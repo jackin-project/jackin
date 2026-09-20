@@ -67,6 +67,15 @@ supervisor as `(pid=2, uid=0, gid=0)` under `vminitd` PID 1 (entrypoint-after-in
 contract, not a runtime probe). Other root peers are rejected before the allowlist
 is consulted.
 
+The Docker relay proxy does not treat container root as the supervisor: launch-wide
+capabilities require the kernel peer tuple `(pid=1, uid=0, gid=0)`, which is the
+Capsule daemon. Session peers remain bound to their exact configured `(uid, gid)`.
+The Apple-container backend uses the host relay directly; its launch contract runs
+the Capsule supervisor as `root:root` and does not provision sudo for session
+identities, so that backend retains an explicit `root:root` supervisor residual.
+If Apple-container ever grants sessions a supported path to UID 0, the direct host
+relay must gain a distinct supervisor credential before that profile is enabled.
+
 ## Container path convention: everything jackin❯ owns lives under `/jackin/` (hard rule)
 
 **Every path jackin❯ creates, mounts, or owns inside role container must live under `/jackin/`.** No FHS-borrowed top-level directories (`/run/jackin/`, `/var/lib/jackin/`, `/opt/jackin/`, `/etc/jackin/`), no scattered locations to discover one-by-one. Operator running `ls /jackin/` inside any role container must see complete map of jackin-owned state in one place.

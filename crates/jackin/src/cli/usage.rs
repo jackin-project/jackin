@@ -123,7 +123,8 @@ pub enum UsageScope {
 /// `jackin usage host snapshot --agent claude`
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct UsageHostSnapshotArgs {
-    /// Host surface id: claude, codex, amp, grok, kimi, opencode, zai, minimax
+    /// Host surface id: codex, claude, amp, grok, zai, kimi, minimax, opencode,
+    /// google, cursor, meta, openrouter
     #[arg(long, value_name = "SURFACE")]
     pub agent: String,
     /// Skip network refresh (read cache / honest refreshing only)

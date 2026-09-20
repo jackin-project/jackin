@@ -90,11 +90,16 @@ fn exec_command_uses_control_request_codec() {
         "gh".to_owned(),
         vec!["auth".to_owned(), "status".to_owned()],
         jackin_protocol::TelemetryContext::v1(),
+        Some("session-capability".to_owned()),
     ));
     let declared = u32::from_be_bytes(framed[..4].try_into().unwrap()) as usize;
     assert_eq!(declared, framed.len() - 4);
     let decoded: ControlRequest = serde_json::from_slice(&framed[4..]).unwrap();
     assert_eq!(decoded.ctx.v, 1);
+    assert_eq!(
+        decoded.session_capability.as_deref(),
+        Some("session-capability")
+    );
     assert!(matches!(
         decoded.msg,
         ClientMsg::ExecCommand { command, args }

@@ -341,6 +341,50 @@ LOCAL = "only-prod"
 }
 
 #[test]
+fn load_migrates_legacy_global_agent_tables_before_embedded_split() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[claude]
+auth_forward = "sync"
+
+[roles.builder]
+git = "https://example.test/builder.git"
+
+[roles.builder.codex]
+auth_forward = "sync"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+
+[[workspaces.prod.mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+"#,
+    )
+    .unwrap();
+
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    assert_eq!(
+        config.roles["builder"].git,
+        "https://example.test/builder.git"
+    );
+    assert!(config.workspaces.contains_key("prod"));
+
+    let global = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(
+        !global.contains("[claude]"),
+        "legacy agent table survived: {global}"
+    );
+    assert!(
+        !global.contains("roles.builder.codex") && !global.contains("[roles.builder.codex]"),
+        "legacy role agent table survived: {global}"
+    );
+}
+
+#[test]
 fn load_preserves_legacy_workspace_op_account_onto_refs() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -376,6 +420,66 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
         !workspace.contains("op_account"),
         "root op_account must be removed after the move:\n{workspace}"
     );
+}
+
+#[test]
+fn embedded_workspace_runs_supported_migrations_before_deserialization() {
+    let raw = include_str!("../../fixtures/config.embedded_workspace_legacy.toml");
+    let (config, embedded) = parse_global_config(raw.as_bytes()).unwrap();
+
+    assert_eq!(config.version, CURRENT_CONFIG_VERSION);
+    assert_eq!(
+        config.account_scan_exclusions,
+        std::collections::BTreeSet::from(["removed-account-fingerprint".to_owned()])
+    );
+    let workspace = embedded.get("legacy").unwrap();
+    assert_eq!(workspace.version, CURRENT_WORKSPACE_VERSION);
+    assert!(workspace.roles.is_empty());
+}
+
+#[test]
+fn split_embedded_workspace_migration_preserves_global_fields_and_is_idempotent() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let raw = include_str!("../../fixtures/config.embedded_workspace_legacy.toml");
+
+    let config = load_split_config(&paths, Some(raw.to_owned())).unwrap();
+    assert_eq!(config.version, CURRENT_CONFIG_VERSION);
+    assert!(
+        config
+            .account_scan_exclusions
+            .contains("removed-account-fingerprint")
+    );
+
+    let global = std::fs::read_to_string(&paths.config_file).unwrap();
+    let global_value: toml::Value = toml::from_str(&global).unwrap();
+    assert_eq!(
+        global_value["version"].as_str(),
+        Some(CURRENT_CONFIG_VERSION)
+    );
+    assert_eq!(
+        global_value["account_scan_exclusions"][0].as_str(),
+        Some("removed-account-fingerprint")
+    );
+
+    let workspace_path = paths.workspaces_dir.join("legacy.toml");
+    let workspace = std::fs::read_to_string(&workspace_path).unwrap();
+    let workspace_value: toml::Value = toml::from_str(&workspace).unwrap();
+    assert_eq!(
+        workspace_value["version"].as_str(),
+        Some(CURRENT_WORKSPACE_VERSION)
+    );
+    assert!(
+        !workspace.contains("codex"),
+        "legacy agent table survived: {workspace}"
+    );
+
+    let global_before = std::fs::read(&paths.config_file).unwrap();
+    let workspace_before = std::fs::read(&workspace_path).unwrap();
+    load_split_config(&paths, Some(raw.to_owned())).unwrap();
+    assert_eq!(global_before, std::fs::read(&paths.config_file).unwrap());
+    assert_eq!(workspace_before, std::fs::read(&workspace_path).unwrap());
 }
 
 #[test]

@@ -10,11 +10,12 @@ use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
+use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCoordinationErrorKind};
 use jackin_usage::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
 use jackin_usage::host::HostUsageRuntime;
 use jackin_usage::host::{
-    ForwardedUsageAccount, HostProbePolicy, HostRuntimeConfig, UsageDiscoveryScope,
-    ensure_usage_broker_with_executor, usage_broker_capabilities,
+    ForwardedUsageAccount, HostProbePolicy, HostRuntimeConfig, UsageBrokerConfig,
+    UsageDiscoveryScope, ensure_usage_broker_with_executor, usage_broker_capabilities,
 };
 
 use crate::dto::UsageFormatPrefsDto;
@@ -46,6 +47,10 @@ auth_forward = "ignore"
 }
 
 fn open_bridge(dir: &std::path::Path) -> UsageMenuBarBridge {
+    open_bridge_with_live(dir, false)
+}
+
+fn open_bridge_with_live(dir: &std::path::Path, allow_live_probes: bool) -> UsageMenuBarBridge {
     let config_root = dir.join("config");
     if !config_root.join("config.toml").exists() {
         write_isolated_config(&config_root);
@@ -57,10 +62,191 @@ fn open_bridge(dir: &std::path::Path) -> UsageMenuBarBridge {
             config_root_override: Some(config_root.display().to_string()),
             refresh_floor_secs: 120,
             enabled_surface_ids: vec!["codex".to_owned(), "claude".to_owned()],
-            allow_live_probes: true,
+            allow_live_probes,
         })
         .expect("open");
     bridge
+}
+
+fn write_account_config(config_root: &std::path::Path, account_id: &str, provider: &str) {
+    std::fs::create_dir_all(config_root).expect("config root");
+    std::fs::write(
+        config_root.join("config.toml"),
+        format!(
+            r#"version = "{}"
+
+[accounts.{account_id}]
+name = "{account_id}"
+provider = "{provider}"
+
+[accounts.{account_id}.credential]
+type = "api_key"
+value = "fixture-{account_id}-secret"
+"#,
+            jackin_config::CURRENT_CONFIG_VERSION
+        ),
+    )
+    .expect("account config");
+}
+
+#[test]
+fn open_runtime_publishes_catalog_before_broker_admission() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_account_config(&dir.path().join("config"), "fixture", "anthropic");
+    let broker = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(dir.path().to_owned()),
+        Arc::new(BlockingBrokerExecutor::new()),
+    )
+    .expect("test broker");
+
+    let bridge = open_bridge_with_live(dir.path(), true);
+    let discovery = bridge
+        .inner
+        .lock()
+        .unwrap()
+        .validated_discovery()
+        .expect("discovery");
+    let admitted = usage_broker_capabilities(&discovery);
+    assert_eq!(
+        admitted.len(),
+        1,
+        "production activation must admit discovery"
+    );
+    assert_eq!(broker.current(admitted[0].clone()).unwrap().generation, 0);
+    let synthetic = UsageAccountCapability {
+        account_id: "not-in-desktop-discovery".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let error = broker.current(synthetic).expect_err("catalog fence");
+    assert_eq!(error.kind, UsageCoordinationErrorKind::CatalogRevoked);
+}
+
+#[test]
+fn open_runtime_activation_failure_is_error_and_keeps_runtime_closed() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_root = dir.path().join("config");
+    write_account_config(&config_root, "fixture", "anthropic");
+    let bridge = UsageMenuBarBridge::create();
+    let host_config = crate::dto::to_host_config(OpenConfig {
+        data_dir_override: Some(dir.path().display().to_string()),
+        config_root_override: Some(config_root.display().to_string()),
+        refresh_floor_secs: 120,
+        enabled_surface_ids: vec!["claude".to_owned()],
+        allow_live_probes: true,
+    })
+    .expect("host config");
+    let mut broker_config = UsageBrokerConfig::for_data_dir(dir.path().to_owned());
+    broker_config.service_executable = None;
+
+    let error = bridge
+        .open_runtime_with_config(host_config, broker_config)
+        .expect_err("activation failure must cross the bridge");
+    assert!(matches!(
+        error,
+        UsageBridgeError::Rejected { ref code, .. } if code == "coordination_unavailable"
+    ));
+    assert!(matches!(
+        bridge.list_surfaces(),
+        Err(UsageBridgeError::RuntimeUnavailable)
+    ));
+    assert!(bridge.broker.lock().unwrap().is_none());
+}
+
+#[test]
+fn failed_production_rotation_retains_last_good_discovery_and_broker() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_root = dir.path().join("config");
+    write_account_config(&config_root, "fixture_a", "anthropic");
+    let broker = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(dir.path().to_owned()),
+        Arc::new(BlockingBrokerExecutor::new()),
+    )
+    .expect("test broker");
+    let bridge = open_bridge_with_live(dir.path(), true);
+    let before = bridge
+        .inner
+        .lock()
+        .unwrap()
+        .validated_discovery()
+        .expect("initial discovery");
+    let before_capabilities = usage_broker_capabilities(&before);
+    assert_eq!(before_capabilities.len(), 1);
+
+    write_account_config(&config_root, "fixture_b", "anthropic");
+    {
+        let mut current = bridge.broker.lock().unwrap();
+        let broker = current.as_mut().expect("attached broker");
+        broker.config.data_dir = dir.path().join("failed-rotation-broker");
+        broker.config.service_executable = Some(dir.path().join("missing-broker"));
+    }
+
+    let error = bridge
+        .refresh(None, true)
+        .expect_err("failed rotation must be visible");
+    assert!(matches!(
+        error,
+        UsageBridgeError::Rejected { ref code, .. } if code == "coordination_unavailable"
+    ));
+    let after = bridge
+        .inner
+        .lock()
+        .unwrap()
+        .validated_discovery()
+        .expect("last-good discovery");
+    assert_eq!(after.config_generation, before.config_generation);
+    assert_eq!(usage_broker_capabilities(&after), before_capabilities);
+    assert_eq!(
+        broker
+            .current(before_capabilities[0].clone())
+            .unwrap()
+            .generation,
+        0
+    );
+}
+
+#[test]
+fn production_rotation_revokes_in_flight_join_and_clears_bridge_phase() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_root = dir.path().join("config");
+    write_account_config(&config_root, "fixture", "anthropic");
+    let executor = Arc::new(BlockingBrokerExecutor::new());
+    let broker_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let broker = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(dir.path().to_owned()),
+        broker_executor,
+    )
+    .expect("test broker");
+    let bridge = open_bridge_with_live(dir.path(), true);
+    let capability = usage_broker_capabilities(
+        &bridge
+            .inner
+            .lock()
+            .unwrap()
+            .validated_discovery()
+            .expect("discovery"),
+    )
+    .pop()
+    .expect("capability");
+
+    bridge.refresh(None, true).expect("start refresh");
+    executor.wait_started();
+    let in_flight = broker.current(capability.clone()).expect("in-flight state");
+    assert!(in_flight.phase.is_active());
+
+    write_isolated_config(&config_root);
+    bridge.refresh(None, true).expect("remove capability");
+    assert!(!bridge.refresh_in_progress().expect("phase cleared"));
+    let revoked = broker
+        .join(capability, in_flight.generation, Duration::from_secs(1))
+        .expect_err("revoked join");
+    assert_eq!(revoked.kind, UsageCoordinationErrorKind::CatalogRevoked);
+
+    executor.release();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while bridge.refresh_in_progress().expect("phase poll") && Instant::now() < deadline {
+        std::thread::park_timeout(Duration::from_millis(10));
+    }
+    assert!(!bridge.refresh_in_progress().expect("phase settled"));
 }
 
 struct BlockingBrokerExecutor {
@@ -167,6 +353,7 @@ fn broker_client_refresh_returns_immediately_and_joins_one_generation() {
     *bridge.broker.lock().unwrap() = Some(DesktopBroker {
         client,
         capabilities,
+        catalog_lease: "test-lease".to_owned(),
         config: broker_config,
         scope: discovery_scope,
     });

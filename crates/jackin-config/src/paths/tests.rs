@@ -53,3 +53,33 @@ fn normalize_path_preserves_root_on_excessive_parents() {
     let path = Path::new("/a/../../../b");
     assert_eq!(normalize_path(path), PathBuf::from("/b"));
 }
+
+#[test]
+fn canonical_path_identity_normalizes_missing_descendants() {
+    let temp = tempfile::tempdir().unwrap();
+    let real = temp.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+
+    let spelled = real.join("created-later/../future");
+    assert_eq!(
+        canonical_path_identity(&spelled),
+        real.canonicalize().unwrap().join("future")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn canonical_path_identity_resolves_symlinked_ancestors() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().unwrap();
+    let real = temp.path().join("real");
+    let alias = temp.path().join("alias");
+    std::fs::create_dir(&real).unwrap();
+    symlink(&real, &alias).unwrap();
+
+    assert_eq!(
+        canonical_path_identity(&alias.join("created-later/../future")),
+        real.canonicalize().unwrap().join("future")
+    );
+}

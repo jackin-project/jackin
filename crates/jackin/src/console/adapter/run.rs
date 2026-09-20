@@ -47,19 +47,27 @@ pub struct ConsoleRunOptions<'a> {
     pub parent_session: Option<&'a TerminalSession>,
 }
 
-/// Read the broker's last published host projection for the Console route.
+/// Worker body for the Console Usage refresh effect: read the broker's
+/// latest host projection for the Console route.
 ///
-/// This is deliberately current-only: Console startup never performs provider
-/// work. Refresh remains broker-owned and is requested by the route later.
-fn load_console_usage_state(
+/// Runs on a worker thread via `spawn_blocking_subscription` — never on the
+/// UI thread. The broker read is one bounded batch
+/// ([`jackin_usage::host::request_usage_batch`]): one refresh request per
+/// unique capability and no blocking join, so one slow provider's probe runs
+/// broker-side and never delays the other accounts' rows. Freshness arrives
+/// over subsequent heartbeat polls. With `force_refresh` (explicit operator
+/// refresh only) the batch bypasses the broker success cadence; shared
+/// rate-limit/`Retry-After` deadlines are still honored broker-side and
+/// active generations are joined rather than duplicated.
+pub(crate) fn load_console_usage_projection(
     paths: &JackinPaths,
     force_refresh: bool,
-) -> anyhow::Result<jackin_console::tui::state::UsageScreenState> {
+) -> anyhow::Result<jackin_protocol::usage_broker::UsageProjectionV1> {
     use jackin_usage::host::{
         HostProbePolicy, HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig,
-        UsageDiscoveryScope, ensure_usage_broker_process, usage_broker_capabilities,
+        UsageDiscoveryScope, ensure_usage_broker_process, request_usage_batch,
+        usage_broker_capabilities,
     };
-    use std::time::Duration;
 
     let discovery_scope = UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
@@ -88,67 +96,112 @@ fn load_console_usage_state(
         &discovery_scope,
     )
     .map_err(|error| anyhow::anyhow!(error.message))?;
-    for capability in usage_broker_capabilities(&discovery) {
-        let state = if force_refresh {
-            let current = client
-                .current(capability.clone())
-                .map_err(|error| anyhow::anyhow!(error.message))?;
-            let state = client
-                .refresh(capability.clone(), current.generation, true)
-                .map_err(|error| anyhow::anyhow!(error.message))?;
-            if state.phase.is_active() {
-                client
-                    .join(capability, state.generation, Duration::from_secs(10))
-                    .map_err(|error| anyhow::anyhow!(error.message))?
-            } else {
-                state
-            }
-        } else {
-            client
-                .current(capability)
-                .map_err(|error| anyhow::anyhow!(error.message))?
-        };
-        runtime
-            .apply_broker_generation(state)
-            .map_err(anyhow::Error::msg)?;
+    for (capability, result) in request_usage_batch(
+        &client,
+        usage_broker_capabilities(&discovery),
+        force_refresh,
+    ) {
+        match result {
+            Ok(view) => runtime
+                .apply_broker_generation(view)
+                .map_err(anyhow::Error::msg)?,
+            Err(error) => runtime
+                .record_broker_error(&capability, &error)
+                .map_err(anyhow::Error::msg)?,
+        }
     }
     let projection = runtime
         .canonical_projection("und")
         .map_err(anyhow::Error::msg)?;
-    Ok(jackin_console::tui::screens::usage::UsageScreenState::from_projection(&projection))
+    Ok(projection)
 }
 
-fn refresh_console_usage_on_key(
-    state: &mut ConsoleState,
-    key: crossterm::event::KeyEvent,
+/// Execute one due Console Usage refresh: poll a completed worker result (if
+/// any), then start a refresh when one is due and none is in flight. This is
+/// the `ConsoleEffect::RequestUsageRefresh` executor, following the
+/// instance-refresh effect+subscription shape: the screen owns the throttle
+/// and generation, broker work runs on the worker thread, and the UI thread
+/// only polls and applies. Manual `r` (flagged by the route) joins shared
+/// in-flight work instead of queueing a duplicate. Returns true when a
+/// completion landed and the screen changed.
+pub(crate) fn execute_usage_refresh_effect(
+    manager: &mut crate::console::adapter::state::ManagerState<'_>,
     paths: &JackinPaths,
-) -> anyhow::Result<()> {
-    use crossterm::event::KeyCode;
+) -> bool {
+    use std::time::Instant;
 
-    if key.code != KeyCode::Char('r') {
-        return Ok(());
-    }
-    let ConsoleStage::Manager(manager) = &mut state.stage else {
-        return Ok(());
-    };
-    let Some(screen) = manager.usage_screen.as_mut() else {
-        return Ok(());
+    let Some(screen) = manager.usage.screen.as_mut() else {
+        return false;
     };
 
-    match load_console_usage_state(paths, true) {
-        Ok(usage) => {
-            manager.usage_accounts = usage.accounts.clone();
-            manager.usage_notice = usage.notice.clone();
-            screen.set_accounts(usage.accounts);
-            screen.notice = usage.notice;
+    let now = Instant::now();
+    let mut changed = false;
+    if let Some(outcome) = screen.poll_refresh() {
+        match outcome {
+            Ok(projection) => {
+                manager.usage_projection = Some(projection.clone());
+                screen.apply_refresh(projection, now);
+                manager.usage_notice.clone_from(&screen.notice);
+            }
+            Err(message) => {
+                let notice = format!("Usage unavailable: {message}");
+                manager.usage_notice = Some(notice.clone());
+                screen.apply_refresh_error(notice, now);
+            }
         }
-        Err(error) => {
-            let notice = format!("Usage unavailable: {error}");
-            manager.usage_notice = Some(notice.clone());
-            screen.notice = Some(notice);
+        changed = true;
+    }
+
+    if let Some(plan) = screen.next_refresh_plan_if_due(now) {
+        let paths = paths.clone();
+        screen.begin_refresh(jackin_console::tui::runtime::spawn_blocking_subscription(
+            move || {
+                let outcome = load_console_usage_projection(&paths, plan.force)
+                    .map_err(|error| error.to_string());
+                (plan.generation, outcome)
+            },
+        ));
+    }
+    changed
+}
+
+/// Poll the off-UI-thread startup usage snapshot once. Returns true when it
+/// landed (or failed) and the manager snapshot changed.
+fn poll_startup_usage(
+    state: &mut ConsoleState,
+    rx: &mut Option<
+        jackin_console::tui::runtime::BlockingSubscription<
+            jackin_console::tui::screens::usage::UsageRefreshOutcome,
+        >,
+    >,
+) -> bool {
+    use jackin_console::tui::runtime::SubscriptionPoll;
+
+    let Some(inner) = rx.as_mut() else {
+        return false;
+    };
+    let outcome = match inner.poll_next() {
+        SubscriptionPoll::Ready(outcome) => outcome,
+        SubscriptionPoll::Closed => Err("usage refresh worker disconnected".to_owned()),
+        SubscriptionPoll::Pending => return false,
+    };
+    *rx = None;
+    if let ConsoleStage::Manager(manager) = &mut state.stage {
+        match outcome {
+            Ok(projection) => {
+                manager.usage_projection = Some(projection.clone());
+                manager.usage_notice =
+                    jackin_console::tui::screens::usage::UsageScreenState::from_projection(
+                        &projection,
+                    )
+                    .notice;
+            }
+            Err(error) => {
+                manager.usage_notice = Some(format!("Usage unavailable: {error}"));
+            }
         }
     }
-    Ok(())
+    true
 }
 
 impl std::fmt::Debug for ConsoleRunOptions<'_> {
@@ -411,6 +464,16 @@ fn drain_background_messages(
         *needs_redraw |=
             crate::console::effects::apply_background_event(ms, config, paths, cwd, message);
     }
+    // Usage heartbeat ticks every frame regardless of the visible route, so
+    // periodic broker refreshes continue while the Usage screen is offscreen
+    // (after its first open creates the screen state). The screen owns the
+    // throttle and generation; worker completions land as state updates.
+    *needs_redraw |= crate::console::effects::execute_manager_effect(
+        ms,
+        config,
+        paths,
+        jackin_console::tui::effect::ConsoleEffect::RequestUsageRefresh.into(),
+    );
 }
 
 struct DrawConsoleContext<'a> {
@@ -818,13 +881,13 @@ where
         crate::console::adapter::InputOutcome::NewSessionWithAccount {
             container,
             agent,
-            account,
+            instance_id,
         } => {
             return Ok(ConsoleLoopFlow::Exit(Some(
                 ConsoleOutcome::NewSessionWithAccount {
                     container,
                     agent,
-                    account,
+                    instance_id,
                 },
             )));
         }
@@ -832,6 +895,7 @@ where
             selector,
             agent,
             account,
+            configuration,
         } => {
             let Some(input) = take_pending_launch_plan(state) else {
                 return Ok(ConsoleLoopFlow::Exit(None));
@@ -858,6 +922,7 @@ where
                     workspace,
                     agent,
                     account,
+                    configuration,
                 },
             )));
         }
@@ -923,7 +988,10 @@ where
         let ConsoleStage::Manager(ms) = &mut state.stage;
         crate::console::adapter::handle_key(ms, inputs.config, inputs.paths, inputs.cwd, key)?
     };
-    refresh_console_usage_on_key(state, key, inputs.paths)?;
+    {
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        *needs_redraw |= execute_usage_refresh_effect(ms, inputs.paths);
+    }
     if startup_error_dismissed(state, inputs.startup_error_pending) {
         return Ok(ConsoleLoopFlow::Exit(None));
     }
@@ -1138,17 +1206,16 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         options.op_available,
         options.startup_error,
     )?;
-    if let ConsoleStage::Manager(manager) = &mut state.stage {
-        match load_console_usage_state(paths, false) {
-            Ok(usage) => {
-                manager.usage_accounts = usage.accounts;
-                manager.usage_notice = usage.notice;
-            }
-            Err(error) => {
-                manager.usage_notice = Some(format!("Usage unavailable: {error}"));
-            }
-        }
-    }
+    // The startup usage snapshot loads off the UI thread: broker activation
+    // (and first discovery) must never stall console startup. The result is
+    // polled into the manager snapshot once per loop turn below.
+    let paths_for_usage_startup = paths.clone();
+    let mut startup_usage_rx = Some(jackin_console::tui::runtime::spawn_blocking_subscription(
+        move || {
+            load_console_usage_projection(&paths_for_usage_startup, false)
+                .map_err(|error| error.to_string())
+        },
+    ));
     // When the launch flow in `app` already owns the host screen, draw into it
     // and leave teardown to that guard; otherwise own the screen here for the
     // lifetime of the console (standalone `jackin console` with no launch).
@@ -1188,6 +1255,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         drain_background_messages(&mut state, &mut config, paths, cwd, &mut needs_redraw);
+        needs_redraw |= poll_startup_usage(&mut state, &mut startup_usage_rx);
 
         present_owed_frame(
             &mut pacer,

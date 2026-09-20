@@ -81,6 +81,20 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         }
         return;
     }
+    if matches!(key.code, KeyCode::Enter)
+        && settings_update::settings_auth_scan_row_selected(
+            settings.auth.pending.len(),
+            settings.auth.selected,
+        )
+    {
+        dispatch_manager(
+            state,
+            ManagerMessage::Settings(
+                crate::tui::screens::settings::message::SettingsMessage::RequestAccountScan,
+            ),
+        );
+        return;
+    }
     let plan = settings_update::settings_auth_key_plan(key.code, settings.is_dirty(), false, true);
     match plan {
         SettingsAuthKeyPlan::ClearKind => {
@@ -549,6 +563,24 @@ fn persist_settings_auth_form(
         AuthKind::Kimi => AiProvider::Moonshot,
         AuthKind::Opencode => AiProvider::Opencode,
         AuthKind::Grok => AiProvider::Xai,
+        AuthKind::Antigravity | AuthKind::Gemini => AiProvider::Google,
+        AuthKind::Cursor => AiProvider::Cursor,
+        AuthKind::Muse => AiProvider::Meta,
+        AuthKind::Omp | AuthKind::Hermes => {
+            // No native provider: edits keep the existing account's
+            // provider; only brand-new console accounts are refused (the
+            // console has no provider picker yet — use the CLI).
+            let existing = auth
+                .editing_account
+                .as_ref()
+                .and_then(|id| auth.pending.get(id))
+                .map(|account| account.provider);
+            let Some(provider) = existing else {
+                auth.set_error("omp/Hermes accounts need an explicit provider; add them with `jackin account add --provider`");
+                return;
+            };
+            provider
+        }
         AuthKind::Zai => AiProvider::Zai,
         AuthKind::Minimax => AiProvider::Minimax,
         AuthKind::Github => {
@@ -565,7 +597,27 @@ fn persist_settings_auth_form(
             let Some(agent) = crate::tui::auth_config::auth_kind_agent(form.kind) else {
                 return;
             };
-            AccountCredential::Profile { agent, directory }
+            let source_selector = auth
+                .editing_account
+                .as_ref()
+                .and_then(|id| auth.pending.get(id))
+                .and_then(|account| match &account.credential {
+                    AccountCredential::Profile {
+                        agent: existing_agent,
+                        directory: existing_directory,
+                        source_selector,
+                        ..
+                    } if *existing_agent == agent && *existing_directory == directory => {
+                        source_selector.clone()
+                    }
+                    _ => None,
+                });
+            AccountCredential::Profile {
+                agent,
+                directory,
+                xdg_roots: None,
+                source_selector,
+            }
         }
         AuthMode::ApiKey => {
             let Some(value) = outcome.env_value else {

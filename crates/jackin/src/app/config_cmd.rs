@@ -32,6 +32,7 @@ pub(super) fn env_rows<'a>(
     env: impl IntoIterator<Item = (&'a String, &'a jackin_core::EnvValue)>,
 ) -> Vec<EnvListRow> {
     env.into_iter()
+        .filter(|(k, _)| !jackin_core::is_account_env(k))
         .map(|(k, v)| (k.clone(), v.as_display_str().to_owned(), v.is_on_demand()))
         .collect()
 }
@@ -349,6 +350,11 @@ fn handle_env_cmd(env_cmd: cli::EnvCommand, config: &AppConfig, paths: &JackinPa
                     "env name {key:?} is reserved by the jackin runtime and cannot be set"
                 );
             }
+            if jackin_core::is_account_env(&key) {
+                anyhow::bail!(
+                    "env name {key:?} belongs to account credentials and cannot be set here"
+                );
+            }
             if let Some(ref agent_key) = role
                 && !config.roles.contains_key(agent_key)
             {
@@ -438,5 +444,26 @@ fn handle_git_cmd(git_cmd: cli::GitCommand, paths: &JackinPaths) -> Result<()> {
             }
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::env_rows;
+    use jackin_core::EnvValue;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn env_rows_omits_account_owned_sentinel_values() {
+        let mut env = BTreeMap::new();
+        env.insert(
+            "ANTHROPIC_API_KEY".to_owned(),
+            EnvValue::Plain("cli-list-sentinel".into()),
+        );
+        env.insert("PROJECT_ENV".to_owned(), EnvValue::Plain("visible".into()));
+
+        let rows = env_rows(&env);
+        assert_eq!(rows, vec![("PROJECT_ENV".into(), "visible".into(), false)]);
+        assert!(!format!("{rows:?}").contains("cli-list-sentinel"));
     }
 }

@@ -132,6 +132,7 @@ public struct UsageWindowDetail: View {
         } else if let error = store.lastError, store.providerGlanceRows.isEmpty {
             ContentUnavailableView {
                 Label("Usage unavailable", systemImage: "exclamationmark.triangle")
+                    .accessibilityIdentifier("usage.global-error")
             } description: {
                 Text(error)
             } actions: {
@@ -139,7 +140,6 @@ public struct UsageWindowDetail: View {
                     .disabled(store.isOpening || store.refreshInProgress)
                     .accessibilityIdentifier("usage.retry")
             }
-            .accessibilityIdentifier("usage.global-error")
         } else if let content = model.content {
             ProviderDetailView(
                 content: content,

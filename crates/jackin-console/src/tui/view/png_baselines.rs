@@ -451,6 +451,8 @@ fn account_config() -> AppConfig {
             AccountCredential::Profile {
                 agent: Agent::Claude,
                 directory: "/profiles/claude-personal".into(),
+                xdg_roots: None,
+                source_selector: None,
             },
         ),
         (
@@ -459,6 +461,8 @@ fn account_config() -> AppConfig {
             AccountCredential::Profile {
                 agent: Agent::Claude,
                 directory: "/profiles/claude-work".into(),
+                xdg_roots: None,
+                source_selector: None,
             },
         ),
         (
@@ -561,6 +565,8 @@ fn account_picker() -> (ManagerState<'static>, AppConfig, PathBuf) {
             name: "Work".into(),
             provider: jackin_config::AiProvider::Anthropic,
             agents: vec![jackin_core::Agent::Claude],
+            configuration_id: None,
+            instance_id: None,
         }],
     ));
     (state, config, cwd)

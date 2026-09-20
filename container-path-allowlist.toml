@@ -4,7 +4,7 @@
 
 [[file]]
 path = "crates/jackin-core/src/container_paths.rs"
-literals = 39
+literals = 51
 note = "the chokepoint module itself defines the canonical constants"
 
 [[file]]
@@ -25,6 +25,11 @@ reason = "reads the container's kernel hostname path (host-visible /etc inside t
 path = "/etc/sudoers.d/agent"
 file = "crates/jackin-capsule/src/sudo_provision.rs"
 reason = "installs the agent sudoers drop-in at the distro path inside the container"
+
+[[forbidden-roots]]
+path = "/var/folders/"
+file = "crates/jackin-docker/src/shell_runner.rs"
+reason = "error scrubber redacts macOS temp-dir tokens from Docker build failures"
 
 [[forbidden-roots]]
 path = "/run"

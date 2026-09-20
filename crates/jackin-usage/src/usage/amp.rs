@@ -164,19 +164,79 @@ pub(crate) fn amp_api_key_snapshot(agent: &str, key: &str, now: i64) -> FocusedU
 
 /// The current Amp `userDisplayBalanceInfo.displayText` contract, shared by the
 /// API and CLI paths through one parser: account identity, the Amp Free daily
-/// remaining percentage, individual credit balance, and per-workspace balances.
+/// remaining percentage, the monthly subscription pools (Agent dollars + Orb
+/// hours, Tier or legacy Subscription shape), individual credit balance, and
+/// per-workspace balances. Each pool keeps its own unit — dollars, hours, and
+/// percents are never compressed into one metric.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct AmpUsage {
     pub(crate) account_label: Option<String>,
     pub(crate) daily_remaining_percent: Option<u8>,
     pub(crate) individual_credits: Option<f64>,
     pub(crate) workspace_balances: Vec<AmpWorkspaceBalance>,
+    pub(crate) subscription: Option<AmpSubscription>,
+    pub(crate) renewal: Option<AmpRenewal>,
+    pub(crate) billing_period: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AmpWorkspaceBalance {
     pub(crate) name: String,
     pub(crate) remaining: f64,
+}
+
+/// One monthly Amp subscription: the plan name (the funding route — which
+/// subscription pays) plus the Agent/Orb pools in their native units.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AmpSubscription {
+    pub(crate) plan: String,
+    pub(crate) kind: AmpSubscriptionKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum AmpSubscriptionKind {
+    /// `Amp <plan> Tier: agent usage $<rem> of $<limit> remaining …` with an
+    /// optional independent `orb usage <R>h of <L>h …` segment. Dollar/hours
+    /// balances are authoritative; no rounded CLI percent is used.
+    Tier {
+        agent_remaining: f64,
+        agent_limit: f64,
+        orb_remaining_hours: Option<f64>,
+        orb_limit_hours: Option<f64>,
+    },
+    /// Legacy `Subscription <plan>: <N>% other usage and <M>% orb usage
+    /// remaining …` (or `Amp <plan> Subscription:`) percent pools.
+    Legacy {
+        agent_remaining_percent: u8,
+        orb_remaining_percent: u8,
+    },
+}
+
+/// Subscription renewal countdown (`resets upon renewal in <N> days|months`).
+/// Months are calendar-approximated as 30 days; the pace label always shows
+/// the raw countdown so the approximation is visible.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AmpRenewal {
+    pub(crate) value: u64,
+    pub(crate) months: bool,
+}
+
+impl AmpRenewal {
+    pub(crate) fn label(&self) -> String {
+        let unit = if self.months { "month" } else { "day" };
+        let plural = if self.value == 1 { "" } else { "s" };
+        format!("renews in {} {unit}{plural}", self.value)
+    }
+
+    pub(crate) fn resets_at(&self, now: i64) -> i64 {
+        let days = if self.months {
+            self.value.saturating_mul(30)
+        } else {
+            self.value
+        };
+        let seconds = days.saturating_mul(86_400);
+        now.saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX))
+    }
 }
 
 impl AmpUsage {
@@ -188,13 +248,30 @@ impl AmpUsage {
         parse_amp_usage_output(display_text)
     }
 
-    /// `Amp Free` only when the daily line exists; a paid/credit-only balance
-    /// never infers a plan.
+    /// The subscription plan names the funding route, so it wins; `Amp Free`
+    /// only when the daily line exists; a paid/credit-only balance never
+    /// infers a plan.
     pub(crate) fn plan_label(&self) -> Option<String> {
+        if let Some(subscription) = &self.subscription {
+            return Some(format!("Amp {}", subscription.plan));
+        }
         self.daily_remaining_percent.map(|_| "Amp Free".to_owned())
     }
 
-    pub(crate) fn buckets(&self) -> Vec<QuotaBucketView> {
+    /// Pace/detail line shared by the subscription buckets: the renewal
+    /// countdown plus the billing period when the CLI reported one.
+    fn subscription_pace(&self) -> Option<String> {
+        let mut parts = Vec::new();
+        if let Some(renewal) = &self.renewal {
+            parts.push(renewal.label());
+        }
+        if let Some(period) = &self.billing_period {
+            parts.push(format!("period {period}"));
+        }
+        (!parts.is_empty()).then(|| parts.join(" · "))
+    }
+
+    pub(crate) fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         if let Some(remaining) = self.daily_remaining_percent {
             buckets.push(with_status_slot(
@@ -209,6 +286,57 @@ impl AmpUsage {
                 ),
                 Some(StatusSlot::Daily),
             ));
+        }
+        if let Some(subscription) = &self.subscription {
+            let reset_at = self.renewal.as_ref().map(|renewal| renewal.resets_at(now));
+            let pace = self.subscription_pace();
+            match &subscription.kind {
+                AmpSubscriptionKind::Tier {
+                    agent_remaining,
+                    agent_limit,
+                    orb_remaining_hours,
+                    orb_limit_hours,
+                } => {
+                    push_amp_agent_dollar_bucket(
+                        &mut buckets,
+                        *agent_remaining,
+                        *agent_limit,
+                        reset_at,
+                        now,
+                        pace.as_deref(),
+                    );
+                    if let (Some(remaining), Some(limit)) = (orb_remaining_hours, orb_limit_hours) {
+                        push_amp_orb_bucket(
+                            &mut buckets,
+                            *remaining,
+                            *limit,
+                            reset_at,
+                            now,
+                            pace.as_deref(),
+                        );
+                    }
+                }
+                AmpSubscriptionKind::Legacy {
+                    agent_remaining_percent,
+                    orb_remaining_percent,
+                } => {
+                    for (label, remaining) in [
+                        ("Agent usage", *agent_remaining_percent),
+                        ("Orb usage", *orb_remaining_percent),
+                    ] {
+                        buckets.push(timed_bucket(
+                            label,
+                            Some(format!("{}% used", 100u8.saturating_sub(remaining))),
+                            Some("100%".to_owned()),
+                            Some(remaining),
+                            reset_at,
+                            now,
+                            pace.as_deref(),
+                            UsageSnapshotStatus::Fresh,
+                        ));
+                    }
+                }
+            }
         }
         if let Some(credits) = self.individual_credits {
             buckets.push(bucket(
@@ -238,6 +366,83 @@ impl AmpUsage {
     }
 }
 
+/// Tier Agent dollar pool: structured `Money` on the `Spend` slot plus a
+/// remaining percent from the full-precision balances (never a rounded CLI
+/// percent). The Amp surface headline stays Daily-only, so this never leaks
+/// into the status bar.
+fn push_amp_agent_dollar_bucket(
+    buckets: &mut Vec<QuotaBucketView>,
+    remaining: f64,
+    limit: f64,
+    reset_at: Option<i64>,
+    now: i64,
+    pace: Option<&str>,
+) {
+    let used = (limit - remaining).max(0.0);
+    let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
+    let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "fraction clamped to 0.0..=1.0; percent is rounded f64→u8"
+    )]
+    let remaining_percent = Some(((remaining / limit).clamp(0.0, 1.0) * 100.0).round() as u8);
+    let mut view = timed_bucket(
+        "Agent usage",
+        Some(format!("{used_money} used")),
+        Some(limit_money.to_string()),
+        remaining_percent,
+        reset_at,
+        now,
+        pace,
+        UsageSnapshotStatus::Fresh,
+    );
+    view.status_slot = Some(StatusSlot::Spend);
+    view.used_money = Some(used_money);
+    view.limit_money = Some(limit_money);
+    buckets.push(view);
+}
+
+/// Tier Orb hour pool: whole a1.small-equivalent hours rounded down, positive
+/// sub-hour balances shown as `< 1h`; the remaining percent keeps full
+/// precision.
+fn push_amp_orb_bucket(
+    buckets: &mut Vec<QuotaBucketView>,
+    remaining: f64,
+    limit: f64,
+    reset_at: Option<i64>,
+    now: i64,
+    pace: Option<&str>,
+) {
+    let used = (limit - remaining).max(0.0);
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "fraction clamped to 0.0..=1.0; percent is rounded f64→u8"
+    )]
+    let remaining_percent = Some(((remaining / limit).clamp(0.0, 1.0) * 100.0).round() as u8);
+    buckets.push(timed_bucket(
+        "Orb usage",
+        Some(format!("{} used", format_orb_hours(used))),
+        Some(format_orb_hours(limit)),
+        remaining_percent,
+        reset_at,
+        now,
+        pace,
+        UsageSnapshotStatus::Fresh,
+    ));
+}
+
+fn format_orb_hours(hours: f64) -> String {
+    if hours < 1.0 {
+        if hours > 0.0 {
+            "< 1h".to_owned()
+        } else {
+            "0h".to_owned()
+        }
+    } else {
+        format!("{}h", hours.floor())
+    }
+}
+
 /// Non-usage inputs the shared Amp success view builder needs: the agent, the
 /// resolved credential origin, and which fetch path produced the usage.
 pub(crate) struct AmpSuccessContext<'a> {
@@ -259,7 +464,7 @@ pub(crate) fn amp_view_from_usage(
         .clone()
         .unwrap_or_else(|| "local Amp auth".to_owned());
     let plan_label = usage.plan_label();
-    let buckets = usage.buckets();
+    let buckets = usage.buckets(now);
     usage_view(UsageViewInput {
         agent: context.agent,
         provider: None,
@@ -340,8 +545,15 @@ pub(crate) fn fetch_amp_cli_usage() -> Result<AmpUsage, String> {
 /// The one parser for the current Amp `displayText`/CLI usage contract. Rejects
 /// the retired `$remaining/$limit (replenishes +$N/hour)` line entirely.
 pub(crate) fn parse_amp_usage_output(text: &str) -> Option<AmpUsage> {
+    // The API `displayText` may carry Markdown bold markers; the CLI never
+    // does, and stripping them is a no-op for CLI output.
+    let cleaned = text.replace("**", "");
     let mut usage = AmpUsage::default();
-    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+    for line in cleaned
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
         if let Some(rest) = line.strip_prefix("Signed in as ") {
             let identity = rest.split(" (").next().unwrap_or(rest).trim();
             if !identity.is_empty() {
@@ -363,12 +575,176 @@ pub(crate) fn parse_amp_usage_output(text: &str) -> Option<AmpUsage> {
             && let Some(balance) = parse_amp_workspace(rest)
         {
             usage.workspace_balances.push(balance);
+            continue;
+        }
+        // Tier wins over a legacy line when both appear (they never do on a
+        // real account); a legacy line only fills an empty subscription.
+        if let Some((subscription, renewal, period)) = parse_amp_tier_line(line) {
+            usage.subscription = Some(subscription);
+            usage.renewal = renewal;
+            usage.billing_period = period;
+            continue;
+        }
+        if usage.subscription.is_none()
+            && let Some((subscription, renewal)) = parse_amp_legacy_subscription_line(line)
+        {
+            usage.subscription = Some(subscription);
+            usage.renewal = renewal;
         }
     }
     (usage.daily_remaining_percent.is_some()
         || usage.individual_credits.is_some()
-        || !usage.workspace_balances.is_empty())
+        || !usage.workspace_balances.is_empty()
+        || usage.subscription.is_some())
     .then_some(usage)
+}
+
+/// Parse `Amp <plan> Tier: agent usage $<rem> of $<limit> remaining …` plus
+/// the optional independent `orb usage <R>h of <L>h …` segment, renewal
+/// countdown, and billing period. Agent dollars are required; every other
+/// segment is optional — unrecognized Orb data never hides the Agent pool.
+fn parse_amp_tier_line(
+    line: &str,
+) -> Option<(AmpSubscription, Option<AmpRenewal>, Option<String>)> {
+    let after_amp = line.strip_prefix("Amp ")?;
+    let (plan, segment) = after_amp.split_once(" Tier:")?;
+    let plan = plan.trim();
+    if plan.is_empty() {
+        return None;
+    }
+    let segment = segment.strip_prefix(" agent usage ")?;
+    if !segment.contains("remaining") {
+        return None;
+    }
+    let amounts = dollar_amounts(segment);
+    let (remaining, limit) = (*amounts.first()?, *amounts.get(1)?);
+    if !remaining.is_finite() || !limit.is_finite() || remaining < 0.0 || limit <= 0.0 {
+        return None;
+    }
+    let (orb_remaining_hours, orb_limit_hours) =
+        parse_amp_orb_hours(segment).map_or((None, None), |(r, l)| (Some(r), Some(l)));
+    let subscription = AmpSubscription {
+        plan: plan.to_owned(),
+        kind: AmpSubscriptionKind::Tier {
+            agent_remaining: remaining,
+            agent_limit: limit,
+            orb_remaining_hours,
+            orb_limit_hours,
+        },
+    };
+    Some((
+        subscription,
+        parse_amp_renewal(segment),
+        parse_amp_period(segment),
+    ))
+}
+
+/// Parse the Tier `orb usage <R>h of <L>h a1.small orb hours remaining`
+/// segment. `None` when the segment is absent or malformed — the caller keeps
+/// the Agent pool regardless.
+fn parse_amp_orb_hours(segment: &str) -> Option<(f64, f64)> {
+    let after = segment.split_once("orb usage ")?.1;
+    let (remaining_token, rest) = after.split_once('h')?;
+    let rest = rest.strip_prefix(" of ")?;
+    let (limit_token, rest) = rest.split_once('h')?;
+    if !rest.contains("orb hours") {
+        return None;
+    }
+    let remaining = parse_amp_number(remaining_token)?;
+    let limit = parse_amp_number(limit_token)?;
+    if !remaining.is_finite() || !limit.is_finite() || remaining < 0.0 || limit <= 0.0 {
+        return None;
+    }
+    Some((remaining, limit))
+}
+
+/// Parse `resets upon renewal in <N> days|months` (trailing URL tolerated).
+fn parse_amp_renewal(segment: &str) -> Option<AmpRenewal> {
+    let after = segment.split_once("resets upon renewal in ")?.1;
+    let mut parts = after.split_whitespace();
+    let value: u64 = parts.next()?.replace(',', "").parse().ok()?;
+    let unit = parts.next()?.to_ascii_lowercase();
+    let months = if unit.starts_with("day") {
+        false
+    } else if unit.starts_with("month") {
+        true
+    } else {
+        return None;
+    };
+    Some(AmpRenewal { value, months })
+}
+
+/// Parse the Tier `period YYYY-MM-DD to YYYY-MM-DD` billing dates. Strict
+/// day shape, end after start; anything else is ignored (never guessed).
+fn parse_amp_period(segment: &str) -> Option<String> {
+    let after = segment.split_once("period ")?.1;
+    let start = after.get(..10)?;
+    let end = after.get(10..)?.strip_prefix(" to ")?.get(..10)?;
+    if !is_amp_period_date(start) || !is_amp_period_date(end) || end <= start {
+        return None;
+    }
+    Some(format!("{start} to {end}"))
+}
+
+fn is_amp_period_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+}
+
+/// Parse the legacy `Subscription <plan>: <N>% other usage and <M>% orb usage
+/// remaining …` line (or the `Amp <plan> Subscription:` variant). The two
+/// percents are required; the renewal countdown is optional.
+fn parse_amp_legacy_subscription_line(line: &str) -> Option<(AmpSubscription, Option<AmpRenewal>)> {
+    let (plan, segment) = if let Some(rest) = line.strip_prefix("Subscription ") {
+        let (plan, segment) = rest.split_once(':')?;
+        (plan, segment)
+    } else {
+        let after_amp = line.strip_prefix("Amp ")?;
+        after_amp.split_once(" Subscription:")?
+    };
+    let plan = plan.trim();
+    if plan.is_empty() {
+        return None;
+    }
+    let (agent_part, orb_segment) = segment.split_once("% other usage and ")?;
+    let (orb_number, orb_rest) = orb_segment.split_once("% orb usage")?;
+    if !orb_rest.contains("remaining") {
+        return None;
+    }
+    let agent = parse_amp_trailing_percent(agent_part)?;
+    let orb = parse_amp_trailing_percent(orb_number)?;
+    let subscription = AmpSubscription {
+        plan: plan.to_owned(),
+        kind: AmpSubscriptionKind::Legacy {
+            agent_remaining_percent: agent,
+            orb_remaining_percent: orb,
+        },
+    };
+    Some((subscription, parse_amp_renewal(segment)))
+}
+
+/// The number token before a `%` marker: last whitespace-separated token of
+/// the text preceding it (`" 61"` → 61). Round then clamp to `0..=100`.
+fn parse_amp_trailing_percent(before_percent: &str) -> Option<u8> {
+    let token = before_percent.split_whitespace().last()?;
+    let percent = parse_amp_number(token)?;
+    if !percent.is_finite() {
+        return None;
+    }
+    #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
+    Some(percent.round().clamp(0.0, 100.0) as u8)
+}
+
+/// A plain comma-tolerant number token (`"1,234.5"` → 1234.5).
+fn parse_amp_number(token: &str) -> Option<f64> {
+    let cleaned: String = token.chars().filter(|ch| *ch != ',').collect();
+    cleaned.trim().parse().ok()
 }
 
 /// Parse `<N>% remaining today (resets daily)`: round then clamp to `0..=100`.

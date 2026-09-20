@@ -33,6 +33,18 @@ pub enum Agent {
     Opencode,
     /// xAI Grok Build CLI.
     Grok,
+    /// Google Antigravity CLI (`agy`).
+    Antigravity,
+    /// Google Gemini CLI (`gemini`).
+    Gemini,
+    /// Cursor agent CLI (`cursor-agent`, alias `agent`).
+    Cursor,
+    /// Meta Muse CLI (`muse`).
+    Muse,
+    /// oh-my-pi multi-provider client (`omp`).
+    Omp,
+    /// Nous Hermes multi-provider client (`hermes`).
+    Hermes,
 }
 
 impl Agent {
@@ -45,6 +57,12 @@ impl Agent {
         Self::Kimi,
         Self::Opencode,
         Self::Grok,
+        Self::Antigravity,
+        Self::Gemini,
+        Self::Cursor,
+        Self::Muse,
+        Self::Omp,
+        Self::Hermes,
     ];
 
     /// Canonical lowercase CLI slug (`"claude"`, `"codex"`, …).
@@ -56,6 +74,12 @@ impl Agent {
             Self::Kimi => "kimi",
             Self::Opencode => "opencode",
             Self::Grok => "grok",
+            Self::Antigravity => "antigravity",
+            Self::Gemini => "gemini",
+            Self::Cursor => "cursor",
+            Self::Muse => "muse",
+            Self::Omp => "omp",
+            Self::Hermes => "hermes",
         }
     }
 
@@ -68,6 +92,12 @@ impl Agent {
             Self::Kimi => "Kimi",
             Self::Opencode => "OpenCode",
             Self::Grok => "Grok",
+            Self::Antigravity => "Antigravity",
+            Self::Gemini => "Gemini",
+            Self::Cursor => "Cursor",
+            Self::Muse => "Muse",
+            Self::Omp => "omp",
+            Self::Hermes => "Hermes",
         }
     }
 
@@ -104,11 +134,32 @@ impl Agent {
             (Self::Kimi, M::ApiKey) => Some(env_model::KIMI_API_KEY_ENV_NAME),
             (Self::Opencode, M::ApiKey) => Some(env_model::OPENCODE_API_KEY_ENV_NAME),
             (Self::Grok, M::ApiKey) => Some(env_model::XAI_API_KEY_ENV_NAME),
+            (Self::Antigravity | Self::Gemini, M::ApiKey) => {
+                Some(env_model::GEMINI_API_KEY_ENV_NAME)
+            }
+            (Self::Cursor, M::ApiKey) => Some(env_model::CURSOR_API_KEY_ENV_NAME),
+            // Verified in `muse login --help`: META_API_KEY overrides login.
+            (Self::Muse, M::ApiKey) => Some(env_model::META_API_KEY_ENV_NAME),
             (Self::Claude, M::Sync | M::Ignore)
             | (
-                Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok,
+                Self::Codex
+                | Self::Amp
+                | Self::Kimi
+                | Self::Opencode
+                | Self::Grok
+                | Self::Antigravity
+                | Self::Gemini
+                | Self::Cursor
+                | Self::Muse,
                 M::Sync | M::Ignore | M::OAuthToken,
-            ) => None,
+            )
+            // Omp/Hermes are pure multi-provider clients with no native
+            // billing: the ApiKey variable is provider-selected at the
+            // account layer (`AccountConfig::api_key_variable`), so no
+            // single agent-level variable exists.
+            | (Self::Omp | Self::Hermes, M::Sync | M::ApiKey | M::Ignore | M::OAuthToken) => {
+                None
+            }
         }
     }
 
@@ -116,11 +167,22 @@ impl Agent {
     /// listing options to the user.
     pub const fn supported_modes(self) -> &'static [AuthForwardMode] {
         use AuthForwardMode as M;
+        // Every agent except Claude supports exactly Sync+ApiKey+Ignore:
+        // the six catalog additions follow the same policy (no per-agent
+        // OAuthToken flow; Omp/Hermes route provider keys via ApiKey).
         match self {
             Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
-            Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok => {
-                &[M::Sync, M::ApiKey, M::Ignore]
-            }
+            Self::Codex
+            | Self::Amp
+            | Self::Kimi
+            | Self::Opencode
+            | Self::Grok
+            | Self::Antigravity
+            | Self::Gemini
+            | Self::Cursor
+            | Self::Muse
+            | Self::Omp
+            | Self::Hermes => &[M::Sync, M::ApiKey, M::Ignore],
         }
     }
 
@@ -138,6 +200,12 @@ impl Agent {
             Self::Kimi => &adapters::KimiRuntime,
             Self::Opencode => &adapters::OpencodeRuntime,
             Self::Grok => &adapters::GrokRuntime,
+            Self::Antigravity => &adapters::AntigravityRuntime,
+            Self::Gemini => &adapters::GeminiRuntime,
+            Self::Cursor => &adapters::CursorRuntime,
+            Self::Muse => &adapters::MuseRuntime,
+            Self::Omp => &adapters::OmpRuntime,
+            Self::Hermes => &adapters::HermesRuntime,
         }
     }
 }
@@ -160,7 +228,7 @@ impl fmt::Display for ParseAgentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "unknown agent: {:?}; supported: claude, codex, amp, kimi, opencode, grok",
+            "unknown agent: {:?}; supported: claude, codex, amp, kimi, opencode, grok, antigravity, gemini, cursor, muse, omp, hermes",
             self.got
         )
     }
@@ -181,6 +249,12 @@ impl Agent {
             "kimi" => Some(Self::Kimi),
             "opencode" => Some(Self::Opencode),
             "grok" => Some(Self::Grok),
+            "antigravity" => Some(Self::Antigravity),
+            "gemini" => Some(Self::Gemini),
+            "cursor" => Some(Self::Cursor),
+            "muse" => Some(Self::Muse),
+            "omp" => Some(Self::Omp),
+            "hermes" => Some(Self::Hermes),
             _ => None,
         }
     }
@@ -198,7 +272,7 @@ impl FromStr for Agent {
 pub(crate) mod adapters;
 pub(crate) mod runtime;
 
-pub use runtime::{AgentRuntime, AgentStatePaths};
+pub use runtime::{AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind};
 
 /// Public registry entry: all built-in [`AgentRuntime`] adapters.
 #[inline]

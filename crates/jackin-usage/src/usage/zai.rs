@@ -5,12 +5,22 @@
 //!
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
+//!
+//! Quota contract (see `ref-contracts-B.md` §2): `GET
+//! {api.z.ai,open.bigmodel.cn}/api/monitor/usage/quota/limit` with
+//! `data.limits[]` carrying new `CREDIT_LIMIT` and older `TOKENS_LIMIT`
+//! windows plus separate `TIME_LIMIT` tool/MCP quotas. A 2xx
+//! `success: false` envelope means a valid key with no GLM Coding Plan — a
+//! distinct state, not a transport error. CN team scope appends `?type=2`
+//! with `Bigmodel-Organization` / `Bigmodel-Project` headers; missing
+//! selectors can return HTTP success with empty data.
 
 #[cfg_attr(
     not(test),
     expect(clippy::wildcard_imports, reason = "target-dependent")
 )]
 use super::*;
+use chrono::{Datelike, Timelike};
 use serde::Deserialize;
 
 pub(crate) fn provider_key_snapshot(
@@ -46,15 +56,24 @@ pub(crate) fn provider_key_snapshot(
                 status,
             )]
         });
+    let team_active = resolve_zai_team_scope().active();
+    let plan_label = provider_quota
+        .as_ref()
+        .and_then(ZaiQuotaResponse::plan_name)
+        .map(|plan| {
+            if team_active {
+                format!("{plan} · Team")
+            } else {
+                plan
+            }
+        });
     usage_view(UsageViewInput {
         agent,
         provider: Some(surface.label()),
         surface,
         account_label: String::new(),
         username: None,
-        plan_label: provider_quota
-            .as_ref()
-            .and_then(ZaiQuotaResponse::plan_name),
+        plan_label,
         credential_origin: Some(if has_key {
             format!("API token · env {key_name}")
         } else {
@@ -118,6 +137,15 @@ pub(crate) struct ZaiLimitRaw {
     pub(crate) percentage: Option<f64>,
     #[serde(rename = "nextResetTime")]
     pub(crate) next_reset_time: Option<i64>,
+    #[serde(rename = "usageDetails", default)]
+    pub(crate) usage_details: Vec<ZaiUsageDetail>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ZaiUsageDetail {
+    #[serde(rename = "modelCode", alias = "model_code", alias = "model")]
+    pub(crate) model_code: Option<String>,
+    pub(crate) usage: Option<i64>,
 }
 
 impl ZaiQuotaResponse {
@@ -131,7 +159,7 @@ impl ZaiQuotaResponse {
         for limit in &limits {
             let Some(slot) = limit.semantic_slot() else {
                 if limit.limit_type == "TIME_LIMIT" {
-                    buckets.push(zai_bucket("MCP", limit, now));
+                    buckets.push(zai_bucket(limit.time_label(), limit, now));
                 }
                 continue;
             };
@@ -185,6 +213,9 @@ impl ZaiLimitRaw {
         })
     }
 
+    /// Window length in minutes from the `(unit, number)` period pair:
+    /// `1` = day, `3` = hour, `5` = minute, `6` = week. Unknown unit codes
+    /// yield no window (never a guessed duration).
     pub(crate) fn window_minutes(&self) -> Option<i64> {
         let number = self.number?;
         if number <= 0 {
@@ -196,6 +227,22 @@ impl ZaiLimitRaw {
             Some(1) => Some(number * 24 * 60),
             Some(6) => Some(number * 7 * 24 * 60),
             _ => None,
+        }
+    }
+
+    /// `TIME_LIMIT` covers both short tool/MCP quotas and the monthly
+    /// web-search count; the window tells them apart. The ≥28d `Web search`
+    /// split is a window-size heuristic with a known residual risk: a 28d+
+    /// MCP window would mislabel. No sharper signal exists in the quota
+    /// payload, so the guess stays, documented.
+    pub(crate) fn time_label(&self) -> &'static str {
+        if self
+            .window_minutes()
+            .is_some_and(|minutes| minutes >= 28 * 24 * 60)
+        {
+            "Web search"
+        } else {
+            "MCP"
         }
     }
 
@@ -211,15 +258,82 @@ impl ZaiLimitRaw {
     }
 }
 
+/// Peak-rate window: Mon–Fri 06:00–10:00 UTC burns credits at 1×,
+/// everything else at 0.5×. Source: the GLM Coding Plan rate note captured
+/// in `ref-contracts-B.md` §2 — no endpoint exposes the rate, so it is
+/// derived client-side from the clock and goes stale silently if the plan
+/// changes; pace-note only, never quota math.
+pub(crate) const ZAI_PEAK_START_HOUR_UTC: u32 = 6;
+pub(crate) const ZAI_PEAK_END_HOUR_UTC: u32 = 10;
+
+/// True while the spend clock is inside the peak-rate window.
+pub(crate) fn zai_is_peak(now: i64) -> bool {
+    let Some(moment) = chrono::DateTime::from_timestamp(now, 0).map(|date| date.naive_utc()) else {
+        return false;
+    };
+    matches!(
+        moment.weekday(),
+        chrono::Weekday::Mon
+            | chrono::Weekday::Tue
+            | chrono::Weekday::Wed
+            | chrono::Weekday::Thu
+            | chrono::Weekday::Fri
+    ) && (ZAI_PEAK_START_HOUR_UTC..ZAI_PEAK_END_HOUR_UTC).contains(&moment.hour())
+}
+
+pub(crate) fn zai_credit_rate_note(now: i64) -> &'static str {
+    if zai_is_peak(now) {
+        "peak 1× rate"
+    } else {
+        "off-peak 0.5× rate"
+    }
+}
+
+/// Top-two models by `usageDetails` consumption, e.g.
+/// `top glm-5 71% · glm-4.5 29%`. `None` when no model breakdown is present.
+pub(crate) fn zai_model_note(limit: &ZaiLimitRaw) -> Option<String> {
+    let mut details = limit.usage_details.clone();
+    details.retain(|detail| {
+        detail.usage.is_some_and(|usage| usage > 0)
+            && detail
+                .model_code
+                .as_deref()
+                .is_some_and(|code| !code.trim().is_empty())
+    });
+    if details.is_empty() {
+        return None;
+    }
+    details.sort_by_key(|detail| std::cmp::Reverse(detail.usage.unwrap_or(0)));
+    let total: i64 = details.iter().filter_map(|detail| detail.usage).sum();
+    let parts = details
+        .iter()
+        .take(2)
+        .map(|detail| {
+            let code = detail.model_code.as_deref().unwrap_or_default().trim();
+            if total > 0 {
+                let used = detail.usage.unwrap_or(0).max(0);
+                let share = (i128::from(used) * 100 / i128::from(total)).clamp(0, 100) as i64;
+                format!("{code} {share}%")
+            } else {
+                code.to_owned()
+            }
+        })
+        .collect::<Vec<_>>();
+    Some(format!("top {}", parts.join(" · ")))
+}
+
 pub(crate) fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView {
     let used_percent = limit.used_percent();
     let remaining = used_percent.map(|used| 100u8.saturating_sub(used));
-    let reset_at = limit.next_reset_time.map(|epoch_ms| epoch_ms / 1000);
-    let detail = if label == "MCP" {
-        zai_count_line(limit)
-    } else {
-        None
-    };
+    let reset_at = limit.next_reset_time.map(epoch_seconds_from_maybe_ms);
+    let mut parts = Vec::new();
+    if matches!(label, "MCP" | "Web search") {
+        parts.extend(zai_count_line(limit));
+    } else if limit.limit_type == "CREDIT_LIMIT" {
+        parts.push(zai_credit_rate_note(now).to_owned());
+    }
+    parts.extend(zai_model_note(limit));
+    let detail = (!parts.is_empty()).then(|| parts.join(" · "));
     timed_bucket(
         label,
         limit
@@ -256,21 +370,111 @@ pub(crate) fn zai_count_line(limit: &ZaiLimitRaw) -> Option<String> {
     ))
 }
 
+/// CN team scope: `?type=2` on the quota path plus the
+/// `Bigmodel-Organization` / `Bigmodel-Project` headers.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ZaiTeamScope {
+    pub(crate) quota_type: Option<String>,
+    pub(crate) organization: Option<String>,
+    pub(crate) project: Option<String>,
+}
+
+pub(crate) fn resolve_zai_team_scope() -> ZaiTeamScope {
+    zai_team_scope_from(
+        env_value("ZAI_QUOTA_TYPE").as_deref(),
+        env_value("BIGMODEL_ORGANIZATION")
+            .or_else(|| env_value("ZAI_TEAM_ORG"))
+            .as_deref(),
+        env_value("BIGMODEL_PROJECT")
+            .or_else(|| env_value("ZAI_TEAM_PROJECT"))
+            .as_deref(),
+    )
+}
+
+pub(crate) fn zai_team_scope_from(
+    quota_type: Option<&str>,
+    organization: Option<&str>,
+    project: Option<&str>,
+) -> ZaiTeamScope {
+    let clean = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    ZaiTeamScope {
+        quota_type: clean(quota_type),
+        organization: clean(organization),
+        project: clean(project),
+    }
+}
+
+impl ZaiTeamScope {
+    pub(crate) fn active(&self) -> bool {
+        self.quota_type.is_some() || self.organization.is_some() || self.project.is_some()
+    }
+
+    pub(crate) fn query(&self) -> Option<&str> {
+        self.quota_type.as_deref()
+    }
+}
+
 pub(crate) fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
-    let url = resolve_zai_quota_url();
-    let quota: ZaiQuotaResponse = get_json_bearer(
+    let mut url = resolve_zai_quota_url();
+    let scope = resolve_zai_team_scope();
+    if let Some(quota_type) = scope.query() {
+        url = format!("{url}?type={quota_type}");
+    }
+    let quota: ZaiQuotaResponse = provider_request(
         jackin_telemetry::schema::enums::ProviderName::Zai,
+        "GET",
         "/api/monitor/usage/quota/limit",
-        "Z.AI quota",
-        &url,
-        token,
-        &[],
+        || {
+            let client = provider_http_client()?;
+            let mut request = client
+                .get(&url)
+                .bearer_auth(token)
+                .header(reqwest::header::ACCEPT, "application/json");
+            if let Some(organization) = scope.organization.as_deref() {
+                request = request.header("Bigmodel-Organization", organization);
+            }
+            if let Some(project) = scope.project.as_deref() {
+                request = request.header("Bigmodel-Project", project);
+            }
+            let response = request
+                .send()
+                .map_err(|err| format!("Z.AI quota request failed: {err}"))?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(format!("Z.AI quota HTTP {status}"));
+            }
+            response
+                .json::<ZaiQuotaResponse>()
+                .map_err(|err| format!("Z.AI quota decode failed: {err}"))
+        },
     )?;
-    if quota.success == Some(false) || quota.code.is_some_and(|code| code != 200) {
-        return Err(format!(
-            "Z.AI quota rejected response: {}",
-            quota.msg.unwrap_or_else(|| "unknown error".to_owned())
-        ));
+    // HTTP success with `success: false` is a valid key without a GLM Coding
+    // Plan — surfaced distinctly so it is never mistaken for key presence.
+    if quota.success == Some(false) {
+        let detail = quota.msg.unwrap_or_else(|| "quota rejected".to_owned());
+        return Err(format!("Z.AI key has no GLM Coding Plan ({detail})"));
+    }
+    if quota.code.is_some_and(|code| code != 200) {
+        let detail = quota.msg.unwrap_or_else(|| "unknown error".to_owned());
+        return Err(format!("Z.AI quota rejected response: {detail}"));
+    }
+    // HTTP success with no windows: a team key missing its selectors, or no
+    // plan entitlement — never rendered as empty-but-fresh quota.
+    let empty = quota
+        .data
+        .as_ref()
+        .is_none_or(|data| data.limits.is_empty());
+    if empty {
+        return Err(if scope.active() {
+            "Z.AI quota returned no usage windows for team scope; verify organization/project selectors".to_owned()
+        } else {
+            "Z.AI quota returned no usage windows; verify Coding Plan entitlement".to_owned()
+        });
     }
     Ok(quota)
 }
@@ -310,3 +514,6 @@ pub(crate) fn json_epoch_seconds(value: &serde_json::Value) -> Option<i64> {
         Some(number.floor() as i64)
     }
 }
+
+#[cfg(test)]
+mod tests;

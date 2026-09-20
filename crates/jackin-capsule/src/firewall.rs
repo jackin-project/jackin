@@ -84,6 +84,10 @@ fn is_ip_or_cidr(host: &str) -> bool {
 }
 
 /// Entry point for the `firewall-apply` subcommand.
+/// # Errors
+///
+/// Returns an error when a required firewall tool is unavailable or the
+/// fail-closed rules cannot be applied.
 pub fn apply() -> Result<()> {
     let raw = std::env::var(jackin_core::JACKIN_ALLOWED_HOSTS_ENV_NAME).unwrap_or_default();
     let entries = parse_allowed_hosts(&raw);

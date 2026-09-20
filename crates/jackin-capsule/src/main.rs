@@ -6,7 +6,7 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
     client, config, daemon, exec, firewall, mcp_server, output, protocol::attach::SpawnRequest,
-    runtime_setup, session::validate_agent_slug, sudo_provision,
+    runtime_setup, session::validate_spawn_token_syntax, sudo_provision,
 };
 use jackin_telemetry::ResultTelemetryExt as _;
 use std::path::Path;
@@ -35,6 +35,9 @@ const DEFAULT_AGENT: &str = "claude";
 )]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).is_some_and(|arg| arg == "__isolated-exec") {
+        return jackin_capsule::process_isolation::run_isolated_command(&args[2..]);
+    }
     if invoked_as_prepare_commit_msg_hook(&args) {
         return runtime_setup::run_prepare_commit_msg_hook(&args[1..]);
     }
@@ -58,8 +61,7 @@ async fn main() -> Result<()> {
             .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
         let launch_config = config::load()
             .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
-        let supported_agents = launch_config.supported_agents();
-        let agent = resolve_initial_agent(&args, &supported_agents)
+        let agent = resolve_initial_agent(&args, &launch_config)
             .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::ConfigError)?;
         let result = daemon::run_daemon(agent, launch_config, &mut telemetry).await;
         if result.is_err() {
@@ -147,31 +149,41 @@ connecting as a client.",
             Some("firewall-apply") => firewall::apply(),
             Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
-                let supported_agents = config::load_optional()
-                    .map(|config| config.supported_agents())
-                    .unwrap_or_default();
+                let launch_config = config::load_optional();
                 let spawn = match args.get(2) {
                     None => Some(SpawnRequest::Shell),
-                    Some(raw) => match validate_agent_slug(raw, &supported_agents) {
-                        Ok(slug) => {
-                            let req = match SpawnRequest::agent(slug) {
-                                Ok(req) => req,
-                                Err(reason) => {
+                    Some(raw) => {
+                        let token = match validate_spawn_token_syntax(raw) {
+                            Ok(token) => Some(token),
+                            Err(reason) => {
+                                output::stderr_line(format_args!(
+                                    "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
+                                ));
+                                None
+                            }
+                        };
+                        // Early client-side resolution for a precise error;
+                        // the daemon re-resolves authoritatively at spawn.
+                        if let (Some(token), Some(config)) = (token, &launch_config)
+                            && let Err(reason) = config.resolve_instance(token)
+                        {
+                            output::stderr_line(format_args!(
+                                "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
+                            ));
+                            None
+                        } else {
+                            match token.map(SpawnRequest::instance) {
+                                None => None,
+                                Some(Ok(req)) => Some(req),
+                                Some(Err(reason)) => {
                                     output::stderr_line(format_args!(
                                         "[jackin-capsule] rejecting agent argv {raw:?}: {reason}; no new session will be spawned"
                                     ));
                                     return client::run_client(None, focus_session).await;
                                 }
-                            };
-                            Some(req)
+                            }
                         }
-                        Err(reason) => {
-                            output::stderr_line(format_args!(
-                                "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
-                            ));
-                            None
-                        }
-                    },
+                    }
                 };
                 client::run_client(spawn, focus_session).await
             }
@@ -323,17 +335,27 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
     None
 }
 
-/// Resolve the initial agent slug for PID-1 daemon mode. The host launcher
+/// Resolve the initial instance for PID-1 daemon mode. The host launcher
 /// passes this as the container command argument after the image name so the
 /// container's global environment does not claim one agent for every session.
 /// `JACKIN_AGENT` is reserved for per-agent entrypoint processes.
-fn resolve_initial_agent(args: &[String], supported_agents: &[String]) -> Result<String> {
+/// Accepts an instance config ID or, when unambiguous, an agent slug.
+fn resolve_initial_agent(
+    args: &[String],
+    launch_config: &jackin_protocol::CapsuleConfig,
+) -> Result<String> {
     let Some(raw) = args.get(1) else {
-        return Ok(DEFAULT_AGENT.to_owned());
+        return launch_config
+            .resolve_instance(DEFAULT_AGENT)
+            .map(str::to_owned)
+            .map_err(|reason| anyhow::anyhow!("default initial instance rejected: {reason}"));
     };
-    let validated = validate_agent_slug(raw, supported_agents)
+    let token = validate_spawn_token_syntax(raw)
         .map_err(|reason| anyhow::anyhow!("initial agent argv {raw:?} rejected: {reason}"))?;
-    Ok(validated.to_owned())
+    launch_config
+        .resolve_instance(token)
+        .map(str::to_owned)
+        .map_err(|reason| anyhow::anyhow!("initial agent argv {raw:?} rejected: {reason}"))
 }
 
 #[cfg(test)]

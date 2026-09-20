@@ -170,25 +170,10 @@ impl Multiplexer {
             return;
         };
         let row0 = self.render.term_rows.saturating_sub(1);
-        register_col_range_1based(
-            regions,
-            row0,
-            layout.left_region,
-            HoverTarget::BranchContext,
-        );
-        register_col_range_1based(regions, row0, layout.usage_region, HoverTarget::UsageStatus);
-        register_col_range_1based(
-            regions,
-            row0,
-            layout.container_region,
-            HoverTarget::Container,
-        );
-        register_col_range_1based(
-            regions,
-            row0,
-            layout.debug_chip_region,
-            HoverTarget::DebugChip,
-        );
+        register_col_range_1based(regions, row0, layout.left, HoverTarget::BranchContext);
+        register_col_range_1based(regions, row0, layout.usage, HoverTarget::UsageStatus);
+        register_col_range_1based(regions, row0, layout.container, HoverTarget::Container);
+        register_col_range_1based(regions, row0, layout.debug_chip, HoverTarget::DebugChip);
     }
 
     pub(super) fn hover_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {

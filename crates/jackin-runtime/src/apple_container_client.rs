@@ -58,6 +58,9 @@ pub const DOCKER_BACKEND_NAME: &str = "docker";
 pub struct AppleContainerSpec {
     /// Role OCI image reference.
     pub image: String,
+    /// UID:GID for the capsule supervisor. Must be `0:0`; session children
+    /// drop to their admitted per-instance identities inside the capsule.
+    pub user: String,
     /// Non-sensitive jackin runtime metadata injected as `-e KEY=VALUE`.
     pub env: Vec<(String, String)>,
     /// Host-only environment file read by `container run --env-file`.
@@ -149,6 +152,10 @@ impl Default for AppleContainerClient {
 
 impl AppleContainerApi for AppleContainerClient {
     async fn run_container(&self, name: &str, spec: &AppleContainerSpec) -> Result<()> {
+        anyhow::ensure!(
+            spec.user == crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
+            "apple-container capsule supervisor must launch as root"
+        );
         let args = container_run_args(name, spec);
 
         let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
@@ -202,8 +209,14 @@ impl AppleContainerApi for AppleContainerClient {
 }
 
 fn container_run_args(name: &str, spec: &AppleContainerSpec) -> Vec<std::ffi::OsString> {
-    let mut args: Vec<std::ffi::OsString> =
-        vec!["run".into(), "--name".into(), name.into(), "-d".into()];
+    let mut args: Vec<std::ffi::OsString> = vec![
+        "run".into(),
+        "--name".into(),
+        name.into(),
+        "-d".into(),
+        "--user".into(),
+        spec.user.clone().into(),
+    ];
 
     if let Some(path) = &spec.env_file {
         args.extend(["--env-file".into(), path.as_os_str().to_owned()]);

@@ -40,6 +40,7 @@ fn seed_override_picker_workspace(
                 env,
                 account_bindings: std::collections::BTreeMap::default(),
                 github: None,
+                default_launch: None,
             },
         );
     }

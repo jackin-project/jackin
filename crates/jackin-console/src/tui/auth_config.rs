@@ -18,6 +18,12 @@ pub const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
         AuthKind::Kimi => Some(Agent::Kimi),
         AuthKind::Opencode => Some(Agent::Opencode),
         AuthKind::Grok => Some(Agent::Grok),
+        AuthKind::Antigravity => Some(Agent::Antigravity),
+        AuthKind::Gemini => Some(Agent::Gemini),
+        AuthKind::Cursor => Some(Agent::Cursor),
+        AuthKind::Muse => Some(Agent::Muse),
+        AuthKind::Omp => Some(Agent::Omp),
+        AuthKind::Hermes => Some(Agent::Hermes),
         AuthKind::Github | AuthKind::Zai | AuthKind::Minimax => None,
     }
 }
@@ -149,8 +155,10 @@ pub trait ModalAuthSourceFolderBrowserOpen<FileBrowserTarget, FileBrowserState, 
 
 #[must_use]
 pub fn env_display_map(values: &BTreeMap<String, EnvValue>) -> BTreeMap<String, String> {
+    let credential_keys = auth_credential_env_keys();
     values
         .iter()
+        .filter(|(key, _)| !credential_keys.contains(key.as_str()))
         .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
         .collect()
 }
@@ -159,12 +167,7 @@ pub fn env_display_map(values: &BTreeMap<String, EnvValue>) -> BTreeMap<String, 
 pub fn env_display_map_without_auth_credentials(
     values: &BTreeMap<String, EnvValue>,
 ) -> BTreeMap<String, String> {
-    let credential_keys = auth_credential_env_keys();
-    values
-        .iter()
-        .filter(|(key, _)| !credential_keys.contains(key.as_str()))
-        .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
-        .collect()
+    env_display_map(values)
 }
 
 #[must_use]

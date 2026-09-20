@@ -174,6 +174,13 @@ impl TokenSession {
             Agent::Amp => amp::poll_session(self),
             // No token-spend reader for Grok yet.
             Agent::Grok => PollStatus::Unchanged,
+            // No token-spend readers for the catalog additions yet.
+            Agent::Antigravity
+            | Agent::Gemini
+            | Agent::Cursor
+            | Agent::Muse
+            | Agent::Omp
+            | Agent::Hermes => PollStatus::Unchanged,
         };
         if changed == PollStatus::Changed {
             self.silent_polls = 0;
@@ -220,6 +227,13 @@ fn token_usage_delta(agent: Agent, previous: &TokenTotals, current: &TokenTotals
                     .saturating_sub(previous.cache_write_tokens),
             ),
         Agent::Codex | Agent::Opencode | Agent::Grok => 0,
+        // No readers yet, so no separate cached-input accounting.
+        Agent::Antigravity
+        | Agent::Gemini
+        | Agent::Cursor
+        | Agent::Muse
+        | Agent::Omp
+        | Agent::Hermes => 0,
     };
     let input = uncached_input.saturating_add(separate_cached_input);
     let output = current.output_tokens.saturating_sub(previous.output_tokens);
@@ -261,6 +275,12 @@ const fn provider_name(agent: Agent) -> Option<schema::enums::GenAiProviderName>
         Agent::Kimi => Some(GenAiProviderName::Kimi),
         Agent::Grok => Some(GenAiProviderName::Xai),
         Agent::Opencode => None,
+        Agent::Antigravity | Agent::Gemini => Some(GenAiProviderName::Google),
+        Agent::Cursor => Some(GenAiProviderName::Cursor),
+        Agent::Muse => Some(GenAiProviderName::Meta),
+        // Omp/Hermes route arbitrary providers per session; no single
+        // attribution until the readers report the routed provider.
+        Agent::Omp | Agent::Hermes => None,
     }
 }
 

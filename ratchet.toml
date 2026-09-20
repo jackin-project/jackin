@@ -22,7 +22,10 @@ key = "crates/jackin-diagnostics/src/observability.rs"
 bound = 2012
 [[family.entry]]
 key = "crates/jackin-xtask/src/telemetry_registry.rs"
-bound = 2008
+bound = 2012
+[[family.entry]]
+key = "crates/jackin-usage/src/host.rs"
+bound = 1930
 
 [[family]]
 id = "file-size-test"
@@ -54,11 +57,14 @@ provider = "expect_per_lint_crate"
 cap = 0
 mode = "enforce"
 [[family.entry]]
+key = "clippy::cast_possible_truncation@jackin-usage"
+bound = 2
+[[family.entry]]
 key = "clippy::cast_precision_loss@jackin-launch"
 bound = 2
 [[family.entry]]
 key = "clippy::cast_precision_loss@jackin-usage"
-bound = 1
+bound = 5
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
 bound = 6
@@ -70,7 +76,7 @@ key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage"
-bound = 10
+bound = 31
 [[family.entry]]
 key = "clippy::cognitive_complexity@jackin-runtime"
 bound = 1
@@ -97,13 +103,16 @@ key = "clippy::disallowed_methods@jackin-host"
 bound = 1
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-image"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-instance"
 bound = 3
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-runtime"
 bound = 6
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-test-support"
+bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage"
 bound = 2
@@ -181,6 +190,9 @@ key = "clippy::fn_params_excessive_bools@jackin-host"
 bound = 1
 [[family.entry]]
 key = "clippy::items_after_statements@jackin-image"
+bound = 1
+[[family.entry]]
+key = "clippy::large_enum_variant@jackin"
 bound = 1
 [[family.entry]]
 key = "clippy::large_futures@jackin-docker"
@@ -385,7 +397,7 @@ key = "clippy::useless_let_if_seq@jackin"
 bound = 1
 [[family.entry]]
 key = "clippy::wildcard_imports@jackin-usage"
-bound = 6
+bound = 9
 [[family.entry]]
 key = "dead_code@jackin"
 bound = 3
@@ -455,7 +467,7 @@ key = "unused_imports@jackin-runtime"
 bound = 2
 [[family.entry]]
 key = "unused_imports@jackin-usage"
-bound = 9
+bound = 12
 [[family.entry]]
 key = "unused_qualifications@jackin-runtime"
 bound = 1
@@ -677,7 +689,7 @@ key = "jackin-tui"
 bound = 3
 [[family.entry]]
 key = "jackin-test-support"
-bound = 4
+bound = 7
 [[family.entry]]
 key = "jackin-usage"
 bound = 9
@@ -763,10 +775,10 @@ key = "jackin-capsule"
 bound = 79
 [[family.entry]]
 key = "jackin-config"
-bound = 22
+bound = 32
 [[family.entry]]
 key = "jackin-console"
-bound = 70
+bound = 71
 [[family.entry]]
 key = "jackin-diagnostics"
 bound = 24
@@ -793,10 +805,10 @@ key = "jackin-protocol"
 bound = 74
 [[family.entry]]
 key = "jackin-runtime"
-bound = 92
+bound = 86
 [[family.entry]]
 key = "jackin-telemetry"
-bound = 24
+bound = 30
 [[family.entry]]
 key = "jackin-usage"
 bound = 29

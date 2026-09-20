@@ -16,14 +16,21 @@ use anyhow::Context as _;
 
 /// Interface for a runtime-specific hook/plugin installer.
 pub trait HookInstaller {
-    /// Install hook/plugin assets into `agent_home`. Creates any missing
+    /// Install hook/plugin assets for one instance. `agent_home` is
+    /// `/home/agent`; `config_dir` is the instance's folder-var target
+    /// (the config home for `Dir`-kind agents). Creates any missing
     /// directories and files; repairs stale configuration atomically via
     /// tmp-file + rename.
-    fn install(&self, agent_home: &Path) -> anyhow::Result<()>;
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the hook files cannot be read, written, or
+    /// atomically replaced.
+    fn install(&self, agent_home: &Path, config_dir: &Path) -> anyhow::Result<()>;
 
-    /// Verify that the current state of `agent_home` matches the expected
-    /// hook/plugin configuration. Returns `true` when no repair is needed.
-    fn verify(&self, agent_home: &Path) -> bool;
+    /// Verify that the current state matches the expected hook/plugin
+    /// configuration. Returns `true` when no repair is needed.
+    fn verify(&self, agent_home: &Path, config_dir: &Path) -> bool;
 }
 
 /// Hook installer for Claude Code.
@@ -45,8 +52,8 @@ impl Default for ClaudeHookInstaller {
 }
 
 impl HookInstaller for ClaudeHookInstaller {
-    fn install(&self, agent_home: &Path) -> anyhow::Result<()> {
-        let settings_path = agent_home.join(".claude").join("settings.json");
+    fn install(&self, _agent_home: &Path, config_dir: &Path) -> anyhow::Result<()> {
+        let settings_path = config_dir.join("settings.json");
         // Claude Code owns this file (model, theme, permissions, MCP config), so
         // we merge our hooks into the existing object and never overwrite it; the
         // shared helper bails on a corrupt file rather than destroying it.
@@ -56,8 +63,8 @@ impl HookInstaller for ClaudeHookInstaller {
         Ok(())
     }
 
-    fn verify(&self, agent_home: &Path) -> bool {
-        let settings_path = agent_home.join(".claude").join("settings.json");
+    fn verify(&self, _agent_home: &Path, config_dir: &Path) -> bool {
+        let settings_path = config_dir.join("settings.json");
         if !settings_path.exists() {
             return false;
         }
@@ -218,6 +225,7 @@ pub struct PluginInstaller {
 }
 
 impl PluginInstaller {
+    #[must_use]
     pub fn opencode() -> Self {
         Self {
             config_dir: "opencode",
@@ -234,7 +242,10 @@ impl PluginInstaller {
 }
 
 impl HookInstaller for PluginInstaller {
-    fn install(&self, agent_home: &Path) -> anyhow::Result<()> {
+    // OpenCode admits one instance per container (XDG-root folder var),
+    // so its reporter stays on the legacy `~/.config` path and ignores
+    // the per-instance config dir.
+    fn install(&self, agent_home: &Path, _config_dir: &Path) -> anyhow::Result<()> {
         // Merge into any existing plugins.json rather than overwriting it, so a
         // drift-repair launch never destroys the operator's / role's own
         // plugins. Bail on a corrupt file instead of clobbering it.
@@ -250,7 +261,7 @@ impl HookInstaller for PluginInstaller {
         write_json_file(&path, &serde_json::Value::Object(root))
     }
 
-    fn verify(&self, agent_home: &Path) -> bool {
+    fn verify(&self, agent_home: &Path, _config_dir: &Path) -> bool {
         let path = self.config_path(agent_home);
         let Ok(content) = fs::read_to_string(path) else {
             return false;
@@ -298,8 +309,8 @@ const CODEX_HOOK_EVENTS: &[&str] = &[
 ];
 
 impl HookInstaller for CodexHookInstaller {
-    fn install(&self, agent_home: &Path) -> anyhow::Result<()> {
-        let hooks_path = agent_home.join(".codex").join("hooks.json");
+    fn install(&self, _agent_home: &Path, config_dir: &Path) -> anyhow::Result<()> {
+        let hooks_path = config_dir.join("hooks.json");
         // Merge into any existing hooks.json rather than overwriting it: the
         // operator or role may own Codex hooks, and a drift-repair launch must
         // not destroy them. `read_existing_json_object` bails on a corrupt file
@@ -327,8 +338,8 @@ impl HookInstaller for CodexHookInstaller {
         write_json_file(&hooks_path, &serde_json::Value::Object(root))
     }
 
-    fn verify(&self, agent_home: &Path) -> bool {
-        let hooks_path = agent_home.join(".codex").join("hooks.json");
+    fn verify(&self, _agent_home: &Path, config_dir: &Path) -> bool {
+        let hooks_path = config_dir.join("hooks.json");
         json_file_contains_string(&hooks_path, &self.hook_script_path)
     }
 }

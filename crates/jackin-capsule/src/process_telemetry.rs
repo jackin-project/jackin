@@ -131,5 +131,30 @@ pub(crate) async fn exec_async_as(
     result.map_err(|_| anyhow::anyhow!("process spawn failed"))
 }
 
+/// Run one real-OTLP conformance test in a fresh test process.
+///
+/// The wire exporter installs process-global tracing, OTLP providers, and a
+/// telemetry meter reservation. Cargo may run unit tests concurrently, and
+/// the provider shutdown path cannot unregister the global tracing subscriber
+/// or release the meter reservation. A child process is therefore the only
+/// deterministic isolation boundary for tests that exercise the real wire
+/// exporter. The marker makes the child execute the body instead of spawning
+/// itself again.
+#[cfg(test)]
+pub(crate) fn run_wire_test_in_child(test_name: &str, child_marker: &str) -> anyhow::Result<bool> {
+    if std::env::var_os(child_marker).is_some() {
+        return Ok(false);
+    }
+    let status = std::process::Command::new(std::env::current_exe()?)
+        .args(["--exact", test_name, "--nocapture"])
+        .env(child_marker, "1")
+        .status()?;
+    anyhow::ensure!(
+        status.success(),
+        "isolated Capsule wire test failed: {test_name}"
+    );
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests;

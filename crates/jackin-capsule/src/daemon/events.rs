@@ -46,6 +46,7 @@ struct Subscriber {
 pub(crate) struct SessionObservation {
     pub(crate) session: u64,
     pub(crate) agent: Option<String>,
+    pub(crate) account_id: Option<String>,
     pub(crate) state: AgentState,
     pub(crate) last_output_at: Option<Instant>,
     pub(crate) last_input_at: Option<Instant>,
@@ -62,6 +63,7 @@ impl SessionObservation {
             seq,
             session: self.session,
             agent: self.agent,
+            account_id: self.account_id,
             state: self.state,
             last_output_ms: elapsed_ms(self.last_output_at),
             last_input_ms: elapsed_ms(self.last_input_at),
@@ -195,7 +197,7 @@ pub(super) fn handle_control_subscription(
 ) {
     // A rejected trace correlation refuses the subscription outright, exactly
     // as it refuses a query: dropping `tx` closes the connection.
-    let Some(operation) = control_server_operation(ctx, msg) else {
+    let Ok(operation) = control_server_operation(ctx, msg) else {
         let _error = jackin_telemetry::record_error(RPC_ERROR);
         return;
     };
@@ -234,6 +236,7 @@ pub(super) fn session_observation(id: u64, session: &Session) -> SessionObservat
     SessionObservation {
         session: id,
         agent: session.agent.clone(),
+        account_id: session.account_id.clone(),
         state: session.state,
         last_output_at: Some(session.last_output_at),
         last_input_at: Some(session.last_input_at),

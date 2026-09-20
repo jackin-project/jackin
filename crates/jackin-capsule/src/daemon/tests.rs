@@ -109,13 +109,14 @@ fn serialized_control_spans(
     let guard = tracing::subscriber::set_default(subscriber);
     let wire = serde_json::to_vec(&jackin_protocol::control::ControlRequest {
         ctx: context,
+        session_capability: None,
         msg: ClientMsg::Status,
     })
     .unwrap();
     let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
     let operation = control_server_operation(&decoded.ctx, &decoded.msg);
-    let accepted = operation.is_some();
-    if let Some(Some(operation)) = operation {
+    let accepted = operation.is_ok();
+    if let Ok(Some(operation)) = operation {
         operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
     }
     drop(guard);
@@ -179,11 +180,12 @@ fn conformance_serialized_control_propagation_matrix_preserves_parentage_and_rej
             invocation_id: Some("not-a-uuid".to_owned()),
             ..jackin_protocol::TelemetryContext::v1()
         },
+        session_capability: None,
         msg: ClientMsg::UsageRefreshFocused,
     })
     .unwrap();
     let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
-    if control_server_operation(&decoded.ctx, &decoded.msg).is_some() {
+    if control_server_operation(&decoded.ctx, &decoded.msg).is_ok() {
         control_reply_for_request(&mut mux, decoded.msg);
     }
     assert!(
@@ -194,6 +196,15 @@ fn conformance_serialized_control_propagation_matrix_preserves_parentage_and_rej
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conformance_wire_real_capsule_control_status_preserves_parent_and_delivery() {
+    if crate::process_telemetry::run_wire_test_in_child(
+        "daemon::tests::conformance_wire_real_capsule_control_status_preserves_parent_and_delivery",
+        "JACKIN_DAEMON_CONTROL_WIRE_CHILD",
+    )
+    .expect("dispatch isolated daemon control wire test")
+    {
+        return;
+    }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
@@ -207,6 +218,7 @@ async fn conformance_wire_real_capsule_control_status_preserves_parent_and_deliv
             traceparent: Some(format!("00-{trace_id}-{parent_id}-01")),
             ..jackin_protocol::TelemetryContext::v1()
         },
+        session_capability: None,
         msg: ClientMsg::Status,
     };
     let wire = serde_json::to_vec(&request).expect("serialize control request");
@@ -219,7 +231,9 @@ async fn conformance_wire_real_capsule_control_status_preserves_parent_and_deliv
         &mut mux,
         ControlRequest {
             ctx: decoded.ctx,
+            session_capability: decoded.session_capability,
             msg: decoded.msg,
+            peer_uid: 0,
             reply: crate::attach_protocol::ControlReply::Once(reply_tx),
         },
     );
@@ -263,6 +277,7 @@ fn conformance_exec_command_rpc_spans_exclude_command_and_args() {
     let argument_secret = "PRIVATE_ARGUMENT_PAYLOAD";
     let request = jackin_protocol::control::ControlRequest {
         ctx: jackin_protocol::TelemetryContext::v1(),
+        session_capability: None,
         msg: ClientMsg::ExecCommand {
             command: command_secret.to_owned(),
             args: vec![argument_secret.to_owned()],
@@ -272,7 +287,7 @@ fn conformance_exec_command_rpc_spans_exclude_command_and_args() {
     let decoded: jackin_protocol::control::ControlRequest = serde_json::from_slice(&wire).unwrap();
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let guard = tracing::subscriber::set_default(subscriber);
-    if let Some(Some(server)) = control_server_operation(&decoded.ctx, &decoded.msg) {
+    if let Ok(Some(server)) = control_server_operation(&decoded.ctx, &decoded.msg) {
         server.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
     }
     let attrs = [
@@ -574,7 +589,7 @@ impl MasterPty for NullMasterPty {
     }
 
     #[cfg(unix)]
-    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
         None
     }
 
@@ -713,14 +728,29 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
         CapsuleConfig {
             role: "test-role".to_owned(),
             workdir: "/workspace".to_owned(),
-            agents: Vec::new(),
+            instances: Vec::new(),
+            agents: BTreeMap::new(),
             models: BTreeMap::new(),
+            efforts: BTreeMap::new(),
             auth_modes: BTreeMap::new(),
+            accounts: BTreeMap::new(),
+            usage_capabilities: BTreeMap::new(),
+            labels: BTreeMap::new(),
             claude_marketplaces: Vec::new(),
             claude_plugins: Vec::new(),
             exec_bindings: Vec::new(),
             dirty_exit_policy: None,
             isolated_worktrees: Vec::new(),
+            instance_home_dirs: BTreeMap::new(),
+            instance_cache_dirs: BTreeMap::new(),
+            instance_forwarded_dirs: BTreeMap::new(),
+            instance_credential_files: BTreeMap::new(),
+            instance_mount_paths: BTreeMap::new(),
+            instance_identities: BTreeMap::new(),
+            shell_identity: Some(jackin_protocol::SessionIdentity {
+                uid: 2_000,
+                gid: 2_000,
+            }),
         },
     )
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
@@ -737,11 +767,12 @@ fn conformance_wire_generated_codename_reaches_child_without_export() -> Result<
                 "--nocapture",
             ])
             .env(CHILD, "1")
-            .env("JACKIN_TEST_SHELL", "sh")
             .status()?;
         anyhow::ensure!(status.success(), "isolated codename privacy test failed");
         return Ok(());
     }
+
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -810,6 +841,198 @@ fn conformance_wire_generated_codename_reaches_child_without_export() -> Result<
     );
     jackin_diagnostics::shutdown_capsule_tracing();
     Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn daemon_pty_lifecycle_reaches_shutdown_after_last_session_exit() -> Result<()> {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::UnixStream;
+    use tokio::time::{Duration, timeout};
+
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
+    let root = tempfile::tempdir()?;
+    let workdir = root.path().join("workspace");
+    std::fs::create_dir(&workdir)?;
+    let socket_path = root.path().join("run/jackin.sock");
+    let config = CapsuleConfig {
+        role: "lifecycle-test".to_owned(),
+        workdir: workdir.display().to_string(),
+        shell_identity: Some(jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        }),
+        ..CapsuleConfig::default()
+    };
+    let daemon_socket = socket_path.clone();
+    let daemon = tokio::spawn(async move {
+        let mut telemetry = crate::telemetry::init()?;
+        run_daemon_for_test(String::new(), config, &mut telemetry, &daemon_socket).await
+    });
+
+    let lifecycle = async {
+        let mut client = timeout(Duration::from_secs(5), async {
+            loop {
+                match UnixStream::connect(&socket_path).await {
+                    Ok(stream) => break stream,
+                    Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+                }
+            }
+        })
+        .await?;
+
+        client
+            .write_all(&crate::protocol::attach::encode_client(
+                ClientFrame::Hello {
+                    rows: 24,
+                    cols: 80,
+                    spawn: None,
+                    env: Vec::new(),
+                    terminal: ClientTerminal::default(),
+                    focus_session: None,
+                    context: None,
+                },
+            )?)
+            .await?;
+
+        let mut saw_welcome = false;
+        let mut initial_output = Vec::new();
+        while !saw_welcome {
+            let mut tag = [0u8; 1];
+            client.read_exact(&mut tag).await?;
+            let frame = read_server_frame(&mut client, tag[0])
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon closed before Welcome"))?;
+            match frame {
+                ServerFrame::Welcome { session_count } => {
+                    assert_eq!(session_count, 1);
+                    saw_welcome = true;
+                }
+                ServerFrame::Output(bytes) => initial_output.extend(bytes),
+                other => anyhow::bail!("unexpected pre-Welcome frame: {other:?}"),
+            }
+        }
+
+        let mut output = initial_output;
+        let mut saw_sentinel = contains_lifecycle_sentinel(&output);
+        client
+            .write_all(&crate::protocol::attach::encode_client(
+                ClientFrame::Input(
+                    b"printf 'CAPSULE_LIFECYCLE_SENTINEL\\n'; read -r _; exit\n".to_vec(),
+                ),
+            )?)
+            .await?;
+
+        timeout(Duration::from_secs(5), async {
+            while !saw_sentinel {
+                let mut tag = [0u8; 1];
+                client.read_exact(&mut tag).await?;
+                let frame = read_server_frame(&mut client, tag[0])
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("daemon closed before shell output"))?;
+                saw_sentinel = lifecycle_output_frame(frame, &mut output)?;
+            }
+            anyhow::Ok(())
+        })
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "timed out waiting for shell output; output so far: {:?}",
+                String::from_utf8_lossy(&output)
+            )
+        })??;
+
+        client
+            .write_all(&crate::protocol::attach::encode_client(
+                ClientFrame::Input(b"\n".to_vec()),
+            )?)
+            .await?;
+
+        let mut saw_shutdown = false;
+        timeout(Duration::from_secs(5), async {
+            while !saw_shutdown {
+                let mut tag = [0u8; 1];
+                client.read_exact(&mut tag).await?;
+                let frame = read_server_frame(&mut client, tag[0])
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("daemon closed before Shutdown"))?;
+                saw_shutdown = lifecycle_shutdown_frame(frame, &mut output)?;
+            }
+            anyhow::Ok(())
+        })
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "timed out waiting for daemon Shutdown; output so far: {:?}",
+                String::from_utf8_lossy(&output)
+            )
+        })??;
+
+        assert!(
+            output
+                .windows(b"CAPSULE_LIFECYCLE_SENTINEL".len())
+                .any(|window| window == b"CAPSULE_LIFECYCLE_SENTINEL"),
+            "shell output did not reach the attached client: {:?}",
+            String::from_utf8_lossy(&output)
+        );
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+
+    if let Err(error) = lifecycle {
+        daemon.abort();
+        drop(daemon.await);
+        return Err(error);
+    }
+
+    let daemon_result = timeout(Duration::from_secs(5), daemon).await??;
+    daemon_result?;
+    Ok(())
+}
+
+fn append_lifecycle_output(output: &mut Vec<u8>, bytes: Vec<u8>) -> bool {
+    output.extend(bytes);
+    contains_lifecycle_sentinel(output)
+}
+
+fn record_lifecycle_output(output: &mut Vec<u8>, bytes: Vec<u8>) {
+    output.extend(bytes);
+}
+
+fn lifecycle_output_frame(frame: ServerFrame, output: &mut Vec<u8>) -> Result<bool> {
+    match frame {
+        ServerFrame::Output(bytes) => Ok(append_lifecycle_output(output, bytes)),
+        ServerFrame::Shutdown { reason } => shutdown_before_sentinel(reason),
+        other => anyhow::bail!("unexpected pre-shutdown frame: {other:?}"),
+    }
+}
+
+fn lifecycle_shutdown_frame(frame: ServerFrame, output: &mut Vec<u8>) -> Result<bool> {
+    match frame {
+        ServerFrame::Output(bytes) => {
+            record_lifecycle_output(output, bytes);
+            Ok(false)
+        }
+        ServerFrame::Shutdown { reason } => clean_shutdown(reason),
+        other => anyhow::bail!("unexpected lifecycle frame: {other:?}"),
+    }
+}
+
+fn contains_lifecycle_sentinel(output: &[u8]) -> bool {
+    output
+        .windows(b"CAPSULE_LIFECYCLE_SENTINEL".len())
+        .any(|window| window == b"CAPSULE_LIFECYCLE_SENTINEL")
+}
+
+fn shutdown_before_sentinel(reason: Option<String>) -> Result<bool> {
+    clean_shutdown(reason)?;
+    anyhow::bail!("daemon shut down before shell output")
+}
+
+fn clean_shutdown(reason: Option<String>) -> Result<bool> {
+    if let Some(reason) = reason {
+        anyhow::bail!("clean shell exit carried reason: {reason:?}");
+    }
+    Ok(true)
 }
 
 #[test]
@@ -1086,7 +1309,8 @@ fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
 }
 
 #[test]
-fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
+fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generation() {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::io::{BufRead as _, BufReader, Write as _};
     use std::os::unix::net::UnixListener;
 
@@ -1102,12 +1326,18 @@ fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("usage.sock");
     let listener = UnixListener::bind(&socket).unwrap();
+    let capability = UsageAccountCapability {
+        account_id: "allowed-a".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let second_capability = UsageAccountCapability {
+        account_id: "allowed-b".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let server_capabilities = BTreeSet::from([capability.clone(), second_capability.clone()]);
     let server = std::thread::spawn(move || {
-        let capability = UsageAccountCapability {
-            account_id: "allowed".to_owned(),
-            surface_id: "codex".to_owned(),
-        };
-        for expected in 0..3 {
+        let mut seen = BTreeMap::<UsageAccountCapability, [bool; 3]>::new();
+        for _ in 0..6 {
             let (mut stream, _) = listener.accept().unwrap();
             let request = {
                 let mut line = String::new();
@@ -1115,40 +1345,31 @@ fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
                 serde_json::from_str::<UsageBrokerRequest>(line.trim()).unwrap()
             };
             assert_eq!(request.protocol_version, USAGE_BROKER_PROTOCOL_VERSION);
-            let (generation, phase, snapshot) = match (expected, request.operation) {
-                (0, UsageBrokerOperation::CurrentForSurface { surface_id }) => {
-                    assert_eq!(surface_id, "codex");
-                    (0, UsageRefreshPhase::Idle, None)
+            let (request_capability, generation, phase, snapshot, stage) = match request.operation {
+                UsageBrokerOperation::CurrentForCapability { capability } => {
+                    (capability, 0, UsageRefreshPhase::Idle, None, 0)
                 }
-                (
-                    1,
-                    UsageBrokerOperation::RefreshForSurface {
-                        surface_id,
-                        observed_generation,
-                        force,
-                    },
-                ) => {
-                    assert_eq!(surface_id, "codex");
+                UsageBrokerOperation::RefreshForCapability {
+                    capability,
+                    observed_generation,
+                    ..
+                } => {
                     assert_eq!(observed_generation, 0);
-                    assert!(force);
-                    (1, UsageRefreshPhase::Queued, None)
+                    (capability, 1, UsageRefreshPhase::Queued, None, 1)
                 }
-                (
-                    2,
-                    UsageBrokerOperation::JoinForSurface {
-                        surface_id,
-                        generation,
-                        ..
-                    },
-                ) => {
-                    assert_eq!(surface_id, "codex");
+                UsageBrokerOperation::JoinForCapability {
+                    capability,
+                    generation,
+                    ..
+                } => {
                     assert_eq!(generation, 1);
                     let mut view = FocusedUsageView::unavailable("fixture", 1);
                     view.status = UsageSnapshotStatus::Fresh;
                     view.source = UsageSource::ProviderApi;
                     view.confidence = UsageConfidence::Authoritative;
                     view.account.provider_label = "OpenAI / Codex".to_owned();
-                    view.account.account_label = "capsule@example.test".to_owned();
+                    view.account.account_label =
+                        format!("{}@capsule.example.test", capability.account_id);
                     view.buckets = vec![QuotaBucketView {
                         label: "Weekly".to_owned(),
                         used_label: None,
@@ -1163,13 +1384,14 @@ fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
                         limit_money: None,
                         severity: UsageSeverity::Normal,
                     }];
-                    (1, UsageRefreshPhase::Completed, Some(view))
+                    (capability, 1, UsageRefreshPhase::Completed, Some(view), 2)
                 }
-                (_, operation) => panic!("unexpected relay operation: {operation:?}"),
+                operation => panic!("unexpected relay operation: {operation:?}"),
             };
+            seen.entry(request_capability.clone()).or_default()[stage] = true;
             let response = UsageBrokerResponse::State {
                 state: Box::new(UsageGenerationView {
-                    capability: capability.clone(),
+                    capability: request_capability,
                     generation,
                     phase,
                     snapshot,
@@ -1181,29 +1403,54 @@ fn broker_client_capsule_deduplicates_surface_and_adopts_terminal_generation() {
             bytes.push(b'\n');
             stream.write_all(&bytes).unwrap();
         }
+        assert_eq!(
+            seen.keys().cloned().collect::<BTreeSet<_>>(),
+            server_capabilities
+        );
+        assert!(seen.values().all(|stages| stages == &[true, true, true]));
     });
     let client =
         jackin_usage::host::UsageBrokerClient::at(socket, env!("CARGO_PKG_VERSION").to_owned());
     let target = crate::usage::UsageRefreshTarget {
         agent: "codex".to_owned(),
         provider: Some("OpenAI".to_owned()),
+        capability: capability.clone(),
+    };
+    let second_target = crate::usage::UsageRefreshTarget {
+        capability: second_capability.clone(),
+        ..target.clone()
     };
 
     let refreshes = multiplexer_utils::refresh_usage_targets_with_client(
         &client,
-        vec![target.clone(), target.clone()],
+        vec![
+            target.clone(),
+            second_target.clone(),
+            target.clone(),
+            second_target.clone(),
+        ],
         Some(target.clone()),
         Some(&target),
     );
     server.join().unwrap();
 
-    assert_eq!(refreshes.len(), 1);
-    let state = refreshes.into_iter().next().unwrap().result.unwrap();
-    assert_eq!(state.phase, UsageRefreshPhase::Completed);
-    assert_eq!(
-        state.snapshot.unwrap().account.account_label,
-        "capsule@example.test"
-    );
+    assert_eq!(refreshes.len(), 2);
+    let states = refreshes
+        .into_iter()
+        .map(|refresh| {
+            let state = refresh.result.unwrap();
+            (refresh.target.capability, state)
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(states.len(), 2);
+    for capability in [capability, second_capability] {
+        let state = states.get(&capability).expect("account state");
+        assert_eq!(state.phase, UsageRefreshPhase::Completed);
+        assert_eq!(
+            state.snapshot.as_ref().unwrap().account.account_label,
+            format!("{}@capsule.example.test", capability.account_id)
+        );
+    }
 }
 
 /// Drive `handle_palette_command` then compose; `None` when empty.
@@ -1236,6 +1483,274 @@ fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
     mux
 }
 
+fn assert_session_peer_authorization(
+    mux: &Multiplexer,
+    own: jackin_protocol::SessionIdentity,
+    own_capability: &str,
+    sibling_capability: &str,
+) {
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::SessionSend {
+            session: 1,
+            text: "own".to_owned(),
+        }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::StatusCapture { session_id: 1 }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::ReportRuntimeEvent {
+            session_id: 1,
+            source_id: "hook-codex-1".to_owned(),
+            runtime: "codex".to_owned(),
+            event: "Stop".to_owned(),
+            payload: None,
+        }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::Events { session: Some(1) }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: vec!["auth".to_owned(), "status".to_owned()],
+        }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(sibling_capability),
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::SessionSend {
+            session: 2,
+            text: "sibling".to_owned(),
+        }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        Some(own_capability),
+        &ClientMsg::StatusCapture { session_id: 2 }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        None,
+        &ClientMsg::Status
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        None,
+        &ClientMsg::Events { session: None }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(own.uid),
+        None,
+        &ClientMsg::ExecCommand {
+            command: "op".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        None,
+        None,
+        &ClientMsg::Status
+    ));
+}
+
+fn assert_operator_and_unknown_peer_authorization(mux: &Multiplexer) {
+    assert!(control_request_allowed(
+        mux,
+        Some(0),
+        None,
+        &ClientMsg::Status
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(0),
+        None,
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+    assert!(control_request_allowed(
+        mux,
+        Some(9_999),
+        None,
+        &ClientMsg::Snapshot
+    ));
+    assert!(!control_request_allowed(
+        mux,
+        Some(9_999),
+        None,
+        &ClientMsg::ExecCommand {
+            command: "gh".to_owned(),
+            args: Vec::new(),
+        }
+    ));
+}
+
+#[test]
+fn socket_peer_credentials_scope_session_controls_and_attach() {
+    let mut mux = single_pane_tab_mux();
+    let own = jackin_protocol::SessionIdentity {
+        uid: 2_101,
+        gid: 2_101,
+    };
+    let sibling = jackin_protocol::SessionIdentity {
+        uid: 2_102,
+        gid: 2_102,
+    };
+    mux.launch_env.launch_config.instance_identities =
+        BTreeMap::from([("own".to_owned(), own), ("sibling".to_owned(), sibling)]);
+    let (mut own_session, _own_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    own_session.identity = own;
+    let (mut sibling_session, _sibling_rx) =
+        test_session_with_agent(24, 80, Some("claude".to_owned()));
+    sibling_session.identity = sibling;
+    mux.session_supervisor.sessions.insert(1, own_session);
+    mux.session_supervisor.sessions.insert(2, sibling_session);
+    let own_capability = mux
+        .session_supervisor
+        .sessions
+        .get(1)
+        .expect("own session")
+        .control_capability
+        .clone();
+    let sibling_capability = mux
+        .session_supervisor
+        .sessions
+        .get(2)
+        .expect("sibling session")
+        .control_capability
+        .clone();
+
+    assert!(
+        attach_peer_is_authorized(&mux, Some(0)),
+        "operator attach stays valid"
+    );
+    assert!(
+        !attach_peer_is_authorized(&mux, Some(own.uid)),
+        "an admitted session UID cannot attach"
+    );
+    assert!(
+        !attach_peer_is_authorized(&mux, None),
+        "missing peer credentials fail closed"
+    );
+
+    assert_session_peer_authorization(&mux, own, &own_capability, &sibling_capability);
+    assert_operator_and_unknown_peer_authorization(&mux);
+}
+
+#[tokio::test]
+async fn unauthorized_session_control_returns_unknown_without_sibling_input() {
+    let mut mux = single_pane_tab_mux();
+    let own = jackin_protocol::SessionIdentity {
+        uid: 2_111,
+        gid: 2_111,
+    };
+    let sibling = jackin_protocol::SessionIdentity {
+        uid: 2_112,
+        gid: 2_112,
+    };
+    mux.launch_env.launch_config.instance_identities =
+        BTreeMap::from([("own".to_owned(), own), ("sibling".to_owned(), sibling)]);
+    let (mut own_session, _own_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    own_session.identity = own;
+    let (mut sibling_session, mut sibling_rx) =
+        test_session_with_agent(24, 80, Some("claude".to_owned()));
+    sibling_session.identity = sibling;
+    mux.session_supervisor.sessions.insert(1, own_session);
+    mux.session_supervisor.sessions.insert(2, sibling_session);
+
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    handle_control_request(
+        &mut mux,
+        ControlRequest {
+            ctx: jackin_protocol::TelemetryContext::v1(),
+            session_capability: None,
+            peer_uid: own.uid,
+            msg: ClientMsg::SessionSend {
+                session: 2,
+                text: "must-not-reach-sibling".to_owned(),
+            },
+            reply: crate::attach_protocol::ControlReply::Once(reply_tx),
+        },
+    );
+
+    let response = reply_rx.await.expect("authorization response");
+    assert!(matches!(response.msg, ServerMsg::Unknown));
+    assert!(
+        sibling_rx.try_recv().is_err(),
+        "unauthorized sibling input must not reach its PTY"
+    );
+}
+
+#[tokio::test]
+async fn unauthorized_exec_is_rejected_before_picker_mutation() {
+    let mut mux = single_pane_tab_mux();
+    let identity = jackin_protocol::SessionIdentity {
+        uid: 2_121,
+        gid: 2_121,
+    };
+    mux.launch_env.launch_config.instance_identities =
+        BTreeMap::from([("agent".to_owned(), identity)]);
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.identity = identity;
+    mux.session_supervisor.sessions.insert(1, session);
+    let initial_dialog_count = mux.control.dialog_stack.len();
+
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    handle_control_request(
+        &mut mux,
+        ControlRequest {
+            ctx: jackin_protocol::TelemetryContext::v1(),
+            session_capability: None,
+            peer_uid: identity.uid,
+            msg: ClientMsg::ExecCommand {
+                command: "gh".to_owned(),
+                args: vec!["auth".to_owned(), "status".to_owned()],
+            },
+            reply: crate::attach_protocol::ControlReply::Once(reply_tx),
+        },
+    );
+
+    let response = reply_rx.await.expect("authorization response");
+    assert!(matches!(response.msg, ServerMsg::Unknown));
+    assert_eq!(mux.control.dialog_stack.len(), initial_dialog_count);
+    assert!(
+        mux.control.pending_exec_reply.is_none(),
+        "unauthorized ExecCommand must not retain a deferred picker reply"
+    );
+}
+
 fn frame_contains_screen_erase(frame: &[u8]) -> bool {
     frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J")
 }
@@ -1266,6 +1781,21 @@ fn control_reply_for_request_shapes_usage_variants() {
 
 #[test]
 fn control_reply_exposes_typed_telemetry_health() {
+    const CHILD: &str = "JACKIN_CAPSULE_TELEMETRY_HEALTH_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = Command::new(std::env::current_exe().expect("current test executable"))
+            .args([
+                "--exact",
+                "daemon::tests::control_reply_exposes_typed_telemetry_health",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .status()
+            .expect("spawn isolated telemetry health test");
+        assert!(status.success(), "isolated telemetry health test failed");
+        return;
+    }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let mut mux = single_pane_tab_mux();
     let reply = control_reply_for_request(&mut mux, ClientMsg::TelemetryHealth);
     let ServerMsg::TelemetryHealth { report } = reply else {
@@ -1414,7 +1944,11 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
             agent: "codex".to_owned(),
-            provider: Some("OpenAI".to_owned())
+            provider: Some("OpenAI".to_owned()),
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: "test-codex".to_owned(),
+                surface_id: "codex".to_owned(),
+            },
         })
     );
 }
@@ -1443,7 +1977,11 @@ fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
             agent: "codex".to_owned(),
-            provider: Some("OpenAI".to_owned())
+            provider: Some("OpenAI".to_owned()),
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: "test-codex".to_owned(),
+                surface_id: "codex".to_owned(),
+            },
         })
     );
 }
@@ -1481,7 +2019,11 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
             agent: "codex".to_owned(),
-            provider: Some("Claude".to_owned())
+            provider: Some("Claude".to_owned()),
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: "test-codex".to_owned(),
+                surface_id: "codex".to_owned(),
+            },
         })
     );
 }
@@ -1516,7 +2058,11 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
             agent: "codex".to_owned(),
-            provider: Some("OpenAI".to_owned())
+            provider: Some("OpenAI".to_owned()),
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: "test-codex".to_owned(),
+                surface_id: "codex".to_owned(),
+            },
         })
     );
 }
@@ -1529,12 +2075,20 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
         label: "OpenAI".to_owned(),
         env_overrides: Vec::new(),
     });
+    let capability = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "test-codex".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    session.usage_capability = Some(capability.clone());
     mux.session_supervisor.sessions.insert(1, session);
     mux.session_supervisor.tabs[0] = Tab::new_single("Codex", 1, "test");
-    let now_epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system time after epoch")
-        .as_secs() as i64;
+    let now_epoch = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time after epoch")
+            .as_secs(),
+    )
+    .unwrap_or(i64::MAX);
     let cached = jackin_protocol::control::FocusedUsageView {
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
@@ -1570,7 +2124,7 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
     };
     mux.usage
         .usage_cache
-        .insert_snapshot_for_test("codex", Some("OpenAI"), cached);
+        .insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &capability, cached);
     let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
     view.updated_label = "Updated just now".to_owned();
     mux.dialog_push(Dialog::new_usage(view));
@@ -1837,19 +2391,24 @@ pub(super) fn test_session_with_agent(
     agent: Option<String>,
 ) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
     let (input_tx, input_rx) = mpsc::unbounded_channel();
-    (
-        Session::new_for_test(
-            "Test".to_owned(),
-            agent,
-            None,
-            (rows, cols),
-            100,
-            input_tx,
-            Arc::new(Mutex::new(Box::new(NullMasterPty))),
-            Arc::new(Mutex::new(Box::new(NullChildKiller))),
-        ),
-        input_rx,
-    )
+    let mut session = Session::new_for_test(
+        "Test".to_owned(),
+        agent.clone(),
+        None,
+        (rows, cols),
+        100,
+        input_tx,
+        Arc::new(Mutex::new(Box::new(NullMasterPty))),
+        Arc::new(Mutex::new(Box::new(NullChildKiller))),
+    );
+    session.usage_capability =
+        agent.map(
+            |agent| jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: format!("test-{agent}"),
+                surface_id: agent,
+            },
+        );
+    (session, input_rx)
 }
 
 fn test_provider_session(
@@ -2361,7 +2920,7 @@ fn resize_shrink_then_grow_does_not_panic() {
 fn initial_spawn_request_is_data_only_agent_or_shell() {
     assert_eq!(
         initial_spawn_request("codex"),
-        SpawnRequest::Agent("codex".to_owned())
+        SpawnRequest::Instance("codex".to_owned())
     );
     assert_eq!(initial_spawn_request(""), SpawnRequest::Shell);
 }
@@ -2369,13 +2928,13 @@ fn initial_spawn_request_is_data_only_agent_or_shell() {
 #[test]
 fn spawn_request_rejects_agent_outside_allowlist_before_pty_spawn() {
     let mut mux = test_mux(24, 80);
-    mux.launch_env.available_agents = vec!["codex".to_owned()];
+    mux.launch_env.available_instances = vec!["codex".to_owned()];
 
     let err = mux
-        .spawn_request(SpawnRequest::Agent("claude".to_owned()), &[])
+        .spawn_request(SpawnRequest::Instance("claude".to_owned()), &[])
         .unwrap_err();
 
-    assert!(err.to_string().contains("rejected agent \"claude\""));
+    assert!(err.to_string().contains("rejected spawn target \"claude\""));
     assert!(mux.session_supervisor.sessions.is_empty());
 }
 
@@ -3445,7 +4004,9 @@ fn read_packed_git_ref_oid_does_not_cache_truncated_read() {
     let padding_per_line = "# padding to fill packed-refs to the cap byte limit aaaaaaaaaa\n";
     // Target one byte OVER the cap so metadata.len() > cap triggers
     // the real truncation path (not the exactly-cap edge case).
-    let target_size = PACKED_REFS_MAX_BYTES as usize + 1;
+    let target_size = usize::try_from(PACKED_REFS_MAX_BYTES)
+        .unwrap_or(usize::MAX)
+        .saturating_add(1);
     let mut buf = String::with_capacity(target_size);
     while buf.len() + real_line.len() + padding_per_line.len() <= target_size {
         buf.push_str(padding_per_line);
@@ -4403,7 +4964,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
         None,
         mux.status.status_bar.instance_id_label(),
     )
-    .and_then(|layout| layout.left_region)
+    .and_then(|layout| layout.left)
     .expect("branch context should fit");
 
     mux.update_pointer_shape_for_mouse(23, hit.start - 1, SGR_NO_BUTTON_MOTION);
@@ -4681,7 +5242,7 @@ fn bottom_container_click_opens_container_info_without_copying() {
         None,
         mux.status.status_bar.instance_id_label(),
     )
-    .and_then(|layout| layout.container_region)
+    .and_then(|layout| layout.container)
     .expect("container should fit");
 
     let press_row = mux.render.term_rows - 1;
@@ -4733,7 +5294,7 @@ fn bottom_context_click_opens_github_context_dialog() {
         None,
         mux.status.status_bar.instance_id_label(),
     )
-    .and_then(|layout| layout.left_region)
+    .and_then(|layout| layout.left)
     .expect("GitHub context should fit");
 
     let press_row = mux.render.term_rows - 1;
@@ -5049,6 +5610,7 @@ fn tab_bar_focus_mode_arrows_switch_tabs_then_esc_returns_to_agent() {
 
 #[test]
 fn capsule_widget_focus_lifecycle_is_exported_without_runtime_identity() {
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(true);
     tracing::subscriber::with_default(subscriber, || {
         let mut mux = test_mux(40, 80);
@@ -5103,6 +5665,8 @@ fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> 
         anyhow::ensure!(status.success(), "isolated Capsule mouse test failed");
         return Ok(());
     }
+
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -5166,7 +5730,7 @@ fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> 
         .filter_map(|point| point.value)
         .map(|value| match value {
             opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
-                value as f64
+                value.to_string().parse::<f64>().unwrap_or_default()
             }
             opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
                 value
@@ -5193,7 +5757,7 @@ fn conformance_wire_capsule_mouse_dispatch_counts_once_without_coordinates() -> 
         .filter_map(|point| point.value)
         .map(|value| match value {
             opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(value) => {
-                value as f64
+                value.to_string().parse::<f64>().unwrap_or_default()
             }
             opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(value) => {
                 value
@@ -5269,7 +5833,7 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
         None,
         mux.status.status_bar.instance_id_label(),
     )
-    .and_then(|layout| layout.container_region)
+    .and_then(|layout| layout.container)
     .expect("container should fit");
 
     mux.apply_action(Action::BranchContextBarClick {
@@ -5564,8 +6128,13 @@ fn account_model_is_used_for_agent_launch() {
     mux.launch_env
         .launch_config
         .models
-        .insert("opencode".to_owned(), "minimax/custom".to_owned());
-    assert_eq!(mux.model_for_agent("opencode"), Some("minimax/custom"));
+        .insert("work@opencode".to_owned(), "minimax/custom".to_owned());
+    assert_eq!(
+        mux.launch_env
+            .launch_config
+            .model_for_instance("work@opencode"),
+        Some("minimax/custom")
+    );
 }
 
 #[test]
@@ -6648,7 +7217,7 @@ async fn modified_click_visible_url_sends_typed_protocol_frame() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "visit https://exa".len() as u16,
+            col: inner.col + u16::try_from("visit https://exa".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -6685,7 +7254,7 @@ async fn modified_click_in_mouse_enabled_pane_forwards_to_pty() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "visit https://exa".len() as u16,
+            col: inner.col + u16::try_from("visit https://exa".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -6725,7 +7294,7 @@ async fn modified_click_visible_file_path_sends_file_export_frames() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "artifact report".len() as u16,
+            col: inner.col + u16::try_from("artifact report".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -6774,7 +7343,7 @@ fn modified_click_plain_word_without_file_falls_through_quietly() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "plain wo".len() as u16,
+            col: inner.col + u16::try_from("plain wo".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -6883,7 +7452,7 @@ async fn modified_click_accepts_visible_mailto_token() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "contact mailto:opera".len() as u16,
+            col: inner.col + u16::try_from("contact mailto:opera".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -6922,7 +7491,7 @@ async fn modified_click_rejects_unsafe_visible_url_without_forwarding() {
         &mut mux,
         Action::OpenVisibleUrlAt {
             row: inner.row,
-            col: inner.col + "local file:///tmp/re".len() as u16,
+            col: inner.col + u16::try_from("local file:///tmp/re".len()).unwrap_or(u16::MAX),
             button: 8,
         },
     );
@@ -8498,16 +9067,8 @@ fn render_perf_probe() {
     }
     durations_us.sort_unstable();
     bytes.sort_unstable();
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "percentile q is 0.0..=1.0; index stays within v.len()"
-    )]
-    let pick = |v: &[u128], q: f64| v[((v.len() - 1) as f64 * q) as usize];
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "percentile q is 0.0..=1.0; index stays within v.len()"
-    )]
-    let pick_b = |v: &[usize], q: f64| v[((v.len() - 1) as f64 * q) as usize];
+    let pick = |v: &[u128], q: f64| v[percentile_index(v.len(), q)];
+    let pick_b = |v: &[usize], q: f64| v[percentile_index(v.len(), q)];
     {
         println!(
             "render_perf_probe: frames={} duration_us p50={} p95={} max={} bytes p50={} p95={} max={}",
@@ -8521,6 +9082,25 @@ fn render_perf_probe() {
         );
     }
     assert_frame_conformance(&mut mux, &client, "perf probe end");
+}
+
+#[must_use]
+fn percentile_index(len: usize, q: f64) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "The test vector is bounded and percentile selection only needs a display index."
+    )]
+    let last = (len - 1) as f64;
+    #[expect(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        reason = "q is clamped to 0.0..=1.0, so the result is a valid test-vector index."
+    )]
+    let index = (last * q.clamp(0.0, 1.0)) as usize;
+    index
 }
 
 fn exit_dirty_selected_value(mux: &Multiplexer) -> usize {
@@ -9053,7 +9633,9 @@ fn subscribe_events(
         mux,
         ControlRequest {
             ctx: jackin_protocol::TelemetryContext::v1(),
+            session_capability: None,
             msg: ClientMsg::Events { session },
+            peer_uid: 0,
             reply: crate::attach_protocol::ControlReply::Stream(tx),
         },
     );
@@ -9205,28 +9787,88 @@ fn session_send_then_status_tick_is_observable_end_to_end_in_process() {
 }
 
 #[test]
-fn daemon_session_boundary_keeps_account_credentials_per_agent() {
+fn daemon_session_boundary_keeps_account_credentials_per_instance() {
     let mut mux = test_mux(24, 80);
-    mux.launch_env.launch_config.auth_modes = BTreeMap::from([
-        ("claude".into(), "sync".into()),
-        ("codex".into(), "ignore".into()),
-        ("opencode".into(), "api_key".into()),
+    mux.launch_env.launch_config.instances = vec!["work".into(), "personal".into()];
+    mux.launch_env.launch_config.agents = BTreeMap::from([
+        ("work".into(), "claude".into()),
+        ("personal".into(), "opencode".into()),
     ]);
-    mux.launch_env.agent_credentials =
-        jackin_protocol::AgentCredentialEnv::new(BTreeMap::from([(
-            "opencode".into(),
-            BTreeMap::from([
-                ("ANTHROPIC_API_KEY".into(), "opencode-anthropic".into()),
-                ("OPENAI_API_KEY".into(), "opencode-openai".into()),
-            ]),
-        )]));
+    mux.launch_env.launch_config.auth_modes = BTreeMap::from([
+        ("work".into(), "sync".into()),
+        ("personal".into(), "api_key".into()),
+    ]);
+    mux.launch_env.launch_config.instance_home_dirs = BTreeMap::from([
+        ("work".into(), "/home/agent/.claude".into()),
+        ("personal".into(), "/home/agent/.local".into()),
+    ]);
+    mux.launch_env.launch_config.instance_forwarded_dirs = BTreeMap::from([
+        ("work".into(), "/jackin/claude".into()),
+        ("personal".into(), "/jackin/opencode".into()),
+    ]);
+    mux.launch_env.launch_config.instance_credential_files = BTreeMap::from([
+        (
+            "work".into(),
+            jackin_protocol::account_credentials_container_path("work"),
+        ),
+        (
+            "personal".into(),
+            jackin_protocol::account_credentials_container_path("personal"),
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_mount_paths = BTreeMap::from([
+        (
+            "work".into(),
+            vec!["/home/agent/.claude".into(), "/jackin/claude".into()],
+        ),
+        (
+            "personal".into(),
+            vec!["/home/agent/.local".into(), "/jackin/opencode".into()],
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_identities = BTreeMap::from([
+        (
+            "work".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_000,
+                gid: 2_000,
+            },
+        ),
+        (
+            "personal".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        ),
+    ]);
+    mux.launch_env.launch_config.shell_identity = Some(jackin_protocol::SessionIdentity {
+        uid: 2_002,
+        gid: 2_002,
+    });
+    mux.launch_env.agent_credentials = serde_json::from_value(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "personal": {
+                "agent": "opencode",
+                "account_id": "acc-personal",
+                "env": {
+                    "ANTHROPIC_API_KEY": "opencode-anthropic",
+                    "OPENAI_API_KEY": "opencode-openai",
+                },
+            },
+        },
+    }))
+    .expect("v2 fixture must decode");
     let ambient = vec![("ANTHROPIC_API_KEY".into(), "ambient-secret".into())];
-    for agent in [Some("claude"), Some("codex"), None] {
-        let launch = mux.session_launch(agent, None, &ambient, "test");
-        assert!(launch.cmd.get_env("ANTHROPIC_API_KEY").is_none());
-        assert!(launch.cmd.get_env("OPENAI_API_KEY").is_none());
-    }
-    let launch = mux.session_launch(Some("opencode"), None, &ambient, "test");
+    let launch = mux
+        .session_launch(Some("work"), None, &ambient, "test")
+        .expect("known instance launches");
+    assert!(launch.cmd.get_env("ANTHROPIC_API_KEY").is_none());
+    assert!(launch.cmd.get_env("OPENAI_API_KEY").is_none());
+    let launch = mux
+        .session_launch(Some("personal"), None, &ambient, "test")
+        .expect("known instance launches");
     assert_eq!(
         launch
             .cmd
@@ -9241,4 +9883,321 @@ fn daemon_session_boundary_keeps_account_credentials_per_agent() {
             .and_then(|v| v.to_str()),
         Some("opencode-openai")
     );
+    assert!(
+        mux.session_launch(Some("missing"), None, &ambient, "test")
+            .is_err()
+    );
+}
+
+fn two_claude_mux() -> Multiplexer {
+    let mut mux = test_mux(24, 80);
+    mux.launch_env.launch_config.instances = vec!["claude-work".into(), "claude-personal".into()];
+    mux.launch_env.launch_config.agents = BTreeMap::from([
+        ("claude-work".into(), "claude".into()),
+        ("claude-personal".into(), "claude".into()),
+    ]);
+    mux.launch_env.launch_config.accounts = BTreeMap::from([
+        ("claude-work".into(), "work".into()),
+        ("claude-personal".into(), "personal".into()),
+    ]);
+    mux.launch_env.launch_config.instance_home_dirs = BTreeMap::from([
+        ("claude-work".into(), "/home/agent/.claude".into()),
+        (
+            "claude-personal".into(),
+            "/home/agent/.claude-claude-personal".into(),
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_forwarded_dirs = BTreeMap::from([
+        ("claude-work".into(), "/jackin/claude".into()),
+        (
+            "claude-personal".into(),
+            "/jackin/claude-claude-personal".into(),
+        ),
+    ]);
+    mux.launch_env.launch_config.auth_modes = BTreeMap::from([
+        ("claude-work".into(), "sync".into()),
+        ("claude-personal".into(), "sync".into()),
+    ]);
+    mux.launch_env.launch_config.instance_credential_files = BTreeMap::from([
+        (
+            "claude-work".into(),
+            jackin_protocol::account_credentials_container_path("claude-work"),
+        ),
+        (
+            "claude-personal".into(),
+            jackin_protocol::account_credentials_container_path("claude-personal"),
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_mount_paths = BTreeMap::from([
+        (
+            "claude-work".into(),
+            vec!["/home/agent/.claude".into(), "/jackin/claude".into()],
+        ),
+        (
+            "claude-personal".into(),
+            vec![
+                "/home/agent/.claude-claude-personal".into(),
+                "/jackin/claude-claude-personal".into(),
+            ],
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_identities = BTreeMap::from([
+        (
+            "claude-work".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_000,
+                gid: 2_000,
+            },
+        ),
+        (
+            "claude-personal".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        ),
+    ]);
+    mux.launch_env.launch_config.shell_identity = Some(jackin_protocol::SessionIdentity {
+        uid: 2_002,
+        gid: 2_002,
+    });
+    mux.launch_env.launch_config.labels = BTreeMap::from([
+        ("claude-work".into(), "Claude · Work".into()),
+        ("claude-personal".into(), "Personal Claude".into()),
+    ]);
+    mux
+}
+
+fn two_codex_mux() -> Multiplexer {
+    let mut mux = test_mux(24, 80);
+    mux.launch_env.launch_config.instances = vec!["codex-work".into(), "codex-personal".into()];
+    mux.launch_env.launch_config.agents = BTreeMap::from([
+        ("codex-work".into(), "codex".into()),
+        ("codex-personal".into(), "codex".into()),
+    ]);
+    mux.launch_env.launch_config.models = BTreeMap::from([
+        ("codex-work".into(), "k3".into()),
+        ("codex-personal".into(), "glm-5.3".into()),
+    ]);
+    mux.launch_env.launch_config.efforts = BTreeMap::from([
+        ("codex-work".into(), "max".into()),
+        ("codex-personal".into(), "low".into()),
+    ]);
+    mux.launch_env.launch_config.instance_home_dirs = BTreeMap::from([
+        ("codex-work".into(), "/home/agent/.codex".into()),
+        (
+            "codex-personal".into(),
+            "/home/agent/.codex-codex-personal".into(),
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_forwarded_dirs = BTreeMap::from([
+        ("codex-work".into(), "/jackin/codex".into()),
+        (
+            "codex-personal".into(),
+            "/jackin/codex-codex-personal".into(),
+        ),
+    ]);
+    mux.launch_env.launch_config.instance_identities = BTreeMap::from([
+        (
+            "codex-work".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_000,
+                gid: 2_000,
+            },
+        ),
+        (
+            "codex-personal".into(),
+            jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        ),
+    ]);
+    // A stale process-wide value must not win over either slot's routing map.
+    mux.launch_env.env_passthrough = vec![
+        (
+            jackin_core::CODEX_LANE_MODEL_ENV_NAME.into(),
+            "wrong-global-model".into(),
+        ),
+        (
+            jackin_core::CODEX_LANE_EFFORT_ENV_NAME.into(),
+            "high".into(),
+        ),
+    ];
+    mux
+}
+
+#[test]
+fn codex_session_launch_fans_model_and_effort_to_each_slot() {
+    let mux = two_codex_mux();
+    let stale_global_env = mux.launch_env.env_passthrough.clone();
+    let work = mux
+        .session_launch(Some("codex-work"), None, &stale_global_env, "test")
+        .expect("work slot launches");
+    let personal = mux
+        .session_launch(Some("codex-personal"), None, &stale_global_env, "test")
+        .expect("personal slot launches");
+
+    let argv = |command: &CommandBuilder| {
+        command
+            .get_argv()
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        argv(&work.cmd),
+        vec![
+            jackin_core::container_paths::ENTRYPOINT.to_owned(),
+            "-m".to_owned(),
+            "k3".to_owned()
+        ]
+    );
+    assert_eq!(
+        argv(&personal.cmd),
+        vec![
+            jackin_core::container_paths::ENTRYPOINT.to_owned(),
+            "-m".to_owned(),
+            "glm-5.3".to_owned()
+        ]
+    );
+    assert_eq!(
+        work.cmd
+            .get_env(jackin_core::CODEX_LANE_MODEL_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("k3")
+    );
+    assert_eq!(
+        work.cmd
+            .get_env(jackin_core::CODEX_LANE_EFFORT_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("max")
+    );
+    assert_eq!(
+        personal
+            .cmd
+            .get_env(jackin_core::CODEX_LANE_MODEL_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("glm-5.3")
+    );
+    assert_eq!(
+        personal
+            .cmd
+            .get_env(jackin_core::CODEX_LANE_EFFORT_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("low")
+    );
+}
+
+#[test]
+fn session_launch_renders_instance_labels_for_same_agent_instances() {
+    let mux = two_claude_mux();
+    let work = mux
+        .session_launch(Some("claude-work"), None, &[], "test")
+        .expect("known instance launches");
+    let personal = mux
+        .session_launch(Some("claude-personal"), None, &[], "test")
+        .expect("known instance launches");
+    // Two same-agent instances are distinguishable in tab/pane chrome.
+    assert_eq!(work.label, "Claude · Work");
+    assert_eq!(personal.label, "Personal Claude");
+}
+
+#[test]
+fn session_launch_falls_back_to_slug_title_without_instance_label() {
+    let mut mux = two_claude_mux();
+    mux.launch_env.launch_config.labels.clear();
+    let launch = mux
+        .session_launch(Some("claude-work"), None, &[], "test")
+        .expect("known instance launches");
+    assert_eq!(launch.label, "Claude");
+    let launch = mux
+        .session_launch(Some("claude-work"), Some("Z.AI"), &[], "test")
+        .expect("known instance launches");
+    assert_eq!(launch.label, "Claude (Z.AI)");
+    let shell = mux
+        .session_launch(None, None, &[], "test")
+        .expect("shell launches");
+    assert_eq!(shell.label, "Shell");
+}
+
+#[test]
+fn record_agent_history_stamps_account_from_launch_config() {
+    let mut mux = two_claude_mux();
+    // `claude-work` is a sync instance with no credential-envelope entry;
+    // the account still resolves from the launch config map.
+    mux.record_agent_history(1, "badger".into(), Some("claude-work".into()), None);
+    mux.record_agent_history(2, "wombat".into(), None, None);
+    mux.record_agent_history(3, "quokka".into(), Some("ghost".into()), None);
+    let history = &mux.session_supervisor.agent_history;
+    assert_eq!(history[0].agent.as_deref(), Some("claude-work"));
+    assert_eq!(history[0].account_id.as_deref(), Some("work"));
+    // Default-provider inference resolves the slug through the instance map.
+    assert_eq!(history[0].provider.as_deref(), Some("anthropic"));
+    assert_eq!(history[1].agent, None);
+    assert_eq!(history[1].account_id, None);
+    assert_eq!(history[2].account_id, None);
+}
+
+#[test]
+fn spawn_session_gate_rejects_unknown_and_ambiguous_targets() {
+    let mut mux = two_claude_mux();
+    let err = mux
+        .spawn_session(Some("codex-work".to_owned()), &[], None)
+        .expect_err("unknown instance must error at the spawn gate");
+    assert!(
+        err.to_string().contains("rejected spawn target"),
+        "unexpected error: {err}"
+    );
+    // The shared slug never silently substitutes one of the two instances.
+    mux.spawn_session(Some("claude".to_owned()), &[], None)
+        .expect_err("ambiguous slug must error at the spawn gate");
+    // ... while an exact config ID passes the gate: whatever the PTY spawn
+    // itself does in this bed, the failure (if any) is never a rejection.
+    if let Err(err) = mux.spawn_session(Some("claude-work".to_owned()), &[], None) {
+        assert!(
+            !err.to_string().contains("rejected spawn target"),
+            "resolution must succeed for an exact ID: {err}"
+        );
+    }
+}
+
+#[test]
+fn spawn_session_shell_leaves_identity_empty() {
+    // `Session::spawn` parks PTY output via `spawn_blocking`: enter a
+    // runtime like the other shell-spawn tests.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("test runtime");
+    let _guard = runtime.enter();
+    let mut mux = two_claude_mux();
+    let workdir = tempfile::tempdir().expect("test workdir");
+    mux.launch_env.workdir = workdir.path().to_path_buf();
+    let id = mux
+        .spawn_session(None, &[], None)
+        .expect("shell spawns in test bed");
+    let session = mux
+        .session_supervisor
+        .sessions
+        .get(id)
+        .expect("session is registered");
+    assert_eq!(session.label, "Shell");
+    assert_eq!(session.agent, None);
+    assert_eq!(session.account_id, None);
+    let tab = mux
+        .session_supervisor
+        .tabs
+        .last()
+        .expect("spawn opens a tab");
+    assert_eq!(tab.instance, None);
+    assert_eq!(tab.account_id, None);
+    let record = mux
+        .session_supervisor
+        .agent_history
+        .last()
+        .expect("spawn records history");
+    assert_eq!(record.session_id, id);
+    assert_eq!(record.agent, None);
+    assert_eq!(record.account_id, None);
 }

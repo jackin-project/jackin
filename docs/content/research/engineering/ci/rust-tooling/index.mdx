@@ -129,7 +129,7 @@ The substantive design for *what* is snapshotted — styled SVG goldens for TUI 
 
 Codebook (`codebook-lsp lint`) is the adopted spell-check gate. It combines Spellbook's Hunspell-compatible dictionary engine with Tree-sitter-aware parsing, so it can check prose-heavy project files and source comments without treating every code token as plain English.
 
-The first CI integration is whole-branch, not diff-only. <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile> runs two separate required jobs:
+The planned CI integration is whole-branch, not diff-only: <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> would run two separate required jobs (the old `docs.yml` workflow was consolidated into the generated PR workflow before this integration landed):
 
 - `spell-check-docs` checks root contributor Markdown, GitHub workflow text, and the published docs corpus.
 - `spell-check-source` checks Rust source, crate TOML files, and Docker runtime/construct scripts.
@@ -194,7 +194,7 @@ CI tools are pinned in <RepoFile path="mise.toml">mise.toml</RepoFile> alongside
 # optional locally and not required in CI (snapshots assert via the nextest run).
 ```
 
-The `deny`, Codebook spell-check, and (informational) coverage steps slot into CI behind the existing aggregators. Codebook currently joins <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile> through the `docs-required` aggregator as `spell-check-docs` and `spell-check-source`. Coverage is non-gating and does not join a required aggregator.
+The `deny`, Codebook spell-check, and (informational) coverage steps slot into CI behind the existing aggregators. Codebook would join <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> through the required aggregator as `spell-check-docs` and `spell-check-source`. Coverage is non-gating and does not join a required aggregator.
 
 ### Advisory-freshness consideration
 

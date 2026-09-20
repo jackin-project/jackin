@@ -34,7 +34,7 @@ use pty_exit::{error_type as pty_exit_error_type, reason as pty_exit_reason};
 /// and every other terminal extension the operator's outer terminal
 /// understands would vanish at the multiplexer boundary.
 use jackin_core::container_paths;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -64,10 +64,23 @@ const OSC_EVIDENCE_MAX_CHARS: usize = 256;
 pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "GIT_AUTHOR_NAME",
     "GIT_AUTHOR_EMAIL",
-    "GH_TOKEN",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
     "TZ",
+];
+
+/// Host credentials that are capabilities, not session ambient state.
+///
+/// These names may be resolved only through the operator-approved
+/// `jackin-exec` path. They are removed from both the inherited process
+/// environment and the session override allowlist before an agent or shell
+/// starts. Keeping this list separate from account credentials is deliberate:
+/// GitHub access is an on-demand capability, not an account selected for an
+/// agent pane.
+pub const EXPLICIT_CAPABILITY_ENV_NAMES: &[&str] = &[
+    jackin_core::GH_TOKEN_ENV_NAME,
+    jackin_core::GITHUB_TOKEN_ENV_NAME,
+    jackin_core::GH_ENTERPRISE_TOKEN_ENV_NAME,
 ];
 
 /// True when an OSC 8 `URI` payload is safe to forward to the
@@ -89,6 +102,24 @@ pub fn next_id() -> u64 {
 pub struct SessionProvider {
     pub label: String,
     pub env_overrides: Vec<(String, String)>,
+}
+
+/// Inputs that identify a session at PTY spawn time.
+#[derive(Debug, Clone)]
+pub struct SessionSpawnSpec {
+    /// Display label shown in the tab and pane chrome.
+    pub label: String,
+    /// Configured agent instance, or `None` for a shell session.
+    pub agent: Option<String>,
+    /// Owning account for the configured agent instance.
+    pub account_id: Option<String>,
+    /// Kernel identity assigned to the child process.
+    pub identity: jackin_protocol::SessionIdentity,
+    /// Provider routing and environment inherited by this session.
+    pub provider: Option<SessionProvider>,
+    /// Per-instance XDG cache root. Shells and legacy configs use the
+    /// private PTY-session cache instead.
+    pub cache_dir: Option<String>,
 }
 
 /// A published public-state change emitted by [`Session::advance_status`].
@@ -118,7 +149,26 @@ const STATUS_FLAP_THRESHOLD: usize = 3;
 )]
 pub struct Session {
     pub label: String,
+    /// Instance config ID (`"claude-work"`), or `None` for shell sessions.
+    /// The admitted instance, not a runtime slug: several instances may
+    /// share one agent runtime. Resolved authoritatively at spawn time.
     pub agent: Option<String>,
+    /// Owning account ID for this session's instance, or `None` for shell
+    /// sessions and sessions spawned before account stamping. Splits inherit
+    /// this from the source pane's instance.
+    pub account_id: Option<String>,
+    /// Exact host usage-broker capability for this instance. Surface and
+    /// configured-account labels are insufficient when two accounts share a
+    /// provider, so refreshes must carry this authority unchanged.
+    pub usage_capability: Option<jackin_protocol::usage_broker::UsageAccountCapability>,
+    /// Kernel identity assigned to this session. Control-socket authorization
+    /// compares the peer UID with this value; it is not inferred from a wire
+    /// session id supplied by the caller.
+    pub identity: jackin_protocol::SessionIdentity,
+    /// Random bearer capability for this exact PTY session. Duplicate panes
+    /// may intentionally share an instance UID, so UID alone cannot authorize
+    /// a target-scoped control RPC.
+    pub(crate) control_capability: String,
     pub conversation_id: Option<String>,
     pub provider: Option<SessionProvider>,
     /// Published effective state. Authored solely by evidence arbitration on the
@@ -248,6 +298,7 @@ pub enum GitContext {
 }
 
 impl GitContext {
+    #[must_use]
     pub fn branch_name(&self) -> Option<&BranchName> {
         match self {
             Self::Branch { name, .. } => Some(name),
@@ -255,6 +306,7 @@ impl GitContext {
         }
     }
 
+    #[must_use]
     pub fn head(&self) -> Option<&Oid> {
         match self {
             Self::Detached { head } => Some(head),
@@ -265,6 +317,7 @@ impl GitContext {
         }
     }
 
+    #[must_use]
     pub fn is_present(&self) -> bool {
         !matches!(self, Self::Absent)
     }
@@ -278,6 +331,7 @@ impl GitContext {
 pub struct Oid(String);
 
 impl Oid {
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         if matches!(value.len(), 40 | 64) && value.bytes().all(|b| b.is_ascii_hexdigit()) {
             Some(Self(value.to_owned()))
@@ -286,6 +340,7 @@ impl Oid {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -328,6 +383,7 @@ impl BranchName {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -397,15 +453,24 @@ impl Session {
               the multiplexer state. Inline shape preserves captured-runtime \
               state across the per-stage error-reporting branches."
     )]
+    /// # Errors
+    ///
+    /// Returns an error when the PTY cannot be opened or the session process
+    /// cannot be spawned.
     pub fn spawn(
-        label: impl Into<String>,
-        agent: Option<String>,
-        provider: Option<SessionProvider>,
+        spec: SessionSpawnSpec,
         mut cmd: CommandBuilder,
         terminal: SessionTerminal,
         event_tx: mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<(Self, u64)> {
-        let label = label.into();
+        let SessionSpawnSpec {
+            label,
+            agent,
+            account_id,
+            identity,
+            provider,
+            cache_dir,
+        } = spec;
         let conversation_id = agent.as_ref().map(|_| uuid::Uuid::new_v4().to_string());
         // Per-tab trace: each pane/agent spawn is its own short trace on the
         // session timeline (shares the resource session.id).
@@ -427,7 +492,14 @@ impl Session {
         // Session id must exist before the child spawns so the agent-status
         // reporter env can carry it. (Assigned here, used for the Session below.)
         let sid = next_id();
-        inject_status_env(&mut cmd, sid, agent.as_deref());
+        let control_capability = uuid::Uuid::new_v4().to_string();
+        inject_status_env(
+            &mut cmd,
+            sid,
+            agent.as_deref(),
+            cache_dir.as_deref(),
+            &control_capability,
+        );
 
         let mut child = slave
             .spawn_command(cmd)
@@ -582,6 +654,10 @@ impl Session {
             Session {
                 label,
                 agent,
+                account_id,
+                usage_capability: None,
+                identity,
+                control_capability,
                 conversation_id,
                 provider,
                 state: AgentState::Unknown,
@@ -656,6 +732,7 @@ impl Session {
 
     /// Tail-relative scrollback view offset. The grid is the single owner
     /// (D12); the session only delegates.
+    #[must_use]
     pub fn scrollback_offset(&self) -> usize {
         self.shadow_grid.scrollback()
     }
@@ -673,10 +750,11 @@ impl Session {
     pub fn clear_scrollback_and_request_screen_clear(&mut self) {
         self.scroll_to_live();
         self.shadow_grid.clear_scrollback();
-        self.send_input(b"\x0c");
+        let _sent = self.send_input(b"\x0c");
     }
 
     /// Number of scrollback lines currently retained for this pane.
+    #[must_use]
     pub fn scrollback_filled(&self) -> usize {
         self.shadow_grid.scrollback_len()
     }
@@ -730,10 +808,12 @@ impl Session {
         (!lines.is_empty()).then(|| lines.join("\n"))
     }
 
+    #[must_use]
     pub fn hyperlink_target_at_content_row(&self, row: usize, col: u16) -> Option<&str> {
         self.shadow_grid.hyperlink_target_at_content_row(row, col)
     }
 
+    #[must_use]
     pub fn send_input(&self, data: &[u8]) -> bool {
         // SendError fires when the writer task has exited (it owns the
         // receiver). The writer task emits SessionEvent::Exited before
@@ -836,6 +916,7 @@ impl Session {
     }
 
     /// Agent-authored terminal-protocol evidence for the evidence snapshot.
+    #[must_use]
     pub fn osc_evidence(&self) -> &crate::agent_status::evidence::OscEvidence {
         &self.osc
     }
@@ -843,6 +924,7 @@ impl Session {
     /// Plain-text rows of the current visible viewport (top to bottom), for the
     /// screen rule-pack engine. Operator scrollback never affects detection —
     /// only the live screen is read.
+    #[must_use]
     pub fn visible_screen_rows(&self) -> Vec<String> {
         let (_, cols) = self.shadow_grid.size();
         self.render_content_snapshot(cols)
@@ -1036,6 +1118,7 @@ impl Session {
     /// belong to jackin or to the pane. Actual PTY mouse forwarding
     /// also consults `mouse_protocol_mode()` so press-only programs
     /// do not receive motion events.
+    #[must_use]
     pub fn mouse_enabled(&self) -> bool {
         !matches!(
             self.shadow_grid.mouse_protocol_mode(),
@@ -1043,31 +1126,37 @@ impl Session {
         )
     }
 
+    #[must_use]
     pub fn mouse_protocol_encoding(&self) -> termpane::MouseProtocolEncoding {
         self.shadow_grid.mouse_protocol_encoding()
     }
 
+    #[must_use]
     pub fn mouse_protocol_mode(&self) -> termpane::MouseProtocolMode {
         self.shadow_grid.mouse_protocol_mode()
     }
 
     /// True when the session enabled DEC private mode `?1004` (focus
     /// event reporting).
+    #[must_use]
     pub fn focus_events_enabled(&self) -> bool {
         self.shadow_grid.focus_events()
     }
 
     /// True when the terminal is in the alternate screen.
+    #[must_use]
     pub fn alternate_screen(&self) -> bool {
         self.shadow_grid.alternate_screen()
     }
 
     /// True when the foreground program has bracketed-paste enabled.
+    #[must_use]
     pub fn bracketed_paste(&self) -> bool {
         self.shadow_grid.bracketed_paste()
     }
 
     /// True when the foreground program has application-cursor-keys mode on.
+    #[must_use]
     pub fn application_cursor(&self) -> bool {
         self.shadow_grid.application_cursor()
     }
@@ -1301,6 +1390,7 @@ impl Session {
         std::mem::take(&mut self.pending_passthrough)
     }
 
+    #[must_use]
     pub fn allow_frame_hyperlinks(&self) -> bool {
         self.osc_policy.allow_hyperlink()
     }
@@ -1316,11 +1406,13 @@ impl Session {
         }
     }
 
+    #[must_use]
     pub fn title(&self) -> Option<&str> {
         self.title.as_deref()
     }
 
     /// Most recently announced working directory (OSC 7), if any.
+    #[must_use]
     pub fn cwd(&self) -> Option<&str> {
         self.cwd.as_deref()
     }
@@ -1491,6 +1583,13 @@ impl Session {
         Self {
             label,
             agent,
+            account_id: None,
+            usage_capability: None,
+            identity: jackin_protocol::SessionIdentity {
+                uid: 65_534,
+                gid: 65_534,
+            },
+            control_capability: uuid::Uuid::new_v4().to_string(),
             conversation_id: None,
             provider,
             state: AgentState::Unknown,
@@ -1538,17 +1637,18 @@ fn parse_modify_other_keys(raw: &[u8]) -> Option<u16> {
     std::str::from_utf8(level).ok()?.parse::<u16>().ok()
 }
 
-/// Reject agent-slug strings that are flags (start with `-`), empty,
-/// contain whitespace / control characters, or — when the launch
-/// config lists supported agents — do not appear in that allowlist.
-/// Shared by the PID-1 argv path, the
-/// `jackin-capsule new <agent>` client path, and the daemon's
-/// `Hello.spawn` decode path so all three trust boundaries
-/// apply the same gate.
-pub fn validate_agent_slug<'a>(
-    raw: &'a str,
-    supported_agents: &[String],
-) -> Result<&'a str, &'static str> {
+/// Reject spawn-target strings that are flags (start with `-`), empty, or
+/// contain whitespace / control characters. Syntax only: membership is
+/// resolved separately via `CapsuleConfig::resolve_instance`, which maps
+/// an instance config ID (or an unambiguous agent-slug shorthand) to its
+/// admitted instance. Shared by the PID-1 argv path and the
+/// `jackin-capsule new <target>` client path; the daemon re-resolves
+/// authoritatively at spawn time.
+/// # Errors
+///
+/// Returns an error when the value is empty, looks like a flag, or contains
+/// whitespace or control characters.
+pub fn validate_spawn_token_syntax(raw: &str) -> Result<&str, &'static str> {
     if raw.is_empty() {
         return Err("empty value");
     }
@@ -1558,31 +1658,66 @@ pub fn validate_agent_slug<'a>(
     if raw.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err("contains whitespace or control characters");
     }
-    if !supported_agents.is_empty() && !supported_agents.iter().any(|a| a == raw) {
-        return Err("not in launch config allowlist");
-    }
     Ok(raw)
 }
 
-/// Inject the agent-status reporter environment into a session's command,
-/// keyed on the session id assigned at spawn. Agent panes get the full set so
-/// hook/plugin reporters can address this session; shell panes get only the
-/// socket var (no runtime to report for). State is never authored from these —
-/// reporters forward events, the daemon maps and gates them.
-fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&str>) {
+/// Inject session-scoped environment into a command. The isolation wrapper
+/// receives its private numeric identity for every child; only agent panes
+/// receive the public runtime/status identity used by hook reporters. State is
+/// never authored from these — reporters forward events, the daemon maps and
+/// gates them.
+fn inject_status_env(
+    cmd: &mut CommandBuilder,
+    session_id: u64,
+    agent: Option<&str>,
+    cache_dir: Option<&str>,
+    control_capability: &str,
+) {
+    let session_root = session_root_path(session_id);
+    let session_state = session_root.join("state");
+    let session_tmp = session_root.join("tmp");
+    let session_runtime = session_root.join("runtime");
+    let session_cache = session_root.join("cache");
+    // These paths are allocated by the root wrapper before Landlock is
+    // installed. Every mutable setup/cache path is therefore private to this
+    // PTY, never the capsule-wide state or host /tmp.
+    cmd.env("JACKIN_SESSION_ROOT", &session_root);
+    cmd.env(jackin_protocol::SESSION_STATE_DIR_ENV, &session_state);
+    cmd.env("TMPDIR", &session_tmp);
+    cmd.env("TMP", &session_tmp);
+    cmd.env("TEMP", &session_tmp);
+    cmd.env("XDG_RUNTIME_DIR", &session_runtime);
+    if let Some(cache_dir) = cache_dir {
+        cmd.env("XDG_CACHE_HOME", cache_dir);
+    } else {
+        cmd.env("XDG_CACHE_HOME", &session_cache);
+    }
+    cmd.env("GIT_CONFIG_GLOBAL", session_root.join("gitconfig"));
+    cmd.env(jackin_protocol::SESSION_CAPABILITY_ENV, control_capability);
+    cmd.env(
+        jackin_protocol::ISOLATION_SESSION_ID_ENV,
+        session_id.to_string(),
+    );
+    cmd.env_remove(jackin_protocol::SESSION_ID_ENV);
     cmd.env("JACKIN_STATUS_SOCKET", crate::socket::SOCKET_PATH);
     if let Some(runtime) = agent {
-        cmd.env("JACKIN_SESSION_ID", session_id.to_string());
+        cmd.env(jackin_protocol::SESSION_ID_ENV, session_id.to_string());
         cmd.env("JACKIN_AGENT_RUNTIME", runtime);
         cmd.env(
             "JACKIN_STATUS_SOURCE",
             format!("hook-{runtime}-{session_id}"),
         );
     } else {
-        cmd.env_remove("JACKIN_SESSION_ID");
         cmd.env_remove("JACKIN_AGENT_RUNTIME");
         cmd.env_remove("JACKIN_STATUS_SOURCE");
     }
+}
+
+/// Canonical private root for one daemon-assigned session id. The wrapper
+/// derives the same path from the trusted numeric id rather than accepting a
+/// caller-supplied filesystem path.
+pub(crate) fn session_root_path(session_id: u64) -> PathBuf {
+    Path::new(container_paths::SESSION_ROOTS_DIR).join(session_id.to_string())
 }
 
 /// Authority grade for a runtime's semantic source. `opencode` and the flagged
@@ -1596,6 +1731,40 @@ fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityG
     }
 }
 
+/// Per-instance facts for one agent spawn, resolved from the Capsule
+/// launch config. `home_dir` is the folder-var target
+/// (`/home/agent/.claude` for primary slots,
+/// `/home/agent/.claude-<suffix>` for secondary same-agent slots);
+/// `forwarded_dir` is the host-forwarded credential dir.
+#[derive(Debug)]
+pub struct AgentSpawnSpec<'a> {
+    pub agent: &'a str,
+    pub instance: &'a str,
+    pub home_dir: &'a str,
+    pub forwarded_dir: &'a str,
+    pub model: Option<&'a str>,
+    pub effort: Option<&'a str>,
+    pub auth_mode: Option<&'a str>,
+    pub env_passthrough: &'a [(String, String)],
+    pub cwd: &'a Path,
+    pub codename: &'a str,
+    /// Identity admitted by the host for this instance.
+    pub identity: jackin_protocol::SessionIdentity,
+}
+
+/// Whether `name` is an agent config-folder env var
+/// (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …). Folder vars are owned by the
+/// spawned instance, never by passthrough.
+fn is_folder_env(name: &str) -> bool {
+    jackin_core::Agent::ALL.iter().any(|agent| {
+        agent
+            .runtime()
+            .state_paths()
+            .folder_env_var
+            .is_some_and(|var| var.name == name)
+    })
+}
+
 /// Build a `CommandBuilder` for an agent session.
 ///
 /// Entrypoint is `/jackin/runtime/entrypoint.sh` with `JACKIN_AGENT=<slug>`.
@@ -1604,40 +1773,57 @@ fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityG
 /// defaults the child's cwd to `$HOME` when none is set — it does not
 /// inherit the daemon's cwd — so omitting this would land every agent in
 /// `/home/agent` regardless of the workspace.
-pub fn build_agent_command(
-    agent: &str,
-    model: Option<&str>,
-    auth_mode: Option<&str>,
-    env_passthrough: &[(String, String)],
-    cwd: &Path,
-    codename: &str,
-) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new(container_paths::ENTRYPOINT);
-    for arg in agent_model_args(agent, model) {
+///
+/// Every agent folder var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …) is
+/// scrubbed and rejected from passthrough, then this instance's folder
+/// var is set to its own home: a stale or foreign value can never leak
+/// this pane into another account's credentials or history.
+#[must_use]
+pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
+    let mut cmd = isolated_command(
+        spec.identity,
+        Some(spec.instance),
+        container_paths::ENTRYPOINT,
+    );
+    remove_ambient_capability_env(&mut cmd);
+    for arg in agent_model_args(spec.agent, spec.model) {
         cmd.arg(arg);
     }
     for name in jackin_core::account_env_names() {
         cmd.env_remove(name);
     }
-    for (k, v) in env_passthrough {
-        if !jackin_core::is_account_env(k) {
+    for agent in jackin_core::Agent::ALL {
+        if let Some(var) = agent.runtime().state_paths().folder_env_var {
+            cmd.env_remove(var.name);
+        }
+    }
+    for (k, v) in spec.env_passthrough {
+        if !jackin_core::is_account_env(k) && !is_folder_env(k) && !is_explicit_capability_env(k) {
             cmd.env(k, v);
         }
     }
-    if agent == "claude" {
+    apply_lane_env(&mut cmd, spec.agent, spec.model, spec.effort);
+    if let Some(agent) = jackin_core::Agent::from_slug(spec.agent)
+        && let Some(var) = agent.runtime().state_paths().folder_env_var
+    {
         // Claude atomically replaces onboarding metadata; keep it inside the
         // durable directory mount rather than a file mounted at the home root.
-        cmd.env("CLAUDE_CONFIG_DIR", container_paths::CLAUDE_CONFIG_DIR);
+        cmd.env(var.name, spec.home_dir);
     }
-    cmd.env("JACKIN_AGENT", agent);
-    if let Some(auth_mode) = auth_mode {
+    cmd.env("JACKIN_AGENT", spec.agent);
+    cmd.env(jackin_protocol::INSTANCE_ENV, spec.instance);
+    cmd.env(
+        jackin_protocol::INSTANCE_FORWARDED_DIR_ENV,
+        spec.forwarded_dir,
+    );
+    if let Some(auth_mode) = spec.auth_mode {
         cmd.env(jackin_protocol::AUTH_MODE_ENV, auth_mode);
     } else {
         cmd.env_remove(jackin_protocol::AUTH_MODE_ENV);
     }
-    cmd.env("JACKIN_AGENT_CODENAME", codename);
+    cmd.env("JACKIN_AGENT_CODENAME", spec.codename);
     apply_terminal_env(&mut cmd);
-    cmd.cwd(cwd);
+    cmd.cwd(spec.cwd);
     cmd
 }
 
@@ -1646,26 +1832,67 @@ fn agent_model_args<'a>(agent: &str, model: Option<&'a str>) -> Vec<&'a str> {
         return Vec::new();
     };
     match agent {
-        "claude" | "kimi" => vec!["--model", model],
+        "claude" | "kimi" | "omp" | "hermes" => vec!["--model", model],
         "codex" | "opencode" | "grok" => vec!["-m", model],
         _ => Vec::new(),
+    }
+}
+
+/// Inject model and reasoning settings for this instance only. The host launch
+/// env is intentionally not used: two same-agent slots may route to different
+/// endpoints/models, so a process-wide value would make the hook and child
+/// command disagree.
+fn apply_lane_env(
+    cmd: &mut CommandBuilder,
+    agent: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+) {
+    for name in [
+        jackin_core::CODEX_LANE_MODEL_ENV_NAME,
+        jackin_core::CODEX_LANE_EFFORT_ENV_NAME,
+        jackin_core::CLAUDE_MODEL_ENV_NAME,
+        jackin_core::CLAUDE_EFFORT_ENV_NAME,
+    ] {
+        cmd.env_remove(name);
+    }
+    let (model_env, effort_env) = match agent {
+        "codex" => (
+            jackin_core::CODEX_LANE_MODEL_ENV_NAME,
+            jackin_core::CODEX_LANE_EFFORT_ENV_NAME,
+        ),
+        "claude" => (
+            jackin_core::CLAUDE_MODEL_ENV_NAME,
+            jackin_core::CLAUDE_EFFORT_ENV_NAME,
+        ),
+        _ => return,
+    };
+    if let Some(model) = model.map(str::trim).filter(|model| !model.is_empty()) {
+        cmd.env(model_env, model);
+    }
+    if let Some(effort) = effort {
+        cmd.env(effort_env, effort);
     }
 }
 
 /// Build a `CommandBuilder` for an interactive shell session.
 ///
 /// See `build_agent_command` for the `cwd` rationale.
+#[must_use]
 pub fn build_shell_command(
     env_passthrough: &[(String, String)],
     cwd: &Path,
     codename: &str,
+    identity: jackin_protocol::SessionIdentity,
 ) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new(shell_executable());
+    let shell = shell_executable();
+    let mut cmd = isolated_command(identity, None, &shell);
+    remove_ambient_capability_env(&mut cmd);
     for name in jackin_core::account_env_names() {
         cmd.env_remove(name);
     }
     for (k, v) in env_passthrough {
-        if !jackin_core::is_account_env(k) {
+        if !jackin_core::is_account_env(k) && !is_explicit_capability_env(k) {
             cmd.env(k, v);
         }
     }
@@ -1676,6 +1903,58 @@ pub fn build_shell_command(
     cmd
 }
 
+fn is_explicit_capability_env(name: &str) -> bool {
+    EXPLICIT_CAPABILITY_ENV_NAMES.contains(&name)
+}
+
+fn remove_ambient_capability_env(cmd: &mut CommandBuilder) {
+    for name in EXPLICIT_CAPABILITY_ENV_NAMES {
+        cmd.env_remove(name);
+    }
+}
+
+/// Build the internal root-supervisor wrapper command. The wrapper validates
+/// the identity against the launch config, installs Landlock, drops to the
+/// slot UID, and only then executes the requested program.
+fn isolated_command(
+    identity: jackin_protocol::SessionIdentity,
+    instance: Option<&str>,
+    program: impl AsRef<std::ffi::OsStr>,
+) -> CommandBuilder {
+    #[cfg(test)]
+    {
+        // Session unit tests run on the host, where the container-only capsule
+        // binary and entrypoint paths do not exist. The production path below
+        // is exercised by the dedicated process-isolation boundary tests.
+        let _ = (identity, instance);
+        CommandBuilder::new(program)
+    }
+    #[cfg(not(test))]
+    {
+        let mut cmd = CommandBuilder::new(container_paths::CAPSULE_BIN);
+        cmd.args(isolated_wrapper_args(identity, instance, program));
+        cmd
+    }
+}
+
+/// Exact argv passed to the capsule root supervisor for one session. Kept
+/// pure so tests can prove the admitted identity is actually wired into the
+/// production spawn command even though host-side PTY tests bypass the
+/// container-only wrapper.
+fn isolated_wrapper_args(
+    identity: jackin_protocol::SessionIdentity,
+    instance: Option<&str>,
+    program: impl AsRef<std::ffi::OsStr>,
+) -> Vec<std::ffi::OsString> {
+    vec![
+        "__isolated-exec".into(),
+        instance.unwrap_or("-").into(),
+        identity.uid.to_string().into(),
+        identity.gid.to_string().into(),
+        program.as_ref().to_owned(),
+    ]
+}
+
 #[cfg(not(test))]
 fn shell_executable() -> std::ffi::OsString {
     "/bin/zsh".into()
@@ -1683,7 +1962,7 @@ fn shell_executable() -> std::ffi::OsString {
 
 #[cfg(test)]
 fn shell_executable() -> std::ffi::OsString {
-    std::env::var_os("JACKIN_TEST_SHELL").unwrap_or_else(|| "/bin/zsh".into())
+    "/bin/sh".into()
 }
 
 /// Apply the stable pane terminal environment. The active outer terminal is
@@ -1706,17 +1985,18 @@ fn apply_terminal_env(cmd: &mut CommandBuilder) {
 #[cfg(test)]
 mod tests;
 
-/// Inject only the account selected for this pane after ambient credentials were stripped.
+/// Inject only the account selected for this pane — the env of one instance
+/// config ID — after ambient credentials were stripped.
 pub(crate) fn apply_account_env(
     command: &mut CommandBuilder,
-    agent: &str,
+    instance: &str,
     auth_mode: Option<&str>,
     credentials: &jackin_protocol::AgentCredentialEnv,
 ) {
     if !matches!(auth_mode, Some("api_key" | "oauth_token")) {
         return;
     }
-    if let Some(env) = credentials.for_agent(agent) {
+    if let Some(env) = credentials.for_instance(instance) {
         for (name, value) in env {
             command.env(name, value);
         }

@@ -187,6 +187,7 @@ pub enum ConsoleManagerMessage<
     DismissInlineAgentPicker,
     DismissInlineAccountPicker,
     DismissLaunchAccountPicker,
+    Settings(crate::tui::screens::settings::message::SettingsMessage),
 }
 
 #[derive(Debug)]
@@ -223,12 +224,13 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     NewSessionWithAccount {
         container: String,
         agent: Agent,
-        account: Provider,
+        instance_id: String,
     },
     LaunchWithAccount {
         selector: RoleSelector,
         agent: Agent,
         account: Provider,
+        configuration: Option<String>,
     },
 }
 
@@ -280,7 +282,7 @@ pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
     NewSessionWithAccount {
         container: String,
         agent: Agent,
-        account: Provider,
+        instance_id: String,
     },
     /// Initial launch with a provider selected before the container exists.
     LaunchWithAccount {
@@ -288,6 +290,7 @@ pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
         workspace: Workspace,
         agent: Agent,
         account: Provider,
+        configuration: Option<String>,
     },
 }
 

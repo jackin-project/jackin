@@ -6,6 +6,7 @@ use super::*;
 use jackin_core::Agent;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::process::Command;
 use tempfile::tempdir;
 #[test]
 fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
@@ -27,7 +28,7 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
     ));
     // A fixed PATH covers every agent's bin dir so the mounted binaries resolve.
     assert!(dockerfile.contains(
-        "ENV PATH=\"/jackin/runtime:/home/agent/.local/bin:/home/agent/.amp/bin:/home/agent/.kimi-code/bin:/home/agent/.opencode/bin:/home/agent/.grok/bin:${PATH}\""
+        "ENV PATH=\"/jackin/runtime:/home/agent/.local/bin:/home/agent/.amp/bin:/home/agent/.kimi-code/bin:/home/agent/.opencode/bin:/home/agent/.grok/bin:/home/agent/.antigravity/bin:/home/agent/.gemini-cli/bin:/home/agent/.cursor-agent/bin:/home/agent/.muse/bin:/home/agent/.omp/bin:/home/agent/.hermes/bin:${PATH}\""
     ));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
 }
@@ -64,7 +65,7 @@ fn renders_runtime_finalization_in_one_layer() {
     ));
     assert!(
         dockerfile
-            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && install -d -o agent -g 0 /jackin/run /jackin/state"),
+            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"),
         "runtime dir setup should share finalization and assign ownership at mkdir time: {dockerfile}"
     );
     assert!(
@@ -104,7 +105,9 @@ fn renders_runtime_finalization_in_one_layer() {
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     // Finalization is its own RUN now (default-home snapshot was pulled out).
     assert!(dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
-    assert!(!dockerfile.contains("\nRUN install -d -o agent -g 0 /jackin/run /jackin/state"));
+    assert!(!dockerfile.contains(
+        "\nRUN install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"
+    ));
     assert_eq!(
         dockerfile
             .matches("\nRUN install -d -o agent -g 0 /jackin/default-home")
@@ -551,7 +554,9 @@ fn renders_dockerfile_targets_agent_user_not_claude() {
     assert!(dockerfile.contains("/home/agent"));
     assert!(!dockerfile.contains("groupmod "));
     assert!(!dockerfile.contains("usermod "));
-    assert!(dockerfile.contains("install -d -o agent -g 0 /jackin/run /jackin/state"));
+    assert!(dockerfile.contains(
+        "install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"
+    ));
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
@@ -829,8 +834,47 @@ fn entrypoint_sources_source_hook_so_exports_persist() {
 
 #[test]
 fn entrypoint_runs_setup_once_with_writable_marker() {
-    assert!(ENTRYPOINT_SH.contains("/jackin/state/hooks/setup-once.done"));
+    assert!(ENTRYPOINT_SH.contains(
+        "setup_once_marker=\"${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hooks/setup-once.done\""
+    ));
+    assert!(!ENTRYPOINT_SH.contains("setup_once_marker=\"/jackin/state/hooks/setup-once.done\""));
     assert!(ENTRYPOINT_SH.contains("touch \"$setup_once_marker\""));
+}
+
+#[test]
+fn entrypoint_setup_once_marker_is_private_per_session() {
+    let fixture = tempdir().expect("marker fixture");
+    let assignment = ENTRYPOINT_SH
+        .lines()
+        .find(|line| line.contains("setup_once_marker=\"${JACKIN_SESSION_STATE_DIR"))
+        .expect("production setup-once marker assignment")
+        .trim();
+    let script = format!(
+        "set -eu\n{assignment}\nmkdir -p \"$(dirname \"$setup_once_marker\")\"\ntouch \"$setup_once_marker\"\nprintf '%s' \"$setup_once_marker\"\n"
+    );
+    let mut markers = Vec::new();
+    for session in ["41", "42"] {
+        let state = fixture.path().join(format!("session-{session}/state"));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "this fixture executes the generated shell to verify its marker path"
+        )]
+        let output = Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .env("JACKIN_SESSION_STATE_DIR", &state)
+            .output()
+            .expect("run setup-once marker shell");
+        assert!(output.status.success(), "marker shell failed: {output:?}");
+        let marker = String::from_utf8(output.stdout).expect("marker path is UTF-8");
+        assert_eq!(
+            marker,
+            state.join("hooks/setup-once.done").display().to_string()
+        );
+        assert!(state.join("hooks/setup-once.done").is_file());
+        markers.push(marker);
+    }
+    assert_ne!(markers[0], markers[1], "session markers must not collide");
 }
 
 #[test]

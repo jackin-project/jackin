@@ -7,6 +7,7 @@ use termrock::{style::DesignSystem, style::Role};
 pub const RESET: &str = "\x1b[0m";
 pub const BRAND_BANNER: &str = "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin\x1b[38;2;255;255;255m❯\x1b[38;2;0;0;0m \x1b[0m\n";
 
+#[must_use]
 pub fn rgb_fg(rgb: Rgb) -> String {
     format!("\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b)
 }

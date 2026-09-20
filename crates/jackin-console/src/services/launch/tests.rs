@@ -4,13 +4,13 @@
 use std::collections::BTreeMap;
 
 use super::*;
-use jackin_core::WorkspaceName;
+use jackin_core::{Agent, WorkspaceName};
 fn wn(name: &str) -> WorkspaceName {
     WorkspaceName::parse(name).unwrap()
 }
 use jackin_config::{
-    AppConfig, CURRENT_WORKSPACE_VERSION, KeepAwakeConfig, MountConfig, MountIsolation, RoleSource,
-    WorkspaceConfig,
+    AccountCredential, AgentConfiguration, AiProvider, AppConfig, CURRENT_WORKSPACE_VERSION,
+    KeepAwakeConfig, MountConfig, MountIsolation, RoleSource, WorkspaceConfig,
 };
 
 #[test]
@@ -64,6 +64,7 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
             runtime: jackin_config::WorkspaceRuntimeConfig::default(),
             dirty_exit_policy: None,
             docker: None,
+            default_launch: None,
         },
     );
 
@@ -110,6 +111,7 @@ fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> Work
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
         docker: None,
+        default_launch: None,
     }
 }
 
@@ -244,6 +246,224 @@ fn resolve_launch_dispatch_preselects_role_picker() {
     assert_eq!(selected, Some(1));
 }
 
+fn api_key_account(name: &str, provider: AiProvider) -> AccountConfig {
+    AccountConfig {
+        enabled: true,
+        name: name.into(),
+        provider,
+        credential: AccountCredential::ApiKey {
+            value: "test-key".into(),
+            base_url: None,
+            model: None,
+        },
+    }
+}
+
+fn agent_configuration(agent: Agent, account: &str) -> AgentConfiguration {
+    AgentConfiguration {
+        agent,
+        account: account.into(),
+        model: None,
+        base_url: None,
+        display_label: None,
+        invoked_via_wrapper: None,
+    }
+}
+
+/// Saved `demo` workspace (workdir-backed) with two Claude accounts
+/// allowlisted, one Claude configuration per account, and no defaults.
+fn admission_config(project_dir: &std::path::Path) -> AppConfig {
+    let mut config = AppConfig::default();
+    config.roles.insert("smith".to_owned(), agent_source_stub());
+    for (id, display) in [("a-claude", "A"), ("z-claude", "Z")] {
+        config
+            .accounts
+            .insert(id.into(), api_key_account(display, AiProvider::Anthropic));
+    }
+    for (id, account) in [("claude-a", "a-claude"), ("claude-z", "z-claude")] {
+        config
+            .agent_configurations
+            .insert(id.into(), agent_configuration(Agent::Claude, account));
+    }
+    let mut saved = launch_workspace(project_dir, vec!["smith"]);
+    saved.accounts = vec!["a-claude".into(), "z-claude".into()];
+    config.workspaces.insert("demo".to_owned(), saved);
+    config
+}
+
+#[test]
+fn admitted_account_choices_defer_to_bindings_without_defaults() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = admission_config(temp.path());
+
+    let admitted =
+        admitted_account_choices(&config, Some(&wn("demo")), "smith", Agent::Claude).unwrap();
+    assert!(
+        admitted.is_none(),
+        "no default anywhere must defer to the legacy bindings path"
+    );
+}
+
+#[test]
+fn admitted_account_choices_resolve_role_default_for_agent() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = admission_config(temp.path());
+    config
+        .workspaces
+        .get_mut("demo")
+        .unwrap()
+        .roles
+        .entry("smith".into())
+        .or_default()
+        .default_launch = Some(vec!["claude-z".into()]);
+
+    let admitted = admitted_account_choices(&config, Some(&wn("demo")), "smith", Agent::Claude)
+        .unwrap()
+        .expect("a configured default must admit");
+    assert_eq!(
+        admitted
+            .iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["z-claude"]
+    );
+    assert_eq!(admitted.first().expect("one admitted row").name, "Z");
+
+    // The same default admits nothing for an agent with no instance in it.
+    let admitted = admitted_account_choices(&config, Some(&wn("demo")), "smith", Agent::Codex)
+        .unwrap()
+        .expect("resolution succeeds; the admitted set is just empty for Codex");
+    assert!(admitted.is_empty());
+}
+
+#[test]
+fn admitted_account_choices_fail_atomically_on_invalid_default() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = admission_config(temp.path());
+    config.workspaces.get_mut("demo").unwrap().default_launch = Some(vec!["ghost".into()]);
+
+    let error =
+        admitted_account_choices(&config, Some(&wn("demo")), "smith", Agent::Claude).unwrap_err();
+    assert!(
+        error.to_string().contains("unknown agent configuration"),
+        "got {error:?}"
+    );
+}
+
+#[test]
+fn account_choices_for_instances_preserve_configuration_identity_and_sort() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = admission_config(temp.path());
+    let instances = resolve_launch(
+        &config,
+        Some(&wn("demo")),
+        "smith",
+        Some(&["claude-z".to_owned(), "claude-a".to_owned()]),
+        None,
+    )
+    .unwrap();
+
+    let rows = account_choices_for_instances(&config, &instances);
+    assert_eq!(
+        rows.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+        vec!["a-claude", "z-claude"]
+    );
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.configuration_id.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("claude-a"), Some("claude-z")]
+    );
+    assert!(
+        rows.iter().all(|row| row.agents.contains(&Agent::Claude)),
+        "admitted rows keep full compatibility info"
+    );
+
+    // Instances naming an unregistered account are skipped, never fabricated.
+    let mut foreign = instances;
+    foreign.push(ResolvedInstance {
+        config_id: "foreign".into(),
+        agent: Agent::Claude,
+        account_id: "ghost".into(),
+        model: None,
+        base_url: None,
+        xdg_roots: None,
+        label: "Ghost".into(),
+        synthesized: true,
+    });
+    let rows = account_choices_for_instances(&config, &foreign);
+    assert_eq!(rows.len(), 2);
+}
+
+#[test]
+fn live_account_choices_preserve_duplicate_agent_instances_and_ids() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = admission_config(temp.path());
+    let rows = account_choices_for_live_instances(
+        &config,
+        &[
+            LiveInstanceAdmission {
+                instance_id: "claude-z".into(),
+                agent: Agent::Claude,
+                account_id: "z-claude".into(),
+            },
+            LiveInstanceAdmission {
+                instance_id: "claude-a".into(),
+                agent: Agent::Claude,
+                account_id: "a-claude".into(),
+            },
+        ],
+    );
+
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.instance_id.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("claude-a"), Some("claude-z")]
+    );
+    assert!(rows.iter().all(|row| row.agents == vec![Agent::Claude]));
+    assert!(rows[0].label().contains("instance claude-a"));
+}
+
+#[test]
+fn resolve_committed_agent_launch_carries_admitted_accounts() {
+    let temp = tempfile::tempdir().unwrap();
+    let project_dir = temp.path().canonicalize().unwrap();
+    let mut config = admission_config(&project_dir);
+    config.workspaces.get_mut("demo").unwrap().default_launch =
+        Some(vec!["claude-z".into(), "claude-a".into()]);
+
+    let resolved = resolve_committed_agent_launch(
+        &config,
+        &project_dir,
+        LoadWorkspaceInput::Saved("demo".into()),
+        RoleSelector::parse("smith").unwrap(),
+        Agent::Claude,
+    )
+    .unwrap()
+    .expect("present saved workspace must resolve");
+    assert_eq!(
+        resolved
+            .accounts
+            .iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a-claude", "z-claude"]
+    );
+
+    // An invalid default fails the commit instead of returning the
+    // eligible list.
+    config.workspaces.get_mut("demo").unwrap().default_launch = Some(vec!["ghost".into()]);
+    resolve_committed_agent_launch(
+        &config,
+        &project_dir,
+        LoadWorkspaceInput::Saved("demo".into()),
+        RoleSelector::parse("smith").unwrap(),
+        Agent::Claude,
+    )
+    .unwrap_err();
+}
+
 #[test]
 fn launch_accounts_require_workspace_assignment_and_agent_support() {
     use jackin_config::{AccountConfig, AccountCredential, AiProvider};
@@ -259,6 +479,8 @@ fn launch_accounts_require_workspace_assignment_and_agent_support() {
                 credential: AccountCredential::Profile {
                     agent: Agent::Claude,
                     directory: format!("/profiles/{id}").into(),
+                    xdg_roots: None,
+                    source_selector: None,
                 },
             },
         );

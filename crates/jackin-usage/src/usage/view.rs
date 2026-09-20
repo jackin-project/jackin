@@ -19,6 +19,15 @@ impl UsageCache {
         target: &UsageRefreshTarget,
         state: &jackin_protocol::usage_broker::UsageGenerationView,
     ) {
+        if target.capability != state.capability
+            || !capability_matches_surface(
+                &target.agent,
+                target.provider.as_deref(),
+                &state.capability,
+            )
+        {
+            return;
+        }
         let mut view = state.snapshot.clone().unwrap_or_else(|| {
             if state.phase.is_active() {
                 FocusedUsageView::refreshing(target.provider.as_deref(), now_epoch())
@@ -36,9 +45,11 @@ impl UsageCache {
         });
         if let Some(error) = &state.error {
             view.last_error = Some(error.message.clone());
-            if !view.buckets.is_empty() {
-                view.status = UsageSnapshotStatus::Stale;
-            }
+            view.status = if view.buckets.is_empty() {
+                UsageSnapshotStatus::Error
+            } else {
+                UsageSnapshotStatus::Stale
+            };
         }
         if view.focused_agent.is_none() {
             view.focused_agent = Some(target.agent.clone());
@@ -46,8 +57,14 @@ impl UsageCache {
         if view.focused_provider.is_none() {
             view.focused_provider = target.provider.clone();
         }
-        self.snapshots
-            .insert(target.cache_key(), CachedUsage { view });
+        self.snapshots.insert(
+            usage_cache_key_for_broker_account(
+                &target.agent,
+                target.provider.as_deref(),
+                &state.capability,
+            ),
+            CachedUsage { view },
+        );
     }
 
     /// Preserve last-good quota while surfacing a typed relay/broker failure.
@@ -56,18 +73,26 @@ impl UsageCache {
         target: &UsageRefreshTarget,
         error: &jackin_protocol::usage_broker::UsageCoordinationError,
     ) {
-        let cache_key = target.cache_key();
-        if let Some(cached) = self.snapshots.get_mut(&cache_key) {
-            cached.view.last_error = Some(error.message.clone());
-            if !cached.view.buckets.is_empty() {
-                cached.view.status = UsageSnapshotStatus::Stale;
-            }
+        if !capability_matches_surface(
+            &target.agent,
+            target.provider.as_deref(),
+            &target.capability,
+        ) {
             return;
         }
-        let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
-        view.focused_agent = Some(target.agent.clone());
-        view.focused_provider = target.provider.clone();
-        self.snapshots.insert(cache_key, CachedUsage { view });
+        let cache_key = target.cache_key();
+        let cached = self.snapshots.entry(cache_key).or_insert_with(|| {
+            let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
+            view.focused_agent = Some(target.agent.clone());
+            view.focused_provider = target.provider.clone();
+            CachedUsage { view }
+        });
+        cached.view.last_error = Some(error.message.clone());
+        cached.view.status = if cached.view.buckets.is_empty() {
+            UsageSnapshotStatus::Error
+        } else {
+            UsageSnapshotStatus::Stale
+        };
     }
 }
 

@@ -15,7 +15,7 @@ use sha2::{Digest as _, Sha256};
 use toml_edit::DocumentMut;
 
 use super::AppConfig;
-use crate::editor::ConfigEditor;
+use crate::editor::{ConfigEditor, recover_pending_publication};
 use crate::migrations;
 use crate::persist::{
     acquire_config_write_lock, commit_staged_config, ensure_replaceable_target, stage_atomic_write,
@@ -39,12 +39,24 @@ pub(crate) struct LoadedConfig {
 
 impl LoadedConfig {
     pub(crate) fn add_pending_write(&mut self, path: PathBuf, contents: String) {
-        self.pending_writes
-            .push(PendingConfigWrite { path, contents });
+        if let Some(existing) = self
+            .pending_writes
+            .iter_mut()
+            .find(|write| write.path == path)
+        {
+            existing.contents = contents;
+        } else {
+            self.pending_writes
+                .push(PendingConfigWrite { path, contents });
+        }
     }
 
     pub(crate) fn has_pending_writes(&self) -> bool {
         !self.pending_writes.is_empty()
+    }
+
+    pub(crate) fn config_mut(&mut self) -> &mut AppConfig {
+        &mut self.config
     }
 
     pub(crate) fn validate(&self) -> crate::ConfigResult<()> {
@@ -379,6 +391,7 @@ fn parse_global_config(
         migrations::CONFIG_MIGRATIONS,
     )?;
     migrate_embedded_op_accounts(&mut doc).map_err(|_| ConfigSourceIssue::Malformed)?;
+    migrate_embedded_workspaces(&mut doc)?;
     let mut config: AppConfig =
         toml::from_str(&doc.to_string()).map_err(|_| ConfigSourceIssue::Malformed)?;
     let raw_embedded = std::mem::take(&mut config.workspaces);
@@ -526,6 +539,7 @@ pub fn load_split_config(
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
     let _lock = acquire_config_write_lock(&paths.config_file)?;
+    recover_pending_publication(&paths.config_file)?;
     let loaded = load_split_config_locked(paths, contents_opt)?;
     loaded.validate()?;
     loaded.commit()
@@ -565,6 +579,11 @@ pub(crate) fn load_split_config_locked(
             );
             let migrated = migrated_from?.is_some();
             migrate_embedded_op_accounts(&mut doc)?;
+            migrate_embedded_workspaces(&mut doc).map_err(|issue| {
+                ConfigError::msg(format!(
+                    "migrating embedded workspace configuration: {issue:?}"
+                ))
+            })?;
             let serialized = doc.to_string();
             if migrated {
                 migrated_global_contents = Some(serialized.clone());
@@ -621,7 +640,32 @@ pub(crate) fn load_split_config_locked(
     })
 }
 
-/// Upgrade embedded legacy fields before strict `WorkspaceConfig` deserialization.
+/// Run the complete workspace migration chain before strict deserialization.
+fn migrate_embedded_workspaces(doc: &mut DocumentMut) -> Result<(), ConfigSourceIssue> {
+    let Some(workspaces) = doc
+        .get_mut("workspaces")
+        .and_then(toml_edit::Item::as_table_mut)
+    else {
+        return Ok(());
+    };
+    for (_, item) in workspaces.iter_mut() {
+        let Some(table) = item.as_table_mut() else {
+            continue;
+        };
+        let mut workspace = DocumentMut::new();
+        *workspace.as_table_mut() = table.clone();
+        let workspace = migrate_document_in_memory(
+            &workspace.to_string(),
+            "workspace config",
+            CURRENT_WORKSPACE_VERSION,
+            migrations::WORKSPACE_MIGRATIONS,
+        )?;
+        *table = workspace.as_table().clone();
+    }
+    Ok(())
+}
+
+/// Upgrade embedded legacy `op_account` fields before strict deserialization.
 fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     let Some(workspaces) = doc
         .get_mut("workspaces")
@@ -653,6 +697,7 @@ pub fn load_workspace_files(
         .unwrap_or(workspaces_dir)
         .join("config.toml");
     let _lock = acquire_config_write_lock(&config_file)?;
+    recover_pending_publication(&config_file)?;
     let (workspaces, pending_writes) = load_workspace_files_locked(workspaces_dir)?;
     commit_pending_config_writes(pending_writes)?;
     Ok(workspaces)
@@ -926,6 +971,7 @@ impl AppConfig {
         paths.ensure_base_dirs()?;
         let lock = acquire_config_write_lock(&paths.config_file)?;
         let loaded = (|| {
+            recover_pending_publication(&paths.config_file)?;
             let contents_opt = load_config_contents(paths)?;
             let loaded = load_split_config_locked(paths, contents_opt)?;
 

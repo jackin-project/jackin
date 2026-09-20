@@ -17,6 +17,7 @@ pub struct GithubContextView<'a> {
     pub status: PullRequestStatus<'a>,
 }
 
+#[must_use]
 pub fn github_context_view_from_state<'a>(
     branch: Option<&'a str>,
     pull_request: Option<&'a PullRequestInfo>,
@@ -42,6 +43,7 @@ pub enum PullRequestStatus<'a> {
 }
 
 impl<'a> PullRequestStatus<'a> {
+    #[must_use]
     pub fn loaded(&self) -> Option<&'a PullRequestInfo> {
         match self {
             Self::Loaded(pr) => Some(*pr),
@@ -140,6 +142,7 @@ impl Dialog {
         Some(state)
     }
 
+    #[must_use]
     pub fn new_github_context() -> Self {
         Self::GitHubContext {
             copied: false,

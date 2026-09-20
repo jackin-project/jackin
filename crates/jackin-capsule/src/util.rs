@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 /// cannot pin daemon memory while parsing branch state or hostnames.
 /// `label` is a static tag so governed DEBUG events traces name which call site
 /// hit the cap or failed.
+#[must_use]
 pub fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
     #[expect(
         clippy::disallowed_methods,

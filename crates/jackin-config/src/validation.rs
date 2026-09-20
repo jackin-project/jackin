@@ -4,7 +4,7 @@
 //! Pure workspace validation helpers: isolation layout and workspace config.
 
 use crate::ConfigError;
-use jackin_core::{MountIsolation, WorkspaceName};
+use jackin_core::{MountIsolation, WorkspaceName, container_paths};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -69,6 +69,7 @@ pub fn validate_workspace_config(
     if !workspace.workdir.starts_with('/') {
         return Err(ConfigError::WorkdirNotAbsolute(name.to_owned()));
     }
+    let normalized_workdir = validate_container_workdir_boundary(&workspace.workdir)?;
     if workspace.mounts.is_empty() {
         return Err(ConfigError::MountsRequired(name.to_owned()));
     }
@@ -77,10 +78,10 @@ pub fn validate_workspace_config(
     validate_isolation_layout(&workspace.mounts)?;
 
     let covers_workdir = workspace.mounts.iter().any(|mount| {
-        let dst = mount.dst.trim_end_matches('/');
-        workspace.workdir == dst
-            || workspace.workdir.starts_with(&format!("{dst}/"))
-            || dst.starts_with(&format!("{}/", workspace.workdir.trim_end_matches('/')))
+        container_paths::paths_overlap(
+            &normalized_workdir,
+            &container_paths::normalize_path(Path::new(&mount.dst)),
+        )
     });
     if !covers_workdir {
         return Err(ConfigError::msg(format!(
@@ -103,6 +104,27 @@ pub fn validate_workspace_config(
     Ok(())
 }
 
+/// Reject a workspace cwd that would make the capsule's recursive full-access
+/// Landlock grant cover capsule state or an admitted agent home. The host
+/// config boundary uses lexical normalization because these are container
+/// destinations, not paths in the host filesystem.
+fn validate_container_workdir_boundary(workdir: &str) -> crate::ConfigResult<PathBuf> {
+    let normalized = container_paths::normalize_path(Path::new(workdir));
+    if !normalized.is_absolute() {
+        return Err(ConfigError::msg("workspace workdir must be absolute"));
+    }
+    let workdir = normalized;
+    for protected_root in ["/home/agent", container_paths::JACKIN_ROOT] {
+        let protected_root = container_paths::normalize_path(Path::new(protected_root));
+        if container_paths::paths_overlap(&workdir, &protected_root) {
+            return Err(ConfigError::msg(format!(
+                "workspace workdir {workdir:?} overlaps capsule-protected path {protected_root:?}"
+            )));
+        }
+    }
+    Ok(workdir)
+}
+
 fn same_host_repo(a: &str, b: &str) -> crate::ConfigResult<bool> {
     let a = PathBuf::from(crate::paths::resolve_path(a));
     let b = PathBuf::from(crate::paths::resolve_path(b));
@@ -115,7 +137,7 @@ fn same_host_repo(a: &str, b: &str) -> crate::ConfigResult<bool> {
 fn is_strict_ancestor(parent: &str, child: &str) -> bool {
     let parent = PathBuf::from(crate::paths::resolve_path(parent));
     let child = PathBuf::from(crate::paths::resolve_path(child));
-    parent != child && child.starts_with(parent)
+    parent != child && container_paths::path_is_ancestor_or_equal(&parent, &child)
 }
 
 fn canonicalize_if_present(path: &Path) -> crate::ConfigResult<Option<PathBuf>> {

@@ -146,7 +146,10 @@ requires_all = ["ok"]
 
 #[test]
 fn agent_screen_detector_coverage_is_exhaustive_or_reviewed() {
-    const NO_SCREEN_DETECTOR: &[&str] = &[];
+    // Reviewed S1 opt-outs: screen-detector packs need live per-agent TUI
+    // capture and belong to the agent-status lane, not catalog expansion.
+    const NO_SCREEN_DETECTOR: &[&str] =
+        &["antigravity", "gemini", "cursor", "muse", "omp", "hermes"];
     let registry = RulePackRegistry::bundled().unwrap();
 
     for agent in jackin_core::Agent::ALL {

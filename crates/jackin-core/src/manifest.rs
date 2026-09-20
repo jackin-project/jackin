@@ -115,6 +115,14 @@ impl RoleManifest {
             Agent::Kimi => self.kimi.is_some(),
             Agent::Opencode => self.opencode.is_some(),
             Agent::Grok => self.grok.is_some(),
+            // No `[<agent>]` manifest tables exist for the catalog
+            // additions yet; they land with the agent-map schema bump.
+            Agent::Antigravity
+            | Agent::Gemini
+            | Agent::Cursor
+            | Agent::Muse
+            | Agent::Omp
+            | Agent::Hermes => false,
         }
     }
 
@@ -131,6 +139,13 @@ impl RoleManifest {
             Agent::Kimi => self.kimi.as_ref().and_then(|c| c.model.as_deref()),
             Agent::Opencode => self.opencode.as_ref().and_then(|c| c.model.as_deref()),
             Agent::Grok => self.grok.as_ref().and_then(|c| c.model.as_deref()),
+            // No per-agent manifest tables for the catalog additions yet.
+            Agent::Antigravity
+            | Agent::Gemini
+            | Agent::Cursor
+            | Agent::Muse
+            | Agent::Omp
+            | Agent::Hermes => None,
         }
     }
 }

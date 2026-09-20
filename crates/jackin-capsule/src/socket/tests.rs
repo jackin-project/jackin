@@ -39,7 +39,7 @@ async fn read_control_msg_rejects_oversize_length_prefix() {
 async fn read_control_msg_rejects_malformed_json() {
     let (mut a, mut b) = UnixStream::pair().unwrap();
     let body = b"{not valid json";
-    let len_buf = (body.len() as u32).to_be_bytes();
+    let len_buf = u32::try_from(body.len()).unwrap_or(u32::MAX).to_be_bytes();
     a.write_all(&len_buf[1..]).await.unwrap();
     a.write_all(body).await.unwrap();
     a.shutdown().await.unwrap();
@@ -51,7 +51,7 @@ async fn read_control_msg_rejects_malformed_json() {
 async fn read_control_msg_decodes_known_request() {
     let (mut a, mut b) = UnixStream::pair().unwrap();
     let body = br#"{"ctx":{"v":1},"msg":{"type":"status"}}"#;
-    let len_buf = (body.len() as u32).to_be_bytes();
+    let len_buf = u32::try_from(body.len()).unwrap_or(u32::MAX).to_be_bytes();
     a.write_all(&len_buf[1..]).await.unwrap();
     a.write_all(body).await.unwrap();
     a.shutdown().await.unwrap();
@@ -63,7 +63,7 @@ async fn read_control_msg_decodes_known_request() {
 async fn read_control_msg_decodes_unknown_variant_for_forward_compat() {
     let (mut a, mut b) = UnixStream::pair().unwrap();
     let body = br#"{"ctx":{"v":1},"msg":{"type":"future_query"}}"#;
-    let len_buf = (body.len() as u32).to_be_bytes();
+    let len_buf = u32::try_from(body.len()).unwrap_or(u32::MAX).to_be_bytes();
     a.write_all(&len_buf[1..]).await.unwrap();
     a.write_all(body).await.unwrap();
     a.shutdown().await.unwrap();
@@ -160,11 +160,9 @@ async fn start_listener_caps_concurrent_clients_at_max() {
 
 #[tokio::test]
 async fn start_listener_locks_socket_and_parent_dir_to_owner_only() {
-    // Hard regression guard for the file-mode security contract
-    // documented at `start_listener_at`. Any refactor that drops
-    // either chmod silently exposes the attach channel to any
-    // in-container uid sharing the agent uid — the exact threat
-    // the comments name.
+    // Hard regression guard for the socket's defense-in-depth file-mode
+    // contract. Protocol peer authentication remains mandatory because
+    // session processes retain CAP_DAC_OVERRIDE.
     let tmp = tempfile::tempdir().expect("tempdir");
     let parent = tmp.path().join("run");
     let socket_path = parent.join("jackin.sock");
@@ -191,6 +189,7 @@ fn conformance_wire_real_listener_has_bounded_private_open_and_close() -> Result
     if dispatch_socket_wire_child()? {
         return Ok(());
     }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()

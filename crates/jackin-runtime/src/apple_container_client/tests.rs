@@ -56,6 +56,7 @@ fn launch_args_use_env_file_without_secret_values() {
     .unwrap();
     let spec = AppleContainerSpec {
         image: "img".into(),
+        user: "0:0".into(),
         env: vec![("JACKIN_CAPSULE_FORCE_DAEMON".into(), "1".into())],
         env_file: Some(host_env_file.path().to_path_buf()),
         mounts: vec![],
@@ -77,6 +78,7 @@ fn launch_args_use_env_file_without_secret_values() {
             .any(|pair| { pair == ["-e", "JACKIN_CAPSULE_FORCE_DAEMON=1"] })
     );
     assert!(!args.join(" ").contains(secret));
+    assert!(args.windows(2).any(|pair| pair == ["--user", "0:0"]));
     assert_eq!(
         std::fs::read_to_string(host_env_file.path()).unwrap(),
         format!("OPERATOR_TOKEN={secret}\n")
@@ -87,6 +89,7 @@ fn launch_args_use_env_file_without_secret_values() {
 fn launch_args_preserve_mount_permissions() {
     let spec = AppleContainerSpec {
         image: "img".into(),
+        user: "0:0".into(),
         env: vec![],
         env_file: None,
         mounts: vec![
@@ -109,6 +112,7 @@ fn launch_args_preserve_mount_permissions() {
         args.windows(2)
             .any(|pair| pair == ["-v", "/host/read-only:/guest/read-only:ro"])
     );
+    assert!(args.windows(2).any(|pair| pair == ["--user", "0:0"]));
 }
 
 #[tokio::test]
@@ -116,6 +120,7 @@ async fn fake_client_lifecycle_contract() {
     let client = FakeAppleContainerClient::new();
     let spec = AppleContainerSpec {
         image: "img".into(),
+        user: "0:0".into(),
         env: vec![],
         env_file: None,
         mounts: vec![],

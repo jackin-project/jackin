@@ -47,7 +47,7 @@ async fn main() {
         }
         Action::RunCommand(command) => {
             let cli = Cli {
-                command: Some(command),
+                command: Some(*command),
                 console_args: ConsoleArgs::default(),
                 debug,
             };

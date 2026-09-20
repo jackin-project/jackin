@@ -24,6 +24,10 @@ use crate::socket::SOCKET_PATH;
 /// the first Hello frame asks the daemon to create that session before
 /// completing attach. Plain attach (operator-initiated reattach)
 /// passes `None`.
+/// # Errors
+///
+/// Returns an error when terminal setup, socket connection, protocol I/O, or
+/// daemon attach fails.
 pub async fn run_client(
     spawn_request: Option<SpawnRequest>,
     focus_session: Option<u64>,
@@ -34,10 +38,15 @@ pub async fn run_client(
 /// Forward a runtime hook/plugin event to the daemon for the current session.
 ///
 /// Invoked as `jackin-capsule report-event --event <name> [--payload-stdin]`
-/// from a container-local hook/plugin. Reads `JACKIN_SESSION_ID`,
+/// from a container-local hook/plugin. Reads the agent-only
+/// `JACKIN_SESSION_ID`,
 /// `JACKIN_STATUS_SOURCE`, `JACKIN_AGENT_RUNTIME` from the spawn env. Always
 /// exits 0 — a reporter must never break the agent's hook — so all failures are
 /// logged and swallowed.
+/// # Errors
+///
+/// This function currently returns \`Ok(())\`; reporter failures are recorded
+/// and swallowed so the agent hook cannot be interrupted.
 pub async fn run_report_event(args: &[String]) -> Result<()> {
     drop(
         try_report_event(args)
@@ -53,6 +62,10 @@ pub async fn run_report_event(args: &[String]) -> Result<()> {
 /// cannot open the bind-mounted Unix socket directly. The proxy is deliberately
 /// byte-blind: the host-side attach client still owns terminal mode, protocol
 /// encoding, frame caps, and validation.
+/// # Errors
+///
+/// Returns an error when the daemon socket cannot be connected or the relay
+/// encounters an I/O failure.
 pub async fn run_attach_proxy() -> Result<()> {
     run_attach_proxy_at(SOCKET_PATH, tokio::io::stdin(), tokio::io::stdout()).await
 }
@@ -99,7 +112,7 @@ where
 
 async fn try_report_event(args: &[String]) -> Result<()> {
     let event = flag_value(args, "--event").context("report-event requires --event <name>")?;
-    let session_id: u64 = std::env::var("JACKIN_SESSION_ID")
+    let session_id: u64 = std::env::var(jackin_protocol::SESSION_ID_ENV)
         .context("JACKIN_SESSION_ID unset")?
         .parse()
         .context("JACKIN_SESSION_ID not a u64")?;
@@ -165,6 +178,10 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
 }
 
 /// Query the daemon for current session list and print it.
+/// # Errors
+///
+/// Returns an error when the daemon request, response validation, or output
+/// operation fails.
 pub async fn run_status() -> Result<()> {
     let msg = request_control(&ClientMsg::Status).await?;
     let sessions = match msg {
@@ -196,6 +213,10 @@ pub async fn run_status() -> Result<()> {
 /// confidence, visible flags, foreground pgid, subagent count, revisions) for
 /// one session, as pretty JSON. Reads the same `Snapshot` the console consumes,
 /// so it needs no extra protocol surface.
+/// # Errors
+///
+/// Returns an error when the session ID is invalid, the daemon request fails,
+/// the session is absent, or the report cannot be serialized.
 pub async fn run_status_explain(args: &[String]) -> Result<()> {
     let session_id: u64 = flag_value(args, "explain")
         .context("usage: jackin-capsule status explain <session_id>")?
@@ -224,6 +245,10 @@ pub async fn run_status_explain(args: &[String]) -> Result<()> {
 /// `jackin-capsule status capture <session_id>` — ask the daemon to write a
 /// capture fixture (live grid + evidence) for one session. The daemon owns the
 /// grid, so it does the write; the client triggers and waits for the Ack.
+/// # Errors
+///
+/// Returns an error when the session ID is invalid, the daemon request fails,
+/// or the daemon does not acknowledge the capture.
 pub async fn run_status_capture(args: &[String]) -> Result<()> {
     let session_id: u64 = flag_value(args, "capture")
         .context("usage: jackin-capsule status capture <session_id>")?
@@ -264,6 +289,10 @@ pub async fn run_status_capture(args: &[String]) -> Result<()> {
 
 /// `jackin-capsule token-usage <session_id>` — print the per-session token-spend
 /// summary as JSON, or a no-data line when the session is unknown to the monitor.
+/// # Errors
+///
+/// Returns an error when the session ID is invalid, the daemon request fails,
+/// or the summary cannot be serialized.
 pub async fn run_token_usage(args: &[String]) -> Result<()> {
     let session_id: u64 = flag_value(args, "token-usage")
         .context("usage: jackin-capsule token-usage <session_id>")?
@@ -292,6 +321,10 @@ pub async fn run_token_usage(args: &[String]) -> Result<()> {
 /// Output shape is `ServerMsg::Snapshot` verbatim so the host
 /// console can deserialize the same struct it shares with the
 /// daemon — no second schema to keep in sync.
+/// # Errors
+///
+/// Returns an error when the daemon request fails, the response is not a
+/// snapshot, or the snapshot cannot be serialized.
 pub async fn run_snapshot() -> Result<()> {
     let msg = request_control(&ClientMsg::Snapshot).await?;
     let (tabs, active_tab) = match msg {
@@ -322,6 +355,10 @@ pub enum AgentsFormat {
 ///
 /// `--format json` emits the registry as a JSON array.
 /// Human format renders a table with a `← you` annotation on the caller's row.
+/// # Errors
+///
+/// Returns an error when the daemon request fails, the response is invalid, or
+/// JSON output cannot be serialized.
 pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     let msg = request_control(&ClientMsg::Agents).await?;
     let records = match msg {
@@ -394,12 +431,19 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error when the usage broker request or JSON serialization fails.
 pub async fn run_usage_accounts() -> Result<()> {
     let accounts = usage_accounts().await?;
     crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&accounts)?));
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error when the usage broker request fails or any account check
+/// reports a failure.
 pub async fn run_usage_verify() -> Result<()> {
     let accounts = usage_accounts().await?;
     let checks = verify_usage_accounts(&accounts);
@@ -603,6 +647,9 @@ async fn connect_and_send(
     let result = stream
         .write_all(&control_frame(&ControlRequest {
             ctx,
+            session_capability: std::env::var(jackin_protocol::SESSION_CAPABILITY_ENV)
+                .ok()
+                .filter(|value| !value.is_empty()),
             msg: request.clone(),
         }))
         .await;
@@ -682,6 +729,10 @@ fn control_response_matches(request: &ClientMsg, response: &ServerMsg) -> bool {
 /// daemon through `docker exec` and this command, exactly as `snapshot` does.
 /// The text is passed through verbatim — an operator who wants the agent to
 /// submit includes the carriage return in the argument.
+/// # Errors
+///
+/// Returns an error when the session ID or text argument is missing or the
+/// daemon request fails.
 pub async fn run_session_send(args: &[String]) -> Result<()> {
     let session: u64 = args
         .get(2)
@@ -719,6 +770,10 @@ pub async fn run_session_send(args: &[String]) -> Result<()> {
 /// is reading a `docker exec` pipe, not a socket: a line is the only framing
 /// that survives that transport unchanged. Hosts that can open the socket
 /// directly read the framed form and never run this.
+/// # Errors
+///
+/// Returns an error when the session filter is invalid, the daemon connection
+/// fails, or the event stream cannot be read or serialized.
 pub async fn run_session_events(args: &[String]) -> Result<()> {
     let session = flag_value(args, "--session")
         .map(|raw| raw.parse::<u64>().context("--session must be a u64"))

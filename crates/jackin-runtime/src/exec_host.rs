@@ -29,11 +29,14 @@
 //!
 //! On Linux, the listener also authenticates the socket peer with safe
 //! `SO_PEERCRED` (`UnixStream::peer_cred`) and accepts only the container's
-//! init process (`NSpid` innermost PID 1), which is the capsule daemon. That
-//! binds credential resolution to the daemon path that already enforces the
-//! operator picker. Non-Linux hosts do not expose this same-kernel
-//! identity check here; Docker Desktop and the future reactive daemon remain
-//! the tracked residuals.
+//! init process with an `NSpid` vector exactly `[host_pid, 1]`. This requires
+//! the one container PID namespace directly hosted by the launch process and
+//! rejects nested PID namespaces. That binds credential resolution to the
+//! daemon path that already enforces the operator picker. Non-Linux hosts fail
+//! closed: the relay is disabled until an equivalent peer-identity mechanism
+//! is implemented for that backend.
+//! File permissions and an operator binding allowlist are not a substitute
+//! for authenticating the in-container caller.
 
 use anyhow::{Context as _, Result};
 use jackin_protocol::control::frame;
@@ -142,6 +145,23 @@ enum CallerAuth {
     CapsuleDaemon,
     #[cfg(all(test, target_os = "linux"))]
     PeerPid(u32),
+    #[cfg(all(test, not(target_os = "linux")))]
+    TestPeer,
+}
+
+/// Ensure the host can authenticate the capsule daemon before enabling a
+/// credential relay with configured bindings.
+pub(crate) fn ensure_caller_auth_supported() -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        anyhow::bail!(
+            "host credential relay is disabled on non-Linux hosts: capsule daemon peer authentication is unavailable"
+        )
+    }
 }
 
 async fn run_listener(
@@ -383,6 +403,8 @@ fn authenticate_caller(stream: &UnixStream, caller_auth: CallerAuth) -> Result<(
             );
             Ok(())
         }
+        #[cfg(all(test, not(target_os = "linux")))]
+        CallerAuth::TestPeer => Ok(()),
     }
 }
 
@@ -407,7 +429,7 @@ fn authenticate_capsule_daemon_peer(stream: &UnixStream) -> Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 fn authenticate_capsule_daemon_peer(_stream: &UnixStream) -> Result<()> {
-    Ok(())
+    ensure_caller_auth_supported()
 }
 
 #[cfg(target_os = "linux")]
@@ -422,8 +444,14 @@ fn peer_is_container_init_process_status(status: &str) -> bool {
     status
         .lines()
         .find_map(|line| line.strip_prefix("NSpid:"))
-        .and_then(|value| value.split_whitespace().last())
-        == Some("1")
+        .is_some_and(|value| {
+            let mut ids = value.split_whitespace();
+            let host_pid = ids.next().and_then(|value| value.parse::<u32>().ok());
+            let container_pid = ids.next();
+            host_pid.is_some_and(|pid| pid > 0)
+                && container_pid == Some("1")
+                && ids.next().is_none()
+        })
 }
 
 async fn resolve_all(refs: &[ExecBinding]) -> Result<std::collections::BTreeMap<String, String>> {

@@ -173,6 +173,7 @@ fn session_display_title(session: &Session) -> String {
 struct SessionLaunch {
     label: String,
     cmd: CommandBuilder,
+    cache_dir: Option<String>,
 }
 
 // ── Owned subsystems (plan 017) ────────────────────────────────────────────
@@ -337,6 +338,26 @@ pub(super) struct ControlRouting {
 }
 
 fn handle_control_request(mux: &mut Multiplexer, request: ControlRequest) {
+    if !control_request_allowed(
+        mux,
+        Some(request.peer_uid),
+        request.session_capability.as_deref(),
+        &request.msg,
+    ) {
+        let _error = jackin_telemetry::record_error(RPC_ERROR);
+        match request.reply {
+            crate::attach_protocol::ControlReply::Once(reply_tx) => {
+                drop(reply_tx.send(ControlResponse {
+                    msg: ServerMsg::Unknown,
+                    operation: None,
+                    outcome: jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    error_type: Some(RPC_ERROR),
+                }));
+            }
+            crate::attach_protocol::ControlReply::Stream(_) => {}
+        }
+        return;
+    }
     let reply_tx = match request.reply {
         crate::attach_protocol::ControlReply::Stream(tx) => {
             handle_control_subscription(mux, &request.ctx, &request.msg, tx);
@@ -344,7 +365,7 @@ fn handle_control_request(mux: &mut Multiplexer, request: ControlRequest) {
         }
         crate::attach_protocol::ControlReply::Once(reply_tx) => reply_tx,
     };
-    let Some(operation) = control_server_operation(&request.ctx, &request.msg) else {
+    let Ok(operation) = control_server_operation(&request.ctx, &request.msg) else {
         drop(reply_tx.send(ControlResponse {
             msg: ServerMsg::Unknown,
             operation: None,
@@ -408,7 +429,7 @@ pub(super) struct RenderState {
 
 /// Static launch configuration at daemon construction.
 pub(super) struct LaunchEnv {
-    pub(crate) available_agents: Vec<String>,
+    pub(crate) available_instances: Vec<String>,
     pub(crate) launch_config: CapsuleConfig,
     pub(crate) agent_credentials: jackin_protocol::AgentCredentialEnv,
     pub(crate) env_passthrough: Vec<(String, String)>,
@@ -444,8 +465,13 @@ pub struct Multiplexer {
 pub struct AgentRecord {
     pub session_id: u64,
     pub codename: String,
-    /// Agent slug (`"claude"`, `"codex"`, …), or `None` for shell sessions.
+    /// Instance config ID (`"claude-work"`), or `None` for shell sessions.
+    /// The admitted instance, not a runtime slug: several instances may
+    /// share one agent runtime.
     pub agent: Option<String>,
+    /// Owning account ID for this record's instance, or `None` for shells
+    /// and for records written before account stamping.
+    pub account_id: Option<String>,
     /// Provider label (e.g. `"Z.AI"`), or `None` when no provider selected.
     pub provider: Option<String>,
     pub started_at: DateTime<Utc>,
@@ -526,12 +552,18 @@ const MAX_TABS: usize = 32;
 const MAX_SESSIONS: usize = 64;
 
 impl Multiplexer {
+    /// # Errors
+    ///
+    /// Returns an error when terminal, session, or credential initialization fails.
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> io::Result<Self> {
         Self::with_clock(rows, cols, launch_config, Arc::new(SystemClock))
     }
 
     /// Construct a multiplexer with an injected clock (tests / deterministic
     /// lifecycle timestamps).
+    /// # Errors
+    ///
+    /// Returns an error when terminal, session, or credential initialization fails.
     pub fn with_clock(
         rows: u16,
         cols: u16,
@@ -541,7 +573,7 @@ impl Multiplexer {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = available_content_rows(rows);
-        let agents = launch_config.supported_agents();
+        let instances = launch_config.supported_instances();
         let agent_credentials = crate::config::load_agent_credentials(&launch_config)?;
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
@@ -644,7 +676,7 @@ impl Multiplexer {
                 terminal_row_arena: termpane::RowArena::default(),
             },
             launch_env: LaunchEnv {
-                available_agents: agents,
+                available_instances: instances,
                 launch_config,
                 agent_credentials,
                 env_passthrough,
@@ -1194,6 +1226,10 @@ async fn run_daemon_for_test(
               deferred-parallel-pass plan as the launch fns — the inline shape \
               preserves captured-runtime state across stages."
 )]
+/// # Errors
+///
+/// Returns an error when daemon initialization, socket setup, session
+/// management, or the event loop fails.
 async fn run_daemon_loop(
     initial_agent: String,
     launch_config: CapsuleConfig,
@@ -1350,6 +1386,7 @@ async fn run_daemon_loop(
             Some(ready) = handshake_rx.recv() => {
                 let AttachHandshake {
                     stream,
+                    peer_uid,
                     rows,
                     cols,
                     spawn,
@@ -1359,6 +1396,12 @@ async fn run_daemon_loop(
                     focus_session,
                     client_permit,
                 } = ready;
+                if !attach_peer_is_authorized(&mux, Some(peer_uid)) {
+                    let mut stream = stream;
+                    reject_invalid_attach_handshake(&mut stream).await;
+                    drop(client_permit);
+                    continue;
+                }
                 let extracted = context
                     .as_ref()
                     .map_or(jackin_telemetry::propagation::ExtractOutcome::LocalRoot, |ctx| {
@@ -1468,7 +1511,8 @@ async fn run_daemon_loop(
                 // race during this tick; the attach boundary owns one error.
                 let mut initial_frames = Vec::with_capacity(5);
                 initial_frames.push(encode_server(ServerFrame::Welcome {
-                    session_count: mux.session_supervisor.sessions.len() as u32,
+                    session_count: u32::try_from(mux.session_supervisor.sessions.len())
+                        .unwrap_or(u32::MAX),
                 }));
                 // Re-assert the attach-client-owned mouse/focus modes,
                 // then restore the focused session's modes (bracketed
@@ -1732,16 +1776,21 @@ async fn run_daemon_loop(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ControlServerOperationError {
+    RejectedTraceContext,
+}
+
 pub(crate) fn control_server_operation(
     context: &jackin_protocol::TelemetryContext,
     message: &ClientMsg,
-) -> Option<Option<jackin_telemetry::operation::OperationGuard>> {
+) -> Result<Option<jackin_telemetry::operation::OperationGuard>, ControlServerOperationError> {
     let extracted = jackin_telemetry::propagation::extract(context);
     if matches!(
         extracted,
         jackin_telemetry::propagation::ExtractOutcome::RejectRequest
     ) {
-        return None;
+        return Err(ControlServerOperationError::RejectedTraceContext);
     }
     let attrs = [
         jackin_telemetry::Attr {
@@ -1764,7 +1813,7 @@ pub(crate) fn control_server_operation(
         _ => jackin_telemetry::operation(&jackin_telemetry::operation::RPC_SERVER, &attrs),
     }
     .ok();
-    Some(operation)
+    Ok(operation)
 }
 
 mod control;

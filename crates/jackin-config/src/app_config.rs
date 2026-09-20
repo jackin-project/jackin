@@ -8,7 +8,7 @@
 //! resolution) lives in the child modules `mounts`, `persist`,
 //! `roles`, and `workspaces`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_core::EnvValue;
 use serde::{Deserialize, Serialize};
@@ -35,7 +35,21 @@ pub struct AppConfig {
     /// Global explicit account selections by agent.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_bindings: BTreeMap<Agent, String>,
-    /// First-run bootstrap sentinel; absent only in pre-sentinel files.
+    /// Secret-free fingerprints of account sources deliberately removed by
+    /// the operator. Explicit scans skip these sources until a direct account
+    /// registration clears the matching fingerprint.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub account_scan_exclusions: BTreeSet<String>,
+    /// Named agent/account/model templates (one launchable instance each).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agent_configurations: BTreeMap<String, crate::AgentConfiguration>,
+    /// Global default launch set (configuration IDs). `None` inherits
+    /// nothing (sole-eligible fallback); an explicit empty list means
+    /// shell-only and replaces every inherited default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_launch: Option<Vec<String>>,
+    /// First-run bootstrap sentinel (absent only in pre-sentinel files,
+    /// which migrate as already-initialized and never rescan).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bootstrap: Option<crate::BootstrapState>,
     /// On-disk schema version (`version` key in `config.toml`).
@@ -108,10 +122,10 @@ impl Default for AppConfig {
             version: CURRENT_CONFIG_VERSION.to_owned(),
             accounts: BTreeMap::new(),
             account_bindings: BTreeMap::new(),
-            bootstrap: Some(crate::BootstrapState {
-                version: crate::BOOTSTRAP_VERSION,
-                fresh_install: false,
-            }),
+            account_scan_exclusions: BTreeSet::new(),
+            agent_configurations: BTreeMap::new(),
+            default_launch: None,
+            bootstrap: None,
             github: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),

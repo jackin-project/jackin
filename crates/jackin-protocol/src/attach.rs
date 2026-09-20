@@ -158,21 +158,22 @@ const FRAME_READ_TIMEOUT: Duration = Duration::from_secs(10);
 pub enum SpawnRequest {
     /// `Shell` variant.
     Shell,
-    /// `Agent` variant.
-    Agent(String),
+    /// Exact instance config ID (or an unambiguous agent slug for the
+    /// entrypoint compatibility path).
+    Instance(String),
 }
 
 impl SpawnRequest {
-    /// Build an `Agent` variant rejecting empty slugs. Mirrors the
+    /// Build an `Instance` request rejecting empty targets. Mirrors the
     /// decode-side `decode_client` check so in-process callers cannot
-    /// construct a degenerate `Agent("")` that would only be caught
-    /// after a wire round-trip.
-    pub fn agent(slug: impl Into<String>) -> Result<Self> {
-        let slug = slug.into();
-        if slug.is_empty() {
-            anyhow::bail!("SpawnRequest::Agent slug must be non-empty");
+    /// construct a degenerate request that would only be caught after a
+    /// wire round-trip.
+    pub fn instance(target: impl Into<String>) -> Result<Self> {
+        let target = target.into();
+        if target.is_empty() {
+            anyhow::bail!("SpawnRequest::Instance target must be non-empty");
         }
-        Ok(SpawnRequest::Agent(slug))
+        Ok(SpawnRequest::Instance(target))
     }
 }
 
@@ -739,7 +740,7 @@ impl std::fmt::Display for ClipboardImageError {
 pub enum ClientFrame {
     /// First frame from a newly-connected client. Plain attach sets
     /// `spawn` to None; `jackin-capsule new` uses `Shell` or
-    /// `Agent(slug)` so the daemon can create the requested session
+    /// `Instance(target)` so the daemon can create the requested session
     /// before attach completes. `env` carries per-session overrides
     /// that the short-lived `docker exec` client must forward to the
     /// long-lived daemon.
@@ -944,7 +945,7 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             let (spawn_kind, agent_bytes): (u8, &[u8]) = match spawn.as_ref() {
                 None => (0, b""),
                 Some(SpawnRequest::Shell) => (1, b""),
-                Some(SpawnRequest::Agent(agent)) => (2, agent.as_bytes()),
+                Some(SpawnRequest::Instance(target)) => (2, target.as_bytes()),
             };
             if env.len() > MAX_HELLO_ENV {
                 bail!(
@@ -1335,15 +1336,15 @@ fn decode_client_legacy(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 0 => None,
                 1 => {
                     if !agent.is_empty() {
-                        bail!("hello shell spawn must not carry an agent slug");
+                        bail!("hello shell spawn must not carry an instance target");
                     }
                     Some(SpawnRequest::Shell)
                 }
                 2 => {
                     if agent.is_empty() {
-                        bail!("hello agent spawn missing slug");
+                        bail!("hello instance spawn missing target");
                     }
-                    Some(SpawnRequest::Agent(agent))
+                    Some(SpawnRequest::Instance(agent))
                 }
                 other => bail!("unknown hello spawn kind {other}"),
             };

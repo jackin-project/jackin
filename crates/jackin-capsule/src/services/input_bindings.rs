@@ -13,6 +13,7 @@
 
 use crate::tui::input::{InputBindings, parse_key_binding};
 
+#[must_use]
 pub fn resolve_input_bindings() -> InputBindings {
     InputBindings {
         prefix: resolve_prefix_binding(),

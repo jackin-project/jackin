@@ -234,6 +234,38 @@ pub fn resolve_load_workspace(
     })
 }
 
+impl AppConfig {
+    /// Effective `default_launch` list after scope precedence.
+    ///
+    /// Returns the most-specific configured list: role override → workspace
+    /// → global. `None` means no scope configures one (the sole-eligible
+    /// fallback applies) or the named workspace is unknown (callers fall
+    /// through to their legacy unknown-workspace error).
+    ///
+    /// This is the shared precedence gate behind `resolve_launch`: console
+    /// pre-checks and runtime validation branch on it so neither
+    /// reimplements the scope order nor string-matches resolver errors.
+    /// It must stay in lockstep with the scope lookup inside
+    /// `resolve_launch` (role → workspace → global, replace without
+    /// union); `effective_default_launch_agrees_with_resolve_launch`
+    /// pins that agreement behaviorally.
+    #[must_use]
+    pub fn effective_default_launch(
+        &self,
+        workspace: Option<&WorkspaceName>,
+        role: &str,
+    ) -> Option<&[String]> {
+        let ws = match workspace {
+            Some(name) => Some(self.workspaces.get(name.as_str())?),
+            None => None,
+        };
+        ws.and_then(|w| w.roles.get(role))
+            .and_then(|r| r.default_launch.as_deref())
+            .or_else(|| ws.and_then(|w| w.default_launch.as_deref()))
+            .or(self.default_launch.as_deref())
+    }
+}
+
 /// Find the saved workspace that best matches the current working directory.
 ///
 /// Workspace workdirs must match `cwd` exactly; mount sources match as a

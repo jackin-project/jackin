@@ -100,7 +100,7 @@ fn console_subcommand_without_tty_errors() {
 fn non_console_subcommand_passes_through() {
     let cli = Cli::try_parse_from(["jackin", "exile"]).unwrap();
     let action = classify(cli, true);
-    assert!(matches!(action, Action::RunCommand(Command::Exile)));
+    assert!(matches!(action, Action::RunCommand(cmd) if *cmd == Command::Exile));
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn non_console_subcommand_passes_through_even_without_tty() {
     // subcommands like `jackin exile` without hitting the TTY gate.
     let cli = Cli::try_parse_from(["jackin", "exile"]).unwrap();
     let action = classify(cli, false);
-    assert!(matches!(action, Action::RunCommand(Command::Exile)));
+    assert!(matches!(action, Action::RunCommand(cmd) if *cmd == Command::Exile));
 }
 
 #[test]

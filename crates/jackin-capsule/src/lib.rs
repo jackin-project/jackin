@@ -27,6 +27,7 @@ pub mod output;
 pub mod perf_budgets;
 pub mod pid1;
 pub mod pr_context;
+pub mod process_isolation;
 mod process_telemetry;
 pub mod protocol;
 pub mod pull_request;
@@ -36,6 +37,26 @@ pub mod session;
 pub mod socket;
 pub mod sudo_provision;
 pub mod util;
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::{Arc, OnceLock};
+    use tokio::sync::{Mutex, OwnedMutexGuard};
+
+    static TELEMETRY_TEST_LOCK: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
+
+    fn telemetry_test_lock() -> Arc<Mutex<()>> {
+        Arc::clone(TELEMETRY_TEST_LOCK.get_or_init(|| Arc::new(Mutex::new(()))))
+    }
+
+    pub(crate) fn telemetry_test_guard() -> OwnedMutexGuard<()> {
+        telemetry_test_lock().blocking_lock_owned()
+    }
+
+    pub(crate) async fn telemetry_test_guard_async() -> OwnedMutexGuard<()> {
+        telemetry_test_lock().lock_owned().await
+    }
+}
 
 /// Terminal-rendering code — all UI paint/layout lives here.
 pub mod tui;

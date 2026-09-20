@@ -10,90 +10,287 @@ use jackin_protocol;
 
 const CAPSULE_LITERAL_SOURCE: &str = "literal";
 
+/// Auth transport per admitted instance, keyed by config id.
+///
+/// Instances are already authorized by [`jackin_config::resolve_launch`};
+/// each entry carries its account's forward mode plus the profile source
+/// directory for `sync` transports.
 pub(crate) fn account_auth_selections(
     config: &jackin_config::AppConfig,
-    workspace_name: Option<&jackin_core::WorkspaceName>,
-    role_key: &str,
-    agents: &[jackin_core::Agent],
+    instances: &[jackin_config::ResolvedInstance],
 ) -> anyhow::Result<
     std::collections::BTreeMap<
-        jackin_core::Agent,
+        String,
         (jackin_config::AuthForwardMode, Option<std::path::PathBuf>),
     >,
 > {
-    agents
+    instances
         .iter()
-        .copied()
-        .map(|agent| {
-            let account = jackin_config::resolve_account(config, agent, workspace_name, role_key)?;
-            let selection =
-                account.map_or((jackin_config::AuthForwardMode::Ignore, None), |account| {
-                    (
-                        account.auth_mode(),
-                        account.source_directory().map(Path::to_path_buf),
-                    )
-                });
-            Ok((agent, selection))
+        .map(|instance| {
+            let account = config
+                .accounts
+                .get(&instance.account_id)
+                .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+            Ok((
+                instance.config_id.clone(),
+                (
+                    account.auth_mode(),
+                    account.source_directory().map(Path::to_path_buf),
+                ),
+            ))
         })
         .collect()
 }
 
+/// One [`InstanceAuthBinding`](crate::instance::InstanceAuthBinding)
+/// per admitted instance, keyed by config ID in launch order. Fails on
+/// the first unknown account; every returned binding resolves.
+pub(crate) fn instance_auth_bindings(
+    config: &jackin_config::AppConfig,
+    instances: &[jackin_config::ResolvedInstance],
+) -> anyhow::Result<Vec<crate::instance::InstanceAuthBinding>> {
+    instances
+        .iter()
+        .map(|instance| {
+            let account = config
+                .accounts
+                .get(&instance.account_id)
+                .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+            let mut binding = crate::instance::InstanceAuthBinding::new(
+                instance.account_id.clone(),
+                instance.agent,
+                account.auth_mode(),
+                account.source_directory().map(Path::to_path_buf),
+            );
+            binding.key = instance.config_id.clone();
+            binding.xdg_roots = instance.xdg_roots.clone();
+            binding.source_provider = account.source_directory().map(|_| account.provider);
+            binding.source_selector = match &account.credential {
+                jackin_config::AccountCredential::Profile {
+                    source_selector, ..
+                } => source_selector.clone(),
+                _ => None,
+            };
+            Ok(binding)
+        })
+        .collect()
+}
+
+/// Per-instance auth modes for [`jackin_protocol::CapsuleConfig`], keyed by
+/// instance config ID in launch order.
 pub(crate) fn capsule_auth_modes(
     config: &jackin_config::AppConfig,
-    workspace_name: Option<&jackin_core::WorkspaceName>,
-    role_key: &str,
-    manifest: &jackin_manifest::RoleManifest,
-    selected_agent: Option<jackin_core::Agent>,
+    instances: &[jackin_config::ResolvedInstance],
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
-    let supported = manifest.supported_agents();
-    let mut auth_modes = std::collections::BTreeMap::new();
-    if let Some(selected) = selected_agent {
-        let selections = account_auth_selections(config, workspace_name, role_key, &[selected])?;
-        for agent in supported {
-            let mode = if agent == selected {
-                selections
-                    .get(&agent)
-                    .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
-            } else {
-                jackin_config::AuthForwardMode::Ignore
-            };
-            auth_modes.insert(agent.slug().to_owned(), mode.to_string());
-        }
-    } else {
-        let selections = account_auth_selections(config, workspace_name, role_key, &supported)?;
-        for (agent, (mode, _)) in selections {
-            auth_modes.insert(agent.slug().to_owned(), mode.to_string());
-        }
-    }
-    Ok(auth_modes)
+    let selections = account_auth_selections(config, instances)?;
+    Ok(selections
+        .into_iter()
+        .map(|(config_id, (mode, _))| (config_id, mode.to_string()))
+        .collect())
 }
 
 /// Account models must override role defaults: a role's native-provider model
 /// may be invalid for the selected account's provider. Explicit launch options
-/// are applied afterwards by the coordinator.
+/// are applied afterwards by the coordinator. The effective instance model
+/// (configuration override, else account default) wins per instance.
 pub(crate) fn apply_account_models(
     launch: &mut jackin_protocol::CapsuleConfig,
     config: &jackin_config::AppConfig,
-    workspace: Option<&jackin_core::WorkspaceName>,
-    role: &str,
-    agents: &[jackin_core::Agent],
+    instances: &[jackin_config::ResolvedInstance],
 ) -> anyhow::Result<()> {
-    for &agent in agents {
-        let Some(account) = jackin_config::resolve_account(config, agent, workspace, role)? else {
+    for instance in instances {
+        let account = config
+            .accounts
+            .get(&instance.account_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+        let Some(model) = instance.model.as_deref() else {
             continue;
         };
-        if let jackin_config::AccountCredential::ApiKey {
-            model: Some(model), ..
-        } = &account.credential
-        {
-            let model = if agent == jackin_core::Agent::Opencode {
+        let model = if instance.agent == jackin_core::Agent::Opencode {
+            super::account_config::opencode_model(account.provider, model)?
+        } else {
+            model.to_owned()
+        };
+        launch.models.insert(instance.config_id.clone(), model);
+    }
+    Ok(())
+}
+
+/// Resolve the exact model map used by both account materialization and the
+/// Capsule. The role model is the base, the selected account model replaces it
+/// when present, and a launch model override fans out to every admitted slot
+/// for the selected runtime.
+pub(crate) fn resolved_instance_models(
+    config: &jackin_config::AppConfig,
+    manifest: &jackin_manifest::RoleManifest,
+    instances: &[jackin_config::ResolvedInstance],
+    selected_agent: jackin_core::Agent,
+    model_override: Option<&str>,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+    let mut launch = jackin_protocol::CapsuleConfig::default();
+    for instance in instances {
+        if let Some(model) = manifest.agent_model(instance.agent) {
+            let model = if instance.agent == jackin_core::Agent::Opencode {
+                let account = config
+                    .accounts
+                    .get(&instance.account_id)
+                    .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
                 super::account_config::opencode_model(account.provider, model)?
             } else {
-                model.clone()
+                model.to_owned()
             };
-            launch.models.insert(agent.slug().to_owned(), model);
+            launch.models.insert(instance.config_id.clone(), model);
         }
     }
+    apply_account_models(&mut launch, config, instances)?;
+    if let Some(model) = model_override
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+    {
+        for instance in instances
+            .iter()
+            .filter(|instance| instance.agent == selected_agent)
+        {
+            let model = if instance.agent == jackin_core::Agent::Opencode {
+                let account = config
+                    .accounts
+                    .get(&instance.account_id)
+                    .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+                super::account_config::opencode_model(account.provider, model)?
+            } else {
+                model.to_owned()
+            };
+            launch.models.insert(instance.config_id.clone(), model);
+        }
+    }
+    Ok(launch.models)
+}
+
+/// Fan out one requested effort to the same runtime's admitted slots. The
+/// Capsule owns this map so no process-wide env value can make two slots
+/// disagree.
+pub(crate) fn resolved_instance_efforts(
+    instances: &[jackin_config::ResolvedInstance],
+    selected_agent: jackin_core::Agent,
+    effort: Option<jackin_core::ReasoningEffort>,
+) -> std::collections::BTreeMap<String, String> {
+    effort.map_or_else(std::collections::BTreeMap::new, |effort| {
+        instances
+            .iter()
+            .filter(|instance| instance.agent == selected_agent)
+            .map(|instance| (instance.config_id.clone(), effort.as_str().to_owned()))
+            .collect()
+    })
+}
+
+fn forwarded_credential_mount_paths(
+    agent: jackin_core::Agent,
+    slot: &crate::instance::ProvisionedInstanceAuth,
+) -> Vec<String> {
+    if matches!(agent, jackin_core::Agent::Kimi | jackin_core::Agent::Hermes) {
+        return vec![format!(
+            "{}/{}",
+            jackin_core::container_paths::JACKIN_ROOT,
+            slot.container_store_rel
+        )];
+    }
+
+    let include_missing_credentials = agent != jackin_core::Agent::Claude;
+    slot.credential_paths
+        .iter()
+        .filter_map(|path| {
+            let file_name = path.file_name()?.to_str()?;
+            (include_missing_credentials || path.exists()).then(|| {
+                format!(
+                    "{}/{}/{}",
+                    jackin_core::container_paths::JACKIN_ROOT,
+                    slot.container_store_rel,
+                    file_name
+                )
+            })
+        })
+        .collect()
+}
+
+/// Fill the per-instance container dirs from prepared role-state
+/// slots, keyed by instance config ID. The folder-var target comes
+/// straight from the slot; the forwarded dir joins `/jackin` with the
+/// slot's store rel. A missing slot fails the launch closed: the
+/// daemon cannot spawn an instance it cannot place.
+pub(crate) fn apply_instance_dirs(
+    launch: &mut jackin_protocol::CapsuleConfig,
+    instances: &[jackin_config::ResolvedInstance],
+    slots: &std::collections::BTreeMap<String, crate::instance::ProvisionedInstanceAuth>,
+) -> anyhow::Result<()> {
+    const FIRST_SESSION_UID: u32 = 2_000;
+    anyhow::ensure!(
+        instances.len() < 1_000,
+        "too many admitted instances for the capsule session UID range"
+    );
+    for (index, instance) in instances.iter().enumerate() {
+        let slot = slots.get(&instance.config_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "instance {:?} has no provisioned auth slot in role state",
+                instance.config_id
+            )
+        })?;
+        launch
+            .instance_home_dirs
+            .insert(instance.config_id.clone(), slot.folder_target.clone());
+        if let Some(cache_rel) = &slot.container_cache_rel {
+            launch.instance_cache_dirs.insert(
+                instance.config_id.clone(),
+                format!("/home/agent/{cache_rel}"),
+            );
+        }
+        launch.instance_forwarded_dirs.insert(
+            instance.config_id.clone(),
+            format!(
+                "{}/{}",
+                jackin_core::container_paths::JACKIN_ROOT,
+                slot.container_store_rel
+            ),
+        );
+        launch.instance_credential_files.insert(
+            instance.config_id.clone(),
+            jackin_protocol::account_credentials_container_path(&instance.config_id),
+        );
+        launch.instance_identities.insert(
+            instance.config_id.clone(),
+            jackin_protocol::SessionIdentity {
+                uid: FIRST_SESSION_UID + index as u32,
+                gid: FIRST_SESSION_UID + index as u32,
+            },
+        );
+
+        let paths = instance.agent.runtime().state_paths();
+        let mut mount_paths = vec![format!("/home/agent/{}", slot.container_home_rel)];
+        if let Some(cache_rel) = &slot.container_cache_rel {
+            mount_paths.push(format!("/home/agent/{cache_rel}"));
+        }
+        mount_paths.extend(
+            paths
+                .home_dirs()
+                .filter(|entry| *entry != paths.credential_dir)
+                .map(|entry| {
+                    format!(
+                        "/home/agent/{}",
+                        crate::instance::slot_home_rel(entry, slot.slot_suffix.as_deref())
+                    )
+                }),
+        );
+        if slot.forward_auth {
+            mount_paths.extend(forwarded_credential_mount_paths(instance.agent, slot));
+        }
+        launch
+            .instance_mount_paths
+            .insert(instance.config_id.clone(), mount_paths);
+    }
+    let shell_uid = FIRST_SESSION_UID + instances.len() as u32;
+    launch.shell_identity = Some(jackin_protocol::SessionIdentity {
+        uid: shell_uid,
+        gid: shell_uid,
+    });
     Ok(())
 }
 
@@ -113,7 +310,8 @@ pub(crate) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> S
 /// credential values.
 pub(crate) fn capsule_config_contents(
     config: &jackin_protocol::CapsuleConfig,
-) -> Result<String, toml::ser::Error> {
+) -> anyhow::Result<String> {
+    validate_capsule_workdir(config)?;
     let mut projected = config.clone();
     for binding in &mut projected.exec_bindings {
         match binding.kind {
@@ -123,7 +321,47 @@ pub(crate) fn capsule_config_contents(
             }
         }
     }
-    toml::to_string(&projected)
+    Ok(toml::to_string(&projected)?)
+}
+
+/// Keep the host-to-capsule handoff fail-closed even when a caller constructs
+/// a `CapsuleConfig` without going through workspace validation. A recursive
+/// workspace Landlock grant must not overlap capsule roots or any private
+/// instance mount destination.
+fn validate_capsule_workdir(config: &jackin_protocol::CapsuleConfig) -> anyhow::Result<()> {
+    let workdir = Path::new(config.workdir.trim());
+    anyhow::ensure!(
+        !config.workdir.trim().is_empty() && workdir.is_absolute(),
+        "capsule workdir must be a non-empty absolute path"
+    );
+    let workdir = jackin_core::container_paths::normalize_path(workdir);
+    for protected_root in ["/home/agent", jackin_core::container_paths::JACKIN_ROOT] {
+        let protected_root =
+            jackin_core::container_paths::normalize_path(Path::new(protected_root));
+        anyhow::ensure!(
+            !jackin_core::container_paths::paths_overlap(&workdir, &protected_root),
+            "capsule workdir {} overlaps protected root {}",
+            workdir.display(),
+            protected_root.display()
+        );
+    }
+    for (instance, paths) in &config.instance_mount_paths {
+        for path in paths {
+            let mount = Path::new(path);
+            anyhow::ensure!(
+                mount.is_absolute(),
+                "private mount destination for instance {instance} must be absolute"
+            );
+            let mount = jackin_core::container_paths::normalize_path(mount);
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&workdir, &mount),
+                "capsule workdir {} overlaps protected mount destination {} for instance {instance}",
+                workdir.display(),
+                mount.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn capsule_config(
@@ -132,22 +370,43 @@ pub(crate) fn capsule_config(
     manifest: &jackin_manifest::RoleManifest,
     dirty_exit_policy: &str,
     isolated_worktrees: Vec<String>,
+    instances: &[jackin_config::ResolvedInstance],
 ) -> jackin_protocol::CapsuleConfig {
-    let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
-    for agent in manifest.supported_agents() {
-        agents.push(agent.slug().to_owned());
-        let model = manifest.agent_model(agent);
-        if let Some(model) = model {
-            models.insert(agent.slug().to_owned(), model.to_owned());
+    let mut agents = std::collections::BTreeMap::new();
+    let mut accounts = std::collections::BTreeMap::new();
+    let mut labels = std::collections::BTreeMap::new();
+    for instance in instances {
+        agents.insert(instance.config_id.clone(), instance.agent.slug().to_owned());
+        accounts.insert(instance.config_id.clone(), instance.account_id.clone());
+        labels.insert(instance.config_id.clone(), instance.label.clone());
+        if let Some(model) = manifest.agent_model(instance.agent) {
+            models.insert(instance.config_id.clone(), model.to_owned());
         }
     }
     jackin_protocol::CapsuleConfig {
         role: selector.key(),
         workdir: workdir.to_owned(),
+        instances: instances
+            .iter()
+            .map(|instance| instance.config_id.clone())
+            .collect(),
         agents,
         models,
+        efforts: std::collections::BTreeMap::new(),
         auth_modes: std::collections::BTreeMap::new(),
+        accounts,
+        usage_capabilities: std::collections::BTreeMap::new(),
+        labels,
+        // Populated by `apply_instance_dirs` once role state is
+        // prepared; the manifest alone does not carry slot layout.
+        instance_home_dirs: std::collections::BTreeMap::new(),
+        instance_cache_dirs: std::collections::BTreeMap::new(),
+        instance_forwarded_dirs: std::collections::BTreeMap::new(),
+        instance_credential_files: std::collections::BTreeMap::new(),
+        instance_mount_paths: std::collections::BTreeMap::new(),
+        instance_identities: std::collections::BTreeMap::new(),
+        shell_identity: None,
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
         // Populated by the launch pipeline once the operator env is known; the
@@ -358,3 +617,6 @@ pub(crate) fn extract_host_env_entries(
     *args = inline;
     Ok(host_only)
 }
+
+#[cfg(test)]
+mod tests;
