@@ -403,12 +403,34 @@ fn parse_global_config(
 
 fn parse_workspace_config(name: &str, bytes: &[u8]) -> Result<WorkspaceConfig, ConfigSourceIssue> {
     let raw = std::str::from_utf8(bytes).map_err(|_| ConfigSourceIssue::Malformed)?;
-    let (normalized, _, _) =
-        normalize_workspace_contents(raw).map_err(|_| ConfigSourceIssue::Malformed)?;
+    let (normalized, _, _) = normalize_workspace_contents(raw).map_err(|error| match error {
+        WorkspaceNormalizationError::UnsupportedVersion(_) => ConfigSourceIssue::UnsupportedVersion,
+        WorkspaceNormalizationError::Other(_) => ConfigSourceIssue::Malformed,
+    })?;
     let workspace: WorkspaceConfig =
         toml::from_str(&normalized).map_err(|_| ConfigSourceIssue::Malformed)?;
     validate_one_workspace(name, &workspace)?;
     Ok(workspace)
+}
+
+#[derive(Debug)]
+enum WorkspaceNormalizationError {
+    UnsupportedVersion(ConfigError),
+    Other(ConfigError),
+}
+
+impl WorkspaceNormalizationError {
+    fn into_config_error(self) -> ConfigError {
+        match self {
+            Self::UnsupportedVersion(error) | Self::Other(error) => error,
+        }
+    }
+}
+
+impl From<ConfigError> for WorkspaceNormalizationError {
+    fn from(error: ConfigError) -> Self {
+        Self::Other(error)
+    }
 }
 
 /// Normalize one workspace document before typed comparison or deserialization.
@@ -416,22 +438,34 @@ fn parse_workspace_config(name: &str, bytes: &[u8]) -> Result<WorkspaceConfig, C
 /// The split migration path can encounter a file written by an older binary
 /// while an embedded legacy workspace is being split. Compare the migrated
 /// semantic value, not the old version marker or fields that the current typed
-/// schema no longer accepts. The caller owns the eventual atomic write.
+/// schema no longer accepts. Legacy fields are transformed only by their
+/// versioned migration step; mislabeled newer documents remain invalid. The
+/// caller owns the eventual atomic write.
 fn normalize_workspace_contents(
     raw: &str,
-) -> crate::ConfigResult<(String, Option<migrations::SchemaVersion>, bool)> {
-    let mut doc: DocumentMut = raw.parse().context("parsing workspace config")?;
+) -> Result<(String, Option<migrations::SchemaVersion>, bool), WorkspaceNormalizationError> {
+    let mut doc: DocumentMut = raw.parse().map_err(|error| {
+        WorkspaceNormalizationError::Other(ConfigError::Other(
+            anyhow::Error::new(error).context("parsing workspace config"),
+        ))
+    })?;
+    let old_version = migrations::doc_version(&doc, "workspace config")?;
+    let current_version = migrations::parse_version(CURRENT_WORKSPACE_VERSION)?;
+    if old_version > current_version {
+        return Err(WorkspaceNormalizationError::UnsupportedVersion(
+            ConfigError::msg(format!(
+                "workspace config is at {old_version}, this binary only understands up to \
+                 {CURRENT_WORKSPACE_VERSION}; upgrade jackin"
+            )),
+        ));
+    }
     let migrated_from = migrations::migrate_document_if_needed(
         &mut doc,
         "workspace config",
         CURRENT_WORKSPACE_VERSION,
         migrations::WORKSPACE_MIGRATIONS,
     )?;
-    let had_legacy_op_account = doc.get("op_account").is_some();
-    if had_legacy_op_account {
-        migrations::migrate_workspace_op_account_to_refs(&mut doc)?;
-    }
-    let needs_write = migrated_from.is_some() || had_legacy_op_account;
+    let needs_write = migrated_from.is_some();
     Ok((doc.to_string(), migrated_from, needs_write))
 }
 
@@ -668,6 +702,7 @@ fn load_workspace_files_locked(
             let raw = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
             normalize_workspace_contents(&raw)
+                .map_err(WorkspaceNormalizationError::into_config_error)
         })();
         let (raw, needs_write) = match migration {
             Ok((raw, migrated_from, needs_write)) => {

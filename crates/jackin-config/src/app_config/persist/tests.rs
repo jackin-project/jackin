@@ -466,7 +466,7 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
     std::fs::write(&paths.config_file, legacy).unwrap();
     std::fs::write(
         paths.workspaces_dir.join("prod.toml"),
-        r#"version = "v1alpha8"
+        r#"version = "v1alpha4"
 workdir = "/workspace/prod"
 op_account = "WORKACCT"
 
@@ -490,6 +490,37 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
     );
     assert!(split.contains(r#"account = "WORKACCT""#), "{split}");
     assert!(!split.contains("op_account"), "{split}");
+}
+
+#[test]
+fn split_workspace_rejects_legacy_op_account_after_migration_edge() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("current.toml"),
+        format!(
+            r#"version = "{CURRENT_WORKSPACE_VERSION}"
+workdir = "/workspace/current"
+op_account = "MISLABELED"
+
+[[mounts]]
+src = "/tmp/current"
+dst = "/workspace/current"
+"#
+        ),
+    )
+    .unwrap();
+
+    let snapshot = load_read_only_config_snapshot(&paths).unwrap();
+
+    assert_eq!(
+        snapshot.diagnostics,
+        vec![ConfigSourceDiagnostic {
+            scope: ConfigSourceScope::Workspace("current".to_owned()),
+            issue: ConfigSourceIssue::Malformed,
+        }]
+    );
 }
 
 #[test]
@@ -1076,6 +1107,30 @@ fn disc_read_only_newer_version_is_typed_and_sanitized() {
         format!("{:?}", snapshot.diagnostics)
             .find(temp.path().to_str().unwrap())
             .is_none()
+    );
+}
+
+#[test]
+fn disc_read_only_newer_workspace_version_preserves_diagnostic() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("future.toml"),
+        r#"version = "v99alpha1"
+workdir = "/workspace/future"
+"#,
+    )
+    .unwrap();
+
+    let snapshot = load_read_only_config_snapshot(&paths).unwrap();
+
+    assert_eq!(
+        snapshot.diagnostics,
+        vec![ConfigSourceDiagnostic {
+            scope: ConfigSourceScope::Workspace("future".to_owned()),
+            issue: ConfigSourceIssue::UnsupportedVersion,
+        }]
     );
 }
 
