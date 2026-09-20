@@ -56,6 +56,8 @@ schema reference; `docs_commands` compares them with the serde structs. */}
 {/* config-key: AccountConfig.name */}
 {/* config-key: AccountConfig.provider */}
 {/* config-key: AccountConfig.credential */}
+{/* config-key: ProfileSelector.entry */}
+{/* config-key: ProfileSelector.profile */}
 {/* config-key: AgentConfiguration.account */}
 {/* config-key: AgentConfiguration.agent */}
 {/* config-key: AgentConfiguration.base_url */}
@@ -214,6 +216,30 @@ Role selections must belong to the workspace allowlist. A global `account_bindin
 API credentials can use literal values, environment references, or 1Password `EnvValue` references. Supported cross-provider accounts can set `base_url` and `model`. Credential routing derives from the selected account; ordinary operator environment layers cannot override governed account credentials.
 
 `ConfigEditor` owns atomic registry and assignment edits. Account removal prunes references. Profile discovery runs once at first initialization; explicit rescanning is available through `jackin account scan`. See [Agent Accounts](/guides/authentication/agents/) for setup and the breaking migration.
+
+Omp and Hermes profile credentials may retain the source entry identity that
+discovery found:
+
+```toml
+[accounts.hermes-work]
+name = "Hermes work"
+provider = "openai"
+
+[accounts.hermes-work.credential]
+type = "profile"
+agent = "hermes"
+directory = "/Users/operator/.hermes"
+
+[accounts.hermes-work.credential.source_selector]
+entry = "openai"
+profile = "work"
+```
+
+`source_selector.entry` is the exact provider/account key in the source store.
+`source_selector.profile` is the optional exact profile label when that store
+provides one. Launch verifies the stored identity before forwarding the whole
+source directory; a missing selector is accepted only when discovery proves the
+source contains exactly one account. Ambiguous or changed stores fail closed.
 
 Named agent configurations describe launchable instances — one agent plus one
 account plus optional model/endpoint overrides. Several configurations may share
