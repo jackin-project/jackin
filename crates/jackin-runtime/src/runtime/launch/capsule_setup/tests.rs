@@ -234,6 +234,8 @@ fn capsule_config_fans_manifest_models_out_per_instance() {
         &manifest,
         "ask",
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
         &[
             instance("claude-work", Agent::Claude, "work"),
             instance("claude-personal", Agent::Claude, "personal"),
@@ -275,6 +277,8 @@ fn capsule_config_carries_instance_accounts_and_labels() {
         &manifest,
         "ask",
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
         &[work, personal],
     );
     assert_eq!(
@@ -299,6 +303,35 @@ fn capsule_config_carries_instance_accounts_and_labels() {
         Some("Personal Claude")
     );
     assert_eq!(config.label_for_instance("unknown"), None);
+}
+
+#[test]
+fn capsule_config_carries_workspace_mounts_and_worktree_git_targets() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest = manifest_with(&temp, &["claude"]);
+    let selector = jackin_core::RoleSelector::new(Some("chainargos"), "the-architect");
+    let config = capsule_config(
+        &selector,
+        "/workspace/project",
+        &manifest,
+        "ask",
+        vec!["/workspace/other".to_owned()],
+        vec![
+            "/workspace/project".to_owned(),
+            "/workspace/other".to_owned(),
+        ],
+        vec!["/jackin/host/workspace/other/.git".to_owned()],
+        &[instance("claude-work", Agent::Claude, "work")],
+    );
+    assert_eq!(config.isolated_worktrees, vec!["/workspace/other"]);
+    assert_eq!(
+        config.workspace_mounts,
+        vec!["/workspace/project", "/workspace/other"]
+    );
+    assert_eq!(
+        config.worktree_git_targets,
+        vec!["/jackin/host/workspace/other/.git"]
+    );
 }
 
 #[test]

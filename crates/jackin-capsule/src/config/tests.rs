@@ -107,6 +107,76 @@ fn workdir_boundary_preserves_workspace_and_rejects_private_mount_ancestors() {
 }
 
 #[test]
+fn workspace_mounts_and_git_targets_preserve_valid_config() {
+    let mut config = instance_config(&[("codex-work", "api_key", "codex")]);
+    config.workspace_mounts = vec!["/workspace/other".to_owned()];
+    config.worktree_git_targets = vec!["/jackin/host/workspace/other/.git".to_owned()];
+    validate(&config).unwrap();
+}
+
+#[test]
+fn workspace_mounts_reject_protected_roots_and_private_mount_ancestors() {
+    for dst in [
+        "/",
+        "/home",
+        "/home/agent",
+        "/jackin",
+        "/jackin/run",
+        "/workspace/../jackin",
+    ] {
+        let mut config = instance_config(&[("codex-work", "api_key", "codex")]);
+        config.workspace_mounts = vec![dst.to_owned()];
+        let error = validate(&config).unwrap_err();
+        assert!(
+            error.to_string().contains("protected"),
+            "unexpected rejection for {dst}: {error}"
+        );
+    }
+
+    let mut config = instance_config(&[("codex-work", "api_key", "codex")]);
+    config.workdir = "/workspace/project".to_owned();
+    config.workspace_mounts = vec!["/workspace".to_owned()];
+    config.instance_mount_paths.insert(
+        "codex-work".to_owned(),
+        vec![
+            "/home/agent/.slot-0".to_owned(),
+            "/jackin/slot-0".to_owned(),
+            "/workspace/private-slot".to_owned(),
+        ],
+    );
+    let error = validate(&config).unwrap_err();
+    assert!(
+        error.to_string().contains("protected mount destination"),
+        "unexpected rejection: {error}"
+    );
+}
+
+#[test]
+fn worktree_git_targets_must_be_strict_host_descendants() {
+    for target in [
+        "/jackin/run/x",
+        "/home/agent/x",
+        "/jackin/host",
+        "/workspace/x",
+        "/jackin/host/../run/x",
+        "/jackin/host/a/../b",
+        "relative/path",
+        "",
+    ] {
+        let mut config = instance_config(&[("codex-work", "api_key", "codex")]);
+        config.worktree_git_targets = vec![target.to_owned()];
+        let error = validate(&config).unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("outside")
+                || message.contains("must not contain")
+                || message.contains("absolute"),
+            "unexpected rejection for {target}: {message}"
+        );
+    }
+}
+
+#[test]
 fn instance_boundary_rejects_protected_root_aliases() {
     let mut invalid_home = instance_config(&[("codex-work", "api_key", "codex")]);
     invalid_home

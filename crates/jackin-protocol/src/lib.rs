@@ -275,6 +275,17 @@ pub struct CapsuleConfig {
     /// never listed (host-owned).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub isolated_worktrees: Vec<String>,
+    /// Container-side destination of every workspace mount (`shared` and
+    /// isolated alike). In-container Landlock sessions grant exactly these
+    /// roots; a mount whose dst lies outside the workdir would otherwise be
+    /// fully denied.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspace_mounts: Vec<String>,
+    /// Container-side host `.git` dir per worktree-isolated mount
+    /// (`/jackin/host/<dst>/.git`). In-container Landlock sessions grant
+    /// these so git can follow the worktree gitdir pointer for every git op.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub worktree_git_targets: Vec<String>,
     /// Value the daemon assigns to the agent's folder env var
     /// (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …) when spawning this
     /// instance, keyed by instance config ID. Primary slots carry the
