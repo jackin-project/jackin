@@ -54,7 +54,10 @@ const ACTIVE_COLUMNS: [&str; 1] = ["active"];
 ///
 /// Reads the sibling `auth.json` and `opencode.db` files when present;
 /// absent files yield no candidates for their half. Pure parsing: no
-/// scanning, no writes.
+/// scanning, no writes. The discovery and provisioning boundary rejects any
+/// directory containing `opencode.db` because the current account contract
+/// can bind only an `auth.json` provider entry; database enumeration remains
+/// available for audit and layout tests, but is not a launchable profile.
 ///
 /// # Errors
 ///

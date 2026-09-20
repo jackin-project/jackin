@@ -493,6 +493,9 @@ pub struct InstanceAuthBinding {
     pub account_id: String,
     pub mode: AuthForwardMode,
     pub sync_source_dir: Option<PathBuf>,
+    /// Provider key selected from a multi-provider source store. This is
+    /// required to filter `OpenCode` auth.json before it enters role state.
+    pub source_provider: Option<jackin_config::AiProvider>,
     /// Explicit XDG roots from the selected profile, if any. These are
     /// selected-instance data, never ambient process-environment state.
     pub xdg_roots: Option<jackin_config::XdgRoots>,
@@ -516,6 +519,7 @@ impl InstanceAuthBinding {
             account_id,
             mode,
             sync_source_dir,
+            source_provider: None,
             xdg_roots: None,
         }
     }
@@ -641,7 +645,12 @@ fn validate_selected_account_sources(
         if binding.mode == AuthForwardMode::Sync
             && let Some(source) = source
         {
-            validate_sync_source_dir(binding.agent, source, host_home)?;
+            auth::validate_sync_source_dir_for_provider(
+                binding.agent,
+                binding.source_provider,
+                source,
+                host_home,
+            )?;
         }
     }
     Ok(())
@@ -1420,7 +1429,12 @@ impl RoleState {
         std::fs::create_dir_all(home_dir.join(slot_home_rel(".config/opencode", suffix)))?;
         let auth_json_path = opencode_dir.join("auth.json");
         let (outcome, auth_json) = if let Some(source_dir) = credential_source_dir {
-            Self::provision_opencode_auth_from_source_dir(&auth_json_path, mode, source_dir)?
+            Self::provision_opencode_auth_from_source_dir(
+                &auth_json_path,
+                mode,
+                source_dir,
+                binding.source_provider,
+            )?
         } else {
             Self::provision_opencode_auth(&auth_json_path, mode, host_home)?
         };

@@ -100,6 +100,73 @@ fn recognizes_each_agents_credentials_and_rejects_metadata() {
 }
 
 #[test]
+fn opencode_default_discovery_keeps_each_auth_entry_source_bound() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home
+        .path()
+        .join(Agent::Opencode.runtime().state_paths().credential_dir);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{
+            "anthropic":{"type":"api","key":"anthropic-sentinel"},
+            "opencode-go":{"type":"api","key":"opencode-sentinel"}
+        }"#,
+    )
+    .unwrap();
+
+    let report = discover_default_accounts(home.path());
+    let accounts = report
+        .accounts
+        .iter()
+        .filter(|account| account.agent == Agent::Opencode)
+        .collect::<Vec<_>>();
+    assert_eq!(accounts.len(), 2);
+    assert_eq!(
+        accounts
+            .iter()
+            .map(|account| account.provider)
+            .collect::<Vec<_>>(),
+        vec![Some(AiProvider::Anthropic), Some(AiProvider::Opencode)]
+    );
+    assert!(accounts.iter().all(|account| {
+        account.directory == directory
+            && account.evidence == CredentialEvidence::File(directory.join("auth.json"))
+    }));
+    assert!(!format!("{accounts:?}").contains("sentinel"));
+}
+
+#[test]
+fn opencode_database_only_source_fails_closed_without_registering_account() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home
+        .path()
+        .join(Agent::Opencode.runtime().state_paths().credential_dir);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("opencode.db"), b"database fixture").unwrap();
+
+    let report = discover_default_accounts(home.path());
+    assert!(
+        !report
+            .accounts
+            .iter()
+            .any(|account| account.agent == Agent::Opencode)
+    );
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Opencode)
+        .expect("unsupported OpenCode database is reported");
+    assert_eq!(
+        issue.error,
+        DiscoveryError::Unsupported(
+            "OpenCode database credentials require a source-bound auth.json profile"
+        )
+    );
+    assert!(!format!("{issue:?}").contains("database fixture"));
+}
+
+#[test]
 fn custom_claude_keychain_scope_never_falls_back_to_default() {
     let home = tempfile::tempdir().unwrap();
     let custom = home.path().join("claude-work");

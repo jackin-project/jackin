@@ -338,6 +338,35 @@ fn instance_bindings_keep_launch_order_and_config_id_keys() {
 }
 
 #[test]
+fn opencode_profile_binding_carries_source_provider_identity() {
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "zai-profile".into(),
+        AccountConfig {
+            enabled: true,
+            name: "OpenCode Zai".into(),
+            provider: AiProvider::Zai,
+            credential: AccountCredential::Profile {
+                agent: Agent::Opencode,
+                directory: "/profiles/opencode".into(),
+                xdg_roots: None,
+            },
+        },
+    );
+
+    let bindings = instance_auth_bindings(
+        &config,
+        &[instance("opencode-zai", Agent::Opencode, "zai-profile")],
+    )
+    .unwrap();
+    assert_eq!(bindings[0].source_provider, Some(AiProvider::Zai));
+    assert_eq!(
+        bindings[0].sync_source_dir,
+        Some("/profiles/opencode".into())
+    );
+}
+
+#[test]
 fn instance_bindings_carry_roots_only_for_selected_instances() {
     let roots = jackin_config::XdgRoots {
         data: "/selected/data".into(),

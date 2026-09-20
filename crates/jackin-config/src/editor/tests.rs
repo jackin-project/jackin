@@ -2579,6 +2579,7 @@ fn profile_scan_candidate_skips_agents_without_native_billing() {
     for agent in [Agent::Omp, Agent::Hermes] {
         let discovered = crate::DiscoveredAccount {
             agent,
+            provider: crate::AiProvider::for_agent(agent),
             directory: "/tmp/store".into(),
             evidence: crate::CredentialEvidence::File("/tmp/store/auth.json".into()),
         };
@@ -2586,12 +2587,27 @@ fn profile_scan_candidate_skips_agents_without_native_billing() {
     }
     let discovered = crate::DiscoveredAccount {
         agent: Agent::Claude,
+        provider: Some(crate::AiProvider::Anthropic),
         directory: "/tmp/claude".into(),
         evidence: crate::CredentialEvidence::File("/tmp/claude/.credentials.json".into()),
     };
     let (id, account) = profile_scan_candidate(&discovered).unwrap();
     assert_eq!(id, "default-claude");
     assert_eq!(account.name, "Claude default");
+}
+
+#[test]
+fn profile_scan_candidate_preserves_opencode_store_provider_identity() {
+    let discovered = crate::DiscoveredAccount {
+        agent: Agent::Opencode,
+        provider: Some(crate::AiProvider::Zai),
+        directory: "/tmp/opencode".into(),
+        evidence: crate::CredentialEvidence::File("/tmp/opencode/auth.json".into()),
+    };
+    let (id, account) = profile_scan_candidate(&discovered).unwrap();
+    assert_eq!(id, "default-opencode-zai");
+    assert_eq!(account.provider, crate::AiProvider::Zai);
+    assert_eq!(account.name, "OpenCode zai default");
 }
 
 #[test]
