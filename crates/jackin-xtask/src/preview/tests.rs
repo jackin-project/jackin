@@ -93,40 +93,114 @@ fn unknown_invalid_rolling_release_is_rejected() {
 }
 
 #[test]
-fn migration_phase_retries_tag_after_failure_after_release_delete() {
+fn migration_phase_advances_legacy_tag_after_release_delete() {
     assert_eq!(
-        plan_legacy_migration(LegacyReleaseState::Absent, true, true).unwrap(),
-        LegacyMigrationPhase::DeleteTag
+        plan_legacy_migration(LegacyReleaseState::Absent, LegacyTagState::Legacy, true).unwrap(),
+        LegacyMigrationPhase::AdvanceTag
     );
 }
 
 #[test]
-fn migration_phase_completes_after_failure_after_tag_delete() {
+fn migration_phase_accepts_candidate_tag_without_release() {
     assert_eq!(
-        plan_legacy_migration(LegacyReleaseState::Absent, false, true).unwrap(),
+        plan_legacy_migration(LegacyReleaseState::Absent, LegacyTagState::Candidate, false)
+            .unwrap(),
+        LegacyMigrationPhase::Noop
+    );
+}
+
+#[test]
+fn migration_phase_archives_then_deletes_known_legacy_release() {
+    assert_eq!(
+        plan_legacy_migration(
+            LegacyReleaseState::KnownLegacy,
+            LegacyTagState::Legacy,
+            false
+        )
+        .unwrap(),
+        LegacyMigrationPhase::Archive
+    );
+    assert_eq!(
+        plan_legacy_migration(
+            LegacyReleaseState::KnownLegacy,
+            LegacyTagState::Legacy,
+            true
+        )
+        .unwrap(),
+        LegacyMigrationPhase::DeleteRelease
+    );
+}
+
+#[test]
+fn candidate_tag_acceptance_is_exact_and_rejects_other_targets() {
+    let candidate = "abcdef0123456789abcdef0123456789abcdef01";
+    assert_eq!(
+        classify_tag_target(Some(candidate), candidate).unwrap(),
+        LegacyTagState::Candidate
+    );
+    assert_eq!(
+        classify_tag_target(Some(LEGACY_TAG_TARGET), candidate).unwrap(),
+        LegacyTagState::Legacy
+    );
+    assert!(classify_tag_target(Some(&"0".repeat(40)), candidate).is_err());
+}
+
+#[test]
+fn migration_phase_completes_without_release_or_tag() {
+    assert_eq!(
+        plan_legacy_migration(LegacyReleaseState::Absent, LegacyTagState::Absent, false).unwrap(),
         LegacyMigrationPhase::Noop
     );
 }
 
 #[test]
 fn migration_phase_fails_closed_for_release_without_tag() {
-    let error = plan_legacy_migration(LegacyReleaseState::KnownLegacy, false, true)
-        .expect_err("release-present/tag-absent must not mutate");
+    let error = plan_legacy_migration(
+        LegacyReleaseState::KnownLegacy,
+        LegacyTagState::Absent,
+        true,
+    )
+    .expect_err("release-present/tag-absent must not mutate");
     assert!(error.to_string().contains("without its tag"));
 }
 
 #[test]
 fn migration_phase_fails_closed_for_unknown_release() {
-    let error = plan_legacy_migration(LegacyReleaseState::Unknown, true, true)
+    let error = plan_legacy_migration(LegacyReleaseState::Unknown, LegacyTagState::Legacy, true)
         .expect_err("unknown release must not mutate");
     assert!(error.to_string().contains("unknown or changed"));
 }
 
 #[test]
-fn migration_phase_requires_durable_archive_before_retrying_tag_delete() {
-    let error = plan_legacy_migration(LegacyReleaseState::Absent, true, false)
-        .expect_err("tag retry without archive must fail closed");
+fn migration_phase_requires_durable_archive_before_advancing_tag() {
+    let error = plan_legacy_migration(LegacyReleaseState::Absent, LegacyTagState::Legacy, false)
+        .expect_err("tag advancement without archive must fail closed");
     assert!(error.to_string().contains("durable legacy archive"));
+}
+
+#[test]
+fn preview_tag_patch_uses_non_force_fast_forward_api() {
+    let args = preview_tag_patch_api_args(
+        LEGACY_SOURCE_REPOSITORY,
+        "abcdef0123456789abcdef0123456789abcdef01",
+    );
+    assert_eq!(
+        args,
+        vec![
+            "api",
+            "--method",
+            "PATCH",
+            "--repo",
+            LEGACY_SOURCE_REPOSITORY,
+            "repos/jackin-project/jackin/git/refs/tags/preview",
+            "--raw-field",
+            "sha=abcdef0123456789abcdef0123456789abcdef01",
+            "--field",
+            "force=false",
+        ]
+    );
+    assert!(!args.iter().any(|arg| arg == "DELETE"));
+    assert!(!args.iter().any(|arg| arg == "force=true"));
 }
 
 #[test]

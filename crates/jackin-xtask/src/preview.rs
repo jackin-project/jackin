@@ -275,7 +275,14 @@ pub(crate) enum LegacyMigrationPhase {
     Noop,
     Archive,
     DeleteRelease,
-    DeleteTag,
+    AdvanceTag,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LegacyTagState {
+    Absent,
+    Legacy,
+    Candidate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -295,27 +302,55 @@ fn known_legacy_assets() -> BTreeMap<String, String> {
 
 pub(crate) fn plan_legacy_migration(
     release: LegacyReleaseState,
-    tag_present: bool,
+    tag: LegacyTagState,
     archive_verified: bool,
 ) -> Result<LegacyMigrationPhase> {
-    match (release, tag_present, archive_verified) {
-        (LegacyReleaseState::Absent, false, _) => Ok(LegacyMigrationPhase::Noop),
-        (LegacyReleaseState::Absent, true, true) => Ok(LegacyMigrationPhase::DeleteTag),
-        (LegacyReleaseState::Absent, true, false) => {
+    match (release, tag, archive_verified) {
+        (LegacyReleaseState::Absent, LegacyTagState::Absent, _) => Ok(LegacyMigrationPhase::Noop),
+        (LegacyReleaseState::Absent, LegacyTagState::Candidate, _) => {
+            Ok(LegacyMigrationPhase::Noop)
+        }
+        (LegacyReleaseState::Absent, LegacyTagState::Legacy, true) => {
+            Ok(LegacyMigrationPhase::AdvanceTag)
+        }
+        (LegacyReleaseState::Absent, LegacyTagState::Legacy, false) => {
             bail!("rolling preview tag remains but its durable legacy archive is not verified")
         }
-        (LegacyReleaseState::CurrentContract, true, _) => Ok(LegacyMigrationPhase::Noop),
-        (LegacyReleaseState::CurrentContract, false, _) => {
+        (LegacyReleaseState::CurrentContract, LegacyTagState::Absent, _) => {
             bail!("rolling preview release exists without its tag; refusing mutation")
         }
-        (LegacyReleaseState::KnownLegacy, false, _) => {
+        (
+            LegacyReleaseState::CurrentContract,
+            LegacyTagState::Legacy | LegacyTagState::Candidate,
+            _,
+        ) => Ok(LegacyMigrationPhase::Noop),
+        (LegacyReleaseState::KnownLegacy, LegacyTagState::Absent, _) => {
             bail!("known legacy rolling release exists without its tag; refusing mutation")
         }
-        (LegacyReleaseState::KnownLegacy, true, true) => Ok(LegacyMigrationPhase::DeleteRelease),
-        (LegacyReleaseState::KnownLegacy, true, false) => Ok(LegacyMigrationPhase::Archive),
+        (LegacyReleaseState::KnownLegacy, LegacyTagState::Legacy, true) => {
+            Ok(LegacyMigrationPhase::DeleteRelease)
+        }
+        (LegacyReleaseState::KnownLegacy, LegacyTagState::Legacy, false) => {
+            Ok(LegacyMigrationPhase::Archive)
+        }
+        (LegacyReleaseState::KnownLegacy, LegacyTagState::Candidate, _) => {
+            bail!("known legacy rolling release tag points at the candidate; refusing mutation")
+        }
         (LegacyReleaseState::Unknown, _, _) => {
             bail!("refusing to migrate unknown or changed rolling preview release")
         }
+    }
+}
+
+fn classify_tag_target(
+    tag_target: Option<&str>,
+    candidate_source_commit: &str,
+) -> Result<LegacyTagState> {
+    match tag_target {
+        None => Ok(LegacyTagState::Absent),
+        Some(target) if target == candidate_source_commit => Ok(LegacyTagState::Candidate),
+        Some(LEGACY_TAG_TARGET) => Ok(LegacyTagState::Legacy),
+        Some(_) => bail!("rolling preview tag target changed; refusing mutation"),
     }
 }
 
@@ -357,21 +392,18 @@ fn migrate_legacy_preview() -> Result<()> {
         let release = github_release_by_tag(&repository, LEGACY_TAG, &token)?;
         let tag_target = git_tag_target(&source_checkout, &token, LEGACY_TAG)?;
         let release_state = classify_release(release.as_ref(), &repository, tag_target.as_deref())?;
+        let tag_state = classify_tag_target(tag_target.as_deref(), &expected_source_commit)?;
 
-        if matches!(release_state, LegacyReleaseState::Absent)
-            && let Some(target) = &tag_target
-        {
-            ensure!(
-                target == LEGACY_TAG_TARGET,
-                "rolling preview tag target changed; refusing mutation"
-            );
-            ensure_candidate_contains_tag(&source_checkout, target, &expected_source_commit)?;
+        if release_state == LegacyReleaseState::Absent && tag_state == LegacyTagState::Legacy {
+            ensure_candidate_contains_tag(
+                &source_checkout,
+                LEGACY_TAG_TARGET,
+                &expected_source_commit,
+            )?;
         }
 
-        let archive_state = if matches!(
-            release_state,
-            LegacyReleaseState::KnownLegacy | LegacyReleaseState::Absent
-        ) && tag_target.is_some()
+        let archive_state = if matches!(release_state, LegacyReleaseState::KnownLegacy)
+            || (release_state == LegacyReleaseState::Absent && tag_state == LegacyTagState::Legacy)
         {
             durable_archive_state(&repository, &source_checkout, &token, &legacy_snapshot())?
         } else {
@@ -379,7 +411,7 @@ fn migrate_legacy_preview() -> Result<()> {
         };
         let phase = plan_legacy_migration(
             release_state,
-            tag_target.is_some(),
+            tag_state,
             archive_state == DurableArchiveState::Verified,
         )?;
 
@@ -389,6 +421,10 @@ fn migrate_legacy_preview() -> Result<()> {
                 if release_state == LegacyReleaseState::CurrentContract {
                     println!(
                         "preview migration: rolling release already uses the current contract"
+                    );
+                } else if tag_state == LegacyTagState::Candidate {
+                    println!(
+                        "preview migration: rolling preview tag already points at the candidate source"
                     );
                 } else {
                     println!("preview migration: no rolling release or tag is present");
@@ -462,22 +498,32 @@ fn migrate_legacy_preview() -> Result<()> {
                     snapshot.release_id,
                 )?;
             }
-            LegacyMigrationPhase::DeleteTag => {
+            LegacyMigrationPhase::AdvanceTag => {
                 let tag_target = tag_target
                     .as_deref()
-                    .context("rolling preview tag disappeared before deletion")?;
+                    .context("rolling preview tag disappeared before advancement")?;
                 ensure!(
                     tag_target == LEGACY_TAG_TARGET,
-                    "rolling preview tag target changed; refusing mutation"
+                    "rolling preview tag changed before advancement; refusing mutation"
                 );
                 let snapshot = legacy_snapshot();
                 ensure!(
                     durable_archive_state(&repository, &source_checkout, &token, &snapshot,)?
                         == DurableArchiveState::Verified,
-                    "durable legacy archive is no longer verified; refusing tag deletion"
+                    "durable legacy archive is no longer verified; refusing tag advancement"
                 );
+                ensure_candidate_contains_tag(
+                    &source_checkout,
+                    tag_target,
+                    &expected_source_commit,
+                )?;
                 retain_publication_lock(&mut publication_lock_retained)?;
-                delete_tag_and_reconcile(&repository, &source_checkout, &token)?;
+                advance_tag_and_reconcile(
+                    &repository,
+                    &source_checkout,
+                    &token,
+                    &expected_source_commit,
+                )?;
             }
         }
     }
@@ -630,13 +676,20 @@ fn delete_release(repository: &str, token: &str, release_id: u64) -> Result<()> 
     crate::cmd::run(&mut command).context("deleting known legacy preview release")
 }
 
-fn delete_tag(repository: &str, token: &str) -> Result<()> {
+fn preview_tag_patch_api_args(repository: &str, expected_source_commit: &str) -> Vec<String> {
     let endpoint = format!("repos/{repository}/git/refs/tags/{LEGACY_TAG}");
-    let mut command = crate::cmd::command("gh");
-    command
-        .args(["api", "--method", "DELETE", "--repo", repository, &endpoint])
-        .env("GH_TOKEN", token);
-    crate::cmd::run(&mut command).context("deleting known legacy preview tag")
+    vec![
+        "api".to_owned(),
+        "--method".to_owned(),
+        "PATCH".to_owned(),
+        "--repo".to_owned(),
+        repository.to_owned(),
+        endpoint,
+        "--raw-field".to_owned(),
+        format!("sha={expected_source_commit}"),
+        "--field".to_owned(),
+        "force=false".to_owned(),
+    ]
 }
 
 fn wait_for_release_absent(repository: &str, token: &str) -> Result<()> {
@@ -651,16 +704,23 @@ fn wait_for_release_absent(repository: &str, token: &str) -> Result<()> {
     bail!("known legacy preview release is still visible after deletion")
 }
 
-fn wait_for_tag_absent(source_checkout: &Path, token: &str) -> Result<()> {
+fn wait_for_tag_target(
+    source_checkout: &Path,
+    token: &str,
+    expected_source_commit: &str,
+) -> Result<()> {
     for attempt in 0..5 {
-        if git_tag_target(source_checkout, token, LEGACY_TAG)?.is_none() {
-            return Ok(());
+        match git_tag_target(source_checkout, token, LEGACY_TAG)? {
+            Some(target) if target == expected_source_commit => return Ok(()),
+            Some(target) if target == LEGACY_TAG_TARGET => {}
+            Some(_) => bail!("rolling preview tag changed during advancement; refusing mutation"),
+            None => bail!("rolling preview tag disappeared during advancement"),
         }
         if attempt < 4 {
             thread::sleep(Duration::from_secs(1));
         }
     }
-    bail!("known legacy preview tag is still visible after deletion")
+    bail!("rolling preview tag still points at the legacy commit after advancement")
 }
 
 fn legacy_snapshot() -> RollingReleaseSnapshot {
@@ -841,24 +901,44 @@ fn delete_release_and_reconcile(
         println!("preview migration: release delete reported an error after remote disappearance");
     }
     wait_for_release_absent(repository, token)?;
-    let tag_target = git_tag_target(source_checkout, token, LEGACY_TAG)?;
-    if let Some(tag_target) = tag_target {
-        ensure!(
-            tag_target == LEGACY_TAG_TARGET,
-            "rolling preview tag changed after release deletion; refusing mutation"
-        );
-    }
+    let tag_target = git_tag_target(source_checkout, token, LEGACY_TAG)?
+        .context("rolling preview tag disappeared after release deletion")?;
+    ensure!(
+        tag_target == LEGACY_TAG_TARGET,
+        "rolling preview tag changed after release deletion; refusing mutation"
+    );
     Ok(())
 }
 
-fn delete_tag_and_reconcile(repository: &str, source_checkout: &Path, token: &str) -> Result<()> {
-    if let Err(error) = delete_tag(repository, token) {
-        if git_tag_target(source_checkout, token, LEGACY_TAG)?.is_some() {
-            return Err(error);
+fn advance_tag_and_reconcile(
+    repository: &str,
+    source_checkout: &Path,
+    token: &str,
+    expected_source_commit: &str,
+) -> Result<()> {
+    let current_target = git_tag_target(source_checkout, token, LEGACY_TAG)?
+        .context("rolling preview tag disappeared before advancement")?;
+    ensure!(
+        current_target == LEGACY_TAG_TARGET,
+        "rolling preview tag changed before advancement; refusing mutation"
+    );
+
+    let mut command = crate::cmd::command("gh");
+    command
+        .args(preview_tag_patch_api_args(
+            repository,
+            expected_source_commit,
+        ))
+        .env("GH_TOKEN", token);
+    if let Err(error) = crate::cmd::run(&mut command) {
+        if git_tag_target(source_checkout, token, LEGACY_TAG)?.as_deref()
+            != Some(expected_source_commit)
+        {
+            return Err(error).context("advancing known legacy preview tag");
         }
-        println!("preview migration: tag delete reported an error after remote disappearance");
+        println!("preview migration: tag advancement reported an error after remote update");
     }
-    wait_for_tag_absent(source_checkout, token)
+    wait_for_tag_target(source_checkout, token, expected_source_commit)
 }
 
 fn archive_expected_names(snapshot: &RollingReleaseSnapshot) -> BTreeSet<String> {
