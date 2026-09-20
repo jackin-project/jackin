@@ -152,6 +152,7 @@ agents = ["codex"]
             },
         );
         config.default_launch = Some(vec!["codex-main".into()]);
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
         let workspace = jackin_config::ResolvedWorkspace {
             name: String::new(),
             label: cached_repo.repo_dir.display().to_string(),
@@ -235,6 +236,9 @@ agents = ["codex"]
     }
 
     fn as_core(&mut self) -> LaunchCore<'_, FakeDockerClient, FakeRunner> {
+        let account_revision =
+            super::super::account_identity::AccountConfigRevision::acquire(&self.paths).unwrap();
+        let admission_config = self.config.clone();
         LaunchCore {
             paths: &self.paths,
             config: &mut self.config,
@@ -269,6 +273,8 @@ agents = ["codex"]
             rebuild: false,
             restore_pinned_sha: None,
             git_pull_join: None,
+            account_revision,
+            admission_config,
         }
     }
 }
