@@ -196,6 +196,42 @@ fn coordinator_winner_joiner_and_force_join_share_one_generation() {
 }
 
 #[test]
+fn coordinator_revisioned_capabilities_do_not_join_in_flight_probe() {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let coordinator = coordinator(
+        Arc::clone(&executor),
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+    );
+    let old_catalog_capability = capability("account-a:catalog-old");
+    let current_catalog_capability = capability("account-a:catalog-current");
+
+    let old = coordinator
+        .request_refresh(&old_catalog_capability, 0, true, 1_000)
+        .unwrap();
+    executor.wait_started(1);
+    let current = coordinator
+        .request_refresh(&current_catalog_capability, 0, true, 1_000)
+        .unwrap();
+    executor.wait_started(2);
+
+    assert_eq!(old.generation, 1);
+    assert_eq!(current.generation, 1);
+    executor.release(2);
+    assert_eq!(
+        join_ok(&coordinator, &old_catalog_capability, 1, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(
+        join_ok(&coordinator, &current_catalog_capability, 1, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn coordinator_post_terminal_manual_refresh_starts_later_generation() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
