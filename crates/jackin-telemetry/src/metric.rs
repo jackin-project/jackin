@@ -4,6 +4,7 @@
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock, RwLock, atomic::AtomicU64},
+    time::Instant,
 };
 
 use opentelemetry::{
@@ -129,6 +130,19 @@ impl std::fmt::Display for MeterInstallError {
 
 impl std::error::Error for MeterInstallError {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeterDetachError {
+    DeadlineExceeded,
+}
+
+impl std::fmt::Display for MeterDetachError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("telemetry facade reader fence exceeded its shutdown deadline")
+    }
+}
+
+impl std::error::Error for MeterDetachError {}
+
 #[must_use = "the reservation must be committed after the subscriber is installed"]
 #[derive(Debug)]
 pub struct MeterReservation {
@@ -175,7 +189,9 @@ impl Drop for MeterReservation {
 /// Detaching or dropping the installation removes the provider-bound facade and
 /// clears its bounded-series registry. Dropping the installation also releases
 /// the retained handles, allowing a later provider to be installed in the same
-/// process without retaining state from the retired provider.
+/// process without retaining state from the retired provider. If a direct drop
+/// cannot acquire the reader fence immediately, it fails closed and preserves
+/// the generation instead of waiting unboundedly or allowing overlap.
 #[must_use = "the meter installation must live as long as its meter provider"]
 #[derive(Debug)]
 pub struct MeterInstallation {
@@ -187,39 +203,57 @@ impl MeterInstallation {
     /// Detach the facade from the active provider while retaining its handles
     /// until this installation is dropped.
     ///
-    /// The write lock waits for every in-flight metric operation that acquired
-    /// the facade read lock. Calls that begin after the detach observe an empty
-    /// facade and become no-ops instead of recording into a retiring provider.
+    /// The write fence waits, up to `deadline`, for every in-flight metric
+    /// operation that acquired the facade read lock. Calls that begin after
+    /// the detach observe an empty facade and become no-ops instead of
+    /// recording into a retiring provider.
     /// The generation remains active until the installation is dropped, so a
     /// replacement provider cannot be installed while the retired handles are
     /// still owned by this lease.
-    pub fn detach(&mut self) {
-        self.detach_inner(|| {});
+    pub fn detach_before(&mut self, deadline: Instant) -> Result<(), MeterDetachError> {
+        self.detach_inner(deadline, || {})
     }
 
-    fn detach_inner(&mut self, before_write: impl FnOnce()) {
+    fn detach_inner(
+        &mut self,
+        deadline: Instant,
+        before_write: impl FnOnce(),
+    ) -> Result<(), MeterDetachError> {
         if self.retired_instruments.is_some() {
-            return;
+            return Ok(());
         }
 
         let state = METER_STATE
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.active_generation != Some(self.generation) {
-            return;
+            return Ok(());
         }
 
+        if Instant::now() >= deadline {
+            return Err(MeterDetachError::DeadlineExceeded);
+        }
         before_write();
-        self.retired_instruments = INSTRUMENTS
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
+        let mut instruments = loop {
+            match INSTRUMENTS.try_write() {
+                Ok(instruments) => break instruments,
+                Err(std::sync::TryLockError::Poisoned(error)) => break error.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if Instant::now() >= deadline {
+                        return Err(MeterDetachError::DeadlineExceeded);
+                    }
+                    std::thread::yield_now();
+                }
+            }
+        };
+        self.retired_instruments = instruments.take();
         if let Some(series) = SERIES.get() {
             series
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clear();
         }
+        Ok(())
     }
 }
 
@@ -232,24 +266,46 @@ impl Drop for MeterInstallation {
             return;
         }
 
-        if self.retired_instruments.is_none() {
-            INSTRUMENTS
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take();
-            if let Some(series) = SERIES.get() {
-                series
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clear();
+        if let Some(retired) = self.retired_instruments.take() {
+            state.active_generation = None;
+            drop(state);
+            drop(retired);
+            return;
+        }
+
+        match INSTRUMENTS.try_write() {
+            Ok(mut instruments) => {
+                let retired = instruments.take();
+                if let Some(series) = SERIES.get() {
+                    series
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clear();
+                }
+                state.active_generation = None;
+                drop(state);
+                drop(retired);
+            }
+            Err(std::sync::TryLockError::Poisoned(error)) => {
+                let mut instruments = error.into_inner();
+                let retired = instruments.take();
+                if let Some(series) = SERIES.get() {
+                    series
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clear();
+                }
+                state.active_generation = None;
+                drop(state);
+                drop(retired);
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                // Drop cannot report a fence timeout. Leave the facade and
+                // generation installed in this terminal state; a replacement
+                // provider must be rejected rather than overlap a writer that
+                // still owns the retiring facade.
             }
         }
-        // A detached installation owns the retired handles until this point,
-        // after the provider has completed its shutdown. Drop them while the
-        // generation is still held so the next provider cannot overlap this
-        // provider-bound ownership.
-        drop(self.retired_instruments.take());
-        state.active_generation = None;
     }
 }
 

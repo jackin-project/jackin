@@ -244,7 +244,11 @@ fn meter_detach_waits_for_in_flight_facade_read_guard() {
     let (done_tx, done_rx) = std::sync::mpsc::sync_channel(0);
     let worker = std::thread::spawn(move || {
         let mut installation = installation;
-        installation.detach_inner(|| ready_tx.send(()).expect("detach worker ready"));
+        installation
+            .detach_inner(Instant::now() + std::time::Duration::from_secs(1), || {
+                ready_tx.send(()).expect("detach worker ready");
+            })
+            .expect("detach after read guard release");
         done_tx.send(()).expect("detach worker done");
     });
 
@@ -284,7 +288,9 @@ fn detached_facade_drops_late_write_before_metric_flush() {
         counter(&TELEMETRY_VALIDATE).add(1, &[])
     });
 
-    installation.detach();
+    installation
+        .detach_before(Instant::now() + std::time::Duration::from_secs(1))
+        .expect("detach before metric flush");
     writer_gate.wait();
     writer
         .join()
@@ -310,7 +316,9 @@ fn detached_meter_installation_keeps_generation_until_drop() {
     let first_provider = SdkMeterProvider::builder().build();
     let mut first_installation =
         install(&first_provider.meter("detached-generation")).expect("first meter installation");
-    first_installation.detach();
+    first_installation
+        .detach_before(Instant::now() + std::time::Duration::from_secs(1))
+        .expect("detach first generation");
 
     let second_provider = SdkMeterProvider::builder().build();
     assert!(matches!(
@@ -321,6 +329,34 @@ fn detached_meter_installation_keeps_generation_until_drop() {
     drop(first_installation);
     let _second_installation = install(&second_provider.meter("next-generation"))
         .expect("next meter installation after retired lease drop");
+}
+
+#[test]
+fn meter_detach_deadline_bounds_reader_fence() {
+    let _lock = METER_TEST_LOCK.lock().expect("meter test lock");
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::SdkMeterProvider;
+
+    let provider = SdkMeterProvider::builder().build();
+    let mut installation =
+        install(&provider.meter("bounded-detach")).expect("bounded detach meter installation");
+    let in_flight = INSTRUMENTS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let started = Instant::now();
+    assert_eq!(
+        installation.detach_before(started + std::time::Duration::from_millis(20)),
+        Err(MeterDetachError::DeadlineExceeded)
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(250),
+        "reader fence exceeded its deadline: {:?}",
+        started.elapsed()
+    );
+    drop(in_flight);
+    installation
+        .detach_before(Instant::now() + std::time::Duration::from_secs(1))
+        .expect("detach after bounded reader fence");
 }
 
 #[test]
