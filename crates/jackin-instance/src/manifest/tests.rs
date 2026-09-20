@@ -112,6 +112,37 @@ fn admitted_instances_empty_is_explicit_and_validate_tabs() {
 }
 
 #[test]
+fn admitted_manifest_membership_does_not_expand_from_unrelated_registration() {
+    let mut manifest = sample_manifest();
+    manifest.set_admitted_instances([AdmittedInstance::new("claude-work", Agent::Claude, "work")]);
+    let admitted_before = manifest.admitted_instances.clone();
+
+    // A newly registered account/configuration exists outside this immutable
+    // launch admission set until an explicit recreate/update path writes a new
+    // manifest.
+    assert!(!manifest.admits_instance("claude-personal"));
+    assert_eq!(manifest.admitted_instances, admitted_before);
+}
+
+#[test]
+fn registration_state_is_visible_without_relabeling_admitted_identity() {
+    let mut manifest = sample_manifest();
+    manifest.set_admitted_instances([AdmittedInstance::new("claude-work", Agent::Claude, "work")]);
+    assert!(manifest.mark_registration_state("claude-work", RegistrationState::Disabled));
+    assert_eq!(
+        manifest.registration_state_for_instance("claude-work"),
+        Some(RegistrationState::Disabled)
+    );
+    assert_eq!(manifest.account_for_instance("claude-work"), Some("work"));
+    assert!(manifest.admits_instance("claude-work"));
+    assert_eq!(RegistrationState::Removed.label(), "removed");
+
+    let restored: InstanceManifest =
+        serde_json::from_str(&serde_json::to_string(&manifest).unwrap()).unwrap();
+    assert_eq!(restored.admitted_instances, manifest.admitted_instances);
+}
+
+#[test]
 fn manifest_read_rejects_pre_v3_versions() {
     let temp = tempdir().unwrap();
     let state_dir = temp.path();

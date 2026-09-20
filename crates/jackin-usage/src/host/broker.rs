@@ -18,8 +18,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
-    UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
-    UsageCoordinationErrorKind, UsageGenerationView, UsageIdentityKindV1,
+    UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCatalogEntry,
+    UsageCoordinationError, UsageCoordinationErrorKind, UsageGenerationView, UsageIdentityKindV1,
     UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
 };
 use nix::fcntl::{OFlag, open, openat, renameat};
@@ -381,6 +381,34 @@ pub fn usage_broker_capabilities(
         .collect()
 }
 
+fn usage_catalog_entries(discovery: &ValidatedUsageDiscovery) -> Vec<UsageCatalogEntry> {
+    let mut source_ids = BTreeMap::<UsageAccountCapability, BTreeSet<String>>::new();
+    for binding in &discovery.bindings {
+        let capability = capability_for_binding(binding);
+        source_ids
+            .entry(capability)
+            .or_default()
+            .insert(binding.capability_id.clone());
+    }
+    source_ids
+        .into_iter()
+        .map(|(capability, source_ids)| {
+            let revision_material = source_ids
+                .iter()
+                .map(|source_id| format!("{}:{source_id}", source_id.len()))
+                .collect::<Vec<_>>()
+                .join("|");
+            UsageCatalogEntry {
+                revision: jackin_core::account_key_hash(
+                    "usage-catalog-entry-v2",
+                    &revision_material,
+                ),
+                capability,
+            }
+        })
+        .collect()
+}
+
 /// Small synchronous client. Each operation uses one bounded frame/connection.
 ///
 /// A client also carries one monitoring screen's subscription set (see
@@ -563,6 +591,18 @@ impl UsageBrokerClient {
         })
     }
 
+    /// Replace the host broker's current catalog and publish revocations.
+    pub fn reconcile_catalog(
+        &self,
+        catalog_revision: String,
+        entries: Vec<UsageCatalogEntry>,
+    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        self.execute_projection(UsageBrokerOperation::ReconcileCatalog {
+            catalog_revision,
+            entries,
+        })
+    }
+
     fn execute_projection(
         &self,
         operation: UsageBrokerOperation,
@@ -611,23 +651,38 @@ fn empty_projection(build_id: &str) -> UsageProjectionV1 {
     }
 }
 
-fn load_projection(config: &UsageBrokerConfig) -> Arc<Mutex<UsageProjectionV1>> {
+type LoadedProjection = (
+    Arc<Mutex<UsageProjectionV1>>,
+    Option<Vec<UsageCatalogEntry>>,
+);
+
+fn load_projection(config: &UsageBrokerConfig) -> Result<LoadedProjection, UsageCoordinationError> {
     let store = FileProjectionStateStore::under_data_dir(&config.data_dir);
-    let projection = store.load().ok().flatten().map_or_else(
+    let loaded = match store.load() {
+        Ok(loaded) => loaded,
+        // v1 and invalid v2 envelopes are quarantined by the store. The
+        // broker deliberately rebuilds an empty projection from current
+        // discovery; unavailable state is not safe to overwrite.
+        Err(crate::coordinator::StateStoreError::Corrupt) => None,
+        Err(crate::coordinator::StateStoreError::Unavailable) => return Err(unavailable()),
+    };
+    let projection = loaded.as_ref().map_or_else(
         || empty_projection(&config.build_id),
-        |envelope| envelope.projection,
+        |envelope| envelope.projection.clone(),
     );
+    let catalog = loaded.as_ref().map(|envelope| envelope.catalog.clone());
     let envelope = ProjectionStateEnvelope {
-        schema_version: 1,
+        schema_version: 2,
         catalog_revision: projection.discovery_revision.clone(),
+        catalog: catalog.clone().unwrap_or_default(),
         broker_instance_id: projection.broker_instance_id.clone(),
         projection: projection.clone(),
         aliases: Vec::new(),
         retry_deadline_epoch: None,
         success_deadline_epoch: None,
     };
-    let _ignored = store.store(&envelope);
-    Arc::new(Mutex::new(projection))
+    store.store(&envelope).map_err(|_| unavailable())?;
+    Ok((Arc::new(Mutex::new(projection)), catalog))
 }
 
 struct DiscoveryProviderExecutor {
@@ -679,6 +734,44 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
             Err(_) => probe::probe_timeout_outcome(),
         }
     }
+
+    fn reconcile_catalog(
+        &self,
+        entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        let admitted = entries
+            .iter()
+            .map(|entry| entry.capability.clone())
+            .collect::<BTreeSet<_>>();
+        // The caller's catalog is authoritative. A transient discovery failure
+        // must clear old bindings rather than leave a revoked credential
+        // usable; a later probe can rediscover one admitted capability.
+        let mut bindings =
+            rediscover_all_bindings(&self.scope, self.resolver.as_ref()).unwrap_or_default();
+        bindings.retain(|capability, _| admitted.contains(capability));
+        self.bindings
+            .lock()
+            .map_err(|_| unavailable())?
+            .clone_from(&bindings);
+        Ok(())
+    }
+}
+
+fn rediscover_all_bindings(
+    scope: &UsageDiscoveryScope,
+    resolver: &dyn ProviderCredentialEnvResolver,
+) -> Option<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>> {
+    resolver.begin_manual_retry();
+    discover_usage_sources(scope, resolver)
+        .ok()
+        .map(|catalog| validate_usage_sources(catalog, resolver))
+        .map(|discovery| {
+            discovery
+                .bindings
+                .into_iter()
+                .map(|binding| (capability_for_binding(&binding), binding))
+                .collect()
+        })
 }
 
 fn rediscover_bindings(
@@ -689,17 +782,7 @@ fn rediscover_bindings(
     Option<ValidatedCredentialBinding>,
     Option<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>>,
 ) {
-    resolver.begin_manual_retry();
-    let bindings = discover_usage_sources(scope, resolver)
-        .ok()
-        .map(|catalog| validate_usage_sources(catalog, resolver))
-        .map(|discovery| {
-            discovery
-                .bindings
-                .into_iter()
-                .map(|binding| (capability_for_binding(&binding), binding))
-                .collect::<BTreeMap<_, _>>()
-        });
+    let bindings = rediscover_all_bindings(scope, resolver);
     let binding = bindings
         .as_ref()
         .and_then(|bindings| bindings.get(capability).cloned());
@@ -787,7 +870,13 @@ pub fn ensure_usage_broker(
         }
     }
     let capabilities = usage_broker_capabilities(&discovery);
+    let catalog_revision = discovery
+        .config_generation
+        .clone()
+        .unwrap_or_else(|| "empty".to_owned());
+    let catalog = usage_catalog_entries(&discovery);
     let client = ensure_usage_broker_process(config, &scope)?;
+    client.reconcile_catalog(catalog_revision, catalog)?;
     Ok(UsageBrokerHandle {
         client,
         capabilities,
@@ -845,6 +934,11 @@ pub fn run_usage_broker_service(
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
 ) -> Result<(), UsageCoordinationError> {
     let identity_metadata = publication_identity_metadata(&discovery);
+    let catalog_revision = discovery
+        .config_generation
+        .clone()
+        .unwrap_or_else(|| "empty".to_owned());
+    let catalog = usage_catalog_entries(&discovery);
     let mut bindings = BTreeMap::new();
     for binding in discovery.bindings {
         bindings
@@ -857,7 +951,12 @@ pub fn run_usage_broker_service(
         resolver,
         probe_budget: config.coordinator.provider_timeout,
     });
-    run_usage_broker_service_with_executor_and_metadata(config, executor, identity_metadata)
+    run_usage_broker_service_with_executor_and_metadata(
+        config,
+        executor,
+        identity_metadata,
+        Some((catalog_revision, catalog)),
+    )
 }
 
 /// Process service seam used by the shipped broker binary and process tests.
@@ -865,13 +964,14 @@ pub fn run_usage_broker_service_with_executor(
     config: UsageBrokerConfig,
     executor: Arc<dyn UsageProviderExecutor>,
 ) -> Result<(), UsageCoordinationError> {
-    run_usage_broker_service_with_executor_and_metadata(config, executor, BTreeMap::new())
+    run_usage_broker_service_with_executor_and_metadata(config, executor, BTreeMap::new(), None)
 }
 
 fn run_usage_broker_service_with_executor_and_metadata(
     config: UsageBrokerConfig,
     executor: Arc<dyn UsageProviderExecutor>,
     identity_metadata: BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata>,
+    initial_catalog: Option<(String, Vec<UsageCatalogEntry>)>,
 ) -> Result<(), UsageCoordinationError> {
     let run_dir = secure_run_directory(&config.data_dir)?;
     let leader_path = run_dir.join(BROKER_LEADER);
@@ -887,14 +987,24 @@ fn run_usage_broker_service_with_executor_and_metadata(
         .map_err(|_| unavailable())?;
     validate_owned_mode(&socket_path, 0o600)?;
     let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
-    let coordinator = Arc::new(UsageCoordinator::new(executor, store, config.coordinator));
-    let projection = load_projection(&config);
+    let (projection, persisted_catalog) = load_projection(&config)?;
+    let previous_catalog = persisted_catalog.clone().unwrap_or_default();
+    let coordinator = Arc::new(UsageCoordinator::with_catalog(
+        executor,
+        store,
+        config.coordinator,
+        previous_catalog.clone(),
+    ));
     let publisher = publish::ProjectionPublisher::new(
         Arc::clone(&coordinator),
         Arc::clone(&projection),
         FileProjectionStateStore::under_data_dir(&config.data_dir),
     )
     .with_identity_metadata(identity_metadata);
+    let publisher = publisher.with_catalog(previous_catalog);
+    if let Some((catalog_revision, catalog)) = initial_catalog {
+        publisher.reconcile_catalog(catalog_revision, catalog, chrono::Utc::now().timestamp())?;
+    }
     serve(ServeConfig {
         listener,
         coordinator,
@@ -939,18 +1049,30 @@ pub fn ensure_usage_broker_with_executor(
         .map_err(|_| unavailable())?;
     validate_owned_mode(&socket_path, 0o600)?;
     let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
-    let coordinator = Arc::new(UsageCoordinator::new(executor, store, config.coordinator));
+    let (projection, persisted_catalog) = load_projection(&config)?;
+    let coordinator = match persisted_catalog.clone() {
+        Some(catalog) => Arc::new(UsageCoordinator::with_catalog(
+            executor,
+            store,
+            config.coordinator,
+            catalog,
+        )),
+        None => Arc::new(UsageCoordinator::new(executor, store, config.coordinator)),
+    };
     let build_id = config.build_id.clone();
     let idle_exit = config.idle_exit;
     let lease_duration = config.lease_duration;
     let lease_renewal = config.lease_renewal;
     let lease_path = leader_path.clone();
-    let projection = load_projection(&config);
     let publisher = publish::ProjectionPublisher::new(
         Arc::clone(&coordinator),
         Arc::clone(&projection),
         FileProjectionStateStore::under_data_dir(&config.data_dir),
     );
+    let publisher = match persisted_catalog {
+        Some(catalog) => publisher.with_catalog(catalog),
+        None => publisher,
+    };
     jackin_telemetry::spawn::thread_joined_named("usage-broker".to_owned(), move || {
         serve(ServeConfig {
             listener,
@@ -1214,6 +1336,21 @@ fn dispatch(
         };
     }
     match &request.operation {
+        UsageBrokerOperation::ReconcileCatalog {
+            catalog_revision,
+            entries,
+        } => {
+            return match publisher.reconcile_catalog(
+                catalog_revision.clone(),
+                entries.clone(),
+                chrono::Utc::now().timestamp(),
+            ) {
+                Ok(projection) => UsageBrokerResponse::Projection {
+                    projection: Box::new(projection),
+                },
+                Err(error) => UsageBrokerResponse::Error { error },
+            };
+        }
         UsageBrokerOperation::CurrentProjection => return read_projection(projection),
         UsageBrokerOperation::RequestRefresh {
             force,
@@ -1237,6 +1374,7 @@ fn dispatch(
     }
     let now = chrono::Utc::now().timestamp();
     let result = match request.operation {
+        UsageBrokerOperation::ReconcileCatalog { .. } => Err(protocol_error()),
         UsageBrokerOperation::CurrentProjection
         | UsageBrokerOperation::RequestRefresh { .. }
         | UsageBrokerOperation::JoinPublication { .. }

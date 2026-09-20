@@ -12,7 +12,8 @@ use jackin_protocol::control::{
     UsageSource,
 };
 use jackin_protocol::usage_broker::{
-    UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageProjectionRefreshStateV1, UsageRefreshPhase,
+    UsageCatalogEntry, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageProjectionRefreshStateV1,
+    UsageRefreshPhase,
 };
 
 use super::*;
@@ -304,6 +305,47 @@ fn usage_broker_handshake_mismatch_fails_before_provider_dispatch() {
     let error = incompatible.refresh(capability(), 0, true).unwrap_err();
     assert_eq!(error.kind, UsageCoordinationErrorKind::ProtocolMismatch);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn existing_broker_reconcile_revokes_without_returning_stale_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let executor: Arc<dyn UsageProviderExecutor> = Arc::new(CountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_owned()),
+        executor,
+    )
+    .unwrap();
+    let entry = UsageCatalogEntry {
+        capability: capability(),
+        revision: "credential-a".to_owned(),
+    };
+
+    let admitted = client
+        .reconcile_catalog("catalog-a".to_owned(), vec![entry.clone()])
+        .unwrap();
+    let queued = client.refresh(capability(), 0, true).unwrap();
+    let completed = client
+        .join(capability(), queued.generation, Duration::from_secs(2))
+        .unwrap();
+    assert_eq!(completed.phase, UsageRefreshPhase::Completed);
+
+    let removed = client
+        .reconcile_catalog("catalog-b".to_owned(), Vec::new())
+        .unwrap();
+    assert_eq!(removed.broker_instance_id, admitted.broker_instance_id);
+    assert_eq!(removed.discovery_revision, "catalog-b");
+    assert_eq!(
+        removed.providers[0].accounts[0].canonical_account_id,
+        capability().account_id
+    );
+    assert_eq!(
+        removed.providers[0].accounts[0].status_label.as_deref(),
+        Some("removed")
+    );
+    assert_eq!(client.current_projection().unwrap(), removed);
 }
 
 #[test]

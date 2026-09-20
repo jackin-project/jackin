@@ -833,6 +833,45 @@ fn opencode_binding_uses_selected_xdg_data_and_cache_roots() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn xdg_cache_overlap_rejects_parent_traversal_and_symlink_aliases() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let real = temp.path().join("real-cache");
+    let alias = temp.path().join("cache-alias");
+    std::fs::create_dir_all(&real).unwrap();
+    symlink(&real, &alias).unwrap();
+
+    let binding_for = |key: &str, cache: PathBuf| {
+        let mut binding =
+            InstanceAuthBinding::new(key, jackin_core::Agent::Amp, AuthForwardMode::Ignore, None);
+        binding.xdg_roots = Some(jackin_config::XdgRoots {
+            data: temp.path().join(format!("{key}-data")),
+            config: temp.path().join(format!("{key}-config")),
+            cache,
+        });
+        binding
+    };
+
+    let error = validate_selected_account_sources(
+        &[
+            binding_for("first", real.clone()),
+            binding_for("second", alias),
+        ],
+        temp.path(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("overlap"), "{error:#}");
+
+    let traversal = real.join("..").join("real-cache");
+    let error =
+        validate_selected_account_sources(&[binding_for("traversal", traversal)], temp.path())
+            .unwrap_err();
+    assert!(error.to_string().contains("parent traversal"), "{error:#}");
+}
+
 #[test]
 fn colliding_sanitized_suffixes_get_numeric_tails() {
     // `a@b` and `a-b` sanitize identically; secondary slots must still

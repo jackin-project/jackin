@@ -7,6 +7,7 @@
     reason = "credential directory durability runs inside the launch blocking task"
 )]
 
+use crate::instance::{AdmittedInstance, InstanceManifest};
 use jackin_config::AppConfig;
 use jackin_core::WorkspaceName;
 use sha2::{Digest as _, Sha256};
@@ -127,7 +128,28 @@ fn rollback_credential_swap(
     Err(cause)
 }
 
-/// Hash account admission, selected bindings, and credential declarations.
+fn configured_workspace<'a>(
+    config: &'a AppConfig,
+    workspace: Option<&WorkspaceName>,
+) -> anyhow::Result<Option<&'a jackin_config::WorkspaceConfig>> {
+    workspace
+        .map(|name| {
+            config
+                .workspaces
+                .get(name.as_str())
+                .ok_or_else(|| anyhow::anyhow!("workspace {name} is not configured"))
+        })
+        .transpose()
+}
+
+#[derive(serde::Serialize)]
+struct AdmittedIdentity<'a> {
+    config_id: &'a str,
+    agent: jackin_core::Agent,
+    account_id: &'a str,
+}
+
+/// Hash the persisted admitted identities and their selected revisions.
 /// Values are hashed in memory; only the digest is stored with an instance.
 ///
 /// # Errors
@@ -136,51 +158,82 @@ pub fn account_configuration_fingerprint(
     config: &AppConfig,
     workspace: Option<&WorkspaceName>,
     role: &str,
+    admitted: &[AdmittedInstance],
 ) -> anyhow::Result<String> {
-    let ws = workspace
-        .map(|name| {
-            config
-                .workspaces
-                .get(name.as_str())
-                .ok_or_else(|| anyhow::anyhow!("workspace {name} is not configured"))
+    // Role defaults are not hashed after admission. The binding for an
+    // admitted agent remains a relevant capability revision: changing it can
+    // change which credential a reconnect would authorize.
+    let _ = role;
+    let ws = configured_workspace(config, workspace)?;
+    let mut admitted = admitted.to_vec();
+    admitted.sort_by(|left, right| {
+        left.config_id
+            .cmp(&right.config_id)
+            .then(left.agent.slug().cmp(right.agent.slug()))
+            .then(left.account_id.cmp(&right.account_id))
+    });
+    let admitted_identities = admitted
+        .iter()
+        .map(|instance| AdmittedIdentity {
+            config_id: &instance.config_id,
+            agent: instance.agent,
+            account_id: &instance.account_id,
         })
-        .transpose()?;
-    let ids = ws.map_or_else(
-        || {
-            config
-                .accounts
-                .keys()
-                .cloned()
-                .collect::<std::collections::BTreeSet<_>>()
-        },
-        |ws| ws.accounts.iter().cloned().collect(),
-    );
-    let accounts = ids
-        .into_iter()
-        .map(|id| {
-            let account = config
-                .accounts
-                .get(&id)
-                .ok_or_else(|| anyhow::anyhow!("unknown account {id:?}"))?;
-            Ok((id, account))
-        })
-        .collect::<anyhow::Result<std::collections::BTreeMap<_, _>>>()?;
+        .collect::<Vec<_>>();
+    let mut credential_revisions = std::collections::BTreeMap::new();
+    let mut capability_revisions = std::collections::BTreeMap::new();
+    for instance in &admitted {
+        let account = config.accounts.get(&instance.account_id);
+        credential_revisions.insert(
+            instance.account_id.clone(),
+            account.map(|account| {
+                (
+                    account.enabled,
+                    account.provider,
+                    account.credential.clone(),
+                )
+            }),
+        );
+        let declared = config
+            .agent_configurations
+            .get(&instance.config_id)
+            .map(|configuration| {
+                (
+                    configuration.agent,
+                    configuration.account.clone(),
+                    configuration.model.clone(),
+                    configuration.base_url.clone(),
+                    configuration.invoked_via_wrapper.clone(),
+                )
+            });
+        let binding = ws
+            .and_then(|workspace| workspace.roles.get(role))
+            .and_then(|role| role.account_bindings.get(&instance.agent))
+            .or_else(|| ws.and_then(|workspace| workspace.account_bindings.get(&instance.agent)))
+            .or_else(|| config.account_bindings.get(&instance.agent))
+            .cloned();
+        capability_revisions.insert(
+            instance.config_id.clone(),
+            (
+                instance.agent,
+                instance.account_id.clone(),
+                declared,
+                account.map(|account| account.supports_agent(instance.agent)),
+                ws.map(|workspace| {
+                    workspace
+                        .accounts
+                        .iter()
+                        .any(|account_id| account_id == &instance.account_id)
+                }),
+                binding,
+            ),
+        );
+    }
     let bytes = serde_json::to_vec(&(
-        // v4 extends admission to the instance set: agent configurations and
-        // launch defaults select which instances resolve. v2 keeps Claude
-        // metadata inside its directory mount; v1 containers pin a mutable
-        // .claude.json inode and cannot support atomic replacement.
-        "account-config-v4-isolated-sessions",
-        accounts,
-        &config.account_bindings,
-        ws.map(|ws| &ws.account_bindings),
-        ws.and_then(|ws| ws.roles.get(role))
-            .map(|role| &role.account_bindings),
-        &config.agent_configurations,
-        &config.default_launch,
-        ws.map(|ws| &ws.default_launch),
-        ws.and_then(|ws| ws.roles.get(role))
-            .map(|role| &role.default_launch),
+        "account-config-v7-admitted-revisions",
+        admitted_identities,
+        credential_revisions,
+        capability_revisions,
     ))?;
     let mut encoded = String::with_capacity(64);
     for byte in Sha256::digest(bytes) {
@@ -205,7 +258,14 @@ pub fn account_configuration_matches(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error.into()),
     };
-    Ok(stored == account_configuration_fingerprint(config, workspace, role)?)
+    let manifest = InstanceManifest::read(root)?;
+    Ok(stored
+        == account_configuration_fingerprint(
+            config,
+            workspace,
+            role,
+            &manifest.admitted_instances,
+        )?)
 }
 
 pub(super) fn record_account_configuration(
@@ -214,10 +274,11 @@ pub(super) fn record_account_configuration(
     config: &AppConfig,
     workspace: Option<&WorkspaceName>,
     role: &str,
+    admitted: &[AdmittedInstance],
 ) -> anyhow::Result<()> {
     std::fs::write(
         root.join(ACCOUNT_FINGERPRINT_FILE),
-        account_configuration_fingerprint(config, workspace, role)?,
+        account_configuration_fingerprint(config, workspace, role, admitted)?,
     )?;
     let snapshot = jackin_config::load_read_only_config_snapshot(paths)?;
     anyhow::ensure!(
@@ -226,7 +287,7 @@ pub(super) fn record_account_configuration(
     );
     std::fs::write(
         root.join("account-admission.sha256"),
-        account_configuration_fingerprint(&snapshot.config, workspace, role)?,
+        account_configuration_fingerprint(&snapshot.config, workspace, role, admitted)?,
     )?;
     Ok(())
 }
@@ -247,7 +308,14 @@ pub fn account_admission_matches(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error.into()),
     };
-    Ok(stored == account_configuration_fingerprint(config, workspace, role)?)
+    let manifest = InstanceManifest::read(root)?;
+    Ok(stored
+        == account_configuration_fingerprint(
+            config,
+            workspace,
+            role,
+            &manifest.admitted_instances,
+        )?)
 }
 
 pub(super) fn admit_restore(

@@ -651,8 +651,6 @@ where
     let container_name_owned = container_name.to_owned();
     let manifest_owned = validated_repo.manifest.clone();
     let config_owned = config.clone();
-    let workspace_opt_owned = configured.workspace_opt.clone();
-    let role_key_owned = role_key.to_owned();
     let github_ctx_owned = configured.github_ctx.clone();
     let model_override_owned = opts.model.clone();
     let effort_owned = opts.effort;
@@ -707,13 +705,6 @@ where
                 &prepared.0.auth.slots,
                 &models,
                 &efforts,
-            )?;
-            super::super::super::account_identity::record_account_configuration(
-                &prepared.0.root,
-                &paths_owned,
-                &config_owned,
-                workspace_opt_owned.as_ref(),
-                &role_key_owned,
             )?;
             Ok(prepared)
         })
@@ -1292,6 +1283,22 @@ where
         &prepared.container_state,
         &mut prepared.instance_manifest,
         InstanceStatus::Active,
+    ) {
+        launch.initialized.cleanup.run(launch.docker).await;
+        return Err(error);
+    }
+    let admitted_instances = trust
+        .instances
+        .iter()
+        .map(AdmittedInstance::from)
+        .collect::<Vec<_>>();
+    if let Err(error) = super::super::super::account_identity::record_account_configuration(
+        &trust.environment.state.root,
+        launch.paths,
+        launch.config,
+        trust.environment.workspace_opt.as_ref(),
+        &launch.role_key,
+        &admitted_instances,
     ) {
         launch.initialized.cleanup.run(launch.docker).await;
         return Err(error);

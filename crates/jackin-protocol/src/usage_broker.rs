@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::control::{FocusedUsageView, Money};
 
 /// Usage-broker wire protocol version.
-pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v1";
+pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v2";
 
 /// Maximum newline-delimited request or response body.
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;
@@ -22,6 +22,16 @@ pub struct UsageAccountCapability {
     pub account_id: String,
     /// Closed Rust-owned provider surface identifier.
     pub surface_id: String,
+}
+
+/// One current broker-catalog member and its secret-free credential/capability
+/// revision. The revision fences work started under an older catalog entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct UsageCatalogEntry {
+    /// Canonical provider-account capability.
+    pub capability: UsageAccountCapability,
+    /// Content-derived revision for this capability's current admission.
+    pub revision: String,
 }
 
 /// Lifecycle phase of one account refresh generation.
@@ -62,6 +72,8 @@ pub enum UsageCoordinationErrorKind {
     Unavailable,
     /// The caller lacks the requested account capability.
     Unauthorized,
+    /// The capability was removed or disabled from the current broker catalog.
+    CatalogRevoked,
     /// The active generation owner disappeared.
     OwnerLost,
     /// A bounded generation wait expired while ownership remained active.
@@ -1044,6 +1056,16 @@ pub struct UsageGenerationView {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum UsageBrokerOperation {
+    /// Host-only atomic replacement of the broker's current capability catalog.
+    ///
+    /// A Capsule relay must reject this operation; it is never forwarded from
+    /// an in-container caller.
+    ReconcileCatalog {
+        /// Content-derived current discovery revision.
+        catalog_revision: String,
+        /// Current canonical capability entries.
+        entries: Vec<UsageCatalogEntry>,
+    },
     /// Read the latest immutable canonical projection without provider work.
     CurrentProjection,
     /// Request one broker-owned projection refresh and return the latest publication.

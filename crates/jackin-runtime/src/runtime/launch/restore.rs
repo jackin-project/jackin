@@ -399,9 +399,7 @@ pub(super) fn manifest_host_workdir_fingerprint(
 }
 
 fn path_covers_workdir(mount_dst: &str, workdir: &str) -> bool {
-    let mount_dst = mount_dst.trim_end_matches('/');
-    workdir == mount_dst
-        || workdir
-            .strip_prefix(mount_dst)
-            .is_some_and(|suffix| suffix.starts_with('/'))
+    let mount_dst = jackin_core::container_paths::normalize_path(std::path::Path::new(mount_dst));
+    let workdir = jackin_core::container_paths::normalize_path(std::path::Path::new(workdir));
+    jackin_core::container_paths::path_is_ancestor_or_equal(&mount_dst, &workdir)
 }

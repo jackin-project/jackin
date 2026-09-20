@@ -8,7 +8,7 @@ use jackin_config::{AuthForwardMode, GithubAuthMode};
 use jackin_core::JackinPaths;
 use jackin_manifest::RoleManifest;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 mod auth;
 pub use auth::validate_sync_source_dir;
@@ -20,7 +20,7 @@ mod process_telemetry;
 pub use manifest::{
     AdmittedInstance, AppleContainerResources, BackendResources, DockerResources, InstanceIndex,
     InstanceIndexEntry, InstanceManifest, InstanceQuery, InstanceStatus, NewInstanceManifest,
-    SessionRecord, SessionStatus,
+    RegistrationState, SessionRecord, SessionStatus,
 };
 pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 
@@ -615,11 +615,12 @@ fn validate_selected_account_sources(
         if xdg_root_agent(binding.agent)
             && let Some(roots) = &binding.xdg_roots
         {
+            let cache_root = canonical_xdg_cache_root(&roots.cache)?;
             if let Some((previous_root, previous_key)) =
                 configured_cache_roots.iter().find(|(previous_root, _)| {
-                    roots.cache == **previous_root
-                        || roots.cache.starts_with(previous_root)
-                        || previous_root.starts_with(&roots.cache)
+                    cache_root == **previous_root
+                        || cache_root.starts_with(previous_root)
+                        || previous_root.starts_with(&cache_root)
                 })
             {
                 anyhow::bail!(
@@ -629,7 +630,7 @@ fn validate_selected_account_sources(
                     previous_root.display()
                 );
             }
-            configured_cache_roots.insert(roots.cache.clone(), binding.key.clone());
+            configured_cache_roots.insert(cache_root, binding.key.clone());
         }
         let xdg_data_dir = xdg_root_agent(binding.agent)
             .then(|| {
@@ -654,6 +655,30 @@ fn validate_selected_account_sources(
         }
     }
     Ok(())
+}
+
+/// Compare XDG cache roots by their filesystem identity, not their spelling.
+/// Reject parent traversal before canonicalization so a missing path cannot
+/// smuggle an unresolved `..` through the fallback normalization.
+fn canonical_xdg_cache_root(path: &Path) -> anyhow::Result<PathBuf> {
+    anyhow::ensure!(
+        !path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir)),
+        "XDG cache root contains parent traversal: {}",
+        path.display()
+    );
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::RootDir => normalized.push(Path::new("/")),
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::Normal(component) => normalized.push(component),
+            Component::ParentDir => unreachable!("parent traversal rejected above"),
+        }
+    }
+    Ok(std::fs::canonicalize(&normalized).unwrap_or(normalized))
 }
 
 #[derive(Debug, Clone)]

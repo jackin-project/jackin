@@ -19,13 +19,17 @@ use jackin_usage::host::{
 };
 
 #[test]
-fn resolved_launch_inventory_deduplicates_only_launch_agents() {
+fn resolved_launch_inventory_is_closed_to_manifest_not_catalog() {
     let config = CapsuleConfig {
         instances: vec![
             "work@claude".to_owned(),
             "work@codex".to_owned(),
             "work@claude".to_owned(),
         ],
+        usage_capabilities: BTreeMap::from([(
+            "unlisted".to_owned(),
+            capability("unlisted-account"),
+        )]),
         ..CapsuleConfig::default()
     };
 
@@ -226,6 +230,22 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
         Err(error) if error.kind == UsageCoordinationErrorKind::Unauthorized
     ));
     Ok(())
+}
+
+#[test]
+fn existing_relay_keeps_materialized_capability_while_new_relay_excludes_it() {
+    let removed = UsageAccountCapability {
+        account_id: "removed-account".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let existing = UsageCapabilitySet::new([removed.clone()]);
+    let recreated = UsageCapabilitySet::new(std::iter::empty());
+
+    existing.authorize(&removed).unwrap();
+    assert_eq!(
+        recreated.authorize(&removed).unwrap_err().kind,
+        UsageCoordinationErrorKind::Unauthorized
+    );
 }
 
 #[tokio::test]

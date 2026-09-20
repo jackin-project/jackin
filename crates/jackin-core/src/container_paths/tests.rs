@@ -1,4 +1,5 @@
 use super::*;
+use std::path::Path;
 
 /// Extending `container_paths` means extending this list — the xtask
 /// container-paths gate makes forgetting expensive.
@@ -82,6 +83,8 @@ fn join_composes_under_jackin() {
 fn is_jackin_owned_rejects_fhs_roots() {
     assert!(is_jackin_owned("/jackin"));
     assert!(is_jackin_owned("/jackin/run/x"));
+    assert!(!is_jackin_owned("/jackin/../home"));
+    assert!(!is_jackin_owned("/jackin-other"));
     assert!(!is_jackin_owned("/run/x"));
     assert!(!is_jackin_owned("/var/x"));
     assert!(!is_jackin_owned("/etc/x"));
@@ -94,6 +97,21 @@ fn is_jackin_owned_rejects_fhs_roots() {
 fn is_run_owned_matches_run_prefix() {
     assert!(is_run_owned("/jackin/run"));
     assert!(is_run_owned("/jackin/run/clipboard"));
+    assert!(!is_run_owned("/jackin/run/../state"));
+    assert!(!is_run_owned("/jackin/runtime"));
     assert!(!is_run_owned("/jackin/state"));
     assert!(!is_run_owned("/jackin"));
+}
+
+#[test]
+fn path_relations_normalize_components_without_prefix_collisions() {
+    assert!(path_is_ancestor_or_equal(
+        Path::new("/workspace/project"),
+        Path::new("/workspace/project/../project/src"),
+    ));
+    assert!(paths_overlap(Path::new("/home"), Path::new("/home/agent"),));
+    assert!(!path_is_ancestor_or_equal(
+        Path::new("/workspace/project"),
+        Path::new("/workspace/project-v2"),
+    ));
 }
