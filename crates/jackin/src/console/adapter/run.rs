@@ -106,7 +106,7 @@ pub(crate) fn load_console_usage_state(
                 .apply_broker_generation(view)
                 .map_err(anyhow::Error::msg)?,
             Err(error) => runtime
-                .record_broker_error(&capability.surface_id, &error)
+                .record_broker_error(&capability, &error)
                 .map_err(anyhow::Error::msg)?,
         }
     }

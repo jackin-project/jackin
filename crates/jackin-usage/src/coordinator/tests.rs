@@ -719,6 +719,22 @@ fn catalog_revocation_retains_materialized_last_good_but_fences_late_result() {
         revoked.snapshot.as_ref().unwrap().buckets[0].remaining_percent,
         Some(80)
     );
+    assert!(
+        coordinator.is_idle(),
+        "revocation must clear active ownership"
+    );
+    assert_eq!(
+        coordinator
+            .join_generation(
+                &account,
+                second.generation,
+                Duration::from_millis(20),
+                1_003,
+            )
+            .unwrap_err()
+            .kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
     assert!(store.purges.lock().unwrap().contains(&account));
 
     executor.release(1);

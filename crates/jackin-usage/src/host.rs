@@ -614,7 +614,7 @@ pub(crate) fn status_bar_rank_key(remaining: u8, resets_at: Option<i64>) -> (i64
 }
 
 /// Capsule-free host usage runtime.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HostUsageRuntime {
     cache: UsageCache,
     enabled: HashSet<String>,

@@ -390,6 +390,69 @@ fn usage_broker_twenty_clients_join_one_generation_and_probe() {
 }
 
 #[test]
+fn concurrent_catalog_rotations_publish_one_complete_revision() {
+    let temp = tempfile::tempdir().unwrap();
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_owned()),
+        Arc::new(CountingExecutor {
+            calls: AtomicUsize::new(0),
+        }),
+    )
+    .unwrap();
+    let account_a = capability();
+    let account_b = second_capability();
+    let entry_a = UsageCatalogEntry {
+        capability: account_a.clone(),
+        revision: "entry-a".to_owned(),
+    };
+    let entry_b = UsageCatalogEntry {
+        capability: account_b.clone(),
+        revision: "entry-b".to_owned(),
+    };
+    let barrier = Arc::new(Barrier::new(3));
+    let first = {
+        let client = client.clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            barrier.wait();
+            client.reconcile_catalog("catalog-a".to_owned(), vec![entry_a])
+        })
+    };
+    let second = {
+        let client = client.clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            barrier.wait();
+            client.reconcile_catalog("catalog-b".to_owned(), vec![entry_b])
+        })
+    };
+    barrier.wait();
+    let first = first.join().unwrap().unwrap();
+    let second = second.join().unwrap().unwrap();
+    assert!(["catalog-a", "catalog-b"].contains(&first.discovery_revision.as_str()));
+    assert!(["catalog-a", "catalog-b"].contains(&second.discovery_revision.as_str()));
+
+    let final_projection = client.current_projection().unwrap();
+    match final_projection.discovery_revision.as_str() {
+        "catalog-a" => {
+            assert_eq!(client.current(account_a).unwrap().generation, 0);
+            assert_eq!(
+                client.current(account_b).unwrap_err().kind,
+                UsageCoordinationErrorKind::CatalogRevoked
+            );
+        }
+        "catalog-b" => {
+            assert_eq!(client.current(account_b).unwrap().generation, 0);
+            assert_eq!(
+                client.current(account_a).unwrap_err().kind,
+                UsageCoordinationErrorKind::CatalogRevoked
+            );
+        }
+        revision => panic!("mixed or unknown catalog revision: {revision}"),
+    }
+}
+
+#[test]
 fn usage_broker_handshake_mismatch_fails_before_provider_dispatch() {
     let temp = tempfile::tempdir().unwrap();
     let executor = Arc::new(CountingExecutor {

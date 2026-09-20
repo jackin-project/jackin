@@ -1702,10 +1702,26 @@ impl HostUsageRuntime {
             .as_ref()
             .map(|current| &current.config_generation)
             != Some(&discovered.config_generation);
+        let admitted = changed.then(|| {
+            discovered
+                .bindings
+                .iter()
+                .map(|binding| {
+                    super::broker::capability_for_binding(
+                        binding,
+                        discovered.config_generation.as_deref(),
+                    )
+                })
+                .collect::<BTreeSet<_>>()
+        });
         self.discovery = Some(discovered);
         if changed {
             let current = discovered_account_keys(self.discovery.as_ref());
             self.discovered_views.retain(|key, _| current.contains(key));
+            if let Some(admitted) = admitted {
+                self.broker_phases
+                    .retain(|capability, _| admitted.contains(capability));
+            }
         }
         self.push_event(
             "discovery_reconciled",

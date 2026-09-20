@@ -30,6 +30,7 @@ pub struct UsageMenuBarBridge {
     inner: Arc<Mutex<HostUsageRuntime>>,
     credential_resolver: Arc<DesktopCredentialResolver>,
     broker: Mutex<Option<DesktopBroker>>,
+    broker_lifecycle: Mutex<()>,
     joiners: Arc<Mutex<BTreeSet<(UsageAccountCapability, u64)>>>,
 }
 
@@ -50,6 +51,7 @@ impl UsageMenuBarBridge {
             inner: Arc::new(Mutex::new(HostUsageRuntime::new())),
             credential_resolver: Arc::new(DesktopCredentialResolver::default()),
             broker: Mutex::new(None),
+            broker_lifecycle: Mutex::new(()),
             joiners: Arc::new(Mutex::new(BTreeSet::new())),
         }
     }
@@ -59,47 +61,7 @@ impl UsageMenuBarBridge {
         catch_entry(|| {
             let host_config = to_host_config(config).map_err(map_open_err)?;
             let broker_config = UsageBrokerConfig::for_data_dir(host_config.data_dir.clone());
-            let discovery_scope = host_config.discovery_scope.clone();
-            let mut guard = self.lock()?;
-            guard
-                .open_with_discovery(host_config, self.credential_resolver.as_ref())
-                .map_err(map_open_err)?;
-            let live = guard.live_probes_enabled();
-            let discovery = guard.validated_discovery();
-            drop(guard);
-            let fallback = broker_config.client();
-            let broker = if live {
-                discovery.map_or_else(
-                    || DesktopBroker {
-                        client: fallback.clone(),
-                        capabilities: Vec::new(),
-                        config: broker_config.clone(),
-                        scope: discovery_scope.clone(),
-                    },
-                    |discovery| {
-                        self.activate_broker(
-                            broker_config.clone(),
-                            discovery_scope.clone(),
-                            discovery,
-                        )
-                        .unwrap_or_else(|_| DesktopBroker {
-                            client: fallback.clone(),
-                            capabilities: Vec::new(),
-                            config: broker_config.clone(),
-                            scope: discovery_scope.clone(),
-                        })
-                    },
-                )
-            } else {
-                DesktopBroker {
-                    client: fallback,
-                    capabilities: Vec::new(),
-                    config: broker_config.clone(),
-                    scope: discovery_scope.clone(),
-                }
-            };
-            *self.broker_lock()? = Some(broker);
-            Ok(())
+            self.open_runtime_with_config(host_config, broker_config)
         })
     }
 
@@ -145,6 +107,7 @@ impl UsageMenuBarBridge {
     /// When `force` is true, bypasses the floor (manual Refresh).
     pub fn refresh(&self, surface_id: Option<String>, force: bool) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             if force {
                 self.reconcile_broker_catalog()?;
             }
@@ -192,7 +155,7 @@ impl UsageMenuBarBridge {
                     Ok(state) => state,
                     Err(error) => {
                         self.lock()?
-                            .record_broker_error(&capability.surface_id, &error)
+                            .record_broker_error(&capability, &error)
                             .map_err(map_runtime_err)?;
                         first_error.get_or_insert(error);
                         continue;
@@ -435,6 +398,7 @@ impl UsageMenuBarBridge {
     /// Shutdown; idempotent.
     pub fn shutdown(&self) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
+            let _lifecycle = self.lifecycle_lock()?;
             let mut guard = self.lock()?;
             guard.shutdown();
             *self.broker_lock()? = None;
@@ -461,20 +425,59 @@ impl UsageMenuBarBridge {
 }
 
 impl UsageMenuBarBridge {
+    fn open_runtime_with_config(
+        &self,
+        host_config: jackin_usage::host::HostRuntimeConfig,
+        broker_config: UsageBrokerConfig,
+    ) -> Result<(), UsageBridgeError> {
+        let _lifecycle = self.lifecycle_lock()?;
+        let discovery_scope = host_config.discovery_scope.clone();
+        let mut staged_runtime = self.lock()?.clone();
+        staged_runtime
+            .open_with_discovery(host_config, self.credential_resolver.as_ref())
+            .map_err(map_open_err)?;
+        let live = staged_runtime.live_probes_enabled();
+        let discovery = staged_runtime.validated_discovery();
+        let fallback = broker_config.client();
+        let broker = if live {
+            match discovery {
+                Some(discovery) => self
+                    .activate_broker(broker_config.clone(), discovery_scope.clone(), discovery)
+                    .map_err(map_coordination_err)?,
+                None => DesktopBroker {
+                    client: fallback,
+                    capabilities: Vec::new(),
+                    config: broker_config.clone(),
+                    scope: discovery_scope.clone(),
+                },
+            }
+        } else {
+            DesktopBroker {
+                client: fallback,
+                capabilities: Vec::new(),
+                config: broker_config.clone(),
+                scope: discovery_scope.clone(),
+            }
+        };
+        self.commit_runtime_and_broker(staged_runtime, broker)
+    }
+
     fn reconcile_broker_catalog(&self) -> Result<(), UsageBridgeError> {
         let current = self
             .broker_lock()?
             .clone()
             .ok_or(UsageBridgeError::RuntimeUnavailable)?;
-        let discovery = {
-            let mut runtime = self.lock()?;
+        let (staged_runtime, discovery) = {
+            let runtime = self.lock()?;
             if !runtime.live_probes_enabled() {
                 return Ok(());
             }
-            runtime
+            let mut staged_runtime = runtime.clone();
+            staged_runtime
                 .reconcile_discovery(self.credential_resolver.as_ref())
                 .map_err(map_runtime_err)?;
-            runtime.validated_discovery()
+            let discovery = staged_runtime.validated_discovery();
+            (staged_runtime, discovery)
         };
         let Some(discovery) = discovery else {
             return Ok(());
@@ -482,7 +485,18 @@ impl UsageMenuBarBridge {
         let refreshed = self
             .activate_broker(current.config, current.scope, discovery)
             .map_err(map_coordination_err)?;
-        *self.broker_lock()? = Some(refreshed);
+        self.commit_runtime_and_broker(staged_runtime, refreshed)
+    }
+
+    fn commit_runtime_and_broker(
+        &self,
+        runtime: HostUsageRuntime,
+        broker: DesktopBroker,
+    ) -> Result<(), UsageBridgeError> {
+        let mut runtime_guard = self.lock()?;
+        let mut broker_guard = self.broker_lock()?;
+        *runtime_guard = runtime;
+        *broker_guard = Some(broker);
         Ok(())
     }
 
@@ -520,6 +534,12 @@ impl UsageMenuBarBridge {
             .map_err(|_| UsageBridgeError::rejected("lock", "broker mutex poisoned"))
     }
 
+    fn lifecycle_lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, UsageBridgeError> {
+        self.broker_lifecycle
+            .lock()
+            .map_err(|_| UsageBridgeError::rejected("lock", "broker lifecycle mutex poisoned"))
+    }
+
     fn schedule_join(
         &self,
         client: UsageBrokerClient,
@@ -548,7 +568,7 @@ impl UsageMenuBarBridge {
             match result {
                 Ok(state) => drop(runtime.apply_broker_generation(state)),
                 Err(error) => {
-                    drop(runtime.record_broker_error(&capability.surface_id, &error));
+                    drop(runtime.record_broker_error(&capability, &error));
                 }
             }
             joiners

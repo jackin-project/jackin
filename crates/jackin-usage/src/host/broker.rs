@@ -119,13 +119,22 @@ impl HostUsageRuntime {
     /// Surface one coordination failure without discarding last-good quota.
     pub fn record_broker_error(
         &mut self,
-        surface_id: &str,
+        capability: &UsageAccountCapability,
         error: &UsageCoordinationError,
     ) -> Result<(), String> {
         self.require_open()?;
+        if error.kind == UsageCoordinationErrorKind::CatalogRevoked
+            && self.broker_phases.remove(capability).is_some()
+        {
+            self.push_event(
+                "broker_phase_changed",
+                Some(&capability.surface_id),
+                Some("failed".to_owned()),
+            );
+        }
         self.push_event(
             "probe_failed",
-            Some(surface_id),
+            Some(&capability.surface_id),
             Some(error.message.clone()),
         );
         Ok(())

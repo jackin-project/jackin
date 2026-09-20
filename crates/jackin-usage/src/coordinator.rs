@@ -223,6 +223,9 @@ struct CoordinatorState {
 
 struct Shared {
     state: Mutex<CoordinatorState>,
+    /// Catalog replacement is a transaction boundary. Executor bindings and
+    /// in-memory revision fencing must never observe two rotations interleaved.
+    catalog_lifecycle: Mutex<()>,
     changed: Condvar,
     executor: Arc<dyn UsageProviderExecutor>,
     store: Arc<dyn AccountStateStore>,
@@ -303,6 +306,7 @@ impl UsageCoordinator {
                 catalog,
                 ..CoordinatorState::default()
             }),
+            catalog_lifecycle: Mutex::new(()),
             changed: Condvar::new(),
             executor,
             store,
@@ -339,6 +343,11 @@ impl UsageCoordinator {
         now_epoch: i64,
     ) -> Result<(), UsageCoordinationError> {
         let entries = entries.into_iter().collect::<Vec<_>>();
+        let _catalog_lifecycle = self
+            .shared
+            .catalog_lifecycle
+            .lock()
+            .map_err(|_| unavailable_error())?;
         self.shared.executor.reconcile_catalog(&entries)?;
         let next = entries
             .into_iter()
@@ -1050,6 +1059,7 @@ fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
     entry.envelope.phase = UsageRefreshPhase::Failed;
     entry.envelope.terminal_result = None;
     entry.envelope.terminal_error = Some(catalog_revoked_error());
+    entry.envelope.started_at_epoch = None;
     entry.envelope.completed_at_epoch = Some(now_epoch);
     entry.envelope.rate_limit_deadline_epoch = None;
     entry.envelope.retry_deadline_epoch = None;

@@ -48,6 +48,9 @@ pub(crate) struct ProjectionPublisher {
     known: Arc<Mutex<BTreeSet<UsageAccountCapability>>>,
     published: Arc<Mutex<BTreeMap<UsageAccountCapability, PublishedAccount>>>,
     catalog: Arc<Mutex<Option<BTreeMap<UsageAccountCapability, String>>>>,
+    /// Serializes catalog replacement with incremental publication and
+    /// observed-capability admission.
+    catalog_lifecycle: Arc<Mutex<()>>,
     identity_metadata: BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
 }
 
@@ -80,6 +83,7 @@ impl ProjectionPublisher {
             known: Arc::new(Mutex::new(BTreeSet::new())),
             published: Arc::new(Mutex::new(BTreeMap::new())),
             catalog: Arc::new(Mutex::new(None)),
+            catalog_lifecycle: Arc::new(Mutex::new(())),
             identity_metadata: BTreeMap::new(),
         }
     }
@@ -129,20 +133,28 @@ impl ProjectionPublisher {
     /// Record one capability served by the broker. Only observed capabilities
     /// are ever merged into a publication.
     pub(crate) fn observe(&self, capability: &UsageAccountCapability) {
-        if let Ok(mut known) = self.known.lock() {
-            let admitted = self.catalog.lock().is_ok_and(|catalog| {
-                catalog
-                    .as_ref()
-                    .is_none_or(|catalog| catalog.contains_key(capability))
-            });
-            if admitted {
-                known.insert(capability.clone());
-            }
+        let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
+            return;
+        };
+        let admitted = self.catalog.lock().is_ok_and(|catalog| {
+            catalog
+                .as_ref()
+                .is_none_or(|catalog| catalog.contains_key(capability))
+        });
+        if admitted && let Ok(mut known) = self.known.lock() {
+            known.insert(capability.clone());
         }
     }
 
     /// Capabilities observed so far, in settled order.
     pub(crate) fn known_capabilities(&self) -> Vec<UsageAccountCapability> {
+        let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
+            return Vec::new();
+        };
+        self.known_capabilities_locked()
+    }
+
+    fn known_capabilities_locked(&self) -> Vec<UsageAccountCapability> {
         let known = self
             .known
             .lock()
@@ -166,6 +178,10 @@ impl ProjectionPublisher {
         entries: Vec<UsageCatalogEntry>,
         now_epoch: i64,
     ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        let _catalog_lifecycle = self
+            .catalog_lifecycle
+            .lock()
+            .map_err(|_| publisher_unavailable())?;
         self.coordinator
             .reconcile_catalog(entries.iter().cloned(), now_epoch)?;
         let catalog = entries
@@ -224,7 +240,10 @@ impl ProjectionPublisher {
     /// Each account is read independently: one unreadable account is skipped
     /// without affecting the others.
     pub(crate) fn publish_due(&self, now_epoch: i64) -> bool {
-        let capabilities = self.known_capabilities();
+        let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
+            return false;
+        };
+        let capabilities = self.known_capabilities_locked();
         if capabilities.is_empty() {
             return false;
         }
