@@ -1,6 +1,6 @@
 # Handoff
 
-Handoff snapshot: `2026-09-20T15:49:30Z`.
+Handoff snapshot: `2026-09-20T15:52:12Z`.
 
 This document preserves the in-progress integration/release goal. It is a continuation point, not a completion claim.
 
@@ -42,8 +42,8 @@ Primary references:
 
 - Repository: `/Users/donbeave/Projects/jackin-project/jackin`
 - Branch: `feat/multi-account-support`
-- Local and `origin/feat/multi-account-support`: `413df30642bbe7155861f094357a78199b551681`
-- Handoff commit: `413df30642bbe7155861f094357a78199b551681` (`docs: add integration release handoff`)
+- Implementation/handoff merge baseline `39b4267da4a30213f20dbcd9cb59ab1d4dc7f071`; this final handoff metadata commit changes only `HANDOFF.md`. Verify the final branch SHA with `git rev-parse HEAD` and `git ls-remote` after push.
+- Handoff merge commit: `39b4267da4a30213f20dbcd9cb59ab1d4dc7f071` (`merge: preserve corrected handoff`); it keeps the first pushed handoff commit as an ancestor without force-push.
 - Implementation baseline immediately before the handoff document: `d3e5f38b37c3437db26343c3e339892dea818e73` (`docs(config): repair current schema contract`)
 - Tree: clean; no staged, unstaged, or untracked files at this snapshot.
 - No tag points at HEAD.
@@ -62,7 +62,7 @@ The following was refreshed from GitHub at `2026-09-20T15:49Z`; the non-#1002 ro
 
 | PR | Head | Base | State / disposition |
 |---|---|---|---|
-| [#1002](https://github.com/jackin-project/jackin/pull/1002) | `413df306` | `main` at stale `41796158` | Starting-scope feature; open, conflicting/dirty. New Policy run `35520768842` was in progress; DCO passed. The prior `d3e5f38b` Policy run failed generated-tree. |
+| [#1002](https://github.com/jackin-project/jackin/pull/1002) | `39b4267d` | `main` at stale `41796158` | Starting-scope feature; open, conflicting/dirty. Policy run `35520889714` failed generated-tree; DCO passed. |
 | [#1004](https://github.com/jackin-project/jackin/pull/1004) | `073ebbc5` | `main` at stale `41796158` | Goal release-verification PR; open, stale/conflicting/unknown merge state. Candidate work exists separately at `9edc8824`. |
 | [#1005](https://github.com/jackin-project/jackin/pull/1005) | `f38cb9ea` | feature at stale `3218706c` | Goal evidence PR; open/unstable and stale. Must update evidence to final SHAs and rerun exact checks. |
 | [#1007](https://github.com/jackin-project/jackin/pull/1007) | `f4054488` | `main` at stale `3d510aac` | Goal-created draft CI/generated-tree PR; currently zero-diff/no-op. It must become real final generated work before merge. |
@@ -181,7 +181,8 @@ Execute in this order. Keep each meaningful unit signed, tested, committed, and 
 Refresh refs and all open PR data before mutation:
 
 ```sh
-rtk git fetch origin main feat/multi-account-support
+rtk git fetch origin main
+rtk git fetch origin '+refs/heads/feat/multi-account-support:refs/remotes/origin/feat/multi-account-support'
 rtk git fetch velnor main
 rtk gh pr list --repo jackin-project/jackin --state open --limit 100 \
   --json number,title,isDraft,headRefName,headRefOid,baseRefName,baseRefOid,mergeable,mergeStateStatus,url
@@ -352,7 +353,8 @@ Useful commands:
 
 ```sh
 rtk git status --short --branch
-rtk git fetch origin main feat/multi-account-support
+rtk git fetch origin main
+rtk git fetch origin '+refs/heads/feat/multi-account-support:refs/remotes/origin/feat/multi-account-support'
 rtk git fetch velnor main
 rtk gh pr checks <number>
 rtk cargo fmt --all -- --check
