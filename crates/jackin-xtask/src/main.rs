@@ -355,3 +355,5 @@ fn main() -> ExitCode {
         }
     }
 }
+
+fn  hook_proof_dirty_unstaged( )  -> i32 {  3  }
