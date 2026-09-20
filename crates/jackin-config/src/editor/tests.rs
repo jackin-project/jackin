@@ -55,6 +55,7 @@ fn config_lock_fresh_editor_bootstraps_without_recursive_acquisition() {
     editor.save().unwrap();
     assert!(paths.config_file.exists());
     assert!(paths.config_file.with_file_name("config.lock").exists());
+    assert!(!publication_journal_path(&paths.config_file).exists());
 }
 
 #[test]
@@ -280,6 +281,10 @@ fn save_commit_failure_does_not_leave_earlier_files_committed() {
     assert!(
         staged_leaks.is_empty(),
         "rollback left staged files: {staged_leaks:?}"
+    );
+    assert!(
+        !publication_journal_path(&paths.config_file).exists(),
+        "failed save left a publication journal behind"
     );
 }
 

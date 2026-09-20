@@ -77,10 +77,10 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
 
 #### `config-crash-between-renames-journal` — durable publication journal + read-path recovery for crash-between-renames
 
-- **What:** `commit_staged_config` rolls back only in-process failures. Every `ConfigEditor::save` with workspace docs is multi-file, so a kill in the rename window can leave global-new/workspace-old skew with dangling account bindings. Add a durable publication journal plus recovery on the read path (not only the write path).
-- **Why:** single-file atomicity and idempotent per-file migrations cover the common cases, but the cross-file window has no crash recovery today; a skewed config strands workspace bindings until hand-edit.
-- **Last verified:** 2026-09-20 — filed as multi-account merge follow-up; the journal recovery was dropped from the merge and the skew window stands.
-- **Done when:** a crash between renames is detected and reconciled on the next read (next write at minimum), covered by a regression test. Remove this entry.
+- **What:** implemented. `commit_staged_config` ([`crates/jackin-config/src/persist.rs`](crates/jackin-config/src/persist.rs)) fsyncs a TOML journal (`<config-dir>/.jackin-config-publication`, version 1, `deny_unknown_fields`, `0600`) before the first rename and removes it after the last; `recover_pending_publication` forward-rolls it under the already-held exclusive lock on the next write-locked open (`AppConfig::load_or_init`, `ConfigEditor::open_with_lock`), with best-effort GC of orphaned `*.tmp.<pid>.<ctr>` staged files. The read-only snapshot reports a pending journal as `TransientConflict` without mutating disk.
+- **Why:** single-file atomicity and idempotent per-file migrations cover the common cases, but the cross-file window had no crash recovery; a skewed config stranded workspace bindings until hand-edit.
+- **Last verified:** 2026-09-20 — implemented as multi-account merge follow-up (D-SEC2); covered by regression tests (`publication_journal_*`, `recover_pending_publication_*` in `persist/tests.rs`, `disc_read_only_pending_publication_*` in `app_config/persist/tests.rs`, journal assertions in `editor/tests.rs`).
+- **Done when:** satisfied — a crash between renames is reconciled on the next write-locked open and surfaced (not served as stable) on the next read. Remove this entry on merge.
 
 ## Roadmap
 

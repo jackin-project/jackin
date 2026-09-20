@@ -3,7 +3,10 @@
 
 //! Tests for `persist`.
 use super::*;
-use crate::persist::{acquire_config_write_lock, atomic_write};
+use crate::persist::{
+    StagedDelete, acquire_config_write_lock, atomic_write, leak_staged_writes,
+    publication_journal_path, stage_atomic_write, write_publication_journal,
+};
 use crate::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
 use jackin_core::JackinPaths;
 use std::path::Path;
@@ -1335,4 +1338,46 @@ fn disc_read_only_repeated_torn_tree_returns_only_transient_diagnostic() {
             issue: ConfigSourceIssue::TransientConflict,
         }]
     );
+}
+
+#[test]
+fn disc_read_only_pending_publication_reports_transient_without_mutation() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    disc_write_tree(&paths);
+
+    // Simulate kill -9 mid-publication: journal plus staged tmps on disk.
+    let journal_path = publication_journal_path(&paths.config_file);
+    let staged = vec![stage_atomic_write(&paths.config_file, "version = \"v9alpha9\"\n").unwrap()];
+    let deletes: Vec<StagedDelete> = Vec::new();
+    write_publication_journal(&journal_path, &staged, &deletes).unwrap();
+    leak_staged_writes(staged);
+
+    let workspace_file = paths.workspaces_dir.join("alpha.toml");
+    let config_before = disc_file_stamp(&paths.config_file);
+    let workspace_before = disc_file_stamp(&workspace_file);
+    let journal_before = disc_file_stamp(&journal_path);
+    let config_entries_before = disc_dir_entries(&paths.config_dir);
+    let workspace_entries_before = disc_dir_entries(&paths.workspaces_dir);
+
+    let snapshot = load_read_only_config_snapshot(&paths).unwrap();
+
+    // Skewed bytes are never served as a stable generation.
+    assert!(snapshot.config.workspaces.is_empty());
+    assert_eq!(
+        snapshot.diagnostics,
+        vec![ConfigSourceDiagnostic {
+            scope: ConfigSourceScope::Workspaces,
+            issue: ConfigSourceIssue::TransientConflict,
+        }]
+    );
+    assert_eq!(disc_file_stamp(&paths.config_file), config_before);
+    assert_eq!(disc_file_stamp(&workspace_file), workspace_before);
+    assert_eq!(disc_file_stamp(&journal_path), journal_before);
+    assert_eq!(disc_dir_entries(&paths.config_dir), config_entries_before);
+    assert_eq!(
+        disc_dir_entries(&paths.workspaces_dir),
+        workspace_entries_before
+    );
+    assert!(!paths.config_file.with_file_name("config.lock").exists());
 }

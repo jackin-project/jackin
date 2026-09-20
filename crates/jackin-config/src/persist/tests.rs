@@ -2,7 +2,215 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::{AppConfig, ConfigEditor};
+use jackin_core::JackinPaths;
 use std::sync::mpsc;
+
+fn journal_workspace_toml(workdir: &str) -> String {
+    format!(
+        "version = \"{}\"\nworkdir = \"{workdir}\"\n\n[[mounts]]\nsrc = \"/host/source\"\ndst = \"{workdir}\"\n",
+        crate::CURRENT_WORKSPACE_VERSION
+    )
+}
+
+fn journal_global_with_marker(global_before: &str) -> String {
+    let mut doc: toml_edit::DocumentMut = global_before.parse().unwrap();
+    doc["env"]["JOURNAL_RECOVERED"] = toml_edit::value("yes");
+    doc.to_string()
+}
+
+fn assert_no_staged_files(paths: &JackinPaths) {
+    for dir in [&paths.config_dir, &paths.workspaces_dir] {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.map(|entry| entry.unwrap()) {
+            assert!(
+                !entry.file_name().to_string_lossy().contains(".tmp."),
+                "staged file leaked: {}",
+                entry.path().display()
+            );
+        }
+    }
+}
+
+#[test]
+fn publication_journal_with_zero_completed_renames_recovers_on_open() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+
+    // Simulate kill -9 after the journal fsync but before the first rename:
+    // staged tmps plus journal on disk, zero renames completed.
+    let global_before = std::fs::read_to_string(&paths.config_file).unwrap();
+    let new_global = journal_global_with_marker(&global_before);
+    let beta_path = paths.workspaces_dir.join("beta.toml");
+    let beta_contents = journal_workspace_toml("/workspace/beta");
+    let journal_path = publication_journal_path(&paths.config_file);
+    let staged = vec![
+        stage_atomic_write(&paths.config_file, &new_global).unwrap(),
+        stage_atomic_write(&beta_path, &beta_contents).unwrap(),
+    ];
+    let deletes: Vec<StagedDelete> = Vec::new();
+    write_publication_journal(&journal_path, &staged, &deletes).unwrap();
+    leak_staged_writes(staged);
+    assert!(journal_path.exists());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(
+            std::fs::metadata(&journal_path)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+    assert_eq!(
+        std::fs::read_to_string(&paths.config_file).unwrap(),
+        global_before
+    );
+
+    drop(ConfigEditor::open(&paths).unwrap());
+
+    assert_eq!(
+        std::fs::read_to_string(&paths.config_file).unwrap(),
+        new_global
+    );
+    assert_eq!(std::fs::read_to_string(&beta_path).unwrap(), beta_contents);
+    assert!(!journal_path.exists());
+    assert_no_staged_files(&paths);
+    // Recovered tree passes full load-time validation.
+    AppConfig::load_or_init(&paths).unwrap();
+}
+
+#[test]
+fn publication_journal_first_rename_only_completes_writes_and_deletes() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let alpha_path = paths.workspaces_dir.join("alpha.toml");
+    let beta_path = paths.workspaces_dir.join("beta.toml");
+    std::fs::write(&alpha_path, journal_workspace_toml("/workspace/alpha")).unwrap();
+    std::fs::write(&beta_path, journal_workspace_toml("/workspace/beta")).unwrap();
+
+    // Simulate kill -9 after the first rename with a delete still pending:
+    // global new, alpha staged, beta awaiting deletion.
+    let global_before = std::fs::read_to_string(&paths.config_file).unwrap();
+    let new_global = journal_global_with_marker(&global_before);
+    let new_alpha = journal_workspace_toml("/workspace/alpha-new");
+    let journal_path = publication_journal_path(&paths.config_file);
+    let staged = vec![
+        stage_atomic_write(&paths.config_file, &new_global).unwrap(),
+        stage_atomic_write(&alpha_path, &new_alpha).unwrap(),
+    ];
+    let deletes = vec![stage_delete(&beta_path).unwrap().unwrap()];
+    write_publication_journal(&journal_path, &staged, &deletes).unwrap();
+    let global_tmp = staged.first().unwrap().tmp.clone();
+    leak_staged_writes(staged);
+    std::fs::rename(&global_tmp, &paths.config_file).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&paths.config_file).unwrap(),
+        new_global
+    );
+
+    drop(ConfigEditor::open(&paths).unwrap());
+
+    assert_eq!(std::fs::read_to_string(&alpha_path).unwrap(), new_alpha);
+    assert!(!beta_path.exists());
+    assert!(!journal_path.exists());
+    assert_no_staged_files(&paths);
+    AppConfig::load_or_init(&paths).unwrap();
+}
+
+#[test]
+fn recover_pending_publication_is_idempotent() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+
+    let global_before = std::fs::read_to_string(&paths.config_file).unwrap();
+    let new_global = journal_global_with_marker(&global_before);
+    let beta_path = paths.workspaces_dir.join("beta.toml");
+    let beta_contents = journal_workspace_toml("/workspace/beta");
+    let journal_path = publication_journal_path(&paths.config_file);
+    let staged = vec![
+        stage_atomic_write(&paths.config_file, &new_global).unwrap(),
+        stage_atomic_write(&beta_path, &beta_contents).unwrap(),
+    ];
+    let deletes: Vec<StagedDelete> = Vec::new();
+    write_publication_journal(&journal_path, &staged, &deletes).unwrap();
+    leak_staged_writes(staged);
+
+    recover_pending_publication(&paths.config_file).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&paths.config_file).unwrap(),
+        new_global
+    );
+    assert!(!journal_path.exists());
+
+    // Second run sees no journal and changes nothing.
+    recover_pending_publication(&paths.config_file).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&paths.config_file).unwrap(),
+        new_global
+    );
+    assert_eq!(std::fs::read_to_string(&beta_path).unwrap(), beta_contents);
+    AppConfig::load_or_init(&paths).unwrap();
+}
+
+#[test]
+fn recover_pending_publication_collects_unlisted_staged_garbage() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let orphan = paths.config_file.with_file_name("config.toml.tmp.12345.7");
+    let orphan_ws = paths.workspaces_dir.join("alpha.toml.tmp.12345.8");
+    let keeper = paths.workspaces_dir.join("notes.tmp.1.2.toml");
+    std::fs::write(&orphan, b"orphan").unwrap();
+    std::fs::write(&orphan_ws, b"orphan").unwrap();
+    std::fs::write(&keeper, b"operator").unwrap();
+
+    recover_pending_publication(&paths.config_file).unwrap();
+
+    assert!(!orphan.exists());
+    assert!(!orphan_ws.exists());
+    assert_eq!(std::fs::read(&keeper).unwrap(), b"operator".to_vec());
+}
+
+#[test]
+fn recover_pending_publication_rejects_corrupt_journal() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+    let journal_path = publication_journal_path(&paths.config_file);
+    std::fs::write(&journal_path, b"not = [valid toml").unwrap();
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+    assert!(err.to_string().contains("corrupt"), "{err:#}");
+    // Recovery never touches a journal it cannot parse.
+    assert_eq!(
+        std::fs::read(&journal_path).unwrap(),
+        b"not = [valid toml".to_vec()
+    );
+}
+
+#[test]
+fn recover_pending_publication_rejects_unsupported_journal_version() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+    let journal_path = publication_journal_path(&paths.config_file);
+    std::fs::write(&journal_path, "version = 999\n").unwrap();
+
+    let err = ConfigEditor::open(&paths).unwrap_err();
+    assert!(err.to_string().contains("unsupported"), "{err:#}");
+    assert!(journal_path.exists());
+}
 
 #[test]
 fn config_lock_two_writers_serialize() {

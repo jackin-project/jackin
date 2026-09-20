@@ -24,7 +24,8 @@ use crate::app_config::persist::{
 use crate::auth::GithubAuthMode;
 use crate::persist::{
     ConfigWriteGuard, StagedWrite, acquire_config_write_lock, commit_staged_config,
-    stage_atomic_write, stage_delete, validate_workspace_file_stem,
+    publication_journal_path, recover_pending_publication, stage_atomic_write, stage_delete,
+    validate_workspace_file_stem,
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
@@ -376,6 +377,7 @@ impl ConfigEditor {
         lock: ConfigWriteGuard,
     ) -> crate::ConfigResult<(Self, BootstrapReport)> {
         paths.ensure_base_dirs()?;
+        recover_pending_publication(&paths.config_file)?;
         let mut report = BootstrapReport::default();
         let initial_contents = if paths.config_file.exists() {
             None
@@ -424,7 +426,7 @@ impl ConfigEditor {
             // config whose instance account is not registered yet for repair.
             loaded.validate_for_editor()?;
         }
-        drop(loaded.commit()?);
+        drop(loaded.commit(&publication_journal_path(&paths.config_file))?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw
@@ -818,7 +820,11 @@ impl ConfigEditor {
                         deletes.push(delete);
                     }
                 }
-                commit_staged_config(&mut staged, &mut deletes)?;
+                commit_staged_config(
+                    &publication_journal_path(&self.path),
+                    &mut staged,
+                    &mut deletes,
+                )?;
                 Ok(config)
             })(),
         )
