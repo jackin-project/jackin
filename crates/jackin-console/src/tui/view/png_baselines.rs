@@ -452,6 +452,7 @@ fn account_config() -> AppConfig {
                 agent: Agent::Claude,
                 directory: "/profiles/claude-personal".into(),
                 xdg_roots: None,
+                source_selector: None,
             },
         ),
         (
@@ -461,6 +462,7 @@ fn account_config() -> AppConfig {
                 agent: Agent::Claude,
                 directory: "/profiles/claude-work".into(),
                 xdg_roots: None,
+                source_selector: None,
             },
         ),
         (

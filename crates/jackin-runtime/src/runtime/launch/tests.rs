@@ -8794,6 +8794,7 @@ fn assigned_account_resolves_mode_and_profile_together() {
                 agent: Agent::Codex,
                 directory: "/accounts/work".into(),
                 xdg_roots: None,
+                source_selector: None,
             },
         },
     );

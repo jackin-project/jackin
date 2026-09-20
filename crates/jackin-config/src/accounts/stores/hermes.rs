@@ -80,6 +80,53 @@ pub(crate) fn enumerate_hermes_store(dir: &Path) -> Result<Vec<StoreCandidate>, 
     Ok(candidates)
 }
 
+/// Prove that the Hermes directory contains one profile and one auth entry
+/// before a whole-store sync is allowed. The directory provisioner cannot
+/// safely rewrite unknown profile/state files, so any extra entry fails closed.
+pub(crate) fn validate_single_profile_store(dir: &Path) -> Result<(), StoreError> {
+    let candidates = enumerate_hermes_store(dir)?;
+    let Some(candidate) = candidates.first() else {
+        return Err(StoreError::Unsupported(
+            "Hermes credential store has no usable profile",
+        ));
+    };
+    if candidates.len() != 1 {
+        return Err(StoreError::Unsupported(
+            "Hermes credential store contains multiple profiles",
+        ));
+    }
+
+    let auth_path = dir.join("auth.json");
+    let auth_bytes = read_store_file(&auth_path, AUTH_JSON_LIMIT)?.ok_or(
+        StoreError::Unsupported("Hermes credential store has no auth.json"),
+    )?;
+    let auth: serde_json::Value =
+        serde_json::from_slice(&auth_bytes).map_err(|_| StoreError::Malformed)?;
+    let entries = auth.as_object().ok_or(StoreError::Malformed)?;
+    if entries.len() != 1 || !entries.contains_key(&candidate.provider) {
+        return Err(StoreError::Unsupported(
+            "Hermes auth.json contains multiple provider entries",
+        ));
+    }
+
+    let mut profiles = BTreeMap::new();
+    if let Some(bytes) = read_store_file(&dir.join("config.yaml"), YAML_LIMIT)? {
+        let text = str::from_utf8(&bytes).map_err(|_| StoreError::Malformed)?;
+        collect_inline_profiles(&parse_simple_yaml(text)?, &mut profiles)?;
+    }
+    collect_file_profiles(&dir.join("profiles"), &mut profiles)?;
+    if profiles.len() != 1
+        || profiles
+            .get(candidate.profile.as_deref().unwrap_or_default())
+            .is_none_or(|provider| provider != &candidate.provider)
+    {
+        return Err(StoreError::Unsupported(
+            "Hermes credential store contains multiple profile entries",
+        ));
+    }
+    Ok(())
+}
+
 /// Merge inline `profiles:` entries from `config.yaml` into `profiles`.
 fn collect_inline_profiles(
     doc: &BTreeMap<String, YamlNode>,

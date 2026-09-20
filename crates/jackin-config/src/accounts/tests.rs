@@ -14,6 +14,7 @@ fn profile(name: &str) -> AccountConfig {
             agent: Agent::Claude,
             directory: PathBuf::from("/profiles").join(name),
             xdg_roots: None,
+            source_selector: None,
         },
     }
 }
@@ -437,6 +438,7 @@ fn profile_compatibility_requires_owner_and_native_or_multi_provider_store() {
             agent,
             directory: PathBuf::from("/profiles/x"),
             xdg_roots: None,
+            source_selector: None,
         },
     };
     // Native profiles still work.
@@ -692,6 +694,7 @@ fn launch_fixture() -> (AppConfig, WorkspaceName) {
                 agent: Agent::Codex,
                 directory: PathBuf::from("/profiles/codex-work"),
                 xdg_roots: None,
+                source_selector: None,
             },
         },
     );
@@ -790,6 +793,7 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
             agent,
             directory: PathBuf::from("/profiles").join(name),
             xdg_roots: None,
+            source_selector: None,
         },
     };
     let add_pair = |cfg: &mut AppConfig, agent: Agent, prefix: &str| {
@@ -1137,6 +1141,7 @@ fn xdg_roots_validate_xdg_agents_and_absolute() {
             agent: Agent::Amp,
             directory: PathBuf::from("/x/amp"),
             xdg_roots: Some(roots("/x/data")),
+            source_selector: None,
         },
     };
     amp.validate("amp").unwrap();
@@ -1144,6 +1149,7 @@ fn xdg_roots_validate_xdg_agents_and_absolute() {
         agent: Agent::Amp,
         directory: PathBuf::from("/x/amp"),
         xdg_roots: Some(roots("relative")),
+        source_selector: None,
     };
     amp.validate("amp").unwrap_err();
     let claude = AccountConfig {
@@ -1154,6 +1160,7 @@ fn xdg_roots_validate_xdg_agents_and_absolute() {
             agent: Agent::Claude,
             directory: PathBuf::from("/x/claude"),
             xdg_roots: Some(roots("/x/data")),
+            source_selector: None,
         },
     };
     claude.validate("claude").unwrap_err();
@@ -1165,6 +1172,7 @@ fn xdg_roots_validate_xdg_agents_and_absolute() {
             agent: Agent::Opencode,
             directory: PathBuf::from("/x/opencode"),
             xdg_roots: Some(roots("/x/data")),
+            source_selector: None,
         },
     };
     opencode.validate("opencode").unwrap();
@@ -1188,6 +1196,7 @@ fn resolved_amp_profile_carries_explicit_xdg_roots() {
                 agent: Agent::Amp,
                 directory: PathBuf::from("/srv/amp/data/amp"),
                 xdg_roots: Some(roots.clone()),
+                source_selector: None,
             },
         },
     );

@@ -1974,6 +1974,7 @@ fn profile_account() -> crate::AccountConfig {
             agent: Agent::Claude,
             directory: "/home/operator/.claude-work".into(),
             xdg_roots: None,
+            source_selector: None,
         },
     }
 }
@@ -2064,6 +2065,7 @@ fn disabling_and_removing_accounts_prune_all_launch_scopes_atomically() {
         agent: Agent::Claude,
         directory: "/home/operator/.claude-other".into(),
         xdg_roots: None,
+        source_selector: None,
     };
     let mut config = AppConfig::default();
     config.accounts.insert("work".into(), work);
@@ -2612,6 +2614,7 @@ fn scan_for_accounts_never_overwrites_operator_id_registrations() {
         agent: Agent::Claude,
         directory: temp.path().join("elsewhere"),
         xdg_roots: None,
+        source_selector: None,
     };
     editor.upsert_account("default-claude", &operator).unwrap();
     let report = editor
@@ -2637,6 +2640,7 @@ fn scan_for_accounts_skips_sources_registered_under_other_ids() {
         agent: Agent::Claude,
         directory: paths.home_dir.join(".claude"),
         xdg_roots: None,
+        source_selector: None,
     };
     editor.upsert_account("mine", &renamed).unwrap();
     let report = editor
@@ -2689,6 +2693,7 @@ fn profile_scan_candidate_skips_agents_without_native_billing() {
             agent,
             provider: crate::AiProvider::for_agent(agent),
             directory: "/tmp/store".into(),
+            source_selector: None,
             evidence: crate::CredentialEvidence::File("/tmp/store/auth.json".into()),
         };
         assert!(profile_scan_candidate(&discovered).is_none());
@@ -2697,6 +2702,7 @@ fn profile_scan_candidate_skips_agents_without_native_billing() {
         agent: Agent::Claude,
         provider: Some(crate::AiProvider::Anthropic),
         directory: "/tmp/claude".into(),
+        source_selector: None,
         evidence: crate::CredentialEvidence::File("/tmp/claude/.credentials.json".into()),
     };
     let (id, account) = profile_scan_candidate(&discovered).unwrap();
@@ -2710,6 +2716,7 @@ fn profile_scan_candidate_preserves_opencode_store_provider_identity() {
         agent: Agent::Opencode,
         provider: Some(crate::AiProvider::Zai),
         directory: "/tmp/opencode".into(),
+        source_selector: None,
         evidence: crate::CredentialEvidence::File("/tmp/opencode/auth.json".into()),
     };
     let (id, account) = profile_scan_candidate(&discovered).unwrap();
@@ -2974,6 +2981,7 @@ fn apply_zshrc_plan_persists_amp_xdg_roots_with_discovered_credentials() {
             agent: Agent::Amp,
             directory,
             xdg_roots: Some(_),
+            source_selector: None,
         } if directory == &data.join("amp")
     ));
     let config = editor.save().unwrap();

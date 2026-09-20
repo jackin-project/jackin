@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{enumerate_omp_credentials, parse_omp_database};
+use super::{enumerate_omp_credentials, parse_omp_database, validate_single_credential_store};
 use crate::accounts::stores::tests::{Cell, Value, database, leaf_page, wal_image};
 use crate::accounts::stores::{CredentialKind, StoreCandidate, StoreError, StoreKind};
 use std::path::Path;
@@ -139,6 +139,48 @@ fn file_round_trip_labels_source() {
         "fixture-omp-004".to_owned(),
     )];
     assert_eq!(candidates, expected);
+}
+
+#[test]
+fn whole_store_validator_preserves_one_account_and_rejects_ambiguity() {
+    let dir = tempfile::tempdir().unwrap();
+    let agent_dir = dir.path().join("agent");
+    std::fs::create_dir_all(&agent_dir).unwrap();
+    let path = agent_dir.join("agent.db");
+    let one = credentials_db(&[Cell::row(
+        1,
+        vec![
+            Value::Text("openai".into()),
+            Value::Text("selected-sentinel".into()),
+            Value::Text("work".into()),
+        ],
+    )]);
+    std::fs::write(&path, one).unwrap();
+    validate_single_credential_store(dir.path()).unwrap();
+
+    let two = credentials_db(&[
+        Cell::row(
+            1,
+            vec![
+                Value::Text("openai".into()),
+                Value::Text("selected-sentinel".into()),
+                Value::Text("work".into()),
+            ],
+        ),
+        Cell::row(
+            2,
+            vec![
+                Value::Text("anthropic".into()),
+                Value::Text("other-sentinel".into()),
+                Value::Text("personal".into()),
+            ],
+        ),
+    ]);
+    std::fs::write(&path, two).unwrap();
+    assert_eq!(
+        validate_single_credential_store(dir.path()).unwrap_err(),
+        StoreError::Unsupported("omp credential store contains multiple entries")
+    );
 }
 
 #[test]

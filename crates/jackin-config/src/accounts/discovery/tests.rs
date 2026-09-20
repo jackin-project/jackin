@@ -371,11 +371,43 @@ fn hermes_discovery_enumerates_profiles_through_stores() {
     )
     .unwrap();
     let found = inspect().unwrap().unwrap();
+    assert_eq!(found.provider, Some(AiProvider::OpenAi));
+    assert_eq!(
+        found.source_selector,
+        Some(ProfileSelector {
+            entry: "openai".to_owned(),
+            profile: Some("work".to_owned()),
+        })
+    );
     assert_eq!(
         found.evidence,
         CredentialEvidence::File(directory.join("auth.json"))
     );
     assert!(!format!("{found:?}").contains("fixture"));
+}
+
+#[test]
+fn hermes_discovery_rejects_ambiguous_profiles_without_exposing_secrets() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".hermes");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("config.yaml"),
+        "profiles:\n  personal:\n    provider: anthropic\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{"anthropic":{"type":"api","key":"personal-sentinel"},"openai":{"type":"api","key":"work-sentinel"}}"#,
+    )
+    .unwrap();
+
+    let error = inspect_directory(Agent::Hermes, &directory, home.path(), |_| false).unwrap_err();
+    assert_eq!(
+        error,
+        DiscoveryError::Unsupported("Hermes credential store contains multiple profiles")
+    );
+    assert!(!format!("{error:?}").contains("sentinel"));
 }
 
 #[test]

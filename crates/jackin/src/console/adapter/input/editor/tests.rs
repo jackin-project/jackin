@@ -340,6 +340,7 @@ fn account_editor_assignment_revokes_dependent_bindings() {
                 agent: jackin_core::Agent::Codex,
                 directory: "/host/codex-work".into(),
                 xdg_roots: None,
+                source_selector: None,
             },
         },
     );

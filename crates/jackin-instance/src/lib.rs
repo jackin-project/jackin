@@ -4,7 +4,7 @@
 //! Entry point: [`InstanceManifest`] — on-disk instance record.
 
 use anyhow::Context;
-use jackin_config::{AuthForwardMode, GithubAuthMode};
+use jackin_config::{AuthForwardMode, GithubAuthMode, ProfileSelector};
 use jackin_core::JackinPaths;
 use jackin_manifest::RoleManifest;
 use std::collections::BTreeMap;
@@ -496,6 +496,8 @@ pub struct InstanceAuthBinding {
     /// Provider key selected from a multi-provider source store. This is
     /// required to filter `OpenCode` auth.json before it enters role state.
     pub source_provider: Option<jackin_config::AiProvider>,
+    /// Immutable entry/profile identity selected from an Omp or Hermes store.
+    pub source_selector: Option<ProfileSelector>,
     /// Explicit XDG roots from the selected profile, if any. These are
     /// selected-instance data, never ambient process-environment state.
     pub xdg_roots: Option<jackin_config::XdgRoots>,
@@ -520,6 +522,7 @@ impl InstanceAuthBinding {
             mode,
             sync_source_dir,
             source_provider: None,
+            source_selector: None,
             xdg_roots: None,
         }
     }
@@ -646,9 +649,10 @@ fn validate_selected_account_sources(
         if binding.mode == AuthForwardMode::Sync
             && let Some(source) = source
         {
-            auth::validate_sync_source_dir_for_provider(
+            auth::validate_sync_source_dir_for_selection(
                 binding.agent,
                 binding.source_provider,
+                binding.source_selector.as_ref(),
                 source,
                 host_home,
             )?;
@@ -1659,9 +1663,21 @@ impl RoleState {
         std::fs::create_dir_all(&omp_home_dir)?;
         let agent_db_path = omp_dir.join("agent.db");
         let (outcome, agent_db) = if let Some(source_dir) = sync_source_dir {
-            Self::provision_omp_auth_from_source_dir(&agent_db_path, mode, source_dir)?
+            Self::provision_omp_auth_from_source_dir(
+                &agent_db_path,
+                mode,
+                source_dir,
+                binding.source_provider,
+                binding.source_selector.as_ref(),
+            )?
         } else {
-            Self::provision_omp_auth(&agent_db_path, mode, host_home)?
+            Self::provision_omp_auth(
+                &agent_db_path,
+                mode,
+                host_home,
+                binding.source_provider,
+                binding.source_selector.as_ref(),
+            )?
         };
         let credential_paths = agent_db.into_iter().collect::<Vec<_>>();
         let forward_auth = !credential_paths.is_empty();
@@ -1691,9 +1707,21 @@ impl RoleState {
         std::fs::create_dir_all(&hermes_dir)?;
         std::fs::create_dir_all(&hermes_home_dir)?;
         let (outcome, forward_auth) = if let Some(source_dir) = sync_source_dir {
-            Self::provision_hermes_auth_from_source_dir(&hermes_dir, mode, source_dir)?
+            Self::provision_hermes_auth_from_source_dir(
+                &hermes_dir,
+                mode,
+                source_dir,
+                binding.source_provider,
+                binding.source_selector.as_ref(),
+            )?
         } else {
-            Self::provision_hermes_auth(&hermes_dir, mode, host_home)?
+            Self::provision_hermes_auth(
+                &hermes_dir,
+                mode,
+                host_home,
+                binding.source_provider,
+                binding.source_selector.as_ref(),
+            )?
         };
         let slot = ProvisionedInstanceAuth::new(
             binding,
