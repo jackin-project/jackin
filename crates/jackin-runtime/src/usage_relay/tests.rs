@@ -668,6 +668,34 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
+#[tokio::test]
+async fn usage_relay_dispatch_denies_projection_for_surface() {
+    let temp = tempfile::tempdir().unwrap();
+    let executor = Arc::new(CountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let concrete = Arc::clone(&executor);
+    let broker_executor: Arc<dyn UsageProviderExecutor> = concrete;
+    let broker = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().join("data")),
+        broker_executor,
+    )
+    .unwrap();
+    let allowlist = UsageCapabilitySet::new([capability("allowed")]);
+
+    let denied = dispatch(
+        UsageBrokerOperation::CurrentProjectionForSurface,
+        broker,
+        allowlist,
+    )
+    .await;
+    let UsageBrokerResponse::Error { error } = denied else {
+        panic!("for-surface projection returned state");
+    };
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+}
+
 #[test]
 fn empty_capabilities_do_not_start_a_tunnel_child() {
     let temp = tempfile::tempdir().unwrap();
