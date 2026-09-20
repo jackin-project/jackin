@@ -460,6 +460,39 @@ workdir = "/workspace/prod"
 }
 
 #[test]
+fn failed_split_migration_leaves_every_workspace_file_unchanged_on_later_conflict() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let versioned = r#"version = "v1alpha10"
+
+[workspaces.alpha]
+workdir = "/workspace/alpha"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+"#;
+    std::fs::write(&paths.config_file, versioned).unwrap();
+    let existing_prod =
+        format!("version = \"{CURRENT_WORKSPACE_VERSION}\"\nworkdir = \"/other\"\n");
+    std::fs::write(paths.workspaces_dir.join("prod.toml"), &existing_prod).unwrap();
+    let before_tree = workspace_tree_bytes(&paths);
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("already exists with different contents")
+    );
+    assert_eq!(
+        std::fs::read(&paths.config_file).unwrap(),
+        versioned.as_bytes()
+    );
+    assert_eq!(workspace_tree_bytes(&paths), before_tree);
+    assert!(!paths.workspaces_dir.join("alpha.toml").exists());
+}
+
+#[test]
 fn empty_legacy_workspaces_table_still_gets_version_stamp() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -514,6 +547,25 @@ fn config_needs_split_migration_returns_true_for_legacy_with_workspaces() {
 fn config_needs_split_migration_returns_false_for_empty_workspaces_table() {
     let raw = "[workspaces]\n";
     assert!(!config_needs_split_migration(raw).unwrap());
+}
+
+fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, Vec<u8>)>> {
+    let entries = match std::fs::read_dir(&paths.workspaces_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(error) => panic!("reading workspace tree: {error}"),
+    };
+    let mut files = entries
+        .map(|entry| {
+            let entry = entry.unwrap();
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                std::fs::read(entry.path()).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    Some(files)
 }
 
 #[test]

@@ -570,16 +570,48 @@ fn migrate_legacy_workspaces(
     workspaces: &BTreeMap<String, WorkspaceConfig>,
     legacy_op_accounts: &BTreeMap<String, String>,
 ) -> anyhow::Result<()> {
+    // Lossy: serde round-trip drops comments and blank lines from
+    // `config.toml`. Acceptable here because this path runs once at legacy
+    // migration; steady-state edits go through `ConfigEditor`.
+    let global_contents = toml::to_string_pretty(global_config).with_context(|| {
+        format!(
+            "serializing migrated global config for {}",
+            paths.config_file.display()
+        )
+    })?;
+    let workspace_writes = plan_legacy_workspace_writes(paths, workspaces, legacy_op_accounts)?;
+
     // Crash-recovery ordering: the global rewrite is the commit point. If
     // we crash before it, the legacy `[workspaces.*]` tables remain
     // authoritative and the next load_or_init re-runs this function. The
-    // exists+equal short-circuit below keeps that re-entry idempotent.
-    std::fs::create_dir_all(&paths.workspaces_dir).with_context(|| {
-        format!(
-            "creating workspaces directory {}",
-            paths.workspaces_dir.display()
-        )
-    })?;
+    // exists+equal short-circuit in the planning pass keeps that re-entry
+    // idempotent.
+    if !workspace_writes.is_empty() {
+        std::fs::create_dir_all(&paths.workspaces_dir).with_context(|| {
+            format!(
+                "creating workspaces directory {}",
+                paths.workspaces_dir.display()
+            )
+        })?;
+    }
+    for (path, contents) in workspace_writes {
+        atomic_write(&path, &contents)?;
+    }
+
+    atomic_write(&paths.config_file, &global_contents)?;
+    Ok(())
+}
+
+/// Validate every embedded workspace and plan only the split files that need
+/// to be created. This pass must stay read/compute-only: both
+/// `AppConfig::load_or_init` and `ConfigEditor::open` depend on a conflict in
+/// any later workspace leaving the complete config tree untouched.
+fn plan_legacy_workspace_writes(
+    paths: &JackinPaths,
+    workspaces: &BTreeMap<String, WorkspaceConfig>,
+    legacy_op_accounts: &BTreeMap<String, String>,
+) -> anyhow::Result<Vec<(PathBuf, String)>> {
+    let mut writes = Vec::new();
     for (name, workspace) in workspaces {
         validate_workspace_file_stem(name)?;
         let path = workspace_file_path(paths, name);
@@ -612,20 +644,9 @@ fn migrate_legacy_workspaces(
             ))
             .into());
         }
-        atomic_write(&path, &contents)?;
+        writes.push((path, contents));
     }
-
-    // Lossy: serde round-trip drops comments and blank lines from
-    // `config.toml`. Acceptable here because this path runs once at legacy
-    // migration; steady-state edits go through `ConfigEditor`.
-    let global_contents = toml::to_string_pretty(global_config).with_context(|| {
-        format!(
-            "serializing migrated global config for {}",
-            paths.config_file.display()
-        )
-    })?;
-    atomic_write(&paths.config_file, &global_contents)?;
-    Ok(())
+    Ok(writes)
 }
 
 fn legacy_workspace_contents(

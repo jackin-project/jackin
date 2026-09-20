@@ -14,6 +14,25 @@ fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
     std::fs::read_to_string(paths.workspaces_dir.join(format!("{name}.toml"))).unwrap()
 }
 
+fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, Vec<u8>)>> {
+    let entries = match std::fs::read_dir(&paths.workspaces_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(error) => panic!("reading workspace tree: {error}"),
+    };
+    let mut files = entries
+        .map(|entry| {
+            let entry = entry.unwrap();
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                std::fs::read(entry.path()).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    Some(files)
+}
+
 #[test]
 fn config_lock_fresh_editor_bootstraps_without_recursive_acquisition() {
     let temp = tempdir().unwrap();
@@ -75,6 +94,41 @@ workdir = "/workspace/prod"
     assert_eq!(out, versioned);
     assert!(out.contains("version = \"v1alpha10\""));
     assert!(!out.contains("[bootstrap]"));
+}
+
+#[test]
+fn open_leaves_every_workspace_file_unchanged_on_later_split_conflict() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let versioned = r#"version = "v1alpha10"
+
+[workspaces.alpha]
+workdir = "/workspace/alpha"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+"#;
+    std::fs::write(&paths.config_file, versioned).unwrap();
+    let existing_prod = format!(
+        "version = \"{}\"\nworkdir = \"/other\"\n",
+        crate::CURRENT_WORKSPACE_VERSION
+    );
+    std::fs::write(paths.workspaces_dir.join("prod.toml"), &existing_prod).unwrap();
+    let before_tree = workspace_tree_bytes(&paths);
+
+    let err = ConfigEditor::open(&paths).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("already exists with different contents")
+    );
+    assert_eq!(
+        std::fs::read(&paths.config_file).unwrap(),
+        versioned.as_bytes()
+    );
+    assert_eq!(workspace_tree_bytes(&paths), before_tree);
+    assert!(!paths.workspaces_dir.join("alpha.toml").exists());
 }
 
 #[test]
