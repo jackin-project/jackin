@@ -41,7 +41,7 @@ jobs:
           key: velnor-renovate-${{ github.repository }}-${{ hashFiles('renovate.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             velnor-renovate-${{ github.repository }}-${{ hashFiles('renovate.json') }}-
-            velnor-renovate-${{ github.repository }}- 
+            velnor-renovate-${{ github.repository }}-
       - name: Fix Renovate cache ownership
         if: steps.renovate-cache.outputs.cache-matched-key != ''
         run: sudo chown -R 12021:0 /tmp/renovate/

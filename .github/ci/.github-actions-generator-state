@@ -1,25 +1,25 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	1bbe2108bc81717d
+config	ccb8464ee6fe1a4b
 scan	79aad67cd9452b50
-generator	52
+generator	53
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
 .github/ci/project.toml	ac6a32b3d3940ec7
-.github/workflows/ci-main.yml	d21b3502fa03dd57
-.github/workflows/ci-policy.yml	3b1b2b4c26a532d0
-.github/workflows/ci-pr.yml	4ec7e15de4701276
-.github/workflows/ci-unit-bun.yml	8fc9e738c78523d5
-.github/workflows/ci-unit-docker.yml	594b60f12ea95203
-.github/workflows/ci-unit-rust.yml	8ab23037b03afe91
-.github/workflows/ci-unit-swift.yml	0f4c7920c4aff4d1
+.github/workflows/ci-main.yml	482b35b7c4e61e59
+.github/workflows/ci-policy.yml	ced4fe969c5a9d9c
+.github/workflows/ci-pr.yml	4e6dc853ff52bbd0
+.github/workflows/ci-unit-bun.yml	8ba3558e3576f121
+.github/workflows/ci-unit-docker.yml	99af2bcb8fc6b4ab
+.github/workflows/ci-unit-rust.yml	cc28649cea494285
+.github/workflows/ci-unit-swift.yml	e7da9288c8a59bcd
 .github/workflows/desktop-merge.yml	f9cb2a63c3d833ff
 .github/workflows/desktop-scheduled.yml	ede17b880d391a6d
-.github/workflows/maintenance.yml	bce931439ab97e53
+.github/workflows/maintenance.yml	51b86bba8a83a69d
 .github/workflows/nightly.yml	0bbe34967df0f3ed
 .github/workflows/release.yml	1aace61e7093c352
 .github/workflows/renovate-upstream-sources.yml	aea51fd10f50526e
 .github/workflows/renovate-validate.yml	0aac9a7e6ffb76ca
-.github/workflows/renovate.yml	2ad2805cd980d762
+.github/workflows/renovate.yml	0fc56f6b1d71c76a
 config/fleet/velnor-host.env	d14b419216449423
