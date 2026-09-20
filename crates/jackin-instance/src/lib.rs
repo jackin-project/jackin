@@ -647,7 +647,12 @@ fn validate_selected_account_sources(
         let source = xdg_data_dir
             .as_deref()
             .or(binding.sync_source_dir.as_deref());
+        // Hermes validates its provider/profile identity from a descriptor-
+        // locked immutable snapshot inside auth provisioning. Do not perform
+        // a separate live-source preflight here: it would create a validation
+        // result that is no longer coupled to the bytes copied into role state.
         if binding.mode == AuthForwardMode::Sync
+            && binding.agent != jackin_core::Agent::Hermes
             && let Some(source) = source
         {
             auth::validate_sync_source_dir_for_selection(

@@ -27,6 +27,9 @@ use anyhow::Context;
 use jackin_config::{AiProvider, AuthForwardMode, GithubAuthMode, ProfileSelector};
 use jackin_core::Agent;
 use std::path::Path;
+use std::sync::atomic::AtomicU64;
+
+static AUTH_DIRECTORY_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Validate that `source_dir` carries the credential structure `agent`
 /// expects for sync-mode auth forwarding.
@@ -72,7 +75,19 @@ pub(crate) fn validate_sync_source_dir_for_selection(
     source_dir: &Path,
     host_home: &Path,
 ) -> Result<(), SyncSourceValidationError> {
-    if !source_dir.is_dir() {
+    let Ok(source_metadata) = std::fs::symlink_metadata(source_dir) else {
+        return Err(SyncSourceValidationError::new(format!(
+            "{} is not a directory.",
+            source_dir.display()
+        )));
+    };
+    if source_metadata.file_type().is_symlink() {
+        return Err(SyncSourceValidationError::new(format!(
+            "{} is a symlink; source folders must be real directories.",
+            source_dir.display()
+        )));
+    }
+    if !source_metadata.is_dir() {
         return Err(SyncSourceValidationError::new(format!(
             "{} is not a directory.",
             source_dir.display()
@@ -112,7 +127,11 @@ pub(crate) fn validate_sync_source_dir_for_selection(
         }
         // Kimi syncs a directory tree rather than a single file.
         Agent::Kimi => {
-            if source_dir.join("config.toml").is_file() && source_dir.join("credentials").is_dir() {
+            let config = std::fs::symlink_metadata(source_dir.join("config.toml"));
+            let credentials = std::fs::symlink_metadata(source_dir.join("credentials"));
+            if config.is_ok_and(|metadata| metadata.is_file())
+                && credentials.is_ok_and(|metadata| metadata.is_dir())
+            {
                 Ok(())
             } else {
                 Err(SyncSourceValidationError::new(format!(
@@ -135,6 +154,9 @@ fn validate_store_source_dir(
     source_dir: &Path,
     host_home: &Path,
 ) -> Result<(), SyncSourceValidationError> {
+    if agent == Agent::Hermes {
+        validate_hermes_source_shape(source_dir)?;
+    }
     let found = jackin_config::discover_account_directory(agent, source_dir, host_home)
         .map_err(|error| {
             SyncSourceValidationError::new(format!("{agent} source rejected: {error}"))
@@ -152,6 +174,37 @@ fn validate_store_source_dir(
     if selector.is_some_and(|expected| found.source_selector.as_ref() != Some(expected)) {
         return Err(SyncSourceValidationError::new(format!(
             "{agent} source entry/profile no longer matches the selected account"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_hermes_source_shape(source_dir: &Path) -> Result<(), SyncSourceValidationError> {
+    for name in ["config.yaml", ".env", "auth.json"] {
+        let path = source_dir.join(name);
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            return Err(SyncSourceValidationError::new(format!(
+                "Hermes source file {} is a symlink; refusing to follow it.",
+                path.display()
+            )));
+        }
+        if !metadata.is_file() {
+            return Err(SyncSourceValidationError::new(format!(
+                "Hermes source file {} is a special or non-regular file.",
+                path.display()
+            )));
+        }
+    }
+    let profiles = source_dir.join("profiles");
+    if let Ok(metadata) = std::fs::symlink_metadata(&profiles)
+        && (metadata.file_type().is_symlink() || !metadata.is_dir())
+    {
+        return Err(SyncSourceValidationError::new(format!(
+            "Hermes source profiles {} is not a real directory.",
+            profiles.display()
         )));
     }
     Ok(())
@@ -381,9 +434,9 @@ impl RoleState {
     ) -> anyhow::Result<GithubProvisionOutcome> {
         // Reject pre-existing symlinks before branching on mode. The
         // role-state dir is bind-mounted RW, so a compromised role could
-        // plant a symlink between launches; calling reject_symlink
+        // plant a symlink between launches; calling reject_auth_path
         // unconditionally is fine — it lstat's and no-ops on ENOENT.
-        reject_symlink(hosts_yml)?;
+        reject_auth_path(hosts_yml)?;
 
         match github.mode {
             GithubAuthMode::Ignore => {
@@ -882,10 +935,6 @@ fn provision_kimi_dir_credential(
     _label: &str,
     agent_name: &str,
 ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
-    use anyhow::Context;
-
-    reject_symlink(target_dir)?;
-
     let outcome = match mode {
         AuthForwardMode::OAuthToken => {
             eprintln!(
@@ -904,31 +953,30 @@ fn provision_kimi_dir_credential(
             wipe_kimi_state(target_dir)?;
             AuthProvisionOutcome::Skipped
         }
-        AuthForwardMode::Sync => {
-            std::fs::create_dir_all(target_dir)?;
-
-            if host_dir.exists() {
+        AuthForwardMode::Sync => auth_directory::stage_auth_directory(
+            target_dir,
+            host_dir,
+            |host_dir, source, staged| {
                 for name in sync_files {
-                    let host_file = host_dir.join(name);
-                    if host_file.exists() {
-                        let content = std::fs::read_to_string(&host_file)
-                            .with_context(|| format!("reading {}", host_file.display()))?;
-                        write_private_file(&target_dir.join(name), &content)?;
-                    }
+                    auth_directory::copy_optional_source_file(
+                        source,
+                        name,
+                        staged,
+                        name,
+                        &format!("reading {}", host_dir.join(name).display()),
+                    )?;
                 }
 
-                let host_creds = host_dir.join("credentials");
-                if host_creds.exists() {
-                    let dest_creds = target_dir.join("credentials");
-                    copy_kimi_credentials_tree(&host_creds, &dest_creds)
-                        .with_context(|| format!("copying {}", host_creds.display()))?;
-                }
-
-                AuthProvisionOutcome::Synced
-            } else {
-                AuthProvisionOutcome::HostMissing
-            }
-        }
+                auth_directory::copy_optional_source_tree(
+                    source,
+                    "credentials",
+                    staged,
+                    "credentials",
+                    &format!("copying {}", host_dir.join("credentials").display()),
+                )?;
+                Ok(())
+            },
+        )?,
     };
 
     let forward_auth = matches!(
@@ -943,44 +991,1189 @@ fn provision_kimi_dir_credential(
 /// made here, not threaded through three near-identical copy blocks.
 const KIMI_SYNC_FILES: &[&str] = &["config.toml", "device_id"];
 
-/// Recursively copy a Kimi Code credentials tree. Symlinks are skipped with
-/// a warning (never followed). Files land at `0o600`, directories at `0o700`.
-fn copy_kimi_credentials_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
+/// Descriptor-relative auth directory transactions.
+///
+/// The destination parent and source root are opened once, every component is
+/// traversed with `O_NOFOLLOW`, and all mutations use the pinned descriptors.
+/// The journal is written and synced before each rename boundary so a retry can
+/// complete or roll back an interrupted swap without retaining an old tree.
+#[cfg(unix)]
+mod auth_directory {
+    use super::{AUTH_DIRECTORY_SWAP_COUNTER, AuthProvisionOutcome};
     use anyhow::Context;
-    std::fs::create_dir_all(dst).with_context(|| format!("creating {}", dst.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(dst, std::fs::Permissions::from_mode(0o700))
-            .with_context(|| format!("chmod 0700 {}", dst.display()))?;
+    use fs4::FileExt;
+    use nix::dir::Dir;
+    use nix::errno::Errno;
+    use nix::fcntl::{AtFlags, OFlag, open, openat, renameat};
+    use nix::sys::stat::{FileStat, Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
+    use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
+    use serde::{Deserialize, Serialize};
+    use std::ffi::{CStr, CString, OsString};
+    use std::fs::File;
+    use std::io::{Read, Write};
+    use std::os::fd::OwnedFd;
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::Ordering;
+
+    const JOURNAL_SCHEMA_VERSION: u32 = 1;
+    const MAX_JOURNAL_BYTES: usize = 16 * 1024;
+
+    #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+    enum SwapPhase {
+        Prepared,
+        BackedUp,
+        Installed,
     }
-    for entry in std::fs::read_dir(src).with_context(|| format!("reading {}", src.display()))? {
-        let entry = entry?;
-        let ft = entry.file_type()?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if ft.is_symlink() {
-            // Route via the TUI-safe channel: the rich loading cockpit owns
-            // the terminal while this runs (credentials stage). A bare
-            // `eprintln!` would corrupt the cockpit. `emit_compact_line` emits
-            // governed telemetry when an invocation is active and defers the
-            // operator notice until the rich surface tears down.
-            jackin_diagnostics::emit_compact_line(
-                "kimi-auth",
-                &format!(
-                    "skipping symlink {} under ~/.kimi-code/credentials/ — symlinks are not synced",
-                    entry.file_name().to_string_lossy()
-                ),
-            );
-        } else if ft.is_dir() {
-            copy_kimi_credentials_tree(&src_path, &dst_path)?;
-        } else if ft.is_file() {
-            let bytes = std::fs::read(&src_path)
-                .with_context(|| format!("reading {}", src_path.display()))?;
-            write_private_bytes(&dst_path, &bytes)?;
+
+    #[derive(Clone, Debug, Deserialize, Serialize)]
+    struct SwapJournal {
+        schema_version: u32,
+        target: String,
+        stage: String,
+        previous: Option<String>,
+        phase: SwapPhase,
+    }
+
+    #[derive(Debug)]
+    struct TargetLock {
+        parent: File,
+        target: CString,
+        key: String,
+        journal: CString,
+        _lock: File,
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct LockedSource {
+        pub(crate) root: File,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(crate) enum FailurePoint {
+        JournalRewrite,
+        Prepared,
+        Backup,
+        Installed,
+    }
+
+    #[cfg(test)]
+    thread_local! {
+        static FAILURE_POINT: std::cell::Cell<Option<FailurePoint>> = const { std::cell::Cell::new(None) };
+    }
+
+    #[cfg(test)]
+    pub(crate) struct FailureGuard;
+
+    #[cfg(test)]
+    impl Drop for FailureGuard {
+        fn drop(&mut self) {
+            FAILURE_POINT.with(|point| point.set(None));
         }
     }
-    Ok(())
+
+    #[cfg(test)]
+    pub(crate) fn inject_failure(point: FailurePoint) -> FailureGuard {
+        FAILURE_POINT.with(|failure| failure.set(Some(point)));
+        FailureGuard
+    }
+
+    #[cfg(test)]
+    thread_local! {
+        static HERMES_SNAPSHOT_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+            const { std::cell::RefCell::new(None) };
+        static SOURCE_OPEN_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_hermes_snapshot_hook(hook: Box<dyn FnOnce()>) {
+        HERMES_SNAPSHOT_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_source_open_hook(hook: Box<dyn FnOnce()>) {
+        SOURCE_OPEN_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
+    }
+
+    pub(crate) fn run_hermes_snapshot_hook() {
+        #[cfg(test)]
+        if let Some(hook) = HERMES_SNAPSHOT_HOOK.with(|slot| slot.borrow_mut().take()) {
+            hook();
+        }
+    }
+
+    fn run_source_open_hook() {
+        #[cfg(test)]
+        if let Some(hook) = SOURCE_OPEN_HOOK.with(|slot| slot.borrow_mut().take()) {
+            hook();
+        }
+    }
+
+    fn maybe_fail(point: FailurePoint) -> anyhow::Result<()> {
+        #[cfg(test)]
+        if FAILURE_POINT.with(|failure| failure.get() == Some(point)) {
+            anyhow::bail!("injected auth directory crash at {point:?}");
+        }
+        #[cfg(not(test))]
+        let _ = point;
+        Ok(())
+    }
+
+    fn owned_fd(fd: OwnedFd) -> File {
+        fd.into()
+    }
+
+    fn nix_error(error: Errno, action: &str) -> anyhow::Error {
+        if error == Errno::ELOOP {
+            return anyhow::anyhow!("{action}: symlink traversal rejected");
+        }
+        if error == Errno::ENOTDIR {
+            return anyhow::anyhow!("{action}: non-directory or symlink traversal rejected");
+        }
+        anyhow::Error::new(error).context(action.to_owned())
+    }
+
+    /// Normalize only lexical aliases. Accepted paths become absolute so the
+    /// lock identity is shared by relative and absolute spellings; symlinks
+    /// are deliberately not resolved here and are rejected by descriptor
+    /// traversal instead.
+    fn normalize_path(path: &Path) -> anyhow::Result<PathBuf> {
+        let mut normalized = if path.is_absolute() {
+            PathBuf::new()
+        } else {
+            std::env::current_dir().context("finding auth path base directory")?
+        };
+        for component in path.components() {
+            match component {
+                std::path::Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+                std::path::Component::RootDir => normalized.push(Path::new("/")),
+                std::path::Component::CurDir => {}
+                std::path::Component::Normal(component) => normalized.push(component),
+                std::path::Component::ParentDir => {
+                    anyhow::ensure!(
+                        normalized.pop(),
+                        "auth path contains parent traversal: {}",
+                        path.display()
+                    );
+                }
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let bytes = normalized.as_os_str().as_bytes();
+            for alias in [b"/var".as_slice(), b"/tmp".as_slice(), b"/etc".as_slice()] {
+                if bytes == alias
+                    || bytes
+                        .strip_prefix(alias)
+                        .is_some_and(|rest| rest.starts_with(b"/"))
+                {
+                    let mut normalized = b"/private".to_vec();
+                    normalized.extend_from_slice(bytes);
+                    return Ok(PathBuf::from(OsString::from_vec(normalized)));
+                }
+            }
+        }
+        Ok(normalized)
+    }
+
+    fn path_key(path: &Path) -> anyhow::Result<String> {
+        use sha2::{Digest, Sha256};
+        let normalized = normalize_path(path)?;
+        let mut digest = Sha256::new();
+        digest.update(normalized.as_os_str().as_bytes());
+        Ok(hex::encode(digest.finalize()))
+    }
+
+    fn cstring_name(path: &Path) -> anyhow::Result<CString> {
+        let name = path.file_name().ok_or_else(|| {
+            anyhow::anyhow!("auth path has no final component: {}", path.display())
+        })?;
+        CString::new(name.as_bytes()).context("auth path contains NUL")
+    }
+
+    fn component_cstring(component: &std::path::Component<'_>) -> anyhow::Result<CString> {
+        CString::new(component.as_os_str().as_bytes()).context("auth path contains NUL")
+    }
+
+    fn open_start(absolute: bool) -> anyhow::Result<File> {
+        let path = if absolute {
+            Path::new("/")
+        } else {
+            Path::new(".")
+        };
+        let fd = open(
+            path,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|error| nix_error(error, "opening auth traversal root"))?;
+        let file = owned_fd(fd);
+        validate_directory(&file, "auth traversal root", false)?;
+        Ok(file)
+    }
+
+    fn validate_directory(file: &File, label: &str, exact_private: bool) -> anyhow::Result<()> {
+        let stat = fstat(file).map_err(|error| nix_error(error, label))?;
+        anyhow::ensure!(
+            SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR),
+            "{label} is not a directory"
+        );
+        let mode = stat.st_mode & 0o7777;
+        if exact_private {
+            anyhow::ensure!(
+                mode & 0o777 == 0o700,
+                "{label} is not mode 0700 (mode {mode:o})"
+            );
+        } else {
+            anyhow::ensure!(
+                mode & 0o022 == 0 || mode & 0o1000 != 0,
+                "{label} is writable by an untrusted group or other user"
+            );
+        }
+        Ok(())
+    }
+
+    fn validate_owned_stat(stat: &FileStat, label: &str, expected: SFlag) -> anyhow::Result<()> {
+        let actual = SFlag::from_bits_truncate(stat.st_mode);
+        anyhow::ensure!(
+            actual.contains(expected),
+            "{} has an unexpected {}",
+            label,
+            if actual.contains(SFlag::S_IFLNK) {
+                "symlink"
+            } else if actual
+                .intersects(SFlag::S_IFIFO | SFlag::S_IFCHR | SFlag::S_IFBLK | SFlag::S_IFSOCK,)
+            {
+                "special file"
+            } else {
+                "file type"
+            }
+        );
+        anyhow::ensure!(
+            stat.st_uid == geteuid().as_raw(),
+            "{label} is not owned by the current user"
+        );
+        anyhow::ensure!(
+            stat.st_mode & 0o022 == 0,
+            "{label} is writable by an untrusted group or other user"
+        );
+        Ok(())
+    }
+
+    fn open_parent(path: &Path, create: bool) -> anyhow::Result<(File, CString, PathBuf)> {
+        anyhow::ensure!(
+            matches!(
+                path.components().next_back(),
+                Some(std::path::Component::Normal(_))
+            ),
+            "auth path must have a normal final component: {}",
+            path.display()
+        );
+        let path = normalize_path(path)?;
+        let target = cstring_name(&path)?;
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let mut directory = open_start(path.is_absolute())?;
+        for component in parent.components() {
+            let std::path::Component::Normal(_) = component else {
+                if matches!(component, std::path::Component::RootDir) {
+                    continue;
+                }
+                if matches!(component, std::path::Component::CurDir) {
+                    continue;
+                }
+                anyhow::bail!("auth path contains parent traversal: {}", path.display());
+            };
+            let component = component_cstring(&component)?;
+            let next = match openat(
+                &directory,
+                component.as_c_str(),
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            ) {
+                Ok(fd) => owned_fd(fd),
+                Err(Errno::ENOENT) if create => {
+                    mkdirat(
+                        &directory,
+                        component.as_c_str(),
+                        Mode::from_bits_truncate(0o700),
+                    )
+                    .or_else(ignore_eexist)
+                    .map_err(|error| nix_error(error, "creating auth directory parent"))?;
+                    let fd = openat(
+                        &directory,
+                        component.as_c_str(),
+                        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                        Mode::empty(),
+                    )
+                    .map_err(|error| nix_error(error, "opening created auth directory parent"))?;
+                    owned_fd(fd)
+                }
+                Err(error) => return Err(nix_error(error, "opening auth directory parent")),
+            };
+            validate_directory(&next, "auth directory parent", false)?;
+            directory = next;
+        }
+        Ok((directory, target, path))
+    }
+
+    fn entry_stat(directory: &File, name: &CStr) -> anyhow::Result<Option<FileStat>> {
+        match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+            Ok(stat) => Ok(Some(stat)),
+            Err(Errno::ENOENT) => Ok(None),
+            Err(error) => Err(nix_error(error, "lstat auth directory entry")),
+        }
+    }
+
+    fn open_private_file(
+        directory: &File,
+        name: &CStr,
+        flags: OFlag,
+        mode: Mode,
+        label: &str,
+    ) -> anyhow::Result<File> {
+        let fd = openat(
+            directory,
+            name,
+            flags | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            mode,
+        )
+        .map_err(|error| nix_error(error, label))?;
+        let file = owned_fd(fd);
+        let stat = fstat(&file).map_err(|error| nix_error(error, label))?;
+        validate_owned_stat(&stat, label, SFlag::S_IFREG)?;
+        Ok(file)
+    }
+
+    fn ensure_same_source_identity(
+        expected: &FileStat,
+        actual: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            expected.st_dev == actual.st_dev
+                && expected.st_ino == actual.st_ino
+                && expected.st_mode & SFlag::S_IFMT.bits() == actual.st_mode & SFlag::S_IFMT.bits(),
+            "{label} was replaced during secure open"
+        );
+        Ok(())
+    }
+
+    fn open_source_file(
+        directory: &File,
+        name: &CStr,
+        expected: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<File> {
+        run_source_open_hook();
+        let fd = openat(
+            directory,
+            name,
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|error| nix_error(error, label))?;
+        let file = owned_fd(fd);
+        let actual = fstat(&file).map_err(|error| nix_error(error, label))?;
+        validate_owned_stat(&actual, label, SFlag::S_IFREG)?;
+        ensure_same_source_identity(expected, &actual, label)?;
+        Ok(file)
+    }
+
+    fn open_directory_at(directory: &File, name: &CStr, label: &str) -> anyhow::Result<File> {
+        let fd = openat(
+            directory,
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|error| nix_error(error, label))?;
+        let file = owned_fd(fd);
+        validate_directory(&file, label, false)?;
+        let stat = fstat(&file).map_err(|error| nix_error(error, label))?;
+        anyhow::ensure!(
+            stat.st_uid == geteuid().as_raw(),
+            "{label} is not owned by the current user"
+        );
+        Ok(file)
+    }
+
+    fn open_source_directory_at(
+        directory: &File,
+        name: &CStr,
+        expected: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<File> {
+        run_source_open_hook();
+        let fd = openat(
+            directory,
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|error| nix_error(error, label))?;
+        let file = owned_fd(fd);
+        validate_directory(&file, label, false)?;
+        let actual = fstat(&file).map_err(|error| nix_error(error, label))?;
+        anyhow::ensure!(
+            actual.st_uid == geteuid().as_raw(),
+            "{label} is not owned by the current user"
+        );
+        ensure_same_source_identity(expected, &actual, label)?;
+        Ok(file)
+    }
+
+    fn fsync_directory(directory: &File) -> anyhow::Result<()> {
+        fsync(directory).map_err(|error| nix_error(error, "syncing auth directory"))
+    }
+
+    fn ignore_eexist(error: Errno) -> Result<(), Errno> {
+        if error == Errno::EEXIST {
+            Ok(())
+        } else {
+            Err(error)
+        }
+    }
+
+    fn source_entry_kind(
+        source: &File,
+        name: &CStr,
+        label: &str,
+    ) -> anyhow::Result<Option<FileStat>> {
+        let Some(stat) = entry_stat(source, name)? else {
+            return Ok(None);
+        };
+        let kind = SFlag::from_bits_truncate(stat.st_mode);
+        if kind.contains(SFlag::S_IFLNK) {
+            anyhow::bail!("{label} is a symlink; refusing to follow source auth state");
+        }
+        Ok(Some(stat))
+    }
+
+    fn read_source_file(
+        source: &File,
+        name: &CStr,
+        stat: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<Vec<u8>> {
+        validate_owned_stat(stat, label, SFlag::S_IFREG)?;
+        let file = open_source_file(source, name, stat, label)?;
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut &file)
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("reading {label}"))?;
+        Ok(bytes)
+    }
+
+    fn write_private_file_at(
+        directory: &File,
+        name: &CStr,
+        bytes: &[u8],
+        label: &str,
+    ) -> anyhow::Result<()> {
+        let file = open_private_file(
+            directory,
+            name,
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL,
+            Mode::from_bits_truncate(0o600),
+            label,
+        )?;
+        fchmod(&file, Mode::from_bits_truncate(0o600))
+            .map_err(|error| nix_error(error, "restricting staged auth file"))?;
+        let mut file = file;
+        file.write_all(bytes)
+            .with_context(|| format!("writing {label}"))?;
+        file.sync_all()
+            .with_context(|| format!("syncing {label}"))?;
+        Ok(())
+    }
+
+    fn source_name(name: &str) -> anyhow::Result<CString> {
+        CString::new(name).context("auth source name contains NUL")
+    }
+
+    pub(crate) fn copy_optional_source_file(
+        source: &File,
+        source_name_text: &str,
+        destination: &File,
+        destination_name_text: &str,
+        label: &str,
+    ) -> anyhow::Result<()> {
+        let source_entry_name = source_name(source_name_text)?;
+        let Some(stat) = source_entry_kind(source, &source_entry_name, label)? else {
+            return Ok(());
+        };
+        validate_owned_stat(&stat, label, SFlag::S_IFREG)?;
+        let bytes = read_source_file(source, &source_entry_name, &stat, label)?;
+        let destination_name = source_name(destination_name_text)?;
+        write_private_file_at(destination, &destination_name, &bytes, label)
+    }
+
+    fn copy_tree(source: &File, destination: &File, label: &str) -> anyhow::Result<()> {
+        validate_directory(source, label, false)?;
+        fchmod(destination, Mode::from_bits_truncate(0o700))
+            .map_err(|error| nix_error(error, "restricting staged auth directory"))?;
+        validate_directory(destination, "staged auth directory", true)?;
+        let source_clone = source.try_clone()?;
+        let mut entries = Dir::from_fd(source_clone.into())
+            .map_err(|error| nix_error(error, "opening source auth directory entries"))?;
+        let mut names = Vec::new();
+        for entry in entries.iter() {
+            let entry = entry.map_err(|error| nix_error(error, "reading source auth directory"))?;
+            let name = entry.file_name();
+            if name.to_bytes() != b"." && name.to_bytes() != b".." {
+                names.push(name.to_owned());
+            }
+        }
+
+        for name in names {
+            let entry_label = format!("{label}/{}", name.to_string_lossy());
+            let stat = entry_stat(source, &name)?.ok_or_else(|| {
+                anyhow::anyhow!("{entry_label} disappeared during secure source snapshot")
+            })?;
+            let kind = SFlag::from_bits_truncate(stat.st_mode);
+            if kind.contains(SFlag::S_IFLNK) {
+                anyhow::bail!("{entry_label} is a symlink; refusing to sync source auth state");
+            }
+            if kind.contains(SFlag::S_IFDIR) {
+                validate_owned_stat(&stat, &entry_label, SFlag::S_IFDIR)?;
+                mkdirat(
+                    destination,
+                    name.as_c_str(),
+                    Mode::from_bits_truncate(0o700),
+                )
+                .or_else(ignore_eexist)
+                .map_err(|error| nix_error(error, "creating staged auth subdirectory"))?;
+                let child = open_directory_at(destination, &name, &entry_label)?;
+                validate_directory(&child, &entry_label, true)?;
+                let source_child = open_source_directory_at(source, &name, &stat, &entry_label)?;
+                copy_tree(&source_child, &child, &entry_label)?;
+                fsync_directory(&child)?;
+            } else if kind.contains(SFlag::S_IFREG) {
+                validate_owned_stat(&stat, &entry_label, SFlag::S_IFREG)?;
+                let bytes = read_source_file(source, &name, &stat, &entry_label)?;
+                write_private_file_at(destination, &name, &bytes, &entry_label)?;
+            } else {
+                anyhow::bail!("{entry_label} is a special file; refusing to sync it");
+            }
+        }
+        fsync_directory(destination)
+    }
+
+    pub(crate) fn copy_optional_source_tree(
+        source: &File,
+        source_name_text: &str,
+        destination: &File,
+        destination_name_text: &str,
+        label: &str,
+    ) -> anyhow::Result<()> {
+        let source_entry_name = source_name(source_name_text)?;
+        let Some(stat) = source_entry_kind(source, &source_entry_name, label)? else {
+            return Ok(());
+        };
+        validate_owned_stat(&stat, label, SFlag::S_IFDIR)?;
+        mkdirat(
+            destination,
+            source_entry_name.as_c_str(),
+            Mode::from_bits_truncate(0o700),
+        )
+        .map_err(|error| nix_error(error, "creating staged auth tree"))?;
+        let destination_name = source_name(destination_name_text)?;
+        if destination_name != source_entry_name {
+            renameat(
+                destination,
+                source_entry_name.as_c_str(),
+                destination,
+                destination_name.as_c_str(),
+            )
+            .map_err(|error| nix_error(error, "naming staged auth tree"))?;
+        }
+        let staged = open_directory_at(destination, &destination_name, label)?;
+        let source_dir = open_source_directory_at(source, &source_entry_name, &stat, label)?;
+        copy_tree(&source_dir, &staged, label)
+    }
+
+    pub(crate) fn open_directory_path(path: &Path) -> anyhow::Result<File> {
+        let (parent, name, normalized) = open_parent(path, false)?;
+        open_directory_at(
+            &parent,
+            name.as_c_str(),
+            &format!("opening auth directory {}", normalized.display()),
+        )
+    }
+
+    pub(crate) fn lock_source_dir(path: &Path) -> anyhow::Result<Option<LockedSource>> {
+        let (parent, name, normalized) = match open_parent(path, false) {
+            Ok(value) => value,
+            Err(error) if error.downcast_ref::<Errno>() == Some(&Errno::ENOENT) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let Some(expected) = entry_stat(&parent, &name)? else {
+            return Ok(None);
+        };
+        validate_owned_stat(
+            &expected,
+            &format!("source auth directory {}", normalized.display()),
+            SFlag::S_IFDIR,
+        )?;
+        let fd = match openat(
+            &parent,
+            name.as_c_str(),
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(fd) => fd,
+            Err(Errno::ENOENT) => return Ok(None),
+            Err(error) => {
+                return Err(nix_error(
+                    error,
+                    &format!("opening source auth directory {}", normalized.display()),
+                ));
+            }
+        };
+        let root = owned_fd(fd);
+        validate_directory(&root, "source auth directory", false)?;
+        let stat =
+            fstat(&root).map_err(|error| nix_error(error, "statting source auth directory"))?;
+        anyhow::ensure!(
+            stat.st_uid == geteuid().as_raw(),
+            "source auth directory is not owned by the current user"
+        );
+        ensure_same_source_identity(
+            &expected,
+            &stat,
+            &format!("source auth directory {}", normalized.display()),
+        )?;
+        FileExt::lock(&root).with_context(|| "locking source auth directory")?;
+        Ok(Some(LockedSource { root }))
+    }
+
+    fn new_stage(parent: &File, key: &str) -> anyhow::Result<(CString, File)> {
+        for _ in 0..128 {
+            let sequence = AUTH_DIRECTORY_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let name = CString::new(format!(
+                ".jackin-auth-stage-{key}-{}-{sequence}",
+                std::process::id()
+            ))?;
+            match mkdirat(parent, name.as_c_str(), Mode::from_bits_truncate(0o700)) {
+                Ok(()) => {
+                    let directory = open_directory_at(parent, &name, "new auth stage")?;
+                    validate_directory(&directory, "new auth stage", true)?;
+                    return Ok((name, directory));
+                }
+                Err(Errno::EEXIST) => {}
+                Err(error) => return Err(nix_error(error, "creating auth stage")),
+            }
+        }
+        anyhow::bail!("could not allocate a unique auth stage")
+    }
+
+    fn new_previous(parent: &File, key: &str) -> anyhow::Result<CString> {
+        for _ in 0..128 {
+            let sequence = AUTH_DIRECTORY_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let name = CString::new(format!(
+                ".jackin-auth-previous-{key}-{}-{sequence}",
+                std::process::id()
+            ))?;
+            if entry_stat(parent, &name)?.is_none() {
+                return Ok(name);
+            }
+        }
+        anyhow::bail!("could not allocate a unique auth previous directory")
+    }
+
+    fn new_journal_temporary(parent: &File, key: &str) -> anyhow::Result<CString> {
+        for _ in 0..128 {
+            let sequence = AUTH_DIRECTORY_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let name = CString::new(format!(
+                ".jackin-auth-journal-{key}-tmp-{}-{sequence}",
+                std::process::id()
+            ))?;
+            if entry_stat(parent, &name)?.is_none() {
+                return Ok(name);
+            }
+        }
+        anyhow::bail!("could not allocate a unique temporary auth journal")
+    }
+
+    fn open_lock(parent: &File, key: &str) -> anyhow::Result<(CString, File)> {
+        let name = CString::new(format!(".jackin-auth-lock-{key}"))?;
+        let mut file = None;
+        for _ in 0..128 {
+            match open_private_file(
+                parent,
+                &name,
+                OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_NONBLOCK,
+                Mode::from_bits_truncate(0o600),
+                "opening auth target lock",
+            ) {
+                Ok(candidate) => {
+                    file = Some(candidate);
+                    break;
+                }
+                Err(error)
+                    if error
+                        .chain()
+                        .any(|cause| cause.downcast_ref::<Errno>() == Some(&Errno::ENOENT)) =>
+                {
+                    std::thread::yield_now();
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        let file = file.ok_or_else(|| {
+            anyhow::anyhow!("auth target lock parent disappeared during creation")
+        })?;
+        fchmod(&file, Mode::from_bits_truncate(0o600))
+            .map_err(|error| nix_error(error, "restricting auth target lock"))?;
+        FileExt::lock(&file).with_context(|| "locking auth target")?;
+        Ok((name, file))
+    }
+
+    fn target_lock(path: &Path, create_parent: bool) -> anyhow::Result<TargetLock> {
+        let (parent, target, normalized) = open_parent(path, create_parent)?;
+        let key = path_key(&normalized)?;
+        let (_lock_name, lock) = open_lock(&parent, &key)?;
+        let journal = CString::new(format!(".jackin-auth-journal-{key}"))?;
+        let target_lock = TargetLock {
+            parent,
+            target,
+            key,
+            journal,
+            _lock: lock,
+        };
+        recover(&target_lock)?;
+        Ok(target_lock)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn target_lock_key_for_test(path: &Path) -> anyhow::Result<String> {
+        path_key(path)
+    }
+
+    fn target_present(target: &TargetLock) -> anyhow::Result<bool> {
+        let Some(stat) = entry_stat(&target.parent, &target.target)? else {
+            return Ok(false);
+        };
+        validate_owned_stat(&stat, "existing auth destination", SFlag::S_IFDIR)?;
+        Ok(true)
+    }
+
+    fn write_journal(target: &TargetLock, journal: &SwapJournal) -> anyhow::Result<()> {
+        let bytes = serde_json::to_vec(journal).context("serializing auth swap journal")?;
+        let temporary = new_journal_temporary(&target.parent, &target.key)?;
+        let result = (|| {
+            let file = open_private_file(
+                &target.parent,
+                &temporary,
+                OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NONBLOCK,
+                Mode::from_bits_truncate(0o600),
+                "opening temporary auth swap journal",
+            )?;
+            let mut file = file;
+            file.write_all(&bytes)
+                .context("writing temporary auth swap journal")?;
+            file.sync_all()
+                .context("syncing temporary auth swap journal")?;
+
+            let replacing = entry_stat(&target.parent, &target.journal)?.is_some();
+            if replacing {
+                let stat = entry_stat(&target.parent, &target.journal)?.ok_or_else(|| {
+                    anyhow::anyhow!("auth swap journal disappeared during atomic rewrite")
+                })?;
+                validate_owned_stat(&stat, "auth swap journal", SFlag::S_IFREG)?;
+                maybe_fail(FailurePoint::JournalRewrite)?;
+            }
+            renameat(
+                &target.parent,
+                temporary.as_c_str(),
+                &target.parent,
+                target.journal.as_c_str(),
+            )
+            .map_err(|error| nix_error(error, "publishing auth swap journal"))?;
+            fsync_directory(&target.parent)
+        })();
+        if result.is_err() {
+            let _ignored_cleanup = unlink_entry(
+                &target.parent,
+                &temporary,
+                "removing failed temporary auth swap journal",
+            );
+        }
+        result
+    }
+
+    fn read_journal(target: &TargetLock) -> anyhow::Result<Option<SwapJournal>> {
+        let Some(stat) = entry_stat(&target.parent, &target.journal)? else {
+            return Ok(None);
+        };
+        validate_owned_stat(&stat, "auth swap journal", SFlag::S_IFREG)?;
+        let file = open_private_file(
+            &target.parent,
+            &target.journal,
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK,
+            Mode::empty(),
+            "opening auth swap journal",
+        )?;
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut &file)
+            .take((MAX_JOURNAL_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .context("reading auth swap journal")?;
+        anyhow::ensure!(
+            bytes.len() <= MAX_JOURNAL_BYTES,
+            "auth swap journal is oversized"
+        );
+        let journal = serde_json::from_slice(&bytes).context("parsing auth swap journal")?;
+        Ok(Some(journal))
+    }
+
+    fn unlink_entry(parent: &File, name: &CStr, label: &str) -> anyhow::Result<()> {
+        match unlinkat(parent, name, UnlinkatFlags::NoRemoveDir) {
+            Ok(()) => Ok(()),
+            Err(Errno::ENOENT) => Ok(()),
+            Err(error) => Err(nix_error(error, label)),
+        }
+    }
+
+    fn remove_tree(parent: &File, name: &CStr, label: &str) -> anyhow::Result<()> {
+        let Some(stat) = entry_stat(parent, name)? else {
+            return Ok(());
+        };
+        validate_owned_stat(&stat, label, SFlag::S_IFDIR)?;
+        let directory = open_directory_at(parent, name, label)?;
+        let clone = directory.try_clone()?;
+        let mut entries = Dir::from_fd(clone.into())
+            .map_err(|error| nix_error(error, "opening auth cleanup directory"))?;
+        let mut names = Vec::new();
+        for entry in entries.iter() {
+            let entry =
+                entry.map_err(|error| nix_error(error, "reading auth cleanup directory"))?;
+            let entry_name = entry.file_name();
+            if entry_name.to_bytes() != b"." && entry_name.to_bytes() != b".." {
+                names.push(entry_name.to_owned());
+            }
+        }
+        for entry_name in names {
+            let Some(entry_stat) = entry_stat(&directory, &entry_name)? else {
+                continue;
+            };
+            let kind = SFlag::from_bits_truncate(entry_stat.st_mode);
+            if kind.contains(SFlag::S_IFDIR) {
+                remove_tree(&directory, &entry_name, label)?;
+            } else if kind.contains(SFlag::S_IFREG) {
+                validate_owned_stat(&entry_stat, label, SFlag::S_IFREG)?;
+                unlink_entry(&directory, &entry_name, "removing auth file")?;
+            } else {
+                anyhow::bail!("{label} contains a special or symlink entry")
+            }
+        }
+        fsync_directory(&directory)?;
+        unlinkat(parent, name, UnlinkatFlags::RemoveDir)
+            .map_err(|error| nix_error(error, "removing auth directory"))?;
+        fsync_directory(parent)
+    }
+
+    fn valid_transaction_name(name: &str, key: &str, kind: &str) -> bool {
+        name.starts_with(&format!(".jackin-auth-{kind}-{key}-"))
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b".-_".contains(&byte))
+    }
+
+    fn previous_name(previous: Option<&CString>) -> anyhow::Result<&CStr> {
+        previous
+            .map(CString::as_c_str)
+            .ok_or_else(|| anyhow::anyhow!("auth swap journal refers to a missing previous name"))
+    }
+
+    fn recover(target: &TargetLock) -> anyhow::Result<()> {
+        let Some(journal) = read_journal(target)? else {
+            cleanup_orphans(target)?;
+            return Ok(());
+        };
+        anyhow::ensure!(
+            journal.schema_version == JOURNAL_SCHEMA_VERSION,
+            "unsupported auth swap journal schema"
+        );
+        anyhow::ensure!(
+            journal.target == hex::encode(target.target.as_bytes()),
+            "auth swap journal targets a different directory"
+        );
+        anyhow::ensure!(
+            valid_transaction_name(&journal.stage, &target.key, "stage"),
+            "auth swap journal contains an invalid stage name"
+        );
+        if let Some(previous) = &journal.previous {
+            anyhow::ensure!(
+                valid_transaction_name(previous, &target.key, "previous"),
+                "auth swap journal contains an invalid previous name"
+            );
+        }
+        let stage = CString::new(journal.stage.as_str())?;
+        let previous = journal.previous.as_deref().map(CString::new).transpose()?;
+        let target_exists = target_present(target)?;
+        let previous_exists = previous
+            .as_ref()
+            .map(|name| entry_stat(&target.parent, name).map(|stat| stat.is_some()))
+            .transpose()?
+            .unwrap_or(false);
+
+        match journal.phase {
+            SwapPhase::Prepared => {
+                if !target_exists && previous_exists {
+                    renameat(
+                        &target.parent,
+                        previous_name(previous.as_ref())?,
+                        &target.parent,
+                        target.target.as_c_str(),
+                    )
+                    .map_err(|error| nix_error(error, "restoring prepared auth swap"))?;
+                    fsync_directory(&target.parent)?;
+                } else if target_exists && previous_exists {
+                    remove_tree(
+                        &target.parent,
+                        previous_name(previous.as_ref())?,
+                        "stale auth previous directory",
+                    )?;
+                }
+            }
+            SwapPhase::BackedUp => {
+                if !target_exists && previous_exists {
+                    renameat(
+                        &target.parent,
+                        previous_name(previous.as_ref())?,
+                        &target.parent,
+                        target.target.as_c_str(),
+                    )
+                    .map_err(|error| nix_error(error, "restoring backed-up auth swap"))?;
+                    fsync_directory(&target.parent)?;
+                } else if target_exists && previous_exists {
+                    remove_tree(
+                        &target.parent,
+                        previous_name(previous.as_ref())?,
+                        "completed auth previous directory",
+                    )?;
+                } else if !target_exists {
+                    anyhow::bail!("auth swap journal has neither destination nor previous tree");
+                }
+            }
+            SwapPhase::Installed => {
+                if !target_exists && previous_exists {
+                    renameat(
+                        &target.parent,
+                        previous_name(previous.as_ref())?,
+                        &target.parent,
+                        target.target.as_c_str(),
+                    )
+                    .map_err(|error| nix_error(error, "restoring lost installed auth swap"))?;
+                    fsync_directory(&target.parent)?;
+                } else if previous_exists {
+                    remove_tree(
+                        &target.parent,
+                        previous_name(previous.as_ref())?,
+                        "installed auth previous directory",
+                    )?;
+                }
+            }
+        }
+        remove_tree(&target.parent, &stage, "orphaned auth stage")?;
+        unlink_entry(
+            &target.parent,
+            &target.journal,
+            "removing auth swap journal",
+        )?;
+        fsync_directory(&target.parent)?;
+        cleanup_orphans(target)
+    }
+
+    fn cleanup_orphans(target: &TargetLock) -> anyhow::Result<()> {
+        let clone = target.parent.try_clone()?;
+        let mut entries = Dir::from_fd(clone.into())
+            .map_err(|error| nix_error(error, "opening auth parent for orphan cleanup"))?;
+        // Transaction names created by this implementation carry the target
+        // identity. Pre-846f984 names do not, so there is no safe way to
+        // attribute those legacy trees to this target; leave them untouched.
+        let new_stage_prefix = format!(".jackin-auth-stage-{}-", target.key);
+        let new_previous_prefix = format!(".jackin-auth-previous-{}-", target.key);
+        let new_journal_temporary_prefix = format!(".jackin-auth-journal-{}-tmp-", target.key);
+        let mut directories = Vec::new();
+        let mut journal_temporaries = Vec::new();
+        for entry in entries.iter() {
+            let entry = entry.map_err(|error| nix_error(error, "reading auth parent"))?;
+            let name = entry.file_name();
+            let text = name.to_string_lossy();
+            if text.starts_with(&new_stage_prefix) || text.starts_with(&new_previous_prefix) {
+                directories.push(name.to_owned());
+            } else if text.starts_with(&new_journal_temporary_prefix) {
+                journal_temporaries.push(name.to_owned());
+            }
+        }
+        for name in directories {
+            remove_tree(&target.parent, &name, "orphaned auth swap directory")?;
+        }
+        for name in journal_temporaries {
+            let stat = entry_stat(&target.parent, &name)?.ok_or_else(|| {
+                anyhow::anyhow!("temporary auth swap journal disappeared during cleanup")
+            })?;
+            validate_owned_stat(&stat, "temporary auth swap journal", SFlag::S_IFREG)?;
+            unlink_entry(
+                &target.parent,
+                &name,
+                "removing orphaned temporary auth swap journal",
+            )?;
+        }
+        Ok(())
+    }
+
+    fn publish(target: &TargetLock, stage: CString) -> anyhow::Result<()> {
+        let has_target = target_present(target)?;
+        let previous = has_target
+            .then(|| new_previous(&target.parent, &target.key))
+            .transpose()?;
+        let journal = SwapJournal {
+            schema_version: JOURNAL_SCHEMA_VERSION,
+            target: hex::encode(target.target.as_bytes()),
+            stage: stage.to_string_lossy().into_owned(),
+            previous: previous
+                .as_ref()
+                .map(|name| name.to_string_lossy().into_owned()),
+            phase: SwapPhase::Prepared,
+        };
+        write_journal(target, &journal)?;
+        maybe_fail(FailurePoint::Prepared)?;
+
+        if let Some(previous) = &previous {
+            renameat(
+                &target.parent,
+                target.target.as_c_str(),
+                &target.parent,
+                previous.as_c_str(),
+            )
+            .map_err(|error| nix_error(error, "moving previous auth directory"))?;
+            fsync_directory(&target.parent)?;
+            write_journal(
+                target,
+                &SwapJournal {
+                    phase: SwapPhase::BackedUp,
+                    ..journal.clone()
+                },
+            )?;
+            maybe_fail(FailurePoint::Backup)?;
+        }
+
+        renameat(
+            &target.parent,
+            stage.as_c_str(),
+            &target.parent,
+            target.target.as_c_str(),
+        )
+        .map_err(|error| nix_error(error, "publishing staged auth directory"))?;
+        fsync_directory(&target.parent)?;
+        let installed = SwapJournal {
+            phase: SwapPhase::Installed,
+            ..journal
+        };
+        write_journal(target, &installed)?;
+        maybe_fail(FailurePoint::Installed)?;
+
+        if let Some(previous) = &previous {
+            remove_tree(&target.parent, previous, "previous auth directory")?;
+        }
+        unlink_entry(
+            &target.parent,
+            &target.journal,
+            "removing auth swap journal",
+        )?;
+        fsync_directory(&target.parent)
+    }
+
+    pub(crate) fn stage_auth_directory<F>(
+        target_dir: &Path,
+        host_dir: &Path,
+        populate: F,
+    ) -> anyhow::Result<AuthProvisionOutcome>
+    where
+        F: FnOnce(&Path, &File, &File) -> anyhow::Result<()>,
+    {
+        let target = target_lock(target_dir, true).map_err(|error| {
+            anyhow::anyhow!("opening auth target {}: {error:#}", target_dir.display())
+        })?;
+        let source = lock_source_dir(host_dir)?;
+        let outcome = if let Some(source) = &source {
+            let (stage, directory) = new_stage(&target.parent, &target.key)?;
+            if let Err(error) = populate(host_dir, &source.root, &directory) {
+                let _ignored_cleanup = remove_tree(&target.parent, &stage, "failed auth stage");
+                return Err(error);
+            }
+            fsync_directory(&directory)?;
+            drop(directory);
+            publish(&target, stage)?;
+            AuthProvisionOutcome::Synced
+        } else {
+            let (stage, directory) = new_stage(&target.parent, &target.key)?;
+            fsync_directory(&directory)?;
+            drop(directory);
+            publish(&target, stage)?;
+            AuthProvisionOutcome::HostMissing
+        };
+        Ok(outcome)
+    }
+
+    pub(crate) fn wipe_auth_directory(target_dir: &Path) -> anyhow::Result<()> {
+        let target = match target_lock(target_dir, false) {
+            Ok(target) => target,
+            Err(error) if error.downcast_ref::<Errno>() == Some(&Errno::ENOENT) => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        if target_present(&target)? {
+            remove_tree(&target.parent, &target.target, "auth destination")?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn snapshot_source(source: &File, snapshot: &File) -> anyhow::Result<()> {
+        copy_tree(source, snapshot, "Hermes source snapshot")
+    }
+}
+
+#[cfg(not(unix))]
+mod auth_directory {
+    use super::*;
+    use std::fs::File;
+
+    pub(crate) fn stage_auth_directory<F>(
+        target_dir: &Path,
+        host_dir: &Path,
+        populate: F,
+    ) -> anyhow::Result<AuthProvisionOutcome>
+    where
+        F: FnOnce(&Path, &File, &File) -> anyhow::Result<()>,
+    {
+        let parent = target_dir.parent().unwrap_or_else(|| Path::new("."));
+        std::fs::create_dir_all(parent)?;
+        let staged = tempfile::Builder::new()
+            .prefix(".jackin-auth-stage-")
+            .tempdir_in(parent)?;
+        let staged_file = File::open(staged.path())?;
+        let outcome = if host_dir.is_dir() {
+            let source = File::open(host_dir)?;
+            populate(host_dir, &source, &staged_file)?;
+            AuthProvisionOutcome::Synced
+        } else {
+            AuthProvisionOutcome::HostMissing
+        };
+        std::fs::rename(staged.path(), target_dir)?;
+        Ok(outcome)
+    }
+
+    pub(crate) fn wipe_auth_directory(target_dir: &Path) -> anyhow::Result<()> {
+        if target_dir.exists() {
+            std::fs::remove_dir_all(target_dir)?;
+        }
+        Ok(())
+    }
 }
 
 impl RoleState {
@@ -1025,7 +2218,7 @@ impl RoleState {
         provider: Option<AiProvider>,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         if mode == AuthForwardMode::Sync {
-            reject_symlink(auth_json)?;
+            reject_auth_path(auth_json)?;
             let content = match std::fs::read_to_string(host_auth_json) {
                 Ok(content) if content.trim().is_empty() => {
                     if auth_json.exists() {
@@ -1371,8 +2564,25 @@ impl RoleState {
         provider: Option<AiProvider>,
         selector: Option<&ProfileSelector>,
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
-        if mode == AuthForwardMode::Sync && source_dir.exists() {
-            validate_store_source_dir(Agent::Hermes, provider, selector, source_dir, source_dir)?;
+        if mode == AuthForwardMode::Sync
+            && let Some(source) = auth_directory::lock_source_dir(source_dir)?
+        {
+            let snapshot = tempfile::tempdir().context("creating Hermes source snapshot")?;
+            let snapshot_root = auth_directory::open_directory_path(snapshot.path())?;
+            auth_directory::snapshot_source(&source.root, &snapshot_root)?;
+            validate_store_source_dir(
+                Agent::Hermes,
+                provider,
+                selector,
+                snapshot.path(),
+                snapshot.path(),
+            )?;
+            auth_directory::run_hermes_snapshot_hook();
+            // Keep the source lock held until the snapshot has been
+            // validated and the descriptor-safe destination swap has
+            // completed. The staged copy reads only the immutable
+            // snapshot, not the live source.
+            return provision_hermes_dir_credential(hermes_dir, snapshot.path(), mode);
         }
         provision_hermes_dir_credential(hermes_dir, source_dir, mode)
     }
@@ -1389,10 +2599,6 @@ fn provision_hermes_dir_credential(
     host_dir: &Path,
     mode: AuthForwardMode,
 ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
-    use anyhow::Context;
-
-    reject_symlink(target_dir)?;
-
     // Best-effort file set; the layout is unverified upstream.
     const SYNC_FILES: &[&str] = &["config.yaml", ".env", "auth.json"];
 
@@ -1414,31 +2620,29 @@ fn provision_hermes_dir_credential(
             wipe_hermes_state(target_dir)?;
             AuthProvisionOutcome::Skipped
         }
-        AuthForwardMode::Sync => {
-            std::fs::create_dir_all(target_dir)?;
-
-            if host_dir.exists() {
+        AuthForwardMode::Sync => auth_directory::stage_auth_directory(
+            target_dir,
+            host_dir,
+            |host_dir, source, staged| {
                 for name in SYNC_FILES {
-                    let host_file = host_dir.join(name);
-                    if host_file.is_file() {
-                        let bytes = std::fs::read(&host_file)
-                            .with_context(|| format!("reading {}", host_file.display()))?;
-                        write_private_bytes(&target_dir.join(name), &bytes)?;
-                    }
+                    auth_directory::copy_optional_source_file(
+                        source,
+                        name,
+                        staged,
+                        name,
+                        &format!("reading {}", host_dir.join(name).display()),
+                    )?;
                 }
-
-                let host_profiles = host_dir.join("profiles");
-                if host_profiles.is_dir() {
-                    let dest_profiles = target_dir.join("profiles");
-                    copy_kimi_credentials_tree(&host_profiles, &dest_profiles)
-                        .with_context(|| format!("copying {}", host_profiles.display()))?;
-                }
-
-                AuthProvisionOutcome::Synced
-            } else {
-                AuthProvisionOutcome::HostMissing
-            }
-        }
+                auth_directory::copy_optional_source_tree(
+                    source,
+                    "profiles",
+                    staged,
+                    "profiles",
+                    &format!("copying {}", host_dir.join("profiles").display()),
+                )?;
+                Ok(())
+            },
+        )?,
     };
 
     let forward_auth = matches!(
@@ -1451,17 +2655,14 @@ fn provision_hermes_dir_credential(
 /// Remove role-state Hermes auth files so a prior Sync run cannot leak
 /// credentials under env-driven modes.
 fn wipe_hermes_state(hermes_dir: &Path) -> anyhow::Result<()> {
-    use anyhow::Context;
-    if hermes_dir.exists() {
-        std::fs::remove_dir_all(hermes_dir).with_context(|| {
-            format!(
-                "failed to wipe stale Hermes state at {} \
+    auth_directory::wipe_auth_directory(hermes_dir).map_err(|error| {
+        anyhow::anyhow!(format!(
+            "failed to wipe stale Hermes state at {}: {error:#} \
                  (auth_forward switched to ignore/api_key); remove the directory \
                  manually if it has unexpected ownership",
-                hermes_dir.display()
-            )
-        })?;
-    }
+            hermes_dir.display()
+        ))
+    })?;
     Ok(())
 }
 
@@ -1477,7 +2678,7 @@ fn provision_single_blob_credential(
 ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
     use anyhow::Context;
 
-    reject_symlink(target)?;
+    reject_auth_path(target)?;
 
     let outcome = match mode {
         AuthForwardMode::OAuthToken => {
@@ -1586,7 +2787,7 @@ fn provision_single_file_credential(
 ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
     use anyhow::Context;
 
-    reject_symlink(target)?;
+    reject_auth_path(target)?;
 
     let outcome = match mode {
         AuthForwardMode::OAuthToken => {
@@ -1698,17 +2899,14 @@ fn wipe_agent_file_state(path: &Path, label: &str) -> anyhow::Result<()> {
 /// Remove role-state Kimi auth files so a prior Sync run cannot leak
 /// credentials under env-driven modes.
 fn wipe_kimi_state(kimi_dir: &Path) -> anyhow::Result<()> {
-    use anyhow::Context;
-    if kimi_dir.exists() {
-        std::fs::remove_dir_all(kimi_dir).with_context(|| {
-            format!(
-                "failed to wipe stale Kimi state at {} \
+    auth_directory::wipe_auth_directory(kimi_dir).map_err(|error| {
+        anyhow::anyhow!(format!(
+            "failed to wipe stale Kimi state at {}: {error:#} \
                  (auth_forward switched to ignore/api_key); remove the directory \
                  manually if it has unexpected ownership",
-                kimi_dir.display()
-            )
-        })?;
-    }
+            kimi_dir.display()
+        ))
+    })?;
     Ok(())
 }
 
@@ -1869,6 +3067,51 @@ fn reject_symlink(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Reject symlink traversal through the destination's existing parent
+/// directories as well as at the final path. Missing ancestors are allowed so
+/// callers can create a new private tree after this check.
+fn reject_auth_path(path: &Path) -> anyhow::Result<()> {
+    reject_symlink(path)?;
+    let mut ancestor = path.parent();
+    while let Some(current) = ancestor {
+        if !is_platform_root_alias(current) {
+            match std::fs::symlink_metadata(current) {
+                Ok(meta) => {
+                    anyhow::ensure!(
+                        !meta.file_type().is_symlink(),
+                        "refusing to use auth path through symlink at {}; remove the symlink and retry",
+                        current.display()
+                    );
+                    anyhow::ensure!(
+                        meta.is_dir(),
+                        "refusing to use auth path through non-directory {}; remove it and retry",
+                        current.display()
+                    );
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        ancestor = current.parent();
+    }
+    Ok(())
+}
+
+/// macOS exposes these root directories as immutable platform aliases (for
+/// example `/var` → `/private/var`). They are outside Jackin-owned state and
+/// must not make every otherwise-safe temporary test or data path fail.
+#[cfg(target_os = "macos")]
+fn is_platform_root_alias(path: &Path) -> bool {
+    matches!(path, p if p == Path::new("/etc")
+        || p == Path::new("/tmp")
+        || p == Path::new("/var"))
+}
+
+#[cfg(not(target_os = "macos"))]
+const fn is_platform_root_alias(_path: &Path) -> bool {
+    false
+}
+
 /// Write a file with restricted permissions (`0o600` on Unix) since it
 /// may contain authentication credentials.
 ///
@@ -1883,7 +3126,7 @@ fn write_private_file(path: &Path, content: &str) -> anyhow::Result<()> {
 
 /// Write raw bytes to `path` with `0o600` permissions, symlink-safe and atomic.
 fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
-    reject_symlink(path)?;
+    reject_auth_path(path)?;
 
     #[cfg(unix)]
     {
@@ -1920,6 +3163,7 @@ fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
 /// real state into the same path.
 pub(super) fn create_private_file_if_absent(path: &Path, content: &[u8]) -> anyhow::Result<()> {
     use anyhow::Context;
+    reject_auth_path(path)?;
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create_new(true);
     #[cfg(unix)]
@@ -1992,6 +3236,7 @@ fn maybe_inject_permission_repair_failure(stage: PermissionRepairFailure) -> any
 /// existing path is returned so launch provisioning fails closed rather than
 /// continuing with potentially exposed credentials.
 fn repair_permissions(path: &Path) -> anyhow::Result<()> {
+    reject_auth_path(path)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
