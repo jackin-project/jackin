@@ -120,6 +120,7 @@ fn operation_capability(operation: &UsageBrokerOperation) -> Option<&UsageAccoun
         UsageBrokerOperation::CurrentProjection
         | UsageBrokerOperation::RequestRefresh { .. }
         | UsageBrokerOperation::JoinPublication { .. }
+        | UsageBrokerOperation::ReconcileCatalog { .. }
         | UsageBrokerOperation::CurrentProjectionForSurface
         | UsageBrokerOperation::RequestRefreshForSurface { .. }
         | UsageBrokerOperation::JoinPublicationForSurface { .. } => None,

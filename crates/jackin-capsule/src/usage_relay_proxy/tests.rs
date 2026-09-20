@@ -3,7 +3,7 @@
 
 use super::*;
 use jackin_protocol::usage_broker::{
-    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation,
+    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation, UsageCatalogEntry,
     UsageCoordinationError,
 };
 use jackin_protocol::{CapsuleConfig, SessionIdentity};
@@ -184,6 +184,40 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
         &operation,
     ));
     assert!(authorization.authorizes(
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+}
+
+#[test]
+fn usage_relay_rejects_host_only_catalog_reconciliation() {
+    let account = capability("account-a");
+    let config = CapsuleConfig {
+        instances: vec!["session-a".to_owned()],
+        usage_capabilities: BTreeMap::from([("session-a".to_owned(), account.clone())]),
+        instance_identities: BTreeMap::from([(
+            "session-a".to_owned(),
+            SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        )]),
+        ..CapsuleConfig::default()
+    };
+    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let operation = UsageBrokerOperation::ReconcileCatalog {
+        catalog_revision: "catalog-2".to_owned(),
+        entries: vec![UsageCatalogEntry {
+            capability: account,
+            revision: "credential-2".to_owned(),
+        }],
+    };
+
+    assert!(!authorization.authorizes(
         Some(PeerIdentity {
             pid: Some(1),
             uid: 0,
