@@ -28,6 +28,46 @@ fn provision_account_admission(paths: &JackinPaths, container_name: &str) {
     write_admission_fixture(paths, container_name, &config, None);
 }
 
+fn provision_agent_admission(paths: &JackinPaths, container_name: &str, agent: jackin_core::Agent) {
+    use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
+
+    let account_id = "fixture-account";
+    let config_id = format!("{}-fixture", agent.slug());
+    let mut config = jackin_config::AppConfig::default();
+    config.accounts.insert(
+        account_id.into(),
+        AccountConfig {
+            enabled: true,
+            name: "Fixture account".into(),
+            provider: AiProvider::for_agent(agent).expect("fixture agent has a provider"),
+            credential: AccountCredential::ApiKey {
+                value: "fixture-key".into(),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    config.agent_configurations.insert(
+        config_id.clone(),
+        AgentConfiguration {
+            agent,
+            account: account_id.into(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+    write_admission_fixture(paths, container_name, &config, None);
+
+    let root = paths.data_dir.join(container_name);
+    let mut manifest = InstanceManifest::read(&root).unwrap();
+    manifest.set_admitted_instances([crate::instance::AdmittedInstance::new(
+        config_id, agent, account_id,
+    )]);
+    manifest.write(&root).unwrap();
+}
+
 fn write_admission_fixture(
     paths: &JackinPaths,
     container_name: &str,
@@ -375,7 +415,7 @@ async fn hardline_detach_with_live_sessions_preserves_runtime_resources() {
 async fn hardline_new_session_execs_entrypoint_in_running_container() {
     let (_tmp, paths) = test_paths();
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    provision_account_admission(&paths, container_name);
+    provision_agent_admission(&paths, container_name, jackin_core::Agent::Codex);
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -425,7 +465,7 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
 async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
     let (_tmp, paths) = test_paths();
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    provision_account_admission(&paths, container_name);
+    provision_agent_admission(&paths, container_name, jackin_core::Agent::Claude);
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -479,7 +519,7 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
 async fn hardline_new_session_forwards_dco_env_when_enabled() {
     let (_tmp, paths) = test_paths();
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
-    provision_account_admission(&paths, container_name);
+    provision_agent_admission(&paths, container_name, jackin_core::Agent::Claude);
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -519,6 +559,47 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
             .any(|call| call.contains("JACKIN_GIT_COAUTHOR_TRAILER")),
         "coauthor trailer env must be absent when disabled; recorded: {:?}",
         runner.recorded
+    );
+}
+
+#[tokio::test]
+async fn new_session_rejects_empty_v3_admission_before_capsule_spawn() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-empty-admission";
+    provision_account_admission(&paths, container_name);
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+
+    let error = spawn_agent_session(
+        &paths,
+        container_name,
+        None,
+        jackin_core::Agent::Claude,
+        &[],
+        false,
+        false,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .expect_err("an explicit empty v3 admission set must reject --new");
+
+    assert!(
+        error.to_string().contains("not admitted"),
+        "unexpected admission error: {error:#}"
+    );
+    assert!(
+        runner.recorded.is_empty(),
+        "rejected --new must not invoke a capsule/session runner: {:?}",
+        runner.recorded
+    );
+    assert_eq!(
+        docker.recorded.borrow().as_slice(),
+        &[format!("docker inspect {container_name}")],
+        "rejected --new may inspect lifecycle state but must not start/exec a session"
     );
 }
 
@@ -1271,6 +1352,14 @@ async fn revoked_account_blocks_focused_attach_agent_and_shell_before_exec() {
             },
         );
         write_admission_fixture(&paths, name, &config, Some("project"));
+        let root = paths.data_dir.join(name);
+        let mut manifest = InstanceManifest::read(&root).unwrap();
+        manifest.set_admitted_instances([crate::instance::AdmittedInstance::new(
+            "work@claude",
+            jackin_core::Agent::Claude,
+            "work",
+        )]);
+        manifest.write(&root).unwrap();
         require_current_account_admission(&paths, name).unwrap();
         if disable {
             config.accounts.get_mut("work").unwrap().enabled = false;
