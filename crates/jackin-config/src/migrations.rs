@@ -93,8 +93,15 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     },
     MigrationStep {
         from: "v1alpha9",
-        to: CURRENT_CONFIG_VERSION,
+        to: "v1alpha10",
         migrate: strip_legacy_agent_tables,
+    },
+    // v1alpha10 → v1alpha11: stamp an initialized bootstrap sentinel so an
+    // upgrade never rescans or resurrects removed accounts.
+    MigrationStep {
+        from: "v1alpha10",
+        to: CURRENT_CONFIG_VERSION,
+        migrate: stamp_bootstrap_initialized,
     },
 ];
 /// Ordered per-workspace file migration chain from [`LEGACY_VERSION`] to current.
@@ -151,6 +158,30 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
         migrate: strip_legacy_agent_tables,
     },
 ];
+
+/// Stamp an already-initialized `[bootstrap]` sentinel, preserving an
+/// installer-written `fresh_install = true` marker so its scan still runs.
+pub(crate) fn stamp_bootstrap_initialized(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
+    use toml_edit::Item;
+
+    let has_marker = doc
+        .get("bootstrap")
+        .and_then(Item::as_table_like)
+        .and_then(|table| table.get("fresh_install"))
+        .and_then(Item::as_bool)
+        .unwrap_or(false);
+    if has_marker {
+        return Ok(());
+    }
+    let mut table = toml_edit::Table::new();
+    table.insert(
+        "version",
+        toml_edit::value(i64::from(crate::BOOTSTRAP_VERSION)),
+    );
+    table.insert("fresh_install", toml_edit::value(false));
+    doc.insert("bootstrap", Item::Table(table));
+    Ok(())
+}
 
 /// Strip legacy agent authentication tables from top-level and roles tables.
 pub(crate) fn strip_legacy_agent_tables(doc: &mut DocumentMut) -> crate::ConfigResult<()> {

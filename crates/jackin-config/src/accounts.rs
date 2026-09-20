@@ -435,6 +435,21 @@ pub fn resolve_account<'a>(
     }
     Ok(selected)
 }
+
+/// Current bootstrap sentinel schema version.
+pub const BOOTSTRAP_VERSION: u32 = 1;
+
+/// First-run bootstrap sentinel (`[bootstrap]` in `config.toml`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BootstrapState {
+    /// Sentinel schema version ([`BOOTSTRAP_VERSION`]).
+    pub version: u32,
+    /// True only when an installer-created config still needs its first scan.
+    #[serde(default)]
+    pub fresh_install: bool,
+}
+
 impl AppConfig {
     /// Validate registry credentials and all account references.
     ///

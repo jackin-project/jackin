@@ -538,8 +538,16 @@ fn prop_config_migration_idempotent() {
     use proptest::prelude::*;
 
     let versions = [
-        "v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7",
-        "v1alpha8", "v1alpha9",
+        "v1alpha1",
+        "v1alpha2",
+        "v1alpha3",
+        "v1alpha4",
+        "v1alpha5",
+        "v1alpha6",
+        "v1alpha7",
+        "v1alpha8",
+        "v1alpha9",
+        "v1alpha10",
     ];
     proptest!(|(idx in 0usize..versions.len())| {
         let version = versions[idx];
@@ -643,7 +651,7 @@ fn account_schema_preserves_existing_registry_and_assignments() {
 }
 
 #[test]
-fn migrates_config_with_top_level_and_role_legacy_agent_tables_to_v1alpha10() {
+fn migrates_config_with_top_level_and_role_legacy_agent_tables_to_v1alpha11() {
     let temp = tempdir().unwrap();
     let path = temp.path().join("config.toml");
     let original = r#"version = "v1alpha9"
@@ -661,7 +669,7 @@ auth_forward = "sync"
     assert!(migrate_config_file_if_needed(&path).unwrap());
     let out = std::fs::read_to_string(&path).unwrap();
     let parsed: toml::Value = toml::from_str(&out).unwrap();
-    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha10");
+    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha11");
     assert!(
         !out.contains("claude"),
         "top-level [claude] must be stripped:\n{out}"
@@ -674,4 +682,36 @@ auth_forward = "sync"
         out.contains("builder.git"),
         "role git url must be preserved:\n{out}"
     );
+}
+
+#[test]
+fn v1alpha10_to_v1alpha11_stamps_initialized_sentinel_without_touching_accounts() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    let original = "version = \"v1alpha10\"\n\n[accounts.work]\nenabled = true\nname = \"Work\"\nprovider = \"anthropic\"\n\n[accounts.work.credential]\ntype = \"api_key\"\nvalue = \"${ANTHROPIC_API_KEY}\"\n";
+    std::fs::write(&path, original).unwrap();
+    assert!(migrate_config_file_if_needed(&path).unwrap());
+    let out = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml::Value = toml::from_str(&out).unwrap();
+    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha11");
+    assert_eq!(parsed["bootstrap"]["version"].as_integer(), Some(1));
+    assert_eq!(parsed["bootstrap"]["fresh_install"].as_bool(), Some(false));
+    assert_eq!(parsed["accounts"]["work"]["name"].as_str(), Some("Work"));
+    assert!(!migrate_config_file_if_needed(&path).unwrap());
+}
+
+#[test]
+fn migration_preserves_installer_fresh_install_marker() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "version = \"v1alpha10\"\n\n[bootstrap]\nversion = 1\nfresh_install = true\n",
+    )
+    .unwrap();
+    assert!(migrate_config_file_if_needed(&path).unwrap());
+    let out = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml::Value = toml::from_str(&out).unwrap();
+    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha11");
+    assert_eq!(parsed["bootstrap"]["fresh_install"].as_bool(), Some(true));
 }

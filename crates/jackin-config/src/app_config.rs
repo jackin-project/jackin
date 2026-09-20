@@ -35,6 +35,9 @@ pub struct AppConfig {
     /// Global explicit account selections by agent.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_bindings: BTreeMap<Agent, String>,
+    /// First-run bootstrap sentinel; absent only in pre-sentinel files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap: Option<crate::BootstrapState>,
     /// On-disk schema version (`version` key in `config.toml`).
     #[serde(
         default = "crate::versions::current_config_version",
@@ -105,6 +108,10 @@ impl Default for AppConfig {
             version: CURRENT_CONFIG_VERSION.to_owned(),
             accounts: BTreeMap::new(),
             account_bindings: BTreeMap::new(),
+            bootstrap: Some(crate::BootstrapState {
+                version: crate::BOOTSTRAP_VERSION,
+                fresh_install: false,
+            }),
             github: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
