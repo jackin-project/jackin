@@ -199,13 +199,14 @@ pub(crate) use self::refresh::{
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::view::{
-    UsageViewInput, account_snapshot_views_from_cache, amp_status_bar_headline, bucket,
-    cached_refreshing_view, cached_unavailable_view, compact_account_identity, contains_word,
-    decorate_surface_view, enrich_provider_tabs, mark_active_tab, most_constrained_fresh_bucket,
-    preserve_cached_quota_on_failed_refresh, provider_matches_usage_label, provider_tabs,
+    UsageViewInput, account_snapshot_views_from_cache, account_tab_label_for_parts,
+    amp_status_bar_headline, bucket, cached_refreshing_view, cached_unavailable_view,
+    compact_account_identity, decorate_surface_view, enrich_provider_tabs, mark_active_tab,
+    most_constrained_fresh_bucket, preserve_cached_quota_on_failed_refresh, provider_tabs,
     quota_amounts_for_account_snapshot, spend_headline_label, status_bar_fresh_or_stale,
-    status_bar_headline_for_surface, status_bar_label, status_bar_quota_labels, surface_from_text,
-    timed_bucket, usage_tab_source_label, usage_tab_status_label, usage_view, with_status_slot,
+    status_bar_headline_for_surface, status_bar_label, status_bar_quota_labels, timed_bucket,
+    usage_account_tab_id, usage_tab_source_label, usage_tab_status_label, usage_view,
+    with_status_slot,
 };
 #[expect(
     unused_imports,
@@ -329,39 +330,6 @@ impl UsageSurface {
             Self::Minimax => "MiniMax",
             Self::OpenCode => "OpenCode",
             Self::Unsupported => "Usage",
-        }
-    }
-
-    /// Every surface, in resolution-precedence order. The single source of truth
-    /// for "which providers exist" — iterate this instead of re-listing variants.
-    const ALL: &'static [UsageSurface] = &[
-        Self::Claude,
-        Self::Codex,
-        Self::Amp,
-        Self::Grok,
-        Self::Zai,
-        Self::Kimi,
-        Self::Minimax,
-        Self::OpenCode,
-        Self::Unsupported,
-    ];
-
-    /// Canonical identity tokens for free-text provider matching — the one alias
-    /// table per variant. `surface_from_text` substring-scans these (Amp on a word
-    /// boundary); `OpenCode`/`Unsupported` carry none so unknown text resolves to
-    /// no surface. Entries must be lowercase: `surface_from_text` lowercases the
-    /// haystack before comparing, so an uppercase token would never match. Order
-    /// within a variant is a match-only alias set — not significant.
-    pub(crate) fn synonyms(self) -> &'static [&'static str] {
-        match self {
-            Self::Claude => &["claude", "anthropic"],
-            Self::Codex => &["codex", "openai"],
-            Self::Amp => &["amp"],
-            Self::Grok => &["grok", "xai"],
-            Self::Zai => &["glm", "z.ai", "zai"],
-            Self::Kimi => &["kimi"],
-            Self::Minimax => &["minimax"],
-            Self::OpenCode | Self::Unsupported => &[],
         }
     }
 }

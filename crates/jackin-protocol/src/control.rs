@@ -919,6 +919,11 @@ pub struct UsageDetailPresentation {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// `UsageProviderTab` protocol type.
 pub struct UsageProviderTab {
+    /// Stable canonical account id (`account_key_hash` over the provider and
+    /// account labels). Tab navigation and active-tab matching key on this;
+    /// `label` is display-only and repeats across same-provider accounts.
+    #[serde(default)]
+    pub id: String,
     /// `label` field.
     pub label: String,
     /// `status_label` field.

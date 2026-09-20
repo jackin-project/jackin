@@ -382,7 +382,13 @@ pub enum DialogAction {
     /// Request a daemon-side focused usage refresh.
     RefreshUsage,
     /// Request a daemon-side usage snapshot for a specific provider tab.
-    SwitchUsageProvider { provider_label: String },
+    /// `account_id` is the stable canonical account id and the resolution
+    /// key; `provider_label` stays for display and old-payload back-compat
+    /// (empty id falls back to label resolution).
+    SwitchUsageProvider {
+        provider_label: String,
+        account_id: String,
+    },
     /// Dialog is still open; redraw.
     Redraw,
     /// Operator confirmed a `jackin-exec` credential picker (Enter). Carries
@@ -495,12 +501,15 @@ impl Dialog {
                 {
                     return DialogAction::Dismiss;
                 }
-                if let Some(provider_label) = match key {
+                if let Some(tab) = match key {
                     b"\x1b[C" => self.usage_provider_tab_target(1),
                     b"\x1b[D" => self.usage_provider_tab_target(-1),
                     _ => None,
                 } {
-                    return DialogAction::SwitchUsageProvider { provider_label };
+                    return DialogAction::SwitchUsageProvider {
+                        provider_label: tab.label,
+                        account_id: tab.id,
+                    };
                 }
                 return DialogAction::Redraw;
             }
@@ -960,6 +969,7 @@ impl Dialog {
                     || DialogAction::Consume,
                     |tab| DialogAction::SwitchUsageProvider {
                         provider_label: tab.label.clone(),
+                        account_id: tab.id.clone(),
                     },
                 ),
                 None => DialogAction::Consume,

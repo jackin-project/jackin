@@ -93,71 +93,243 @@ fn provider_labels_resolve_all_account_refresh_surfaces() {
     );
 }
 
-#[test]
-fn provider_tabs_follow_usage_overlay_display_order() {
-    let labels = provider_tabs(UsageSurface::Codex)
-        .into_iter()
-        .map(|tab| tab.label)
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        labels,
-        vec![
-            "OpenAI".to_owned(),
-            "Anthropic".to_owned(),
-            "Amp".to_owned(),
-            "xAI".to_owned(),
-            "Z.AI".to_owned(),
-            "Kimi".to_owned(),
-            "MiniMax".to_owned(),
-        ]
-    );
+fn account_snapshot_view(
+    provider_label: &str,
+    account_label: &str,
+    plan_label: Option<&str>,
+    fetched_at_epoch: i64,
+) -> FocusedUsageView {
+    let mut view = FocusedUsageView::unavailable("none", fetched_at_epoch);
+    view.account.provider_label = provider_label.to_owned();
+    view.account.account_label = account_label.to_owned();
+    view.account.plan_label = plan_label.map(str::to_owned);
+    view.status = UsageSnapshotStatus::Fresh;
+    view
 }
 
 #[test]
-fn provider_tabs_include_cached_account_identity() {
-    let mut view = FocusedUsageView::unavailable("none", 123);
-    view.account = FocusedAccountHeader {
-        provider_label: "OpenAI / Codex".to_owned(),
-        account_label: "codex@example.com".to_owned(),
-        username: None,
-        plan_label: Some("Pro 20x".to_owned()),
-        credential_origin: None,
-    };
-    view.status = UsageSnapshotStatus::Fresh;
-    view.tabs = provider_tabs(UsageSurface::Codex);
+fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
+    let claude_stale = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
+    let claude_latest = account_snapshot_view("Anthropic", "a@example.com", Some("Max 20x"), 200);
+    let codex = account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150);
 
-    let mut claude = FocusedUsageView::unavailable("none", 120);
-    claude.account = FocusedAccountHeader {
-        provider_label: "Anthropic / Claude".to_owned(),
-        account_label: "claude@example.com".to_owned(),
-        username: None,
-        plan_label: Some("Max".to_owned()),
-        credential_origin: None,
-    };
-    claude.status = UsageSnapshotStatus::Stale;
+    let tabs = provider_tabs(&[&claude_stale, &claude_latest, &codex]);
+
+    // Duplicate snapshots for one account collapse to the newest fetch;
+    // same-provider accounts would each keep their own tab.
+    assert_eq!(tabs.len(), 2);
+    assert_eq!(
+        tabs.iter().map(|tab| &tab.label).collect::<Vec<_>>(),
+        vec!["Anthropic · a@example.com", "OpenAI · codex@example.com"]
+    );
+    let claude = tabs
+        .iter()
+        .find(|tab| tab.account_label == "a@example.com")
+        .expect("claude tab");
+    assert_eq!(claude.plan_label.as_deref(), Some("Max 20x"));
+    assert_eq!(
+        claude.id,
+        usage_account_tab_id("Anthropic", "a@example.com")
+    );
+    assert_eq!(
+        tabs[1].id,
+        usage_account_tab_id("OpenAI", "codex@example.com")
+    );
+    assert_ne!(tabs[0].id, tabs[1].id);
+    assert!(tabs.iter().all(|tab| !tab.active));
+
+    // An unlisted provider tabs without a hardcoded surface entry, and an
+    // empty scope stays empty.
+    let cursor = account_snapshot_view("Cursor", "cursor@example.com", None, 100);
+    let tabs = provider_tabs(&[&cursor]);
+    assert_eq!(tabs.len(), 1);
+    assert_eq!(tabs[0].label, "Cursor · cursor@example.com");
+    assert!(provider_tabs(&[]).is_empty());
+
+    // Same-provider accounts render individually visible labels; an account
+    // without identity keeps the bare provider label.
+    let claude_b = account_snapshot_view("Anthropic", "b@example.com", None, 100);
+    let tabs = provider_tabs(&[&claude_stale, &claude_b]);
+    assert_eq!(
+        tabs.iter().map(|tab| &tab.label).collect::<Vec<_>>(),
+        vec!["Anthropic · a@example.com", "Anthropic · b@example.com"]
+    );
+    let unknown = account_snapshot_view("Anthropic", "", None, 100);
+    let tabs = provider_tabs(&[&unknown]);
+    assert_eq!(tabs[0].label, "Anthropic");
+}
+
+#[test]
+fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
+    let mut view = account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 123);
+    view.tabs = vec![UsageProviderTab {
+        id: "stale".to_owned(),
+        label: "Stale".to_owned(),
+        status_label: String::new(),
+        account_label: String::new(),
+        plan_label: None,
+        source_label: None,
+        active: true,
+    }];
+    let claude = account_snapshot_view("Anthropic", "claude@example.com", Some("Max"), 120);
 
     let mut snapshots = HashMap::new();
-    snapshots.insert("claude:Claude".to_owned(), CachedUsage { view: claude });
+    snapshots.insert(
+        "Anthropic:account-1".to_owned(),
+        CachedUsage { view: claude },
+    );
+    snapshots.insert(
+        "OpenAI:account-2".to_owned(),
+        CachedUsage { view: view.clone() },
+    );
 
     enrich_provider_tabs(&mut view, &snapshots);
 
+    assert_eq!(view.tabs.len(), 2);
     let codex = view
         .tabs
         .iter()
-        .find(|tab| tab.label == "OpenAI")
+        .find(|tab| tab.label == "OpenAI · codex@example.com")
         .expect("codex tab");
     assert_eq!(codex.account_label, "codex@example.com");
     assert_eq!(codex.plan_label.as_deref(), Some("Pro 20x"));
-
     let claude = view
         .tabs
         .iter()
-        .find(|tab| tab.label == "Anthropic")
+        .find(|tab| tab.label == "Anthropic · claude@example.com")
         .expect("claude tab");
     assert_eq!(claude.account_label, "claude@example.com");
     assert_eq!(claude.plan_label.as_deref(), Some("Max"));
-    assert_eq!(claude.status_label, "stale");
+
+    // Empty broker state clears the strip instead of leaving stale tabs.
+    let mut view = account_snapshot_view("OpenAI", "codex@example.com", None, 123);
+    enrich_provider_tabs(&mut view, &HashMap::new());
+    assert!(view.tabs.is_empty());
+}
+
+#[test]
+fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
+    );
+    cache.insert_snapshot_for_test(
+        "codex",
+        Some("OpenAI"),
+        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+    );
+
+    let snapshot = cache.focused_snapshot(Some("claude"), Some("Anthropic"));
+
+    // One tab (and therefore one overview row) per admitted account.
+    assert_eq!(snapshot.tabs.len(), 3);
+    let mut ids: Vec<String> = snapshot.tabs.iter().map(|tab| tab.id.clone()).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 3);
+    let mut expected = vec![
+        usage_account_tab_id("Anthropic", "a@example.com"),
+        usage_account_tab_id("Anthropic", "b@example.com"),
+        usage_account_tab_id("OpenAI", "codex@example.com"),
+    ];
+    expected.sort();
+    assert_eq!(ids, expected);
+    // The focused account (newest Claude fetch) is the active tab.
+    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(
+        active[0].id,
+        usage_account_tab_id("Anthropic", "b@example.com")
+    );
+
+    // Selection by id focuses the correct account: a view focused on the
+    // other Claude account marks exactly its tab, matched by id rather than
+    // the shared "Anthropic" display label.
+    let id_a = usage_account_tab_id("Anthropic", "a@example.com");
+    let mut selected = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
+    enrich_provider_tabs(&mut selected, &cache.snapshots);
+    mark_active_tab(&mut selected);
+    let active: Vec<&UsageProviderTab> = selected.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, id_a);
+    assert_eq!(active[0].account_label, "a@example.com");
+    // Strip labels stay individually visible per account.
+    let mut labels: Vec<String> = selected.tabs.iter().map(|tab| tab.label.clone()).collect();
+    labels.sort();
+    labels.dedup();
+    assert_eq!(labels.len(), 3);
+}
+
+#[test]
+fn focused_snapshot_for_account_id_selects_exact_account() {
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
+    );
+    let id_b = usage_account_tab_id("Anthropic", "b@example.com");
+
+    let snapshot = cache
+        .focused_snapshot_for_account_id(&id_b)
+        .expect("snapshot for claude-b");
+    assert_eq!(snapshot.account.account_label, "b@example.com");
+    assert_eq!(snapshot.tabs.len(), 2);
+    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, id_b);
+
+    assert!(
+        cache
+            .focused_snapshot_for_account_id("sha256:unknown")
+            .is_none()
+    );
+    assert!(cache.focused_snapshot_for_account_id("").is_none());
+}
+
+#[test]
+fn broker_account_id_for_tab_id_recovers_broker_key() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
+
+    let mut cache = UsageCache::default();
+    let capability_a = UsageAccountCapability {
+        account_id: "broker-claude-a".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    cache.insert_snapshot_for_capability_for_test(
+        "claude",
+        Some("Anthropic"),
+        &capability_a,
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "codex",
+        Some("OpenAI"),
+        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+    );
+
+    assert_eq!(
+        cache.broker_account_id_for_tab_id(&usage_account_tab_id("Anthropic", "a@example.com")),
+        Some("broker-claude-a".to_owned())
+    );
+    // Legacy keys carry no capability; unknown ids match nothing.
+    assert_eq!(
+        cache.broker_account_id_for_tab_id(&usage_account_tab_id("OpenAI", "codex@example.com")),
+        None
+    );
+    assert_eq!(cache.broker_account_id_for_tab_id("sha256:unknown"), None);
 }
 
 #[test]
@@ -318,7 +490,7 @@ fn usage_snapshot_reads_in_memory_cache() {
         snapshot
             .tabs
             .iter()
-            .any(|tab| tab.label == "OpenAI" && tab.active)
+            .any(|tab| tab.label == "OpenAI · codex@example.com" && tab.active)
     );
 }
 
@@ -2224,69 +2396,6 @@ fn claude_cli_usage_output_maps_scoped_weekly_fable() {
 }
 
 #[test]
-fn provider_matches_usage_label_resolves_canonical_synonyms() {
-    // A tab label matches an account provider label when both resolve to the
-    // same canonical surface, across synonym spellings and in both orders.
-    for (left, right) in [
-        ("OpenAI / Codex", "codex"),
-        ("Codex", "openai"),
-        ("Anthropic / Claude", "claude"),
-        ("Claude", "anthropic"),
-        ("xAI / Grok", "grok"),
-        ("Grok Build", "xai"),
-        ("GLM / Z.AI", "glm"),
-        ("Z.AI", "zai"),
-        ("MiniMax", "minimax"),
-        ("Kimi", "kimi"),
-        ("Amp", "amp"),
-    ] {
-        assert!(
-            provider_matches_usage_label(left, right),
-            "{left} should match {right}"
-        );
-        assert!(
-            provider_matches_usage_label(right, left),
-            "{right} should match {left}"
-        );
-    }
-
-    // Different surfaces never match.
-    for (left, right) in [
-        ("Codex", "claude"),
-        ("GLM / Z.AI", "grok"),
-        ("Kimi", "minimax"),
-    ] {
-        assert!(
-            !provider_matches_usage_label(left, right),
-            "{left} must not match {right}"
-        );
-    }
-
-    // Providers outside the known surface set (OpenCode) fall through to the
-    // case-insensitive substring path — equal labels match, distinct don't.
-    assert!(provider_matches_usage_label("OpenCode", "opencode"));
-    assert!(!provider_matches_usage_label("OpenCode", "codex"));
-
-    // Unknown text names no surface; the short "amp" token must not match
-    // inside an unrelated word (whole-token match, not bare substring), and
-    // a glued token ("ampcode") is not a word match either.
-    assert_eq!(surface_from_text("totally-unknown"), None);
-    assert_eq!(surface_from_text("example"), None);
-    assert_eq!(surface_from_text("ampcode"), None);
-    assert!(!provider_matches_usage_label("Example", "amp"));
-    assert_eq!(surface_from_text("Amp / Code"), Some(UsageSurface::Amp));
-
-    // A known surface never matches an unknown label — this is the
-    // production direction (tab label resolves, focus value may not).
-    assert!(!provider_matches_usage_label("Codex", "totally-unknown"));
-    assert!(!provider_matches_usage_label("Amp", "totally-unknown"));
-
-    // Both unknown → substring fallback: containment matches, distinct don't.
-    assert!(provider_matches_usage_label("opencode-zen", "opencode"));
-    assert!(!provider_matches_usage_label("opencode", "ollama"));
-}
-
-#[test]
 fn grok_billing_config_maps_current_fallback_and_bounds() {
     let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
         "subscription_tier": "SuperGrok",
@@ -3651,65 +3760,6 @@ fn minimax_operation_path_matches_candidate_path() {
     assert_eq!(
         minimax_operation_path("https://quota.example/custom/remains?tenant=secret"),
         "/custom"
-    );
-}
-
-#[test]
-fn usage_surface_synonyms_are_lowercase() {
-    // surface_from_text lowercases the haystack before comparing, so any
-    // uppercase synonym entry would be permanently unmatchable.
-    for surface in UsageSurface::ALL {
-        for syn in surface.synonyms() {
-            assert_eq!(
-                *syn,
-                syn.to_ascii_lowercase(),
-                "synonym {syn:?} for {surface:?} must be lowercase"
-            );
-        }
-    }
-}
-
-#[test]
-fn usage_surface_all_lists_every_variant() {
-    // `guard` has no wildcard arm: adding a UsageSurface variant makes it fail to
-    // compile, forcing the author to this test. `variants` then drives the runtime
-    // check that each variant is present in ALL — a variant missing from ALL is
-    // silently unmatchable in surface_from_text. The len check catches the reverse.
-    fn guard(surface: UsageSurface) {
-        match surface {
-            UsageSurface::Claude
-            | UsageSurface::Codex
-            | UsageSurface::Amp
-            | UsageSurface::Grok
-            | UsageSurface::Zai
-            | UsageSurface::Kimi
-            | UsageSurface::Minimax
-            | UsageSurface::OpenCode
-            | UsageSurface::Unsupported => {}
-        }
-    }
-    let variants = [
-        UsageSurface::Claude,
-        UsageSurface::Codex,
-        UsageSurface::Amp,
-        UsageSurface::Grok,
-        UsageSurface::Zai,
-        UsageSurface::Kimi,
-        UsageSurface::Minimax,
-        UsageSurface::OpenCode,
-        UsageSurface::Unsupported,
-    ];
-    for surface in variants {
-        guard(surface);
-        assert!(
-            UsageSurface::ALL.contains(&surface),
-            "{surface:?} missing from UsageSurface::ALL"
-        );
-    }
-    assert_eq!(
-        UsageSurface::ALL.len(),
-        variants.len(),
-        "UsageSurface::ALL has an entry this test does not cover"
     );
 }
 

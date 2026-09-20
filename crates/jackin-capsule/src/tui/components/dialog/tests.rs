@@ -991,6 +991,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
         tabs: vec![
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-codex".to_owned(),
                 label: "Codex".to_owned(),
                 status_label: "37% left · Resets in 1h 21m (Jun 17, 23:15)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -999,6 +1000,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: true,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-claude".to_owned(),
                 label: "Claude".to_owned(),
                 status_label: "16% left · Resets in 46m (Jun 17, 22:40)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1007,6 +1009,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-amp".to_owned(),
                 label: "Amp".to_owned(),
                 status_label: "unsupported".to_owned(),
                 account_label: "account unavailable".to_owned(),
@@ -1015,6 +1018,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-grok".to_owned(),
                 label: "Grok Build".to_owned(),
                 status_label: "needs login".to_owned(),
                 account_label: "account unavailable".to_owned(),
@@ -1023,6 +1027,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-zai".to_owned(),
                 label: "GLM / Z.AI".to_owned(),
                 status_label: "88% left · Resets in 4d (Jun 21, 00:00)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1031,6 +1036,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-kimi".to_owned(),
                 label: "Kimi".to_owned(),
                 status_label: "72% left · Resets in 13h (Jun 18, 11:00)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1039,6 +1045,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-minimax".to_owned(),
                 label: "MiniMax".to_owned(),
                 status_label: "100% left".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1071,6 +1078,74 @@ fn usage_projection_empty_inventory_has_no_retry_copy() {
             .iter()
             .any(|hint| matches!(hint, termrock::widgets::HintSpan::Key("r")))
     );
+}
+
+#[test]
+fn usage_overview_renders_one_row_per_account_tab() {
+    let mut view = usage_view_fixture();
+    view.tabs = vec![
+        jackin_protocol::control::UsageProviderTab {
+            id: "test-tab-claude-a".to_owned(),
+            label: "Claude".to_owned(),
+            status_label: "40% left".to_owned(),
+            account_label: "a@example.com".to_owned(),
+            plan_label: Some("Max".to_owned()),
+            source_label: Some("fresh · provider".to_owned()),
+            active: false,
+        },
+        jackin_protocol::control::UsageProviderTab {
+            id: "test-tab-claude-b".to_owned(),
+            label: "Claude".to_owned(),
+            status_label: "60% left".to_owned(),
+            account_label: "b@example.com".to_owned(),
+            plan_label: Some("Max 20x".to_owned()),
+            source_label: Some("fresh · provider".to_owned()),
+            active: true,
+        },
+        jackin_protocol::control::UsageProviderTab {
+            id: "test-tab-codex".to_owned(),
+            label: "Codex".to_owned(),
+            status_label: "37% left".to_owned(),
+            account_label: "codex@example.com".to_owned(),
+            plan_label: Some("Pro 20x".to_owned()),
+            source_label: Some("fresh · provider".to_owned()),
+            active: false,
+        },
+    ];
+    let strip = crate::tui::components::dialog_widgets::usage_tab_strip_labels(
+        &view,
+        UsageDialogTab::Overview,
+    );
+    assert_eq!(
+        strip
+            .iter()
+            .map(|(label, _)| label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Overview", "Anthropic", "Anthropic", "OpenAI"]
+    );
+    let dialog = Dialog::new_usage_with_tab(view, UsageDialogTab::Overview);
+    let state = dialog.usage_state().expect("usage state");
+    assert_eq!(state.rows().len(), 3);
+    assert_eq!(
+        state
+            .rows()
+            .iter()
+            .map(|row| row.value().to_owned())
+            .collect::<Vec<_>>(),
+        vec!["40% left", "60% left", "37% left"]
+    );
+}
+
+#[test]
+fn usage_overview_matches_provider_head_of_composite_tab_labels() {
+    use crate::tui::components::dialog_widgets::usage::is_overview_provider_label;
+
+    assert!(is_overview_provider_label("Anthropic"));
+    assert!(is_overview_provider_label("Anthropic · a@example.com"));
+    assert!(is_overview_provider_label("Cursor · c@example.com"));
+    assert!(is_overview_provider_label("OpenCode · o@example.com"));
+    assert!(!is_overview_provider_label("Nous Portal · n@example.com"));
+    assert!(!is_overview_provider_label("Username"));
 }
 
 fn usage_status_bucket(
@@ -1566,8 +1641,12 @@ fn usage_dialog_provider_tabs_are_clickable() {
 
     assert!(d.clickable_at(tab_row, tab_col, 32, 120, None));
     match d.handle_click(tab_row, tab_col, 32, 120, None) {
-        DialogAction::SwitchUsageProvider { provider_label } => {
+        DialogAction::SwitchUsageProvider {
+            provider_label,
+            account_id,
+        } => {
             assert_eq!(provider_label, "Claude");
+            assert_eq!(account_id, "test-tab-claude");
         }
         other => panic!("expected provider switch, got {other:?}"),
     }
@@ -1951,7 +2030,8 @@ fn usage_dialog_right_arrow_switches_to_next_provider() {
     assert_eq!(
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
-            provider_label: "Claude".to_owned()
+            provider_label: "Claude".to_owned(),
+            account_id: "test-tab-claude".to_owned(),
         }
     );
 }

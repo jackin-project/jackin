@@ -661,37 +661,43 @@ fn normalize_provider_label(value: &str) -> String {
 fn usage_provider_tabs_from_rows(
     rows: &[StoredAccountUsageSnapshot],
 ) -> Vec<jackin_protocol::control::UsageProviderTab> {
-    [
-        "Codex",
-        "Claude",
-        "Amp",
-        "Grok Build",
-        "GLM / Z.AI",
-        "Kimi",
-        "MiniMax",
-    ]
-    .into_iter()
-    .map(|label| {
-        let latest = rows
-            .iter()
-            .filter(|row| provider_matches(label, &row.provider))
-            .max_by_key(|row| row.fetched_at);
-        jackin_protocol::control::UsageProviderTab {
-            label: label.to_owned(),
-            status_label: latest.map_or_else(
-                || "not cached".to_owned(),
-                |row| tab_status_label(row, rows),
+    // One tab per distinct stored account, keyed by the stable
+    // `account_key_hash`; the newest fetch wins per account. Same-provider
+    // accounts never collapse, and an empty store stays empty.
+    let mut latest: HashMap<&str, &StoredAccountUsageSnapshot> = HashMap::new();
+    for row in rows {
+        latest
+            .entry(row.account_key_hash.as_str())
+            .and_modify(|current| {
+                if row.fetched_at > current.fetched_at {
+                    *current = row;
+                }
+            })
+            .or_insert(row);
+    }
+    let mut tabs: Vec<jackin_protocol::control::UsageProviderTab> = latest
+        .values()
+        .map(|row| jackin_protocol::control::UsageProviderTab {
+            id: row.account_key_hash.clone(),
+            label: crate::usage::account_tab_label_for_parts(
+                &row.provider,
+                &row.account_label,
+                row.focused_provider.as_deref(),
             ),
-            account_label: latest.map_or_else(
-                || "account unavailable".to_owned(),
-                |row| row.account_label.clone(),
-            ),
-            plan_label: latest.and_then(|row| row.plan_label.clone()),
-            source_label: latest.map(|row| format!("{} · {}", row.view_status, row.source)),
+            status_label: tab_status_label(row, rows),
+            account_label: row.account_label.clone(),
+            plan_label: row.plan_label.clone(),
+            source_label: Some(format!("{} · {}", row.view_status, row.source)),
             active: false,
-        }
-    })
-    .collect()
+        })
+        .collect();
+    tabs.sort_by(|left, right| {
+        left.label
+            .cmp(&right.label)
+            .then(left.account_label.cmp(&right.account_label))
+            .then(left.id.cmp(&right.id))
+    });
+    tabs
 }
 
 #[cfg(test)]
