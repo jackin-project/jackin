@@ -2,13 +2,285 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Materialize selected API account settings in the private capsule home.
+#![expect(
+    clippy::disallowed_methods,
+    reason = "private config publication runs inside the launch blocking task"
+)]
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Context as _;
 use jackin_config::{AccountCredential, AiProvider, AppConfig};
 use jackin_core::Agent;
+
+static PRIVATE_CONFIG_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PrivateConfigFailurePoint {
+    StagedFile(&'static str),
+    BeforeSwap,
+    AfterPreviousRename,
+    AfterInstall,
+}
+
+#[cfg(test)]
+thread_local! {
+    static PRIVATE_CONFIG_FAILURE: std::cell::Cell<Option<PrivateConfigFailurePoint>> =
+        const { std::cell::Cell::new(None) };
+}
+
+fn maybe_inject_private_config_failure(point: PrivateConfigFailurePoint) -> anyhow::Result<()> {
+    #[cfg(test)]
+    if PRIVATE_CONFIG_FAILURE.with(|failure| failure.get() == Some(point)) {
+        anyhow::bail!("injected private-config publication failure at {point:?}");
+    }
+
+    #[cfg(not(test))]
+    let _ = point;
+    Ok(())
+}
+
+fn private_config_entry_path(directory: &Path, name: &str) -> anyhow::Result<PathBuf> {
+    let components = Path::new(name).components().collect::<Vec<_>>();
+    anyhow::ensure!(
+        components.len() == 1 && matches!(components[0], Component::Normal(_)),
+        "private config entry must be a single file name: {name:?}"
+    );
+    Ok(directory.join(name))
+}
+
+fn sync_private_config_directory(path: &Path) -> std::io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
+}
+
+fn unique_private_config_sibling(parent: &Path, prefix: &str) -> anyhow::Result<PathBuf> {
+    for _ in 0..128 {
+        let sequence = PRIVATE_CONFIG_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = parent.join(format!(".{prefix}-{}-{sequence}", std::process::id()));
+        match std::fs::symlink_metadata(&path) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(path),
+            Err(error) => return Err(error.into()),
+        }
+    }
+    anyhow::bail!("could not allocate a private config swap path")
+}
+
+fn copy_private_config_tree(source: &Path, destination: &Path) -> anyhow::Result<()> {
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let metadata = std::fs::symlink_metadata(&source_path)?;
+        anyhow::ensure!(
+            !metadata.file_type().is_symlink(),
+            "refusing to publish private config through symlink {}",
+            source_path.display()
+        );
+        if metadata.is_dir() {
+            std::fs::create_dir(&destination_path)?;
+            copy_private_config_tree(&source_path, &destination_path)?;
+            std::fs::set_permissions(&destination_path, metadata.permissions())?;
+        } else if metadata.is_file() {
+            std::fs::copy(&source_path, &destination_path)?;
+            std::fs::set_permissions(&destination_path, metadata.permissions())?;
+        } else {
+            anyhow::bail!(
+                "refusing to publish private config with special entry {}",
+                source_path.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn existing_private_config_permissions(
+    directory: &Path,
+    name: &str,
+) -> anyhow::Result<Option<std::fs::Permissions>> {
+    let path = private_config_entry_path(directory, name)?;
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.is_file(),
+                "private config entry is not a regular file: {}",
+                path.display()
+            );
+            Ok(Some(metadata.permissions()))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn write_private_config_file(
+    directory: &Path,
+    name: &str,
+    bytes: &[u8],
+    permissions: Option<std::fs::Permissions>,
+) -> anyhow::Result<()> {
+    use std::io::Write as _;
+
+    let path = private_config_entry_path(directory, name)?;
+    let mut file = tempfile::NamedTempFile::new_in(directory)?;
+    file.write_all(bytes)?;
+    if let Some(permissions) = permissions {
+        file.as_file().set_permissions(permissions)?;
+    }
+    file.as_file().sync_all()?;
+    file.persist(&path).map_err(|error| error.error)?;
+    Ok(())
+}
+
+fn remove_private_config_file(directory: &Path, name: &str) -> anyhow::Result<()> {
+    let path = private_config_entry_path(directory, name)?;
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.is_file(),
+                "private config entry is not a regular file: {}",
+                path.display()
+            );
+            std::fs::remove_file(path)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+fn rollback_private_config_swap(
+    directory: &Path,
+    previous: Option<&Path>,
+    installed: bool,
+    cause: anyhow::Error,
+) -> anyhow::Result<()> {
+    let mut rollback_error = None;
+    if installed
+        && let Err(error) = std::fs::remove_dir_all(directory)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        rollback_error = Some(anyhow::Error::new(error));
+    }
+    if let Some(previous) = previous
+        && rollback_error.is_none()
+        && let Err(error) = std::fs::rename(previous, directory)
+    {
+        rollback_error = Some(anyhow::Error::new(error));
+    }
+    if let Some(rollback_error) = rollback_error {
+        return Err(cause.context(format!(
+            "private config publication failed and rollback failed: {rollback_error:#}"
+        )));
+    }
+    Err(cause)
+}
+
+fn publish_private_config_directory(
+    directory: &Path,
+    files: &[(&'static str, Vec<u8>)],
+    remove_files: &[&str],
+) -> anyhow::Result<()> {
+    let parent = directory
+        .parent()
+        .context("private config directory has no parent")?;
+    std::fs::create_dir_all(parent)?;
+    let existing = match std::fs::symlink_metadata(directory) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.is_dir(),
+                "private config path is not a directory: {}",
+                directory.display()
+            );
+            Some(metadata)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+
+    // Stage the complete directory beside the live path. Copying unrelated
+    // entries preserves the private home while making every generated file
+    // visible only after one directory publication.
+    let staged_directory = tempfile::Builder::new()
+        .prefix(".jackin-private-config-stage-")
+        .tempdir_in(parent)?;
+    if let Some(existing) = existing.as_ref() {
+        copy_private_config_tree(directory, staged_directory.path())?;
+        std::fs::set_permissions(staged_directory.path(), existing.permissions())?;
+    }
+
+    for name in remove_files {
+        remove_private_config_file(staged_directory.path(), name)?;
+    }
+    for (name, bytes) in files {
+        let permissions = existing_private_config_permissions(directory, name)?;
+        write_private_config_file(staged_directory.path(), name, bytes, permissions)?;
+        maybe_inject_private_config_failure(PrivateConfigFailurePoint::StagedFile(name))?;
+    }
+    sync_private_config_directory(staged_directory.path())?;
+    maybe_inject_private_config_failure(PrivateConfigFailurePoint::BeforeSwap)?;
+
+    let previous_directory = if existing.is_some() {
+        let previous = unique_private_config_sibling(parent, "jackin-private-config-previous")?;
+        std::fs::rename(directory, &previous)?;
+        Some(previous)
+    } else {
+        None
+    };
+    if let Err(error) =
+        maybe_inject_private_config_failure(PrivateConfigFailurePoint::AfterPreviousRename)
+    {
+        return rollback_private_config_swap(
+            directory,
+            previous_directory.as_deref(),
+            false,
+            error,
+        );
+    }
+
+    if let Err(error) = std::fs::rename(staged_directory.path(), directory) {
+        return rollback_private_config_swap(
+            directory,
+            previous_directory.as_deref(),
+            false,
+            error.into(),
+        );
+    }
+    if let Err(error) = maybe_inject_private_config_failure(PrivateConfigFailurePoint::AfterInstall)
+    {
+        return rollback_private_config_swap(directory, previous_directory.as_deref(), true, error);
+    }
+    if let Err(error) = sync_private_config_directory(parent) {
+        return rollback_private_config_swap(
+            directory,
+            previous_directory.as_deref(),
+            true,
+            error.into(),
+        );
+    }
+    if let Some(previous_directory) = previous_directory {
+        std::fs::remove_dir_all(previous_directory)?;
+        sync_private_config_directory(parent)?;
+    }
+    Ok(())
+}
+
+fn read_private_config_file(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.is_file(),
+                "private config path is not a regular file: {}",
+                path.display()
+            );
+            Ok(Some(std::fs::read(path)?))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
 
 fn account_with_effective_model(
     account: &jackin_config::AccountConfig,
@@ -112,13 +384,14 @@ fn configure_codex(
     // slot layout used by mounts and the Capsule's CODEX_HOME value. Never
     // collapse multiple admitted Codex instances onto the primary home.
     let directory = root.join("home").join(&slot.container_home_rel);
-    std::fs::create_dir_all(&directory).context("create private Codex configuration directory")?;
     let path = directory.join("config.toml");
-    let mut document: toml::Table = match std::fs::read_to_string(&path) {
-        Ok(contents) => toml::from_str(&contents).context("parse private Codex configuration")?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
-        Err(error) => return Err(error).context("read private Codex configuration"),
-    };
+    let mut document: toml::Table =
+        match read_private_config_file(&path).context("read private Codex configuration")? {
+            Some(contents) => {
+                toml::from_slice(&contents).context("parse private Codex configuration")?
+            }
+            None => toml::Table::new(),
+        };
     let mut provider = toml::Table::new();
     provider.insert("name".into(), account.provider.slug().into());
     provider.insert("base_url".into(), base_url.unwrap_or(default_url).into());
@@ -133,6 +406,7 @@ fn configure_codex(
         .context("Codex model_providers must be a table")?;
     providers.insert("jackin_account".into(), provider.into());
     document.insert("model_provider".into(), "jackin_account".into());
+    let mut files = Vec::new();
     if let Some(model) = model {
         document.insert("model".into(), model.into());
         if let Some(catalog) = model_catalog(account.provider, model) {
@@ -142,11 +416,7 @@ fn configure_codex(
                     "Codex model {model:?} does not support reasoning effort {effort:?}"
                 );
             }
-            std::fs::write(
-                directory.join("account-models.json"),
-                serde_json::to_vec_pretty(&catalog)?,
-            )
-            .context("write private Codex model metadata")?;
+            files.push(("account-models.json", serde_json::to_vec_pretty(&catalog)?));
             let catalog_target = Path::new(&slot.folder_target)
                 .join("account-models.json")
                 .to_string_lossy()
@@ -164,8 +434,12 @@ fn configure_codex(
     } else {
         document.remove("model_reasoning_effort");
     }
-    std::fs::write(path, toml::to_string_pretty(&document)?)
-        .context("write private Codex account configuration")
+    files.push((
+        "config.toml",
+        toml::to_string_pretty(&document)?.into_bytes(),
+    ));
+    publish_private_config_directory(&directory, &files, &["account-models.json"])
+        .context("publish private Codex account configuration")
 }
 
 /// Provider identifiers from `OpenCode`'s catalog; config and CLI model use the same ID.
@@ -259,8 +533,6 @@ fn configure_opencode(
         ".config/opencode",
         slot.slot_suffix.as_deref(),
     ));
-    std::fs::create_dir_all(&directory)
-        .context("create private OpenCode configuration directory")?;
     let mut provider = serde_json::json!({
         "name": account.name, "npm": npm,
         "options": { "baseURL": base_url.unwrap_or(default_url), "apiKey": format!("{{env:{key}}}") }
@@ -289,11 +561,12 @@ fn configure_opencode(
         document["model"] = full_model.into();
     }
     document["provider"] = serde_json::json!({ id: provider });
-    std::fs::write(
-        directory.join("opencode.json"),
-        serde_json::to_vec_pretty(&document)?,
+    publish_private_config_directory(
+        &directory,
+        &[("opencode.json", serde_json::to_vec_pretty(&document)?)],
+        &[],
     )
-    .context("write private OpenCode account configuration")
+    .context("publish private OpenCode account configuration")
 }
 
 /// Provider-published metadata, not guessed for custom model IDs.

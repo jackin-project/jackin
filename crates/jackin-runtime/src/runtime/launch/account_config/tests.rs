@@ -5,6 +5,25 @@ use super::*;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+struct PrivateConfigFailureGuard {
+    previous: Option<PrivateConfigFailurePoint>,
+}
+
+fn inject_private_config_failure(point: PrivateConfigFailurePoint) -> PrivateConfigFailureGuard {
+    let previous = PRIVATE_CONFIG_FAILURE.with(|failure| failure.replace(Some(point)));
+    assert!(
+        previous.is_none(),
+        "nested private-config failure injection is not supported"
+    );
+    PrivateConfigFailureGuard { previous }
+}
+
+impl Drop for PrivateConfigFailureGuard {
+    fn drop(&mut self) {
+        PRIVATE_CONFIG_FAILURE.with(|failure| failure.set(self.previous));
+    }
+}
+
 fn slots_for(
     instances: &[jackin_config::ResolvedInstance],
 ) -> std::collections::BTreeMap<String, crate::instance::ProvisionedInstanceAuth> {
@@ -587,4 +606,178 @@ fn codex_slots_keep_routed_models_catalogs_and_requested_effort_separate() {
         assert!(!contents.contains("model_reasoning_effort = \"high\""));
         assert!(slots.contains_key(id));
     }
+}
+
+fn codex_fixture(
+    provider: AiProvider,
+    model: &str,
+    endpoint: &str,
+) -> (AppConfig, [jackin_config::ResolvedInstance; 1]) {
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "work".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider,
+            credential: AccountCredential::ApiKey {
+                value: "fixture-private-key".into(),
+                base_url: Some(endpoint.into()),
+                model: Some(model.into()),
+            },
+        },
+    );
+    (
+        config,
+        [instance(
+            "codex-work",
+            Agent::Codex,
+            "work",
+            Some(model),
+            Some(endpoint),
+        )],
+    )
+}
+
+fn assert_no_private_config_swap_artifacts(directory: &Path) {
+    for entry in std::fs::read_dir(directory).unwrap() {
+        let name = entry.unwrap().file_name();
+        let name = name.to_string_lossy();
+        assert!(
+            !name.starts_with(".jackin-private-config-stage-")
+                && !name.starts_with(".jackin-private-config-previous-"),
+            "private config swap artifact remained: {name}"
+        );
+    }
+}
+
+#[test]
+fn codex_catalog_or_config_interruption_preserves_complete_previous_directory() {
+    for point in [
+        PrivateConfigFailurePoint::StagedFile("account-models.json"),
+        PrivateConfigFailurePoint::StagedFile("config.toml"),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let (old_config, old_instances) =
+            codex_fixture(AiProvider::Moonshot, "k3", "https://old.example/v1");
+        configure_for_test(temp.path(), &old_config, &old_instances).unwrap();
+        let directory = temp.path().join("home/.codex");
+        let old_config_bytes = std::fs::read(directory.join("config.toml")).unwrap();
+        let old_catalog_bytes = std::fs::read(directory.join("account-models.json")).unwrap();
+
+        let (new_config, new_instances) =
+            codex_fixture(AiProvider::Zai, "glm-5.3", "https://new.example/v1");
+        let _failure = inject_private_config_failure(point);
+        let error = configure_for_test(temp.path(), &new_config, &new_instances).unwrap_err();
+        assert!(format!("{error:#}").contains("injected private-config publication failure"));
+
+        assert_eq!(
+            std::fs::read(directory.join("config.toml")).unwrap(),
+            old_config_bytes
+        );
+        assert_eq!(
+            std::fs::read(directory.join("account-models.json")).unwrap(),
+            old_catalog_bytes
+        );
+        assert_no_private_config_swap_artifacts(directory.parent().unwrap());
+    }
+}
+
+#[test]
+fn opencode_publication_failure_preserves_previous_configuration() {
+    for point in [
+        PrivateConfigFailurePoint::StagedFile("opencode.json"),
+        PrivateConfigFailurePoint::AfterInstall,
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let mut old_config = AppConfig::default();
+        old_config.accounts.insert(
+            "work".into(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: "Work".into(),
+                provider: AiProvider::OpenAi,
+                credential: AccountCredential::ApiKey {
+                    value: "old-private-key".into(),
+                    base_url: Some("https://old.example/v1".into()),
+                    model: Some("old-model".into()),
+                },
+            },
+        );
+        let old_instances = [instance(
+            "opencode-work",
+            Agent::Opencode,
+            "work",
+            Some("old-model"),
+            Some("https://old.example/v1"),
+        )];
+        configure_for_test(temp.path(), &old_config, &old_instances).unwrap();
+        let directory = temp.path().join("home/.config/opencode");
+        let old_bytes = std::fs::read(directory.join("opencode.json")).unwrap();
+        std::fs::write(directory.join("unrelated.json"), b"keep me").unwrap();
+
+        old_config.accounts.get_mut("work").unwrap().credential = AccountCredential::ApiKey {
+            value: "new-private-key".into(),
+            base_url: Some("https://new.example/v1".into()),
+            model: Some("new-model".into()),
+        };
+        let new_instances = [instance(
+            "opencode-work",
+            Agent::Opencode,
+            "work",
+            Some("new-model"),
+            Some("https://new.example/v1"),
+        )];
+        let _failure = inject_private_config_failure(point);
+        let error = configure_for_test(temp.path(), &old_config, &new_instances).unwrap_err();
+        assert!(format!("{error:#}").contains("private-config publication"));
+
+        assert_eq!(
+            std::fs::read(directory.join("opencode.json")).unwrap(),
+            old_bytes
+        );
+        assert_eq!(
+            std::fs::read(directory.join("unrelated.json")).unwrap(),
+            b"keep me"
+        );
+        assert_no_private_config_swap_artifacts(directory.parent().unwrap());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn private_config_publication_preserves_paths_and_permissions() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://provider.example/v1");
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+    let directory = temp.path().join("home/.codex");
+    let unrelated = directory.join("preserved.toml");
+    std::fs::write(&unrelated, b"preserve this").unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o750)).unwrap();
+    for name in ["config.toml", "account-models.json", "preserved.toml"] {
+        std::fs::set_permissions(directory.join(name), std::fs::Permissions::from_mode(0o640))
+            .unwrap();
+    }
+
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+
+    assert_eq!(
+        std::fs::metadata(&directory).unwrap().permissions().mode() & 0o7777,
+        0o750
+    );
+    for name in ["config.toml", "account-models.json", "preserved.toml"] {
+        assert_eq!(
+            std::fs::metadata(directory.join(name))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777,
+            0o640,
+            "permissions changed for {name}"
+        );
+    }
+    assert_eq!(std::fs::read(unrelated).unwrap(), b"preserve this");
 }
