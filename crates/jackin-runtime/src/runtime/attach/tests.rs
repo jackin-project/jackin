@@ -421,11 +421,114 @@ async fn attach_rejects_rotation_after_readiness_before_capsule_exec() {
         "unexpected rotation error: {error:#}"
     );
     assert!(
+        error.is::<ReconnectAdmissionFailure>(),
+        "readiness rotation must remain a reconnect admission error: {error:#}"
+    );
+    assert!(
         !runner
             .recorded
             .iter()
             .any(|call| call.contains("jackin-capsule")),
         "capsule exec ran after the generation rotated: {:?}",
+        runner.recorded
+    );
+}
+
+#[tokio::test]
+async fn start_removes_container_if_generation_rotates_during_start() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-start-generation-after-await";
+    provision_account_admission(&paths, container_name);
+    let mut rotated = jackin_config::AppConfig::default();
+    rotated
+        .env
+        .insert("ROTATED_DURING_START_AWAIT".into(), "new".into());
+    let _rotation = schedule_config_rotation(
+        &paths,
+        format!("start_container:{container_name}"),
+        &rotated,
+    );
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 1,
+            oom_killed: false,
+        }])),
+        operation_hook: Some(rotate_config_on_operation),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+
+    let error = start_or_reconnect_capsule_client(&paths, container_name, &docker, &mut runner)
+        .await
+        .expect_err("start must fail after a generation rotates during Docker start");
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+    assert!(
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call == &format!("docker rm -f {container_name}")),
+        "stale started container must be force-removed: {:?}",
+        docker.recorded.borrow()
+    );
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("jackin-capsule")),
+        "reconnect must not run after stale container cleanup: {:?}",
+        runner.recorded
+    );
+}
+
+#[tokio::test]
+async fn reconnect_rejects_rotation_after_capsule_exec() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-reconnect-generation-after-await";
+    provision_account_admission(&paths, container_name);
+    let mut rotated = jackin_config::AppConfig::default();
+    rotated
+        .env
+        .insert("ROTATED_DURING_RECONNECT_AWAIT".into(), "new".into());
+    let path = paths.config_file.clone();
+    let bytes = toml::to_string(&rotated).unwrap().into_bytes();
+    let mut runner = FakeRunner::default();
+    runner.side_effects.push((
+        "docker exec".to_owned(),
+        Box::new(move || std::fs::write(&path, &bytes).unwrap()),
+    ));
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
+
+    let error = hardline_agent(&paths, container_name, &docker, &mut runner)
+        .await
+        .expect_err("reconnect must reject a generation rotation during capsule exec");
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+    assert!(
+        error.is::<ReconnectAdmissionFailure>(),
+        "post-exec lease failure must remain a reconnect admission error: {error:#}"
+    );
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("jackin-capsule")),
+        "reconnect should reach the awaited capsule exec: {:?}",
         runner.recorded
     );
 }

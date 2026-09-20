@@ -1117,6 +1117,13 @@ pub(crate) async fn launch_role_runtime(
         jackin_diagnostics::emit_operator_notice("role container start failed");
     }
     run_role_result?;
+    super::ensure_current_or_remove_stale_container(
+        account_revision,
+        paths,
+        container_name,
+        docker,
+    )
+    .await?;
 
     // Privileged post-run capsule steps, each run as root via `docker exec`
     // (needs no setuid, so composes with no-new-privileges) and each fail-closed:
@@ -1209,6 +1216,13 @@ pub(crate) async fn launch_role_runtime(
         "pre_attach_exit_check",
         Some("running"),
     );
+    super::ensure_current_or_remove_stale_container(
+        account_revision,
+        paths,
+        container_name,
+        docker,
+    )
+    .await?;
 
     // Connect the operator's terminal to the running jackin-capsule multiplexer.
     // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
@@ -1290,6 +1304,11 @@ pub(crate) async fn launch_role_runtime(
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
     if let Err(err) = session_result {
+        if err.is::<super::super::attach::ReconnectAdmissionFailure>()
+            || err.is::<super::GenerationLeaseViolation>()
+        {
+            return Err(err);
+        }
         // Single inspect — the previous two-call shape opened a TOCTOU
         // window where the container could transition Running→Stopped(0)
         // between the diagnose and swallow checks. If the attach command
@@ -1301,6 +1320,9 @@ pub(crate) async fn launch_role_runtime(
             diagnose_with_state(runner, container_name, &inspect, ExitPhase::PostAttach).await
         {
             return Err(diag);
+        }
+        if !super::is_known_socket_close(&err, &inspect) {
+            return Err(err);
         }
         // `diagnose_with_state` returned `None`, so PID 1 exited cleanly: the
         // in-capsule dirty-exit modal already made any keep/discard decision and

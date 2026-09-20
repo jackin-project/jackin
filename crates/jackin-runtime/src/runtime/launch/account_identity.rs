@@ -11,12 +11,14 @@ use crate::instance::{AdmittedInstance, InstanceManifest};
 use anyhow::Context as _;
 use jackin_config::{AppConfig, ConfigGeneration, ConfigReadGuard, ReadOnlyConfigSnapshot};
 use jackin_core::WorkspaceName;
+use jackin_docker::docker_client::DockerApi;
 use sha2::{Digest as _, Sha256};
 use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const ACCOUNT_FINGERPRINT_FILE: &str = "account-config.sha256";
+const ACCOUNT_ADMISSION_FILE: &str = "account-admission.sha256";
 
 #[derive(Debug)]
 pub(crate) struct GenerationLeaseViolation(String);
@@ -95,6 +97,27 @@ impl AccountConfigRevision {
     pub(crate) fn ensure_current(&self, paths: &jackin_core::JackinPaths) -> anyhow::Result<()> {
         self.current_snapshot(paths).map(drop)
     }
+}
+
+/// Validate a generation after an awaited container start/run. A direct writer
+/// can bypass the advisory read lock while Docker is in flight, so a mismatch
+/// after the operation means the container already holds stale credentials and
+/// must be force-removed before the error escapes.
+pub(crate) async fn ensure_current_or_remove_stale_container(
+    revision: &AccountConfigRevision,
+    paths: &jackin_core::JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
+    let Err(error) = revision.ensure_current(paths) else {
+        return Ok(());
+    };
+    if let Err(cleanup_error) = docker.remove_container(container_name).await {
+        return Err(error.context(format!(
+            "stale-generation container {container_name} cleanup failed: {cleanup_error:#}"
+        )));
+    }
+    Err(error)
 }
 
 fn mark_generation_lease_error(error: anyhow::Error) -> anyhow::Error {
@@ -413,9 +436,71 @@ pub(super) fn record_account_configuration(
             == account_configuration_fingerprint(&snapshot.config, workspace, role, admitted)?,
         "account configuration changed during launch; aborting credential publication"
     );
-    std::fs::write(root.join(ACCOUNT_FINGERPRINT_FILE), selected_fingerprint)?;
-    std::fs::write(root.join("account-admission.sha256"), admission_fingerprint)?;
-    revision.ensure_current(paths)?;
+    publish_account_fingerprints(
+        root,
+        paths,
+        revision,
+        &selected_fingerprint,
+        &admission_fingerprint,
+    )
+}
+
+fn publish_account_fingerprints(
+    root: &Path,
+    paths: &jackin_core::JackinPaths,
+    revision: &AccountConfigRevision,
+    selected_fingerprint: &str,
+    admission_fingerprint: &str,
+) -> anyhow::Result<()> {
+    let selected_path = root.join(ACCOUNT_FINGERPRINT_FILE);
+    let admission_path = root.join(ACCOUNT_ADMISSION_FILE);
+    let selected_tmp = root.join(format!(
+        ".{ACCOUNT_FINGERPRINT_FILE}.{}.tmp",
+        CREDENTIAL_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let admission_tmp = root.join(format!(
+        ".{ACCOUNT_ADMISSION_FILE}.{}.tmp",
+        CREDENTIAL_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let previous_selected = read_marker(&selected_path)?;
+    let previous_admission = read_marker(&admission_path)?;
+
+    let publish_result = (|| -> anyhow::Result<()> {
+        std::fs::write(&selected_tmp, selected_fingerprint)?;
+        std::fs::write(&admission_tmp, admission_fingerprint)?;
+        std::fs::rename(&selected_tmp, &selected_path)?;
+        std::fs::rename(&admission_tmp, &admission_path)?;
+        revision.ensure_current(paths)?;
+        Ok(())
+    })();
+
+    if let Err(error) = publish_result {
+        drop(std::fs::remove_file(&selected_tmp));
+        drop(std::fs::remove_file(&admission_tmp));
+        restore_marker(&selected_path, previous_selected.as_deref())?;
+        restore_marker(&admission_path, previous_admission.as_deref())?;
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn read_marker(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn restore_marker(path: &Path, previous: Option<&[u8]>) -> anyhow::Result<()> {
+    match previous {
+        Some(bytes) => std::fs::write(path, bytes)?,
+        None => match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        },
+    }
     Ok(())
 }
 
@@ -430,7 +515,7 @@ pub fn account_admission_matches(
     workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> anyhow::Result<bool> {
-    let stored = match std::fs::read_to_string(root.join("account-admission.sha256")) {
+    let stored = match std::fs::read_to_string(root.join(ACCOUNT_ADMISSION_FILE)) {
         Ok(value) => value,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error.into()),

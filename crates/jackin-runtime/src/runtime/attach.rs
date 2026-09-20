@@ -24,6 +24,22 @@ use jackin_docker::docker_client::DockerApi;
 use jackin_protocol::attach::SpawnRequest;
 use std::path::PathBuf;
 
+#[derive(Debug)]
+pub(crate) struct ReconnectAdmissionFailure(String);
+
+impl std::fmt::Display for ReconnectAdmissionFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "reconnect admission failed: {}", self.0)
+    }
+}
+
+impl std::error::Error for ReconnectAdmissionFailure {}
+
+fn mark_reconnect_admission_failure(error: anyhow::Error) -> anyhow::Error {
+    let summary = error.to_string();
+    error.context(ReconnectAdmissionFailure(summary))
+}
+
 /// Shell command for querying the in-container daemon's session
 /// inventory.
 ///
@@ -580,10 +596,15 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    let admission_lease = require_current_account_admission(paths, container_name)?;
+    let admission_lease = require_current_account_admission(paths, container_name)
+        .map_err(mark_reconnect_admission_failure)?;
     set_role_terminal_title(paths, container_name);
-    wait_for_capsule_daemon(paths, container_name, docker).await?;
-    admission_lease.ensure_current(paths)?;
+    wait_for_capsule_daemon(paths, container_name, docker)
+        .await
+        .map_err(mark_reconnect_admission_failure)?;
+    admission_lease
+        .ensure_current(paths)
+        .map_err(mark_reconnect_admission_failure)?;
     if super::host_attach::host_attach_enabled(paths) {
         let outcome = super::host_attach::run_host_attach_session(
             paths,
@@ -594,6 +615,9 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         )
         .await;
         jackin_diagnostics::reassert_alt_screen();
+        admission_lease
+            .ensure_current(paths)
+            .map_err(mark_reconnect_admission_failure)?;
         return outcome;
     }
     let focus_arg = focus_session.map(|id| id.to_string());
@@ -612,7 +636,9 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         "capsule_client_exec",
         Some(container_name),
     );
-    admission_lease.ensure_current(paths)?;
+    admission_lease
+        .ensure_current(paths)
+        .map_err(mark_reconnect_admission_failure)?;
     let outcome = runner
         .run(
             "docker",
@@ -644,6 +670,9 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     // The capsule has detached; re-claim the alt screen before any post-attach
     // work so the exit flow does not flash the operator's shell.
     jackin_diagnostics::reassert_alt_screen();
+    admission_lease
+        .ensure_current(paths)
+        .map_err(mark_reconnect_admission_failure)?;
     outcome
 }
 
@@ -676,6 +705,13 @@ pub(super) async fn start_or_reconnect_capsule_client(
                     ContainerState::Stopped { .. } | ContainerState::Created => {
                         admission_lease.ensure_current(paths)?;
                         drop(docker.start_container(dind_name).await);
+                        super::launch::ensure_current_or_remove_stale_container(
+                            &admission_lease,
+                            paths,
+                            dind_name,
+                            docker,
+                        )
+                        .await?;
                     }
                     _ => {}
                 }
@@ -718,6 +754,13 @@ pub(super) async fn start_or_reconnect_capsule_client(
                 }
                 return Err(start_err);
             }
+            super::launch::ensure_current_or_remove_stale_container(
+                &admission_lease,
+                paths,
+                container_name,
+                docker,
+            )
+            .await?;
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -845,6 +888,7 @@ pub async fn spawn_shell_session(
         )
         .await;
         jackin_diagnostics::reassert_alt_screen();
+        admission_lease.ensure_current(paths)?;
         eprintln!();
         result?;
         return finalize_reconnected_foreground_session(paths, container_name, docker, runner)
@@ -897,6 +941,7 @@ pub async fn spawn_shell_session(
         );
     }
     jackin_diagnostics::reassert_alt_screen();
+    admission_lease.ensure_current(paths)?;
     eprintln!();
     result?;
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
@@ -966,6 +1011,7 @@ pub async fn spawn_agent_session(
         )
         .await;
         jackin_diagnostics::reassert_alt_screen();
+        admission_lease.ensure_current(paths)?;
         eprintln!();
         result?;
         return finalize_reconnected_foreground_session(paths, container_name, docker, runner)
@@ -1025,6 +1071,7 @@ pub async fn spawn_agent_session(
         );
     }
     jackin_diagnostics::reassert_alt_screen();
+    admission_lease.ensure_current(paths)?;
     eprintln!();
     result?;
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
@@ -1146,12 +1193,27 @@ pub(crate) async fn hardline_docker_agent_with_focus(
         }
     };
     // A clean last-session shutdown surfaces as a non-zero attach result (the
-    // capsule client hits the socket close as `early eof`). Do not short-circuit
-    // on it: `finalize_reconnected_foreground_session` re-inspects the container
-    // and reads exit-action.json, so it handles both a clean exit and a genuine
-    // failure. Only a clean exit reaches here in practice; log and proceed.
+    // capsule client hits the socket close as `early eof`). Preserve that one
+    // known transport race, but never swallow admission or generation errors
+    // while the lifecycle inspect still says the container is running.
     if let Err(error) = attach_outcome {
-        if error.is::<super::launch::GenerationLeaseViolation>() {
+        if error.is::<super::launch::GenerationLeaseViolation>()
+            || error.is::<ReconnectAdmissionFailure>()
+        {
+            return Err(error);
+        }
+        let inspect = docker.inspect_container_state(container_name).await;
+        if let Some(diag) = super::launch::diagnose_with_state(
+            runner,
+            container_name,
+            &inspect,
+            super::launch::ExitPhase::PostAttach,
+        )
+        .await
+        {
+            return Err(diag);
+        }
+        if !super::launch::is_known_socket_close(&error, &inspect) {
             return Err(error);
         }
         let _warning = jackin_telemetry::record_recovered_degradation();

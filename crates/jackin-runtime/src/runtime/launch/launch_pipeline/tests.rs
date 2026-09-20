@@ -17,9 +17,63 @@ use jackin_core::RoleSelector;
 use jackin_env::ResolvedEnv;
 use jackin_test_support::{FakeDockerClient, FakeRunner, seed_valid_role_repo};
 use std::collections::{BTreeMap, VecDeque};
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
 const INTEGRATED_LAUNCH_WIRE_CHILD: &str = "JACKIN_INTEGRATED_LAUNCH_WIRE_CHILD";
+
+type ScheduledConfigRotation = (String, PathBuf, Vec<u8>);
+
+fn config_rotation_slot() -> &'static Mutex<Vec<ScheduledConfigRotation>> {
+    static SLOT: OnceLock<Mutex<Vec<ScheduledConfigRotation>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+struct ConfigRotationGuard {
+    operation_prefix: String,
+    path: PathBuf,
+}
+
+fn schedule_config_rotation(
+    paths: &JackinPaths,
+    operation_prefix: impl Into<String>,
+    config: &AppConfig,
+) -> ConfigRotationGuard {
+    let operation_prefix = operation_prefix.into();
+    let path = paths.config_file.clone();
+    config_rotation_slot().lock().unwrap().push((
+        operation_prefix.clone(),
+        path.clone(),
+        toml::to_string(config).unwrap().into_bytes(),
+    ));
+    ConfigRotationGuard {
+        operation_prefix,
+        path,
+    }
+}
+
+fn rotate_config_on_operation(operation: &str) {
+    let scheduled = {
+        let mut slot = config_rotation_slot().lock().unwrap();
+        let position = slot.iter().position(|(prefix, _, _)| {
+            operation == prefix || operation.starts_with(&format!("{prefix} "))
+        });
+        position.map(|position| slot.remove(position))
+    };
+    if let Some((_, path, bytes)) = scheduled {
+        std::fs::write(path, bytes).unwrap();
+    }
+}
+
+impl Drop for ConfigRotationGuard {
+    fn drop(&mut self) {
+        config_rotation_slot()
+            .lock()
+            .unwrap()
+            .retain(|(prefix, path, _)| prefix != &self.operation_prefix || path != &self.path);
+    }
+}
 
 fn observe_launch_process(command: &str) {
     let program = command.split_whitespace().next().unwrap_or("unknown");
@@ -401,6 +455,36 @@ async fn run_launch_core_happy_path_returns_container_name() {
     assert!(
         !recorded.is_empty(),
         "happy path must exercise Docker via FakeDocker; recorded empty"
+    );
+}
+
+#[tokio::test]
+async fn run_launch_core_removes_container_if_generation_rotates_during_docker_run() {
+    let mut fix = LaunchCoreFixture::new();
+    let mut rotated = fix.config.clone();
+    rotated
+        .env
+        .insert("ROTATED_DURING_DOCKER_RUN".into(), "new".into());
+    let _rotation = schedule_config_rotation(&fix.paths, "docker run", &rotated);
+    fix.runner.command_hook = Some(rotate_config_on_operation);
+
+    let error = launch_core::run_launch_core(fix.as_core())
+        .await
+        .expect_err("launch must fail after config rotates during docker run");
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected rotation error: {error:#}"
+    );
+    assert!(
+        fix.docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call == &format!("docker rm -f {}", fix.container_name)),
+        "stale started container must be force-removed: {:?}",
+        fix.docker.recorded.borrow()
     );
 }
 

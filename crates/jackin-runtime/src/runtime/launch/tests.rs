@@ -2083,6 +2083,29 @@ fn attach_failure_error_preserves_command_context() {
     assert!(error.contains("command failed: docker exec"), "{error}");
 }
 
+#[test]
+fn known_socket_close_requires_clean_exit_and_attach_transport_error() {
+    use jackin_docker::docker_client::ContainerState;
+
+    let clean = ContainerState::Stopped {
+        exit_code: 0,
+        oom_killed: false,
+    };
+    assert!(is_known_socket_close(&anyhow::anyhow!("early eof"), &clean));
+    assert!(is_known_socket_close(
+        &anyhow::anyhow!("command failed: docker exec jk jackin-capsule"),
+        &clean
+    ));
+    assert!(!is_known_socket_close(
+        &anyhow::anyhow!("generation lease admission failed"),
+        &clean
+    ));
+    assert!(!is_known_socket_close(
+        &anyhow::anyhow!("early eof"),
+        &ContainerState::Running
+    ));
+}
+
 fn codex_trust_slot(
     account_id: &str,
     container_home_rel: &str,

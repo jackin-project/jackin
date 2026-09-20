@@ -627,17 +627,18 @@ fn persist_new_role_trust(
     restore_source_override: bool,
     is_new: bool,
     newly_trusted: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<AppConfig>> {
     if restore_source_override || (!is_new && !newly_trusted) {
-        return Ok(());
+        return Ok(None);
     }
     let mut editor = jackin_config::ConfigEditor::open(paths)?;
     if let Some(role_source) = config.roles.get(&selector.key()) {
         editor.upsert_agent_source(&selector.key(), role_source);
     }
     editor.set_agent_trust(&selector.key(), true);
-    *config = editor.save()?;
-    Ok(())
+    let persisted_config = editor.save()?;
+    *config = persisted_config.clone();
+    Ok(Some(persisted_config))
 }
 
 fn confirm_role_branch(
@@ -1113,7 +1114,7 @@ pub(crate) async fn load_role_with(
     // handing the config tree to the trust writer in that case.
     initial_account_revision.ensure_current(paths)?;
     drop(initial_account_revision);
-    persist_new_role_trust(
+    let persisted_config = persist_new_role_trust(
         paths,
         config,
         selector,
@@ -1127,7 +1128,14 @@ pub(crate) async fn load_role_with(
             None,
         );
     }
-    let account_revision = super::account_identity::AccountConfigRevision::acquire(paths)?;
+    // Reacquire against the exact persisted caller snapshot. The launch config
+    // may carry an ephemeral account/configuration selection, so bind to the
+    // preselection snapshot unless the trust editor returned the new persisted
+    // snapshot explicitly. An unbound acquire would accept a direct writer's
+    // intervening generation and continue with stale in-memory inputs.
+    let persisted_snapshot = persisted_config.as_ref().unwrap_or(&admission_config);
+    let account_revision =
+        super::account_identity::AccountConfigRevision::acquire_bound(paths, persisted_snapshot)?;
 
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
