@@ -72,6 +72,14 @@ status = "required"
 CARGO_TERM_COLOR = "always"
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+# S1: `mise run` auto-installs every missing toolset entry before the task
+# (26 tools, 576s on run 35542103447 despite a mise-cache HIT on the 9
+# install_args tools). The desktop graph only invokes the 9 installed tools
+# plus system/Xcode binaries (audit: plans/cicd-reliability/s1-result.md),
+# so skip the upfront install and fail fast on any shim miss instead of
+# slow-installing it back.
+MISE_TASK_RUN_AUTO_INSTALL = "false"
+MISE_NOT_FOUND_AUTO_INSTALL = "false"
 
 [[check_profile]]
 id = "desktop-scheduled"
@@ -86,6 +94,11 @@ status = "required"
 CARGO_TERM_COLOR = "always"
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+# S1: same as desktop-merge — skip the whole-toolset auto-install
+# (scheduled tier additionally needs periphery for desktop-deadcode, already
+# in this profile's tool list). Audit: plans/cicd-reliability/s1-result.md.
+MISE_TASK_RUN_AUTO_INSTALL = "false"
+MISE_NOT_FOUND_AUTO_INSTALL = "false"
 
 # One file, one trigger set, faithful to the copy: the merge tier runs on
 # push-to-main + dispatch (copy desktop-cadence.yml push: branches: [main],
