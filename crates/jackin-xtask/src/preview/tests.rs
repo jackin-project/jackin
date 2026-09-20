@@ -93,6 +93,78 @@ fn unknown_invalid_rolling_release_is_rejected() {
 }
 
 #[test]
+fn migration_phase_retries_tag_after_failure_after_release_delete() {
+    assert_eq!(
+        plan_legacy_migration(LegacyReleaseState::Absent, true, true).unwrap(),
+        LegacyMigrationPhase::DeleteTag
+    );
+}
+
+#[test]
+fn migration_phase_completes_after_failure_after_tag_delete() {
+    assert_eq!(
+        plan_legacy_migration(LegacyReleaseState::Absent, false, true).unwrap(),
+        LegacyMigrationPhase::Noop
+    );
+}
+
+#[test]
+fn migration_phase_fails_closed_for_release_without_tag() {
+    let error = plan_legacy_migration(LegacyReleaseState::KnownLegacy, false, true)
+        .expect_err("release-present/tag-absent must not mutate");
+    assert!(error.to_string().contains("without its tag"));
+}
+
+#[test]
+fn migration_phase_fails_closed_for_unknown_release() {
+    let error = plan_legacy_migration(LegacyReleaseState::Unknown, true, true)
+        .expect_err("unknown release must not mutate");
+    assert!(error.to_string().contains("unknown or changed"));
+}
+
+#[test]
+fn migration_phase_requires_durable_archive_before_retrying_tag_delete() {
+    let error = plan_legacy_migration(LegacyReleaseState::Absent, true, false)
+        .expect_err("tag retry without archive must fail closed");
+    assert!(error.to_string().contains("durable legacy archive"));
+}
+
+#[test]
+fn github_environment_markers_append_without_replacing_existing_state() {
+    let directory = tempfile::tempdir().unwrap();
+    let env_file = directory.path().join("github-env");
+    fs::write(&env_file, "EXISTING=1\n").unwrap();
+
+    append_env_marker(&env_file, RETAIN_MARKER, "1").unwrap();
+    append_env_marker(&env_file, PREPUBLISH_MARKER, "1").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(env_file).unwrap(),
+        "EXISTING=1\nVELNOR_PUBLICATION_LOCK_RETAIN=1\nVELNOR_PREPUBLISH_COMPLETED=1\n"
+    );
+}
+
+#[test]
+fn source_remote_parser_accepts_only_expected_github_shapes() {
+    assert_eq!(
+        github_repository_from_remote("https://github.com/jackin-project/jackin.git"),
+        Some(LEGACY_SOURCE_REPOSITORY.to_owned())
+    );
+    assert_eq!(
+        github_repository_from_remote("git@github.com:jackin-project/jackin.git"),
+        Some(LEGACY_SOURCE_REPOSITORY.to_owned())
+    );
+    assert_eq!(
+        github_repository_from_remote("https://github.com/other/repo.git"),
+        Some("other/repo".to_owned())
+    );
+    assert_eq!(
+        github_repository_from_remote("https://evil.example/jackin-project/jackin"),
+        None
+    );
+}
+
+#[test]
 fn known_legacy_release_archives_bytes_as_unverified_evidence() {
     let snapshot = known_legacy_snapshot();
     let downloaded = tempfile::tempdir().unwrap();
@@ -115,6 +187,14 @@ fn known_legacy_release_archives_bytes_as_unverified_evidence() {
         Value::String("unverified-legacy-bytes".to_owned())
     );
     assert_eq!(
+        metadata["phase"],
+        Value::String(LEGACY_ARCHIVE_PHASE.to_owned())
+    );
+    assert_eq!(
+        metadata["archive_tag"],
+        Value::String(LEGACY_ARCHIVE_TAG.to_owned())
+    );
+    assert_eq!(
         metadata["assets"].as_object().unwrap().len(),
         snapshot.assets.len()
     );
@@ -131,6 +211,10 @@ fn known_legacy_release_archives_bytes_as_unverified_evidence() {
             fs::read(downloaded.path().join(name)).unwrap()
         );
     }
+    assert!(
+        ensure_verified_legacy_archive(&snapshot, &archive).is_err(),
+        "untrusted bytes must not qualify for the durable archive"
+    );
 }
 
 #[test]
