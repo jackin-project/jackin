@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use super::should_snapshot_instance;
+use super::{SnapshotTransport, apply_snapshot_result, should_snapshot_instance};
 
 fn instance(
     container_base: &str,
@@ -55,4 +55,53 @@ fn snapshot_filter_preserves_legacy_behavior_without_docker_ps() {
         ),
         None,
     ));
+}
+
+#[test]
+fn snapshot_result_records_snapshot_and_transport() {
+    let mut snapshots = HashMap::new();
+    let mut exec_fallback_seen = false;
+    let snapshot = jackin_runtime::runtime::snapshot::InstanceSnapshot {
+        tabs: Vec::new(),
+        active_tab: 0,
+    };
+
+    assert!(!apply_snapshot_result(
+        "jk-running".to_owned(),
+        Ok((Some(snapshot), SnapshotTransport::DirectSocket)),
+        &mut snapshots,
+        &mut exec_fallback_seen,
+    ));
+    assert!(!exec_fallback_seen);
+    assert!(snapshots.contains_key("jk-running"));
+}
+
+#[test]
+fn snapshot_result_records_fallback_without_snapshot() {
+    let mut snapshots = HashMap::new();
+    let mut exec_fallback_seen = false;
+
+    assert!(!apply_snapshot_result(
+        "jk-running".to_owned(),
+        Ok((None, SnapshotTransport::DockerExecFallback)),
+        &mut snapshots,
+        &mut exec_fallback_seen,
+    ));
+    assert!(exec_fallback_seen);
+    assert!(snapshots.is_empty());
+}
+
+#[test]
+fn snapshot_result_marks_fetch_failure_for_recovery() {
+    let mut snapshots = HashMap::new();
+    let mut exec_fallback_seen = false;
+
+    assert!(apply_snapshot_result(
+        "jk-failed".to_owned(),
+        Err(anyhow::anyhow!("snapshot unavailable")),
+        &mut snapshots,
+        &mut exec_fallback_seen,
+    ));
+    assert!(!exec_fallback_seen);
+    assert!(snapshots.is_empty());
 }
