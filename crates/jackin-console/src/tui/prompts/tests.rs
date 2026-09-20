@@ -635,10 +635,10 @@ fn several_admitted_instances_open_picker_in_id_order() {
 }
 
 #[test]
-fn shared_account_instances_dedupe_to_single_launch() {
+fn shared_account_instances_open_picker_with_exact_configurations() {
     let (mut config, ws) = launch_config();
-    // Two instances, one account (different models): a single picker row,
-    // so the launch proceeds without prompting.
+    // Two instances, one account (different models): keep both configuration
+    // identities in the picker instead of collapsing them to the account.
     for (id, model) in [("claude-a-fast", "fast"), ("claude-a-deep", "deep")] {
         let mut configuration = agent_configuration(Agent::Claude, "a-claude");
         configuration.model = Some(model.into());
@@ -651,9 +651,17 @@ fn shared_account_instances_dedupe_to_single_launch() {
     );
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
 
+    let selection =
+        select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap();
+    let LaunchAccountSelection::Pick(accounts) = selection else {
+        panic!("expected a picker for two configurations sharing one account");
+    };
     assert_eq!(
-        select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
-        LaunchAccountSelection::Launch("a-claude".into())
+        accounts
+            .iter()
+            .map(|account| account.configuration_id.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("claude-a-deep"), Some("claude-a-fast")]
     );
 }
 

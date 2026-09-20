@@ -236,17 +236,26 @@ pub struct AccountChoice {
     pub name: String,
     pub provider: jackin_config::AiProvider,
     pub agents: Vec<Agent>,
+    /// Exact pre-container launch configuration. `None` for legacy account
+    /// rows and live rows, which use their own routing identity.
+    pub configuration_id: Option<String>,
     /// Exact live launch instance. `None` for pre-container launch rows.
     pub instance_id: Option<String>,
 }
 
 impl AccountChoice {
     pub fn label(&self) -> String {
-        self.instance_id.as_deref().map_or_else(
+        if let Some(instance_id) = self.instance_id.as_deref() {
+            return format!(
+                "{} · {} ({}) · instance {instance_id}",
+                self.name, self.provider, self.id
+            );
+        }
+        self.configuration_id.as_deref().map_or_else(
             || format!("{} · {} ({})", self.name, self.provider, self.id),
-            |instance_id| {
+            |configuration_id| {
                 format!(
-                    "{} · {} ({}) · instance {instance_id}",
+                    "{} · {} ({}) · configuration {configuration_id}",
                     self.name, self.provider, self.id
                 )
             },
@@ -266,6 +275,7 @@ fn account_row(id: &str, account: &AccountConfig) -> AccountChoice {
             .copied()
             .filter(|agent| account.supports_agent(*agent))
             .collect(),
+        configuration_id: None,
         instance_id: None,
     }
 }
@@ -325,8 +335,9 @@ pub fn accounts_for_launch(
 
 /// Map admitted launch instances to secret-free picker rows.
 ///
-/// One row per distinct account id (several instances may share one
-/// account with different models), in ascending-id picker order.
+/// One row per admitted configuration, in ascending account/configuration
+/// order. Configurations sharing an account remain distinct: the
+/// configuration, not just the account, is the launch identity.
 /// Instances naming an unregistered account are skipped:
 /// `jackin_config::resolve_launch` never produces them, so only a foreign
 /// instance list can hit that.
@@ -338,14 +349,18 @@ pub fn account_choices_for_instances(
     let mut choices: Vec<AccountChoice> = instances
         .iter()
         .filter_map(|instance| {
-            config
-                .accounts
-                .get(&instance.account_id)
-                .map(|account| account_row(&instance.account_id, account))
+            config.accounts.get(&instance.account_id).map(|account| {
+                let mut choice = account_row(&instance.account_id, account);
+                choice.configuration_id = Some(instance.config_id.clone());
+                choice
+            })
         })
         .collect();
-    choices.sort_by_key(|choice| choice.id.clone());
-    choices.dedup_by_key(|choice| choice.id.clone());
+    choices.sort_by(|left, right| {
+        left.id
+            .cmp(&right.id)
+            .then_with(|| left.configuration_id.cmp(&right.configuration_id))
+    });
     choices
 }
 

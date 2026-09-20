@@ -230,6 +230,7 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
         selector: RoleSelector,
         agent: Agent,
         account: Provider,
+        configuration: Option<String>,
     },
 }
 
@@ -289,6 +290,7 @@ pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
         workspace: Workspace,
         agent: Agent,
         account: Provider,
+        configuration: Option<String>,
     },
 }
 

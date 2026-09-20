@@ -209,6 +209,7 @@ pub fn launch_with_committed_agent(
             workspace: resolved.workspace,
             agent,
             account: Some(id),
+            configuration: None,
         })),
         Ok(LaunchAccountSelection::Pick(accounts)) => {
             open_launch_account_picker_plan(state, resolved.input, resolved.role, agent, accounts);

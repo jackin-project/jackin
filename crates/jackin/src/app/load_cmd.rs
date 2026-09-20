@@ -332,9 +332,15 @@ async fn dispatch_console_outcome(
             workspace,
             agent,
             account,
+            configuration,
         } => {
             return console_outcome_launch_with_account(
-                selector, workspace, agent, account, &mut ctx,
+                selector,
+                workspace,
+                agent,
+                account,
+                configuration,
+                &mut ctx,
             )
             .await;
         }
@@ -433,12 +439,14 @@ async fn console_outcome_launch_with_account(
     workspace: jackin_config::ResolvedWorkspace,
     agent: jackin_core::Agent,
     account: Option<String>,
+    configuration: Option<String>,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
     super::emit_mount_heal_notices(&workspace);
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = Some(agent);
     opts.account = account;
+    opts.configuration = configuration;
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
