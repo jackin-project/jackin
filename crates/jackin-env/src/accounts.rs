@@ -4,10 +4,37 @@
 //! Resolve credentials exclusively from assigned accounts.
 
 use crate::{OpRunner, resolve_env_value};
-use jackin_config::AppConfig;
-use jackin_core::WorkspaceName;
+use jackin_config::{AccountConfig, AccountCredential, AppConfig};
+use jackin_core::{Agent, WorkspaceName};
 use jackin_protocol::{AgentCredentialEnv, InstanceCredentialEnv};
 use std::collections::BTreeMap;
+
+// Codex/OpenCode consume the selected model from their private configuration,
+// not from the credential environment. The CLI model override is applied
+// after credentials are resolved, so the environment phase needs a
+// non-empty validation marker when no instance-level model exists yet.
+const DEFERRED_MODEL: &str = "__jackin_model_deferred__";
+
+fn account_for_credential_resolution(
+    account: &AccountConfig,
+    agent: Agent,
+    model: Option<&str>,
+) -> AccountConfig {
+    let model =
+        model.or_else(|| matches!(agent, Agent::Codex | Agent::Opencode).then_some(DEFERRED_MODEL));
+    let Some(model) = model else {
+        return account.clone();
+    };
+    let mut account = account.clone();
+    if let AccountCredential::ApiKey {
+        model: account_model,
+        ..
+    } = &mut account.credential
+    {
+        *account_model = Some(model.to_owned());
+    }
+    account
+}
 
 /// Environment names owned by account selection, including endpoint routing.
 #[must_use]
@@ -56,6 +83,8 @@ where
             .accounts
             .get(&instance.account_id)
             .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+        let account =
+            account_for_credential_resolution(account, instance.agent, instance.model.as_deref());
         let declarations =
             account.credential_env_for_instance(instance.agent, instance.base_url.as_deref())?;
         if declarations
