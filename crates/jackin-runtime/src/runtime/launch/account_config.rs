@@ -338,7 +338,7 @@ fn private_config_read_file_at(directory: &File, name: &str) -> anyhow::Result<O
     let Some(mut file) = (match openat(
         directory,
         name.as_c_str(),
-        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
         Mode::empty(),
     ) {
         Ok(fd) => Some(File::from(fd)),
