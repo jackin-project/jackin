@@ -588,6 +588,17 @@ fn auth_lock_identity_normalizes_relative_absolute_and_dot_aliases() {
         target_lock_key_for_test(relative).unwrap(),
         target_lock_key_for_test(&absolute_from_relative).unwrap()
     );
+
+    let mut escaping = Path::new("").to_path_buf();
+    for _ in 0..=current.components().count() {
+        escaping.push("..");
+    }
+    escaping.push("auth");
+    let error = target_lock_key_for_test(&escaping).unwrap_err();
+    assert!(
+        error.to_string().contains("parent traversal"),
+        "root escape must be rejected: {error:#}"
+    );
 }
 
 #[cfg(unix)]

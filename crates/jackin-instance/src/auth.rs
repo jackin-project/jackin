@@ -1151,7 +1151,11 @@ mod auth_directory {
                 std::path::Component::CurDir => {}
                 std::path::Component::Normal(component) => normalized.push(component),
                 std::path::Component::ParentDir => {
-                    let _ = normalized.pop();
+                    anyhow::ensure!(
+                        normalized.pop(),
+                        "auth path contains parent traversal: {}",
+                        path.display()
+                    );
                 }
             }
         }
