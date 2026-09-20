@@ -1005,7 +1005,7 @@ mod auth_directory {
     use nix::dir::Dir;
     use nix::errno::Errno;
     use nix::fcntl::{AtFlags, OFlag, open, openat, renameat};
-    use nix::sys::stat::{Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
+    use nix::sys::stat::{FileStat, Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
     use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
     use serde::{Deserialize, Serialize};
     use std::ffi::{CStr, CString, OsString};
@@ -1051,6 +1051,7 @@ mod auth_directory {
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) enum FailurePoint {
+        JournalRewrite,
         Prepared,
         Backup,
         Installed,
@@ -1081,6 +1082,8 @@ mod auth_directory {
     thread_local! {
         static HERMES_SNAPSHOT_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
             const { std::cell::RefCell::new(None) };
+        static SOURCE_OPEN_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+            const { std::cell::RefCell::new(None) };
     }
 
     #[cfg(test)]
@@ -1088,9 +1091,21 @@ mod auth_directory {
         HERMES_SNAPSHOT_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_source_open_hook(hook: Box<dyn FnOnce()>) {
+        SOURCE_OPEN_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
+    }
+
     pub(crate) fn run_hermes_snapshot_hook() {
         #[cfg(test)]
         if let Some(hook) = HERMES_SNAPSHOT_HOOK.with(|slot| slot.borrow_mut().take()) {
+            hook();
+        }
+    }
+
+    fn run_source_open_hook() {
+        #[cfg(test)]
+        if let Some(hook) = SOURCE_OPEN_HOOK.with(|slot| slot.borrow_mut().take()) {
             hook();
         }
     }
@@ -1119,10 +1134,27 @@ mod auth_directory {
         anyhow::Error::new(error).context(action.to_owned())
     }
 
-    fn normalize_path(path: &Path) -> PathBuf {
+    fn normalize_path(path: &Path) -> anyhow::Result<PathBuf> {
+        let mut normalized = PathBuf::new();
+        for component in path.components() {
+            match component {
+                std::path::Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+                std::path::Component::RootDir => normalized.push(Path::new("/")),
+                std::path::Component::CurDir => {}
+                std::path::Component::Normal(component) => normalized.push(component),
+                std::path::Component::ParentDir => {
+                    anyhow::ensure!(
+                        normalized.pop(),
+                        "auth path contains parent traversal: {}",
+                        path.display()
+                    );
+                }
+            }
+        }
+
         #[cfg(target_os = "macos")]
         {
-            let bytes = path.as_os_str().as_bytes();
+            let bytes = normalized.as_os_str().as_bytes();
             for alias in [b"/var".as_slice(), b"/tmp".as_slice(), b"/etc".as_slice()] {
                 if bytes == alias
                     || bytes
@@ -1131,17 +1163,17 @@ mod auth_directory {
                 {
                     let mut normalized = b"/private".to_vec();
                     normalized.extend_from_slice(bytes);
-                    return PathBuf::from(OsString::from_vec(normalized));
+                    return Ok(PathBuf::from(OsString::from_vec(normalized)));
                 }
             }
         }
-        path.to_path_buf()
+        Ok(normalized)
     }
 
     fn path_key(path: &Path) -> String {
         use sha2::{Digest, Sha256};
         let mut digest = Sha256::new();
-        digest.update(normalize_path(path).as_os_str().as_bytes());
+        digest.update(path.as_os_str().as_bytes());
         hex::encode(digest.finalize())
     }
 
@@ -1194,11 +1226,7 @@ mod auth_directory {
         Ok(())
     }
 
-    fn validate_owned_stat(
-        stat: &nix::sys::stat::FileStat,
-        label: &str,
-        expected: SFlag,
-    ) -> anyhow::Result<()> {
+    fn validate_owned_stat(stat: &FileStat, label: &str, expected: SFlag) -> anyhow::Result<()> {
         let actual = SFlag::from_bits_truncate(stat.st_mode);
         anyhow::ensure!(
             actual.contains(expected),
@@ -1226,7 +1254,7 @@ mod auth_directory {
     }
 
     fn open_parent(path: &Path, create: bool) -> anyhow::Result<(File, CString, PathBuf)> {
-        let path = normalize_path(path);
+        let path = normalize_path(path)?;
         let target = cstring_name(&path)?;
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         let mut directory = open_start(path.is_absolute())?;
@@ -1273,10 +1301,7 @@ mod auth_directory {
         Ok((directory, target, path))
     }
 
-    fn entry_stat(
-        directory: &File,
-        name: &CStr,
-    ) -> anyhow::Result<Option<nix::sys::stat::FileStat>> {
+    fn entry_stat(directory: &File, name: &CStr) -> anyhow::Result<Option<FileStat>> {
         match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
             Ok(stat) => Ok(Some(stat)),
             Err(Errno::ENOENT) => Ok(None),
@@ -1304,6 +1329,41 @@ mod auth_directory {
         Ok(file)
     }
 
+    fn ensure_same_source_identity(
+        expected: &FileStat,
+        actual: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            expected.st_dev == actual.st_dev
+                && expected.st_ino == actual.st_ino
+                && expected.st_mode & SFlag::S_IFMT.bits() == actual.st_mode & SFlag::S_IFMT.bits(),
+            "{label} was replaced during secure open"
+        );
+        Ok(())
+    }
+
+    fn open_source_file(
+        directory: &File,
+        name: &CStr,
+        expected: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<File> {
+        run_source_open_hook();
+        let fd = openat(
+            directory,
+            name,
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|error| nix_error(error, label))?;
+        let file = owned_fd(fd);
+        let actual = fstat(&file).map_err(|error| nix_error(error, label))?;
+        validate_owned_stat(&actual, label, SFlag::S_IFREG)?;
+        ensure_same_source_identity(expected, &actual, label)?;
+        Ok(file)
+    }
+
     fn open_directory_at(directory: &File, name: &CStr, label: &str) -> anyhow::Result<File> {
         let fd = openat(
             directory,
@@ -1319,6 +1379,31 @@ mod auth_directory {
             stat.st_uid == geteuid().as_raw(),
             "{label} is not owned by the current user"
         );
+        Ok(file)
+    }
+
+    fn open_source_directory_at(
+        directory: &File,
+        name: &CStr,
+        expected: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<File> {
+        run_source_open_hook();
+        let fd = openat(
+            directory,
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|error| nix_error(error, label))?;
+        let file = owned_fd(fd);
+        validate_directory(&file, label, false)?;
+        let actual = fstat(&file).map_err(|error| nix_error(error, label))?;
+        anyhow::ensure!(
+            actual.st_uid == geteuid().as_raw(),
+            "{label} is not owned by the current user"
+        );
+        ensure_same_source_identity(expected, &actual, label)?;
         Ok(file)
     }
 
@@ -1338,7 +1423,7 @@ mod auth_directory {
         source: &File,
         name: &CStr,
         label: &str,
-    ) -> anyhow::Result<Option<nix::sys::stat::FileStat>> {
+    ) -> anyhow::Result<Option<FileStat>> {
         let Some(stat) = entry_stat(source, name)? else {
             return Ok(None);
         };
@@ -1349,18 +1434,14 @@ mod auth_directory {
         Ok(Some(stat))
     }
 
-    fn read_source_file(source: &File, name: &CStr, label: &str) -> anyhow::Result<Vec<u8>> {
-        let Some(stat) = source_entry_kind(source, name, label)? else {
-            anyhow::bail!("{label} is missing");
-        };
-        validate_owned_stat(&stat, label, SFlag::S_IFREG)?;
-        let file = open_private_file(
-            source,
-            name,
-            OFlag::O_RDONLY | OFlag::O_NONBLOCK,
-            Mode::empty(),
-            label,
-        )?;
+    fn read_source_file(
+        source: &File,
+        name: &CStr,
+        stat: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<Vec<u8>> {
+        validate_owned_stat(stat, label, SFlag::S_IFREG)?;
+        let file = open_source_file(source, name, stat, label)?;
         let mut bytes = Vec::new();
         Read::by_ref(&mut &file)
             .read_to_end(&mut bytes)
@@ -1407,7 +1488,7 @@ mod auth_directory {
             return Ok(());
         };
         validate_owned_stat(&stat, label, SFlag::S_IFREG)?;
-        let bytes = read_source_file(source, &source_entry_name, label)?;
+        let bytes = read_source_file(source, &source_entry_name, &stat, label)?;
         let destination_name = source_name(destination_name_text)?;
         write_private_file_at(destination, &destination_name, &bytes, label)
     }
@@ -1431,19 +1512,12 @@ mod auth_directory {
 
         for name in names {
             let entry_label = format!("{label}/{}", name.to_string_lossy());
-            let Some(stat) = entry_stat(source, &name)? else {
-                continue;
-            };
+            let stat = entry_stat(source, &name)?.ok_or_else(|| {
+                anyhow::anyhow!("{entry_label} disappeared during secure source snapshot")
+            })?;
             let kind = SFlag::from_bits_truncate(stat.st_mode);
             if kind.contains(SFlag::S_IFLNK) {
-                jackin_diagnostics::emit_compact_line(
-                    "auth",
-                    &format!(
-                        "skipping source symlink {} — symlinks are not synced",
-                        name.to_string_lossy()
-                    ),
-                );
-                continue;
+                anyhow::bail!("{entry_label} is a symlink; refusing to sync source auth state");
             }
             if kind.contains(SFlag::S_IFDIR) {
                 validate_owned_stat(&stat, &entry_label, SFlag::S_IFDIR)?;
@@ -1456,12 +1530,12 @@ mod auth_directory {
                 .map_err(|error| nix_error(error, "creating staged auth subdirectory"))?;
                 let child = open_directory_at(destination, &name, &entry_label)?;
                 validate_directory(&child, &entry_label, true)?;
-                let source_child = open_directory_at(source, &name, &entry_label)?;
+                let source_child = open_source_directory_at(source, &name, &stat, &entry_label)?;
                 copy_tree(&source_child, &child, &entry_label)?;
                 fsync_directory(&child)?;
             } else if kind.contains(SFlag::S_IFREG) {
                 validate_owned_stat(&stat, &entry_label, SFlag::S_IFREG)?;
-                let bytes = read_source_file(source, &name, &entry_label)?;
+                let bytes = read_source_file(source, &name, &stat, &entry_label)?;
                 write_private_file_at(destination, &name, &bytes, &entry_label)?;
             } else {
                 anyhow::bail!("{entry_label} is a special file; refusing to sync it");
@@ -1499,7 +1573,7 @@ mod auth_directory {
             .map_err(|error| nix_error(error, "naming staged auth tree"))?;
         }
         let staged = open_directory_at(destination, &destination_name, label)?;
-        let source_dir = open_directory_at(source, &source_entry_name, label)?;
+        let source_dir = open_source_directory_at(source, &source_entry_name, &stat, label)?;
         copy_tree(&source_dir, &staged, label)
     }
 
@@ -1518,6 +1592,14 @@ mod auth_directory {
             Err(error) if error.downcast_ref::<Errno>() == Some(&Errno::ENOENT) => return Ok(None),
             Err(error) => return Err(error),
         };
+        let Some(expected) = entry_stat(&parent, &name)? else {
+            return Ok(None);
+        };
+        validate_owned_stat(
+            &expected,
+            &format!("source auth directory {}", normalized.display()),
+            SFlag::S_IFDIR,
+        )?;
         let fd = match openat(
             &parent,
             name.as_c_str(),
@@ -1541,6 +1623,11 @@ mod auth_directory {
             stat.st_uid == geteuid().as_raw(),
             "source auth directory is not owned by the current user"
         );
+        ensure_same_source_identity(
+            &expected,
+            &stat,
+            &format!("source auth directory {}", normalized.display()),
+        )?;
         FileExt::lock(&root).with_context(|| "locking source auth directory")?;
         Ok(Some(LockedSource { root }))
     }
@@ -1577,6 +1664,20 @@ mod auth_directory {
             }
         }
         anyhow::bail!("could not allocate a unique auth previous directory")
+    }
+
+    fn new_journal_temporary(parent: &File, key: &str) -> anyhow::Result<CString> {
+        for _ in 0..128 {
+            let sequence = AUTH_DIRECTORY_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let name = CString::new(format!(
+                ".jackin-auth-journal-{key}-tmp-{}-{sequence}",
+                std::process::id()
+            ))?;
+            if entry_stat(parent, &name)?.is_none() {
+                return Ok(name);
+            }
+        }
+        anyhow::bail!("could not allocate a unique temporary auth journal")
     }
 
     fn open_lock(parent: &File, key: &str) -> anyhow::Result<(CString, File)> {
@@ -1639,18 +1740,46 @@ mod auth_directory {
 
     fn write_journal(target: &TargetLock, journal: &SwapJournal) -> anyhow::Result<()> {
         let bytes = serde_json::to_vec(journal).context("serializing auth swap journal")?;
-        let file = open_private_file(
-            &target.parent,
-            &target.journal,
-            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC | OFlag::O_NONBLOCK,
-            Mode::from_bits_truncate(0o600),
-            "opening auth swap journal",
-        )?;
-        let mut file = file;
-        file.write_all(&bytes)
-            .context("writing auth swap journal")?;
-        file.sync_all().context("syncing auth swap journal")?;
-        fsync_directory(&target.parent)
+        let temporary = new_journal_temporary(&target.parent, &target.key)?;
+        let result = (|| {
+            let file = open_private_file(
+                &target.parent,
+                &temporary,
+                OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NONBLOCK,
+                Mode::from_bits_truncate(0o600),
+                "opening temporary auth swap journal",
+            )?;
+            let mut file = file;
+            file.write_all(&bytes)
+                .context("writing temporary auth swap journal")?;
+            file.sync_all()
+                .context("syncing temporary auth swap journal")?;
+
+            let replacing = entry_stat(&target.parent, &target.journal)?.is_some();
+            if replacing {
+                let stat = entry_stat(&target.parent, &target.journal)?.ok_or_else(|| {
+                    anyhow::anyhow!("auth swap journal disappeared during atomic rewrite")
+                })?;
+                validate_owned_stat(&stat, "auth swap journal", SFlag::S_IFREG)?;
+                maybe_fail(FailurePoint::JournalRewrite)?;
+            }
+            renameat(
+                &target.parent,
+                temporary.as_c_str(),
+                &target.parent,
+                target.journal.as_c_str(),
+            )
+            .map_err(|error| nix_error(error, "publishing auth swap journal"))?;
+            fsync_directory(&target.parent)
+        })();
+        if result.is_err() {
+            let _ignored_cleanup = unlink_entry(
+                &target.parent,
+                &temporary,
+                "removing failed temporary auth swap journal",
+            );
+        }
+        result
     }
 
     fn read_journal(target: &TargetLock) -> anyhow::Result<Option<SwapJournal>> {
@@ -1729,14 +1858,6 @@ mod auth_directory {
             && name
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || b".-_".contains(&byte))
-    }
-
-    fn is_legacy_transaction_name(name: &str, kind: &str) -> bool {
-        let Some(suffix) = name.strip_prefix(&format!(".jackin-auth-{kind}-")) else {
-            return false;
-        };
-        let key = suffix.split('-').next().unwrap_or_default();
-        !(key.len() == 64 && key.bytes().all(|byte| byte.is_ascii_hexdigit()))
     }
 
     fn previous_name(previous: Option<&CString>) -> anyhow::Result<&CStr> {
@@ -1849,23 +1970,37 @@ mod auth_directory {
         let clone = target.parent.try_clone()?;
         let mut entries = Dir::from_fd(clone.into())
             .map_err(|error| nix_error(error, "opening auth parent for orphan cleanup"))?;
+        // Transaction names created by this implementation carry the target
+        // identity. Pre-846f984 names do not, so there is no safe way to
+        // attribute those legacy trees to this target; leave them untouched.
         let new_stage_prefix = format!(".jackin-auth-stage-{}-", target.key);
         let new_previous_prefix = format!(".jackin-auth-previous-{}-", target.key);
-        let mut names = Vec::new();
+        let new_journal_temporary_prefix = format!(".jackin-auth-journal-{}-tmp-", target.key);
+        let mut directories = Vec::new();
+        let mut journal_temporaries = Vec::new();
         for entry in entries.iter() {
             let entry = entry.map_err(|error| nix_error(error, "reading auth parent"))?;
             let name = entry.file_name();
             let text = name.to_string_lossy();
-            if text.starts_with(&new_stage_prefix)
-                || text.starts_with(&new_previous_prefix)
-                || is_legacy_transaction_name(&text, "stage")
-                || is_legacy_transaction_name(&text, "previous")
-            {
-                names.push(name.to_owned());
+            if text.starts_with(&new_stage_prefix) || text.starts_with(&new_previous_prefix) {
+                directories.push(name.to_owned());
+            } else if text.starts_with(&new_journal_temporary_prefix) {
+                journal_temporaries.push(name.to_owned());
             }
         }
-        for name in names {
+        for name in directories {
             remove_tree(&target.parent, &name, "orphaned auth swap directory")?;
+        }
+        for name in journal_temporaries {
+            let stat = entry_stat(&target.parent, &name)?.ok_or_else(|| {
+                anyhow::anyhow!("temporary auth swap journal disappeared during cleanup")
+            })?;
+            validate_owned_stat(&stat, "temporary auth swap journal", SFlag::S_IFREG)?;
+            unlink_entry(
+                &target.parent,
+                &name,
+                "removing orphaned temporary auth swap journal",
+            )?;
         }
         Ok(())
     }

@@ -3,7 +3,9 @@
 
 //! Tests for `instance/auth` — tests.
 #[cfg(unix)]
-use super::auth_directory::{FailurePoint, inject_failure, set_hermes_snapshot_hook};
+use super::auth_directory::{
+    FailurePoint, inject_failure, set_hermes_snapshot_hook, set_source_open_hook,
+};
 use super::{
     Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState,
     inject_permission_repair_failure, repair_permissions, validate_sync_source_dir,
@@ -372,7 +374,7 @@ fn hermes_sync_replaces_removed_entries_and_revokes_missing_source() {
 
 #[cfg(unix)]
 #[test]
-fn directory_swap_recovers_journal_and_cleans_orphaned_trees_on_retry() {
+fn directory_swap_recovers_journal_and_cleans_target_scoped_orphans_on_retry() {
     let temp = tempdir().unwrap();
     let source_dir = temp.path().join("host/.kimi-code");
     let target_dir = temp.path().join("role/.kimi-code");
@@ -395,8 +397,27 @@ fn directory_swap_recovers_journal_and_cleans_orphaned_trees_on_retry() {
     drop(crash);
 
     let parent = target_dir.parent().unwrap();
-    std::fs::create_dir_all(parent.join(".jackin-auth-stage-legacy-orphan/nested")).unwrap();
-    std::fs::create_dir_all(parent.join(".jackin-auth-previous-legacy-orphan/nested")).unwrap();
+    let current_key = std::fs::read_dir(parent)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .find_map(|name| {
+            name.to_str()
+                .and_then(|name| name.strip_prefix(".jackin-auth-stage-"))
+                .and_then(|suffix| suffix.split('-').next())
+                .filter(|key| key.len() == 64)
+                .map(str::to_owned)
+        })
+        .expect("failed swap must leave a target-scoped stage");
+    let unrelated_key = "0".repeat(64);
+    assert_ne!(current_key, unrelated_key);
+    let unrelated_stage = parent.join(format!(
+        ".jackin-auth-stage-{unrelated_key}-unrelated/nested"
+    ));
+    std::fs::create_dir_all(&unrelated_stage).unwrap();
+    // Pre-846f984 legacy names have no target identity. They are retained
+    // rather than risking deletion of another target's credential tree.
+    let unscoped_legacy = parent.join(".jackin-auth-stage-legacy-orphan/nested");
+    std::fs::create_dir_all(&unscoped_legacy).unwrap();
 
     let (outcome, forward_auth) = RoleState::provision_kimi_auth_from_source_dir(
         &target_dir,
@@ -419,14 +440,131 @@ fn directory_swap_recovers_journal_and_cleans_orphaned_trees_on_retry() {
         .map(|entry| entry.unwrap().file_name())
         .filter(|name| {
             let name = name.to_string_lossy();
-            name.starts_with(".jackin-auth-stage-")
-                || name.starts_with(".jackin-auth-previous-")
-                || name.starts_with(".jackin-auth-journal-")
+            name.starts_with(&format!(".jackin-auth-stage-{current_key}-"))
+                || name.starts_with(&format!(".jackin-auth-previous-{current_key}-"))
+                || name.starts_with(&format!(".jackin-auth-journal-{current_key}-"))
         })
         .collect::<Vec<_>>();
     assert!(
         leftovers.is_empty(),
         "orphan auth transaction entries: {leftovers:?}"
+    );
+    assert!(unrelated_stage.parent().unwrap().exists());
+    assert!(unscoped_legacy.parent().unwrap().exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn journal_rewrite_failure_preserves_valid_record_for_recovery() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "version = \"old\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "old-token").unwrap();
+    RoleState::provision_kimi_auth_from_source_dir(&target_dir, AuthForwardMode::Sync, &source_dir)
+        .unwrap();
+
+    std::fs::write(source_dir.join("config.toml"), "version = \"new\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "new-token").unwrap();
+    let crash = inject_failure(FailurePoint::JournalRewrite);
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("injected auth directory crash"));
+    drop(crash);
+
+    assert!(
+        !target_dir.exists(),
+        "backup boundary must leave target absent"
+    );
+    let parent = target_dir.parent().unwrap();
+    let journal = std::fs::read_dir(parent)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with(".jackin-auth-journal-"))
+        })
+        .expect("journal must survive failed atomic rewrite");
+    let journal_bytes = std::fs::read(&journal).unwrap();
+    serde_json::from_slice::<serde_json::Value>(&journal_bytes)
+        .expect("journal remains valid JSON after failed rewrite");
+    assert!(
+        !std::fs::read_dir(parent).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("-tmp-")),
+        "failed journal rewrite must remove its temporary file"
+    );
+
+    RoleState::provision_kimi_auth_from_source_dir(&target_dir, AuthForwardMode::Sync, &source_dir)
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(target_dir.join("config.toml")).unwrap(),
+        "version = \"new\"\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(target_dir.join("credentials/token")).unwrap(),
+        "new-token"
+    );
+    assert!(
+        !std::fs::read_dir(parent).unwrap().any(|entry| {
+            let name = entry.unwrap().file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(".jackin-auth-stage-")
+                || name.starts_with(".jackin-auth-previous-")
+                || name.starts_with(".jackin-auth-journal-")
+        }),
+        "retry must remove all transaction sidecars"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn ignore_recovers_interrupted_swap_when_destination_is_absent() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "version = \"old\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "old-token").unwrap();
+    RoleState::provision_kimi_auth_from_source_dir(&target_dir, AuthForwardMode::Sync, &source_dir)
+        .unwrap();
+
+    std::fs::write(source_dir.join("config.toml"), "version = \"new\"\n").unwrap();
+    let crash = inject_failure(FailurePoint::Backup);
+    RoleState::provision_kimi_auth_from_source_dir(&target_dir, AuthForwardMode::Sync, &source_dir)
+        .unwrap_err();
+    drop(crash);
+    assert!(!target_dir.exists());
+
+    let (outcome, forward_auth) = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Ignore,
+        &source_dir,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+    assert!(!forward_auth);
+    assert!(
+        !target_dir.exists(),
+        "Ignore must revoke the recovered tree"
+    );
+    let parent = target_dir.parent().unwrap();
+    assert!(
+        !std::fs::read_dir(parent).unwrap().any(|entry| {
+            let name = entry.unwrap().file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(".jackin-auth-stage-")
+                || name.starts_with(".jackin-auth-previous-")
+                || name.starts_with(".jackin-auth-journal-")
+        }),
+        "Ignore must clean recovered transaction trees even without a target"
     );
 }
 
@@ -446,9 +584,12 @@ fn directory_swap_serializes_concurrent_replacements_per_target() {
     }
 
     let barrier = Arc::new(Barrier::new(3));
-    let target_path = target.as_path();
+    let target_alias = target.parent().unwrap().join(".").join(".kimi-code");
     std::thread::scope(|scope| {
-        for source in [&source_a, &source_b] {
+        for (source, target_path) in [
+            (&source_a, target.as_path()),
+            (&source_b, target_alias.as_path()),
+        ] {
             let barrier = Arc::clone(&barrier);
             scope.spawn(move || {
                 barrier.wait();
@@ -472,6 +613,18 @@ fn directory_swap_serializes_concurrent_replacements_per_target() {
         (config.contains('a') && token == "a-token")
             || (config.contains('b') && token == "b-token")
     );
+    let lock_files = std::fs::read_dir(target.parent().unwrap())
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".jackin-auth-lock-")
+        })
+        .count();
+    assert_eq!(lock_files, 1, "dot aliases must share one target lock");
 }
 
 #[cfg(unix)]
@@ -538,6 +691,81 @@ fn kimi_and_hermes_reject_source_symlink_roots_and_fifo_files() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("special file"));
+}
+
+#[cfg(unix)]
+#[test]
+fn source_entry_replacement_between_lstat_and_open_is_rejected() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    let config = source_dir.join("config.toml");
+    let replacement = source_dir.join("config.toml.replacement");
+    std::fs::write(&config, "version = \"old\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "token").unwrap();
+    std::fs::write(&replacement, "version = \"replacement\"\n").unwrap();
+    let config_for_hook = config.clone();
+    set_source_open_hook(Box::new(move || {
+        std::fs::rename(&replacement, &config_for_hook).unwrap();
+    }));
+
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("replaced during secure open"),
+        "{error:#}"
+    );
+    assert!(
+        !target_dir.exists(),
+        "replaced source must not publish a tree"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn hermes_nested_source_symlink_is_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.hermes");
+    let target_dir = temp.path().join("role/.hermes");
+    let decoy = temp.path().join("decoy.yaml");
+    std::fs::create_dir_all(source_dir.join("profiles")).unwrap();
+    std::fs::write(
+        source_dir.join("config.yaml"),
+        "profiles:\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"sentinel"}}"#,
+    )
+    .unwrap();
+    std::fs::write(&decoy, "provider: anthropic\n").unwrap();
+    symlink(&decoy, source_dir.join("profiles/evil.yaml")).unwrap();
+
+    let error = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&ProfileSelector {
+            entry: "openai".to_owned(),
+            profile: Some("work".to_owned()),
+        }),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("symlink"), "{error:#}");
+    assert!(!target_dir.exists());
+    assert_eq!(
+        std::fs::read_to_string(&decoy).unwrap(),
+        "provider: anthropic\n"
+    );
 }
 
 #[cfg(unix)]
@@ -3507,10 +3735,10 @@ fn surfaces_unreadable_config_toml_as_error() {
 
 #[cfg(unix)]
 #[test]
-fn credentials_nested_symlink_is_skipped_not_followed() {
+fn credentials_nested_symlink_is_rejected_not_skipped() {
     // A symlink planted under `credentials/mcp/` (e.g. by a hostile or
-    // misconfigured host) must NOT be copied or dereferenced into the
-    // sealed container. Real files in the same subtree must still copy.
+    // misconfigured host) must fail the complete source snapshot. Silently
+    // dropping it would publish an incomplete credential tree.
     use std::os::unix::fs::symlink;
     let temp = tempdir().unwrap();
     let kimi_dir = temp.path().join("kimi_state");
@@ -3522,21 +3750,13 @@ fn credentials_nested_symlink_is_skipped_not_followed() {
     std::fs::write(&decoy, "must_not_leak").unwrap();
     symlink(&decoy, host_creds.join("mcp").join("evil")).unwrap();
 
-    let (outcome, forward_auth) =
-        RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+    let error =
+        RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap_err();
 
-    assert_eq!(outcome, AuthProvisionOutcome::Synced);
-    assert!(forward_auth);
-    assert!(
-        kimi_dir.join("credentials/mcp/real_token").exists(),
-        "real nested file must still be copied"
-    );
-    assert!(
-        !kimi_dir.join("credentials/mcp/evil").exists(),
-        "nested symlink must not appear in role state"
-    );
+    assert!(error.to_string().contains("symlink"), "{error:#}");
+    assert!(!kimi_dir.exists(), "failed source must not publish a tree");
     // The decoy on the host must remain untouched: no write through the
-    // skipped symlink, no read into the role state.
+    // rejected symlink and no read into the role state.
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "must_not_leak");
 }
 
