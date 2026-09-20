@@ -6,33 +6,37 @@ Proof levels: `implemented` < `fixture_verified` < `container_verified` <
 
 ## Evidence audit and live-head recheck — 2026-09-20
 
-PR #1005 is `audit/pr1002-evidence`; this repair started at
+PR #1005 is `audit/pr1002-evidence`; the prior audit started at
 `cefa882f6c3f5a3b4f0ce52a2052a05cb4706756` (`cefa882f`) and was pushed as the
-signed repair commit `128aaa4d53a861b0ce5175d2f4d775c4b7cc088f` (`128aaa4d`). The
+signed repair commit `128aaa4d53a861b0ce5175d2f4d775c4b7cc088f` (`128aaa4d`).
+This follow-up repair started from PR #1005 head
+`ebf74abe5ed89cebfc604b21e613d32120969e3c` (`ebf74abe`). The
 original PR #1005 evidence baseline used #1002 source
 `ca128f8a80907319ea6d5648cf172ed81e33b1d4` (`ca128f8`). The pre-sync #1002
 coordinator snapshot used by the prior recheck was
 `72feee236162468aeeeb416e8139a97db06538eb` (`72feee23`). Current #1002 head at
-this audit is `a73743ab5cc39b24d39173c1393d713734d8f856` (`a73743ab`), four
+this audit is `3218706cf2b992ceeb20ca2d0ea280d4c6eae3d9` (`3218706c`), 27
 commits beyond that snapshot. A normal merge of current #1002 into this branch
-was performed after the original evidence baseline; no rebase or force-push was
-used. The `ca128f8` and `72feee23` runs below remain historical pre-sync
-snapshots and must be refreshed again if #1002 advances. The starting #1005 head was
+was performed in merge commit
+`798ba7de1d86144c8a474a252ec0d7c28f08b886` (`798ba7de`); no rebase or force-push
+was used. The `ca128f8` and `72feee23` runs below remain historical pre-sync
+snapshots and must be refreshed again if #1002 advances. The earlier audit starting #1005 head was
 `33810907904ccc4b0858e9479d71da54c8df0719` (`3381090`), whose tree differed from
 the `ca128f8` source only in these two ledger files. The audit worktree is
 `/private/tmp/jackin-pr1002-evidence` on `audit/pr1002-evidence`.
 
-The GitHub review query for #1002 at current head `a73743ab` was repeated on
-2026-09-20: reviews and inline
-review comments were empty; the only issue comment was the Codex usage-limit
-notice. Its hosted checks were mixed (in progress, cancelled, and failed), so
-they are not substituted for local evidence. No live provider call, container
-run, GUI/keychain run, or native-client comparison was performed here. Those
-surfaces remain `not_run`.
+The prior GitHub review query for #1002 at source head `a73743ab` is historical;
+its empty review state and mixed hosted checks are not substituted for current
+evidence at `3218706c`. This repair separately queried PR #1005 at starting head
+`ebf74abe`: the four REST inline findings each had a matching unresolved,
+outdated GraphQL thread, and the formal review was `COMMENTED`; no additional
+review finding was found. No live provider call, container run, GUI/keychain
+run, or native-client comparison was performed here. Those surfaces remain
+`not_run`.
 
 The live #1002 PR description still contains older synchronized-gate claims of
 `563 passed` and `1055 passed, 1 skipped`; those are historical PR-body values,
-not current evidence for #1002 head `a73743ab` and do not supersede the
+not current evidence for #1002 head `3218706c` and do not supersede the
 pre-sync labels below.
 
 The historical `/tmp` artifacts named by this document are absent in the audit
@@ -47,9 +51,9 @@ Evidence runs and their source heads, all observed on 2026-09-20 unless stated:
 - PR #1005 baseline `AUDIT-F`: `cargo nextest run -p jackin-config -p jackin-env -p jackin-protocol -p jackin-usage --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **1059 passed, 1 skipped**, exit 0 (5 binaries, 16.084 seconds). This is the source baseline carried by the unsynchronized PR.
 - PR #1005 baseline config/instance fixture gate: `cargo nextest run -p jackin-instance -p jackin-config --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **567 passed**, exit 0 (2 binaries, 21.135 seconds). Counts are per command and overlap on `jackin-config`; they are not additive.
 - PR #1005 baseline broad fixture/console gate: `cargo nextest run -p jackin-runtime -p jackin-console -p jackin-capsule -p jackin-instance -p jackin-core -p jackin --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **3836 passed**, exit 0 (41 binaries, 200.269 seconds). This is separate from historical `AUDIT-R` below.
-- Pre-sync #1002 coordinator `COORD-F`: the same five-package fixture command at `72feee236162468aeeeb416e8139a97db06538eb` — **1069 passed, 1 skipped**, exit 0 (5 binaries, 20.460 seconds). Not a current `a73743ab` result.
-- Pre-sync #1002 coordinator config/instance recheck: the two-package fixture command at `72feee236162468aeeeb416e8139a97db06538eb` — **577 passed**, exit 0 (2 binaries, 23.414 seconds). Not a current `a73743ab` result.
-- Pre-sync #1002 coordinator `COORD-R`: the broad fixture/console command at `72feee236162468aeeeb416e8139a97db06538eb` — **3839 passed, 1 skipped**, exit 0 (41 binaries, 140.370 seconds). Not a current `a73743ab` result.
+- Pre-sync #1002 coordinator `COORD-F`: the same five-package fixture command at `72feee236162468aeeeb416e8139a97db06538eb` — **1069 passed, 1 skipped**, exit 0 (5 binaries, 20.460 seconds). Not a current `3218706c` result.
+- Pre-sync #1002 coordinator config/instance recheck: the two-package fixture command at `72feee236162468aeeeb416e8139a97db06538eb` — **577 passed**, exit 0 (2 binaries, 23.414 seconds). Not a current `3218706c` result.
+- Pre-sync #1002 coordinator `COORD-R`: the broad fixture/console command at `72feee236162468aeeeb416e8139a97db06538eb` — **3839 passed, 1 skipped**, exit 0 (41 binaries, 140.370 seconds). Not a current `3218706c` result.
 - Current post-merge audit-tree MDX build: `cd docs && bun run build` — MDX/Vite compilation completed, but static prerender failed with `ECONNRESET` while requesting `/og/research/context/techniques/09-output-discipline.webp`; exit 1. A prior same-tree attempt failed with `ConnectionRefused` on the same generated route. No live or provider evidence is implied.
 - Current post-merge audit-tree type gate: `cd docs && bun run types:check` — **pass** (`fumadocs-mdx` generated files; `tsc --noEmit` reported no errors).
 - Current post-merge audit-tree docs tests: `cd docs && bun test` — **18 passed, 0 failed** across 2 files, exit 0.
@@ -57,12 +61,12 @@ Evidence runs and their source heads, all observed on 2026-09-20 unless stated:
 - Current post-merge research gate: `cargo xtask research check` — **pass**, 63 `meta.json` files resolved.
 - Current repository-link gate before this repair: `cargo xtask docs repo-links` — **failed** on two pre-existing references to `.github/workflows/preview.yml` in `docs/content/roadmap/(isolation-security)/security-threat-model-and-signed-releases.mdx:22,64`; the repair wraps both existing paths in `<RepoFile>` without changing the workflow.
 - Current post-merge repository-link gate: `cargo xtask docs repo-links` — **pass**, after both existing `preview.yml` paths were wrapped in `<RepoFile>`.
-- Historical pre-sync workflow policy gate: `velnor-workflow policy --workflow-root . --head-sha cefa882f6c3f5a3b4f0ce52a2052a05cb4706756 --base-sha ca128f8a80907319ea6d5648cf172ed81e33b1d4 --ruleset-contexts DCO,Policy,ci-required` with validator pin `0dc79895ff1c5e88be7c3822c437e1c5b5282e12` — **11 rules, 0 failed**. This is not a current `a73743ab` or final-PR-head gate.
+- Historical pre-sync workflow policy gate: `velnor-workflow policy --workflow-root . --head-sha cefa882f6c3f5a3b4f0ce52a2052a05cb4706756 --base-sha ca128f8a80907319ea6d5648cf172ed81e33b1d4 --ruleset-contexts DCO,Policy,ci-required` with validator pin `0dc79895ff1c5e88be7c3822c437e1c5b5282e12` — **11 rules, 0 failed**. This is not a current `3218706c` or final-PR-head gate.
 
 The previous synchronized audit at `176dcc0632f977a78d58443bde1b3ceb40304606`
 reported **1057 passed, 1 skipped** for its fixture command. That is stale
 176-era evidence, not a current #1002 result; the pre-sync `72feee23` count above
-supersedes it only for that historical snapshot. No current `a73743ab` count is
+supersedes it only for that historical snapshot. No current `3218706c` count is
 claimed here. The earlier aggregate at `1c8b99077a5fe82cbfd19e6b5803a0a2db67d8ba` remains
 historical `AUDIT-R`: **3826 passed, 1 skipped, 1 timed out**, exit 100, with
 the focused PNG rerun **1 passed**. Its run date was not retained.
@@ -101,9 +105,9 @@ does not imply service, container, or live-provider proof.
 
 ## Current exact-head evidence
 
-The branch now contains current #1002 source `a73743ab`. The three `ca128f8`
+The branch now contains current #1002 source `3218706c`. The three `ca128f8`
 nextest runs and the `72feee23` coordinator recheck above predate this sync and
-are not current `a73743ab` counts. No new aggregate nextest result is claimed
+are not current `3218706c` counts. No new aggregate nextest result is claimed
 by this documentation correction. The required container,
 live-provider, GUI/keychain, native-client, and independent-review surfaces
 remain `not_run`; no status below upgrades them.
@@ -322,7 +326,7 @@ gap/disposition text controls current status.
 | H01 | Existing configuration converts or fails actionably without silent loss | `crates/jackin-config/src/migrations/tests.rs::config_migrations_chain_reaches_current`, `account_schema_preserves_existing_registry_and_assignments`, `v1alpha10_to_current_stamps_initialized_sentinel_without_touching_accounts`; AUDIT-F pass | fixture_verified | implemented | No user-home migration. |
 | H02 | Schema transition is atomic/idempotent and obsolete path is removed | `crates/jackin-config/src/migrations/tests.rs::prop_config_migration_idempotent`, `prop_workspace_migration_idempotent`, `rejects_when_migration_path_was_removed`; `crates/jackin-config/src/editor/tests.rs::editor_save_atomic_staging_failure_preserves_every_original_file`; AUDIT-F pass | fixture_verified | implemented | No compatibility-shim audit beyond exact-head source inspection. |
 | H03 | Protocol/build mismatch gives restart/upgrade error | `crates/jackin-capsule/src/config/tests.rs::invalid_staged_credentials_reject_with_explicit_upgrade_error`, `protected_credentials_reject_profile_mode_and_arbitrary_environment`; AUDIT-R pass | fixture_verified | implemented | Error text is fixture-verified. |
-| H04 | Unit, integration, format, lint, docs, and snapshot gates pass | PR #1005 baseline `AUDIT-F` passed **1059/1 skipped** at `ca128f8`; baseline config/instance passed **567**; baseline broad gate passed **3836** across 41 binaries. Pre-sync coordinator rechecks at `72feee23` passed **1069/1 skipped**, **577**, and **3839/1 skipped** respectively; none is a current `a73743ab` result. On the audit branch, post-merge types passed, docs tests passed **18/18**, roadmap/research passed, and repository-links passed. The historical pre-sync policy gate passed **11/11**, but is not a current or final-head gate; post-merge MDX/Vite build reached static prerender but exited 1 with `ECONNRESET` for the generated `/og/research/context/techniques/09-output-discipline.webp` route. `cargo xtask lint --strict` also remains red on inherited container-paths, telemetry-registry, ratchet, and test-layout violations. Historical `AUDIT-R` passed 3826/1 skipped but timed out at `crates/jackin-console/src/tui/view/png_baselines/tests.rs::png_baselines_screens_match` after 360s and exited 100; its focused rerun passed once in 153.035s. | fixture_verified (partial) | failed | Current aggregate/docs gate is not green; isolated historical rerun does not authorize an all-gates pass. |
+| H04 | Unit, integration, format, lint, docs, and snapshot gates pass | PR #1005 baseline `AUDIT-F` passed **1059/1 skipped** at `ca128f8`; baseline config/instance passed **567**; baseline broad gate passed **3836** across 41 binaries. Pre-sync coordinator rechecks at `72feee23` passed **1069/1 skipped**, **577**, and **3839/1 skipped** respectively; none is a current `3218706c` result. On the audit branch, post-merge types passed, docs tests passed **18/18**, roadmap/research passed, and repository-links passed. The historical pre-sync policy gate passed **11/11**, but is not a current or final-head gate; post-merge MDX/Vite build reached static prerender but exited 1 with `ECONNRESET` for the generated `/og/research/context/techniques/09-output-discipline.webp` route. `cargo xtask lint --strict` also remains red on inherited container-paths, telemetry-registry, ratchet, and test-layout violations. Historical `AUDIT-R` passed 3826/1 skipped but timed out at `crates/jackin-console/src/tui/view/png_baselines/tests.rs::png_baselines_screens_match` after 360s and exited 100; its focused rerun passed once in 153.035s. | fixture_verified (partial) | failed | Current aggregate/docs gate is not green; isolated historical rerun does not authorize an all-gates pass. |
 | H05 | Apple Silicon macOS 26 plus OrbStack usage-broker E2E with JUnit | No current exact-head `cargo xtask ci --e2e` run or JUnit artifact; historical `target/nextest/docker-e2e/junit.xml` and `/tmp` evidence are absent | — | not_run | Mandatory container gate blocker: rerun on the target Mac and attach current JUnit. |
 | H06 | Live provider/account matrix records identity and real fields | No current live-provider command or artifact; historical provider matrix is not independently reproducible here | — | not_run | Mandatory live matrix blocker; configured credentials and native outputs must be captured without secrets. |
 | H07 | Two-Claude-plus-one-Codex real-account container scenario | `/tmp/tracer/evidence.md` and `/tmp/split.log` absent; no current target-head container/TUI run | — | not_run | Mandatory scenario blocker; do not reuse historical `live_verified` label. |
@@ -367,7 +371,7 @@ mandatory H05–H10 gaps above remain separate from these optional provider lane
 ## Historical evidence retained for provenance only
 
 Everything below this boundary is a report from an earlier lane, not current
-verification of PR #1002 at `a73743ab5cc39b24d39173c1393d713734d8f856`.
+verification of PR #1002 at `3218706cf2b992ceeb20ca2d0ea280d4c6eae3d9`.
 Historical values such as `pass`, `container`, or `live` preserve what the
 earlier lane reported; they do not upgrade the current `not_run` gaps in H05–H10
 or the current provider table above. The referenced `/tmp` and `target`
@@ -383,7 +387,7 @@ roadmap reported 18 resolved `meta.json` files, research reported 63, and the
 repository-link gate reported the same two pre-existing `preview.yml` errors.
 The prior record did not retain a run date or raw artifacts. These values are
 historical-only and must not be read as validation of current #1002 head
-`a73743ab`.
+`3218706c`.
 
 ### Historical provider lanes
 

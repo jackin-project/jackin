@@ -11,19 +11,20 @@ ledger for the multi-account plan, not published documentation
 ## Current #1002 audit provenance — 2026-09-20
 
 The current GitHub head of PR #1002 is `feat/multi-account-support` at
-`a73743ab5cc39b24d39173c1393d713734d8f856` (`a73743ab`). The companion evidence
+`3218706cf2b992ceeb20ca2d0ea280d4c6eae3d9` (`3218706c`). The companion evidence
 ledger repair in PR #1005 started at
 `cefa882f6c3f5a3b4f0ce52a2052a05cb4706756` (`cefa882f`) and was pushed as signed
 commit `128aaa4d53a861b0ce5175d2f4d775c4b7cc088f` (`128aaa4d`). Its original
 `AUDIT-F` evidence baseline used the pre-merge
 `ca128f8a80907319ea6d5648cf172ed81e33b1d4` (`ca128f8`) source tree. A normal
-merge of current #1002 `a73743ab` has now been performed into this branch; no
-rebase or force-push was used. `AUDIT-F` in this file means the PR #1005
+merge of current #1002 `3218706c` has now been performed into this branch in
+merge commit `798ba7de1d86144c8a474a252ec0d7c28f08b886` (`798ba7de`); no rebase
+or force-push was used. `AUDIT-F` in this file means the PR #1005
 baseline fixture run at `ca128f8`: `cargo nextest run -p jackin-config -p
 jackin-env -p jackin-protocol -p jackin-usage --all-features` — **1059 passed,
 1 skipped**, exit 0 on 2026-09-20. The prior pre-sync coordinator recheck at
 `72feee23` produced **1069 passed, 1 skipped** for that command; neither count
-is a current `a73743ab` result. No current container,
+is a current `3218706c` result. No current container,
 live-provider, GUI/keychain, or native-client verification exists; those
 dispositions remain `not_run` in [ledger.md](./ledger.md).
 
