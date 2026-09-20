@@ -645,7 +645,8 @@ fn assert_no_private_config_swap_artifacts(directory: &Path) {
         let name = name.to_string_lossy();
         assert!(
             !name.starts_with(".jackin-private-config-stage-")
-                && !name.starts_with(".jackin-private-config-previous-"),
+                && !name.starts_with(".jackin-private-config-previous-")
+                && name != PRIVATE_CONFIG_TRANSACTION_FILE,
             "private config swap artifact remained: {name}"
         );
     }
@@ -742,6 +743,74 @@ fn opencode_publication_failure_preserves_previous_configuration() {
         );
         assert_no_private_config_swap_artifacts(directory.parent().unwrap());
     }
+}
+
+#[test]
+fn restart_recovers_after_crash_between_previous_rename_and_install() {
+    let temp = tempfile::tempdir().unwrap();
+    let (old_config, old_instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://old.example/v1");
+    configure_for_test(temp.path(), &old_config, &old_instances).unwrap();
+    let directory = temp.path().join("home/.codex");
+    let old_config_bytes = std::fs::read(directory.join("config.toml")).unwrap();
+    let old_catalog_bytes = std::fs::read(directory.join("account-models.json")).unwrap();
+    let (new_config, new_instances) =
+        codex_fixture(AiProvider::Zai, "glm-5.3", "https://new.example/v1");
+
+    {
+        let _failure = inject_private_config_failure(
+            PrivateConfigFailurePoint::SimulatedCrashAfterPreviousRename,
+        );
+        let error = configure_for_test(temp.path(), &new_config, &new_instances).unwrap_err();
+        assert!(format!("{error:#}").contains("simulated process crash"));
+    }
+    assert!(
+        !directory.exists(),
+        "crash simulation must leave the rename gap"
+    );
+    assert!(
+        directory
+            .parent()
+            .unwrap()
+            .join(PRIVATE_CONFIG_TRANSACTION_FILE)
+            .is_file()
+    );
+
+    // A fresh launch automatically recovers the previous complete tree before
+    // attempting its requested publication.
+    configure_for_test(temp.path(), &old_config, &old_instances).unwrap();
+    assert_eq!(
+        std::fs::read(directory.join("config.toml")).unwrap(),
+        old_config_bytes
+    );
+    assert_eq!(
+        std::fs::read(directory.join("account-models.json")).unwrap(),
+        old_catalog_bytes
+    );
+    assert_no_private_config_swap_artifacts(directory.parent().unwrap());
+
+    configure_for_test(temp.path(), &new_config, &new_instances).unwrap();
+    let new_contents = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(new_contents.contains("https://new.example/v1"));
+    assert_no_private_config_swap_artifacts(directory.parent().unwrap());
+}
+
+#[cfg(unix)]
+#[test]
+fn private_config_publication_rejects_symlinked_ancestor_below_root() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("root");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("home")).unwrap();
+    let (config, instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://provider.example/v1");
+
+    let error = configure_for_test(&root, &config, &instances).unwrap_err();
+    assert!(format!("{error:#}").contains("private config ancestor is a symlink"));
+    assert!(!outside.join(".codex").exists());
+    assert!(!root.join(PRIVATE_CONFIG_TRANSACTION_FILE).exists());
 }
 
 #[cfg(unix)]
