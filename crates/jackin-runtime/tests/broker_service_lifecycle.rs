@@ -6,7 +6,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use jackin_protocol::usage_broker::UsageAccountCapability;
+use jackin_protocol::usage_broker::{
+    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationErrorKind,
+};
 use jackin_usage::host::{UsageBrokerConfig, UsageDiscoveryScope, ensure_usage_broker_process};
 
 #[test]
@@ -63,11 +65,34 @@ fn broker_service_lifecycle() {
         })
         .collect::<Vec<_>>();
     assert!(projection_ids.windows(2).all(|pair| pair[0] == pair[1]));
+
+    // The service starts from its own discovery catalog. This empty fixture
+    // therefore cannot admit a synthetic capability until the test publishes
+    // the same caller-owned catalog update that the production discovery path
+    // sends after broker activation.
+    let stale_capability = UsageAccountCapability {
+        account_id: "synthetic-test-account-stale".to_owned(),
+        surface_id: "openai".to_owned(),
+    };
+    let current_capability = UsageAccountCapability {
+        account_id: "synthetic-test-account-current".to_owned(),
+        surface_id: "openai".to_owned(),
+    };
+    client
+        .reconcile_catalog(
+            "catalog-current".to_owned(),
+            vec![UsageCatalogEntry {
+                capability: current_capability.clone(),
+                revision: "credential-current".to_owned(),
+            }],
+        )
+        .expect("publish current catalog");
+    let stale_error = client
+        .current(stale_capability)
+        .expect_err("stale capability must remain fenced");
+    assert_eq!(stale_error.kind, UsageCoordinationErrorKind::CatalogRevoked);
     let state = client
-        .current(UsageAccountCapability {
-            account_id: "synthetic-test-account".to_owned(),
-            surface_id: "openai".to_owned(),
-        })
+        .current(current_capability)
         .expect("broker serves current state");
     assert_eq!(state.generation, 0);
     assert!(client_socket(&client).exists());
