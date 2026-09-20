@@ -4,8 +4,8 @@
 //! Tests for `instance/auth` — tests.
 #[cfg(unix)]
 use super::auth_directory::{
-    FailurePoint, inject_failure, set_hermes_snapshot_hook, set_source_open_hook,
-    target_lock_key_for_test,
+    FailurePoint, TreeEntryKind, classify_tree_entry_for_removal, inject_failure,
+    set_hermes_snapshot_hook, set_source_open_hook, target_lock_key_for_test,
 };
 use super::{
     Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState,
@@ -3378,6 +3378,84 @@ fn directory_sync_replaces_nested_destination_symlinks_without_following_them() 
         "fresh-secret"
     );
     assert!(!decoy_dir.join("token").exists());
+}
+
+/// Pins the regular-file half of the removal trust check: a group-writable
+/// nested file in a pre-existing destination must still be rejected with the
+/// writability error (threat model preserved), while symlinks take the
+/// ownership-only path. Also reproduces the CI error path deterministically
+/// on any platform via explicit loose perms.
+#[cfg(unix)]
+#[test]
+fn directory_sync_rejects_group_writable_nested_destination_files() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "profile = \"fresh\"\n").unwrap();
+    std::fs::create_dir_all(target_dir.join("credentials")).unwrap();
+    let loose = target_dir.join("credentials/token");
+    std::fs::write(&loose, "stale-secret").unwrap();
+    std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o664)).unwrap();
+
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("previous auth directory is writable"),
+        "unexpected error: {error:#}"
+    );
+}
+
+/// Symlink `lstat` modes are platform-defined noise (Linux reports 0777,
+/// macOS 0755), so removal must route symlinks by exact file type — never
+/// through the regular-file writability check. Regression test for the
+/// Linux-only `directory_sync_replaces_nested_destination_symlinks...`
+/// failure, using synthetic modes since no platform lets a test fabricate a
+/// foreign platform's symlink `lstat` bits.
+#[cfg(unix)]
+#[test]
+fn tree_entry_classification_routes_symlinks_away_from_mode_checks() {
+    use nix::sys::stat::{SFlag, mode_t};
+
+    let mode = |kind: SFlag, perm: mode_t| kind.bits() | perm;
+    // Linux reports every symlink as 0777; macOS reports 0755. Both are
+    // unlinkable links, not writable files.
+    assert_eq!(
+        classify_tree_entry_for_removal(mode(SFlag::S_IFLNK, 0o777)),
+        TreeEntryKind::Symlink
+    );
+    assert_eq!(
+        classify_tree_entry_for_removal(mode(SFlag::S_IFLNK, 0o755)),
+        TreeEntryKind::Symlink
+    );
+    assert_eq!(
+        classify_tree_entry_for_removal(mode(SFlag::S_IFREG, 0o600)),
+        TreeEntryKind::Regular
+    );
+    assert_eq!(
+        classify_tree_entry_for_removal(mode(SFlag::S_IFDIR, 0o700)),
+        TreeEntryKind::Directory
+    );
+    for special in [
+        SFlag::S_IFIFO,
+        SFlag::S_IFCHR,
+        SFlag::S_IFBLK,
+        SFlag::S_IFSOCK,
+    ] {
+        assert_eq!(
+            classify_tree_entry_for_removal(mode(special, 0o600)),
+            TreeEntryKind::Special,
+            "file type {special:?} must stay fail-closed"
+        );
+    }
 }
 
 #[cfg(unix)]

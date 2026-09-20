@@ -1005,7 +1005,7 @@ mod auth_directory {
     use nix::dir::Dir;
     use nix::errno::Errno;
     use nix::fcntl::{AtFlags, OFlag, open, openat, renameat};
-    use nix::sys::stat::{FileStat, Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
+    use nix::sys::stat::{FileStat, Mode, SFlag, fchmod, fstat, fstatat, mkdirat, mode_t};
     use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
     use serde::{Deserialize, Serialize};
     use std::ffi::{CStr, CString};
@@ -1843,6 +1843,33 @@ mod auth_directory {
         }
     }
 
+    /// How `remove_tree` must treat one directory entry, matched on exact
+    /// `S_IFMT` bits. `SFlag::contains` on whole file-type flags over-matches
+    /// (`S_IFLNK` contains the `S_IFREG` bit), which previously routed symlinks
+    /// into the regular-file writability check — and `lstat` mode bits on a
+    /// symlink are meaningless (Linux always reports `0777`, macOS `0755`), so
+    /// legitimate Linux trees were rejected as group-writable.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum TreeEntryKind {
+        Directory,
+        Regular,
+        Symlink,
+        Special,
+    }
+
+    pub(crate) fn classify_tree_entry_for_removal(mode: mode_t) -> TreeEntryKind {
+        let file_type = mode & SFlag::S_IFMT.bits();
+        if file_type == SFlag::S_IFDIR.bits() {
+            TreeEntryKind::Directory
+        } else if file_type == SFlag::S_IFREG.bits() {
+            TreeEntryKind::Regular
+        } else if file_type == SFlag::S_IFLNK.bits() {
+            TreeEntryKind::Symlink
+        } else {
+            TreeEntryKind::Special
+        }
+    }
+
     fn remove_tree(parent: &File, name: &CStr, label: &str) -> anyhow::Result<()> {
         let Some(stat) = entry_stat(parent, name)? else {
             return Ok(());
@@ -1865,14 +1892,28 @@ mod auth_directory {
             let Some(entry_stat) = entry_stat(&directory, &entry_name)? else {
                 continue;
             };
-            let kind = SFlag::from_bits_truncate(entry_stat.st_mode);
-            if kind.contains(SFlag::S_IFDIR) {
-                remove_tree(&directory, &entry_name, label)?;
-            } else if kind.contains(SFlag::S_IFREG) {
-                validate_owned_stat(&entry_stat, label, SFlag::S_IFREG)?;
-                unlink_entry(&directory, &entry_name, "removing auth file")?;
-            } else {
-                anyhow::bail!("{label} contains a special or symlink entry")
+            match classify_tree_entry_for_removal(entry_stat.st_mode) {
+                TreeEntryKind::Directory => {
+                    remove_tree(&directory, &entry_name, label)?;
+                }
+                TreeEntryKind::Regular => {
+                    validate_owned_stat(&entry_stat, label, SFlag::S_IFREG)?;
+                    unlink_entry(&directory, &entry_name, "removing auth file")?;
+                }
+                TreeEntryKind::Symlink => {
+                    // `lstat` mode bits on a symlink carry no access meaning
+                    // (Linux always reports 0777, macOS 0755), so only the
+                    // link's ownership is checked. `unlinkat` never follows
+                    // the link, so removing it cannot touch its target.
+                    anyhow::ensure!(
+                        entry_stat.st_uid == geteuid().as_raw(),
+                        "{label} is not owned by the current user"
+                    );
+                    unlink_entry(&directory, &entry_name, "removing auth symlink")?;
+                }
+                TreeEntryKind::Special => {
+                    anyhow::bail!("{label} contains a special file entry")
+                }
             }
         }
         fsync_directory(&directory)?;
