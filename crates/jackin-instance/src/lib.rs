@@ -8,6 +8,7 @@ use jackin_config::{AuthForwardMode, GithubAuthMode, ProfileSelector};
 use jackin_core::JackinPaths;
 use jackin_manifest::RoleManifest;
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
 mod auth;
@@ -682,7 +683,27 @@ fn canonical_xdg_cache_root(path: &Path) -> anyhow::Result<PathBuf> {
             Component::ParentDir => unreachable!("parent traversal rejected above"),
         }
     }
-    Ok(std::fs::canonicalize(&normalized).unwrap_or(normalized))
+    if let Ok(canonical) = std::fs::canonicalize(&normalized) {
+        return Ok(canonical);
+    }
+
+    let mut ancestor = normalized.clone();
+    let mut missing = Vec::<OsString>::new();
+    while !ancestor.exists() {
+        let Some(name) = ancestor.file_name().map(OsString::from) else {
+            return Ok(normalized);
+        };
+        missing.push(name);
+        if !ancestor.pop() {
+            return Ok(normalized);
+        }
+    }
+
+    let mut resolved = std::fs::canonicalize(&ancestor).unwrap_or(ancestor);
+    for name in missing.iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
 }
 
 #[derive(Debug, Clone)]

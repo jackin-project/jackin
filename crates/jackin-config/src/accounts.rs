@@ -652,9 +652,12 @@ pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
                 hash_component(&mut digest, "no_source_selector");
             }
         }
-        AccountCredential::ApiKey { value, .. } => {
+        AccountCredential::ApiKey {
+            value, base_url, ..
+        } => {
             hash_component(&mut digest, "api_key");
             hash_env_value(&mut digest, value);
+            hash_optional_component(&mut digest, base_url.as_deref());
         }
         AccountCredential::OAuthToken { agent, value } => {
             hash_component(&mut digest, "oauth_token");

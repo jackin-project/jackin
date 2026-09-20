@@ -86,10 +86,9 @@ fn scan(paths: &JackinPaths) -> Result<()> {
     let (mut editor, open_report) = ConfigEditor::open_detailed(paths)?;
     let scan_report = editor.scan_for_accounts()?;
     let zshrc_report = import_zshrc_accounts(&mut editor, paths)?;
-    // The zshrc pass can update model/endpoint metadata on an existing
-    // account without adding an account. Persist the complete scan mutation,
-    // not only newly synthesized registry entries.
-    editor.save()?;
+    if scan_report.changed || zshrc_report.changed {
+        editor.save()?;
+    }
     let mut added = open_report.added;
     added.extend(scan_report.added);
     added.extend(zshrc_report.added);

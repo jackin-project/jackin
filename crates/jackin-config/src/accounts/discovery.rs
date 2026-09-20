@@ -10,11 +10,68 @@ use serde_json::Value;
 
 use super::{AiProvider, ProfileSelector};
 
-/// Find provider API-key references in an explicit environment snapshot.
-/// Returns variable names only; values never leave this boundary.
-pub fn discover_environment_accounts(
+/// An environment API-key source plus its non-secret endpoint override.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EnvironmentAccountCandidate {
+    /// Provider selected by the API-key variable.
+    pub provider: AiProvider,
+    /// Variable holding the credential reference.
+    pub variable: String,
+    /// Optional provider endpoint from the environment.
+    pub base_url: Option<String>,
+}
+
+fn endpoint_variables(provider: AiProvider) -> &'static [&'static str] {
+    match provider {
+        AiProvider::Anthropic => &["ANTHROPIC_BASE_URL"],
+        AiProvider::OpenAi => &["OPENAI_BASE_URL", "OPENAI_API_BASE", "OPENAI_API_URL"],
+        AiProvider::Amp => &["AMP_URL", "AMP_BASE_URL", "AMP_API_URL"],
+        AiProvider::Xai => &["XAI_BASE_URL", "XAI_API_BASE", "XAI_API_URL"],
+        AiProvider::Opencode => &["OPENCODE_BASE_URL", "OPENCODE_API_BASE", "OPENCODE_API_URL"],
+        AiProvider::Moonshot => &[
+            "KIMI_BASE_URL",
+            "KIMI_CODE_BASE_URL",
+            "MOONSHOT_BASE_URL",
+            "MOONSHOT_API_BASE",
+            "MOONSHOT_API_URL",
+        ],
+        AiProvider::Zai => &[
+            "ZAI_BASE_URL",
+            "Z_AI_BASE_URL",
+            "ZHIPU_BASE_URL",
+            "ZAI_API_BASE",
+            "ZAI_API_URL",
+        ],
+        AiProvider::Minimax => &["MINIMAX_BASE_URL", "MINIMAX_API_BASE", "MINIMAX_API_URL"],
+        AiProvider::Google => &[
+            "GEMINI_BASE_URL",
+            "GOOGLE_BASE_URL",
+            "GEMINI_API_BASE",
+            "GEMINI_API_URL",
+        ],
+        AiProvider::Cursor => &["CURSOR_BASE_URL", "CURSOR_API_BASE", "CURSOR_API_URL"],
+        AiProvider::Meta => &["META_BASE_URL", "META_API_BASE", "META_API_URL"],
+        AiProvider::OpenRouter => &["OPENROUTER_BASE_URL", "OPENROUTER_API_URL"],
+    }
+}
+
+fn environment_base_url(
+    provider: AiProvider,
     environment: &std::collections::BTreeMap<String, String>,
-) -> Vec<(AiProvider, String)> {
+) -> Option<String> {
+    endpoint_variables(provider).iter().find_map(|name| {
+        environment
+            .get(*name)
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+    })
+}
+
+/// Find provider API-key sources and their endpoint overrides in an explicit
+/// environment snapshot. Secret values never leave this boundary.
+pub(crate) fn discover_environment_account_candidates(
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Vec<EnvironmentAccountCandidate> {
     [
         (AiProvider::Anthropic, &["ANTHROPIC_API_KEY"][..]),
         (AiProvider::OpenAi, &["OPENAI_API_KEY"][..]),
@@ -56,10 +113,25 @@ pub fn discover_environment_accounts(
             environment
                 .get(*name)
                 .filter(|value| !value.trim().is_empty())
-                .map(|_| (provider, (*name).to_owned()))
+                .map(|_| EnvironmentAccountCandidate {
+                    provider,
+                    variable: (*name).to_owned(),
+                    base_url: environment_base_url(provider, environment),
+                })
         })
     })
     .collect()
+}
+
+/// Find provider API-key references in an explicit environment snapshot.
+/// Returns variable names only; values never leave this boundary.
+pub fn discover_environment_accounts(
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Vec<(AiProvider, String)> {
+    discover_environment_account_candidates(environment)
+        .into_iter()
+        .map(|candidate| (candidate.provider, candidate.variable))
+        .collect()
 }
 
 /// Discover supported subscription-token references without copying their values.

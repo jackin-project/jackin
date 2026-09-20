@@ -21,6 +21,26 @@ fn environment_discovery_returns_names_without_secret_values() {
 }
 
 #[test]
+fn environment_candidates_keep_the_matching_endpoint_without_secret_values() {
+    let environment = std::collections::BTreeMap::from([
+        ("OPENAI_API_KEY".to_owned(), "sensitive-fixture".to_owned()),
+        (
+            "OPENAI_BASE_URL".to_owned(),
+            "https://proxy.example/v1".to_owned(),
+        ),
+    ]);
+    let found = discover_environment_account_candidates(&environment);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].provider, AiProvider::OpenAi);
+    assert_eq!(found[0].variable, "OPENAI_API_KEY");
+    assert_eq!(
+        found[0].base_url.as_deref(),
+        Some("https://proxy.example/v1")
+    );
+    assert!(!format!("{found:?}").contains("sensitive-fixture"));
+}
+
+#[test]
 fn environment_aliases_use_first_nonempty_reference_per_provider() {
     for (provider, primary, alias) in [
         (AiProvider::Moonshot, "KIMI_API_KEY", "MOONSHOT_API_KEY"),
