@@ -289,6 +289,10 @@ pub enum UsageDiscoveryIssue {
     ConfigInvalid,
     /// Config schema is newer than supported.
     ConfigVersionUnsupported,
+    /// Forwarded catalog surface id is not recognized by this build.
+    Unsupported,
+    /// Known forwarded surface is outside the Desktop usage catalog.
+    NotRun,
     /// Config changed repeatedly during discovery.
     ConfigTransientConflict,
     /// Required credential source is absent.
@@ -309,6 +313,8 @@ impl UsageDiscoveryIssue {
             Self::ConfigUnreadable => "config_unreadable",
             Self::ConfigInvalid => "config_invalid",
             Self::ConfigVersionUnsupported => "config_version_unsupported",
+            Self::Unsupported => "unsupported",
+            Self::NotRun => "not_run",
             Self::ConfigTransientConflict => "config_transient_conflict",
             Self::CredentialMissing => "credential_missing",
             Self::CredentialDenied => "credential_denied",
@@ -324,6 +330,8 @@ impl UsageDiscoveryIssue {
             Self::ConfigUnreadable => "Configuration could not be read",
             Self::ConfigInvalid => "Configuration is invalid",
             Self::ConfigVersionUnsupported => "Configuration version is not supported",
+            Self::Unsupported => "Usage source is unsupported",
+            Self::NotRun => "Usage source was not run",
             Self::ConfigTransientConflict => "Configuration changed while it was being read",
             Self::CredentialMissing => "Credentials are missing",
             Self::CredentialDenied => "Credential access was denied",
@@ -589,11 +597,20 @@ fn discover_host_sources(
 
 fn discover_forwarded_sources(accounts: &[ForwardedUsageAccount]) -> UsageDiscoveryCatalog {
     let mut candidates = BTreeMap::<CredentialSourceKey, CandidateAccumulator>::new();
+    let mut rejected = BTreeMap::<(String, String), UsageDiscoveryIssue>::new();
     for account in accounts {
         let Some(surface) = HostSurfaceId::from_id(&account.surface_id) else {
+            rejected.insert(
+                (account.surface_id.clone(), account.capability_id.clone()),
+                UsageDiscoveryIssue::Unsupported,
+            );
             continue;
         };
         if !HostSurfaceId::DESKTOP_PROVIDER_ORDER.contains(&surface) {
+            rejected.insert(
+                (account.surface_id.clone(), account.capability_id.clone()),
+                UsageDiscoveryIssue::NotRun,
+            );
             continue;
         }
         candidates
@@ -610,7 +627,22 @@ fn discover_forwarded_sources(accounts: &[ForwardedUsageAccount]) -> UsageDiscov
                 operator_home: None,
             });
     }
-    materialize_catalog(None, candidates, Vec::new())
+    let mut catalog = materialize_catalog(None, candidates, Vec::new());
+    for (index, ((surface_id, capability_id), issue)) in rejected.into_iter().enumerate() {
+        catalog.candidates.push(UsageSourceCandidateDescriptor {
+            surface_id: surface_id.clone(),
+            credential_kind: UsageCredentialKind::ForwardedCapability,
+            source_id: format!("forwarded-rejected-{index:04}"),
+            capability_id: capability_id.clone(),
+            provenance: vec!["forwarded to Capsule".to_owned()],
+        });
+        catalog.diagnostics.push(UsageDiscoveryDiagnostic {
+            surface_id: Some(surface_id),
+            scope_label: format!("forwarded capability {capability_id}"),
+            issue,
+        });
+    }
+    catalog
 }
 
 /// Registry entries are the sole discovery authority. Workspace references add
@@ -1697,6 +1729,8 @@ impl HostUsageRuntime {
         let changed = self.discovery.as_ref().is_none_or(|current| {
             super::broker::usage_catalog_entries(current)
                 != super::broker::usage_catalog_entries(&discovered)
+                || current.candidates != discovered.candidates
+                || current.diagnostics != discovered.diagnostics
         });
         Ok(Some(StagedUsageDiscovery {
             base_generation: self.discovery_generation,

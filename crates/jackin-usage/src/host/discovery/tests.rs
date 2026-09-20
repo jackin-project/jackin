@@ -336,13 +336,110 @@ fn disc_scope_capsule_uses_only_forwarded_capabilities() {
     )
     .unwrap();
 
+    assert_eq!(catalog.candidates.len(), 2);
+    let known = catalog
+        .candidates
+        .iter()
+        .find(|candidate| candidate.surface_id == "claude")
+        .expect("known forwarded capability");
+    assert_eq!(
+        known.credential_kind,
+        UsageCredentialKind::ForwardedCapability
+    );
+    assert!(catalog.diagnostics.iter().any(|diagnostic| {
+        diagnostic.surface_id.as_deref() == Some("opencode")
+            && diagnostic.issue == UsageDiscoveryIssue::NotRun
+            && diagnostic.scope_label == "forwarded capability excluded"
+    }));
+    assert!(resolver.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn disc_scope_capsule_preserves_unknown_catalog_ids_as_unsupported() {
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::Capsule {
+            forwarded_accounts: vec![ForwardedUsageAccount {
+                surface_id: "future-provider".to_owned(),
+                capability_id: "future-capability".to_owned(),
+                account_label: Some("future@example.test".to_owned()),
+            }],
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+
     assert_eq!(catalog.candidates.len(), 1);
-    assert_eq!(catalog.candidates[0].surface_id, "claude");
+    assert_eq!(catalog.candidates[0].surface_id, "future-provider");
+    assert_eq!(catalog.candidates[0].capability_id, "future-capability");
     assert_eq!(
         catalog.candidates[0].credential_kind,
         UsageCredentialKind::ForwardedCapability
     );
-    assert!(resolver.calls.lock().unwrap().is_empty());
+    assert_eq!(catalog.diagnostics.len(), 1);
+    assert_eq!(
+        catalog.diagnostics[0].surface_id.as_deref(),
+        Some("future-provider")
+    );
+    assert_eq!(
+        catalog.diagnostics[0].scope_label,
+        "forwarded capability future-capability"
+    );
+    assert_eq!(
+        catalog.diagnostics[0].issue,
+        UsageDiscoveryIssue::Unsupported
+    );
+
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    assert!(validated.bindings.is_empty());
+    assert_eq!(validated.candidates.len(), 1);
+    assert_eq!(
+        validated.diagnostics[0].issue,
+        UsageDiscoveryIssue::Unsupported
+    );
+}
+
+#[test]
+fn disc_stage_detects_rejected_catalog_membership_changes() {
+    let temp = tempfile::tempdir().unwrap();
+    let old_scope = UsageDiscoveryScope::Capsule {
+        forwarded_accounts: vec![ForwardedUsageAccount {
+            surface_id: "future-provider".to_owned(),
+            capability_id: "old-capability".to_owned(),
+            account_label: None,
+        }],
+    };
+    let new_scope = UsageDiscoveryScope::Capsule {
+        forwarded_accounts: vec![ForwardedUsageAccount {
+            surface_id: "future-provider".to_owned(),
+            capability_id: "new-capability".to_owned(),
+            account_label: None,
+        }],
+    };
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig {
+            data_dir: temp.path().to_owned(),
+            refresh_floor_secs: 60,
+            enabled_surface_ids: Vec::new(),
+            probe_policy: crate::host::HostProbePolicy::Disabled,
+            discovery_scope: old_scope.clone(),
+        })
+        .unwrap();
+    runtime.discovery = Some(validate_usage_sources(
+        discover_usage_sources(&old_scope, &NoEnvResolver).unwrap(),
+        &NoEnvResolver,
+    ));
+    runtime.discovery_scope = Some(new_scope);
+
+    let staged = runtime
+        .stage_discovery(&NoEnvResolver)
+        .unwrap()
+        .expect("discovery stage");
+    assert!(staged.changed);
+    assert_eq!(
+        staged.discovery.candidates[0].capability_id,
+        "new-capability"
+    );
 }
 
 #[test]

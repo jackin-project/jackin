@@ -17,9 +17,38 @@ use jackin_protocol::usage_broker::{
 };
 
 use super::*;
+use crate::host::{ForwardedUsageAccount, ProviderCredentialEnvResolution};
 
 struct CountingExecutor {
     calls: AtomicUsize,
+}
+
+struct RetryRecordingResolver {
+    manual_retries: Arc<AtomicUsize>,
+}
+
+impl Default for RetryRecordingResolver {
+    fn default() -> Self {
+        Self {
+            manual_retries: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl ProviderCredentialEnvResolver for RetryRecordingResolver {
+    fn begin_manual_retry(&self) {
+        self.manual_retries.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn resolve_provider_credentials(
+        &self,
+        _config: &jackin_config::AppConfig,
+        _workspace: Option<&jackin_core::WorkspaceName>,
+        _role: Option<&str>,
+        _keys: &[jackin_core::UsageCredentialEnvName],
+    ) -> Vec<ProviderCredentialEnvResolution> {
+        Vec::new()
+    }
 }
 
 impl UsageProviderExecutor for CountingExecutor {
@@ -121,6 +150,51 @@ fn discovery_provider_unsupported_views_remain_publishable_unsupported() {
         provider_probe_outcome(view),
         ProviderProbeOutcome::Success(_)
     ));
+}
+
+#[test]
+fn background_rediscovery_does_not_start_manual_retry_or_admit_mismatch() {
+    let resolver = RetryRecordingResolver::default();
+    let scope = UsageDiscoveryScope::Capsule {
+        forwarded_accounts: vec![ForwardedUsageAccount {
+            surface_id: "claude".to_owned(),
+            capability_id: "different-capability".to_owned(),
+            account_label: Some("other@example.test".to_owned()),
+        }],
+    };
+    let (binding, refreshed) = rediscover_bindings(&scope, &resolver, &capability());
+
+    assert!(binding.is_none());
+    assert!(refreshed.is_none());
+    assert_eq!(resolver.manual_retries.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn discovery_executor_rejects_catalog_that_does_not_match_current_scope() {
+    let manual_retries = Arc::new(AtomicUsize::new(0));
+    let resolver: Arc<dyn ProviderCredentialEnvResolver> = Arc::new(RetryRecordingResolver {
+        manual_retries: Arc::clone(&manual_retries),
+    });
+    let executor = DiscoveryProviderExecutor {
+        bindings: Mutex::new(BTreeMap::new()),
+        scope: UsageDiscoveryScope::Capsule {
+            forwarded_accounts: Vec::new(),
+        },
+        resolver: Arc::clone(&resolver),
+        probe_budget: Duration::from_secs(1),
+    };
+    let error = executor
+        .validate_catalog(&[UsageCatalogEntry {
+            capability: capability(),
+            revision: "mismatched".to_owned(),
+        }])
+        .expect_err("mismatched catalog must fail closed");
+
+    assert_eq!(
+        error.kind,
+        UsageCoordinationErrorKind::CatalogRevisionConflict
+    );
+    assert_eq!(manual_retries.load(Ordering::SeqCst), 0);
 }
 
 #[test]
