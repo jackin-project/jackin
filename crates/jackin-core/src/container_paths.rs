@@ -6,6 +6,8 @@
 //! constants or [`join`]; the policy suite and the `cargo xtask lint
 //! container-paths` gate keep stragglers from regrowing.
 
+use std::path::{Component, Path, PathBuf};
+
 /// Absolute root of every container-side jackin❯ path.
 pub const JACKIN_ROOT: &str = "/jackin";
 
@@ -130,6 +132,46 @@ pub const AGENT_STATUS_CODEX_HOOK: &str = "/jackin/runtime/agent-status/hooks/co
 pub const AGENT_STATUS_OPENCODE_PLUGIN: &str =
     "/jackin/runtime/agent-status/hooks/opencode/plugin.js";
 
+/// Normalize a path lexically, resolving `.` and `..` without filesystem I/O.
+///
+/// Callers that handle an existing path should canonicalize it first so
+/// symlink aliases are removed; this helper is the safe fallback for paths
+/// that do not exist yet.
+#[must_use]
+pub fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if matches!(components.last(), Some(Component::Normal(_))) {
+                    components.pop();
+                } else if !matches!(
+                    components.last(),
+                    Some(Component::RootDir | Component::Prefix(_))
+                ) {
+                    components.push(component);
+                }
+            }
+            component => components.push(component),
+        }
+    }
+    components.iter().collect()
+}
+
+/// Whether `ancestor` is the same path as, or a component-wise ancestor of,
+/// `path` after lexical normalization.
+#[must_use]
+pub fn path_is_ancestor_or_equal(ancestor: &Path, path: &Path) -> bool {
+    normalize_path(path).starts_with(normalize_path(ancestor))
+}
+
+/// Whether two paths overlap after lexical normalization.
+#[must_use]
+pub fn paths_overlap(left: &Path, right: &Path) -> bool {
+    path_is_ancestor_or_equal(left, right) || path_is_ancestor_or_equal(right, left)
+}
+
 /// Compose a container path under a jackin-owned base.
 ///
 /// Debug-asserts that `base` starts with [`JACKIN_ROOT`] and that `rel` is a
@@ -138,7 +180,7 @@ pub const AGENT_STATUS_OPENCODE_PLUGIN: &str =
 #[must_use]
 pub fn join(base: &str, rel: &str) -> String {
     debug_assert!(
-        base == JACKIN_ROOT || base.starts_with(&format!("{JACKIN_ROOT}/")),
+        path_is_ancestor_or_equal(Path::new(JACKIN_ROOT), Path::new(base)),
         "container_paths::join base must start with {JACKIN_ROOT}"
     );
     debug_assert!(
@@ -153,15 +195,13 @@ pub fn join(base: &str, rel: &str) -> String {
 /// Mirrors the classifier used by capsule file-export.
 #[must_use]
 pub fn is_jackin_owned(path: &str) -> bool {
-    let trimmed = path.trim();
-    trimmed == JACKIN_ROOT || trimmed.starts_with(&format!("{JACKIN_ROOT}/"))
+    path_is_ancestor_or_equal(Path::new(JACKIN_ROOT), Path::new(path.trim()))
 }
 
 /// Whether `path` is under the run subtree (prefix or exact).
 #[must_use]
 pub fn is_run_owned(path: &str) -> bool {
-    let trimmed = path.trim();
-    trimmed == RUN_DIR || trimmed.starts_with(&format!("{RUN_DIR}/"))
+    path_is_ancestor_or_equal(Path::new(RUN_DIR), Path::new(path.trim()))
 }
 
 #[cfg(test)]

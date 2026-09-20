@@ -10,6 +10,7 @@
 use anyhow::{Context, Result};
 use jackin_protocol::CapsuleConfig;
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 /// # Errors
 ///
@@ -66,10 +67,68 @@ pub fn load_optional() -> Option<CapsuleConfig> {
 }
 
 fn is_descendant(path: &str, root: &str) -> bool {
-    path == root
-        || path
-            .strip_prefix(root)
-            .is_some_and(|suffix| suffix.starts_with('/'))
+    jackin_core::container_paths::path_is_ancestor_or_equal(Path::new(root), Path::new(path))
+}
+
+fn is_strict_descendant(path: &str, root: &str) -> bool {
+    let path = jackin_core::container_paths::normalize_path(Path::new(path));
+    let root = jackin_core::container_paths::normalize_path(Path::new(root));
+    path != root && jackin_core::container_paths::path_is_ancestor_or_equal(&root, &path)
+}
+
+/// Resolve an existing container path through symlinks and normalize paths
+/// that are not present yet. A path that exists but cannot be canonicalized is
+/// rejected by the caller rather than being treated as a harmless alias.
+fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
+    anyhow::ensure!(path.is_absolute(), "container path must be absolute");
+    let normalized = jackin_core::container_paths::normalize_path(path);
+    match std::fs::canonicalize(&normalized) {
+        Ok(path) => Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(normalized),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Reject a cwd whose recursive workspace grant could cover capsule state,
+/// agent-private homes, or an admitted private mount destination.
+fn validate_workdir_boundary(config: &CapsuleConfig) -> Result<()> {
+    let lexical_workdir = jackin_core::container_paths::normalize_path(Path::new(&config.workdir));
+    let workdir = normalize_existing_path(&lexical_workdir)?;
+    for protected_root in ["/home/agent", jackin_core::container_paths::JACKIN_ROOT] {
+        let lexical_root = jackin_core::container_paths::normalize_path(Path::new(protected_root));
+        anyhow::ensure!(
+            !jackin_core::container_paths::paths_overlap(&lexical_workdir, &lexical_root),
+            "capsule workdir {} overlaps protected root {}",
+            lexical_workdir.display(),
+            lexical_root.display()
+        );
+        let protected_root = normalize_existing_path(&lexical_root)?;
+        anyhow::ensure!(
+            !jackin_core::container_paths::paths_overlap(&workdir, &protected_root),
+            "capsule workdir {} overlaps protected root {}",
+            workdir.display(),
+            protected_root.display()
+        );
+    }
+    for (instance, paths) in &config.instance_mount_paths {
+        for path in paths {
+            let lexical_mount = jackin_core::container_paths::normalize_path(Path::new(path));
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&lexical_workdir, &lexical_mount),
+                "capsule workdir {} overlaps protected mount destination {} for instance {instance}",
+                lexical_workdir.display(),
+                lexical_mount.display()
+            );
+            let mount = normalize_existing_path(&lexical_mount)?;
+            anyhow::ensure!(
+                !jackin_core::container_paths::paths_overlap(&workdir, &mount),
+                "capsule workdir {} overlaps protected mount destination {} for instance {instance}",
+                workdir.display(),
+                mount.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn validate_instance(
@@ -106,13 +165,14 @@ fn validate_instance(
         .home_for_instance(instance)
         .ok_or_else(|| anyhow::anyhow!("instance {instance:?} has no private home path"))?;
     anyhow::ensure!(
-        is_descendant(home, "/home/agent") && !home.split('/').any(|component| component == ".."),
+        is_strict_descendant(home, "/home/agent")
+            && !home.split('/').any(|component| component == ".."),
         "instance {instance:?} has an invalid private home path"
     );
     let cache_root = config.cache_for_instance(instance);
     if let Some(cache_root) = cache_root {
         anyhow::ensure!(
-            cache_root.starts_with("/home/agent/.cache/")
+            is_strict_descendant(cache_root, "/home/agent/.cache")
                 && !cache_root.split('/').any(|component| component == ".."),
             "instance {instance:?} has an invalid XDG cache path"
         );
@@ -140,7 +200,7 @@ fn validate_instance(
         .forwarded_for_instance(instance)
         .ok_or_else(|| anyhow::anyhow!("instance {instance:?} has no private auth path"))?;
     anyhow::ensure!(
-        forwarded.starts_with("/jackin/")
+        is_strict_descendant(forwarded, jackin_core::container_paths::JACKIN_ROOT)
             && !forwarded.split('/').any(|component| component == "..")
             && ![
                 jackin_core::container_paths::RUN_DIR,
@@ -161,20 +221,22 @@ fn validate_instance(
         "instance {instance:?} has an invalid credential mount path"
     );
     for path in config.mount_paths_for_instance(instance) {
-        let is_private_home = path.starts_with("/home/agent/")
-            && (is_descendant(path, home)
+        let normalized_path = jackin_core::container_paths::normalize_path(Path::new(path));
+        let normalized_path = normalized_path.to_string_lossy();
+        let is_private_home = is_strict_descendant(&normalized_path, "/home/agent")
+            && (is_descendant(&normalized_path, home)
                 || paired_xdg_config_root
                     .as_deref()
-                    .is_some_and(|root| is_descendant(path, root))
-                || cache_root.is_some_and(|root| is_descendant(path, root)));
-        let is_forwarded_auth = is_descendant(path, forwarded);
+                    .is_some_and(|root| is_descendant(&normalized_path, root))
+                || cache_root.is_some_and(|root| is_descendant(&normalized_path, root)));
+        let is_forwarded_auth = is_descendant(&normalized_path, forwarded);
         anyhow::ensure!(
-            path != "/home/agent"
-                && path != jackin_core::container_paths::JACKIN_ROOT
-                && path != jackin_core::container_paths::RUN_DIR
-                && path != jackin_core::container_paths::STATE_DIR
-                && path != jackin_core::container_paths::RUNTIME_DIR
-                && !is_descendant(path, jackin_protocol::ACCOUNT_CREDENTIALS_DIR)
+            normalized_path != "/home/agent"
+                && normalized_path != jackin_core::container_paths::JACKIN_ROOT
+                && normalized_path != jackin_core::container_paths::RUN_DIR
+                && normalized_path != jackin_core::container_paths::STATE_DIR
+                && normalized_path != jackin_core::container_paths::RUNTIME_DIR
+                && !is_descendant(&normalized_path, jackin_protocol::ACCOUNT_CREDENTIALS_DIR)
                 && (is_private_home || is_forwarded_auth)
                 && !path.split('/').any(|component| component == ".."),
             "instance {instance:?} has an invalid private mount path"
@@ -187,6 +249,7 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
     if config.workdir.trim().is_empty() {
         anyhow::bail!("{} workdir is empty", jackin_protocol::CAPSULE_CONFIG_PATH);
     }
+    validate_workdir_boundary(config)?;
     let mut identities = BTreeSet::new();
     for instance in &config.instances {
         validate_instance(config, instance, &mut identities)?;
