@@ -73,6 +73,23 @@ fn every_account_owned_environment_name_is_hidden_from_general_display() {
 }
 
 #[test]
+fn general_environment_display_never_contains_account_owned_sentinel() {
+    let values = BTreeMap::from([
+        (
+            "ANTHROPIC_API_KEY".to_owned(),
+            EnvValue::Plain("account-display-sentinel".into()),
+        ),
+        ("PROJECT_ENV".to_owned(), EnvValue::Plain("visible".into())),
+    ]);
+
+    let display = env_display_map(&values);
+    let rendered = format!("{display:?}");
+    assert!(!rendered.contains("account-display-sentinel"));
+    assert!(!display.contains_key("ANTHROPIC_API_KEY"));
+    assert_eq!(display.get("PROJECT_ENV"), Some(&"visible".to_owned()));
+}
+
+#[test]
 fn source_form_traits_keep_profile_and_key_modes_distinct() {
     let mut form = AuthForm::<EnvValue>::new(AuthKind::Claude);
     form.set_mode(AuthMode::Sync);

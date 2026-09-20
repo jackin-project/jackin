@@ -1011,6 +1011,9 @@ pub fn workspace_env_rows(
     let mut rows = Vec::new();
     if let Some(ws) = ws_config {
         for (key, value) in &ws.env {
+            if jackin_core::is_account_env(key) {
+                continue;
+            }
             rows.push(WorkspaceEnvRow {
                 name: key.clone(),
                 scope: None,
@@ -1019,6 +1022,9 @@ pub fn workspace_env_rows(
         }
         for (role, overrides) in &ws.roles {
             for (key, value) in &overrides.env {
+                if jackin_core::is_account_env(key) {
+                    continue;
+                }
                 rows.push(WorkspaceEnvRow {
                     name: key.clone(),
                     scope: Some(role.clone()),

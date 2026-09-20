@@ -599,6 +599,32 @@ fn env_lines_render_key_header_and_sentinels() {
 }
 
 #[test]
+fn env_lines_redact_account_owned_sentinel_even_when_unmasked() {
+    let rows = [SettingsEnvRow::Key {
+        scope: SettingsEnvScope::Global,
+        key: "ANTHROPIC_API_KEY".to_owned(),
+    }];
+
+    let lines = env_lines(
+        &rows,
+        0,
+        true,
+        100,
+        |_, _| Some(SecretValueDisplay::Plain("settings-view-sentinel")),
+        |_, _| true,
+        |_| 0,
+    );
+    let rendered = lines
+        .iter()
+        .flat_map(|line| line.spans.iter())
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+
+    assert!(!rendered.contains("settings-view-sentinel"));
+    assert!(rendered.contains("ANTHROPIC_API_KEY"));
+}
+
+#[test]
 fn global_mount_lines_render_header_rows_and_sentinel() {
     let rows = [MountDisplayRow {
         destination: "/workspace".to_owned(),

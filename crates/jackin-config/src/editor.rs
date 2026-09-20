@@ -1227,6 +1227,12 @@ impl ConfigEditor {
         use jackin_core::EnvValue;
         use toml_edit::{InlineTable, Item, Value, value as toml_value};
 
+        if jackin_core::is_account_env(key) {
+            return Err(ConfigError::msg(format!(
+                "env name {key:?} belongs to account credentials and cannot be set here"
+            )));
+        }
+
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
         let table = table_path_mut(doc, &path);
         let item = match value {

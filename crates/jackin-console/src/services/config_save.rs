@@ -14,7 +14,7 @@ use jackin_config::{
     WorkspaceEdit, plan_create, plan_edit,
 };
 use jackin_core::shorten_home;
-use jackin_core::{Agent, WorkspaceName, is_reserved};
+use jackin_core::{Agent, WorkspaceName, is_account_env, is_reserved};
 
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
 
@@ -247,6 +247,11 @@ fn validate_settings_env_keys<'a>(
         if is_reserved(key) {
             anyhow::bail!(
                 "env name {key:?} in {scope} is reserved by the jackin runtime and cannot be set"
+            );
+        }
+        if is_account_env(key) {
+            anyhow::bail!(
+                "env name {key:?} in {scope} belongs to account credentials and cannot be set here"
             );
         }
     }
