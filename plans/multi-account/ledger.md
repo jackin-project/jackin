@@ -4,16 +4,17 @@ Proof levels: `implemented` < `fixture_verified` < `container_verified` <
 `live_verified`. Also: `failed`, `unavailable` (credentials), `unsupported`
 (genuinely, with evidence), `not_run`.
 
-## Current exact-head audit — 2026-09-20
+## Evidence audit and live-head recheck — 2026-09-20
 
-Audit target: live PR #1002 source branch `feat/multi-account-support` at
-`ca128f8a80907319ea6d5648cf172ed81e33b1d4` (`ca128f8`). GitHub still reports
-that commit as the open PR's current head. This evidence ledger is carried by
-PR #1005, whose starting head was `33810907904ccc4b0858e9479d71da54c8df0719`
-(`3381090`) with base `feat/multi-account-support` at the same `ca128f8` commit;
-the starting tree differed from that source head only in these two ledger files.
-The audit worktree is `/private/tmp/jackin-pr1002-evidence` on
-`audit/pr1002-evidence`.
+PR #1005 is `audit/pr1002-evidence` at `cefa882f6c3f5a3b4f0ce52a2052a05cb4706756`
+(`cefa882f`) and remains based on #1002 source `ca128f8a80907319ea6d5648cf172ed81e33b1d4`
+(`ca128f8`). The live #1002 coordinator has since advanced to
+`72feee236162468aeeeb416e8139a97db06538eb` (`72feee23`). No merge or sync of that
+head was performed; the PR #1005 evidence baseline and the live-head recheck are
+kept separate. The starting #1005 head was
+`33810907904ccc4b0858e9479d71da54c8df0719` (`3381090`), whose tree differed from
+the `ca128f8` source only in these two ledger files. The audit worktree is
+`/private/tmp/jackin-pr1002-evidence` on `audit/pr1002-evidence`.
 
 The GitHub review query for #1002 was repeated on 2026-09-20: reviews and inline
 review comments were empty; the only issue comment was the Codex usage-limit
@@ -35,15 +36,20 @@ or `live_verified` labels.
 
 Evidence runs and their source heads, all observed on 2026-09-20 unless stated:
 
-- Current exact-source `AUDIT-F`: `cargo nextest run -p jackin-config -p jackin-env -p jackin-protocol -p jackin-usage --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **1059 passed, 1 skipped**, exit 0 (5 binaries, 16.084 seconds). This is the exact current #1002 source tree.
-- Current exact-source config/instance fixture gate: `cargo nextest run -p jackin-instance -p jackin-config --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **567 passed**, exit 0 (2 binaries, 21.135 seconds). Counts are per command and overlap on `jackin-config`; they are not additive.
-- Current exact-source broad fixture/console gate: `cargo nextest run -p jackin-runtime -p jackin-console -p jackin-capsule -p jackin-instance -p jackin-core -p jackin --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **3836 passed**, exit 0 (41 binaries, 200.269 seconds). This is `CURRENT-R`; it is separate from historical `AUDIT-R` below.
-- Current audit-tree MDX build (final rerun): `cd docs && bun run build` — MDX/Vite compilation completed, but static prerender failed when its preview server refused the request for `/og/research/context/techniques/09-output-discipline.webp`; exit 1. A prior same-tree attempt failed the same way on another generated `/og/...webp` route. No live or provider evidence is implied.
+- PR #1005 baseline `AUDIT-F`: `cargo nextest run -p jackin-config -p jackin-env -p jackin-protocol -p jackin-usage --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **1059 passed, 1 skipped**, exit 0 (5 binaries, 16.084 seconds). This is the source baseline carried by the unsynchronized PR.
+- PR #1005 baseline config/instance fixture gate: `cargo nextest run -p jackin-instance -p jackin-config --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **567 passed**, exit 0 (2 binaries, 21.135 seconds). Counts are per command and overlap on `jackin-config`; they are not additive.
+- PR #1005 baseline broad fixture/console gate: `cargo nextest run -p jackin-runtime -p jackin-console -p jackin-capsule -p jackin-instance -p jackin-core -p jackin --all-features` at `ca128f8a80907319ea6d5648cf172ed81e33b1d4` — **3836 passed**, exit 0 (41 binaries, 200.269 seconds). This is separate from historical `AUDIT-R` below.
+- Live coordinator `COORD-F`: the same five-package fixture command at `72feee236162468aeeeb416e8139a97db06538eb` — **1069 passed, 1 skipped**, exit 0 (5 binaries, 20.460 seconds).
+- Live coordinator config/instance recheck: the two-package fixture command at `72feee236162468aeeeb416e8139a97db06538eb` — **577 passed**, exit 0 (2 binaries, 23.414 seconds).
+- Live coordinator `COORD-R`: the broad fixture/console command at `72feee236162468aeeeb416e8139a97db06538eb` — **3839 passed, 1 skipped**, exit 0 (41 binaries, 140.370 seconds).
+- Current audit-tree MDX build (final rerun): `cd docs && bun run build` — MDX/Vite compilation completed, but static prerender failed with `ConnectionRefused` while requesting `/og/research/context/techniques/09-output-discipline.webp`; exit 1. A prior same-tree attempt failed with a preview-server socket error on the same generated route. No live or provider evidence is implied.
 - Current audit-tree type gate: `cd docs && bun run types:check` — **pass** (`fumadocs-mdx` generated files; `tsc --noEmit` reported no errors).
 - Current audit-tree docs tests: `cd docs && bun test` — **18 passed, 0 failed** across 2 files, exit 0.
 - Current roadmap gate: `cargo xtask roadmap audit` — **pass**, 18 `meta.json` files resolved.
 - Current research gate: `cargo xtask research check` — **pass**, 63 `meta.json` files resolved.
-- Current repository-link gate: `cargo xtask docs repo-links` — **failed** on two pre-existing references to `.github/workflows/preview.yml` in `docs/content/roadmap/(isolation-security)/security-threat-model-and-signed-releases.mdx:22,64`; neither changed file is under `docs/`.
+- Current repository-link gate before this repair: `cargo xtask docs repo-links` — **failed** on two pre-existing references to `.github/workflows/preview.yml` in `docs/content/roadmap/(isolation-security)/security-threat-model-and-signed-releases.mdx:22,64`; the repair wraps both existing paths in `<RepoFile>` without changing the workflow.
+- Final repository-link gate: `cargo xtask docs repo-links` — **pass**, after both existing `preview.yml` paths were wrapped in `<RepoFile>`.
+- Final workflow policy gate: `velnor-workflow policy --workflow-root . --head-sha cefa882f6c3f5a3b4f0ce52a2052a05cb4706756 --base-sha ca128f8a80907319ea6d5648cf172ed81e33b1d4 --ruleset-contexts DCO,Policy,ci-required` with validator pin `0dc79895ff1c5e88be7c3822c437e1c5b5282e12` — **11 rules, 0 failed**.
 
 The previous synchronized audit at `176dcc0632f977a78d58443bde1b3ceb40304606`
 reported **1057 passed, 1 skipped** for its fixture command. That is stale
@@ -60,6 +66,22 @@ implemented without usage-event fixtures; and Antigravity live GUI/keyring
 support remains `not_run`, not `unsupported`. No code behavior is claimed from
 these documentation-only updates.
 
+## PR #1005 review gate — four P2 evidence threads
+
+The REST review-comment ids and GraphQL thread ids below were read from live PR
+#1005 before this repair. All four GraphQL threads were `isResolved: false` and
+`isOutdated: true`, and all targeted the earlier reviewed commit
+`77e2473a8abc0b892ce5cbf63326ff8ff9ffb567`. The comments were checked against
+the current ledger rows and current fixture evidence; none authorizes a stronger
+proof label.
+
+| Review comment / thread | Current evidence check | Concrete disposition |
+|---|---|---|
+| REST `4055299925` / GraphQL `PRRT_kwDOR2N26c6kE6Ic` — D13 | D13's cited runtime/capsule tests cover serialized config, host-only env-file cleanup, and PTY output; no Docker argv, labels, image history, `Config.Env`, staged-mount inventory, or target-container artifact exists. | Keep `fixture_verified` / `not_run`; Docker leakage evidence is explicitly unverified. No container-security claim is closed. |
+| REST `4055299929` / GraphQL `PRRT_kwDOR2N26c6kE6Ih` — F22 | OpenRouter fixtures cover key, credits denial, BYOK, and model semantics; delayed history has no collector implementation or fixture, and host credential dispatch remains absent. | Keep `fixture_verified` / `not_run`; history is explicitly unimplemented/unverified. The key-scoped collector is not promoted to full F22 support. |
+| REST `4055299937` / GraphQL `PRRT_kwDOR2N26c6kE6Io` — F28 | Broker-generation and repeated-root tests are not usage-event tests; no shared/fork/subagent/release event stream fixture exists. | Keep `fixture_verified` / `not_run`; event-level deduplication remains unverified. Cache/root deduplication is not counted as event proof. |
+| REST `4055299941` / GraphQL `PRRT_kwDOR2N26c6kE6Ir` — D08/F14/provider matrix | The Antigravity fixture only records the gated headless/old-command state; no GUI/keyring-backed live call, container, or multiple-account artifact exists. | Keep Antigravity live GUI/keyring support `not_run`, not `unsupported`; only the narrow headless fixture state is described. |
+
 Table convention: `Proof` is the highest evidence layer actually available in
 this audit. `Status` is the requirement disposition: `implemented` means the
 code path and cited deterministic evidence are present; `failed` means a cited
@@ -70,9 +92,11 @@ does not imply service, container, or live-provider proof.
 
 ## Current exact-head evidence
 
-The current source-level evidence is the three exact-source nextest runs above.
-The required container, live-provider, GUI/keychain, native-client, and
-independent-review surfaces remain `not_run`; no status below upgrades them.
+The PR #1005 baseline source-level evidence is the three `ca128f8` nextest runs
+above. The live coordinator recheck is recorded separately and does not imply
+that `72feee23` is present in this branch. The required container,
+live-provider, GUI/keychain, native-client, and independent-review surfaces
+remain `not_run`; no status below upgrades them.
 
 ## Historical lane spine (retained, not current verification)
 
@@ -105,9 +129,10 @@ dispositions do not re-issue current proof.
 ## Checklist A–H (from jackin-implementation-and-verification.md)
 
 Every requirement is listed once. Test names are repository paths in the current
-source tree. `AUDIT-F` means the current exact-source fixture run at `ca128f8`;
-`CURRENT-R` means the current exact-source broad fixture/console run at
-`ca128f8`; `AUDIT-R` means the historical aggregate at `1c8b9907`, not a
+source tree. `AUDIT-F` means the PR #1005 baseline exact-source fixture run at
+`ca128f8`; `CURRENT-R` means the PR #1005 baseline broad fixture/console run at
+`ca128f8`; `COORD-F` and `COORD-R` name the separate live-coordinator rechecks
+at `72feee23`; `AUDIT-R` means the historical aggregate at `1c8b9907`, not a
 current run. A row citing `AUDIT-R` retains historical evidence only; its
 gap/disposition text controls current status.
 
@@ -287,7 +312,7 @@ gap/disposition text controls current status.
 | H01 | Existing configuration converts or fails actionably without silent loss | `crates/jackin-config/src/migrations/tests.rs::config_migrations_chain_reaches_current`, `account_schema_preserves_existing_registry_and_assignments`, `v1alpha10_to_current_stamps_initialized_sentinel_without_touching_accounts`; AUDIT-F pass | fixture_verified | implemented | No user-home migration. |
 | H02 | Schema transition is atomic/idempotent and obsolete path is removed | `crates/jackin-config/src/migrations/tests.rs::prop_config_migration_idempotent`, `prop_workspace_migration_idempotent`, `rejects_when_migration_path_was_removed`; `crates/jackin-config/src/editor/tests.rs::editor_save_atomic_staging_failure_preserves_every_original_file`; AUDIT-F pass | fixture_verified | implemented | No compatibility-shim audit beyond exact-head source inspection. |
 | H03 | Protocol/build mismatch gives restart/upgrade error | `crates/jackin-capsule/src/config/tests.rs::invalid_staged_credentials_reject_with_explicit_upgrade_error`, `protected_credentials_reject_profile_mode_and_arbitrary_environment`; AUDIT-R pass | fixture_verified | implemented | Error text is fixture-verified. |
-| H04 | Unit, integration, format, lint, docs, and snapshot gates pass | Current `AUDIT-F` passed **1059/1 skipped** at `ca128f8`; current config/instance fixture gate passed **567**; current `CURRENT-R` passed **3836** across 41 binaries; current MDX/Vite build reached static prerender but exited 1 on a preview-server connection refusal; current type gate passed; docs tests passed **18/18**; roadmap/research passed; repo-links failed on two pre-existing `preview.yml` references. Historical `AUDIT-R` passed 3826/1 skipped but timed out at `crates/jackin-console/src/tui/view/png_baselines/tests.rs::png_baselines_screens_match` after 360s and exited 100; its focused rerun passed once in 153.035s. | fixture_verified (partial) | failed | Current aggregate/docs gate is not green; isolated historical rerun does not authorize an all-gates pass. |
+| H04 | Unit, integration, format, lint, docs, and snapshot gates pass | PR #1005 baseline `AUDIT-F` passed **1059/1 skipped** at `ca128f8`; baseline config/instance passed **567**; baseline broad gate passed **3836/1 skipped** across 41 binaries. Live coordinator rechecks at `72feee23` passed **1069/1 skipped**, **577**, and **3839/1 skipped** respectively. On the audit branch, types passed, docs tests passed **18/18**, roadmap/research passed, final repo-links passed, and policy passed **11/11**; MDX/Vite build reached static prerender but exited 1 with `ConnectionRefused` for the generated `/og/research/context/techniques/09-output-discipline.webp` route. `cargo xtask lint --strict` also remains red on inherited container-paths, telemetry-registry, ratchet, and test-layout violations. Historical `AUDIT-R` passed 3826/1 skipped but timed out at `crates/jackin-console/src/tui/view/png_baselines/tests.rs::png_baselines_screens_match` after 360s and exited 100; its focused rerun passed once in 153.035s. | fixture_verified (partial) | failed | Current aggregate/docs gate is not green; isolated historical rerun does not authorize an all-gates pass. |
 | H05 | Apple Silicon macOS 26 plus OrbStack usage-broker E2E with JUnit | No current exact-head `cargo xtask ci --e2e` run or JUnit artifact; historical `target/nextest/docker-e2e/junit.xml` and `/tmp` evidence are absent | — | not_run | Mandatory container gate blocker: rerun on the target Mac and attach current JUnit. |
 | H06 | Live provider/account matrix records identity and real fields | No current live-provider command or artifact; historical provider matrix is not independently reproducible here | — | not_run | Mandatory live matrix blocker; configured credentials and native outputs must be captured without secrets. |
 | H07 | Two-Claude-plus-one-Codex real-account container scenario | `/tmp/tracer/evidence.md` and `/tmp/split.log` absent; no current target-head container/TUI run | — | not_run | Mandatory scenario blocker; do not reuse historical `live_verified` label. |

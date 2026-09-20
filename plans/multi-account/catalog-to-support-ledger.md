@@ -11,15 +11,17 @@ ledger for the multi-account plan, not published documentation
 ## Current #1002 audit provenance — 2026-09-20
 
 The live GitHub head of PR #1002 is `feat/multi-account-support` at
-`ca128f8a80907319ea6d5648cf172ed81e33b1d4` (`ca128f8`). The companion evidence
-ledger is being repaired in PR #1005 from starting head
-`33810907904ccc4b0858e9479d71da54c8df0719` (`3381090`), whose base is that
-same `ca128f8` source tree. `AUDIT-F` in this file means the exact-source local
-fixture run at `ca128f8`: `cargo nextest run -p jackin-config -p jackin-env
--p jackin-protocol -p jackin-usage --all-features` — **1059 passed, 1 skipped**,
-exit 0 on 2026-09-20. No current container, live-provider, GUI/keychain, or
-native-client verification exists; those dispositions remain `not_run` in
-[ledger.md](./ledger.md).
+`72feee236162468aeeeb416e8139a97db06538eb` (`72feee23`). The companion evidence
+ledger is being repaired in PR #1005 at
+`cefa882f6c3f5a3b4f0ce52a2052a05cb4706756` (`cefa882f`), still based on the
+unsynchronized `ca128f8a80907319ea6d5648cf172ed81e33b1d4` (`ca128f8`) source
+tree; no merge was performed. `AUDIT-F` in this file means the PR #1005
+baseline fixture run at `ca128f8`: `cargo nextest run -p jackin-config -p
+jackin-env -p jackin-protocol -p jackin-usage --all-features` — **1059 passed,
+1 skipped**, exit 0 on 2026-09-20. A separate live-head recheck at `72feee23`
+produced **1069 passed, 1 skipped** for that command. No current container,
+live-provider, GUI/keychain, or native-client verification exists; those
+dispositions remain `not_run` in [ledger.md](./ledger.md).
 
 The catalog inputs in §1 are research snapshots, not current #1002 validation:
 their pinned repository SHAs and 2026-09-17 fetch dates are retained as source
@@ -290,9 +292,9 @@ private/reference-grade until vendor-documented or Mac-live-verified
 | `minimax-code` | `GET {base}/v1/token_plan/remains` (Global `api.minimax.io` / China `api.minimaxi.com`) | `implemented` [minimax.rs](../../crates/jackin-usage/src/usage/minimax.rs); attribution wiring `planned` | **S** |
 | `minimax-code-cn` | same remains API on CN host | `planned` — verify CN-host behavior ([U3](#9-u-register-exact-missing-proofs)) | **U** |
 | `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` | `implemented` [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs); attribution wiring `planned` | **R** |
-| `openrouter` | `GET {base}/api/v1/auth/key` (key-scoped) | `implemented` collector [openrouter.rs]; attribution/host credential dispatch is blocked at `provider_credential_snapshot` ([U12](#9-u-register-exact-missing-proofs)) | **D** (ref-contracts-D) |
+| `openrouter` | `GET {base}/api/v1/auth/key` (key-scoped); delayed history is not implemented or fixture-verified | `implemented` collector [openrouter.rs]; attribution/host credential dispatch is blocked at `provider_credential_snapshot` ([U12](#9-u-register-exact-missing-proofs)) | **D** (ref-contracts-D) |
 | `github-copilot` | `planned api.github.com copilot quota` | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
-| `google-antigravity` | `planned daily-cloudcode-pa :retrieveUserQuotaSummary`; bind identity | `planned` — see also native [antigravity.rs](../../crates/jackin-usage/src/usage/antigravity.rs) (`agy -p /usage --output-format json`) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
+| `google-antigravity` | `planned daily-cloudcode-pa :retrieveUserQuotaSummary`; bind identity; GUI/keyring live proof is `not_run` | `planned` — see also native [antigravity.rs](../../crates/jackin-usage/src/usage/antigravity.rs) (`agy -p /usage --output-format json`) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `google-gemini-cli` | `planned` cloudcode-pa Code Assist quota; OAuth only | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `muse-code` | cached MSP observation; key-exchange is a separate op, never auto-poll | `planned` — see native [muse.rs](../../crates/jackin-usage/src/usage/muse.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `xai-oauth` | `planned` Grok CLI billing endpoint; weekly/monthly split | `planned` — see native [grok.rs](../../crates/jackin-usage/src/usage/grok.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
