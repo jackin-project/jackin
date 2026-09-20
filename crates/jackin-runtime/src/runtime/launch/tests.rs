@@ -385,6 +385,8 @@ model = "zai/glm"
         &manifest,
         "ask",
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
         &instances,
     );
     let auth_modes =

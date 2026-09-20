@@ -364,12 +364,18 @@ fn validate_capsule_workdir(config: &jackin_protocol::CapsuleConfig) -> anyhow::
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "capsule config combines role, workspace, policy, mount, and instance state"
+)]
 pub(crate) fn capsule_config(
     selector: &jackin_core::RoleSelector,
     workdir: &str,
     manifest: &jackin_manifest::RoleManifest,
     dirty_exit_policy: &str,
     isolated_worktrees: Vec<String>,
+    workspace_mounts: Vec<String>,
+    worktree_git_targets: Vec<String>,
     instances: &[jackin_config::ResolvedInstance],
 ) -> jackin_protocol::CapsuleConfig {
     let mut models = std::collections::BTreeMap::new();
@@ -414,6 +420,8 @@ pub(crate) fn capsule_config(
         exec_bindings: Vec::new(),
         dirty_exit_policy: Some(dirty_exit_policy.to_owned()),
         isolated_worktrees,
+        workspace_mounts,
+        worktree_git_targets,
     }
 }
 
