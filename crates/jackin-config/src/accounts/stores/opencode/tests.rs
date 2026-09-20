@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{enumerate_opencode_auth, enumerate_opencode_database, enumerate_opencode_store};
+use super::{
+    enumerate_opencode_auth, enumerate_opencode_database, enumerate_opencode_store,
+    validate_opencode_auth_layout,
+};
 use crate::accounts::stores::tests::{Cell, Value, database};
 use crate::accounts::stores::{CredentialKind, StoreCandidate, StoreError, StoreKind};
 use std::path::Path;
@@ -172,6 +175,51 @@ fn store_reads_both_files_with_missing_halves_allowed() {
     assert_eq!(candidates[1].provider, "anthropic");
     assert_eq!(candidates[1].profile.as_deref(), Some("db"));
     assert_eq!(candidates[1].source.file_name().unwrap(), "opencode.db");
+}
+
+#[test]
+fn auth_layout_accepts_one_entry_with_sibling_database() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"fixture-auth"}}"#,
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("opencode.db"), b"database fixture").unwrap();
+
+    validate_opencode_auth_layout(dir.path()).unwrap();
+}
+
+#[test]
+fn auth_layout_rejects_multiple_entries_before_persistence() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("auth.json"),
+        r#"{"anthropic":{"type":"api","key":"fixture-a"},"opencode-go":{"type":"api","key":"fixture-go"}}"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        validate_opencode_auth_layout(dir.path()).unwrap_err(),
+        StoreError::Unsupported("OpenCode auth.json must contain exactly one provider credential")
+    );
+}
+
+#[test]
+fn auth_layout_rejects_single_foreign_entry_without_usage_materialization() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("auth.json"),
+        r#"{"zai":{"type":"api","key":"fixture-zai"}}"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        validate_opencode_auth_layout(dir.path()).unwrap_err(),
+        StoreError::Unsupported(
+            "OpenCode source-bound profiles currently support only the opencode-go auth entry"
+        )
+    );
 }
 
 #[test]

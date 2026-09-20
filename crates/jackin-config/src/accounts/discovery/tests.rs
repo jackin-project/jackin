@@ -73,7 +73,7 @@ fn recognizes_each_agents_credentials_and_rejects_metadata() {
         (
             Agent::Opencode,
             "auth.json",
-            r#"{"anthropic":{"type":"oauth","refresh":"fixture"}}"#,
+            r#"{"opencode-go":{"type":"api","key":"fixture"}}"#,
         ),
         (
             Agent::Grok,
@@ -100,7 +100,7 @@ fn recognizes_each_agents_credentials_and_rejects_metadata() {
 }
 
 #[test]
-fn opencode_default_discovery_keeps_each_auth_entry_source_bound() {
+fn opencode_default_discovery_rejects_multi_entry_before_persistence() {
     let home = tempfile::tempdir().unwrap();
     let directory = home
         .path()
@@ -116,23 +116,55 @@ fn opencode_default_discovery_keeps_each_auth_entry_source_bound() {
     .unwrap();
 
     let report = discover_default_accounts(home.path());
+    assert!(
+        !report
+            .accounts
+            .iter()
+            .any(|account| account.agent == Agent::Opencode)
+    );
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Opencode)
+        .expect("ambiguous OpenCode auth is reported");
+    assert_eq!(
+        issue.error,
+        DiscoveryError::Unsupported(
+            "OpenCode auth.json must contain exactly one provider credential"
+        )
+    );
+    assert!(!format!("{issue:?}").contains("sentinel"));
+}
+
+#[test]
+fn opencode_default_discovery_uses_auth_entry_when_database_coexists() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home
+        .path()
+        .join(Agent::Opencode.runtime().state_paths().credential_dir);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"opencode-sentinel"}}"#,
+    )
+    .unwrap();
+    std::fs::write(directory.join("opencode.db"), b"database fixture").unwrap();
+
+    let report = discover_default_accounts(home.path());
     let accounts = report
         .accounts
         .iter()
         .filter(|account| account.agent == Agent::Opencode)
         .collect::<Vec<_>>();
-    assert_eq!(accounts.len(), 2);
-    assert_eq!(
-        accounts
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].provider, Some(AiProvider::Opencode));
+    assert_eq!(accounts[0].directory, directory);
+    assert!(
+        report
+            .issues
             .iter()
-            .map(|account| account.provider)
-            .collect::<Vec<_>>(),
-        vec![Some(AiProvider::Anthropic), Some(AiProvider::Opencode)]
+            .all(|issue| issue.agent != Agent::Opencode)
     );
-    assert!(accounts.iter().all(|account| {
-        account.directory == directory
-            && account.evidence == CredentialEvidence::File(directory.join("auth.json"))
-    }));
     assert!(!format!("{accounts:?}").contains("sentinel"));
 }
 

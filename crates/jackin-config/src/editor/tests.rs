@@ -2871,3 +2871,62 @@ fn apply_zshrc_plan_persists_amp_xdg_roots_with_discovered_credentials() {
     let config = editor.save().unwrap();
     assert!(config.accounts.contains_key("custom-amp"));
 }
+
+#[test]
+fn apply_zshrc_plan_rejects_opencode_xdg_root_before_amp_persistence() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let data = temp.path().join("xdg-data");
+    let config = temp.path().join("xdg-config");
+    let cache = temp.path().join("xdg-cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(data.join("opencode")).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-amp"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        data.join("opencode/auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"fixture-opencode"}}"#,
+    )
+    .unwrap();
+    let source = format!(
+        "XDG_DATA_HOME={}\nXDG_CONFIG_HOME={}\nXDG_CACHE_HOME={}\n",
+        data.display(),
+        config.display(),
+        cache.display()
+    );
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&source));
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+
+    assert!(report.added_accounts.is_empty(), "{report:?}");
+    assert_eq!(
+        report.unapplied_zshrc_xdg_roots,
+        vec![crate::XdgRoots {
+            data: data.clone(),
+            config: config.clone(),
+            cache: cache.clone(),
+        }]
+    );
+    assert!(report.issues.iter().any(|issue| {
+        issue.agent == Agent::Opencode
+            && issue.error
+                == crate::DiscoveryError::Unsupported(
+                    "OpenCode XDG roots from shell imports require an explicit profile directory",
+                )
+    }));
+    let config = editor.save().unwrap();
+    assert!(!config.accounts.contains_key("custom-amp"));
+    assert!(
+        !config
+            .accounts
+            .values()
+            .any(|account| account.provider == crate::AiProvider::Opencode)
+    );
+}
