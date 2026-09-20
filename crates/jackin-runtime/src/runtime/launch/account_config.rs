@@ -2,22 +2,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Materialize selected API account settings in the private capsule home.
-#![expect(
-    clippy::disallowed_methods,
-    reason = "private config publication runs inside the launch blocking task"
+#![cfg_attr(
+    not(unix),
+    expect(
+        clippy::disallowed_methods,
+        reason = "private config publication runs inside the launch blocking task"
+    )
 )]
 
 use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::ffi::{CStr, CString};
+#[cfg(unix)]
+use std::fs::File;
+#[cfg(unix)]
+use std::io::{Read as _, Write as _};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Context as _;
 use jackin_config::{AccountCredential, AiProvider, AppConfig};
 use jackin_core::Agent;
+#[cfg(unix)]
+use nix::dir::Dir;
+#[cfg(unix)]
+use nix::fcntl::{AtFlags, OFlag, open, openat, renameat};
+#[cfg(unix)]
+use nix::sys::stat::{Mode, SFlag, fchmod, fstatat, mkdirat};
+#[cfg(unix)]
+use nix::unistd::{UnlinkatFlags, unlinkat};
 
 static PRIVATE_CONFIG_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
 const PRIVATE_CONFIG_TRANSACTION_VERSION: u8 = 1;
 const PRIVATE_CONFIG_TRANSACTION_FILE: &str = ".jackin-private-config-transaction";
+#[cfg(unix)]
+const PRIVATE_CONFIG_LOCK_FILE: &str = ".jackin-private-config-lock";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PrivateConfigFailurePoint {
@@ -27,6 +48,12 @@ enum PrivateConfigFailurePoint {
     AfterInstall,
     #[cfg(test)]
     SimulatedCrashAfterPreviousRename,
+    #[cfg(test)]
+    SimulatedCrashAfterPreviousDeletion,
+    #[cfg(test)]
+    JournalAfterPreviousMoved,
+    #[cfg(test)]
+    JournalAfterInstalled,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -62,275 +89,429 @@ fn maybe_inject_private_config_failure(point: PrivateConfigFailurePoint) -> anyh
     Ok(())
 }
 
-fn private_config_entry_path(directory: &Path, name: &str) -> anyhow::Result<PathBuf> {
+#[cfg(unix)]
+struct PrivateConfigPublication {
+    parent_path: PathBuf,
+    parent: File,
+    _lock: File,
+}
+
+#[cfg(unix)]
+fn private_config_name(name: &str) -> anyhow::Result<CString> {
     let components = Path::new(name).components().collect::<Vec<_>>();
     anyhow::ensure!(
         components.len() == 1 && matches!(components[0], Component::Normal(_)),
         "private config entry must be a single file name: {name:?}"
     );
-    Ok(directory.join(name))
+    CString::new(name.as_bytes()).context("private config entry contains NUL")
 }
 
-fn sync_private_config_directory(path: &Path) -> std::io::Result<()> {
-    std::fs::File::open(path)?.sync_all()
+#[cfg(unix)]
+fn private_config_parent_components(root: &Path, parent: &Path) -> anyhow::Result<Vec<CString>> {
+    let relative = parent.strip_prefix(root).with_context(|| {
+        format!(
+            "private config parent {} escapes root {}",
+            parent.display(),
+            root.display()
+        )
+    })?;
+    relative
+        .components()
+        .map(|component| {
+            let Component::Normal(component) = component else {
+                anyhow::bail!(
+                    "private config parent contains a non-normal component: {}",
+                    parent.display()
+                );
+            };
+            let component = component
+                .to_str()
+                .context("private config path component is not valid UTF-8")?;
+            CString::new(component.as_bytes()).context("private config path component contains NUL")
+        })
+        .collect()
 }
 
-fn unique_private_config_sibling(parent: &Path, prefix: &str) -> anyhow::Result<PathBuf> {
+#[cfg(unix)]
+fn open_private_config_directory(parent: &File, name: &CStr) -> anyhow::Result<Option<File>> {
+    match openat(
+        parent,
+        name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => Ok(Some(File::from(fd))),
+        Err(nix::errno::Errno::ENOENT) => Ok(None),
+        Err(nix::errno::Errno::ELOOP) => {
+            anyhow::bail!("private config directory is a symlink: {name:?}")
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(unix)]
+fn begin_private_config_publication(
+    root: &Path,
+    parent_path: &Path,
+) -> anyhow::Result<PrivateConfigPublication> {
+    let root_fd = open(
+        root,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .with_context(|| format!("open private config root {}", root.display()))?;
+    let mut parent = File::from(root_fd);
+    for component in private_config_parent_components(root, parent_path)? {
+        match mkdirat(
+            &parent,
+            component.as_c_str(),
+            Mode::from_bits_truncate(0o700),
+        ) {
+            Ok(()) | Err(nix::errno::Errno::EEXIST) => {}
+            Err(error) => return Err(error.into()),
+        }
+        let child = match openat(
+            &parent,
+            component.as_c_str(),
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(child) => child,
+            Err(nix::errno::Errno::ELOOP) => {
+                anyhow::bail!("private config ancestor is a symlink: {component:?}")
+            }
+            Err(nix::errno::Errno::ENOTDIR)
+                if fstatat(&parent, component.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW)
+                    .is_ok_and(|stat| {
+                        SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFLNK)
+                    }) =>
+            {
+                anyhow::bail!("private config ancestor is a symlink: {component:?}")
+            }
+            Err(error) => {
+                return Err(anyhow::Error::new(error).context(format!(
+                    "open private config ancestor below {}: {:?}",
+                    root.display(),
+                    component
+                )));
+            }
+        };
+        parent = File::from(child);
+    }
+
+    let lock_name = private_config_name(PRIVATE_CONFIG_LOCK_FILE)?;
+    let lock = File::from(
+        openat(
+            &parent,
+            lock_name.as_c_str(),
+            OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::from_bits_truncate(0o600),
+        )
+        .context("open private config publication lock")?,
+    );
+    anyhow::ensure!(
+        lock.metadata()?.is_file(),
+        "private config publication lock is not a regular file"
+    );
+    fs4::FileExt::lock(&lock).context("lock private config publication parent")?;
+
+    Ok(PrivateConfigPublication {
+        parent_path: parent_path.to_owned(),
+        parent,
+        _lock: lock,
+    })
+}
+
+#[cfg(unix)]
+fn private_config_directory_entries(directory: &File) -> anyhow::Result<Vec<CString>> {
+    let mut entries = Dir::openat(
+        directory,
+        ".",
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    entries
+        .iter()
+        .map(|entry| {
+            let entry = entry?;
+            let name = entry.file_name();
+            if name.to_bytes() == b"." || name.to_bytes() == b".." {
+                return Ok(None);
+            }
+            Ok(Some(CString::new(name.to_bytes())?))
+        })
+        .filter_map(Result::transpose)
+        .collect::<Result<Vec<_>, anyhow::Error>>()
+}
+
+#[cfg(unix)]
+fn private_config_remove_tree_at(parent: &File, name: &CStr) -> anyhow::Result<()> {
+    let Some(directory) = open_private_config_directory(parent, name)? else {
+        return Ok(());
+    };
+    for child in private_config_directory_entries(&directory)? {
+        let stat = match fstatat(&directory, child.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(nix::errno::Errno::ENOENT) => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let kind = SFlag::from_bits_truncate(stat.st_mode);
+        if kind.contains(SFlag::S_IFDIR) {
+            private_config_remove_tree_at(&directory, child.as_c_str())?;
+            match unlinkat(&directory, child.as_c_str(), UnlinkatFlags::RemoveDir) {
+                Ok(()) | Err(nix::errno::Errno::ENOENT) => {}
+                Err(error) => return Err(error.into()),
+            }
+        } else {
+            match unlinkat(&directory, child.as_c_str(), UnlinkatFlags::NoRemoveDir) {
+                Ok(()) | Err(nix::errno::Errno::ENOENT) => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+    drop(directory);
+    match unlinkat(parent, name, UnlinkatFlags::RemoveDir) {
+        Ok(()) | Err(nix::errno::Errno::ENOENT) => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(unix)]
+fn private_config_copy_tree(source: &File, destination: &File) -> anyhow::Result<()> {
+    for name in private_config_directory_entries(source)? {
+        let stat = fstatat(source, name.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW)?;
+        let kind = SFlag::from_bits_truncate(stat.st_mode);
+        let mode = Mode::from_bits_truncate(stat.st_mode);
+        if kind.contains(SFlag::S_IFLNK) {
+            anyhow::bail!("refusing to publish private config through symlink {name:?}");
+        }
+        if kind.contains(SFlag::S_IFDIR) {
+            mkdirat(destination, name.as_c_str(), mode)?;
+            let child = File::from(openat(
+                destination,
+                name.as_c_str(),
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )?);
+            let source_child = File::from(openat(
+                source,
+                name.as_c_str(),
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )?);
+            private_config_copy_tree(&source_child, &child)?;
+            fchmod(&child, mode)?;
+        } else if kind.contains(SFlag::S_IFREG) {
+            let source_file = File::from(openat(
+                source,
+                name.as_c_str(),
+                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )?);
+            anyhow::ensure!(
+                source_file.metadata()?.is_file(),
+                "private config entry changed to a non-file during publication: {name:?}"
+            );
+            let mut destination_file = File::from(openat(
+                destination,
+                name.as_c_str(),
+                OFlag::O_WRONLY
+                    | OFlag::O_CREAT
+                    | OFlag::O_EXCL
+                    | OFlag::O_NOFOLLOW
+                    | OFlag::O_CLOEXEC,
+                mode,
+            )?);
+            std::io::copy(&mut &source_file, &mut destination_file)?;
+            destination_file.sync_all()?;
+            fchmod(&destination_file, mode)?;
+        } else {
+            anyhow::bail!("refusing to publish private config with special entry {name:?}");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_read_file_at(directory: &File, name: &str) -> anyhow::Result<Option<Vec<u8>>> {
+    let name = private_config_name(name)?;
+    let Some(mut file) = (match openat(
+        directory,
+        name.as_c_str(),
+        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => Some(File::from(fd)),
+        Err(nix::errno::Errno::ENOENT) => None,
+        Err(error) => return Err(error.into()),
+    }) else {
+        return Ok(None);
+    };
+    anyhow::ensure!(
+        file.metadata()?.is_file(),
+        "private config entry is not a regular file: {name:?}"
+    );
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(Some(bytes))
+}
+
+#[cfg(unix)]
+fn private_config_existing_mode(
+    directory: Option<&File>,
+    name: &str,
+) -> anyhow::Result<Option<Mode>> {
+    let Some(directory) = directory else {
+        return Ok(None);
+    };
+    let name = private_config_name(name)?;
+    match fstatat(directory, name.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => {
+            let kind = SFlag::from_bits_truncate(stat.st_mode);
+            anyhow::ensure!(
+                kind.contains(SFlag::S_IFREG),
+                "private config entry is not a regular file: {name:?}"
+            );
+            Ok(Some(Mode::from_bits_truncate(stat.st_mode)))
+        }
+        Err(nix::errno::Errno::ENOENT) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(unix)]
+fn private_config_write_file_at(
+    directory: &File,
+    name: &str,
+    bytes: &[u8],
+    mode: Option<Mode>,
+) -> anyhow::Result<()> {
+    let name = private_config_name(name)?;
+    let temporary = private_config_name(&format!(
+        ".jackin-private-config-file-{}-{}",
+        std::process::id(),
+        PRIVATE_CONFIG_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ))?;
+    let mut file = File::from(openat(
+        directory,
+        temporary.as_c_str(),
+        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        mode.unwrap_or_else(|| Mode::from_bits_truncate(0o600)),
+    )?);
+    let result = (|| {
+        file.write_all(bytes)?;
+        if let Some(mode) = mode {
+            fchmod(&file, mode)?;
+        }
+        file.sync_all()?;
+        renameat(directory, temporary.as_c_str(), directory, name.as_c_str())?;
+        Ok::<(), anyhow::Error>(())
+    })();
+    if result.is_err() {
+        let _ignored = unlinkat(directory, temporary.as_c_str(), UnlinkatFlags::NoRemoveDir);
+    }
+    result
+}
+
+#[cfg(unix)]
+fn private_config_remove_file_at(directory: &File, name: &str) -> anyhow::Result<()> {
+    let name = private_config_name(name)?;
+    match fstatat(directory, name.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => {
+            let kind = SFlag::from_bits_truncate(stat.st_mode);
+            anyhow::ensure!(
+                kind.contains(SFlag::S_IFREG),
+                "private config entry is not a regular file: {name:?}"
+            );
+            unlinkat(directory, name.as_c_str(), UnlinkatFlags::NoRemoveDir)?;
+        }
+        Err(nix::errno::Errno::ENOENT) => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_allocate_sibling(parent: &File, prefix: &str) -> anyhow::Result<String> {
     for _ in 0..128 {
-        let sequence = PRIVATE_CONFIG_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = parent.join(format!(".{prefix}-{}-{sequence}", std::process::id()));
-        match std::fs::symlink_metadata(&path) {
+        let name = format!(
+            ".{prefix}-{}-{}",
+            std::process::id(),
+            PRIVATE_CONFIG_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
+        let name_c = private_config_name(&name)?;
+        match fstatat(parent, name_c.as_c_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
             Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(path),
+            Err(nix::errno::Errno::ENOENT) => return Ok(name),
             Err(error) => return Err(error.into()),
         }
     }
     anyhow::bail!("could not allocate a private config swap path")
 }
 
-fn validate_private_config_root(root: &Path) -> anyhow::Result<()> {
-    let metadata = std::fs::symlink_metadata(root)
-        .with_context(|| format!("inspect private config root {}", root.display()))?;
-    anyhow::ensure!(
-        !metadata.file_type().is_symlink() && metadata.is_dir(),
-        "private config root is not a real directory: {}",
-        root.display()
-    );
-    Ok(())
+#[cfg(unix)]
+struct PrivateConfigStage<'a> {
+    parent: &'a File,
+    name: CString,
+    directory: File,
+    armed: bool,
 }
 
-fn private_config_components_below<'a>(
-    root: &Path,
-    path: &'a Path,
-) -> anyhow::Result<Vec<Component<'a>>> {
-    validate_private_config_root(root)?;
-    let relative = path.strip_prefix(root).with_context(|| {
-        format!(
-            "private config path {} escapes root {}",
-            path.display(),
-            root.display()
-        )
-    })?;
-    let components = relative.components().collect::<Vec<_>>();
-    anyhow::ensure!(
-        !components
-            .iter()
-            .any(|component| matches!(component, Component::ParentDir)),
-        "private config path contains a parent traversal: {}",
-        path.display()
-    );
-    Ok(components)
+#[cfg(unix)]
+impl PrivateConfigStage<'_> {
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
 }
 
-fn validate_private_config_ancestors(root: &Path, path: &Path) -> anyhow::Result<()> {
-    let mut current = root.to_path_buf();
-    for component in private_config_components_below(root, path)? {
-        anyhow::ensure!(
-            !matches!(component, Component::ParentDir),
-            "private config path contains a parent traversal: {}",
-            path.display()
-        );
-        current.push(component.as_os_str());
-        match std::fs::symlink_metadata(&current) {
-            Ok(metadata) => {
-                anyhow::ensure!(
-                    !metadata.file_type().is_symlink(),
-                    "private config ancestor is a symlink: {}",
-                    current.display()
-                );
-                anyhow::ensure!(
-                    metadata.is_dir(),
-                    "private config ancestor is not a directory: {}",
-                    current.display()
-                );
+#[cfg(unix)]
+impl Drop for PrivateConfigStage<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ignored = private_config_remove_tree_at(self.parent, &self.name);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn private_config_stage(parent: &File) -> anyhow::Result<PrivateConfigStage<'_>> {
+    for _ in 0..128 {
+        let name = private_config_name(&format!(
+            ".jackin-private-config-stage-{}-{}",
+            std::process::id(),
+            PRIVATE_CONFIG_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ))?;
+        match mkdirat(parent, name.as_c_str(), Mode::from_bits_truncate(0o700)) {
+            Ok(()) => {
+                let Some(directory) = open_private_config_directory(parent, name.as_c_str())?
+                else {
+                    anyhow::bail!("created private config stage disappeared");
+                };
+                return Ok(PrivateConfigStage {
+                    parent,
+                    name,
+                    directory,
+                    armed: true,
+                });
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(nix::errno::Errno::EEXIST) => {}
             Err(error) => return Err(error.into()),
         }
     }
-    Ok(())
+    anyhow::bail!("could not allocate a private config staging directory")
 }
 
-fn ensure_private_config_parent(root: &Path, parent: &Path) -> anyhow::Result<()> {
-    let mut current = root.to_path_buf();
-    for component in private_config_components_below(root, parent)? {
-        anyhow::ensure!(
-            !matches!(component, Component::ParentDir),
-            "private config path contains a parent traversal: {}",
-            parent.display()
-        );
-        current.push(component.as_os_str());
-        match std::fs::symlink_metadata(&current) {
-            Ok(metadata) => {
-                anyhow::ensure!(
-                    !metadata.file_type().is_symlink(),
-                    "private config ancestor is a symlink: {}",
-                    current.display()
-                );
-                anyhow::ensure!(
-                    metadata.is_dir(),
-                    "private config ancestor is not a directory: {}",
-                    current.display()
-                );
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                match std::fs::create_dir(&current) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                    Err(error) => return Err(error.into()),
-                }
-                let metadata = std::fs::symlink_metadata(&current)?;
-                anyhow::ensure!(
-                    !metadata.file_type().is_symlink() && metadata.is_dir(),
-                    "private config ancestor became non-directory: {}",
-                    current.display()
-                );
-            }
-            Err(error) => return Err(error.into()),
-        }
-    }
-    Ok(())
-}
-
-fn private_config_directory_exists(path: &Path) -> anyhow::Result<bool> {
-    match std::fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            anyhow::ensure!(
-                !metadata.file_type().is_symlink(),
-                "private config directory is a symlink: {}",
-                path.display()
-            );
-            anyhow::ensure!(
-                metadata.is_dir(),
-                "private config path is not a directory: {}",
-                path.display()
-            );
-            Ok(true)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error.into()),
-    }
-}
-
-fn copy_private_config_tree(source: &Path, destination: &Path) -> anyhow::Result<()> {
-    for entry in std::fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        let metadata = std::fs::symlink_metadata(&source_path)?;
-        anyhow::ensure!(
-            !metadata.file_type().is_symlink(),
-            "refusing to publish private config through symlink {}",
-            source_path.display()
-        );
-        if metadata.is_dir() {
-            std::fs::create_dir(&destination_path)?;
-            copy_private_config_tree(&source_path, &destination_path)?;
-            std::fs::set_permissions(&destination_path, metadata.permissions())?;
-        } else if metadata.is_file() {
-            std::fs::copy(&source_path, &destination_path)?;
-            std::fs::set_permissions(&destination_path, metadata.permissions())?;
-        } else {
-            anyhow::bail!(
-                "refusing to publish private config with special entry {}",
-                source_path.display()
-            );
-        }
-    }
-    Ok(())
-}
-
-fn existing_private_config_permissions(
-    directory: &Path,
-    name: &str,
-) -> anyhow::Result<Option<std::fs::Permissions>> {
-    let path = private_config_entry_path(directory, name)?;
-    match std::fs::symlink_metadata(&path) {
-        Ok(metadata) => {
-            anyhow::ensure!(
-                metadata.is_file(),
-                "private config entry is not a regular file: {}",
-                path.display()
-            );
-            Ok(Some(metadata.permissions()))
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.into()),
-    }
-}
-
-fn write_private_config_file(
-    directory: &Path,
-    name: &str,
-    bytes: &[u8],
-    permissions: Option<std::fs::Permissions>,
-) -> anyhow::Result<()> {
-    use std::io::Write as _;
-
-    let path = private_config_entry_path(directory, name)?;
-    let mut file = tempfile::NamedTempFile::new_in(directory)?;
-    file.write_all(bytes)?;
-    if let Some(permissions) = permissions {
-        file.as_file().set_permissions(permissions)?;
-    }
-    file.as_file().sync_all()?;
-    file.persist(&path).map_err(|error| error.error)?;
-    Ok(())
-}
-
-fn remove_private_config_file(directory: &Path, name: &str) -> anyhow::Result<()> {
-    let path = private_config_entry_path(directory, name)?;
-    match std::fs::symlink_metadata(&path) {
-        Ok(metadata) => {
-            anyhow::ensure!(
-                metadata.is_file(),
-                "private config entry is not a regular file: {}",
-                path.display()
-            );
-            std::fs::remove_file(path)?;
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
-    }
-    Ok(())
-}
-
-fn private_config_transaction_path(parent: &Path) -> PathBuf {
-    parent.join(PRIVATE_CONFIG_TRANSACTION_FILE)
-}
-
-fn persist_private_config_transaction(
-    parent: &Path,
+#[cfg(unix)]
+fn private_config_transaction_names(
     transaction: &PrivateConfigTransaction,
-) -> anyhow::Result<()> {
-    let bytes = serde_json::to_vec(transaction)?;
-    write_private_config_file(parent, PRIVATE_CONFIG_TRANSACTION_FILE, &bytes, None)?;
-    sync_private_config_directory(parent)?;
-    Ok(())
-}
-
-fn clear_private_config_transaction(parent: &Path) -> anyhow::Result<()> {
-    remove_private_config_file(parent, PRIVATE_CONFIG_TRANSACTION_FILE)?;
-    sync_private_config_directory(parent)?;
-    Ok(())
-}
-
-fn require_private_config_previous(previous: Option<&Path>) -> anyhow::Result<&Path> {
-    previous.context("private config transaction is missing its previous directory")
-}
-
-fn recover_private_config_transaction(parent: &Path) -> anyhow::Result<()> {
-    let journal_path = private_config_transaction_path(parent);
-    let Some(bytes) = read_private_config_file(&journal_path)? else {
-        return Ok(());
-    };
-    let transaction: PrivateConfigTransaction =
-        serde_json::from_slice(&bytes).context("parse private config transaction journal")?;
-    anyhow::ensure!(
-        transaction.schema_version == PRIVATE_CONFIG_TRANSACTION_VERSION,
-        "unsupported private config transaction schema {}",
-        transaction.schema_version
-    );
+) -> anyhow::Result<(CString, CString, Option<CString>)> {
+    let target = private_config_name(&transaction.target)?;
+    let staged = private_config_name(&transaction.staged)?;
+    let previous = transaction
+        .previous
+        .as_deref()
+        .map(private_config_name)
+        .transpose()?;
     anyhow::ensure!(
         transaction.target != PRIVATE_CONFIG_TRANSACTION_FILE
             && transaction.staged != PRIVATE_CONFIG_TRANSACTION_FILE
@@ -343,21 +524,71 @@ fn recover_private_config_transaction(parent: &Path) -> anyhow::Result<()> {
             && transaction.previous.as_deref() != Some(transaction.staged.as_str()),
         "private config transaction journal contains duplicate paths"
     );
+    Ok((target, staged, previous))
+}
 
-    let target = private_config_entry_path(parent, &transaction.target)?;
-    let staged = private_config_entry_path(parent, &transaction.staged)?;
-    let previous = transaction
-        .previous
-        .as_deref()
-        .map(|name| private_config_entry_path(parent, name))
-        .transpose()?;
-    let target_exists = private_config_directory_exists(&target)?;
-    let staged_exists = private_config_directory_exists(&staged)?;
+#[cfg(unix)]
+fn private_config_persist_transaction(
+    publication: &PrivateConfigPublication,
+    transaction: &PrivateConfigTransaction,
+) -> anyhow::Result<()> {
+    let bytes = serde_json::to_vec(transaction)?;
+    private_config_write_file_at(
+        &publication.parent,
+        PRIVATE_CONFIG_TRANSACTION_FILE,
+        &bytes,
+        None,
+    )?;
+    publication.parent.sync_all()?;
+    #[cfg(test)]
+    match transaction.phase {
+        PrivateConfigTransactionPhase::PreviousMoved => {
+            maybe_inject_private_config_failure(
+                PrivateConfigFailurePoint::JournalAfterPreviousMoved,
+            )?;
+        }
+        PrivateConfigTransactionPhase::Installed => {
+            maybe_inject_private_config_failure(PrivateConfigFailurePoint::JournalAfterInstalled)?;
+        }
+        PrivateConfigTransactionPhase::Prepared => {}
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_clear_transaction(publication: &PrivateConfigPublication) -> anyhow::Result<()> {
+    private_config_remove_file_at(&publication.parent, PRIVATE_CONFIG_TRANSACTION_FILE)?;
+    publication.parent.sync_all()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_recover_transaction(
+    publication: &PrivateConfigPublication,
+) -> anyhow::Result<()> {
+    let Some(bytes) =
+        private_config_read_file_at(&publication.parent, PRIVATE_CONFIG_TRANSACTION_FILE)?
+    else {
+        return Ok(());
+    };
+    let transaction: PrivateConfigTransaction =
+        serde_json::from_slice(&bytes).context("parse private config transaction journal")?;
+    anyhow::ensure!(
+        transaction.schema_version == PRIVATE_CONFIG_TRANSACTION_VERSION,
+        "unsupported private config transaction schema {}",
+        transaction.schema_version
+    );
+    let (target, staged, previous) = private_config_transaction_names(&transaction)?;
+    let target_exists =
+        open_private_config_directory(&publication.parent, target.as_c_str())?.is_some();
+    let staged_exists =
+        open_private_config_directory(&publication.parent, staged.as_c_str())?.is_some();
     let previous_exists = previous
-        .as_deref()
-        .map(private_config_directory_exists)
+        .as_ref()
+        .map(|name| open_private_config_directory(&publication.parent, name.as_c_str()))
         .transpose()?
-        .unwrap_or(false);
+        .flatten()
+        .is_some();
 
     match transaction.phase {
         PrivateConfigTransactionPhase::Prepared => {
@@ -366,9 +597,14 @@ fn recover_private_config_transaction(parent: &Path) -> anyhow::Result<()> {
                     !target_exists,
                     "private config transaction has both live and previous directories"
                 );
-                std::fs::rename(
-                    require_private_config_previous(previous.as_deref())?,
-                    &target,
+                renameat(
+                    &publication.parent,
+                    previous
+                        .as_ref()
+                        .context("prepared transaction has no previous")?
+                        .as_c_str(),
+                    &publication.parent,
+                    target.as_c_str(),
                 )?;
             } else if transaction.previous.is_some() {
                 anyhow::ensure!(
@@ -382,28 +618,56 @@ fn recover_private_config_transaction(parent: &Path) -> anyhow::Result<()> {
                 );
             }
             if staged_exists {
-                std::fs::remove_dir_all(&staged)?;
+                private_config_remove_tree_at(&publication.parent, staged.as_c_str())?;
             }
         }
         PrivateConfigTransactionPhase::PreviousMoved => {
-            if target_exists && previous_exists {
-                anyhow::ensure!(
-                    !staged_exists,
-                    "private config transaction has ambiguous live, staged, and previous directories"
-                );
-                std::fs::remove_dir_all(require_private_config_previous(previous.as_deref())?)?;
-            } else if !target_exists && previous_exists {
-                if staged_exists {
-                    std::fs::remove_dir_all(&staged)?;
+            anyhow::ensure!(
+                transaction.previous.is_some(),
+                "previous-moved transaction has no previous directory"
+            );
+            match (target_exists, previous_exists) {
+                (true, true) => {
+                    anyhow::ensure!(
+                        !staged_exists,
+                        "private config transaction has ambiguous live, staged, and previous directories"
+                    );
+                    private_config_remove_tree_at(
+                        &publication.parent,
+                        previous
+                            .as_ref()
+                            .context("missing previous directory")?
+                            .as_c_str(),
+                    )?;
                 }
-                std::fs::rename(
-                    require_private_config_previous(previous.as_deref())?,
-                    &target,
-                )?;
-            } else {
-                anyhow::bail!(
-                    "private config transaction lost its previous directory before recovery"
-                );
+                (false, true) => {
+                    if staged_exists {
+                        private_config_remove_tree_at(&publication.parent, staged.as_c_str())?;
+                    }
+                    renameat(
+                        &publication.parent,
+                        previous
+                            .as_ref()
+                            .context("missing previous directory")?
+                            .as_c_str(),
+                        &publication.parent,
+                        target.as_c_str(),
+                    )?;
+                }
+                (true, false) => {
+                    // The previous directory may have been durably deleted
+                    // before a crash. The live target proves publication won;
+                    // only an absent staged sibling makes this state unambiguous.
+                    anyhow::ensure!(
+                        !staged_exists,
+                        "private config transaction has ambiguous live and staged directories"
+                    );
+                }
+                (false, false) => {
+                    anyhow::bail!(
+                        "private config transaction lost its previous directory before recovery"
+                    );
+                }
             }
         }
         PrivateConfigTransactionPhase::Installed => {
@@ -412,54 +676,56 @@ fn recover_private_config_transaction(parent: &Path) -> anyhow::Result<()> {
                 "installed private config transaction has no live directory"
             );
             if staged_exists {
-                std::fs::remove_dir_all(&staged)?;
+                private_config_remove_tree_at(&publication.parent, staged.as_c_str())?;
             }
             if previous_exists {
-                std::fs::remove_dir_all(require_private_config_previous(previous.as_deref())?)?;
+                private_config_remove_tree_at(
+                    &publication.parent,
+                    previous
+                        .as_ref()
+                        .context("installed transaction has no previous")?
+                        .as_c_str(),
+                )?;
             }
         }
     }
-    sync_private_config_directory(parent)?;
-    clear_private_config_transaction(parent)
+    publication.parent.sync_all()?;
+    private_config_clear_transaction(publication)
 }
 
-fn restore_private_config_swap(
-    directory: &Path,
-    previous: Option<&Path>,
+#[cfg(unix)]
+fn private_config_restore_swap(
+    publication: &PrivateConfigPublication,
+    target: &CStr,
+    previous: Option<&CStr>,
     installed: bool,
 ) -> anyhow::Result<()> {
-    let mut rollback_error = None;
-    if installed
-        && let Err(error) = std::fs::remove_dir_all(directory)
-        && error.kind() != std::io::ErrorKind::NotFound
-    {
-        rollback_error = Some(anyhow::Error::new(error));
+    if installed {
+        private_config_remove_tree_at(&publication.parent, target)?;
     }
-    if let Some(previous) = previous
-        && rollback_error.is_none()
-        && let Err(error) = std::fs::rename(previous, directory)
-    {
-        rollback_error = Some(anyhow::Error::new(error));
+    if let Some(previous) = previous {
+        renameat(&publication.parent, previous, &publication.parent, target)?;
     }
-    if let Some(rollback_error) = rollback_error {
-        anyhow::bail!("private config rollback failed: {rollback_error:#}");
-    }
+    publication.parent.sync_all()?;
     Ok(())
 }
 
-fn abort_private_config_transaction(
-    parent: &Path,
-    directory: &Path,
-    previous: Option<&Path>,
+#[cfg(unix)]
+fn private_config_abort_transaction(
+    publication: &PrivateConfigPublication,
+    target: &CStr,
+    previous: Option<&CStr>,
     installed: bool,
     cause: anyhow::Error,
 ) -> anyhow::Result<()> {
-    if let Err(rollback_error) = restore_private_config_swap(directory, previous, installed) {
+    if let Err(rollback_error) =
+        private_config_restore_swap(publication, target, previous, installed)
+    {
         return Err(cause.context(format!(
             "private config publication failed and rollback failed: {rollback_error:#}"
         )));
     }
-    if let Err(clear_error) = clear_private_config_transaction(parent) {
+    if let Err(clear_error) = private_config_clear_transaction(publication) {
         return Err(cause.context(format!(
             "private config publication failed and journal cleanup failed: {clear_error:#}"
         )));
@@ -467,6 +733,176 @@ fn abort_private_config_transaction(
     Err(cause)
 }
 
+#[cfg(unix)]
+fn publish_private_config_directory_locked(
+    publication: &PrivateConfigPublication,
+    directory: &Path,
+    files: &[(&'static str, Vec<u8>)],
+    remove_files: &[&str],
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        directory.parent() == Some(publication.parent_path.as_path()),
+        "private config publication parent changed: {}",
+        directory.display()
+    );
+    let target_name = directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("private config directory name is not valid UTF-8")?;
+    let target = private_config_name(target_name)?;
+    let existing = open_private_config_directory(&publication.parent, target.as_c_str())?;
+    let existing_mode = existing
+        .as_ref()
+        .map(|directory| {
+            directory
+                .metadata()
+                .map(|metadata| metadata.permissions().mode())
+        })
+        .transpose()?;
+
+    let mut staged = private_config_stage(&publication.parent)?;
+    if let Some(existing) = existing.as_ref() {
+        private_config_copy_tree(existing, &staged.directory)?;
+        fchmod(
+            &staged.directory,
+            Mode::from_bits_truncate(existing_mode.context("missing live mode")? as _),
+        )?;
+    }
+    for name in remove_files {
+        private_config_remove_file_at(&staged.directory, name)?;
+    }
+    for (name, bytes) in files {
+        let mode = private_config_existing_mode(existing.as_ref(), name)?;
+        private_config_write_file_at(&staged.directory, name, bytes, mode)?;
+        maybe_inject_private_config_failure(PrivateConfigFailurePoint::StagedFile(name))?;
+    }
+    staged.directory.sync_all()?;
+    maybe_inject_private_config_failure(PrivateConfigFailurePoint::BeforeSwap)?;
+
+    let previous_name = if existing.is_some() {
+        Some(private_config_allocate_sibling(
+            &publication.parent,
+            "jackin-private-config-previous",
+        )?)
+    } else {
+        None
+    };
+    let previous = previous_name
+        .as_deref()
+        .map(private_config_name)
+        .transpose()?;
+    let mut transaction = PrivateConfigTransaction {
+        schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
+        target: target_name.to_owned(),
+        staged: staged.name.to_string_lossy().into_owned(),
+        previous: previous_name,
+        phase: PrivateConfigTransactionPhase::Prepared,
+    };
+    private_config_persist_transaction(publication, &transaction)?;
+
+    if let Some(previous) = previous.as_ref() {
+        renameat(
+            &publication.parent,
+            target.as_c_str(),
+            &publication.parent,
+            previous.as_c_str(),
+        )?;
+        transaction.phase = PrivateConfigTransactionPhase::PreviousMoved;
+        if let Err(error) = private_config_persist_transaction(publication, &transaction) {
+            return private_config_abort_transaction(
+                publication,
+                target.as_c_str(),
+                Some(previous),
+                false,
+                error,
+            );
+        }
+    }
+
+    #[cfg(test)]
+    if PRIVATE_CONFIG_FAILURE.with(|failure| {
+        failure.get() == Some(PrivateConfigFailurePoint::SimulatedCrashAfterPreviousRename)
+    }) {
+        staged.disarm();
+        return Err(anyhow::anyhow!(
+            "simulated process crash after private config rename"
+        ));
+    }
+
+    if let Err(error) =
+        maybe_inject_private_config_failure(PrivateConfigFailurePoint::AfterPreviousRename)
+    {
+        return private_config_abort_transaction(
+            publication,
+            target.as_c_str(),
+            previous.as_deref(),
+            false,
+            error,
+        );
+    }
+    if let Err(error) = renameat(
+        &publication.parent,
+        staged.name.as_c_str(),
+        &publication.parent,
+        target.as_c_str(),
+    ) {
+        return private_config_abort_transaction(
+            publication,
+            target.as_c_str(),
+            previous.as_deref(),
+            false,
+            error.into(),
+        );
+    }
+    staged.disarm();
+    transaction.phase = PrivateConfigTransactionPhase::Installed;
+    if let Err(error) = private_config_persist_transaction(publication, &transaction) {
+        return private_config_abort_transaction(
+            publication,
+            target.as_c_str(),
+            previous.as_deref(),
+            true,
+            error,
+        );
+    }
+    if let Err(error) = maybe_inject_private_config_failure(PrivateConfigFailurePoint::AfterInstall)
+    {
+        return private_config_abort_transaction(
+            publication,
+            target.as_c_str(),
+            previous.as_deref(),
+            true,
+            error,
+        );
+    }
+    if let Err(error) = publication.parent.sync_all() {
+        return private_config_abort_transaction(
+            publication,
+            target.as_c_str(),
+            previous.as_deref(),
+            true,
+            error.into(),
+        );
+    }
+    if let Some(previous) = previous.as_ref() {
+        private_config_remove_tree_at(&publication.parent, previous.as_c_str())?;
+        #[cfg(test)]
+        if PRIVATE_CONFIG_FAILURE.with(|failure| {
+            failure.get() == Some(PrivateConfigFailurePoint::SimulatedCrashAfterPreviousDeletion)
+        }) {
+            return Err(anyhow::anyhow!(
+                "simulated process crash after previous private config deletion"
+            ));
+        }
+        // The Installed journal is already durable. If this fsync or journal
+        // cleanup fails, the next launch sees the new live tree and completes
+        // the idempotent Installed recovery path.
+        publication.parent.sync_all()?;
+    }
+    private_config_clear_transaction(publication)
+}
+
+#[cfg(unix)]
 fn publish_private_config_directory(
     root: &Path,
     directory: &Path,
@@ -476,163 +912,17 @@ fn publish_private_config_directory(
     let parent = directory
         .parent()
         .context("private config directory has no parent")?;
-    ensure_private_config_parent(root, parent)?;
-    recover_private_config_transaction(parent)?;
-    validate_private_config_ancestors(root, directory)?;
-    let existing = match std::fs::symlink_metadata(directory) {
-        Ok(metadata) => {
-            anyhow::ensure!(
-                metadata.is_dir(),
-                "private config path is not a directory: {}",
-                directory.display()
-            );
-            Some(metadata)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(error.into()),
-    };
-
-    // Stage the complete directory beside the live path. Copying unrelated
-    // entries preserves the private home while making every generated file
-    // visible only after one directory publication.
-    let staged_directory = tempfile::Builder::new()
-        .prefix(".jackin-private-config-stage-")
-        .tempdir_in(parent)?;
-    if let Some(existing) = existing.as_ref() {
-        copy_private_config_tree(directory, staged_directory.path())?;
-        std::fs::set_permissions(staged_directory.path(), existing.permissions())?;
-    }
-
-    for name in remove_files {
-        remove_private_config_file(staged_directory.path(), name)?;
-    }
-    for (name, bytes) in files {
-        let permissions = existing_private_config_permissions(directory, name)?;
-        write_private_config_file(staged_directory.path(), name, bytes, permissions)?;
-        maybe_inject_private_config_failure(PrivateConfigFailurePoint::StagedFile(name))?;
-    }
-    sync_private_config_directory(staged_directory.path())?;
-    maybe_inject_private_config_failure(PrivateConfigFailurePoint::BeforeSwap)?;
-
-    let target_name = directory
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("private config directory name is not valid UTF-8")?;
-    let staged_name = staged_directory
-        .path()
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("private config staging directory name is not valid UTF-8")?;
-    let previous_directory = if existing.is_some() {
-        let previous = unique_private_config_sibling(parent, "jackin-private-config-previous")?;
-        Some(previous)
-    } else {
-        None
-    };
-    let previous_name = previous_directory
-        .as_deref()
-        .map(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_owned)
-                .context("generated private config swap path is not valid UTF-8")
-        })
-        .transpose()?;
-    let mut transaction = PrivateConfigTransaction {
-        schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
-        target: target_name.to_owned(),
-        staged: staged_name.to_owned(),
-        previous: previous_name,
-        phase: PrivateConfigTransactionPhase::Prepared,
-    };
-    persist_private_config_transaction(parent, &transaction)?;
-
-    if let Some(previous_directory) = previous_directory.as_deref() {
-        // The journal is durable before this rename. A restart can therefore
-        // restore the previous directory even if the process dies in the
-        // absence gap before the staged directory is installed.
-        std::fs::rename(directory, previous_directory)?;
-        transaction.phase = PrivateConfigTransactionPhase::PreviousMoved;
-        persist_private_config_transaction(parent, &transaction)?;
-    }
-
-    #[cfg(test)]
-    if PRIVATE_CONFIG_FAILURE.with(|failure| {
-        failure.get() == Some(PrivateConfigFailurePoint::SimulatedCrashAfterPreviousRename)
-    }) {
-        // Model process death: do not run the in-process rollback or TempDir
-        // cleanup. The next launch must recover from the journal and siblings.
-        std::mem::forget(staged_directory);
-        return Err(anyhow::anyhow!(
-            "simulated process crash after private config rename"
-        ));
-    }
-
-    if let Err(error) =
-        maybe_inject_private_config_failure(PrivateConfigFailurePoint::AfterPreviousRename)
-    {
-        return abort_private_config_transaction(
-            parent,
-            directory,
-            previous_directory.as_deref(),
-            false,
-            error,
-        );
-    }
-
-    if let Err(error) = std::fs::rename(staged_directory.path(), directory) {
-        return abort_private_config_transaction(
-            parent,
-            directory,
-            previous_directory.as_deref(),
-            false,
-            error.into(),
-        );
-    }
-    transaction.phase = PrivateConfigTransactionPhase::Installed;
-    // If this phase write fails, leave the journal in its previous durable
-    // phase. Recovery will infer an installed tree from the live/staged
-    // siblings and finish or roll back safely on the next launch.
-    persist_private_config_transaction(parent, &transaction)?;
-    if let Err(error) = maybe_inject_private_config_failure(PrivateConfigFailurePoint::AfterInstall)
-    {
-        return abort_private_config_transaction(
-            parent,
-            directory,
-            previous_directory.as_deref(),
-            true,
-            error,
-        );
-    }
-    if let Err(error) = sync_private_config_directory(parent) {
-        return abort_private_config_transaction(
-            parent,
-            directory,
-            previous_directory.as_deref(),
-            true,
-            error.into(),
-        );
-    }
-    if let Some(previous_directory) = previous_directory {
-        std::fs::remove_dir_all(previous_directory)?;
-        sync_private_config_directory(parent)?;
-    }
-    clear_private_config_transaction(parent)
+    let publication = begin_private_config_publication(root, parent)?;
+    private_config_recover_transaction(&publication)?;
+    publish_private_config_directory_locked(&publication, directory, files, remove_files)
 }
 
-fn read_private_config_file(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
-    match std::fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            anyhow::ensure!(
-                metadata.is_file(),
-                "private config path is not a regular file: {}",
-                path.display()
-            );
-            Ok(Some(std::fs::read(path)?))
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.into()),
-    }
+#[cfg(unix)]
+fn read_private_config_file_at(
+    publication: &PrivateConfigPublication,
+    name: &str,
+) -> anyhow::Result<Option<Vec<u8>>> {
+    private_config_read_file_at(&publication.parent, name)
 }
 
 fn account_with_effective_model(
@@ -720,12 +1010,45 @@ fn configure_codex(
     let AccountCredential::ApiKey { .. } = &account.credential else {
         return Ok(());
     };
+    // `container_home_rel` is computed by the auth provisioner from the same
+    // slot layout used by mounts and the Capsule's CODEX_HOME value. Never
+    // collapse multiple admitted Codex instances onto the primary home.
+    let directory = root.join("home").join(&slot.container_home_rel);
+    let publication = {
+        let parent = directory
+            .parent()
+            .context("private Codex configuration directory has no parent")?;
+        let publication = begin_private_config_publication(root, parent)?;
+        private_config_recover_transaction(&publication)?;
+        publication
+    };
+    let existing = read_private_config_file_at(&publication, "config.toml")?;
+    let files = build_codex_private_config_files(
+        account,
+        slot,
+        instance,
+        model,
+        effort,
+        existing.as_deref(),
+    )?;
+    publish_private_config_directory_locked(
+        &publication,
+        &directory,
+        &files,
+        &["account-models.json"],
+    )
+    .context("publish private Codex account configuration")
+}
+
+fn build_codex_private_config_files(
+    account: &jackin_config::AccountConfig,
+    slot: &crate::instance::ProvisionedInstanceAuth,
+    instance: &jackin_config::ResolvedInstance,
+    model: Option<&str>,
+    effort: Option<&str>,
+    existing: Option<&[u8]>,
+) -> anyhow::Result<Vec<(&'static str, Vec<u8>)>> {
     let base_url = instance.base_url.as_deref();
-    let cross_provider = account.provider != AiProvider::OpenAi;
-    anyhow::ensure!(
-        !cross_provider || model.is_some(),
-        "a model is required for a Codex provider account"
-    );
     let (default_url, key) = match account.provider {
         AiProvider::Moonshot => ("https://api.kimi.com/coding/v1", "KIMI_API_KEY"),
         AiProvider::Zai => ("https://api.z.ai/api/v1", "OPENAI_API_KEY"),
@@ -733,19 +1056,17 @@ fn configure_codex(
         AiProvider::OpenAi => ("https://api.openai.com/v1", "OPENAI_API_KEY"),
         _ => anyhow::bail!("selected provider cannot authenticate Codex"),
     };
-    // `container_home_rel` is computed by the auth provisioner from the same
-    // slot layout used by mounts and the Capsule's CODEX_HOME value. Never
-    // collapse multiple admitted Codex instances onto the primary home.
-    let directory = root.join("home").join(&slot.container_home_rel);
-    validate_private_config_ancestors(root, &directory)?;
-    let path = directory.join("config.toml");
-    let mut document: toml::Table =
-        match read_private_config_file(&path).context("read private Codex configuration")? {
-            Some(contents) => {
-                toml::from_slice(&contents).context("parse private Codex configuration")?
-            }
-            None => toml::Table::new(),
-        };
+    let cross_provider = account.provider != AiProvider::OpenAi;
+    anyhow::ensure!(
+        !cross_provider || model.is_some(),
+        "a model is required for a Codex provider account"
+    );
+    let mut document: toml::Table = match existing {
+        Some(contents) => {
+            toml::from_slice(contents).context("parse private Codex configuration")?
+        }
+        None => toml::Table::new(),
+    };
     let mut provider = toml::Table::new();
     provider.insert("name".into(), account.provider.slug().into());
     provider.insert("base_url".into(), base_url.unwrap_or(default_url).into());
@@ -792,8 +1113,7 @@ fn configure_codex(
         "config.toml",
         toml::to_string_pretty(&document)?.into_bytes(),
     ));
-    publish_private_config_directory(root, &directory, &files, &["account-models.json"])
-        .context("publish private Codex account configuration")
+    Ok(files)
 }
 
 /// Provider identifiers from `OpenCode`'s catalog; config and CLI model use the same ID.

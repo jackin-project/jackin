@@ -795,6 +795,159 @@ fn restart_recovers_after_crash_between_previous_rename_and_install() {
     assert_no_private_config_swap_artifacts(directory.parent().unwrap());
 }
 
+#[test]
+fn journal_persist_failures_after_renames_restore_previous_directory() {
+    for point in [
+        PrivateConfigFailurePoint::JournalAfterPreviousMoved,
+        PrivateConfigFailurePoint::JournalAfterInstalled,
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let (old_config, old_instances) =
+            codex_fixture(AiProvider::Moonshot, "k3", "https://old.example/v1");
+        configure_for_test(temp.path(), &old_config, &old_instances).unwrap();
+        let directory = temp.path().join("home/.codex");
+        let old_config_bytes = std::fs::read(directory.join("config.toml")).unwrap();
+        let old_catalog_bytes = std::fs::read(directory.join("account-models.json")).unwrap();
+        let (new_config, new_instances) =
+            codex_fixture(AiProvider::Zai, "glm-5.3", "https://new.example/v1");
+
+        let _failure = inject_private_config_failure(point);
+        let error = configure_for_test(temp.path(), &new_config, &new_instances).unwrap_err();
+        assert!(format!("{error:#}").contains("injected private-config publication failure"));
+        assert_eq!(
+            std::fs::read(directory.join("config.toml")).unwrap(),
+            old_config_bytes
+        );
+        assert_eq!(
+            std::fs::read(directory.join("account-models.json")).unwrap(),
+            old_catalog_bytes
+        );
+        assert_no_private_config_swap_artifacts(directory.parent().unwrap());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn previous_moved_recovery_is_idempotent_after_previous_deletion() {
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://provider.example/v1");
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+    let directory = temp.path().join("home/.codex");
+    let before = std::fs::read(directory.join("config.toml")).unwrap();
+    let parent = directory.parent().unwrap();
+    let publication = begin_private_config_publication(temp.path(), parent).unwrap();
+    let transaction = PrivateConfigTransaction {
+        schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
+        target: ".codex".into(),
+        staged: ".jackin-private-config-stage-already-gone".into(),
+        previous: Some(".jackin-private-config-previous-already-gone".into()),
+        phase: PrivateConfigTransactionPhase::PreviousMoved,
+    };
+    private_config_persist_transaction(&publication, &transaction).unwrap();
+    private_config_recover_transaction(&publication).unwrap();
+
+    assert_eq!(
+        std::fs::read(directory.join("config.toml")).unwrap(),
+        before
+    );
+    assert!(!parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).exists());
+    assert_no_private_config_swap_artifacts(parent);
+}
+
+#[cfg(unix)]
+#[test]
+fn restart_recovers_after_previous_deletion_before_journal_cleanup() {
+    let temp = tempfile::tempdir().unwrap();
+    let (old_config, old_instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://old.example/v1");
+    configure_for_test(temp.path(), &old_config, &old_instances).unwrap();
+    let directory = temp.path().join("home/.codex");
+    let (new_config, new_instances) =
+        codex_fixture(AiProvider::Zai, "glm-5.3", "https://new.example/v1");
+
+    let _failure = inject_private_config_failure(
+        PrivateConfigFailurePoint::SimulatedCrashAfterPreviousDeletion,
+    );
+    let error = configure_for_test(temp.path(), &new_config, &new_instances).unwrap_err();
+    assert!(format!("{error:#}").contains("after previous private config deletion"));
+    assert!(directory.join("config.toml").is_file());
+    let parent = directory.parent().unwrap();
+    assert!(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).is_file());
+
+    let publication = begin_private_config_publication(temp.path(), parent).unwrap();
+    private_config_recover_transaction(&publication).unwrap();
+    assert!(directory.join("config.toml").is_file());
+    assert!(
+        std::fs::read_to_string(directory.join("config.toml"))
+            .unwrap()
+            .contains("https://new.example/v1")
+    );
+    assert_no_private_config_swap_artifacts(parent);
+}
+
+#[cfg(unix)]
+#[test]
+fn descriptor_relative_publication_survives_ancestor_swap() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("root");
+    let home = root.join("home");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    let directory = home.join(".codex");
+    let publication = begin_private_config_publication(&root, &home).unwrap();
+    private_config_recover_transaction(&publication).unwrap();
+
+    let real_home = root.join("home-real");
+    std::fs::rename(&home, &real_home).unwrap();
+    std::os::unix::fs::symlink(&outside, &home).unwrap();
+    publish_private_config_directory_locked(
+        &publication,
+        &directory,
+        &[("config.toml", b"descriptor-relative".to_vec())],
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        std::fs::read(real_home.join(".codex/config.toml")).unwrap(),
+        b"descriptor-relative"
+    );
+    assert!(!outside.join(".codex").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn private_config_parent_lock_serializes_publishers() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("root");
+    let parent = root.join("home");
+    std::fs::create_dir_all(&parent).unwrap();
+    let held = begin_private_config_publication(&root, &parent).unwrap();
+    let (attempted_tx, attempted_rx) = mpsc::channel();
+    let (finished_tx, finished_rx) = mpsc::channel();
+    let root_for_thread = root.clone();
+    let parent_for_thread = parent.clone();
+    let worker = std::thread::spawn(move || {
+        attempted_tx.send(()).unwrap();
+        let _publication = begin_private_config_publication(&root_for_thread, &parent_for_thread);
+        finished_tx.send(()).unwrap();
+    });
+    attempted_rx.recv().unwrap();
+    assert!(
+        finished_rx
+            .recv_timeout(Duration::from_millis(100))
+            .is_err()
+    );
+    drop(held);
+    finished_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    worker.join().unwrap();
+}
+
 #[cfg(unix)]
 #[test]
 fn private_config_publication_rejects_symlinked_ancestor_below_root() {
@@ -808,7 +961,10 @@ fn private_config_publication_rejects_symlinked_ancestor_below_root() {
         codex_fixture(AiProvider::Moonshot, "k3", "https://provider.example/v1");
 
     let error = configure_for_test(&root, &config, &instances).unwrap_err();
-    assert!(format!("{error:#}").contains("private config ancestor is a symlink"));
+    assert!(
+        format!("{error:#}").contains("private config ancestor is a symlink"),
+        "{error:#}"
+    );
     assert!(!outside.join(".codex").exists());
     assert!(!root.join(PRIVATE_CONFIG_TRANSACTION_FILE).exists());
 }
