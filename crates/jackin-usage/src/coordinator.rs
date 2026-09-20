@@ -825,12 +825,35 @@ impl UsageCoordinator {
         now_epoch: i64,
     ) -> Result<(), UsageCoordinationError> {
         {
-            let state = self.shared.state.lock().map_err(|_| unavailable_error())?;
+            let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
+            if let Some(error) = state.blocked.get(capability).cloned() {
+                let Some(envelope) = state
+                    .accounts
+                    .get(capability)
+                    .map(|entry| entry.envelope.clone())
+                else {
+                    return Err(error);
+                };
+                if self.shared.store.store(&envelope, now_epoch).is_err() {
+                    return Err(error);
+                }
+                state.blocked.remove(capability);
+                if envelope.phase.is_terminal() {
+                    let Some(entry) = state.accounts.get_mut(capability) else {
+                        return Err(unavailable_error());
+                    };
+                    if !entry
+                        .history
+                        .iter()
+                        .any(|view| view.generation == envelope.generation)
+                    {
+                        entry.record_terminal();
+                    }
+                }
+                self.shared.changed.notify_all();
+            }
             if state.accounts.contains_key(capability) {
                 return Ok(());
-            }
-            if let Some(error) = state.blocked.get(capability) {
-                return Err(error.clone());
             }
             if state
                 .catalog
@@ -1010,10 +1033,18 @@ fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> bool {
         .store(&entry.envelope, job.started_at_epoch)
         .is_err()
     {
-        state
-            .blocked
-            .insert(job.capability.clone(), unavailable_error());
-        shared.changed.notify_all();
+        // This worker already owns the queued generation. Resolve it through
+        // the terminal path so its owner cannot remain active after the job
+        // has been discarded.
+        drop(state);
+        finish_failure(
+            shared,
+            job,
+            UsageCoordinationErrorKind::Unavailable,
+            "usage state store is unavailable",
+            None,
+            job.started_at_epoch,
+        );
         return false;
     }
     shared.changed.notify_all();
