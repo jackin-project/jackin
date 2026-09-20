@@ -217,6 +217,7 @@ pub struct XdgRoots {
     /// Cache home (`XDG_CACHE_HOME` equivalent).
     pub cache: PathBuf,
 }
+
 /// Shell-wrapper invocation found while importing shell configuration.
 ///
 /// The current capsule launch protocol deliberately does not execute arbitrary
@@ -612,10 +613,11 @@ impl AccountConfig {
 
 /// Stable, secret-free identity for the credential source used by an account.
 ///
-/// The fields intentionally mirror `same_credential_source`: API-key model and
-/// endpoint overrides do not identify a credential source, while the full
-/// persisted `EnvValue` does. The digest lets removal tombstones survive
-/// without keeping literal credentials in a second config field.
+/// The fields intentionally mirror `same_credential_source`: API-key model
+/// overrides do not identify a credential source, while the full persisted
+/// `EnvValue` does. The digest lets removal tombstones survive without keeping
+/// literal credentials in a second config field. Profile directories and XDG
+/// roots are canonicalized for identity before hashing.
 pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
     let mut digest = Sha256::new();
     hash_component(&mut digest, account.provider.slug());
@@ -628,12 +630,12 @@ pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
         } => {
             hash_component(&mut digest, "profile");
             hash_component(&mut digest, agent.slug());
-            hash_component(&mut digest, &directory.to_string_lossy());
+            hash_path_component(&mut digest, directory);
             if let Some(roots) = xdg_roots {
                 hash_component(&mut digest, "xdg_roots");
-                hash_component(&mut digest, &roots.data.to_string_lossy());
-                hash_component(&mut digest, &roots.config.to_string_lossy());
-                hash_component(&mut digest, &roots.cache.to_string_lossy());
+                hash_path_component(&mut digest, &roots.data);
+                hash_path_component(&mut digest, &roots.config);
+                hash_path_component(&mut digest, &roots.cache);
             } else {
                 hash_component(&mut digest, "no_xdg_roots");
             }
@@ -661,6 +663,11 @@ pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
         }
     }
     hex::encode(digest.finalize())
+}
+
+fn hash_path_component(digest: &mut Sha256, path: &Path) {
+    let canonical = crate::paths::canonical_path_identity(path);
+    hash_component(digest, canonical.to_string_lossy().as_ref());
 }
 
 fn hash_component(digest: &mut Sha256, value: &str) {

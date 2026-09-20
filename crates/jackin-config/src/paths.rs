@@ -42,6 +42,48 @@ fn normalize_path(path: &Path) -> PathBuf {
     parts.iter().collect()
 }
 
+/// Resolve a path to one stable filesystem identity.
+///
+/// Existing components are resolved through symlinks. If the leaf or a
+/// descendant does not exist yet, the nearest existing ancestor is resolved
+/// and the remaining components are appended after lexical normalization.
+/// This keeps supported paths usable before their directories are created
+/// while making equivalent existing paths compare identically. Callers that
+/// preserve configured path spelling should retain the original path.
+pub(crate) fn canonical_path_identity(path: &Path) -> PathBuf {
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical;
+    }
+
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().map_or_else(|_| path.to_path_buf(), |cwd| cwd.join(path))
+    };
+    let normalized = normalize_path(&absolute);
+    let mut missing = Vec::new();
+    let mut existing = normalized.as_path();
+
+    loop {
+        if let Ok(canonical) = existing.canonicalize() {
+            let mut result = canonical;
+            for component in missing.iter().rev() {
+                result.push(component);
+            }
+            return result;
+        }
+
+        let Some(name) = existing.file_name() else {
+            return normalized;
+        };
+        missing.push(name.to_owned());
+        let Some(parent) = existing.parent() else {
+            return normalized;
+        };
+        existing = parent;
+    }
+}
+
 /// Expand tilde, resolve relative paths to absolute using the current working
 /// directory, and normalize `.` / `..` components.
 pub fn resolve_path(path: &str) -> String {

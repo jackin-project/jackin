@@ -2504,6 +2504,122 @@ fn removed_account_stays_excluded_from_scan_after_reload() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn removed_amp_xdg_account_stays_excluded_after_symlinked_shell_scan() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let root = temp.path().join("xdg");
+    let alias = temp.path().join("xdg-alias");
+    let data = root.join("data");
+    let config = root.join("config");
+    let cache = root.join("cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#,
+    )
+    .unwrap();
+    symlink(&root, &alias).unwrap();
+
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: "Amp removed".into(),
+        provider: crate::AiProvider::Amp,
+        credential: crate::AccountCredential::Profile {
+            agent: Agent::Amp,
+            directory: data.join("amp"),
+            xdg_roots: Some(crate::XdgRoots {
+                data: data.clone(),
+                config: config.clone(),
+                cache: cache.clone(),
+            }),
+            source_selector: None,
+        },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("custom-amp", &account).unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("custom-amp").unwrap();
+    editor.save().unwrap();
+
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&format!(
+        "XDG_DATA_HOME={}/./data\nXDG_CONFIG_HOME={}/config/..//config\nXDG_CACHE_HOME={}/cache\n",
+        alias.display(),
+        alias.display(),
+        alias.display()
+    )));
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(report.added_accounts.is_empty(), "{report:?}");
+    assert!(report.unapplied_zshrc_xdg_roots.is_empty(), "{report:?}");
+    assert!(!editor.save().unwrap().accounts.contains_key("custom-amp"));
+}
+
+#[cfg(unix)]
+#[test]
+fn removed_opencode_account_stays_excluded_after_symlinked_home_scan() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let real_home = paths.home_dir.clone();
+    let alias_home = temp.path().join("home-alias");
+    let directory = real_home.join(".local/share/opencode");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"fixture-key"}}"#,
+    )
+    .unwrap();
+    symlink(&real_home, &alias_home).unwrap();
+
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: "OpenCode removed".into(),
+        provider: crate::AiProvider::Opencode,
+        credential: crate::AccountCredential::Profile {
+            agent: Agent::Opencode,
+            directory: real_home.join(".local/share/./opencode"),
+            xdg_roots: None,
+            source_selector: None,
+        },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("removed-opencode", &account).unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("removed-opencode").unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor
+        .scan_for_accounts_with(&alias_home.join("."), &BTreeMap::new())
+        .unwrap();
+    assert!(
+        !report
+            .added_accounts
+            .contains(&"default-opencode-opencode".to_owned()),
+        "{report:?}"
+    );
+    assert!(
+        !editor
+            .save()
+            .unwrap()
+            .accounts
+            .contains_key("default-opencode-opencode")
+    );
+}
+
 #[test]
 fn removed_amp_xdg_profile_stays_excluded_from_shell_scan() {
     let temp = tempdir().unwrap();
