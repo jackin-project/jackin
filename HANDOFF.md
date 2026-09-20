@@ -1,5 +1,82 @@
 # Handoff
 
+## Active accounts goal — 2026-09-21
+
+The current objective is to complete, independently verify, merge PR
+[#1002](https://github.com/jackin-project/jackin/pull/1002), and verify its landed
+main result. The user supplied the objective in
+`/Users/donbeave/.codex-chainargos2/attachments/3e84b0df-4a2d-4878-9e05-d71888c89719/pasted-text-1.txt`.
+That objective supersedes the historical integration/release objective below.
+Unrelated PR merges, preview releases, and Homebrew publication are not required.
+Historical records remain below for provenance, not as current completion evidence.
+
+Current integration state:
+
+- The initially clean checkout at `0a66b7a9` was 121 commits behind the actual PR
+  branch. It was fast-forwarded to `2a318440ce2e02a15a76530812f375ee4998a0f3`.
+- Current fetched main is `fce94cea` and includes the Apple relay supervisor
+  isolation change. Normal merge commit `a4930735` integrates it into the existing feature branch
+  and has been pushed. Generated CI artifacts remain a stale checkpoint pending
+  the ownership-state repair described below.
+- The PR remains open. Its current remote head has a failed Policy check
+  ([run 35521088323](https://github.com/jackin-project/jackin/actions/runs/35521088323))
+  and successful DCO; these do not prove functional readiness.
+- The requirement-to-evidence source of truth is
+  [the accounts ledger](plans/multi-account/ledger.md). Its historical counts and
+  incomplete checklist are being reconciled against current source and actual runs.
+- Parallel owners cover requirements/reviews, provider research, account
+  configuration, credential/runtime lifecycle, broker/relay, Console/Capsule UI,
+  native/container verification, and CI. Separate reviewers inspect credential
+  publication and the integrated main changes. Only the coordinator stages,
+  commits, pushes, or merges Git history.
+
+The dependency order is main synchronization and contract reconciliation, parallel
+implementation and focused regression proof, integrated functional/native/live
+acceptance, fresh independent review and current required CI, protected PR merge,
+then landed-main checks and smoke tests. Missing mandatory proof remains a blocker;
+neither historical tracer summaries nor fixture tests substitute for live accounts.
+
+### User-requested immediate checkpoint
+
+The user requested committing and pushing all current work before full verification.
+This checkpoint is work in progress, not merge-ready. After resolving the active
+merge entries, publish the current state on `feat/multi-account-support`; resume
+implementation and verification from this inventory:
+
+- Config conflict resolution passed 458 `jackin-config` library tests. Focused
+  core/telemetry/diagnostics passed 293 tests; protocol passed 120, with only its
+  intentionally ignored corpus-rewrite utility skipped. See the
+  [working-tree evidence](plans/multi-account/evidence/2026-09-21-main-sync.md).
+- Console now retains the canonical projection through startup and refresh, but
+  its tests still instantiate removed local DTOs. Convert those tests before
+  claiming a Console build. Rich metric-group rendering and Capsule's scoped
+  canonical overview remain unfinished.
+- Environment boundary changes and same-agent Capsule session tests passed
+  rustfmt/diff checks only. Their Cargo verification is pending.
+- Auth source no-follow/identity races, stale credential publication, private
+  Codex/OpenCode config publication, broker refresh ownership/CAS, and complete
+  runtime lease coverage remain open. The audit identified real defects; repair
+  assignments alone are not implementation evidence.
+- Provider research found production discovery/dispatch filtering out several
+  implemented collectors, discarded OMP/Hermes selectors, and a closed provider
+  enum that cannot register every configured client route. These remain required
+  work alongside precise percentages, shared model pools, and reset entitlements.
+- Native host is macOS 27.0 with OrbStack, not the required macOS 26 environment.
+  Repository self-hosted runner inventory returned zero runners. Claude status
+  probes found no authenticated default/custom profile; Codex, Cursor, and Kimi
+  have some local authentication evidence but no completed usage/container proof.
+- CI regeneration is blocked at this checkpoint. Velnor source
+  `4fa7a3a85f14` was built with the matching `af140ad4d8d84326` runtime closure;
+  generation failed with `cannot prove ownership of existing generated file:
+  .github/actionlint.yaml; it differs from current output and has no recorded
+  state`. The previously committed feature artifacts are retained where their
+  merge conflicts could not be regenerated. They are explicitly stale checkpoint
+  inputs, not a final conflict repair or green Policy claim. Resume by restoring
+  a valid ownership-state baseline and regenerating from the canonical typed
+  inputs. Required CI, independent final review, merge, and main smoke remain open.
+
+## Historical handoff
+
 Handoff snapshot: `2026-09-20T15:55:18Z`.
 
 This document preserves the in-progress integration/release goal. It is a continuation point, not a completion claim.

@@ -1,6 +1,6 @@
 # T02 frozen domain contracts (S1–S3 spine + lane interfaces)
 
-Status: FROZEN 2026-09-17 by orchestrator. Lanes code against this. Changes need an
+Status: FROZEN 2026-09-17, amended 2026-09-21 by orchestrator. Lanes code against this. Changes need an
 explicit orchestrator decision appended under "Amendments" with date + reason.
 
 Source docs: `jackin-provider-research.md`, `jackin-accounts-usage-specification.md`,
@@ -152,4 +152,22 @@ never borrows ambient/native/another-client credentials (D15/D21/D22).
 
 ## Amendments
 
-(none yet)
+### 2026-09-21: lossless account usage across consumers
+
+The active accounts objective requires fractional percentages (including the
+illustrative 99.98% Antigravity fixture), absolute reported quantities, dynamic
+shared-pool model membership, billing scope, and manual-reset entitlements. The
+current `UsageMetricValueV1::Window` integer percentage fields and
+`UsageMetricScopeV1` single-model field cannot represent that contract. The
+coordinator authorizes evolving the existing canonical protocol and projection
+to retain those facts, with explicit schema/protocol mismatch handling and
+corresponding FFI consumers and fixtures. This is required implementation work,
+not a completed capability claim.
+
+Console and Capsule must consume the same account-based canonical presentation.
+Remove lossy local account DTOs and provider-only selection where they discard
+separate registrations or supported details. Keep provider I/O, credential
+resolution, and quota interpretation in the existing host broker/adapters.
+Preserve shared pools as one pool with its actual model membership; never derive
+an allowance from model availability, synthesize absolute quantities from
+percentages, or treat refresh/reset-time display as entitlement redemption.

@@ -1,7 +1,10 @@
 # Catalog-to-support ledger (maintained)
 
-Status: maintained. Distilled 2026-09-17 from the research draft
-`/tmp/provider-catalog-ledger.md` (359 rows, not committed; fetch date 2026-09-17 UTC).
+Status: maintained. Original catalog was distilled 2026-09-17 from the research draft
+`/tmp/provider-catalog-ledger.md` (359 rows, not committed). Current source/status
+re-audit: 2026-09-20/21 UTC/local, Jackin provider snapshot
+`2a318440ce2e02a15a76530812f375ee4998a0f3`; see §11 and
+[provider capability matrix](../../jackin-provider-research.md#20-current-provider-capability-matrix-2026-09-2021).
 Home: this file lives next to [ledger.md](./ledger.md) and
 [001-t02-domain-contracts.md](./001-t02-domain-contracts.md) because it is a working
 ledger for the multi-account plan, not published documentation
@@ -40,12 +43,14 @@ Consequences for this ledger:
 
 | Client | Repo / origin | Pinned SHA / fetch | Registry path |
 |---|---|---|---|
-| OpenCode | anomalyco/opencode | `5a8335857b0ebec44ef6aa1d52b339cf25c329ca` | `packages/opencode/src/provider/`, `packages/core/src/plugin/provider/`, live `https://models.opencode.ai/api.json` (fetched 2026-09-17) |
-| omp | can1357/oh-my-pi | `116190d317ca319ae17ab624cb479c76a1ca4704` | `packages/ai/src/registry/`, `packages/catalog/src/compat/rules/auth/*.kdl`, `packages/catalog/src/models.json`, `packages/ai/src/usage/` |
-| Hermes | NousResearch/hermes-agent | `f5d192611032025d2757b07ad838921872126182` | `website/docs/integrations/providers.md`, `hermes_cli/auth.py` `PROVIDER_REGISTRY`, `hermes_cli/models_catalog_static.py` `CANONICAL_PROVIDERS`, `plugins/model-providers/*` |
-| Codex docs | learn.chatgpt.com | live, fetched 2026-09-17 | `/docs/config-file/config-reference` |
-| Claude docs | code.claude.com | live, fetched 2026-09-17 | `/docs/en/model-config`, `/docs/en/llm-gateway*`, `/docs/en/env-vars`, `/docs/en/plugins` |
-| Ref contracts A–E | CodexBar `b6e65a83dc471817b7ff7678e68e0204c9dd604f`, openusage `56378e5765f85d38ff413036fd984afe3d4664e4`, kimi-cli `86f136422a0aae6b217ea49e7ea1d2e8a1defcd2`, grok-build `482711333c7195dc16a272777f86086d615e2afb`, muse-code-sdk `94e98141a8074d50d2ac418de7acb5b16d8024fa`, minimax-cli `bfbb4cb75ec343149eaccfd668c5011aa27bcf2b` (+ omp/Hermes/OpenCode SHAs above) | fetched 2026-09-17 | `/tmp/ref-contracts-A.md` … `/tmp/ref-contracts-E.md` (research inputs, not committed) |
+| OpenCode | anomalyco/opencode | `d870e22c70f27103016dcd479edcfebf86136d93` | `packages/opencode/src/provider/`, Go usage route; current `https://models.opencode.ai/api.json` returned 222 provider IDs (2026-09-20). Prior plan pin: `5a8335857b0ebec44ef6aa1d52b339cf25c329ca`. |
+| omp | can1357/oh-my-pi | `b0651dc551831aa03545f29081a21ccf89829ee8` | `packages/ai/src/registry/`, 85 auth KDL files incl. `packages/catalog/src/compat/rules/auth/stencil.kdl`, `models.json` (69 entries), `packages/ai/src/usage/`. Prior plan pin: `116190d317ca319ae17ab624cb479c76a1ca4704`. |
+| Hermes | NousResearch/hermes-agent | source audit `133004ac799b4e9f6c15a6a475b13596ab8aa68e`; observed moving HEAD `6abbc02228857fdde743326bf6416d63b5dad28e` was not re-audited | Provider registry/plugin list, profiles and auth; the older plan pin was `f5d192611032025d2757b07ad838921872126182`. |
+| Codex docs | developers.openai.com | live, fetched 2026-09-21 | `/codex/app-server`, `/codex/auth`; replaces old `learn.chatgpt.com` docs URL. |
+| Anthropic/Claude docs | platform.claude.com and code.claude.com | live, fetched 2026-09-20/21 | Auth, usage/cost reporting, rate-limit and spend-limit docs. |
+| CodexBar | steipete/CodexBar | `6d3df3678a1d5402679ad7871ed4475a3f2132ef` | Provider docs/source/tests. Prior plan pin: `b6e65a83dc471817b7ff7678e68e0204c9dd604f`. |
+| OpenUsage | robinebers/openusage | `7caf4caab4970701ccaeae3798a71e9995847001` | Provider docs/source/tests. Prior plan pin: `56378e5765f85d38ff413036fd984afe3d4664e4`. |
+| Kimi / Grok / Muse / MiniMax sources | Kimi CLI `86f136422a0aae6b217ea49e7ea1d2e8a1defcd2`; Grok Build `4247f661689354b831191f11eeeac8424993fe3d`; Muse SDK `4dc252c1a31b02ff676dce0358d297ffbc5d8784`; MiniMax CLI `33453cf123927f41c00e1935450e504d8a630763` | fetched 2026-09-20/21 | Current first-party/reference contracts; old pins are preserved in §§ below for provenance, not current head claims. |
 
 ## 2. Legend
 
@@ -99,45 +104,48 @@ unsupported, stays visible on the Usage screen with that reason.
 
 ## 3. OpenCode
 
-Catalog scope: **220 providers live** (2026-09-17) · **159 in the pinned-SHA test
-fixture** (`packages/opencode/test/tool/fixtures/models-api.json`) · delta: 62 added
-since fixture, 1 removed (`github-models`, fixture-only). Model counts below are
-live-catalog counts at fetch date.
+Catalog scope: **222 providers live** from `https://models.opencode.ai/api.json`
+(2026-09-20). The prior 220-entry/159-fixture comparison was from 2026-09-17 and is
+historical; the fixture delta was not recomputed against OpenCode revision
+`d870e22c70f27103016dcd479edcfebf86136d93`. Model counts below are live-catalog
+counts only for the stated fetch date.
 
-Full live id list (220, every entry per B16):
+Full live id list (222, every entry per B16):
 
 ```text
 302ai abacus abliteration-ai above agentrouter agnes ai-router ai21 aiand aihubmix
-aixy aki-io alibaba alibaba-cn alibaba-coding-plan alibaba-coding-plan-cn
+ainetcafe aixy aki-io alibaba alibaba-cn alibaba-coding-plan alibaba-coding-plan-cn
 alibaba-token-plan alibaba-token-plan-cn amazon-bedrock ambient amd anthropic anyapi
 arcee atomic-chat auriko azure azure-cognitive-services bailing baseten berget
 blueclaw bothub cerebras chutes clarifai claudinio cline-pass cloudferro-sherlock
-cloudflare-ai-gateway cloudflare-workers-ai cohere coralbricks cortecs crof
-crossmodel crusoe daoxe databricks deepinfra deepseek digitalocean dinference drun
-ebcloud echo edenai empiriolabs evroc fastrouter fireworks-ai freemodel friendli
-frogbot github-copilot gitlab gmicloud google google-vertex google-vertex-anthropic
-greenpt groq helicone hetzner hpc-ai huggingface hyper iflowcn impossibl inception
-inceptron inco infer inference inferx infomaniak io-net iteracompute jalapeno jiekou
-kenari kilo kimi-for-coding klokintegration kosmik kuae-cloud-coding-plan lilac
-llama llmgateway llmgateway-providers llmtech llmtr lmstudio longcat lucidquery lynkr
-meganova melious merge-gateway meta minimax minimax-cn minimax-cn-coding-plan
+cloudflare-ai-gateway cloudflare-workers-ai cohere coralbricks cortecs crof crossmodel
+crusoe daoxe databricks deepinfra deepseek digitalocean dinference drun ebcloud echo
+edenai empiriolabs evroc fastrouter fireworks-ai freemodel friendli frogbot
+github-copilot gitlab gmicloud google google-vertex google-vertex-anthropic greenpt groq
+helicone hetzner hpc-ai huggingface hyper iflowcn impossibl inception inceptron inco
+infer inference inferx infomaniak io-net iteracompute jalapeno jiekou kenari kilo
+kimi-code-plan-cn kimi-code-plan-global klokintegration kosmik kuae-cloud-coding-plan
+lilac llama llmgateway llmgateway-providers llmtech llmtr lmstudio longcat lucidquery
+lynkr meganova melious merge-gateway meta minimax minimax-cn minimax-cn-coding-plan
 minimax-coding-plan mistral mixlayer moark modal model-oracle-ai modelis modelscope
-moonshotai moonshotai-cn morph nan nano-gpt nearai nebius neon neosmith neuralwatt
-nova novita-ai nvidia oci ofox ollama-cloud openai opencode opencode-go openreason
-openrouter opper orcarouter ovhcloud pendra perplexity perplexity-agent pioneer poe
-poolside privatemode-ai qihang-ai qiniu-ai qvac regolo-ai requesty routing-run
-runinfra sakana salad-cloud sap-ai-core sarvam scaleway scnet-token-plan scx-ai
-sensenova siliconflow siliconflow-cn snowflake-cortex stackit standardcompute stepfun
-stepfun-ai stepfun-ai-step-plan stepfun-step-plan subconscious submodel synthetic
-tencent-coding-plan tencent-token-plan tencent-tokenhub tensorx the-grid-ai
-thinkingmachines tinfoil togetherai tokengo tokenrouter trustedrouter umans-ai
-umans-ai-coding-plan unorouter upstage v0 vancine venice vercel vispark vivgrid
-volcengine volcengine-coding-plan vultr wafer.ai wallaby wandb watsonx xai xiaomi
-xiaomi-token-plan-ams xiaomi-token-plan-cn xiaomi-token-plan-sgp xpersona zai
-zai-coding-plan zeldoc zenifra zenmux zhipuai zhipuai-coding-plan
+moonshotai moonshotai-cn morph nan nano-gpt nearai nebius neon neosmith neuralwatt nova
+novita-ai nvidia oci ofox ollama-cloud openai opencode opencode-go openreason openrouter
+opper orcarouter ovhcloud pendra perplexity perplexity-agent pioneer poe poolside
+privatemode-ai qihang-ai qiniu-ai qvac regolo-ai requesty routing-run runinfra sakana
+salad-cloud sap-ai-core sarvam scaleway scnet-token-plan scx-ai sensenova siliconflow
+siliconflow-cn snowflake-cortex stackit standardcompute stepfun stepfun-ai
+stepfun-ai-step-plan stepfun-step-plan subconscious submodel synthetic tencent-coding-plan
+tencent-token-plan tencent-tokenhub tensorx the-grid-ai thinkingmachines tinfoil togetherai
+tokengo tokenrouter trustedrouter umans-ai umans-ai-coding-plan unorouter upstage v0
+vancine venice vercel vispark vivgrid volcengine volcengine-coding-plan vultr wafer.ai
+wallaby wandb watsonx xai xiaomi xiaomi-token-plan-ams xiaomi-token-plan-cn
+xiaomi-token-plan-sgp xpersona zai zai-coding-plan zeldoc zenifra zenmux zhipuai
+zhipuai-coding-plan
 ```
 
-Fixture-only id (removed live): `github-models`.
+Current IDs include the two Kimi Code plan providers `kimi-code-plan-cn` and
+`kimi-code-plan-global`. This list is the returned 2026-09-20 API snapshot, not a
+hardcoded product allowlist. The old fixture-only `github-models` entry is not live.
 
 Auth architecture (**S**): credential = `auth.json` union
 {`oauth`{refresh,access,expires,accountId}, `api`{key,metadata},
@@ -185,8 +193,9 @@ per §3.1 except the three rows in §3.3.
 
 | Provider | Usage source | Status | Ev | Proof |
 |---|---|---|---|---|
-| `opencode`, `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` (rolling/weekly/monthly; no Zen-balance/live-model fields) | `implemented` [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs) | **S**+**R** (endpoint known via reference collectors, not vendor-documented) | `implemented` |
-| `openrouter` | `planned GET https://openrouter.ai/api/v1/auth/key` (key-scoped usage/limit); `/credits` needs a management key and stays out of key scope | `planned` — no openrouter collector in `crates/jackin-usage/src/usage/` ([U12](#9-u-register-exact-missing-proofs)) | **D** (ref-contracts-D: `{base}/credits`, `{base}/key` request shapes) | `not_run` |
+| `opencode-go` only | `GET https://opencode.ai/zen/go/v1/usage` (Go subscription rolling/weekly/monthly; not general OpenCode provider usage or Zen balance) | Collector in [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs); production dispatch exists; per-model details absent/unverified | **S** current OpenCode server route; **D** Go product docs | `not_run` |
+| `opencode` third-party providers / Zen PAYG | No generic provider allowance API; Go route does not report Zen PAYG cash balance | No general collector; preserve underlying provider/product identity | Zen balance **unverified**, not zero or unsupported | `not_run` |
+| `openrouter` | Official `GET https://openrouter.ai/api/v1/key` is key-scoped; `GET /api/v1/credits` returns account credits with ordinary Bearer auth; `GET /api/v1/activity` and analytics require a Management key | Helper in [openrouter.rs](../../crates/jackin-usage/src/usage/openrouter.rs) exists but broker dispatch is missing; parser misses `limit_reset` and `free_model_daily_requests` | **D** official API docs | `not_run` |
 
 ## 4. omp (oh-my-pi)
 
@@ -260,20 +269,20 @@ private/reference-grade until vendor-documented or Mac-live-verified
 
 | Provider | Usage source | Status | Ev |
 |---|---|---|---|
-| `anthropic` | `planned GET {base}/api/oauth/usage` + `profile`; OAuth scope-gated (same contract as native Claude lane) | `planned` attribution to [claude.rs](../../crates/jackin-usage/src/usage/claude.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** (ref-contracts-A; omp `usage/claude.ts`) |
-| `openai-codex`, `openai-codex-device` | `planned` wham/usage + reset-credit inventory; prefer app-server `account/*` (same contract as native Codex lane) | `planned` attribution to [codex.rs](../../crates/jackin-usage/src/usage/codex.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
-| `kimi-code` | `GET https://api.kimi.com/coding/v1/usages` (OAuth + key paths) | `implemented` [kimi.rs](../../crates/jackin-usage/src/usage/kimi.rs); attribution wiring `planned` | **D** (kimi-cli `usage.py` + omp `usage/kimi.ts` at pinned SHAs) |
-| `zai`, `zai-coding-plan` | `planned api.z.ai /api/monitor/usage/quota/limit` + model-usage; CREDIT vs TOKENS_LIMIT pools; plan-scoped | `implemented` [zai.rs](../../crates/jackin-usage/src/usage/zai.rs); attribution wiring `planned` | **R** |
-| `minimax-code` | `GET {base}/v1/token_plan/remains` (Global `api.minimax.io` / China `api.minimaxi.com`) | `implemented` [minimax.rs](../../crates/jackin-usage/src/usage/minimax.rs); attribution wiring `planned` | **S** |
+| `anthropic` | Private `GET {base}/api/oauth/usage` + profile; OAuth scope-gated | Collector exists in [claude.rs](../../crates/jackin-usage/src/usage/claude.rs); broker route exists; attribution/lane proof remains separate | **R** private route; Admin reports are documented separately (**D**) |
+| `openai-codex`, `openai-codex-device` | App-server rate-limit/account reads plus private Wham/reset-credit inventory; current profile path still uses Wham | Collector exists in [codex.rs](../../crates/jackin-usage/src/usage/codex.rs); profile attribution not fully wired; documented `account/usage/read` is not called | **D** app-server; **R** Wham/reset-credit internals |
+| `kimi-code` | Native collector calls `/coding/v1/usages`; current CLI server documents experimental loopback `/api/v1/oauth/usage` | Collector exists in [kimi.rs](../../crates/jackin-usage/src/usage/kimi.rs); region/product scope is not preserved; attribution wiring remains incomplete | `/coding/v1/usages` **R/S**, not a current public usage contract; server API **D** but experimental |
+| `zai`, `zai-coding-plan` | Private `api.z.ai /api/monitor/usage/quota/limit`; plan quota only; no model analytics/PAYG balance | Collector exists in [zai.rs](../../crates/jackin-usage/src/usage/zai.rs); host/team/product scope is not per-account | **R** private route; official plan docs **D** |
+| `minimax-code` | Token Plan `/v1/token_plan/remains`; PAYG `/account/query_balance`; current source chooses by credential kind | Collector exists in [minimax.rs](../../crates/jackin-usage/src/usage/minimax.rs); pool/region/account semantics need live fixture | **S** MiniMax CLI source; docs **D** |
 | `minimax-code-cn` | same remains API on CN host | `planned` — verify CN-host behavior ([U3](#9-u-register-exact-missing-proofs)) | **U** |
-| `opencode-go` | `GET https://opencode.ai/zen/go/v1/usage` | `implemented` [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs); attribution wiring `planned` | **R** |
-| `openrouter` | `planned GET {base}/api/v1/auth/key` (key-scoped) | `planned` — no openrouter collector ([U12](#9-u-register-exact-missing-proofs)) | **D** (ref-contracts-D) |
+| `opencode-go` | Go subscription usage route, rolling/weekly/monthly; not Zen balance | Collector and production dispatch exist in [opencode.rs](../../crates/jackin-usage/src/usage/opencode.rs); no live response | **S** current server source; product docs **D** |
+| `openrouter` | `/api/v1/key` (per-key) + `/api/v1/credits` (account credits, ordinary Bearer); `/activity` requires Management key | Helper exists in [openrouter.rs](../../crates/jackin-usage/src/usage/openrouter.rs) but broker dispatch is absent; current parser misses `limit_reset` and `free_model_daily_requests` | **D** official API docs |
 | `github-copilot` | `planned api.github.com copilot quota` | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
-| `google-antigravity` | `planned daily-cloudcode-pa :retrieveUserQuotaSummary`; bind identity | `planned` — see also native [antigravity.rs](../../crates/jackin-usage/src/usage/antigravity.rs) (`agy -p /usage --output-format json`) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
-| `google-gemini-cli` | `planned` cloudcode-pa Code Assist quota; OAuth only | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
-| `muse-code` | cached MSP observation; key-exchange is a separate op, never auto-poll | `planned` — see native [muse.rs](../../crates/jackin-usage/src/usage/muse.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
-| `xai-oauth` | `planned` Grok CLI billing endpoint; weekly/monthly split | `planned` — see native [grok.rs](../../crates/jackin-usage/src/usage/grok.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
-| `cursor` | `planned cursor.com/api/usage-summary` + `/api/auth/me`; personal scope | `planned` — see native [cursor.rs](../../crates/jackin-usage/src/usage/cursor.rs) ([U11](#9-u-register-exact-missing-proofs)) | **R** |
+| `google-antigravity` | Official read-only `agy -p /usage --output-format json`; identity must be proven in the owned runtime | Parser/command helpers in [antigravity.rs](../../crates/jackin-usage/src/usage/antigravity.rs); no production dispatch; OAuth keychain is not isolated by HOME | CLI command **D**; private quota interfaces **R** |
+| `google-gemini-cli` | Consumer Google login ended 2026-06-18; Workspace/API/Vertex are distinct scopes | Helper in [gemini.rs](../../crates/jackin-usage/src/usage/gemini.rs); no active broker dispatch or usage-reporting implementation | Quota limits **D**; remaining subscription allowance unavailable from evidence |
+| `muse-code` | MSP `usage/read` returns cached observation; key exchange is not a safe polling route | Fixture/helper in [muse.rs](../../crates/jackin-usage/src/usage/muse.rs); no profile material or broker dispatch | SDK schema **D**; live provider read **unverified** |
+| `xai-oauth` | Private Grok CLI proxy billing path; personal subscription only | Collector exists in [grok.rs](../../crates/jackin-usage/src/usage/grok.rs); profile dispatch exists; manual reset-credit inventory absent | **R/S** private endpoint; no vendor stability promise |
+| `cursor` | Current private personal/team usage endpoints; Admin API is a separate scope | Parser/helper in [cursor.rs](../../crates/jackin-usage/src/usage/cursor.rs); no broker dispatch; Cursor Models/Other Models pools are not preserved | **R** comparator routes; public Admin API **D** |
 | `devin` | `planned SeatManagementService/GetUserStatus`; no REST usage endpoint | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `cline-pass` | `planned /users/me` + `/users/me/plan/usage-limits` | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
 | `charm-hyper` | `planned` credits endpoint | `planned` ([U11](#9-u-register-exact-missing-proofs)) | **R** |
@@ -466,17 +475,17 @@ Routing contract (**D**, code.claude.com docs fetched 2026-09-17):
 | Id | Cell(s) | Exact missing proof |
 |---|---|---|
 | U1 | omp `azure`, `google`, `groq`, `mistral`, `openai` auth | No auth KDL for these ids at pinned SHA `116190d`; missing: vendor login flow or a pinned-source statement that env-only is the complete contract. |
-| U2 | omp `minimax-cn` auth | Present in models.json, absent from auth KDLs at pinned SHA; missing: which login kind (if any) owns this id. Launch `blocked` until resolved. |
+| U2 | omp `minimax-cn` auth | Present in current `models.json`, absent from current auth KDLs (`b0651dc…`); `minimax-code-cn` is a distinct auth rule and does not resolve this ID. Keep `minimax-cn` unsupported/unverified until its auth contract is identified. |
 | U3 | omp `minimax-code-cn`, hermes `minimax-cn` usage | Missing: live verification that the Token Plan remains API answers on the CN host (`api.minimaxi.com`) with the same shape. |
 | U4 | hermes `nous-api` auth | Only a config comment references `NOUS_API_KEY`; missing: registry/plugin/code path proving the aggregator contract. |
 | U5 | hermes `nous` usage | Missing: Portal billing/balance API paths + scope proof (which calls, which auth, what fields). |
 | U6 | hermes `kimi-coding-cn` usage | Missing: live verification of the usages API on the CN host (`api.moonshot.cn`). |
 | U7 | hermes `alibaba-token-plan-cn` usage | Missing: live verification of the bailian token-plan API on the CN host. |
-| U8 | hermes `minimax-oauth` usage | Missing: proof that the remains API accepts the OAuth grant (vs key-only) and which scopes. |
+| U8 | hermes `minimax-oauth` usage | Current MiniMax CLI selects Token Plan remains for OAuth/other non-`sk-api-*` credentials, but the remote OAuth acceptance and exact account scope remain unverified; no live read was run. |
 | U9 | hermes `deepseek` usage | Missing: verify whether a key-scoped balance endpoint exists; currently `none` by absence of evidence. |
 | U10 | opencode `opencode-zen` (hermes row) / Zen balance | Missing: any Zen balance/live-model endpoint; do not invent. Currently `none` with reason. |
 | U11 | every `planned` **R** usage row (§4.2, §5.3, §6, §7) | Missing: Mac-live verification of each private/reference endpoint (URL + method + auth + response shape) before claiming support; lands in [ledger.md](./ledger.md) provider lanes. |
-| U12 | opencode/omp/hermes `openrouter` usage | Missing: jackin-usage openrouter collector (`GET /api/v1/auth/key` key-scoped; `/credits` needs mgmt key — key scope only). No code in `crates/jackin-usage/src/usage/` yet. |
+| U12 | opencode/omp/hermes `openrouter` usage | Helper exists in `crates/jackin-usage/src/usage/openrouter.rs`, but broker dispatch is absent. Current documented routes: `/api/v1/key` (per-key) and `/api/v1/credits` (ordinary Bearer); `/api/v1/activity` needs a Management key. Parser omits `limit_reset` and `free_model_daily_requests`. |
 
 ## 10. Maintenance
 
@@ -490,3 +499,47 @@ Routing contract (**D**, code.claude.com docs fetched 2026-09-17):
   row only when no cell references it.
 - Link check: every relative link in this file must resolve; re-run the check below
   after edits.
+
+## 11. Current provider/client re-audit (2026-09-20/21)
+
+This section supersedes contradictory status claims in the 17 September snapshot
+above. It is tied to Jackin `2a318440ce2e02a15a76530812f375ee4998a0f3` and current
+source pins in §1. Full auth/scope/window/reset/balance/source matrix is in
+[jackin-provider-research.md §20](../../jackin-provider-research.md#20-current-provider-capability-matrix-2026-09-2021).
+No provider usage endpoint was queried. Installed binaries/auth-status checks are
+inventory only, not usage or launch proof.
+
+| Catalog/client family | Current support finding | Provider state classification |
+|---|---|---|
+| OpenCode provider IDs | Current catalog contains **222** IDs (full dated list in §3). Jackin's production store rejects stores with more than one auth provider and rejects all auth entries except `opencode-go` (`crates/jackin-config/src/accounts/stores/opencode.rs:89-110`). | Arbitrary catalog discovery/import is **unimplemented in Jackin**, not provider-unsupported. |
+| OpenCode Go vs Zen | `opencode-go` is the distinct subscription product. Its route is not general OpenCode usage and does not establish Zen PAYG balance. Current server source: `d870e22c70f27103016dcd479edcfebf86136d93/packages/console/app/src/routes/zen/go/v1/usage.ts`. | Go collector/dispatch exists; live response **unverified**. Zen balance **unverified**, never zero by default. |
+| omp auth/model catalog | Current source `b0651dc551831aa03545f29081a21ccf89829ee8` has 85 auth KDLs (including `stencil.kdl`) and 69 model providers. `minimax-cn` is in models but has no same-ID auth KDL; `minimax-code-cn` is a different provider. Store importer fails closed on multiple credentials (`crates/jackin-config/src/accounts/stores/omp.rs:72-83`). | Single-account subset can be imported; arbitrary multi-provider pool is **unimplemented in Jackin**. U2 remains open for `minimax-cn`. |
+| Hermes catalog/profile | Hermes has multiple auth providers, OAuth identities, profile-local stores and Nous Portal; it is a client, not a single biller. Jackin validation rejects multi-profile/extra provider auth entries (`crates/jackin-config/src/accounts/stores/hermes.rs:86-106`). Current remote HEAD moves rapidly; reviewed source commit and the later unreviewed HEAD are recorded in §1/§20. | Broad native catalog launch/attribution is **unimplemented in Jackin**. No generic Portal quota schema is documented; provider identity must route to the underlying service. |
+| OpenRouter | Correct key-scoped route is `GET /api/v1/key`, not `/api/v1/auth/key`. `/api/v1/credits` uses ordinary Bearer auth for account credits; `/api/v1/activity` and analytics require Management key. Jackin helper misses `limit_reset` and `free_model_daily_requests` and is not broker-dispatched. | Provider API **supported/documented**; Jackin production collection **unimplemented**. This is not an unsupported provider capability. |
+| Grok / xAI | Jackin reads consumer private billing partially; CodexBar and OpenUsage current refs also use the private endpoint. Current Grok source carries product history/unified state and CodexBar reads a separate reset coupon inventory without redeeming. xAI Management billing is a separate documented scope. | Consumer collector partial/private; reset inventory and Management API **unimplemented**. Live fields **unverified**. |
+| Antigravity / Gemini | Official Antigravity CLI added safe print-mode `/usage`, `/quota`, `/credits` by v1.1.11; subscription OAuth is keychain-backed. Gemini API-key launch requires both `modelProvider="gemini"` config and `GEMINI_API_KEY`. The old “no CLI”/headless blocker is stale. Jackin collapses Google/Gemini/Antigravity billing identities. | CLI surface **provider-supported**; Jackin broker dispatch/config identity **unimplemented**; OAuth multi-account isolation **unverified**. Gemini API project quota is not subscription remaining allowance. |
+| Muse | SDK `usage/read` is a cached observation; SDK lacks host binary. Key exchange is not a safe unconditional polling endpoint because it may return an API key. Jackin helper has no broker collector. | Read contract limited/cached; Jackin live collection **unimplemented**, runtime auth **unverified**. |
+| Cursor | Current provider-defined pools include Cursor Models, Other Models, billing-cycle/on-demand and optional Grok Bot weekly allowance; team Admin API is separate. Jackin helper flattens groups and is not broker-dispatched. | Provider scope **supported/documented or reference-backed by surface**; Jackin complete collection **unimplemented**; team/personal live scopes **unverified**. |
+| Kimi / Moonshot | New Kimi plans use five-hour + shared monthly windows; old memberships can retain weekly; Extra Usage wallet is separate. Kimi Code and Moonshot Open Platform PAYG have different auth/hosts. Jackin's global base URL and Moonshot→Kimi alias lose per-account product/region. | Kimi collector exists, public API/runtime schema **unverified**; PAYG balance is documented for overseas endpoint but **unimplemented** in Jackin. |
+| Z.AI / MiniMax | Z.AI has current credit-plan plus legacy plan generations, regions and team scopes; Jackin's private quota route uses global selector state. MiniMax source separates Token Plan remains from PAYG balance; official docs describe unified quota, while Jackin emits model-specific rows. | Collectors exist; selectors/pool semantics and regional behavior **unverified**; do not sum or relabel model rows until proven. |
+| Claude / Codex / Amp | Collector code exists; Claude OAuth usage and Grok/Z.AI/Kimi source routes include private APIs. Codex official app-server adds documented `account/usage/read`; current Jackin profile path does not call it. Amp current pricing separates Hobby BYOK from Agent/Orb/workspace credits; duplicate Amp profile isolation is explicitly rejected. | Code presence is not provider live proof. Claude Admin reports, Codex activity endpoint, Amp current schema, and valid scopes remain separately tracked in §20. |
+
+### Status vocabulary for provider evidence
+
+- **Provider-unsupported:** vendor/client documentation or observed contract explicitly says the capability does not exist for that product/scope. Never infer it from missing Jackin code.
+- **Unimplemented:** the source/docs establish a usable capability, but Jackin has no production collector, account routing, or presentation path.
+- **Permission-denied:** endpoint exists but current credential lacks required user/org/team/admin scope; preserve that status rather than saying unsupported.
+- **Unavailable:** source is temporarily unreachable, timeout/rate-limited, CLI missing, or current auth is absent. Keep last-good data if ownership is unchanged.
+- **Unverified:** docs/source indicate a possible path, but current installed version/account has not produced a sanitized read-only response.
+- **Implemented:** code exists. Record production dispatch and fixture/container/live proof separately; never let this word imply the latter.
+
+### Comparator inspection record
+
+CodexBar `6d3df3678a1d5402679ad7871ed4475a3f2132ef` and OpenUsage
+`7caf4caab4970701ccaeae3798a71e9995847001` were checked at their current refs on
+2026-09-20/21. Reviewed current provider source/docs for Codex, Claude, Antigravity,
+Cursor, Grok, Kimi and Z.AI; CodexBar's Grok `GrokRemainingResetsFetcher.swift`
+shows a separate read-only coupon inventory; OpenUsage Cursor source keeps Total,
+Cursor, Other and Grok groups distinct. Their test trees were inspected for fixture
+coverage; neither upstream suite was run. Private endpoints remain **R** evidence,
+not stable vendor contracts. No code was copied.
