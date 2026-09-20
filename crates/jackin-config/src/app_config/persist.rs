@@ -403,16 +403,36 @@ fn parse_global_config(
 
 fn parse_workspace_config(name: &str, bytes: &[u8]) -> Result<WorkspaceConfig, ConfigSourceIssue> {
     let raw = std::str::from_utf8(bytes).map_err(|_| ConfigSourceIssue::Malformed)?;
-    let doc = migrate_document_in_memory(
-        raw,
+    let (normalized, _, _) =
+        normalize_workspace_contents(raw).map_err(|_| ConfigSourceIssue::Malformed)?;
+    let workspace: WorkspaceConfig =
+        toml::from_str(&normalized).map_err(|_| ConfigSourceIssue::Malformed)?;
+    validate_one_workspace(name, &workspace)?;
+    Ok(workspace)
+}
+
+/// Normalize one workspace document before typed comparison or deserialization.
+///
+/// The split migration path can encounter a file written by an older binary
+/// while an embedded legacy workspace is being split. Compare the migrated
+/// semantic value, not the old version marker or fields that the current typed
+/// schema no longer accepts. The caller owns the eventual atomic write.
+fn normalize_workspace_contents(
+    raw: &str,
+) -> crate::ConfigResult<(String, Option<migrations::SchemaVersion>, bool)> {
+    let mut doc: DocumentMut = raw.parse().context("parsing workspace config")?;
+    let migrated_from = migrations::migrate_document_if_needed(
+        &mut doc,
         "workspace config",
         CURRENT_WORKSPACE_VERSION,
         migrations::WORKSPACE_MIGRATIONS,
     )?;
-    let workspace: WorkspaceConfig =
-        toml::from_str(&doc.to_string()).map_err(|_| ConfigSourceIssue::Malformed)?;
-    validate_one_workspace(name, &workspace)?;
-    Ok(workspace)
+    let had_legacy_op_account = doc.get("op_account").is_some();
+    if had_legacy_op_account {
+        migrations::migrate_workspace_op_account_to_refs(&mut doc)?;
+    }
+    let needs_write = migrated_from.is_some() || had_legacy_op_account;
+    Ok((doc.to_string(), migrated_from, needs_write))
 }
 
 fn validate_one_workspace(
@@ -521,7 +541,8 @@ pub(crate) fn load_split_config_locked(
     };
 
     let legacy_workspaces = std::mem::take(&mut config.workspaces);
-    let mut pending_writes = Vec::new();
+    let (mut split_workspaces, split_writes) = load_workspace_files_locked(&paths.workspaces_dir)?;
+    let mut pending_writes = split_writes;
     let mut global_write = None;
     if !legacy_workspaces.is_empty() {
         // Lossy: serde round-trip drops comments and blank lines from
@@ -537,6 +558,7 @@ pub(crate) fn load_split_config_locked(
             paths,
             &legacy_workspaces,
             &legacy_op_accounts,
+            &split_workspaces,
         )?);
         global_write = Some(PendingConfigWrite {
             path: paths.config_file.clone(),
@@ -549,8 +571,6 @@ pub(crate) fn load_split_config_locked(
         });
     }
 
-    let (mut split_workspaces, split_writes) = load_workspace_files_locked(&paths.workspaces_dir)?;
-    pending_writes.extend(split_writes);
     if let Some(global_write) = global_write {
         // Keep the global rewrite last: it remains the migration commit
         // marker, while the transaction restores earlier split files if a
@@ -644,14 +664,13 @@ fn load_workspace_files_locked(
         })?;
         let name = WorkspaceName::parse(stem)
             .with_context(|| format!("invalid workspace filename {}", path.display()))?;
-        let migration = migrations::migrate_file_contents_if_needed(
-            &path,
-            "workspace config",
-            CURRENT_WORKSPACE_VERSION,
-            migrations::WORKSPACE_MIGRATIONS,
-        );
-        let (raw, migrated_from) = match migration {
-            Ok((raw, migrated_from)) => {
+        let migration = (|| -> crate::ConfigResult<_> {
+            let raw = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            normalize_workspace_contents(&raw)
+        })();
+        let (raw, needs_write) = match migration {
+            Ok((raw, migrated_from, needs_write)) => {
                 let event_result = Ok(migrated_from.clone());
                 migrations::emit_migration_result(
                     "workspace",
@@ -659,7 +678,7 @@ fn load_workspace_files_locked(
                     migrations::WORKSPACE_MIGRATIONS,
                     &event_result,
                 );
-                (raw, migrated_from)
+                (raw, needs_write)
             }
             Err(error) => {
                 let event_result = Err(ConfigError::msg("workspace migration failed"));
@@ -672,7 +691,7 @@ fn load_workspace_files_locked(
                 return Err(error);
             }
         };
-        if migrated_from.is_some() {
+        if needs_write {
             pending_writes.push(PendingConfigWrite {
                 path: path.clone(),
                 contents: raw.clone(),
@@ -729,6 +748,7 @@ fn plan_legacy_workspace_writes(
     paths: &JackinPaths,
     workspaces: &BTreeMap<String, WorkspaceConfig>,
     legacy_op_accounts: &BTreeMap<String, String>,
+    existing_workspaces: &BTreeMap<String, WorkspaceConfig>,
 ) -> anyhow::Result<Vec<PendingConfigWrite>> {
     let mut writes = Vec::new();
     for (name, workspace) in workspaces {
@@ -739,19 +759,13 @@ fn plan_legacy_workspace_writes(
             workspace,
             legacy_op_accounts.get(name).map(String::as_str),
         )?;
-        if path.exists() {
-            // Idempotent re-entry: compare against the bytes we would write
-            // (account already stamped), not the legacy struct — otherwise a
-            // crash-recovery re-run would see the stamped on-disk file differ
-            // from the unstamped legacy struct and bail. Both sides are
-            // parsed to ignore formatting drift.
-            let existing_raw = std::fs::read_to_string(&path)
-                .with_context(|| format!("reading existing workspace {}", path.display()))?;
-            let existing: WorkspaceConfig = toml::from_str(&existing_raw)
-                .with_context(|| format!("parsing existing workspace {}", path.display()))?;
-            let desired: WorkspaceConfig = toml::from_str(&contents)
-                .with_context(|| format!("parsing migrated workspace {name:?}"))?;
-            if existing == desired {
+        let desired: WorkspaceConfig = toml::from_str(&contents)
+            .with_context(|| format!("parsing migrated workspace {name:?}"))?;
+        if let Some(existing) = existing_workspaces.get(name) {
+            // The split loader has already normalized versioned/legacy bytes
+            // in memory and queued any required rewrite. Compare semantic
+            // current-schema values, never raw on-disk versions or fields.
+            if existing == &desired {
                 continue;
             }
             return Err(ConfigError::msg(format!(
