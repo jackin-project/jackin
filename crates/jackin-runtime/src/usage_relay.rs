@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::os::unix::ffi::OsStrExt as _;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -165,7 +165,44 @@ pub fn resolved_launch_usage_inventory(config: &CapsuleConfig) -> ResolvedLaunch
 pub struct UsageRelayGuard {
     task: Option<tokio::task::JoinHandle<()>>,
     socket_path: Option<PathBuf>,
+    socket_identity: Option<(u64, u64)>,
     shutdown: Option<oneshot::Sender<()>>,
+}
+
+struct RelaySocketStartupCleanup {
+    path: Option<PathBuf>,
+    identity: Option<(u64, u64)>,
+}
+
+impl RelaySocketStartupCleanup {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path: Some(path),
+            identity: None,
+        }
+    }
+
+    fn claim(&mut self, identity: (u64, u64)) {
+        self.identity = Some(identity);
+    }
+
+    fn disarm(&mut self) {
+        self.path = None;
+        self.identity = None;
+    }
+}
+
+impl Drop for RelaySocketStartupCleanup {
+    fn drop(&mut self) {
+        if let (Some(path), Some(identity)) = (self.path.take(), self.identity) {
+            remove_owned_relay_socket(&path, identity);
+        }
+    }
+}
+
+struct StartedRelaySocket {
+    task: tokio::task::JoinHandle<()>,
+    identity: (u64, u64),
 }
 
 struct AbortTaskOnDrop<T>(tokio::task::JoinHandle<T>);
@@ -197,8 +234,8 @@ impl Drop for UsageRelayGuard {
         } else if let Some(task) = &self.task {
             task.abort();
         }
-        if let Some(socket_path) = &self.socket_path {
-            drop(fs::remove_file(socket_path));
+        if let (Some(socket_path), Some(identity)) = (&self.socket_path, self.socket_identity) {
+            remove_owned_relay_socket(socket_path, identity);
         }
     }
 }
@@ -382,6 +419,7 @@ pub(crate) async fn prepare_for_container(
             UsageRelayGuard {
                 task: None,
                 socket_path: Some(socket_path),
+                socket_identity: None,
                 shutdown: None,
             },
             CanonicalLaunchUsageCapabilities::default(),
@@ -404,6 +442,7 @@ pub(crate) async fn prepare_for_container(
             UsageRelayGuard {
                 task: None,
                 socket_path: Some(socket_path),
+                socket_identity: None,
                 shutdown: None,
             },
             CanonicalLaunchUsageCapabilities::default(),
@@ -484,6 +523,7 @@ pub fn start_docker_tunnel_with_command(
         return Ok(UsageRelayGuard {
             task: None,
             socket_path: None,
+            socket_identity: None,
             shutdown: None,
         });
     }
@@ -544,6 +584,7 @@ fn start_tunnel_process(
     Ok(UsageRelayGuard {
         task: Some(task),
         socket_path: None,
+        socket_identity: None,
         shutdown: Some(shutdown),
     })
 }
@@ -554,10 +595,12 @@ fn start_guard(
     capabilities: Vec<UsageAccountCapability>,
     peer_capabilities: RelayPeerCapabilities,
 ) -> Result<UsageRelayGuard> {
-    let task = start(socket_path.clone(), client, capabilities, peer_capabilities)?;
+    let StartedRelaySocket { task, identity } =
+        start_owned(socket_path.clone(), client, capabilities, peer_capabilities)?;
     Ok(UsageRelayGuard {
         task: Some(task),
         socket_path: Some(socket_path),
+        socket_identity: Some(identity),
         shutdown: None,
     })
 }
@@ -637,22 +680,55 @@ pub fn start(
     capabilities: Vec<UsageAccountCapability>,
     peer_capabilities: BTreeMap<(u32, u32), UsageAccountCapability>,
 ) -> Result<tokio::task::JoinHandle<()>> {
+    Ok(start_owned(socket_path, broker, capabilities, peer_capabilities)?.task)
+}
+
+fn start_owned(
+    socket_path: PathBuf,
+    broker: UsageBrokerClient,
+    capabilities: Vec<UsageAccountCapability>,
+    peer_capabilities: BTreeMap<(u32, u32), UsageAccountCapability>,
+) -> Result<StartedRelaySocket> {
     let allowlist = UsageCapabilitySet::new(capabilities);
+    let mut cleanup = RelaySocketStartupCleanup::new(socket_path.clone());
     drop(fs::remove_file(&socket_path));
     let listener = UnixListener::bind(&socket_path)
         .with_context(|| format!("binding scoped usage relay at {}", socket_path.display()))?;
+    let identity = relay_socket_identity(&socket_path)?;
+    cleanup.claim(identity);
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
-    Ok(jackin_telemetry::spawn::spawn_stream(
-        "usage_relay.connection",
-        async move {
-            if let Err(_error) = run_listener(listener, broker, allowlist, peer_capabilities).await
-            {
-                let _recorded = jackin_telemetry::record_error(
-                    jackin_telemetry::schema::enums::ErrorType::RpcError,
-                );
-            }
-        },
-    ))
+    let task = jackin_telemetry::spawn::spawn_stream("usage_relay.connection", async move {
+        if let Err(_error) = run_listener(listener, broker, allowlist, peer_capabilities).await {
+            let _recorded = jackin_telemetry::record_error(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
+            );
+        }
+    });
+    cleanup.disarm();
+    Ok(StartedRelaySocket { task, identity })
+}
+
+fn relay_socket_identity(path: &Path) -> Result<(u64, u64)> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("reading scoped usage relay at {}", path.display()))?;
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink(),
+        "scoped usage relay path is a symlink"
+    );
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+fn remove_owned_relay_socket(path: &Path, identity: (u64, u64)) {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return;
+    };
+    if metadata.file_type().is_symlink()
+        || metadata.dev() != identity.0
+        || metadata.ino() != identity.1
+    {
+        return;
+    }
+    drop(fs::remove_file(path));
 }
 
 async fn run_listener(

@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -22,7 +22,7 @@ use jackin_protocol::usage_broker::{
     UsageCoordinationError, UsageCoordinationErrorKind, UsageGenerationView, UsageIdentityKindV1,
     UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
 };
-use nix::fcntl::{OFlag, open, openat, renameat};
+use nix::fcntl::{OFlag, open, openat};
 use nix::sys::signal::kill;
 use nix::sys::stat::{Mode, fchmod, mkdirat};
 use nix::unistd::{Pid, UnlinkatFlags, fsync, geteuid, unlinkat};
@@ -189,6 +189,52 @@ impl BrokerLease {
     }
 }
 
+/// Descriptor-bound broker authority.
+///
+/// The lease file is never replaced while an owner is alive. Each lifecycle
+/// operation locks this descriptor, verifies the instance, and updates or
+/// removes only the inode it opened. A stale process holding an old descriptor
+/// therefore cannot renew or unlink a replacement lease at the same path.
+struct BrokerLeaseOwner {
+    lease: BrokerLease,
+    file: File,
+}
+
+/// Owns the startup lease and socket until the serve loop takes over. Drop
+/// removes the socket while the descriptor-bound lease is still locked, then
+/// removes that exact lease inode. A successor cannot claim the lease between
+/// those operations and therefore cannot have its socket removed by stale
+/// startup cleanup.
+struct BrokerStartupCleanup {
+    lease_path: PathBuf,
+    socket_path: PathBuf,
+    lease: Option<BrokerLeaseOwner>,
+}
+
+impl BrokerStartupCleanup {
+    fn new(lease_path: PathBuf, socket_path: PathBuf, lease: BrokerLeaseOwner) -> Self {
+        Self {
+            lease_path,
+            socket_path,
+            lease: Some(lease),
+        }
+    }
+
+    fn renew(&mut self, lease_duration: Duration) -> bool {
+        self.lease
+            .as_mut()
+            .is_some_and(|lease| renew_lease(lease, lease_duration))
+    }
+}
+
+impl Drop for BrokerStartupCleanup {
+    fn drop(&mut self) {
+        if let Some(lease) = self.lease.as_mut() {
+            let _ignored = cleanup_owned_files(&self.lease_path, &self.socket_path, lease);
+        }
+    }
+}
+
 /// Host broker filesystem and handshake configuration.
 #[derive(Debug, Clone)]
 pub struct UsageBrokerConfig {
@@ -344,10 +390,13 @@ pub fn forwarded_usage_capabilities(
                 binding.provenance.contains(scope_label)
             } else {
                 binding.provenance.iter().any(|provenance| {
-                    sources
-                        .selected_account_ids
-                        .iter()
-                        .any(|account_id| provenance == &format!("account {account_id}"))
+                    sources.selected_account_ids.iter().any(|account_id| {
+                        provenance == &format!("account {account_id}")
+                            && sources
+                                .selected_account_surfaces
+                                .get(account_id)
+                                .is_some_and(|surface| surface == binding.surface.id())
+                    })
                 })
             }
         })
@@ -396,25 +445,31 @@ pub fn usage_broker_capabilities(
 }
 
 pub(super) fn usage_catalog_entries(discovery: &ValidatedUsageDiscovery) -> Vec<UsageCatalogEntry> {
-    let mut source_ids = BTreeMap::<UsageAccountCapability, BTreeSet<String>>::new();
+    let mut source_revisions = BTreeMap::<UsageAccountCapability, BTreeSet<String>>::new();
     for binding in &discovery.bindings {
         let capability = capability_for_binding(binding, discovery.config_generation.as_deref());
-        source_ids
+        source_revisions
             .entry(capability)
             .or_default()
-            .insert(binding.capability_id.clone());
+            .insert(format!(
+                "{}:{}:{}:{}",
+                binding.capability_id.len(),
+                binding.capability_id,
+                binding.credential_revision.len(),
+                binding.credential_revision,
+            ));
     }
-    source_ids
+    source_revisions
         .into_iter()
-        .map(|(capability, source_ids)| {
-            let revision_material = source_ids
+        .map(|(capability, source_revisions)| {
+            let revision_material = source_revisions
                 .iter()
-                .map(|source_id| format!("{}:{source_id}", source_id.len()))
+                .map(|source_revision| format!("{}:{source_revision}", source_revision.len()))
                 .collect::<Vec<_>>()
                 .join("|");
             UsageCatalogEntry {
                 revision: jackin_core::account_key_hash(
-                    "usage-catalog-entry-v2",
+                    "usage-catalog-entry-v3",
                     &revision_material,
                 ),
                 capability,
@@ -683,10 +738,11 @@ fn empty_projection(build_id: &str) -> UsageProjectionV1 {
     }
 }
 
-type LoadedProjection = (
-    Arc<Mutex<UsageProjectionV1>>,
-    Option<Vec<UsageCatalogEntry>>,
-);
+struct LoadedProjection {
+    projection: Arc<Mutex<UsageProjectionV1>>,
+    catalog: Option<Vec<UsageCatalogEntry>>,
+    catalog_revision: Option<String>,
+}
 
 fn load_projection(config: &UsageBrokerConfig) -> Result<LoadedProjection, UsageCoordinationError> {
     let store = FileProjectionStateStore::under_data_dir(&config.data_dir);
@@ -703,9 +759,15 @@ fn load_projection(config: &UsageBrokerConfig) -> Result<LoadedProjection, Usage
         |envelope| envelope.projection.clone(),
     );
     let catalog = loaded.as_ref().map(|envelope| envelope.catalog.clone());
+    let catalog_revision = loaded
+        .as_ref()
+        .map(|envelope| envelope.catalog_revision.clone());
+    let envelope_catalog_revision = catalog_revision
+        .clone()
+        .unwrap_or_else(|| projection.discovery_revision.clone());
     let envelope = ProjectionStateEnvelope {
         schema_version: 2,
-        catalog_revision: projection.discovery_revision.clone(),
+        catalog_revision: envelope_catalog_revision,
         catalog: catalog.clone().unwrap_or_default(),
         broker_instance_id: projection.broker_instance_id.clone(),
         projection: projection.clone(),
@@ -714,14 +776,25 @@ fn load_projection(config: &UsageBrokerConfig) -> Result<LoadedProjection, Usage
         success_deadline_epoch: None,
     };
     store.store(&envelope).map_err(|_| unavailable())?;
-    Ok((Arc::new(Mutex::new(projection)), catalog))
+    Ok(LoadedProjection {
+        projection: Arc::new(Mutex::new(projection)),
+        catalog,
+        catalog_revision,
+    })
 }
 
 struct DiscoveryProviderExecutor {
     bindings: Mutex<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>>,
+    validated_catalog: Mutex<Option<StagedDiscoveryCatalog>>,
     scope: UsageDiscoveryScope,
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
     probe_budget: Duration,
+}
+
+struct StagedDiscoveryCatalog {
+    catalog_revision: String,
+    entries: BTreeMap<UsageAccountCapability, String>,
+    discovery: ValidatedUsageDiscovery,
 }
 
 impl UsageProviderExecutor for DiscoveryProviderExecutor {
@@ -767,19 +840,84 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
         }
     }
 
+    fn validate_catalog(
+        &self,
+        entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        let discovery = rediscover_discovery(&self.scope, self.resolver.as_ref())?;
+        let expected = catalog_entry_map(&usage_catalog_entries(&discovery));
+        if expected != catalog_entry_map(entries) {
+            return Err(discovery_catalog_conflict());
+        }
+        Ok(())
+    }
+
     fn reconcile_catalog(
         &self,
         entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        let discovery = rediscover_discovery(&self.scope, self.resolver.as_ref())?;
+        let expected = catalog_entry_map(&usage_catalog_entries(&discovery));
+        if expected != catalog_entry_map(entries) {
+            return Err(discovery_catalog_conflict());
+        }
+        self.replace_bindings(entries, &discovery)
+    }
+
+    fn validate_catalog_revision(
+        &self,
+        catalog_revision: &str,
+        entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        let discovery = rediscover_discovery(&self.scope, self.resolver.as_ref())?;
+        ensure_catalog_matches(&discovery, catalog_revision, entries)?;
+        self.validated_catalog
+            .lock()
+            .map_err(|_| unavailable())?
+            .replace(StagedDiscoveryCatalog {
+                catalog_revision: catalog_revision.to_owned(),
+                entries: catalog_entry_map(entries),
+                discovery,
+            });
+        Ok(())
+    }
+
+    fn reconcile_catalog_revision(
+        &self,
+        catalog_revision: &str,
+        entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        let requested_entries = catalog_entry_map(entries);
+        let staged = self
+            .validated_catalog
+            .lock()
+            .map_err(|_| unavailable())?
+            .take()
+            .filter(|staged| {
+                staged.catalog_revision == catalog_revision && staged.entries == requested_entries
+            });
+        let discovery = if let Some(staged) = staged {
+            staged.discovery
+        } else {
+            let discovery = rediscover_discovery(&self.scope, self.resolver.as_ref())?;
+            ensure_catalog_matches(&discovery, catalog_revision, entries)?;
+            discovery
+        };
+        self.replace_bindings(entries, &discovery)
+    }
+}
+
+impl DiscoveryProviderExecutor {
+    fn replace_bindings(
+        &self,
+        entries: &[UsageCatalogEntry],
+        discovery: &ValidatedUsageDiscovery,
     ) -> Result<(), UsageCoordinationError> {
         let admitted = entries
             .iter()
             .map(|entry| entry.capability.clone())
             .collect::<BTreeSet<_>>();
-        // The caller's catalog is authoritative. A transient discovery failure
-        // must clear old bindings rather than leave a revoked credential
-        // usable; a later probe can rediscover one admitted capability.
-        let mut bindings =
-            rediscover_all_bindings(&self.scope, self.resolver.as_ref()).unwrap_or_default();
+        let mut bindings = bindings_from_discovery(discovery);
         bindings.retain(|capability, _| admitted.contains(capability));
         self.bindings
             .lock()
@@ -789,26 +927,70 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
     }
 }
 
+fn rediscover_discovery(
+    scope: &UsageDiscoveryScope,
+    resolver: &dyn ProviderCredentialEnvResolver,
+) -> Result<ValidatedUsageDiscovery, UsageCoordinationError> {
+    resolver.begin_manual_retry();
+    let catalog =
+        discover_usage_sources(scope, resolver).map_err(|error| UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unavailable,
+            message: format!("usage account discovery failed: {error}"),
+        })?;
+    Ok(validate_usage_sources(catalog, resolver))
+}
+
+fn bindings_from_discovery(
+    discovery: &ValidatedUsageDiscovery,
+) -> BTreeMap<UsageAccountCapability, ValidatedCredentialBinding> {
+    discovery
+        .bindings
+        .iter()
+        .map(|binding| {
+            (
+                capability_for_binding(binding, discovery.config_generation.as_deref()),
+                binding.clone(),
+            )
+        })
+        .collect()
+}
+
+fn catalog_entry_map(entries: &[UsageCatalogEntry]) -> BTreeMap<UsageAccountCapability, String> {
+    entries
+        .iter()
+        .map(|entry| (entry.capability.clone(), entry.revision.clone()))
+        .collect()
+}
+
+fn ensure_catalog_matches(
+    discovery: &ValidatedUsageDiscovery,
+    catalog_revision: &str,
+    entries: &[UsageCatalogEntry],
+) -> Result<(), UsageCoordinationError> {
+    let service_revision = discovery.config_generation.as_deref().unwrap_or("empty");
+    let service_entries = usage_catalog_entries(discovery);
+    if service_revision != catalog_revision
+        || catalog_entry_map(&service_entries) != catalog_entry_map(entries)
+    {
+        return Err(discovery_catalog_conflict());
+    }
+    Ok(())
+}
+
+fn discovery_catalog_conflict() -> UsageCoordinationError {
+    UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::CatalogRevisionConflict,
+        message: "caller and broker discovery catalogs differ".to_owned(),
+    }
+}
+
 fn rediscover_all_bindings(
     scope: &UsageDiscoveryScope,
     resolver: &dyn ProviderCredentialEnvResolver,
 ) -> Option<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>> {
-    resolver.begin_manual_retry();
-    discover_usage_sources(scope, resolver)
+    rediscover_discovery(scope, resolver)
         .ok()
-        .map(|catalog| validate_usage_sources(catalog, resolver))
-        .map(|discovery| {
-            discovery
-                .bindings
-                .into_iter()
-                .map(|binding| {
-                    (
-                        capability_for_binding(&binding, discovery.config_generation.as_deref()),
-                        binding,
-                    )
-                })
-                .collect()
-        })
+        .map(|discovery| bindings_from_discovery(&discovery))
 }
 
 fn rediscover_bindings(
@@ -1016,6 +1198,7 @@ pub fn run_usage_broker_service(
     }
     let executor = Arc::new(DiscoveryProviderExecutor {
         bindings: Mutex::new(bindings),
+        validated_catalog: Mutex::new(None),
         scope,
         resolver,
         probe_budget: config.coordinator.provider_timeout,
@@ -1048,6 +1231,7 @@ fn run_usage_broker_service_with_executor_and_metadata(
         return Ok(());
     };
     let socket_path = config.socket_path();
+    let cleanup = BrokerStartupCleanup::new(leader_path.clone(), socket_path.clone(), lease);
     if socket_path.exists() {
         fs::remove_file(&socket_path).map_err(|_| unavailable())?;
     }
@@ -1056,14 +1240,27 @@ fn run_usage_broker_service_with_executor_and_metadata(
         .map_err(|_| unavailable())?;
     validate_owned_mode(&socket_path, 0o600)?;
     let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
-    let (projection, persisted_catalog) = load_projection(&config)?;
+    let LoadedProjection {
+        projection,
+        catalog: persisted_catalog,
+        catalog_revision,
+    } = load_projection(&config)?;
     let previous_catalog = persisted_catalog.clone().unwrap_or_default();
-    let coordinator = Arc::new(UsageCoordinator::with_catalog(
-        executor,
-        store,
-        config.coordinator,
-        previous_catalog.clone(),
-    ));
+    let coordinator = match (persisted_catalog.is_some(), catalog_revision) {
+        (true, Some(catalog_revision)) => Arc::new(UsageCoordinator::with_catalog_revision(
+            executor,
+            store,
+            config.coordinator,
+            previous_catalog.clone(),
+            catalog_revision,
+        )),
+        _ => Arc::new(UsageCoordinator::with_catalog(
+            executor,
+            store,
+            config.coordinator,
+            previous_catalog.clone(),
+        )),
+    };
     let publisher = publish::ProjectionPublisher::new(
         Arc::clone(&coordinator),
         Arc::clone(&projection),
@@ -1078,8 +1275,7 @@ fn run_usage_broker_service_with_executor_and_metadata(
         listener,
         coordinator,
         build_id: config.build_id.clone(),
-        lease_path: leader_path,
-        lease,
+        cleanup,
         policy: ServePolicy {
             idle_exit: config.idle_exit,
             lease_duration: config.lease_duration,
@@ -1109,6 +1305,7 @@ pub fn ensure_usage_broker_with_executor(
         return Ok(client);
     };
 
+    let cleanup = BrokerStartupCleanup::new(leader_path, socket_path.clone(), lease);
     if socket_path.exists() {
         fs::remove_file(&socket_path).map_err(|_| unavailable())?;
     }
@@ -1117,21 +1314,33 @@ pub fn ensure_usage_broker_with_executor(
         .map_err(|_| unavailable())?;
     validate_owned_mode(&socket_path, 0o600)?;
     let store = Arc::new(FileAccountStateStore::under_data_dir(&config.data_dir));
-    let (projection, persisted_catalog) = load_projection(&config)?;
-    let coordinator = match persisted_catalog.clone() {
-        Some(catalog) => Arc::new(UsageCoordinator::with_catalog(
+    let LoadedProjection {
+        projection,
+        catalog: persisted_catalog,
+        catalog_revision,
+    } = load_projection(&config)?;
+    let coordinator = match (persisted_catalog.clone(), catalog_revision) {
+        (Some(catalog), Some(catalog_revision)) => {
+            Arc::new(UsageCoordinator::with_catalog_revision(
+                executor,
+                store,
+                config.coordinator,
+                catalog,
+                catalog_revision,
+            ))
+        }
+        (Some(catalog), None) => Arc::new(UsageCoordinator::with_catalog(
             executor,
             store,
             config.coordinator,
             catalog,
         )),
-        None => Arc::new(UsageCoordinator::new(executor, store, config.coordinator)),
+        (None, _) => Arc::new(UsageCoordinator::new(executor, store, config.coordinator)),
     };
     let build_id = config.build_id.clone();
     let idle_exit = config.idle_exit;
     let lease_duration = config.lease_duration;
     let lease_renewal = config.lease_renewal;
-    let lease_path = leader_path.clone();
     let publisher = publish::ProjectionPublisher::new(
         Arc::clone(&coordinator),
         Arc::clone(&projection),
@@ -1146,8 +1355,7 @@ pub fn ensure_usage_broker_with_executor(
             listener,
             coordinator,
             build_id,
-            lease_path,
-            lease,
+            cleanup,
             policy: ServePolicy {
                 idle_exit,
                 lease_duration,
@@ -1170,8 +1378,7 @@ struct ServeConfig {
     listener: UnixListener,
     coordinator: Arc<UsageCoordinator>,
     build_id: String,
-    lease_path: PathBuf,
-    lease: BrokerLease,
+    cleanup: BrokerStartupCleanup,
     policy: ServePolicy,
     publisher: publish::ProjectionPublisher,
 }
@@ -1181,8 +1388,7 @@ fn serve(config: ServeConfig) {
         listener,
         coordinator,
         build_id,
-        lease_path,
-        mut lease,
+        mut cleanup,
         policy,
         publisher,
     } = config;
@@ -1223,6 +1429,8 @@ fn serve(config: ServeConfig) {
         }
     }
     if workers.is_empty() {
+        drop(listener);
+        drop(cleanup);
         return;
     }
     if listener.set_nonblocking(true).is_err() {
@@ -1230,6 +1438,8 @@ fn serve(config: ServeConfig) {
         for worker in workers {
             drop(worker.join());
         }
+        drop(listener);
+        drop(cleanup);
         return;
     }
     // Incremental publisher: while any generation is active, merge completed
@@ -1281,7 +1491,7 @@ fn serve(config: ServeConfig) {
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 let now = Instant::now();
                 if now.duration_since(last_renewal) >= policy.lease_renewal {
-                    if !renew_lease(&lease_path, &mut lease, policy.lease_duration) {
+                    if !cleanup.renew(policy.lease_duration) {
                         break;
                     }
                     last_renewal = now;
@@ -1302,8 +1512,8 @@ fn serve(config: ServeConfig) {
     if let Some(ticker) = ticker {
         drop(ticker.join());
     }
-    let _ignored = remove_lease(&lease_path, &lease);
-    let _ignored = fs::remove_file(lease_path.with_file_name(BROKER_SOCKET));
+    drop(listener);
+    drop(cleanup);
 }
 
 fn handle_stream(
@@ -1642,126 +1852,221 @@ fn claim_leader(
     path: &Path,
     build_id: &str,
     lease_duration: Duration,
-) -> Result<Option<BrokerLease>, UsageCoordinationError> {
+) -> Result<Option<BrokerLeaseOwner>, UsageCoordinationError> {
     let lease = BrokerLease::new(build_id);
-    match open(
-        path,
-        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
-        Mode::from_bits_truncate(0o600),
-    ) {
-        Ok(fd) => {
-            let mut file = File::from(fd);
-            let bytes = serde_json::to_vec(&lease).map_err(|_| unavailable())?;
-            file.write_all(&bytes).map_err(|_| unavailable())?;
-            file.sync_all().map_err(|_| unavailable())?;
-            Ok(Some(lease))
-        }
-        Err(nix::errno::Errno::EEXIST) => {
-            validate_owned_mode(path, 0o600)?;
-            let bytes = fs::read(path).map_err(|_| unavailable())?;
-            let existing = serde_json::from_slice::<BrokerLease>(&bytes).ok();
-            let now = chrono::Utc::now().timestamp();
-            if let Some(existing) = existing {
-                if existing.protocol_version != USAGE_BROKER_PROTOCOL_VERSION
-                    || existing.build_id != build_id
-                {
-                    // A healthy incompatible endpoint is never replaced by an
-                    // activator; the client will receive protocol_mismatch.
+    loop {
+        match open(path, OFlag::O_RDWR | OFlag::O_NOFOLLOW, Mode::empty()) {
+            Ok(fd) => {
+                let mut file = File::from(fd);
+                validate_owned_file(&file, 0o600)?;
+                // A live broker does not hold the lease lock continuously. A
+                // contender therefore either observes the current owner or
+                // takes the same descriptor lock before replacing an expired
+                // payload.
+                if file.try_lock().is_err() {
                     return Ok(None);
                 }
-                if now.saturating_sub(existing.renewed_at_epoch)
-                    < i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
-                {
-                    return Ok(None);
+                if file.metadata().map_err(|_| unavailable())?.nlink() == 0 {
+                    let _ignored = file.unlock();
+                    continue;
                 }
-            } else {
-                // Preserve compatibility with pre-lease state only when its PID
-                // is demonstrably gone; a malformed live lease fails closed.
-                let pid = String::from_utf8_lossy(&bytes).trim().parse::<i32>().ok();
-                if pid.is_none_or(|pid| kill(Pid::from_raw(pid), None).is_ok()) {
-                    return Ok(None);
-                }
+                let result = claim_existing_lease(&mut file, &lease, build_id, lease_duration);
+                let unlock = file.unlock();
+                return match (result, unlock) {
+                    (Ok(Some(())), Ok(())) => Ok(Some(BrokerLeaseOwner { lease, file })),
+                    (Ok(Some(()) | None), Err(_)) => Err(unavailable()),
+                    (Ok(None), Ok(())) => Ok(None),
+                    (Err(error), _) => Err(error),
+                };
             }
-            fs::remove_file(path).map_err(|_| unavailable())?;
-            claim_leader(path, build_id, lease_duration)
+            Err(nix::errno::Errno::ENOENT) => {
+                let fd = open(
+                    path,
+                    OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
+                    Mode::from_bits_truncate(0o600),
+                )
+                .map_err(|_| unavailable())?;
+                let mut file = Some(File::from(fd));
+                let result = (|| -> Result<BrokerLeaseOwner, UsageCoordinationError> {
+                    {
+                        let lease_file = file.as_mut().ok_or_else(unavailable)?;
+                        validate_owned_file(lease_file, 0o600)?;
+                        lease_file.try_lock().map_err(|_| unavailable())?;
+                        write_lease(lease_file, &lease).map_err(|_| unavailable())?;
+                        lease_file.unlock().map_err(|_| unavailable())?;
+                    }
+                    let file = file.take().ok_or_else(unavailable)?;
+                    Ok(BrokerLeaseOwner { lease, file })
+                })();
+                return match result {
+                    Ok(owner) => Ok(Some(owner)),
+                    Err(error) => {
+                        if let Some(file) = file.as_mut() {
+                            let _ignored = unlink_created_lease(path, file);
+                        }
+                        Err(error)
+                    }
+                };
+            }
+            Err(_) => return Err(unavailable()),
         }
-        Err(_) => Err(unavailable()),
     }
 }
 
-fn renew_lease(path: &Path, lease: &mut BrokerLease, lease_duration: Duration) -> bool {
-    let Ok(bytes) = fs::read(path) else {
-        return false;
+fn claim_existing_lease(
+    file: &mut File,
+    replacement: &BrokerLease,
+    build_id: &str,
+    lease_duration: Duration,
+) -> Result<Option<()>, UsageCoordinationError> {
+    if file.metadata().map_err(|_| unavailable())?.nlink() == 0 {
+        return Ok(None);
+    }
+    let bytes = read_lease_bytes(file).map_err(|_| unavailable())?;
+    let existing = serde_json::from_slice::<BrokerLease>(&bytes).ok();
+    let replace = if let Some(existing) = existing {
+        if existing.protocol_version != USAGE_BROKER_PROTOCOL_VERSION
+            || existing.build_id != build_id
+        {
+            // A healthy incompatible endpoint is never replaced by an
+            // activator; the client will receive protocol_mismatch.
+            return Ok(None);
+        }
+        chrono::Utc::now()
+            .timestamp()
+            .saturating_sub(existing.renewed_at_epoch)
+            >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
+    } else {
+        // Preserve compatibility with pre-lease state only when its PID is
+        // demonstrably gone; a malformed live lease fails closed.
+        let pid = String::from_utf8_lossy(&bytes).trim().parse::<i32>().ok();
+        pid.is_some_and(|pid| kill(Pid::from_raw(pid), None).is_err())
     };
-    let Ok(mut current) = serde_json::from_slice::<BrokerLease>(&bytes) else {
-        return false;
-    };
-    if current.instance_id != lease.instance_id {
+    if !replace {
+        return Ok(None);
+    }
+    write_lease(file, replacement).map_err(|_| unavailable())?;
+    Ok(Some(()))
+}
+
+fn renew_lease(owner: &mut BrokerLeaseOwner, lease_duration: Duration) -> bool {
+    if owner.file.lock().is_err() {
         return false;
     }
-    let now = chrono::Utc::now().timestamp();
-    if now.saturating_sub(lease.renewed_at_epoch)
-        > i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
-    {
+    let result = (|| {
+        if owner.file.metadata().ok()?.nlink() == 0 {
+            return Some(false);
+        }
+        let mut current = read_lease(&mut owner.file).ok()?;
+        if current.instance_id != owner.lease.instance_id {
+            return Some(false);
+        }
+        let now = chrono::Utc::now().timestamp();
+        if now.saturating_sub(current.renewed_at_epoch)
+            >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
+        {
+            return Some(false);
+        }
+        current.renewed_at_epoch = now;
+        write_lease(&mut owner.file, &current).ok()?;
+        owner.lease.renewed_at_epoch = now;
+        Some(true)
+    })()
+    .unwrap_or(false);
+    let unlock = owner.file.unlock();
+    result && unlock.is_ok()
+}
+
+fn cleanup_owned_files(
+    lease_path: &Path,
+    socket_path: &Path,
+    owner: &mut BrokerLeaseOwner,
+) -> bool {
+    if owner.file.lock().is_err() {
         return false;
     }
-    current.renewed_at_epoch = now;
-    let Some(parent) = path.parent() else {
-        return false;
-    };
-    let Some(temporary) = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(|name| format!(".{name}.renew.tmp"))
-    else {
-        return false;
-    };
-    let Ok(directory) = open(
+    let result = (|| -> Result<(), ()> {
+        if owner.file.metadata().map_err(|_| ())?.nlink() == 0 {
+            return Err(());
+        }
+        let current = read_lease(&mut owner.file).map_err(|_| ())?;
+        if current.instance_id != owner.lease.instance_id {
+            return Err(());
+        }
+        // The lease descriptor remains locked across both unlinks. No valid
+        // successor can bind the broker socket between the ownership check
+        // and path removal.
+        unlink_owned_path(socket_path)?;
+        unlink_owned_path(lease_path)?;
+        Ok(())
+    })()
+    .is_ok();
+    let unlock = owner.file.unlock().is_ok();
+    result && unlock
+}
+
+fn unlink_owned_path(path: &Path) -> Result<(), ()> {
+    let parent = path.parent().ok_or(())?;
+    let filename = path.file_name().and_then(|name| name.to_str()).ok_or(())?;
+    let directory = open(
         parent,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
         Mode::empty(),
-    ) else {
-        return false;
-    };
+    )
+    .map_err(|_| ())?;
     let directory = File::from(directory);
-    let Ok(bytes) = serde_json::to_vec(&current) else {
-        return false;
-    };
-    let Ok(fd) = openat(
-        &directory,
-        temporary.as_str(),
-        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
-        Mode::from_bits_truncate(0o600),
-    ) else {
-        return false;
-    };
-    let mut file = File::from(fd);
-    if file.write_all(&bytes).is_err() || file.sync_all().is_err() {
-        let _ignored = unlinkat(&directory, temporary.as_str(), UnlinkatFlags::NoRemoveDir);
-        return false;
+    match unlinkat(&directory, filename, UnlinkatFlags::NoRemoveDir) {
+        Ok(()) | Err(nix::errno::Errno::ENOENT) => {}
+        Err(_) => return Err(()),
     }
-    let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    if renameat(&directory, temporary.as_str(), &directory, filename).is_err() {
-        let _ignored = unlinkat(&directory, temporary.as_str(), UnlinkatFlags::NoRemoveDir);
-        return false;
-    }
-    if fsync(&directory).is_err() {
-        return false;
-    }
-    lease.renewed_at_epoch = now;
-    true
+    fsync(&directory).map_err(|_| ())?;
+    Ok(())
 }
 
-fn remove_lease(path: &Path, lease: &BrokerLease) -> bool {
-    let Ok(bytes) = fs::read(path) else {
+fn unlink_created_lease(path: &Path, file: &mut File) -> bool {
+    let Ok(expected) = file.metadata() else {
         return false;
     };
-    let Ok(current) = serde_json::from_slice::<BrokerLease>(&bytes) else {
+    let Ok(actual) = fs::symlink_metadata(path) else {
         return false;
     };
-    current.instance_id == lease.instance_id && fs::remove_file(path).is_ok()
+    if actual.file_type().is_symlink()
+        || actual.dev() != expected.dev()
+        || actual.ino() != expected.ino()
+    {
+        return false;
+    }
+    unlink_owned_path(path).is_ok()
+}
+
+fn read_lease(file: &mut File) -> Result<BrokerLease, std::io::Error> {
+    let bytes = read_lease_bytes(file)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+}
+
+fn read_lease_bytes(file: &mut File) -> Result<Vec<u8>, std::io::Error> {
+    file.seek(SeekFrom::Start(0))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn write_lease(file: &mut File, lease: &BrokerLease) -> Result<(), std::io::Error> {
+    let bytes = serde_json::to_vec(lease)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    file.set_len(0)?;
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(&bytes)?;
+    file.sync_all()
+}
+
+fn validate_owned_file(file: &File, mode: u32) -> Result<(), UsageCoordinationError> {
+    let metadata = file.metadata().map_err(|_| unavailable())?;
+    if metadata.uid() != geteuid().as_raw() || metadata.mode() & 0o777 != mode {
+        return Err(unavailable());
+    }
+    Ok(())
 }
 
 fn wait_for_leader(client: &UsageBrokerClient) -> Result<(), UsageCoordinationError> {

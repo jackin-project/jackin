@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::os::unix::fs::PermissionsExt as _;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use jackin_protocol::control::{
@@ -16,6 +17,7 @@ struct MemoryStore {
     purges: Mutex<Vec<UsageAccountCapability>>,
     load_error: Mutex<Option<StateStoreError>>,
     store_error: Mutex<Option<StateStoreError>>,
+    purge_error: Mutex<Option<StateStoreError>>,
 }
 
 impl AccountStateStore for MemoryStore {
@@ -46,6 +48,9 @@ impl AccountStateStore for MemoryStore {
     }
 
     fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        if let Some(error) = *self.purge_error.lock().unwrap() {
+            return Err(error);
+        }
         self.states.lock().unwrap().remove(capability);
         self.purges.lock().unwrap().push(capability.clone());
         Ok(())
@@ -802,6 +807,46 @@ fn catalog_revision_change_purges_old_state_and_allows_only_new_revision() {
 }
 
 #[test]
+fn catalog_purge_failure_restores_durable_state_and_keeps_old_catalog() {
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(MemoryStore::default());
+    let account = capability("account-a");
+    let coordinator = UsageCoordinator::with_catalog(
+        Arc::<ImmediateExecutor>::clone(&executor),
+        Arc::<MemoryStore>::clone(&store),
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+    let generation = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap()
+        .generation;
+    assert_eq!(
+        join_ok(&coordinator, &account, generation, 1_001).phase,
+        UsageRefreshPhase::Completed
+    );
+    let before = store.states.lock().unwrap().get(&account).cloned();
+    *store.purge_error.lock().unwrap() = Some(StateStoreError::Unavailable);
+
+    let error = coordinator.reconcile_catalog([], 1_002).unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert_eq!(store.states.lock().unwrap().get(&account).cloned(), before);
+    assert_eq!(
+        coordinator.current(&account, 1_002).unwrap().phase,
+        UsageRefreshPhase::Completed
+    );
+
+    *store.purge_error.lock().unwrap() = None;
+    coordinator.reconcile_catalog([], 1_003).unwrap();
+    assert_eq!(
+        coordinator.current(&account, 1_003).unwrap().phase,
+        UsageRefreshPhase::Failed
+    );
+}
+
+#[test]
 fn same_capability_revision_change_fences_in_flight_join_immediately() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
@@ -881,6 +926,42 @@ fn catalog_purge_prevents_restart_resurrection() {
     );
     assert_eq!(
         restarted.current(&account, 1_003).unwrap_err().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+}
+
+#[test]
+fn corrupt_revoked_account_is_quarantined_without_poisoning_rotation() {
+    let temp = tempfile::tempdir().unwrap();
+    let accounts = temp.path().join("accounts");
+    std::fs::create_dir_all(&accounts).unwrap();
+    let account = capability("account-a");
+    let active = accounts.join("claude-account-a.json");
+    std::fs::write(&active, b"corrupt revoked state").unwrap();
+    std::fs::set_permissions(&active, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(FileAccountStateStore::at(accounts.clone()));
+    let coordinator = UsageCoordinator::with_catalog(
+        executor,
+        store,
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-a")],
+    );
+
+    coordinator.reconcile_catalog([], 1_001).unwrap();
+    assert!(!active.exists());
+    let quarantined = std::fs::read_dir(accounts)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains(".corrupt."))
+        .collect::<Vec<_>>();
+    assert_eq!(quarantined.len(), 1);
+    assert_eq!(
+        coordinator.current(&account, 1_001).unwrap_err().kind,
         UsageCoordinationErrorKind::CatalogRevoked
     );
 }

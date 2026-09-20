@@ -260,6 +260,7 @@ async fn docker_relay_guard_requests_graceful_shutdown_before_detach() -> Result
     let guard = UsageRelayGuard {
         task: Some(task),
         socket_path: None,
+        socket_identity: None,
         shutdown: Some(shutdown),
     };
 
@@ -549,6 +550,25 @@ async fn usage_relay_bind_failure_is_inactive_and_never_probes() {
     assert!(error.to_string().contains("binding scoped usage relay"));
     assert!(!socket.exists());
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn relay_guard_does_not_remove_a_successor_socket() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("usage.sock");
+    let guard = start_guard(
+        socket.clone(),
+        UsageBrokerConfig::for_data_dir(temp.path().join("data")).client(),
+        vec![capability("allowed")],
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    fs::remove_file(&socket).unwrap();
+    let successor = UnixListener::bind(&socket).unwrap();
+    drop(guard);
+    assert!(socket.exists());
+    drop(successor);
 }
 
 #[tokio::test]
