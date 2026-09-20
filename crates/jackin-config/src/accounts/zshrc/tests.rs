@@ -331,9 +331,9 @@ fn plan_parses_wrapper_call_sites() {
 }
 
 #[test]
-fn plan_groups_model_profiles_by_stem() {
+fn plan_groups_model_profiles_by_canonical_provider_stem() {
     let parsed = parse_zshrc_source(
-        "KIMI_MODEL=kimi-k2\nKIMI_BASE_URL=https://api.kimi.com/coding/v1\nKIMI_PROFILE=dev\nZAI_MODEL=glm-4.6\nMINIMAX_MODEL=MiniMax-M2\nMINIMAX_BASE_URL=https://api.minimax.io/v1\nANTHROPIC_DEFAULT_OPUS_MODEL=opus-x\nANTHROPIC_MODEL=sonnet-y\nAWS_PROFILE=dev-only\n",
+        "MOONSHOT_MODEL=kimi-k2\nMOONSHOT_BASE_URL=https://api.kimi.com/coding/v1\nMOONSHOT_PROFILE=dev\nGOOGLE_MODEL=gemini-2.5-pro\nGOOGLE_BASE_URL=https://generativelanguage.example/v1\nZAI_MODEL=glm-4.6\nMINIMAX_MODEL=MiniMax-M2\nMINIMAX_BASE_URL=https://api.minimax.io/v1\nANTHROPIC_DEFAULT_OPUS_MODEL=opus-x\nANTHROPIC_MODEL=sonnet-y\nAWS_PROFILE=dev-only\n",
     );
     let plan = import_plan(&parsed);
     assert_eq!(
@@ -345,14 +345,19 @@ fn plan_groups_model_profiles_by_stem() {
                 base_url: None,
             },
             ModelProfile {
-                name: "kimi".into(),
-                model: Some("kimi-k2".into()),
-                base_url: Some("https://api.kimi.com/coding/v1".into()),
+                name: "google".into(),
+                model: Some("gemini-2.5-pro".into()),
+                base_url: Some("https://generativelanguage.example/v1".into()),
             },
             ModelProfile {
                 name: "minimax".into(),
                 model: Some("MiniMax-M2".into()),
                 base_url: Some("https://api.minimax.io/v1".into()),
+            },
+            ModelProfile {
+                name: "moonshot".into(),
+                model: Some("kimi-k2".into()),
+                base_url: Some("https://api.kimi.com/coding/v1".into()),
             },
             ModelProfile {
                 name: "zai".into(),
@@ -366,11 +371,14 @@ fn plan_groups_model_profiles_by_stem() {
 #[test]
 fn plan_carries_no_secret_values() {
     let parsed = parse_zshrc_source(
-        "CLAUDE_CONFIG_DIR=/srv/claude\nANTHROPIC_API_KEY=sk-ant-secret\nKIMI_API_KEY=$(op read op://work/kimi/password)\nKIMI_MODEL=kimi-k2\n",
+        "CLAUDE_CONFIG_DIR=/srv/claude\nANTHROPIC_API_KEY=sk-ant-secret\nMOONSHOT_API_KEY=$(op read op://work/moonshot/password)\nMOONSHOT_MODEL=kimi-k2\n",
     );
     let plan = import_plan(&parsed);
     let rendered = format!("{plan:?}");
     assert!(!rendered.contains("sk-ant-secret"), "{rendered}");
-    assert!(rendered.contains("op://work/kimi/password"), "{rendered}");
+    assert!(
+        rendered.contains("op://work/moonshot/password"),
+        "{rendered}"
+    );
     assert!(rendered.contains("/srv/claude"), "{rendered}");
 }
