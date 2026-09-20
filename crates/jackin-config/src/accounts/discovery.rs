@@ -88,6 +88,10 @@ pub enum CredentialEvidence {
 pub struct DiscoveredAccount {
     /// Agent that owns the credential format.
     pub agent: Agent,
+    /// Provider identity selected from the source store.  Multi-provider
+    /// clients must carry this identity into the account registry; the
+    /// directory alone is not an account selector.
+    pub provider: Option<AiProvider>,
     /// Selected source directory to store in the account registry.
     pub directory: PathBuf,
     /// Credential location which established this discovery.
@@ -106,6 +110,10 @@ pub enum DiscoveryError {
     /// Source exceeds the bounded credential read size.
     #[error("credential file exceeds the discovery size limit")]
     TooLarge,
+    /// Source is readable but the selected agent cannot safely provision its
+    /// layout without risking unrelated credentials.
+    #[error("credential source uses an unsupported layout: {0}")]
+    Unsupported(&'static str),
 }
 
 /// One failed source; other agents are still scanned.
@@ -136,6 +144,21 @@ pub fn discover_default_accounts(home: &Path) -> DiscoveryReport {
         let primary = home.join(agent.runtime().state_paths().credential_dir);
         let fallback = (agent == Agent::Kimi).then(|| home.join(".kimi"));
         for directory in std::iter::once(primary).chain(fallback) {
+            if agent == Agent::Opencode {
+                match inspect_store_accounts(agent, &directory) {
+                    Ok(accounts) if !accounts.is_empty() => {
+                        report.accounts.extend(accounts);
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(error) => report.issues.push(DiscoveryIssue {
+                        agent,
+                        directory,
+                        error,
+                    }),
+                }
+                continue;
+            }
             match discover_account_directory(agent, &directory, home) {
                 Ok(Some(account)) => {
                     report.accounts.push(account);
@@ -180,6 +203,7 @@ fn inspect_directory(
         if keychain_exists("gemini") {
             return Ok(Some(DiscoveredAccount {
                 agent,
+                provider: AiProvider::for_agent(agent),
                 directory: directory.to_path_buf(),
                 evidence: CredentialEvidence::Keychain("gemini".to_owned()),
             }));
@@ -227,6 +251,7 @@ fn inspect_directory(
     {
         return Ok(Some(DiscoveredAccount {
             agent,
+            provider: AiProvider::for_agent(agent),
             directory: directory.to_path_buf(),
             evidence: CredentialEvidence::File(file),
         }));
@@ -238,6 +263,7 @@ fn inspect_directory(
     {
         return Ok(Some(DiscoveredAccount {
             agent,
+            provider: AiProvider::for_agent(agent),
             directory: scope.normalized_config_dir,
             evidence: CredentialEvidence::Keychain(scope.service),
         }));
@@ -255,36 +281,93 @@ fn inspect_store(
     agent: Agent,
     directory: &Path,
 ) -> Result<Option<DiscoveredAccount>, DiscoveryError> {
+    Ok(inspect_store_accounts(agent, directory)?.into_iter().next())
+}
+
+/// Inspect a store and retain every source-bound account candidate.
+///
+/// `OpenCode` candidates are keyed by the provider entry in `auth.json`.
+/// Database-only stores are not launchable by the current profile contract, so
+/// they are rejected instead of registering candidates with no materializable
+/// source. A sibling database is ignored when a single usable `auth.json`
+/// entry supplies the source-bound profile.
+fn inspect_store_accounts(
+    agent: Agent,
+    directory: &Path,
+) -> Result<Vec<DiscoveredAccount>, DiscoveryError> {
     use super::stores::{hermes, omp, opencode};
+    if agent == Agent::Opencode {
+        opencode::validate_opencode_auth_layout(directory).map_err(map_store_error)?;
+    }
     let candidates = match agent {
-        Agent::Opencode => opencode::enumerate_opencode_store(directory),
+        // The database parser remains available for audit fixtures, but its
+        // row identity cannot cross the profile boundary. A valid auth.json
+        // entry is the only source currently materialized for launch/usage;
+        // ignore a sibling database rather than mixing two identity systems.
+        Agent::Opencode => opencode::enumerate_opencode_auth(&directory.join("auth.json")),
         Agent::Omp => omp::enumerate_omp_credentials(&directory.join("agent/agent.db")),
         Agent::Hermes => hermes::enumerate_hermes_store(directory),
         _ => unreachable!("stores-backed agents only"),
     };
     match candidates {
-        Ok(candidates) => Ok(candidates
-            .into_iter()
-            .next()
-            .map(|candidate| DiscoveredAccount {
-                agent,
-                directory: directory.to_path_buf(),
-                evidence: CredentialEvidence::File(candidate.source),
-            })),
+        Ok(candidates) => {
+            if agent == Agent::Opencode {
+                if candidates.is_empty() && directory.join("opencode.db").is_file() {
+                    return Err(DiscoveryError::Unsupported(
+                        "OpenCode database credentials require a source-bound auth.json profile",
+                    ));
+                }
+                let mut accounts = Vec::with_capacity(candidates.len());
+                for candidate in candidates {
+                    let provider = opencode_provider(&candidate.provider).ok_or(
+                        DiscoveryError::Unsupported(
+                            "OpenCode credential provider is not in jackin's catalog",
+                        ),
+                    )?;
+                    accounts.push(DiscoveredAccount {
+                        agent,
+                        provider: Some(provider),
+                        directory: directory.to_path_buf(),
+                        evidence: CredentialEvidence::File(candidate.source),
+                    });
+                }
+                return Ok(accounts);
+            }
+            Ok(candidates
+                .into_iter()
+                .next()
+                .map(|candidate| DiscoveredAccount {
+                    agent,
+                    provider: AiProvider::for_agent(agent),
+                    directory: directory.to_path_buf(),
+                    evidence: CredentialEvidence::File(candidate.source),
+                })
+                .into_iter()
+                .collect())
+        }
         Err(error) => Err(map_store_error(error)),
     }
 }
 
+/// Map an `OpenCode` store key to the canonical provider catalog. `OpenCode`
+/// names its native Go subscription `opencode-go`; every other accepted key
+/// uses the catalog slug directly.
+fn opencode_provider(name: &str) -> Option<AiProvider> {
+    if name == "opencode-go" {
+        return Some(AiProvider::Opencode);
+    }
+    name.parse().ok()
+}
+
 /// Map a secret-free [`StoreError`](super::stores::StoreError) to the
-/// matching discovery category. `Unsupported` (present but uncovered
-/// layout) folds into `Malformed`: both mean present-but-unverifiable.
+/// matching discovery category. Unsupported layouts retain their sanitized
+/// reason so Settings can explain why a source was not registered.
 fn map_store_error(error: super::stores::StoreError) -> DiscoveryError {
     match error {
         super::stores::StoreError::Unreadable => DiscoveryError::Unreadable,
         super::stores::StoreError::TooLarge => DiscoveryError::TooLarge,
-        super::stores::StoreError::Malformed | super::stores::StoreError::Unsupported(_) => {
-            DiscoveryError::Malformed
-        }
+        super::stores::StoreError::Malformed => DiscoveryError::Malformed,
+        super::stores::StoreError::Unsupported(reason) => DiscoveryError::Unsupported(reason),
     }
 }
 

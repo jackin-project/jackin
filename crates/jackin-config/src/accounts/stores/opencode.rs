@@ -1,7 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Read-only enumerator for XDG data `opencode` credential stores.
+//! Read-only parser for XDG data `opencode` credential stores.
+//!
+//! The production source-bound boundary is deliberately auth-only: account
+//! discovery, provisioning, and usage accept one native `opencode-go` entry
+//! from `auth.json`. The `SQLite` parser and combined-store enumerator below are
+//! compiled only for unit-test audit fixtures; they are not canonical
+//! production discovery and cannot produce launchable or usage profiles.
 //!
 //! Authentication material lives in two sibling files, and either may be
 //! absent:
@@ -13,58 +19,102 @@
 //!   row per credential with columns such as `id`, `integration_id`,
 //!   `label`, `value`, `connector_id`, `method_id`, and `active`.
 //!
-//! Enumeration selects only entries holding a non-blank secret and returns
-//! one [`StoreCandidate`](super::StoreCandidate) per entry: `auth.json`
-//! providers sorted by name first, then `credential` rows in rowid order.
-//! The whole store is never copied: blank or unshaped entries are skipped,
-//! and only the selected secrets are cloned into candidates.
-//!
-//! The database is parsed through the shared [`sqlite`](super::sqlite)
-//! reader (no `rusqlite`, no Turso, no writes, no checkpoints). Rows whose
-//! `active` column is explicitly falsy (`0`, `"false"`, `"no"`, `"off"`,
-//! blank) are skipped; rows without the column are kept.
+//! Auth parsing selects only entries holding a non-blank secret. The
+//! test-only combined parser also inspects `SQLite` rows through the shared
+//! [`sqlite`](super::sqlite) reader (no `rusqlite`, no Turso, no writes, no
+//! checkpoints); that audit path is intentionally unavailable to production
+//! discovery.
 
 use std::path::Path;
 
+#[cfg(test)]
+use super::CredentialKind;
+#[cfg(test)]
 use super::sqlite::{
     SqlValue, SqliteImage, TableRow, find_column, find_table_schema, parse_column_names,
     text_value, wal_sibling_path,
 };
-use super::{
-    CredentialKind, StoreCandidate, StoreError, StoreKind, read_store_file, select_entry_secret,
-};
+use super::{StoreCandidate, StoreError, StoreKind, read_store_file, select_entry_secret};
 
 /// Maximum `auth.json` size accepted for enumeration.
 const AUTH_JSON_LIMIT: u64 = 1024 * 1024;
-/// Maximum database file size accepted for enumeration.
+/// Maximum database file size accepted by the test-only audit parser.
+#[cfg(test)]
 const DB_LIMIT: u64 = 8 * 1024 * 1024;
-/// Maximum `-wal` sibling size accepted for enumeration.
+/// Maximum `-wal` sibling size accepted by the test-only audit parser.
+#[cfg(test)]
 const WAL_LIMIT: u64 = 8 * 1024 * 1024;
 
 /// `credential` columns holding the secret, in preference order.
+#[cfg(test)]
 const VALUE_COLUMNS: [&str; 1] = ["value"];
 /// `credential` columns naming the provider, in preference order.
+#[cfg(test)]
 const PROVIDER_COLUMNS: [&str; 3] = ["integration_id", "connector_id", "label"];
 /// `credential` columns naming the credential method, in preference order.
+#[cfg(test)]
 const METHOD_COLUMNS: [&str; 2] = ["method_id", "method"];
 /// `credential` columns flagging whether the row is active.
+#[cfg(test)]
 const ACTIVE_COLUMNS: [&str; 1] = ["active"];
 
 /// Enumerate usable credentials from an `opencode` data directory.
 ///
 /// Reads the sibling `auth.json` and `opencode.db` files when present;
 /// absent files yield no candidates for their half. Pure parsing: no
-/// scanning, no writes.
+/// scanning, no writes. This helper is test-only audit coverage: discovery
+/// and provisioning use only the source-bound `auth.json` path, so database
+/// rows cannot become launchable profiles accidentally.
 ///
 /// # Errors
 ///
 /// Returns [`StoreError`] when a present source is unreadable, oversized, or
 /// malformed. One corrupt source fails the whole enumeration rather than
 /// silently hiding half the store.
+#[cfg(test)]
 pub(crate) fn enumerate_opencode_store(data_dir: &Path) -> Result<Vec<StoreCandidate>, StoreError> {
     let mut candidates = enumerate_opencode_auth(&data_dir.join("auth.json"))?;
     candidates.extend(enumerate_opencode_database(&data_dir.join("opencode.db"))?);
     Ok(candidates)
+}
+
+/// Validate the profile layout accepted by account discovery and
+/// provisioning. `OpenCode`'s parser can enumerate several entries for audit,
+/// but persistence cannot retain the raw entry identity yet; accepting more
+/// than one would let same-directory candidates collapse under one account
+/// ID/fingerprint. The launchable boundary is therefore exactly one usable
+/// top-level entry in `auth.json`. A sibling database is ignored because the
+/// auth entry is the source-bound materialization; database-only stores are
+/// rejected by discovery before persistence.
+pub(crate) fn validate_opencode_auth_layout(data_dir: &Path) -> Result<(), StoreError> {
+    let Some(bytes) = read_store_file(&data_dir.join("auth.json"), AUTH_JSON_LIMIT)? else {
+        return Ok(());
+    };
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| StoreError::Malformed)?;
+    let entries = value.as_object().ok_or(StoreError::Malformed)?;
+    if entries.is_empty() {
+        return Ok(());
+    }
+    if entries.len() != 1 {
+        return Err(StoreError::Unsupported(
+            "OpenCode auth.json must contain exactly one provider credential",
+        ));
+    }
+    let Some((provider, entry)) = entries.iter().next() else {
+        return Ok(());
+    };
+    if provider != "opencode-go" {
+        return Err(StoreError::Unsupported(
+            "OpenCode source-bound profiles currently support only the opencode-go auth entry",
+        ));
+    }
+    if select_entry_secret(entry).is_none() {
+        return Err(StoreError::Unsupported(
+            "OpenCode auth.json entry has no supported credential",
+        ));
+    }
+    Ok(())
 }
 
 /// Enumerate usable provider credentials from an `opencode/auth.json` file.
@@ -93,6 +143,7 @@ pub(crate) fn enumerate_opencode_auth(auth_path: &Path) -> Result<Vec<StoreCandi
 ///
 /// Returns [`StoreError`] for unreadable, oversized, malformed, or
 /// unsupported-layout sources.
+#[cfg(test)]
 pub(crate) fn enumerate_opencode_database(
     db_path: &Path,
 ) -> Result<Vec<StoreCandidate>, StoreError> {
@@ -133,6 +184,7 @@ fn parse_opencode_bytes(bytes: &[u8], source: &Path) -> Result<Vec<StoreCandidat
     Ok(candidates)
 }
 
+#[cfg(test)]
 fn parse_opencode_database(
     db: &[u8],
     wal: Option<&[u8]>,
@@ -166,6 +218,7 @@ fn parse_opencode_database(
 }
 
 /// Resolved `credential` column positions for one table walk.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 struct CredentialColumns {
     value: usize,
@@ -175,6 +228,7 @@ struct CredentialColumns {
     label: Option<usize>,
 }
 
+#[cfg(test)]
 fn row_to_candidate(
     row: &TableRow,
     columns: &[String],
@@ -224,6 +278,7 @@ fn row_to_candidate(
 
 /// Whether an `active` flag reads as enabled. Only explicitly falsy values
 /// disable the row; NULL and unrecognized shapes keep it.
+#[cfg(test)]
 fn is_active(flag: &SqlValue) -> bool {
     match flag {
         SqlValue::Int(number) => *number != 0,

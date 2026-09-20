@@ -1,16 +1,23 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Read-only enumerators for third-party credential stores.
+//! Read-only parsers for third-party credential stores.
 //!
 //! Each submodule parses one store layout from caller-given paths and returns
-//! the selected [`StoreCandidate`]s. Enumerators never write, never migrate,
-//! never create lock or journal sidecars, and never scan for store locations:
-//! discovery of *where* a store lives belongs to the caller.
+//! selected [`StoreCandidate`]s for audit/import work. Parsers never write,
+//! never migrate, never create lock or journal sidecars, and never scan for
+//! store locations: discovery of *where* a store lives belongs to the caller.
+//!
+//! Production `OpenCode` discovery, provisioning, and usage have a narrower
+//! source-bound contract: one native `auth.json` entry is canonical. The
+//! `OpenCode` `SQLite` parser is test-only audit coverage and must never become a
+//! production launch or usage candidate.
 //!
 //! Canonical entry points, one per store:
 //!
-//! - [`opencode::enumerate_opencode_store`]: `auth.json` + `opencode.db`;
+//! - [`opencode::enumerate_opencode_auth`]: production `auth.json` parsing;
+//! - [`opencode::enumerate_opencode_store`]: test-only combined `auth.json` +
+//!   `opencode.db` audit parsing;
 //! - [`omp::enumerate_omp_credentials`]: `agent.db` credentials;
 //! - [`hermes::enumerate_hermes_store`]: `.hermes/` directory.
 //!

@@ -59,6 +59,25 @@ impl ProfileCredentialReader for RecordingProfileReader {
     }
 }
 
+struct SyntheticDatabaseOnlyReader;
+
+impl ProfileCredentialReader for SyntheticDatabaseOnlyReader {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        path.file_name().and_then(std::ffi::OsStr::to_str) == Some("opencode.db")
+    }
+
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        panic!("Claude is ignored in source-validation fixtures")
+    }
+}
+
 impl ProviderCredentialEnvResolver for FakeEnvResolver {
     fn resolve_provider_credentials(
         &self,
@@ -92,6 +111,53 @@ impl ProviderCredentialEnvResolver for FakeEnvResolver {
             })
             .collect()
     }
+}
+
+#[test]
+fn opencode_profile_requires_one_auth_entry_and_ignores_sibling_database() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("opencode");
+    std::fs::create_dir_all(&root).unwrap();
+    let auth = root.join("auth.json");
+    let reader = RecordingProfileReader::default();
+
+    std::fs::write(
+        &auth,
+        r#"{"anthropic":{"type":"api","key":"fixture-a"},"opencode-go":{"type":"api","key":"fixture-go"}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Malformed
+    ));
+
+    std::fs::write(
+        &auth,
+        r#"{"opencode-go":{"type":"api","key":"fixture-go"}}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("opencode.db"), b"database fixture").unwrap();
+    assert!(matches!(
+        opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Anonymous(Some(_))
+    ));
+
+    std::fs::remove_file(&auth).unwrap();
+    assert!(matches!(
+        opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Malformed
+    ));
+}
+
+#[test]
+fn opencode_profile_database_only_uses_reader_abstraction() {
+    let reader = SyntheticDatabaseOnlyReader;
+    let auth = Path::new("/synthetic/opencode/auth.json");
+
+    assert!(matches!(
+        opencode_profile_identity(&reader, auth),
+        ProfileValidation::Malformed
+    ));
 }
 
 fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {

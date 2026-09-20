@@ -845,6 +845,22 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
         error.to_string().contains("XDG_DATA_HOME"),
         "unexpected amp rejection: {error}"
     );
+    // OpenCode also exports an XDG root. Until each pane has a complete
+    // process-wide XDG namespace, two provider-bound profiles in one
+    // container are rejected rather than sharing unrelated OpenCode state.
+    add_pair(&mut cfg, Agent::Opencode, "opencode");
+    let error = resolve_launch(
+        &cfg,
+        Some(&ws),
+        "smith",
+        Some(&["opencode-a".to_owned(), "opencode-b".to_owned()]),
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("XDG_DATA_HOME"),
+        "unexpected OpenCode rejection: {error}"
+    );
     // A lone second-agent instance still resolves.
     let instances =
         resolve_launch(&cfg, Some(&ws), "smith", Some(&["kimi-a".to_owned()]), None).unwrap();

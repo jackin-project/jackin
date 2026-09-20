@@ -465,33 +465,16 @@ pub(super) mod instances {
         let mut recovered_failure = false;
 
         for entry in &instances {
-            if is_live_instance_status(entry.status) {
-                let state_dir = paths.data_dir.join(&entry.container_base);
-                match jackin_runtime::instance::InstanceManifest::read(&state_dir) {
-                    Ok(manifest) => {
-                        admissions.insert(
-                            entry.container_base.clone(),
-                            manifest
-                                .admitted_instances
-                                .iter()
-                                .map(|admitted| {
-                                    jackin_console::services::launch::LiveInstanceAdmission {
-                                        instance_id: admitted.config_id.clone(),
-                                        agent: admitted.agent,
-                                        account_id: admitted.account_id.clone(),
-                                    }
-                                })
-                                .collect(),
-                        );
-                        if !manifest.sessions.is_empty() {
-                            sessions.insert(entry.container_base.clone(), manifest.sessions);
-                        }
-                    }
-                    Err(_) => {
-                        recovered_failure = true;
-                        session_errors.insert(entry.container_base.clone());
-                    }
-                }
+            if is_live_instance_status(entry.status)
+                && !record_live_manifest(
+                    paths,
+                    &entry.container_base,
+                    &mut admissions,
+                    &mut sessions,
+                )
+            {
+                recovered_failure = true;
+                session_errors.insert(entry.container_base.clone());
             }
             if should_snapshot_instance(entry, running_filter.as_ref()) {
                 snapshot_targets.push(entry.container_base.clone());
@@ -528,6 +511,45 @@ pub(super) mod instances {
             snapshots,
             next_interval: instance_refresh_interval(exec_fallback_seen),
         })
+    }
+
+    fn record_live_manifest(
+        paths: &jackin_core::JackinPaths,
+        container_base: &str,
+        admissions: &mut HashMap<
+            String,
+            Vec<jackin_console::services::launch::LiveInstanceAdmission>,
+        >,
+        sessions: &mut HashMap<String, Vec<jackin_core::SessionRecord>>,
+    ) -> bool {
+        let Ok(manifest) =
+            jackin_runtime::instance::InstanceManifest::read(&paths.data_dir.join(container_base))
+        else {
+            return false;
+        };
+
+        admissions.insert(
+            container_base.to_owned(),
+            manifest
+                .admitted_instances
+                .iter()
+                .map(live_instance_admission)
+                .collect(),
+        );
+        if !manifest.sessions.is_empty() {
+            sessions.insert(container_base.to_owned(), manifest.sessions);
+        }
+        true
+    }
+
+    fn live_instance_admission(
+        admitted: &jackin_runtime::instance::AdmittedInstance,
+    ) -> jackin_console::services::launch::LiveInstanceAdmission {
+        jackin_console::services::launch::LiveInstanceAdmission {
+            instance_id: admitted.config_id.clone(),
+            agent: admitted.agent,
+            account_id: admitted.account_id.clone(),
+        }
     }
 
     pub(crate) fn running_role_containers() -> anyhow::Result<Vec<String>> {

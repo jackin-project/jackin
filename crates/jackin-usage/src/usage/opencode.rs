@@ -115,6 +115,12 @@ pub(crate) fn load_opencode_api_key(path: &Path) -> Result<String, String> {
     })?;
     let value: serde_json::Value =
         serde_json::from_str(&text).map_err(|_| "OpenCode auth.json is malformed".to_owned())?;
+    let entries = value
+        .as_object()
+        .ok_or_else(|| "OpenCode auth.json is malformed".to_owned())?;
+    if entries.len() != 1 {
+        return Err("OpenCode auth.json has unsupported multiple credentials".to_owned());
+    }
     let entry = value
         .get("opencode-go")
         .ok_or_else(|| "OpenCode opencode-go credential is missing".to_owned())?;

@@ -138,6 +138,16 @@ branches = ["main"]
 # velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived
 # `docker build` is self-contained.
+#
+# The rust-jackin closure is too large for the GitHub-hosted runner's MBX
+# object-import staging quota: the observed restore was a 2.07 GiB archive and
+# `mbx cache import` expands it under `/tmp` before adopting objects. Keep the
+# useful Cargo registry/Git source cache, but opt this one unit out of the
+# unsafe MBX object transport. Other Rust units retain MBX.
+[[units]]
+id = "rust-jackin"
+mbx = false
+
 [[units]]
 id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]

@@ -2579,6 +2579,7 @@ fn profile_scan_candidate_skips_agents_without_native_billing() {
     for agent in [Agent::Omp, Agent::Hermes] {
         let discovered = crate::DiscoveredAccount {
             agent,
+            provider: crate::AiProvider::for_agent(agent),
             directory: "/tmp/store".into(),
             evidence: crate::CredentialEvidence::File("/tmp/store/auth.json".into()),
         };
@@ -2586,12 +2587,27 @@ fn profile_scan_candidate_skips_agents_without_native_billing() {
     }
     let discovered = crate::DiscoveredAccount {
         agent: Agent::Claude,
+        provider: Some(crate::AiProvider::Anthropic),
         directory: "/tmp/claude".into(),
         evidence: crate::CredentialEvidence::File("/tmp/claude/.credentials.json".into()),
     };
     let (id, account) = profile_scan_candidate(&discovered).unwrap();
     assert_eq!(id, "default-claude");
     assert_eq!(account.name, "Claude default");
+}
+
+#[test]
+fn profile_scan_candidate_preserves_opencode_store_provider_identity() {
+    let discovered = crate::DiscoveredAccount {
+        agent: Agent::Opencode,
+        provider: Some(crate::AiProvider::Zai),
+        directory: "/tmp/opencode".into(),
+        evidence: crate::CredentialEvidence::File("/tmp/opencode/auth.json".into()),
+    };
+    let (id, account) = profile_scan_candidate(&discovered).unwrap();
+    assert_eq!(id, "default-opencode-zai");
+    assert_eq!(account.provider, crate::AiProvider::Zai);
+    assert_eq!(account.name, "OpenCode zai default");
 }
 
 #[test]
@@ -2854,4 +2870,63 @@ fn apply_zshrc_plan_persists_amp_xdg_roots_with_discovered_credentials() {
     ));
     let config = editor.save().unwrap();
     assert!(config.accounts.contains_key("custom-amp"));
+}
+
+#[test]
+fn apply_zshrc_plan_rejects_opencode_xdg_root_before_amp_persistence() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let data = temp.path().join("xdg-data");
+    let config = temp.path().join("xdg-config");
+    let cache = temp.path().join("xdg-cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(data.join("opencode")).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-amp"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        data.join("opencode/auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"fixture-opencode"}}"#,
+    )
+    .unwrap();
+    let source = format!(
+        "XDG_DATA_HOME={}\nXDG_CONFIG_HOME={}\nXDG_CACHE_HOME={}\n",
+        data.display(),
+        config.display(),
+        cache.display()
+    );
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&source));
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+
+    assert!(report.added_accounts.is_empty(), "{report:?}");
+    assert_eq!(
+        report.unapplied_zshrc_xdg_roots,
+        vec![crate::XdgRoots {
+            data: data.clone(),
+            config: config.clone(),
+            cache: cache.clone(),
+        }]
+    );
+    assert!(report.issues.iter().any(|issue| {
+        issue.agent == Agent::Opencode
+            && issue.error
+                == crate::DiscoveryError::Unsupported(
+                    "OpenCode XDG roots from shell imports require an explicit profile directory",
+                )
+    }));
+    let config = editor.save().unwrap();
+    assert!(!config.accounts.contains_key("custom-amp"));
+    assert!(
+        !config
+            .accounts
+            .values()
+            .any(|account| account.provider == crate::AiProvider::Opencode)
+    );
 }

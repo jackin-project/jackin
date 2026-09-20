@@ -73,7 +73,7 @@ fn recognizes_each_agents_credentials_and_rejects_metadata() {
         (
             Agent::Opencode,
             "auth.json",
-            r#"{"anthropic":{"type":"oauth","refresh":"fixture"}}"#,
+            r#"{"opencode-go":{"type":"api","key":"fixture"}}"#,
         ),
         (
             Agent::Grok,
@@ -97,6 +97,105 @@ fn recognizes_each_agents_credentials_and_rejects_metadata() {
         assert_eq!(found.evidence, CredentialEvidence::File(path));
         assert!(!format!("{found:?}").contains("fixture"));
     }
+}
+
+#[test]
+fn opencode_default_discovery_rejects_multi_entry_before_persistence() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home
+        .path()
+        .join(Agent::Opencode.runtime().state_paths().credential_dir);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{
+            "anthropic":{"type":"api","key":"anthropic-sentinel"},
+            "opencode-go":{"type":"api","key":"opencode-sentinel"}
+        }"#,
+    )
+    .unwrap();
+
+    let report = discover_default_accounts(home.path());
+    assert!(
+        !report
+            .accounts
+            .iter()
+            .any(|account| account.agent == Agent::Opencode)
+    );
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Opencode)
+        .expect("ambiguous OpenCode auth is reported");
+    assert_eq!(
+        issue.error,
+        DiscoveryError::Unsupported(
+            "OpenCode auth.json must contain exactly one provider credential"
+        )
+    );
+    assert!(!format!("{issue:?}").contains("sentinel"));
+}
+
+#[test]
+fn opencode_default_discovery_uses_auth_entry_when_database_coexists() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home
+        .path()
+        .join(Agent::Opencode.runtime().state_paths().credential_dir);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"opencode-sentinel"}}"#,
+    )
+    .unwrap();
+    std::fs::write(directory.join("opencode.db"), b"database fixture").unwrap();
+
+    let report = discover_default_accounts(home.path());
+    let accounts = report
+        .accounts
+        .iter()
+        .filter(|account| account.agent == Agent::Opencode)
+        .collect::<Vec<_>>();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].provider, Some(AiProvider::Opencode));
+    assert_eq!(accounts[0].directory, directory);
+    assert!(
+        report
+            .issues
+            .iter()
+            .all(|issue| issue.agent != Agent::Opencode)
+    );
+    assert!(!format!("{accounts:?}").contains("sentinel"));
+}
+
+#[test]
+fn opencode_database_only_source_fails_closed_without_registering_account() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home
+        .path()
+        .join(Agent::Opencode.runtime().state_paths().credential_dir);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("opencode.db"), b"database fixture").unwrap();
+
+    let report = discover_default_accounts(home.path());
+    assert!(
+        !report
+            .accounts
+            .iter()
+            .any(|account| account.agent == Agent::Opencode)
+    );
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Opencode)
+        .expect("unsupported OpenCode database is reported");
+    assert_eq!(
+        issue.error,
+        DiscoveryError::Unsupported(
+            "OpenCode database credentials require a source-bound auth.json profile"
+        )
+    );
+    assert!(!format!("{issue:?}").contains("database fixture"));
 }
 
 #[test]
