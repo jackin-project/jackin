@@ -636,10 +636,10 @@ fn load_or_init_dual_migrates_legacy_config_with_legacy_workspaces() {
     // Pin the dual-migration contract: a legacy `config.toml` (no
     // `version`) carrying `[workspaces.X]` tables ends up with
     // the current version on the global file AND on each split
-    // workspace file after one load. The current registries are
-    // no-ops; once a real content-changing config migration lands,
-    // this test guards the ordering that the version migration runs
-    // alongside the split rather than getting silently skipped.
+    // workspace file after one load. The bootstrap migration is
+    // content-changing, so this test guards the ordering that the
+    // version migration runs alongside the split rather than getting
+    // silently skipped.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -661,12 +661,27 @@ dst = "/workspace/prod"
 
     let config = AppConfig::load_or_init(&paths).unwrap();
     assert!(config.workspaces.contains_key("prod"));
+    assert_eq!(
+        config.bootstrap,
+        Some(crate::BootstrapState {
+            version: crate::BOOTSTRAP_VERSION,
+            fresh_install: false,
+        })
+    );
 
     let global_on_disk = std::fs::read_to_string(&paths.config_file).unwrap();
     let global_parsed: toml::Value = toml::from_str(&global_on_disk).unwrap();
     assert_eq!(
         global_parsed["version"].as_str().unwrap(),
         CURRENT_CONFIG_VERSION
+    );
+    assert_eq!(
+        global_parsed["bootstrap"]["version"].as_integer(),
+        Some(i64::from(crate::BOOTSTRAP_VERSION))
+    );
+    assert_eq!(
+        global_parsed["bootstrap"]["fresh_install"].as_bool(),
+        Some(false)
     );
     assert!(!global_on_disk.contains("[workspaces."), "{global_on_disk}");
 
