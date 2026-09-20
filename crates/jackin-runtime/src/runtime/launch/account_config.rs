@@ -4,7 +4,7 @@
 //! Materialize selected API account settings in the private capsule home.
 
 use std::collections::BTreeMap;
-use std::path::{Component, Path};
+use std::path::Path;
 
 use anyhow::Context as _;
 use jackin_config::{AccountCredential, AiProvider, AppConfig};
@@ -14,7 +14,6 @@ use jackin_core::Agent;
 mod private_config_fs {
     use std::fs::File;
     use std::io::{Read as _, Write as _};
-    use std::os::fd::AsRawFd as _;
     use std::os::unix::fs::MetadataExt as _;
     use std::path::{Component, Path};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -175,7 +174,6 @@ mod private_config_fs {
         }
 
         let (temp_name, mut temp_file) = create_temp_file(directory)?;
-        let mut installed = false;
         let result = (|| {
             hook(PublishPoint::TempCreated(Artifact::CodexCatalog))?;
             temp_file
@@ -192,7 +190,7 @@ mod private_config_fs {
                 name,
                 AtFlags::empty(),
             ) {
-                Ok(()) => installed = true,
+                Ok(()) => {}
                 Err(Errno::EEXIST) => {
                     let existing = read_optional(directory, name)?;
                     anyhow::ensure!(
@@ -211,7 +209,7 @@ mod private_config_fs {
             Ok(())
         })();
 
-        cleanup_owned_temp(directory, &temp_name, &temp_file, result, installed)
+        cleanup_owned_temp(directory, &temp_name, &temp_file, result)
     }
 
     pub(super) fn publish_atomic<F>(
@@ -229,7 +227,6 @@ mod private_config_fs {
         // malformed capsule state from being silently taken over.
         let _ = read_optional(directory, name)?;
         let (temp_name, mut temp_file) = create_temp_file(directory)?;
-        let mut installed = false;
         let result = (|| {
             hook(PublishPoint::TempCreated(artifact))?;
             temp_file
@@ -243,7 +240,6 @@ mod private_config_fs {
             hook(PublishPoint::BeforeInstall(artifact))?;
             renameat(directory, temp_name.as_str(), directory, name)
                 .with_context(|| format!("atomically install private provider config {name}"))?;
-            installed = true;
             hook(PublishPoint::Installed(artifact))?;
             directory
                 .sync_all()
@@ -252,7 +248,7 @@ mod private_config_fs {
             Ok(())
         })();
 
-        cleanup_owned_temp(directory, &temp_name, &temp_file, result, installed)
+        cleanup_owned_temp(directory, &temp_name, &temp_file, result)
     }
 
     fn create_temp_file(directory: &File) -> anyhow::Result<(String, File)> {
@@ -285,26 +281,29 @@ mod private_config_fs {
         temp_name: &str,
         temp_file: &File,
         result: anyhow::Result<()>,
-        installed: bool,
     ) -> anyhow::Result<()> {
-        if installed {
-            // renameat moved this exact owned entry to the destination.
-            return result;
-        }
         let temp_stat = fstat(temp_file).context("stat owned provider config staging file")?;
+        let mut removed = false;
         match fstatat(directory, temp_name, AtFlags::AT_SYMLINK_NOFOLLOW) {
             Ok(path_stat)
                 if path_stat.st_dev == temp_stat.st_dev && path_stat.st_ino == temp_stat.st_ino =>
             {
-                if let Err(error) = unlinkat(directory, temp_name, UnlinkatFlags::NoRemoveDir) {
-                    if result.is_ok() || error != Errno::ENOENT {
-                        return Err(error).context("remove owned provider config staging file");
+                match unlinkat(directory, temp_name, UnlinkatFlags::NoRemoveDir) {
+                    Ok(()) => removed = true,
+                    Err(Errno::ENOENT) => {}
+                    Err(error) => {
+                        return Err(error).context("remove owned provider config staging file")
                     }
                 }
             }
             Err(Errno::ENOENT) => {}
             Ok(_) => anyhow::bail!("provider config staging name changed ownership; left untouched"),
             Err(error) => return Err(error).context("verify owned provider config staging file"),
+        }
+        if removed {
+            directory
+                .sync_all()
+                .context("sync private provider config staging cleanup")?;
         }
         result
     }
@@ -380,6 +379,7 @@ pub(super) fn configure_accounts(
     Ok(())
 }
 
+#[cfg(unix)]
 fn configure_codex(
     root: &Path,
     config: &AppConfig,
@@ -388,6 +388,34 @@ fn configure_codex(
     model: Option<&str>,
     effort: Option<&str>,
 ) -> anyhow::Result<()> {
+    configure_codex_with_publish_hook(root, config, instance, slot, model, effort, |_| Ok(()))
+}
+
+#[cfg(not(unix))]
+fn configure_codex(
+    _root: &Path,
+    _config: &AppConfig,
+    _instance: &jackin_config::ResolvedInstance,
+    _slot: &crate::instance::ProvisionedInstanceAuth,
+    _model: Option<&str>,
+    _effort: Option<&str>,
+) -> anyhow::Result<()> {
+    anyhow::bail!("private Codex config publication requires Unix descriptor-relative file operations")
+}
+
+#[cfg(unix)]
+fn configure_codex_with_publish_hook<F>(
+    root: &Path,
+    config: &AppConfig,
+    instance: &jackin_config::ResolvedInstance,
+    slot: &crate::instance::ProvisionedInstanceAuth,
+    model: Option<&str>,
+    effort: Option<&str>,
+    mut hook: F,
+) -> anyhow::Result<()>
+where
+    F: FnMut(private_config_fs::PublishPoint) -> anyhow::Result<()>,
+{
     let account = config
         .accounts
         .get(&instance.account_id)
@@ -411,13 +439,16 @@ fn configure_codex(
     // `container_home_rel` is computed by the auth provisioner from the same
     // slot layout used by mounts and the Capsule's CODEX_HOME value. Never
     // collapse multiple admitted Codex instances onto the primary home.
-    let directory = root.join("home").join(&slot.container_home_rel);
-    std::fs::create_dir_all(&directory).context("create private Codex configuration directory")?;
-    let path = directory.join("config.toml");
-    let mut document: toml::Table = match std::fs::read_to_string(&path) {
-        Ok(contents) => toml::from_str(&contents).context("parse private Codex configuration")?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
-        Err(error) => return Err(error).context("read private Codex configuration"),
+    let directory = private_config_fs::open_directory(root, Path::new(&slot.container_home_rel))?;
+    let _lock = private_config_fs::lock(&directory)?;
+    let mut document: toml::Table = match private_config_fs::read_optional(&directory, "config.toml")
+        .context("read private Codex configuration")?
+    {
+        Some(contents) => toml::from_str(
+            std::str::from_utf8(&contents).context("decode private Codex configuration")?,
+        )
+        .context("parse private Codex configuration")?,
+        None => toml::Table::new(),
     };
     let mut provider = toml::Table::new();
     provider.insert("name".into(), account.provider.slug().into());
@@ -433,6 +464,7 @@ fn configure_codex(
         .context("Codex model_providers must be a table")?;
     providers.insert("jackin_account".into(), provider.into());
     document.insert("model_provider".into(), "jackin_account".into());
+    let mut catalog_to_publish = None;
     if let Some(model) = model {
         document.insert("model".into(), model.into());
         if let Some(catalog) = model_catalog(account.provider, model) {
@@ -442,16 +474,14 @@ fn configure_codex(
                     "Codex model {model:?} does not support reasoning effort {effort:?}"
                 );
             }
-            std::fs::write(
-                directory.join("account-models.json"),
-                serde_json::to_vec_pretty(&catalog)?,
-            )
-            .context("write private Codex model metadata")?;
+            let catalog_contents = serde_json::to_vec_pretty(&catalog)?;
+            let catalog_name = codex_catalog_filename(&catalog_contents);
             let catalog_target = Path::new(&slot.folder_target)
-                .join("account-models.json")
+                .join(&catalog_name)
                 .to_string_lossy()
                 .into_owned();
             document.insert("model_catalog_json".into(), catalog_target.into());
+            catalog_to_publish = Some((catalog_name, catalog_contents));
         } else {
             document.remove("model_catalog_json");
         }
@@ -464,8 +494,32 @@ fn configure_codex(
     } else {
         document.remove("model_reasoning_effort");
     }
-    std::fs::write(path, toml::to_string_pretty(&document)?)
-        .context("write private Codex account configuration")
+    let config_contents = toml::to_string_pretty(&document)?.into_bytes();
+    if let Some((catalog_name, catalog_contents)) = catalog_to_publish {
+        // The catalog name is content-addressed and immutable. Sync it before
+        // atomically changing config.toml, which is the pair's commit point.
+        private_config_fs::publish_catalog(
+            &directory,
+            &catalog_name,
+            &catalog_contents,
+            &mut hook,
+        )
+        .context("publish private Codex model metadata")?;
+    }
+    private_config_fs::publish_atomic(
+        &directory,
+        "config.toml",
+        &config_contents,
+        private_config_fs::Artifact::CodexConfig,
+        &mut hook,
+    )
+    .context("publish private Codex account configuration")
+}
+
+fn codex_catalog_filename(contents: &[u8]) -> String {
+    use sha2::{Digest as _, Sha256};
+
+    format!("account-models-{:x}.json", Sha256::digest(contents))
 }
 
 /// Provider identifiers from `OpenCode`'s catalog; config and CLI model use the same ID.
