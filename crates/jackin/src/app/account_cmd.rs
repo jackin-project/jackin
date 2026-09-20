@@ -86,7 +86,7 @@ fn scan(paths: &JackinPaths) -> Result<()> {
     let (mut editor, open_report) = ConfigEditor::open_detailed(paths)?;
     let scan_report = editor.scan_for_accounts()?;
     let zshrc_report = import_zshrc_accounts(&mut editor, paths)?;
-    if !scan_report.added_accounts.is_empty() || !zshrc_report.added_accounts.is_empty() {
+    if scan_report.changed || zshrc_report.changed {
         editor.save()?;
     }
     let mut added = open_report.added;

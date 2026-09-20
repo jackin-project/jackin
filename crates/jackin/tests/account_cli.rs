@@ -155,6 +155,42 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
     Ok(())
 }
 
+#[test]
+fn account_scan_persists_zshrc_model_and_endpoint_without_new_account() -> anyhow::Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let home = temporary.path();
+    command(home)?
+        .args([
+            "account",
+            "add",
+            "openai-api-key",
+            "--provider",
+            "openai",
+            "--api-key",
+            "--secret-ref",
+            "$OPENAI_API_KEY",
+        ])
+        .assert()
+        .success();
+    fs::write(
+        home.join(".zshrc"),
+        "OPENAI_MODEL=gpt-5-boundary\nOPENAI_BASE_URL=https://proxy.example/v1\n",
+    )?;
+
+    command(home)?.args(["account", "scan"]).assert().success();
+
+    let config = registry(home)?;
+    let AccountCredential::ApiKey {
+        model, base_url, ..
+    } = &config.accounts["openai-api-key"].credential
+    else {
+        anyhow::bail!("expected API-key account");
+    };
+    assert_eq!(model.as_deref(), Some("gpt-5-boundary"));
+    assert_eq!(base_url.as_deref(), Some("https://proxy.example/v1"));
+    Ok(())
+}
+
 fn assert_workspace_assignment_lifecycle(home: &Path) -> anyhow::Result<()> {
     let mount = format!("{}:/workspace", home.display());
     command(home)?

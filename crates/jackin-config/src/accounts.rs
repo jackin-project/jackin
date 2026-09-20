@@ -562,8 +562,8 @@ impl AccountConfig {
 ///
 /// The fields intentionally mirror `same_credential_source`: API-key model
 /// overrides do not identify a credential source, while the full persisted
-/// `EnvValue` does. The digest lets removal tombstones survive without keeping
-/// literal credentials in a second config field.
+/// `EnvValue` and endpoint do. The digest lets removal tombstones survive
+/// without keeping literal credentials in a second config field.
 pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
     let mut digest = Sha256::new();
     hash_component(&mut digest, account.provider.slug());

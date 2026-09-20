@@ -8,7 +8,8 @@ use jackin_config::{AuthForwardMode, GithubAuthMode};
 use jackin_core::JackinPaths;
 use jackin_manifest::RoleManifest;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
 
 mod auth;
 pub use auth::validate_sync_source_dir;
@@ -615,11 +616,12 @@ fn validate_selected_account_sources(
         if xdg_root_agent(binding.agent)
             && let Some(roots) = &binding.xdg_roots
         {
+            let cache_root = resolve_xdg_root_for_overlap(&roots.cache);
             if let Some((previous_root, previous_key)) =
                 configured_cache_roots.iter().find(|(previous_root, _)| {
-                    roots.cache == **previous_root
-                        || roots.cache.starts_with(previous_root)
-                        || previous_root.starts_with(&roots.cache)
+                    cache_root == **previous_root
+                        || cache_root.starts_with(previous_root)
+                        || previous_root.starts_with(&cache_root)
                 })
             {
                 anyhow::bail!(
@@ -629,7 +631,7 @@ fn validate_selected_account_sources(
                     previous_root.display()
                 );
             }
-            configured_cache_roots.insert(roots.cache.clone(), binding.key.clone());
+            configured_cache_roots.insert(cache_root, binding.key.clone());
         }
         let xdg_data_dir = xdg_root_agent(binding.agent)
             .then(|| {
@@ -654,6 +656,55 @@ fn validate_selected_account_sources(
         }
     }
     Ok(())
+}
+
+/// Resolve an XDG root to the path identity used by the overlap guard.
+///
+/// `canonicalize` handles existing aliases and symlinks. For a not-yet-created
+/// root, canonicalize the nearest existing ancestor and append the missing
+/// suffix, so the guard still compares physical roots without requiring
+/// provisioning to run first.
+fn resolve_xdg_root_for_overlap(path: &Path) -> PathBuf {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return canonical;
+    }
+
+    let lexical = normalize_xdg_path(path);
+    let mut ancestor = lexical.clone();
+    let mut missing = Vec::<OsString>::new();
+    while !ancestor.exists() {
+        let Some(name) = ancestor.file_name().map(OsString::from) else {
+            return lexical;
+        };
+        missing.push(name);
+        if !ancestor.pop() {
+            return lexical;
+        }
+    }
+
+    let mut resolved = std::fs::canonicalize(&ancestor).unwrap_or(ancestor);
+    for name in missing.iter().rev() {
+        resolved.push(name);
+    }
+    normalize_xdg_path(&resolved)
+}
+
+fn normalize_xdg_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(std::path::MAIN_SEPARATOR_STR),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push(component.as_os_str());
+                }
+            }
+            Component::Normal(value) => normalized.push(value),
+        }
+    }
+    normalized
 }
 
 #[derive(Debug, Clone)]

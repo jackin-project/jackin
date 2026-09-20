@@ -79,6 +79,8 @@ pub enum EnvScope {
 pub struct BootstrapReport {
     /// True when a fresh-install scan ran during this open.
     pub fresh_install: bool,
+    /// True when the editor contains a scan mutation that must be saved.
+    pub changed: bool,
     /// Account IDs registered by the bootstrap scan.
     pub added_accounts: Vec<String>,
     /// Full `(id, account)` pairs for `added_accounts`, in the same order.
@@ -171,8 +173,9 @@ fn zshrc_provider(stem: &str) -> Option<crate::AiProvider> {
 fn env_scan_candidate(
     provider: crate::AiProvider,
     variable: &str,
+    base_url: Option<String>,
 ) -> (String, crate::AccountConfig) {
-    api_key_scan_candidate(provider, EnvValue::from(format!("${variable}")))
+    api_key_scan_candidate(provider, EnvValue::from(format!("${variable}")), base_url)
 }
 
 /// Synthesize the registry entry for a provider API key with an explicit
@@ -180,6 +183,7 @@ fn env_scan_candidate(
 fn api_key_scan_candidate(
     provider: crate::AiProvider,
     value: EnvValue,
+    base_url: Option<String>,
 ) -> (String, crate::AccountConfig) {
     let id = format!("{}-api-key", provider.slug());
     let account = crate::AccountConfig {
@@ -188,7 +192,7 @@ fn api_key_scan_candidate(
         provider,
         credential: crate::AccountCredential::ApiKey {
             value,
-            base_url: None,
+            base_url,
             model: None,
         },
     };
@@ -230,16 +234,18 @@ fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapRepo
     let scan = crate::discover_default_accounts(home);
     report.issues = scan.issues;
     let mut register = |id: String, account: crate::AccountConfig| {
-        if config.accounts.contains_key(&id)
-            || config
-                .account_scan_exclusions
-                .contains(&account_source_fingerprint(&account))
-        {
+        if scan_candidate_is_blocked(
+            &config.accounts,
+            &config.account_scan_exclusions,
+            &id,
+            &account,
+        ) {
             return;
         }
         config.accounts.insert(id.clone(), account.clone());
         report.added_accounts.push(id.clone());
         report.added.push((id, account));
+        report.changed = true;
     };
     for discovered in scan.accounts {
         if let Some((id, account)) = profile_scan_candidate(&discovered) {
@@ -249,8 +255,11 @@ fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapRepo
     let environment = std::env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
         .collect();
-    for (provider, variable) in crate::discover_environment_accounts(&environment) {
-        let (id, account) = env_scan_candidate(provider, &variable);
+    for candidate in
+        crate::accounts::discovery::discover_environment_account_candidates(&environment)
+    {
+        let (id, account) =
+            env_scan_candidate(candidate.provider, &candidate.variable, candidate.base_url);
         register(id, account);
     }
     for (agent, variable) in crate::discover_environment_oauth_accounts(&environment) {
@@ -306,6 +315,19 @@ fn scan_source_registered(
             _ => false,
         }
     })
+}
+
+/// Apply the same ID, tombstone, and credential-source collision policy to
+/// every discovery helper.
+fn scan_candidate_is_blocked(
+    known: &BTreeMap<String, crate::AccountConfig>,
+    excluded: &BTreeSet<String>,
+    id: &str,
+    account: &crate::AccountConfig,
+) -> bool {
+    known.contains_key(id)
+        || excluded.contains(&account_source_fingerprint(account))
+        || scan_source_registered(known, account)
 }
 
 /// Read an installer `fresh_install` marker without changing it.
@@ -753,6 +775,7 @@ pub(crate) fn recover_pending_publication(config_file: &Path) -> crate::ConfigRe
 fn apply_xdg_profile_candidate(
     editor: &mut ConfigEditor,
     known: &mut BTreeMap<String, crate::AccountConfig>,
+    excluded: &BTreeSet<String>,
     report: &mut BootstrapReport,
     roots: &crate::XdgRoots,
     candidate: Option<(String, crate::AccountConfig)>,
@@ -761,17 +784,19 @@ fn apply_xdg_profile_candidate(
         report.unapplied_zshrc_xdg_roots.push(roots.clone());
         return Ok(());
     };
-    if scan_source_registered(known, &account) {
-        return Ok(());
-    }
-    if known.contains_key(&id) {
-        report.unapplied_zshrc_xdg_roots.push(roots.clone());
+    let is_excluded = excluded.contains(&account_source_fingerprint(&account));
+    let source_registered = scan_source_registered(known, &account);
+    if scan_candidate_is_blocked(known, excluded, &id, &account) {
+        if known.contains_key(&id) && !is_excluded && !source_registered {
+            report.unapplied_zshrc_xdg_roots.push(roots.clone());
+        }
         return Ok(());
     }
     editor.upsert_account(&id, &account)?;
     known.insert(id.clone(), account.clone());
     report.added_accounts.push(id.clone());
     report.added.push((id, account));
+    report.changed = true;
     Ok(())
 }
 
@@ -876,8 +901,14 @@ impl ConfigEditor {
                 candidates.push(candidate);
             }
         }
-        for (provider, variable) in crate::discover_environment_accounts(environment) {
-            candidates.push(env_scan_candidate(provider, &variable));
+        for candidate in
+            crate::accounts::discovery::discover_environment_account_candidates(environment)
+        {
+            candidates.push(env_scan_candidate(
+                candidate.provider,
+                &candidate.variable,
+                candidate.base_url,
+            ));
         }
         for (agent, variable) in crate::discover_environment_oauth_accounts(environment) {
             if let Some(candidate) = oauth_scan_candidate(agent, &variable) {
@@ -891,16 +922,14 @@ impl ConfigEditor {
             // Skip-on-collision in both dimensions: an operator
             // registration (same ID, or same credential source under
             // another ID) always wins over scan synthesis.
-            if known.contains_key(&id)
-                || excluded.contains(&account_source_fingerprint(&account))
-                || scan_source_registered(&known, &account)
-            {
+            if scan_candidate_is_blocked(&known, &excluded, &id, &account) {
                 continue;
             }
             self.upsert_account(&id, &account)?;
             known.insert(id.clone(), account.clone());
             report.added_accounts.push(id.clone());
             report.added.push((id, account));
+            report.changed = true;
         }
         Ok(report)
     }
@@ -947,16 +976,14 @@ impl ConfigEditor {
                             xdg_roots: None,
                         },
                     };
-                    if known.contains_key(&id)
-                        || excluded.contains(&account_source_fingerprint(&account))
-                        || scan_source_registered(&known, &account)
-                    {
+                    if scan_candidate_is_blocked(&known, &excluded, &id, &account) {
                         continue;
                     }
                     self.upsert_account(&id, &account)?;
                     known.insert(id.clone(), account.clone());
                     report.added_accounts.push(id.clone());
                     report.added.push((id, account));
+                    report.changed = true;
                 }
                 Ok(None) => {}
                 Err(error) => report.issues.push(crate::DiscoveryIssue {
@@ -999,6 +1026,7 @@ impl ConfigEditor {
                         apply_xdg_profile_candidate(
                             self,
                             &mut known,
+                            &excluded,
                             &mut report,
                             roots,
                             Some(candidate),
@@ -1025,7 +1053,14 @@ impl ConfigEditor {
                 crate::discover_environment_accounts(&probe)
                     .into_iter()
                     .next()
-                    .map(|(provider, _)| api_key_scan_candidate(provider, value))
+                    .map(|(provider, _)| {
+                        let base_url = plan
+                            .models
+                            .iter()
+                            .find(|model| zshrc_provider(&model.name) == Some(provider))
+                            .and_then(|model| model.base_url.clone());
+                        api_key_scan_candidate(provider, value, base_url)
+                    })
             } else {
                 oauth_scan_candidate_with_value(jackin_core::Agent::Claude, value)
             };
@@ -1034,16 +1069,14 @@ impl ConfigEditor {
             let Some((id, account)) = seeded else {
                 continue;
             };
-            if known.contains_key(&id)
-                || excluded.contains(&account_source_fingerprint(&account))
-                || scan_source_registered(&known, &account)
-            {
+            if scan_candidate_is_blocked(&known, &excluded, &id, &account) {
                 continue;
             }
             self.upsert_account(&id, &account)?;
             known.insert(id.clone(), account.clone());
             report.added_accounts.push(id.clone());
             report.added.push((id, account));
+            report.changed = true;
         }
         for model in &plan.models {
             let Some(provider) = zshrc_provider(&model.name) else {
@@ -1055,7 +1088,7 @@ impl ConfigEditor {
                 report.unapplied_zshrc_models.push(model.clone());
                 continue;
             };
-            let mut account = existing;
+            let mut account = existing.clone();
             let crate::AccountCredential::ApiKey {
                 model: account_model,
                 base_url: account_url,
@@ -1071,8 +1104,11 @@ impl ConfigEditor {
             if model.base_url.is_some() {
                 *account_url = model.base_url.clone();
             }
-            self.upsert_account(&id, &account)?;
-            known.insert(id, account);
+            if account != existing {
+                self.upsert_account(&id, &account)?;
+                known.insert(id, account);
+                report.changed = true;
+            }
         }
         // Arbitrary shell wrappers cannot safely be executed or serialized
         // into the current launch protocol. Retain the parsed call sites in

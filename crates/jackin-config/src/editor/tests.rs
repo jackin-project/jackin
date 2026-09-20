@@ -2503,6 +2503,58 @@ fn removed_account_stays_excluded_from_scan_after_reload() {
 }
 
 #[test]
+fn removed_environment_account_with_endpoint_stays_excluded() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let environment = BTreeMap::from([
+        ("OPENAI_API_KEY".to_owned(), "fixture-key".to_owned()),
+        (
+            "OPENAI_BASE_URL".to_owned(),
+            "https://proxy.example/v1".to_owned(),
+        ),
+    ]);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let first = editor
+        .scan_for_accounts_with(&paths.home_dir, &environment)
+        .unwrap();
+    assert!(first.added_accounts.contains(&"openai-api-key".to_owned()));
+    let (_, account) = first
+        .added
+        .iter()
+        .find(|(id, _)| id == "openai-api-key")
+        .unwrap();
+    assert!(matches!(
+        &account.credential,
+        crate::AccountCredential::ApiKey {
+            base_url: Some(url),
+            ..
+        } if url == "https://proxy.example/v1"
+    ));
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("openai-api-key").unwrap();
+    let removed = editor.save().unwrap();
+    assert_eq!(removed.account_scan_exclusions.len(), 1);
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let second = editor
+        .scan_for_accounts_with(&paths.home_dir, &environment)
+        .unwrap();
+    assert!(second.added_accounts.is_empty(), "{second:?}");
+    assert!(!second.changed);
+    assert!(
+        !editor
+            .save()
+            .unwrap()
+            .accounts
+            .contains_key("openai-api-key")
+    );
+}
+
+#[test]
 fn scan_for_accounts_reads_live_home_and_environment() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -2775,6 +2827,7 @@ fn apply_zshrc_plan_persists_canonical_model_and_reports_unsupported_wrapper() {
     let report = editor.apply_zshrc_plan(&plan).unwrap();
 
     assert!(report.unapplied_zshrc_models.is_empty(), "{report:?}");
+    assert!(report.changed);
     assert_eq!(report.unapplied_zshrc_wrappers.len(), 1);
     assert_eq!(report.unapplied_zshrc_wrappers[0].var, "KIMI_API_KEY");
     let config = editor.save().unwrap();
@@ -2786,6 +2839,46 @@ fn apply_zshrc_plan_persists_canonical_model_and_reports_unsupported_wrapper() {
             base_url: Some("https://api.kimi.example/v1".into()),
             model: Some("kimi-k2".into()),
         }
+    );
+}
+
+#[test]
+fn removed_op_ref_account_keeps_model_endpoint_tombstone_identity() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let plan = crate::import_plan(&crate::parse_zshrc_source(
+        "MOONSHOT_MODEL=kimi-k2\nMOONSHOT_BASE_URL=https://proxy.example/v1\nKIMI_API_KEY=$(op read op://vault/item/field)\n",
+    ));
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let first = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(
+        first
+            .added_accounts
+            .contains(&"moonshot-api-key".to_owned())
+    );
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("moonshot-api-key").unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let second = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(second.added_accounts.is_empty(), "{second:?}");
+    assert!(
+        second
+            .unapplied_zshrc_models
+            .iter()
+            .any(|model| model.name == "moonshot")
+    );
+    assert!(
+        !editor
+            .save()
+            .unwrap()
+            .accounts
+            .contains_key("moonshot-api-key")
     );
 }
 
@@ -2895,6 +2988,46 @@ fn apply_zshrc_plan_persists_amp_xdg_roots_with_discovered_credentials() {
     ));
     let config = editor.save().unwrap();
     assert!(config.accounts.contains_key("custom-amp"));
+}
+
+#[test]
+fn removed_amp_xdg_account_stays_excluded_from_zshrc_scan() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let data = temp.path().join("xdg-data");
+    let config = temp.path().join("xdg-config");
+    let cache = temp.path().join("xdg-cache");
+    std::fs::create_dir_all(data.join("amp")).unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        data.join("amp/secrets.json"),
+        r#"{"apiKey@https://ampcode.com/":"fixture-key"}"#,
+    )
+    .unwrap();
+    let source = format!(
+        "XDG_DATA_HOME={}\nXDG_CONFIG_HOME={}\nXDG_CACHE_HOME={}\n",
+        data.display(),
+        config.display(),
+        cache.display()
+    );
+    let plan = crate::import_plan(&crate::parse_zshrc_source(&source));
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let first = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(first.added_accounts.contains(&"custom-amp".to_owned()));
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.remove_account("custom-amp").unwrap();
+    editor.save().unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let second = editor.apply_zshrc_plan(&plan).unwrap();
+    assert!(second.added_accounts.is_empty(), "{second:?}");
+    assert!(second.unapplied_zshrc_xdg_roots.is_empty(), "{second:?}");
+    assert!(!editor.save().unwrap().accounts.contains_key("custom-amp"));
 }
 
 #[test]
