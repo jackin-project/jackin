@@ -1141,3 +1141,361 @@ fn probe_budget_propagates_worker_panic_to_coordinator_classification() {
         "worker panic must propagate to the caller"
     );
 }
+
+fn scripted_discovery(
+    generation: Option<&str>,
+    members: &[(&str, crate::host::HostSurfaceId)],
+) -> ValidatedUsageDiscovery {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject};
+
+    ValidatedUsageDiscovery {
+        config_generation: generation.map(str::to_owned),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: members
+            .iter()
+            .enumerate()
+            .map(|(index, (label, surface))| ValidatedCredentialBinding {
+                surface: *surface,
+                identity: Some(CanonicalAccountIdentity {
+                    surface: *surface,
+                    subject: CanonicalAccountSubject::ProviderStableHandle((*label).to_owned()),
+                }),
+                source_id: format!("source-{index}"),
+                capability_id: format!("capability-{index}-{label}"),
+                provenance: BTreeSet::from(["workspace sample role test".to_owned()]),
+                source: ValidatedCredentialSource::Capability,
+            })
+            .collect(),
+    }
+}
+
+fn activation_scope(temp: &tempfile::TempDir) -> UsageDiscoveryScope {
+    UsageDiscoveryScope::HostDesktop {
+        config_root: temp.path().join("config"),
+        operator_home: temp.path().join("home"),
+    }
+}
+
+fn counting_broker(data_dir: &Path) -> UsageBrokerClient {
+    ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(data_dir.to_owned()),
+        Arc::new(CountingExecutor {
+            calls: AtomicUsize::new(0),
+        }),
+    )
+    .unwrap()
+}
+
+#[test]
+fn slow_activator_stale_caller_catalog_never_wins() {
+    use crate::host::HostSurfaceId;
+
+    let temp = tempfile::tempdir().unwrap();
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let client = counting_broker(temp.path());
+
+    // The newer winner already published the current truth.
+    let fresh = scripted_discovery(
+        Some("generation-fresh"),
+        &[("fresh", HostSurfaceId::Claude)],
+    );
+    let fresh_entries = usage_catalog_entries(&fresh);
+    let winner = client
+        .reconcile_catalog("generation-fresh".to_owned(), fresh_entries)
+        .unwrap();
+    let stale = scripted_discovery(Some("generation-stale"), &[("stale", HostSurfaceId::Codex)]);
+    let stale_capability =
+        capability_for_binding(&stale.bindings[0], stale.config_generation.as_deref());
+
+    // A slow activator arrives holding a stale caller-side catalog, but its
+    // post-lease scan observes the same current truth as the winner. The
+    // ordering is driven explicitly through the seams: no timing involved.
+    let published = Arc::new(Mutex::new(Vec::<String>::new()));
+    let mut discover =
+        || -> Result<ValidatedUsageDiscovery, UsageCoordinationError> { Ok(fresh.clone()) };
+    let mut reconcile = {
+        let published = Arc::clone(&published);
+        move |client: &UsageBrokerClient,
+              expected_projection_id: Option<String>,
+              catalog_revision: String,
+              entries: Vec<UsageCatalogEntry>| {
+            published.lock().unwrap().push(catalog_revision.clone());
+            client.reconcile_catalog_if_projection(
+                expected_projection_id,
+                catalog_revision,
+                entries,
+            )
+        }
+    };
+    let handle = ensure_usage_broker_with_hooks(
+        &config,
+        &activation_scope(&temp),
+        stale,
+        &mut discover,
+        &mut reconcile,
+    )
+    .unwrap();
+
+    let published = published.lock().unwrap();
+    assert!(
+        !published.is_empty()
+            && published
+                .iter()
+                .all(|revision| revision == "generation-fresh"),
+        "stale caller catalog must never be published: {published:?}"
+    );
+    let final_projection = client.current_projection().unwrap();
+    assert_eq!(final_projection.discovery_revision, "generation-fresh");
+    assert_eq!(
+        final_projection.broker_instance_id,
+        winner.broker_instance_id
+    );
+    assert_eq!(handle.catalog_lease, final_projection.projection_id);
+    assert_eq!(handle.capabilities, usage_broker_capabilities(&fresh));
+    assert_eq!(
+        client.current(stale_capability).unwrap_err().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+    assert!(
+        temp.path()
+            .join("usage-broker")
+            .join("activate.lock")
+            .exists(),
+        "activation must hold the inter-process lock file"
+    );
+}
+
+#[test]
+fn catalog_conflict_retries_with_rediscovery_then_succeeds() {
+    use crate::host::HostSurfaceId;
+
+    let temp = tempfile::tempdir().unwrap();
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let client = counting_broker(temp.path());
+
+    let fresh = scripted_discovery(
+        Some("generation-fresh"),
+        &[("fresh", HostSurfaceId::Claude)],
+    );
+    let winner_entries = usage_catalog_entries(&scripted_discovery(
+        Some("generation-winner"),
+        &[("winner", HostSurfaceId::Codex)],
+    ));
+    let scans = Arc::new(AtomicUsize::new(0));
+    let reconciles = Arc::new(AtomicUsize::new(0));
+    let mut discover = {
+        let scans = Arc::clone(&scans);
+        let fresh = fresh.clone();
+        move || -> Result<ValidatedUsageDiscovery, UsageCoordinationError> {
+            scans.fetch_add(1, Ordering::SeqCst);
+            Ok(fresh.clone())
+        }
+    };
+    let mut reconcile = {
+        let reconciles = Arc::clone(&reconciles);
+        move |client: &UsageBrokerClient,
+              expected_projection_id: Option<String>,
+              catalog_revision: String,
+              entries: Vec<UsageCatalogEntry>| {
+            // Deterministic interleaving: a winner commits between our lease
+            // read and our first reconcile, so the first CAS attempt fails.
+            if reconciles.fetch_add(1, Ordering::SeqCst) == 0 {
+                client
+                    .reconcile_catalog("generation-winner".to_owned(), winner_entries.clone())
+                    .unwrap();
+            }
+            client.reconcile_catalog_if_projection(
+                expected_projection_id,
+                catalog_revision,
+                entries,
+            )
+        }
+    };
+    let handle = ensure_usage_broker_with_hooks(
+        &config,
+        &activation_scope(&temp),
+        scripted_discovery(Some("generation-stale"), &[("stale", HostSurfaceId::Amp)]),
+        &mut discover,
+        &mut reconcile,
+    )
+    .unwrap();
+
+    assert_eq!(reconciles.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        scans.load(Ordering::SeqCst),
+        2,
+        "every conflict retry must re-discover, not reuse the losing scan"
+    );
+    let final_projection = client.current_projection().unwrap();
+    assert_eq!(final_projection.discovery_revision, "generation-fresh");
+    assert_eq!(handle.catalog_lease, final_projection.projection_id);
+}
+
+#[test]
+fn catalog_conflict_fails_closed_after_bounded_retries() {
+    use crate::host::HostSurfaceId;
+
+    let temp = tempfile::tempdir().unwrap();
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let _client = counting_broker(temp.path());
+
+    let fresh = scripted_discovery(
+        Some("generation-fresh"),
+        &[("fresh", HostSurfaceId::Claude)],
+    );
+    let scans = Arc::new(AtomicUsize::new(0));
+    let reconciles = Arc::new(AtomicUsize::new(0));
+    let mut discover = {
+        let scans = Arc::clone(&scans);
+        move || -> Result<ValidatedUsageDiscovery, UsageCoordinationError> {
+            scans.fetch_add(1, Ordering::SeqCst);
+            Ok(fresh.clone())
+        }
+    };
+    let mut reconcile = {
+        let reconciles = Arc::clone(&reconciles);
+        move |_client: &UsageBrokerClient,
+              _expected_projection_id: Option<String>,
+              _catalog_revision: String,
+              _entries: Vec<UsageCatalogEntry>|
+              -> Result<UsageProjectionV1, UsageCoordinationError> {
+            reconciles.fetch_add(1, Ordering::SeqCst);
+            Err(UsageCoordinationError {
+                kind: UsageCoordinationErrorKind::CatalogRevisionConflict,
+                message: "scripted conflict".to_owned(),
+            })
+        }
+    };
+    let error = ensure_usage_broker_with_hooks(
+        &config,
+        &activation_scope(&temp),
+        scripted_discovery(None, &[]),
+        &mut discover,
+        &mut reconcile,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.kind,
+        UsageCoordinationErrorKind::CatalogRevisionConflict
+    );
+    assert_eq!(
+        reconciles.load(Ordering::SeqCst),
+        BROKER_ACTIVATION_ATTEMPTS as usize
+    );
+    assert_eq!(
+        scans.load(Ordering::SeqCst),
+        BROKER_ACTIVATION_ATTEMPTS as usize,
+        "every attempt must run its own post-lease discovery scan"
+    );
+}
+
+#[test]
+fn transient_empty_scan_does_not_wipe_live_catalog() {
+    use crate::host::HostSurfaceId;
+
+    let temp = tempfile::tempdir().unwrap();
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let client = counting_broker(temp.path());
+
+    let good = scripted_discovery(Some("generation-good"), &[("good", HostSurfaceId::Claude)]);
+    let good_capability =
+        capability_for_binding(&good.bindings[0], good.config_generation.as_deref());
+    client
+        .reconcile_catalog("generation-good".to_owned(), usage_catalog_entries(&good))
+        .unwrap();
+
+    // First scan observes a transient empty catalog; the confirmation scan
+    // re-observes the live catalog. Pops resolve in scan order.
+    let scripted = Arc::new(Mutex::new(vec![
+        good.clone(),
+        scripted_discovery(None, &[]),
+    ]));
+    let mut discover = {
+        let scripted = Arc::clone(&scripted);
+        move || -> Result<ValidatedUsageDiscovery, UsageCoordinationError> {
+            Ok(scripted.lock().unwrap().pop().unwrap())
+        }
+    };
+    let published_sizes = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let mut reconcile = {
+        let published_sizes = Arc::clone(&published_sizes);
+        move |client: &UsageBrokerClient,
+              expected_projection_id: Option<String>,
+              catalog_revision: String,
+              entries: Vec<UsageCatalogEntry>| {
+            published_sizes.lock().unwrap().push(entries.len());
+            client.reconcile_catalog_if_projection(
+                expected_projection_id,
+                catalog_revision,
+                entries,
+            )
+        }
+    };
+    let handle = ensure_usage_broker_with_hooks(
+        &config,
+        &activation_scope(&temp),
+        good.clone(),
+        &mut discover,
+        &mut reconcile,
+    )
+    .unwrap();
+
+    let published_sizes = published_sizes.lock().unwrap();
+    assert_eq!(
+        published_sizes.as_slice(),
+        &[1],
+        "transient empty scan must yield to the confirmation scan, never publish: {published_sizes:?}"
+    );
+    let final_projection = client.current_projection().unwrap();
+    assert_eq!(final_projection.discovery_revision, "generation-good");
+    assert_eq!(handle.catalog_lease, final_projection.projection_id);
+    client.current(good_capability).unwrap();
+}
+
+#[test]
+fn confirmed_empty_scan_still_revokes_live_catalog() {
+    use crate::host::HostSurfaceId;
+
+    let temp = tempfile::tempdir().unwrap();
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let client = counting_broker(temp.path());
+
+    let good = scripted_discovery(Some("generation-good"), &[("good", HostSurfaceId::Claude)]);
+    let good_capability =
+        capability_for_binding(&good.bindings[0], good.config_generation.as_deref());
+    client
+        .reconcile_catalog("generation-good".to_owned(), usage_catalog_entries(&good))
+        .unwrap();
+
+    // Two consecutive empty scans confirm a genuine removal: the revocation
+    // must still publish.
+    let mut discover = || -> Result<ValidatedUsageDiscovery, UsageCoordinationError> {
+        Ok(scripted_discovery(None, &[]))
+    };
+    let mut reconcile = |client: &UsageBrokerClient,
+                         expected_projection_id: Option<String>,
+                         catalog_revision: String,
+                         entries: Vec<UsageCatalogEntry>| {
+        client.reconcile_catalog_if_projection(expected_projection_id, catalog_revision, entries)
+    };
+    let handle = ensure_usage_broker_with_hooks(
+        &config,
+        &activation_scope(&temp),
+        good,
+        &mut discover,
+        &mut reconcile,
+    )
+    .unwrap();
+
+    let final_projection = client.current_projection().unwrap();
+    assert_eq!(final_projection.discovery_revision, "empty");
+    assert_eq!(handle.catalog_lease, final_projection.projection_id);
+    assert!(handle.capabilities.is_empty());
+    assert_eq!(
+        client.current(good_capability).unwrap_err().kind,
+        UsageCoordinationErrorKind::CatalogRevoked
+    );
+}
