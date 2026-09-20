@@ -453,11 +453,22 @@ pub(crate) fn fetch_openrouter_model_check(base_url: &str, model_id: &str) -> Op
 }
 
 pub(crate) fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> FocusedUsageView {
+    openrouter_snapshot_with_base(agent, key, &openrouter_base_url(), now)
+}
+
+/// Key snapshot against an explicit base: production resolves the base from
+/// env, hermetic tests point it at a dead port.
+pub(crate) fn openrouter_snapshot_with_base(
+    agent: &str,
+    key: Option<&str>,
+    base_url: &str,
+    now: i64,
+) -> FocusedUsageView {
     let Some(key) = key.filter(|key| !key.trim().is_empty()) else {
         return usage_view(UsageViewInput {
             agent,
             provider: Some("OpenRouter"),
-            surface: UsageSurface::Unsupported,
+            surface: UsageSurface::OpenRouter,
             account_label: "OpenRouter key missing".to_owned(),
             username: None,
             plan_label: None,
@@ -478,8 +489,7 @@ pub(crate) fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> F
             last_error: Some("OpenRouter API key missing".to_owned()),
         });
     };
-    let base_url = openrouter_base_url();
-    let key_result = fetch_openrouter_key_usage(&base_url, key)
+    let key_result = fetch_openrouter_key_usage(base_url, key)
         .map_err(|error| {
             if error.contains("401") {
                 (UsageSnapshotStatus::NeedsLogin, error)
@@ -513,7 +523,7 @@ pub(crate) fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> F
     // the `/key` rows and surfaces as a note.
     let credits_note =
         (status == UsageSnapshotStatus::Fresh).then(|| {
-            match fetch_openrouter_credits(&base_url, key) {
+            match fetch_openrouter_credits(base_url, key) {
                 OpenRouterCreditsOutcome::Available {
                     spent_cents,
                     ceiling_cents,
@@ -531,7 +541,7 @@ pub(crate) fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> F
     usage_view(UsageViewInput {
         agent,
         provider: Some("OpenRouter"),
-        surface: UsageSurface::Unsupported,
+        surface: UsageSurface::OpenRouter,
         account_label: "OpenRouter key".to_owned(),
         username: None,
         plan_label: quota.as_ref().and_then(|quota| quota.plan_label.clone()),

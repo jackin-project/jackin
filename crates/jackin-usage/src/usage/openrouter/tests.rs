@@ -268,4 +268,65 @@ fn openrouter_snapshot_without_key_needs_login() {
     let view = openrouter_snapshot("opencode", None, 1_780_000_000);
     assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
     assert_eq!(view.source, UsageSource::None);
+    assert_eq!(view.account.provider_label, "OpenRouter");
+}
+
+#[test]
+fn openrouter_snapshot_with_base_serves_key_quota_from_canned_api() {
+    use std::io::{Read as _, Write as _};
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    // One `/key` read; `/credits` is skipped unless the key read is Fresh,
+    // and the fixture parses Fresh — so serve both.
+    let server = std::thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let read = stream.read(&mut request).unwrap();
+            let body = if String::from_utf8_lossy(&request[..read]).contains("/credits") {
+                serde_json::json!({"data": {"total_credits": 10.0, "total_usage": 2.5}}).to_string()
+            } else {
+                key_fixture().to_string()
+            };
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        }
+    });
+    let view = openrouter_snapshot_with_base(
+        "opencode",
+        Some("fixture-key"),
+        &format!("http://{address}"),
+        1_780_000_000,
+    );
+    server.join().unwrap();
+
+    assert_eq!(view.status, UsageSnapshotStatus::Fresh);
+    assert_eq!(view.account.provider_label, "OpenRouter");
+    assert!(
+        view.buckets
+            .iter()
+            .any(|bucket| bucket.label == "Key Limit")
+    );
+}
+
+#[test]
+fn openrouter_snapshot_with_refused_base_is_error_never_fabricated() {
+    let refused = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = refused.local_addr().unwrap();
+    drop(refused);
+    let view = openrouter_snapshot_with_base(
+        "opencode",
+        Some("fixture-key"),
+        &format!("http://{address}"),
+        1_780_000_000,
+    );
+
+    assert_eq!(view.status, UsageSnapshotStatus::Error);
+    assert_eq!(view.account.provider_label, "OpenRouter");
+    assert!(view.last_error.is_some());
 }

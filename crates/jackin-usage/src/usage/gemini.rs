@@ -285,6 +285,22 @@ fn gemini_quota_bucket(quota: &GeminiProjectQuota, now: i64) -> QuotaBucketView 
 
 pub(crate) fn gemini_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     let (has_oauth, has_api_key) = gemini_credential_presence();
+    let origin = gemini_credential_origin(has_oauth, has_api_key);
+    gemini_snapshot_with_presence(agent, provider, has_oauth, has_api_key, &origin, now)
+}
+
+/// Snapshot from broker-routed evidence instead of ambient files: profile
+/// refresh passes the discovery-proven OAuth presence, the env arm the
+/// configured key. The result stays a typed gap (never a zero balance) until
+/// an entitlement endpoint lands.
+pub(crate) fn gemini_snapshot_with_presence(
+    agent: &str,
+    provider: Option<&str>,
+    has_oauth: bool,
+    has_api_key: bool,
+    credential_origin: &str,
+    now: i64,
+) -> FocusedUsageView {
     // No entitlement endpoint is wired yet, so no migration signal exists:
     // every authenticated user gets the generic reporting-gap message until a
     // fetched entitlement says `consumer_unsupported`.
@@ -305,17 +321,14 @@ pub(crate) fn gemini_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
             "Gemini project quota needs authorized reporting scope",
         )
     };
-    let mut view = usage_view(UsageViewInput {
+    usage_view(UsageViewInput {
         agent,
-        provider: provider.or(Some("Gemini")),
-        // No UsageSurface variant exists for Gemini yet (this lane is
-        // constrained to mod lines + re-exports in usage.rs); patch the
-        // provider label until the surface wiring lands.
-        surface: UsageSurface::Unsupported,
+        provider: provider.or(Some("Google")),
+        surface: UsageSurface::Google,
         account_label: String::new(),
         username: None,
         plan_label: None,
-        credential_origin: Some(gemini_credential_origin(has_oauth, has_api_key)),
+        credential_origin: Some(credential_origin.to_owned()),
         buckets: vec![bucket(
             "Eligibility",
             None,
@@ -330,9 +343,7 @@ pub(crate) fn gemini_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
         confidence: UsageConfidence::None,
         now,
         last_error: Some(message.to_owned()),
-    });
-    view.account.provider_label = "Gemini".to_owned();
-    view
+    })
 }
 
 #[cfg(test)]
