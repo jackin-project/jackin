@@ -3,6 +3,8 @@
 
 use super::*;
 use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::os::unix::fs::FileTypeExt as _;
 use std::path::Path;
 
 struct PrivateConfigFailureGuard {
@@ -329,6 +331,22 @@ fn codex_configuration_model_override_routes_without_account_model() {
         Some("KIMI_API_KEY")
     );
     assert!(!contents.contains("work-secret"));
+}
+
+#[test]
+fn codex_reads_existing_config_from_target_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let (old_config, old_instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://old.example/v1");
+    configure_for_test(temp.path(), &old_config, &old_instances).unwrap();
+    std::fs::write(temp.path().join("home/config.toml"), b"not valid toml [").unwrap();
+
+    let (new_config, new_instances) =
+        codex_fixture(AiProvider::Zai, "glm-5.3", "https://new.example/v1");
+    configure_for_test(temp.path(), &new_config, &new_instances).unwrap();
+    let contents = std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap();
+    assert!(contents.contains("https://new.example/v1"));
+    assert!(contents.contains("model_provider = \"jackin_account\""));
 }
 
 #[test]
@@ -888,6 +906,73 @@ fn restart_recovers_after_previous_deletion_before_journal_cleanup() {
 
 #[cfg(unix)]
 #[test]
+fn installed_recovery_restores_previous_after_rollback_target_removal() {
+    let temp = tempfile::tempdir().unwrap();
+    let (old_config, old_instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://old.example/v1");
+    configure_for_test(temp.path(), &old_config, &old_instances).unwrap();
+    let directory = temp.path().join("home/.codex");
+    let old_config_bytes = std::fs::read(directory.join("config.toml")).unwrap();
+    let old_catalog_bytes = std::fs::read(directory.join("account-models.json")).unwrap();
+    let (new_config, new_instances) =
+        codex_fixture(AiProvider::Zai, "glm-5.3", "https://new.example/v1");
+
+    {
+        let _failure = inject_private_config_failure(
+            PrivateConfigFailurePoint::SimulatedCrashAfterInstalledRollbackTargetRemoval,
+        );
+        let error = configure_for_test(temp.path(), &new_config, &new_instances).unwrap_err();
+        assert!(format!("{error:#}").contains("rollback failed"));
+    }
+    assert!(!directory.exists());
+    let parent = directory.parent().unwrap();
+    assert!(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).is_file());
+
+    let publication = begin_private_config_publication(temp.path(), parent).unwrap();
+    private_config_recover_transaction(&publication).unwrap();
+    assert_eq!(
+        std::fs::read(directory.join("config.toml")).unwrap(),
+        old_config_bytes
+    );
+    assert_eq!(
+        std::fs::read(directory.join("account-models.json")).unwrap(),
+        old_catalog_bytes
+    );
+    assert_no_private_config_swap_artifacts(parent);
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_recovery_clears_first_publication_after_target_removal() {
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://provider.example/v1");
+
+    {
+        let _failure = inject_private_config_failure(
+            PrivateConfigFailurePoint::SimulatedCrashAfterInstalledRollbackTargetRemoval,
+        );
+        let error = configure_for_test(temp.path(), &config, &instances).unwrap_err();
+        assert!(format!("{error:#}").contains("rollback failed"));
+    }
+    let directory = temp.path().join("home/.codex");
+    assert!(!directory.exists());
+    let parent = directory.parent().unwrap();
+    assert!(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).is_file());
+
+    let publication = begin_private_config_publication(temp.path(), parent).unwrap();
+    private_config_recover_transaction(&publication).unwrap();
+    assert!(!parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).exists());
+    assert!(!directory.exists());
+    drop(publication);
+
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+    assert!(directory.join("config.toml").is_file());
+    assert_no_private_config_swap_artifacts(parent);
+}
+
+#[cfg(unix)]
+#[test]
 fn descriptor_relative_publication_survives_ancestor_swap() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("root");
@@ -915,6 +1000,57 @@ fn descriptor_relative_publication_survives_ancestor_swap() {
         b"descriptor-relative"
     );
     assert!(!outside.join(".codex").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn private_config_publication_rejects_fifo_replacing_config_without_blocking() {
+    use nix::sys::stat::Mode;
+    use nix::unistd::mkfifo;
+
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://provider.example/v1");
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+    let config_path = temp.path().join("home/.codex/config.toml");
+    std::fs::remove_file(&config_path).unwrap();
+    mkfifo(&config_path, Mode::from_bits_truncate(0o600)).unwrap();
+
+    let error = configure_for_test(temp.path(), &config, &instances).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("not a regular file"),
+        "{error:#}"
+    );
+    assert!(
+        std::fs::metadata(config_path)
+            .unwrap()
+            .file_type()
+            .is_fifo()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn private_config_publication_rejects_fifo_in_preserved_tree() {
+    use nix::sys::stat::Mode;
+    use nix::unistd::mkfifo;
+
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://provider.example/v1");
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+    let directory = temp.path().join("home/.codex");
+    let fifo_path = directory.join("unrelated.pipe");
+    mkfifo(&fifo_path, Mode::from_bits_truncate(0o600)).unwrap();
+    let old_config = std::fs::read(directory.join("config.toml")).unwrap();
+
+    let error = configure_for_test(temp.path(), &config, &instances).unwrap_err();
+    assert!(format!("{error:#}").contains("special entry"), "{error:#}");
+    assert_eq!(
+        std::fs::read(directory.join("config.toml")).unwrap(),
+        old_config
+    );
+    assert!(std::fs::metadata(fifo_path).unwrap().file_type().is_fifo());
 }
 
 #[cfg(unix)]

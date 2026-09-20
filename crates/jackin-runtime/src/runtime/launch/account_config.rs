@@ -51,6 +51,8 @@ enum PrivateConfigFailurePoint {
     #[cfg(test)]
     SimulatedCrashAfterPreviousDeletion,
     #[cfg(test)]
+    SimulatedCrashAfterInstalledRollbackTargetRemoval,
+    #[cfg(test)]
     JournalAfterPreviousMoved,
     #[cfg(test)]
     JournalAfterInstalled,
@@ -80,7 +82,14 @@ thread_local! {
 
 fn maybe_inject_private_config_failure(point: PrivateConfigFailurePoint) -> anyhow::Result<()> {
     #[cfg(test)]
-    if PRIVATE_CONFIG_FAILURE.with(|failure| failure.get() == Some(point)) {
+    if PRIVATE_CONFIG_FAILURE.with(|failure| {
+        let failure = failure.get();
+        failure == Some(point)
+            || (matches!(point, PrivateConfigFailurePoint::AfterInstall)
+                && failure
+                    == Some(PrivateConfigFailurePoint::
+                        SimulatedCrashAfterInstalledRollbackTargetRemoval))
+    }) {
         anyhow::bail!("injected private-config publication failure at {point:?}");
     }
 
@@ -150,17 +159,23 @@ fn open_private_config_directory(parent: &File, name: &CStr) -> anyhow::Result<O
 }
 
 #[cfg(unix)]
+fn private_config_open_root(root: &Path) -> anyhow::Result<File> {
+    Ok(File::from(
+        open(
+            root,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .with_context(|| format!("open private config root {}", root.display()))?,
+    ))
+}
+
+#[cfg(unix)]
 fn begin_private_config_publication(
     root: &Path,
     parent_path: &Path,
 ) -> anyhow::Result<PrivateConfigPublication> {
-    let root_fd = open(
-        root,
-        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )
-    .with_context(|| format!("open private config root {}", root.display()))?;
-    let mut parent = File::from(root_fd);
+    let mut parent = private_config_open_root(root)?;
     for component in private_config_parent_components(root, parent_path)? {
         match mkdirat(
             &parent,
@@ -671,21 +686,51 @@ fn private_config_recover_transaction(
             }
         }
         PrivateConfigTransactionPhase::Installed => {
-            anyhow::ensure!(
-                target_exists,
-                "installed private config transaction has no live directory"
-            );
-            if staged_exists {
-                private_config_remove_tree_at(&publication.parent, staged.as_c_str())?;
-            }
-            if previous_exists {
-                private_config_remove_tree_at(
-                    &publication.parent,
-                    previous
-                        .as_ref()
-                        .context("installed transaction has no previous")?
-                        .as_c_str(),
-                )?;
+            match (target_exists, staged_exists, previous_exists) {
+                (true, false, false | true) => {
+                    if previous_exists {
+                        private_config_remove_tree_at(
+                            &publication.parent,
+                            previous
+                                .as_ref()
+                                .context("installed transaction has no previous")?
+                                .as_c_str(),
+                        )?;
+                    }
+                }
+                (true, true, _) => {
+                    anyhow::bail!(
+                        "installed private config transaction has live and staged directories"
+                    );
+                }
+                (false, false, true) => {
+                    // A failed post-install rollback can remove the new live
+                    // tree before the old tree is restored. The durable
+                    // Installed journal makes that gap recoverable.
+                    renameat(
+                        &publication.parent,
+                        previous
+                            .as_ref()
+                            .context("installed transaction has no previous")?
+                            .as_c_str(),
+                        &publication.parent,
+                        target.as_c_str(),
+                    )?;
+                }
+                (false, false, false) if transaction.previous.is_none() => {
+                    // First publication has no old tree to restore. Clearing
+                    // the journal makes the next launch retry normally.
+                }
+                (false, false, false) => {
+                    anyhow::bail!(
+                        "installed private config transaction lost its previous directory"
+                    );
+                }
+                (false, true, _) => {
+                    anyhow::bail!(
+                        "installed private config transaction has staged data but no live directory"
+                    );
+                }
             }
         }
     }
@@ -702,6 +747,17 @@ fn private_config_restore_swap(
 ) -> anyhow::Result<()> {
     if installed {
         private_config_remove_tree_at(&publication.parent, target)?;
+        #[cfg(test)]
+        if PRIVATE_CONFIG_FAILURE.with(|failure| {
+            failure.get()
+                == Some(
+                    PrivateConfigFailurePoint::SimulatedCrashAfterInstalledRollbackTargetRemoval,
+                )
+        }) {
+            return Err(anyhow::anyhow!(
+                "simulated process crash after installed target removal"
+            ));
+        }
     }
     if let Some(previous) = previous {
         renameat(&publication.parent, previous, &publication.parent, target)?;
@@ -740,16 +796,7 @@ fn publish_private_config_directory_locked(
     files: &[(&'static str, Vec<u8>)],
     remove_files: &[&str],
 ) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        directory.parent() == Some(publication.parent_path.as_path()),
-        "private config publication parent changed: {}",
-        directory.display()
-    );
-    let target_name = directory
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("private config directory name is not valid UTF-8")?;
-    let target = private_config_name(target_name)?;
+    let target = private_config_target_name(publication, directory)?;
     let existing = open_private_config_directory(&publication.parent, target.as_c_str())?;
     let existing_mode = existing
         .as_ref()
@@ -793,7 +840,7 @@ fn publish_private_config_directory_locked(
         .transpose()?;
     let mut transaction = PrivateConfigTransaction {
         schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
-        target: target_name.to_owned(),
+        target: target.to_string_lossy().into_owned(),
         staged: staged.name.to_string_lossy().into_owned(),
         previous: previous_name,
         phase: PrivateConfigTransactionPhase::Prepared,
@@ -885,7 +932,12 @@ fn publish_private_config_directory_locked(
         );
     }
     if let Some(previous) = previous.as_ref() {
-        private_config_remove_tree_at(&publication.parent, previous.as_c_str())?;
+        if let Err(error) = private_config_remove_tree_at(&publication.parent, previous.as_c_str())
+        {
+            return Err(error.context(
+                "private config installed; previous cleanup failed and the journal was retained",
+            ));
+        }
         #[cfg(test)]
         if PRIVATE_CONFIG_FAILURE.with(|failure| {
             failure.get() == Some(PrivateConfigFailurePoint::SimulatedCrashAfterPreviousDeletion)
@@ -897,9 +949,35 @@ fn publish_private_config_directory_locked(
         // The Installed journal is already durable. If this fsync or journal
         // cleanup fails, the next launch sees the new live tree and completes
         // the idempotent Installed recovery path.
-        publication.parent.sync_all()?;
+        if let Err(error) = publication.parent.sync_all() {
+            return Err(anyhow::Error::new(error).context(
+                "private config installed; previous cleanup fsync failed and the journal was retained",
+            ));
+        }
     }
-    private_config_clear_transaction(publication)
+    if let Err(error) = private_config_clear_transaction(publication) {
+        return Err(error.context(
+            "private config installed; journal cleanup failed and the journal was retained",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_target_name(
+    publication: &PrivateConfigPublication,
+    directory: &Path,
+) -> anyhow::Result<CString> {
+    anyhow::ensure!(
+        directory.parent() == Some(publication.parent_path.as_path()),
+        "private config publication parent changed: {}",
+        directory.display()
+    );
+    let target_name = directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("private config directory name is not valid UTF-8")?;
+    private_config_name(target_name)
 }
 
 #[cfg(unix)]
@@ -915,14 +993,6 @@ fn publish_private_config_directory(
     let publication = begin_private_config_publication(root, parent)?;
     private_config_recover_transaction(&publication)?;
     publish_private_config_directory_locked(&publication, directory, files, remove_files)
-}
-
-#[cfg(unix)]
-fn read_private_config_file_at(
-    publication: &PrivateConfigPublication,
-    name: &str,
-) -> anyhow::Result<Option<Vec<u8>>> {
-    private_config_read_file_at(&publication.parent, name)
 }
 
 fn account_with_effective_model(
@@ -1022,7 +1092,13 @@ fn configure_codex(
         private_config_recover_transaction(&publication)?;
         publication
     };
-    let existing = read_private_config_file_at(&publication, "config.toml")?;
+    let target = private_config_target_name(&publication, &directory)?;
+    let existing_directory = open_private_config_directory(&publication.parent, target.as_c_str())?;
+    let existing = existing_directory
+        .as_ref()
+        .map(|directory| private_config_read_file_at(directory, "config.toml"))
+        .transpose()?
+        .flatten();
     let files = build_codex_private_config_files(
         account,
         slot,
