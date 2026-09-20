@@ -841,6 +841,214 @@ fn begin_exec_picker_supersedes_pending_reply_and_dialog() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn daemon_pty_lifecycle_reaches_shutdown_after_last_session_exit() -> Result<()> {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::UnixStream;
+    use tokio::time::{Duration, timeout};
+
+    const CHILD: &str = "JACKIN_PTY_LIFECYCLE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let shell = if Path::new("/bin/zsh").is_file() {
+            "/bin/zsh"
+        } else {
+            "/bin/sh"
+        };
+        let status = Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "daemon::tests::daemon_pty_lifecycle_reaches_shutdown_after_last_session_exit",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("JACKIN_TEST_SHELL", shell)
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated PTY lifecycle test failed");
+        return Ok(());
+    }
+
+    let root = tempfile::tempdir()?;
+    let workdir = root.path().join("workspace");
+    std::fs::create_dir(&workdir)?;
+    let socket_path = root.path().join("run/jackin.sock");
+    let config = CapsuleConfig {
+        role: "lifecycle-test".to_owned(),
+        workdir: workdir.display().to_string(),
+        ..CapsuleConfig::default()
+    };
+    let daemon_socket = socket_path.clone();
+    let daemon = tokio::spawn(async move {
+        let mut telemetry = crate::telemetry::init().map_err(|error| anyhow::anyhow!("{error}"))?;
+        run_daemon_for_test(String::new(), config, &mut telemetry, &daemon_socket).await
+    });
+
+    let lifecycle = async {
+        let mut client = timeout(Duration::from_secs(5), async {
+            loop {
+                match UnixStream::connect(&socket_path).await {
+                    Ok(stream) => break stream,
+                    Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+                }
+            }
+        })
+        .await?;
+
+        client
+            .write_all(&crate::protocol::attach::encode_client(
+                ClientFrame::Hello {
+                    rows: 24,
+                    cols: 80,
+                    spawn: None,
+                    env: Vec::new(),
+                    terminal: ClientTerminal::default(),
+                    focus_session: None,
+                    context: None,
+                },
+            )?)
+            .await?;
+
+        let mut saw_welcome = false;
+        let mut initial_output = Vec::new();
+        while !saw_welcome {
+            let mut tag = [0u8; 1];
+            client.read_exact(&mut tag).await?;
+            let frame = read_server_frame(&mut client, tag[0])
+                .await
+                .map_err(|error| anyhow::anyhow!("reading Welcome: {error}"))?
+                .ok_or_else(|| anyhow::anyhow!("daemon closed before Welcome"))?;
+            match frame {
+                ServerFrame::Welcome { session_count } => {
+                    assert_eq!(session_count, 1);
+                    saw_welcome = true;
+                }
+                ServerFrame::Output(bytes) => initial_output.extend(bytes),
+                other => anyhow::bail!("unexpected pre-Welcome frame: {other:?}"),
+            }
+        }
+
+        let mut output = initial_output;
+        let mut saw_sentinel = contains_lifecycle_sentinel(&output);
+        client
+            .write_all(&crate::protocol::attach::encode_client(
+                ClientFrame::Input(
+                    b"printf 'CAPSULE_LIFECYCLE_SENTINEL\\n'; read -r _; exit\n".to_vec(),
+                ),
+            )?)
+            .await?;
+
+        timeout(Duration::from_secs(5), async {
+            while !saw_sentinel {
+                let mut tag = [0u8; 1];
+                client.read_exact(&mut tag).await?;
+                let frame = read_server_frame(&mut client, tag[0])
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("daemon closed before shell output"))?;
+                saw_sentinel = lifecycle_output_frame(frame, &mut output)?;
+            }
+            anyhow::Ok(())
+        })
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "timed out waiting for shell output; output so far: {:?}",
+                String::from_utf8_lossy(&output)
+            )
+        })??;
+
+        client
+            .write_all(&crate::protocol::attach::encode_client(
+                ClientFrame::Input(b"\n".to_vec()),
+            )?)
+            .await?;
+
+        let mut saw_shutdown = false;
+        timeout(Duration::from_secs(5), async {
+            while !saw_shutdown {
+                let mut tag = [0u8; 1];
+                client.read_exact(&mut tag).await?;
+                let frame = read_server_frame(&mut client, tag[0])
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("daemon closed before Shutdown"))?;
+                saw_shutdown = lifecycle_shutdown_frame(frame, &mut output)?;
+            }
+            anyhow::Ok(())
+        })
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "timed out waiting for daemon Shutdown; output so far: {:?}",
+                String::from_utf8_lossy(&output)
+            )
+        })??;
+
+        assert!(
+            output
+                .windows(b"CAPSULE_LIFECYCLE_SENTINEL".len())
+                .any(|window| window == b"CAPSULE_LIFECYCLE_SENTINEL"),
+            "shell output did not reach the attached client: {:?}",
+            String::from_utf8_lossy(&output)
+        );
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+
+    if let Err(error) = lifecycle {
+        daemon.abort();
+        drop(daemon.await);
+        return Err(error);
+    }
+
+    let daemon_result = timeout(Duration::from_secs(5), daemon).await??;
+    daemon_result?;
+    Ok(())
+}
+
+fn append_lifecycle_output(output: &mut Vec<u8>, bytes: Vec<u8>) -> bool {
+    output.extend(bytes);
+    contains_lifecycle_sentinel(output)
+}
+
+fn record_lifecycle_output(output: &mut Vec<u8>, bytes: Vec<u8>) {
+    output.extend(bytes);
+}
+
+fn lifecycle_output_frame(frame: ServerFrame, output: &mut Vec<u8>) -> Result<bool> {
+    match frame {
+        ServerFrame::Output(bytes) => Ok(append_lifecycle_output(output, bytes)),
+        ServerFrame::Shutdown { reason } => shutdown_before_sentinel(reason),
+        other => anyhow::bail!("unexpected pre-shutdown frame: {other:?}"),
+    }
+}
+
+fn lifecycle_shutdown_frame(frame: ServerFrame, output: &mut Vec<u8>) -> Result<bool> {
+    match frame {
+        ServerFrame::Output(bytes) => {
+            record_lifecycle_output(output, bytes);
+            Ok(false)
+        }
+        ServerFrame::Shutdown { reason } => clean_shutdown(reason),
+        other => anyhow::bail!("unexpected lifecycle frame: {other:?}"),
+    }
+}
+
+fn contains_lifecycle_sentinel(output: &[u8]) -> bool {
+    output
+        .windows(b"CAPSULE_LIFECYCLE_SENTINEL".len())
+        .any(|window| window == b"CAPSULE_LIFECYCLE_SENTINEL")
+}
+
+fn shutdown_before_sentinel(reason: Option<String>) -> Result<bool> {
+    clean_shutdown(reason)?;
+    anyhow::bail!("daemon shut down before shell output")
+}
+
+fn clean_shutdown(reason: Option<String>) -> Result<bool> {
+    if let Some(reason) = reason {
+        anyhow::bail!("clean shell exit carried reason: {reason:?}");
+    }
+    Ok(true)
+}
+
 /// Compose the frame an invalidation with `reason` produces — the
 /// derived-rendering equivalent of the old per-tier compose calls.
 fn compose_after(mux: &mut Multiplexer, reason: FullRedrawReason) -> Vec<u8> {

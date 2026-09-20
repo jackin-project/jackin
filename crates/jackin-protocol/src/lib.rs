@@ -92,8 +92,14 @@ pub enum CredReply {
 /// Filename written under `/jackin/run/` by the host launcher.
 pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 
-/// Normalized runtime config path read by Capsule PID 1.
+/// Normalized runtime config path read by the Capsule daemon.
 pub const CAPSULE_CONFIG_PATH: &str = container_paths::CAPSULE_CONFIG;
+
+/// Launch metadata naming the Capsule supervisor PID for local peer checks.
+pub const CAPSULE_SUPERVISOR_PID_ENV: &str = "JACKIN_CAPSULE_SUPERVISOR_PID";
+
+/// Apple `container run` starts the Capsule entrypoint after `vminitd`.
+pub const APPLE_CAPSULE_SUPERVISOR_PID: u32 = 2;
 
 /// Path inside the role container of the `jackin-exec` host credential
 /// resolver socket. The host creates it under the bind-mounted `/jackin/run`
