@@ -94,7 +94,7 @@ impl<'a> UsageEntryRef<'a> {
     }
 
     #[must_use]
-    pub fn provider_id(self) -> &'_ str {
+    pub fn provider_id(self) -> &'a str {
         match self {
             Self::Account { provider, .. } => &provider.provider_id,
             Self::Unresolved { entry, .. } => &entry.provider_id,
@@ -327,11 +327,11 @@ impl UsageScreenState {
     }
 
     pub fn move_selection(&mut self, delta: isize) {
-        let entries = self.entries();
-        if entries.is_empty() {
+        let entry_count = self.entries().len();
+        if entry_count == 0 {
             return;
         }
-        let len = entries.len().saturating_add(1);
+        let len = entry_count.saturating_add(1);
         let current = self.selected.min(len - 1);
         self.selected = if delta.is_negative() {
             current.saturating_sub(delta.unsigned_abs())
@@ -340,7 +340,8 @@ impl UsageScreenState {
                 .saturating_add(delta.cast_unsigned())
                 .min(len.saturating_sub(1))
         };
-        self.selected_id = entries
+        self.selected_id = self
+            .entries()
             .get(self.selected.saturating_sub(1))
             .filter(|_| self.selected > 0)
             .map(|entry| entry.id());
@@ -403,13 +404,6 @@ impl UsageScreenState {
 fn projection_notice(projection: Option<&UsageProjectionV1>) -> Option<String> {
     let unresolved = projection?.unresolved.len();
     (unresolved > 0).then(|| format!("{unresolved} configured capability(s) unresolved"))
-}
-
-fn entry_label(entry: UsageEntryRef<'_>, unresolved_number: usize) -> String {
-    match entry {
-        UsageEntryRef::Account { account, .. } => account.display_label.clone(),
-        UsageEntryRef::Unresolved { .. } => format!("Unresolved account {unresolved_number}"),
-    }
 }
 
 fn entry_status_label(entry: UsageEntryRef<'_>) -> String {
