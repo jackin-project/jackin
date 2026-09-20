@@ -27,6 +27,9 @@ use anyhow::Context;
 use jackin_config::{AiProvider, AuthForwardMode, GithubAuthMode, ProfileSelector};
 use jackin_core::Agent;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static AUTH_DIRECTORY_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Validate that `source_dir` carries the credential structure `agent`
 /// expects for sync-mode auth forwarding.
@@ -381,9 +384,9 @@ impl RoleState {
     ) -> anyhow::Result<GithubProvisionOutcome> {
         // Reject pre-existing symlinks before branching on mode. The
         // role-state dir is bind-mounted RW, so a compromised role could
-        // plant a symlink between launches; calling reject_symlink
+        // plant a symlink between launches; calling reject_auth_path
         // unconditionally is fine — it lstat's and no-ops on ENOENT.
-        reject_symlink(hosts_yml)?;
+        reject_auth_path(hosts_yml)?;
 
         match github.mode {
             GithubAuthMode::Ignore => {
@@ -884,7 +887,7 @@ fn provision_kimi_dir_credential(
 ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
     use anyhow::Context;
 
-    reject_symlink(target_dir)?;
+    reject_auth_path(target_dir)?;
 
     let outcome = match mode {
         AuthForwardMode::OAuthToken => {
@@ -904,31 +907,24 @@ fn provision_kimi_dir_credential(
             wipe_kimi_state(target_dir)?;
             AuthProvisionOutcome::Skipped
         }
-        AuthForwardMode::Sync => {
-            std::fs::create_dir_all(target_dir)?;
-
-            if host_dir.exists() {
-                for name in sync_files {
-                    let host_file = host_dir.join(name);
-                    if host_file.exists() {
-                        let content = std::fs::read_to_string(&host_file)
-                            .with_context(|| format!("reading {}", host_file.display()))?;
-                        write_private_file(&target_dir.join(name), &content)?;
-                    }
+        AuthForwardMode::Sync => stage_auth_directory(target_dir, host_dir, |host_dir, staged| {
+            for name in sync_files {
+                let host_file = host_dir.join(name);
+                if host_file.exists() {
+                    let content = std::fs::read_to_string(&host_file)
+                        .with_context(|| format!("reading {}", host_file.display()))?;
+                    write_private_file(&staged.join(name), &content)?;
                 }
-
-                let host_creds = host_dir.join("credentials");
-                if host_creds.exists() {
-                    let dest_creds = target_dir.join("credentials");
-                    copy_kimi_credentials_tree(&host_creds, &dest_creds)
-                        .with_context(|| format!("copying {}", host_creds.display()))?;
-                }
-
-                AuthProvisionOutcome::Synced
-            } else {
-                AuthProvisionOutcome::HostMissing
             }
-        }
+
+            let host_creds = host_dir.join("credentials");
+            if host_creds.exists() {
+                let staged_creds = staged.join("credentials");
+                copy_kimi_credentials_tree(&host_creds, &staged_creds)
+                    .with_context(|| format!("copying {}", host_creds.display()))?;
+            }
+            Ok(())
+        })?,
     };
 
     let forward_auth = matches!(
@@ -936,6 +932,134 @@ fn provision_kimi_dir_credential(
         AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
     );
     Ok((outcome, forward_auth))
+}
+
+/// Build a complete auth directory beside the live destination and publish it
+/// as one directory replacement. An absent source publishes an empty
+/// directory so `HostMissing` retains its documented mount contract without
+/// retaining credentials from an earlier source.
+fn stage_auth_directory<F>(
+    target_dir: &Path,
+    host_dir: &Path,
+    populate: F,
+) -> anyhow::Result<AuthProvisionOutcome>
+where
+    F: FnOnce(&Path, &Path) -> anyhow::Result<()>,
+{
+    let parent = prepare_auth_directory_parent(target_dir)?;
+    let staged = tempfile::Builder::new()
+        .prefix(".jackin-auth-stage-")
+        .tempdir_in(parent)
+        .with_context(|| format!("staging auth directory beside {}", target_dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(staged.path(), std::fs::Permissions::from_mode(0o700))?;
+    }
+
+    let outcome = if host_dir.exists() {
+        populate(host_dir, staged.path())?;
+        AuthProvisionOutcome::Synced
+    } else {
+        AuthProvisionOutcome::HostMissing
+    };
+    publish_auth_directory(target_dir, staged)?;
+    Ok(outcome)
+}
+
+/// Verify the destination and its existing ancestors before creating a
+/// missing parent. This keeps `create_dir_all` from following a planted
+/// destination ancestor symlink.
+fn prepare_auth_directory_parent(target_dir: &Path) -> anyhow::Result<&Path> {
+    reject_auth_path(target_dir)?;
+    let parent = target_dir.parent().unwrap_or(Path::new("."));
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("creating auth directory parent {}", parent.display()))?;
+    reject_auth_path(target_dir)?;
+    Ok(parent)
+}
+
+/// Publish a staged directory with rename-only transitions. Moving the old
+/// destination aside first permits replacement even when it contains stale
+/// files; if installing the new tree fails, restore the old tree.
+fn publish_auth_directory(target_dir: &Path, staged: tempfile::TempDir) -> anyhow::Result<()> {
+    reject_auth_path(target_dir)?;
+    let parent = target_dir.parent().unwrap_or(Path::new("."));
+    let staged_path = staged.path().to_path_buf();
+    let target_exists = match std::fs::symlink_metadata(target_dir) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.is_dir(),
+                "auth destination is not a directory: {}",
+                target_dir.display()
+            );
+            true
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+
+    if !target_exists {
+        std::fs::rename(&staged_path, target_dir).with_context(|| {
+            format!(
+                "publishing staged auth directory {} to {}",
+                staged_path.display(),
+                target_dir.display()
+            )
+        })?;
+        return Ok(());
+    }
+
+    let previous = unique_auth_directory_sibling(parent)?;
+    std::fs::rename(target_dir, &previous).with_context(|| {
+        format!(
+            "moving previous auth directory {} to {}",
+            target_dir.display(),
+            previous.display()
+        )
+    })?;
+
+    if let Err(error) = std::fs::rename(&staged_path, target_dir) {
+        let rollback = std::fs::rename(&previous, target_dir);
+        return match rollback {
+            Ok(()) => Err(anyhow::Error::new(error).context(format!(
+                "publishing staged auth directory {} to {}",
+                staged_path.display(),
+                target_dir.display()
+            ))),
+            Err(rollback_error) => Err(anyhow::Error::new(error).context(format!(
+                "publishing staged auth directory {} to {} failed; restoring {} also failed: {}",
+                staged_path.display(),
+                target_dir.display(),
+                target_dir.display(),
+                rollback_error
+            ))),
+        };
+    }
+
+    std::fs::remove_dir_all(&previous).with_context(|| {
+        format!(
+            "removing previous auth directory after publishing {}",
+            target_dir.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn unique_auth_directory_sibling(parent: &Path) -> anyhow::Result<std::path::PathBuf> {
+    for _ in 0..128 {
+        let sequence = AUTH_DIRECTORY_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = parent.join(format!(
+            ".jackin-auth-previous-{}-{sequence}",
+            std::process::id()
+        ));
+        match std::fs::symlink_metadata(&path) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(path),
+            Err(error) => return Err(error.into()),
+        }
+    }
+    anyhow::bail!("could not allocate a unique auth directory replacement path")
 }
 
 /// Single-file host artifacts forwarded into the role-state directory under
@@ -1025,7 +1149,7 @@ impl RoleState {
         provider: Option<AiProvider>,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         if mode == AuthForwardMode::Sync {
-            reject_symlink(auth_json)?;
+            reject_auth_path(auth_json)?;
             let content = match std::fs::read_to_string(host_auth_json) {
                 Ok(content) if content.trim().is_empty() => {
                     if auth_json.exists() {
@@ -1391,7 +1515,7 @@ fn provision_hermes_dir_credential(
 ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
     use anyhow::Context;
 
-    reject_symlink(target_dir)?;
+    reject_auth_path(target_dir)?;
 
     // Best-effort file set; the layout is unverified upstream.
     const SYNC_FILES: &[&str] = &["config.yaml", ".env", "auth.json"];
@@ -1414,31 +1538,24 @@ fn provision_hermes_dir_credential(
             wipe_hermes_state(target_dir)?;
             AuthProvisionOutcome::Skipped
         }
-        AuthForwardMode::Sync => {
-            std::fs::create_dir_all(target_dir)?;
-
-            if host_dir.exists() {
-                for name in SYNC_FILES {
-                    let host_file = host_dir.join(name);
-                    if host_file.is_file() {
-                        let bytes = std::fs::read(&host_file)
-                            .with_context(|| format!("reading {}", host_file.display()))?;
-                        write_private_bytes(&target_dir.join(name), &bytes)?;
-                    }
+        AuthForwardMode::Sync => stage_auth_directory(target_dir, host_dir, |host_dir, staged| {
+            for name in SYNC_FILES {
+                let host_file = host_dir.join(name);
+                if host_file.is_file() {
+                    let bytes = std::fs::read(&host_file)
+                        .with_context(|| format!("reading {}", host_file.display()))?;
+                    write_private_bytes(&staged.join(name), &bytes)?;
                 }
-
-                let host_profiles = host_dir.join("profiles");
-                if host_profiles.is_dir() {
-                    let dest_profiles = target_dir.join("profiles");
-                    copy_kimi_credentials_tree(&host_profiles, &dest_profiles)
-                        .with_context(|| format!("copying {}", host_profiles.display()))?;
-                }
-
-                AuthProvisionOutcome::Synced
-            } else {
-                AuthProvisionOutcome::HostMissing
             }
-        }
+
+            let host_profiles = host_dir.join("profiles");
+            if host_profiles.is_dir() {
+                let staged_profiles = staged.join("profiles");
+                copy_kimi_credentials_tree(&host_profiles, &staged_profiles)
+                    .with_context(|| format!("copying {}", host_profiles.display()))?;
+            }
+            Ok(())
+        })?,
     };
 
     let forward_auth = matches!(
@@ -1477,7 +1594,7 @@ fn provision_single_blob_credential(
 ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
     use anyhow::Context;
 
-    reject_symlink(target)?;
+    reject_auth_path(target)?;
 
     let outcome = match mode {
         AuthForwardMode::OAuthToken => {
@@ -1586,7 +1703,7 @@ fn provision_single_file_credential(
 ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
     use anyhow::Context;
 
-    reject_symlink(target)?;
+    reject_auth_path(target)?;
 
     let outcome = match mode {
         AuthForwardMode::OAuthToken => {
@@ -1869,6 +1986,51 @@ fn reject_symlink(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Reject symlink traversal through the destination's existing parent
+/// directories as well as at the final path. Missing ancestors are allowed so
+/// callers can create a new private tree after this check.
+fn reject_auth_path(path: &Path) -> anyhow::Result<()> {
+    reject_symlink(path)?;
+    let mut ancestor = path.parent();
+    while let Some(current) = ancestor {
+        if !is_platform_root_alias(current) {
+            match std::fs::symlink_metadata(current) {
+                Ok(meta) => {
+                    anyhow::ensure!(
+                        !meta.file_type().is_symlink(),
+                        "refusing to use auth path through symlink at {}; remove the symlink and retry",
+                        current.display()
+                    );
+                    anyhow::ensure!(
+                        meta.is_dir(),
+                        "refusing to use auth path through non-directory {}; remove it and retry",
+                        current.display()
+                    );
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        ancestor = current.parent();
+    }
+    Ok(())
+}
+
+/// macOS exposes these root directories as immutable platform aliases (for
+/// example `/var` → `/private/var`). They are outside Jackin-owned state and
+/// must not make every otherwise-safe temporary test or data path fail.
+#[cfg(target_os = "macos")]
+fn is_platform_root_alias(path: &Path) -> bool {
+    matches!(path, p if p == Path::new("/etc")
+        || p == Path::new("/tmp")
+        || p == Path::new("/var"))
+}
+
+#[cfg(not(target_os = "macos"))]
+const fn is_platform_root_alias(_path: &Path) -> bool {
+    false
+}
+
 /// Write a file with restricted permissions (`0o600` on Unix) since it
 /// may contain authentication credentials.
 ///
@@ -1883,7 +2045,7 @@ fn write_private_file(path: &Path, content: &str) -> anyhow::Result<()> {
 
 /// Write raw bytes to `path` with `0o600` permissions, symlink-safe and atomic.
 fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
-    reject_symlink(path)?;
+    reject_auth_path(path)?;
 
     #[cfg(unix)]
     {
@@ -1920,6 +2082,7 @@ fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
 /// real state into the same path.
 pub(super) fn create_private_file_if_absent(path: &Path, content: &[u8]) -> anyhow::Result<()> {
     use anyhow::Context;
+    reject_auth_path(path)?;
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create_new(true);
     #[cfg(unix)]
@@ -1992,6 +2155,7 @@ fn maybe_inject_permission_repair_failure(stage: PermissionRepairFailure) -> any
 /// existing path is returned so launch provisioning fails closed rather than
 /// continuing with potentially exposed credentials.
 fn repair_permissions(path: &Path) -> anyhow::Result<()> {
+    reject_auth_path(path)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
