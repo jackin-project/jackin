@@ -78,6 +78,38 @@ async fn force_cleanup_clone_removes_directory_without_host_git_ops() {
 }
 
 #[tokio::test]
+async fn force_cleanup_clone_does_not_follow_planted_symlinks() {
+    let repo_dir = TempDir::new().unwrap();
+    let container_dir = TempDir::new().unwrap();
+    let victim_dir = TempDir::new().unwrap();
+    let victim_file = victim_dir.path().join("data.txt");
+    std::fs::write(&victim_file, "precious").unwrap();
+    let clone_dir = container_dir
+        .path()
+        .join("git/clone/repo/workspace/jackin/jackin-x");
+    std::fs::create_dir_all(clone_dir.join("sub")).unwrap();
+    // Planted links must be unlinked, never traversed: the victim outside
+    // the clone root must survive teardown (D-SEC3 regression pin).
+    std::os::unix::fs::symlink(&victim_file, clone_dir.join("sub/evil")).unwrap();
+    std::os::unix::fs::symlink(victim_dir.path(), clone_dir.join("wtlink")).unwrap();
+    let rec = IsolationRecord {
+        isolation: MountIsolation::Clone,
+        worktree_path: clone_dir.to_string_lossy().into(),
+        ..rec_for(repo_dir.path(), container_dir.path())
+    };
+    write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+    let mut runner = FakeRunner::default();
+    force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+        .await
+        .unwrap();
+
+    assert!(!clone_dir.exists());
+    assert_eq!(std::fs::read(&victim_file).unwrap(), b"precious");
+    assert!(read_records(container_dir.path()).unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn force_cleanup_tolerates_missing_host_repo() {
     let container_dir = TempDir::new().unwrap();
     let rec = IsolationRecord {
