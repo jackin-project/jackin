@@ -322,11 +322,18 @@ pub fn forwarded_sources_from_launch_config(
     let mut sources = forwarded_sources_from_launch(state, resolved_env);
     sources.selected_account_ids = launch_config.accounts.values().cloned().collect();
     for (instance_id, account_id) in &launch_config.accounts {
-        if let Some(capability) = launch_config.usage_capabilities.get(instance_id) {
+        let surface = launch_config
+            .credential_provider_surface_for_instance(instance_id)
+            .or_else(|| {
+                launch_config
+                    .usage_capability_for_instance(instance_id)
+                    .map(|capability| capability.surface_id.as_str())
+            });
+        if let Some(surface) = surface {
             sources
                 .selected_account_surfaces
                 .entry(account_id.clone())
-                .or_insert_with(|| capability.surface_id.clone());
+                .or_insert_with(|| surface.to_owned());
         }
     }
     sources
@@ -353,6 +360,9 @@ pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mu
         let Some(surface) = HostSurfaceId::from_provider_alias(account.provider.slug()) else {
             continue;
         };
+        launch_config
+            .credential_provider_surfaces
+            .insert(instance_id.clone(), surface.id().to_owned());
         launch_config.usage_capabilities.insert(
             instance_id.clone(),
             UsageAccountCapability {

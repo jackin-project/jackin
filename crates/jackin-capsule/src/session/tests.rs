@@ -2126,6 +2126,26 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         Some("https://api.z.ai/api/anthropic")
     );
     assert!(routed_claude.get_env("OPENAI_API_KEY").is_none());
+
+    let mut unproved_routed_claude = build_agent_command(&spawn_spec(
+        "claude",
+        "claude-routed",
+        Some("api_key"),
+        &empty,
+    ));
+    super::apply_account_env(
+        &mut unproved_routed_claude,
+        "claude-routed",
+        Some("api_key"),
+        None,
+        &credentials,
+    );
+    assert!(
+        unproved_routed_claude
+            .get_env("ANTHROPIC_AUTH_TOKEN")
+            .is_none(),
+        "routed Claude credentials must not inject without a selected provider surface"
+    );
 }
 
 #[test]

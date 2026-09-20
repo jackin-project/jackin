@@ -269,8 +269,12 @@ impl Multiplexer {
                     instance,
                     config.auth_mode_for_instance(instance),
                     config
-                        .usage_capability_for_instance(instance)
-                        .map(|capability| capability.surface_id.as_str()),
+                        .credential_provider_surface_for_instance(instance)
+                        .or_else(|| {
+                            config
+                                .usage_capability_for_instance(instance)
+                                .map(|capability| capability.surface_id.as_str())
+                        }),
                     &self.launch_env.agent_credentials,
                 );
                 Ok(SessionLaunch {

@@ -304,6 +304,16 @@ fn validate(config: &CapsuleConfig) -> Result<()> {
             "Unix identities name an instance outside the configured allowlist"
         );
     }
+    for (instance, surface) in &config.credential_provider_surfaces {
+        anyhow::ensure!(
+            config.instances.contains(instance),
+            "credential provider surfaces name an instance outside the configured allowlist"
+        );
+        anyhow::ensure!(
+            !surface.trim().is_empty(),
+            "credential provider surface for instance {instance:?} is empty"
+        );
+    }
     if config
         .auth_modes
         .keys()
@@ -641,8 +651,12 @@ fn validate_agent_credentials(
             expected_agent,
             config.auth_mode_for_instance(instance).unwrap_or_default(),
             config
-                .usage_capability_for_instance(instance)
-                .map(|capability| capability.surface_id.as_str()),
+                .credential_provider_surface_for_instance(instance)
+                .or_else(|| {
+                    config
+                        .usage_capability_for_instance(instance)
+                        .map(|capability| capability.surface_id.as_str())
+                }),
         )
         .map_err(|_| {
             std::io::Error::new(

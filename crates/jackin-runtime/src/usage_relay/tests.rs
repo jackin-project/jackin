@@ -48,6 +48,7 @@ fn launch_usage_capabilities_preserve_account_identity_and_provider_surface() {
         ("personal-openai", AiProvider::OpenAi),
         ("work-openai", AiProvider::OpenAi),
         ("routed-zai", AiProvider::Zai),
+        ("routed-kimi", AiProvider::Moonshot),
     ] {
         config.accounts.insert(
             id.to_owned(),
@@ -69,16 +70,19 @@ fn launch_usage_capabilities_preserve_account_identity_and_provider_surface() {
             "personal-codex".to_owned(),
             "work-codex".to_owned(),
             "routed-codex".to_owned(),
+            "routed-kimi-codex".to_owned(),
         ],
         agents: BTreeMap::from([
             ("personal-codex".to_owned(), "codex".to_owned()),
             ("work-codex".to_owned(), "codex".to_owned()),
             ("routed-codex".to_owned(), "codex".to_owned()),
+            ("routed-kimi-codex".to_owned(), "codex".to_owned()),
         ]),
         accounts: BTreeMap::from([
             ("personal-codex".to_owned(), "personal-openai".to_owned()),
             ("work-codex".to_owned(), "work-openai".to_owned()),
             ("routed-codex".to_owned(), "routed-zai".to_owned()),
+            ("routed-kimi-codex".to_owned(), "routed-kimi".to_owned()),
         ]),
         ..CapsuleConfig::default()
     };
@@ -109,7 +113,69 @@ fn launch_usage_capabilities_preserve_account_identity_and_provider_surface() {
                     surface_id: "zai".to_owned(),
                 },
             ),
+            (
+                "routed-kimi-codex".to_owned(),
+                UsageAccountCapability {
+                    account_id: "routed-kimi".to_owned(),
+                    surface_id: "kimi".to_owned(),
+                },
+            ),
         ])
+    );
+    assert_eq!(
+        launch_config.credential_provider_surfaces,
+        BTreeMap::from([
+            ("personal-codex".to_owned(), "codex".to_owned()),
+            ("work-codex".to_owned(), "codex".to_owned()),
+            ("routed-codex".to_owned(), "zai".to_owned()),
+            ("routed-kimi-codex".to_owned(), "kimi".to_owned()),
+        ])
+    );
+}
+
+#[test]
+fn credential_surface_survives_usage_authority_canonicalization() {
+    use crate::instance::{AgentRuntimeState, GithubProvisionOutcome, ProvisionedAuth, RoleState};
+    use jackin_core::Agent;
+
+    let temp = tempfile::tempdir().unwrap();
+    let state = RoleState {
+        root: temp.path().join("role"),
+        gh_config_dir: temp.path().join("role/.config/gh"),
+        gh_provision_outcome: GithubProvisionOutcome::Skipped,
+        agent_runtime: AgentRuntimeState {
+            agent: Agent::Claude,
+            model: None,
+        },
+        auth: ProvisionedAuth::default(),
+        auth_outcomes: BTreeMap::new(),
+    };
+    let resolved_env = jackin_env::ResolvedEnv { vars: Vec::new() };
+    let mut launch_config = CapsuleConfig {
+        instances: vec!["claude-zai".to_owned()],
+        accounts: BTreeMap::from([("claude-zai".to_owned(), "account-zai".to_owned())]),
+        credential_provider_surfaces: BTreeMap::from([("claude-zai".to_owned(), "zai".to_owned())]),
+        usage_capabilities: BTreeMap::from([(
+            "claude-zai".to_owned(),
+            UsageAccountCapability {
+                account_id: "account-zai".to_owned(),
+                surface_id: "zai".to_owned(),
+            },
+        )]),
+        ..CapsuleConfig::default()
+    };
+
+    let sources = forwarded_sources_from_launch_config(&state, &resolved_env, &launch_config);
+    assert_eq!(
+        sources.selected_account_surfaces,
+        BTreeMap::from([("account-zai".to_owned(), "zai".to_owned())])
+    );
+
+    CanonicalLaunchUsageCapabilities::default().apply_to_launch_config(&mut launch_config);
+    assert!(launch_config.usage_capabilities.is_empty());
+    assert_eq!(
+        launch_config.credential_provider_surface_for_instance("claude-zai"),
+        Some("zai")
     );
 }
 

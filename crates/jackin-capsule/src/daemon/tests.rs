@@ -735,6 +735,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             auth_modes: BTreeMap::new(),
             accounts: BTreeMap::new(),
             usage_capabilities: BTreeMap::new(),
+            credential_provider_surfaces: BTreeMap::new(),
             labels: BTreeMap::new(),
             claude_marketplaces: Vec::new(),
             claude_plugins: Vec::new(),

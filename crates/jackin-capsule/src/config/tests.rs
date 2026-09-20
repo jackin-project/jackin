@@ -328,13 +328,9 @@ fn protected_credentials_bind_claude_oauth_to_its_auth_family() {
 #[test]
 fn protected_credentials_preserve_claude_routed_auth_token_and_reject_foreign_key() {
     let mut config = instance_config(&[("claude-work", "api_key", "claude")]);
-    config.usage_capabilities.insert(
-        "claude-work".to_owned(),
-        jackin_protocol::usage_broker::UsageAccountCapability {
-            account_id: "acc-work".to_owned(),
-            surface_id: "zai".to_owned(),
-        },
-    );
+    config
+        .credential_provider_surfaces
+        .insert("claude-work".to_owned(), "zai".to_owned());
     let valid = v2_credentials(serde_json::json!({
         "schema_version": 2,
         "instances": {

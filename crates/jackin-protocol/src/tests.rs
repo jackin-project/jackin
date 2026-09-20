@@ -161,3 +161,21 @@ fn capsule_config_accessors_are_keyed_by_instance_config_id() {
     );
     assert_eq!(config.auth_mode_for_instance("codex-work"), None);
 }
+
+#[test]
+fn credential_provider_surface_is_independent_from_usage_authority() {
+    let config = CapsuleConfig {
+        instances: vec!["claude-work".to_owned()],
+        credential_provider_surfaces: BTreeMap::from([(
+            "claude-work".to_owned(),
+            "zai".to_owned(),
+        )]),
+        ..CapsuleConfig::default()
+    };
+
+    assert_eq!(
+        config.credential_provider_surface_for_instance("claude-work"),
+        Some("zai")
+    );
+    assert_eq!(config.usage_capability_for_instance("claude-work"), None);
+}
