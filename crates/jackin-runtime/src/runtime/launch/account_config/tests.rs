@@ -664,6 +664,8 @@ fn assert_no_private_config_swap_artifacts(directory: &Path) {
         assert!(
             !name.starts_with(".jackin-private-config-stage-")
                 && !name.starts_with(".jackin-private-config-previous-")
+                && !name.starts_with(".jackin-private-config-rollback-")
+                && !name.starts_with(".jackin-private-config-previous-cleanup-")
                 && name != PRIVATE_CONFIG_TRANSACTION_FILE,
             "private config swap artifact remained: {name}"
         );
@@ -860,6 +862,7 @@ fn previous_moved_recovery_is_idempotent_after_previous_deletion() {
         target: ".codex".into(),
         staged: ".jackin-private-config-stage-already-gone".into(),
         previous: Some(".jackin-private-config-previous-already-gone".into()),
+        cleanup: None,
         phase: PrivateConfigTransactionPhase::PreviousMoved,
     };
     private_config_persist_transaction(&publication, &transaction).unwrap();
@@ -906,7 +909,7 @@ fn restart_recovers_after_previous_deletion_before_journal_cleanup() {
 
 #[cfg(unix)]
 #[test]
-fn installed_recovery_restores_previous_after_rollback_target_removal() {
+fn installed_recovery_quarantines_surviving_target_before_restoring_previous() {
     let temp = tempfile::tempdir().unwrap();
     let (old_config, old_instances) =
         codex_fixture(AiProvider::Moonshot, "k3", "https://old.example/v1");
@@ -914,12 +917,78 @@ fn installed_recovery_restores_previous_after_rollback_target_removal() {
     let directory = temp.path().join("home/.codex");
     let old_config_bytes = std::fs::read(directory.join("config.toml")).unwrap();
     let old_catalog_bytes = std::fs::read(directory.join("account-models.json")).unwrap();
+    let parent = directory.parent().unwrap();
+    let publication = begin_private_config_publication(temp.path(), parent).unwrap();
+    let target = private_config_name(".codex").unwrap();
+    let previous_name =
+        private_config_allocate_sibling(&publication.parent, "jackin-private-config-previous")
+            .unwrap();
+    let previous = private_config_name(&previous_name).unwrap();
+    renameat(
+        &publication.parent,
+        target.as_c_str(),
+        &publication.parent,
+        previous.as_c_str(),
+    )
+    .unwrap();
+    let mut staged = private_config_stage(&publication.parent).unwrap();
+    private_config_write_file_at(
+        &staged.directory,
+        "config.toml",
+        b"incomplete new config",
+        None,
+    )
+    .unwrap();
+    staged.directory.sync_all().unwrap();
+    let staged_name = staged.name.to_string_lossy().into_owned();
+    renameat(
+        &publication.parent,
+        staged.name.as_c_str(),
+        &publication.parent,
+        target.as_c_str(),
+    )
+    .unwrap();
+    staged.disarm();
+    let transaction = PrivateConfigTransaction {
+        schema_version: PRIVATE_CONFIG_TRANSACTION_VERSION,
+        target: ".codex".into(),
+        staged: staged_name,
+        previous: Some(previous_name),
+        cleanup: None,
+        phase: PrivateConfigTransactionPhase::Installed,
+    };
+    private_config_persist_transaction(&publication, &transaction).unwrap();
+    private_config_recover_transaction(&publication).unwrap();
+
+    assert_eq!(
+        std::fs::read(directory.join("config.toml")).unwrap(),
+        old_config_bytes
+    );
+    assert_eq!(
+        std::fs::read(directory.join("account-models.json")).unwrap(),
+        old_catalog_bytes
+    );
+    assert_no_private_config_swap_artifacts(parent);
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_recovery_restores_previous_after_mid_recursive_rollback_cleanup() {
+    let temp = tempfile::tempdir().unwrap();
+    let (old_config, old_instances) =
+        codex_fixture(AiProvider::Moonshot, "k3", "https://old.example/v1");
+    configure_for_test(temp.path(), &old_config, &old_instances).unwrap();
+    let directory = temp.path().join("home/.codex");
+    std::fs::create_dir_all(directory.join("nested")).unwrap();
+    std::fs::write(directory.join("nested/old.txt"), b"old nested config").unwrap();
+    let old_config_bytes = std::fs::read(directory.join("config.toml")).unwrap();
+    let old_catalog_bytes = std::fs::read(directory.join("account-models.json")).unwrap();
     let (new_config, new_instances) =
         codex_fixture(AiProvider::Zai, "glm-5.3", "https://new.example/v1");
 
     {
         let _failure = inject_private_config_failure(
-            PrivateConfigFailurePoint::SimulatedCrashAfterInstalledRollbackTargetRemoval,
+            PrivateConfigFailurePoint::SimulatedCrashDuringRollbackCleanup,
         );
         let error = configure_for_test(temp.path(), &new_config, &new_instances).unwrap_err();
         assert!(format!("{error:#}").contains("rollback failed"));
@@ -927,12 +996,23 @@ fn installed_recovery_restores_previous_after_rollback_target_removal() {
     assert!(!directory.exists());
     let parent = directory.parent().unwrap();
     assert!(parent.join(PRIVATE_CONFIG_TRANSACTION_FILE).is_file());
+    assert!(std::fs::read_dir(parent).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".jackin-private-config-rollback-")
+    }));
 
     let publication = begin_private_config_publication(temp.path(), parent).unwrap();
     private_config_recover_transaction(&publication).unwrap();
     assert_eq!(
         std::fs::read(directory.join("config.toml")).unwrap(),
         old_config_bytes
+    );
+    assert_eq!(
+        std::fs::read(directory.join("nested/old.txt")).unwrap(),
+        b"old nested config"
     );
     assert_eq!(
         std::fs::read(directory.join("account-models.json")).unwrap(),
@@ -950,7 +1030,7 @@ fn installed_recovery_clears_first_publication_after_target_removal() {
 
     {
         let _failure = inject_private_config_failure(
-            PrivateConfigFailurePoint::SimulatedCrashAfterInstalledRollbackTargetRemoval,
+            PrivateConfigFailurePoint::SimulatedCrashDuringRollbackCleanup,
         );
         let error = configure_for_test(temp.path(), &config, &instances).unwrap_err();
         assert!(format!("{error:#}").contains("rollback failed"));

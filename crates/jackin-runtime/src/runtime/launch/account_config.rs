@@ -35,7 +35,7 @@ use nix::sys::stat::{Mode, SFlag, fchmod, fstatat, mkdirat};
 use nix::unistd::{UnlinkatFlags, unlinkat};
 
 static PRIVATE_CONFIG_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
-const PRIVATE_CONFIG_TRANSACTION_VERSION: u8 = 1;
+const PRIVATE_CONFIG_TRANSACTION_VERSION: u8 = 2;
 const PRIVATE_CONFIG_TRANSACTION_FILE: &str = ".jackin-private-config-transaction";
 #[cfg(unix)]
 const PRIVATE_CONFIG_LOCK_FILE: &str = ".jackin-private-config-lock";
@@ -51,7 +51,7 @@ enum PrivateConfigFailurePoint {
     #[cfg(test)]
     SimulatedCrashAfterPreviousDeletion,
     #[cfg(test)]
-    SimulatedCrashAfterInstalledRollbackTargetRemoval,
+    SimulatedCrashDuringRollbackCleanup,
     #[cfg(test)]
     JournalAfterPreviousMoved,
     #[cfg(test)]
@@ -64,14 +64,21 @@ struct PrivateConfigTransaction {
     target: String,
     staged: String,
     previous: Option<String>,
+    cleanup: Option<String>,
     phase: PrivateConfigTransactionPhase,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]
 enum PrivateConfigTransactionPhase {
     Prepared,
     PreviousMoved,
     Installed,
+    RollbackPrepared,
+    RollbackTargetQuarantined,
+    RollbackTargetRemoved,
+    RollbackRestored,
+    PreviousCleanupPrepared,
+    PreviousQuarantined,
 }
 
 #[cfg(test)]
@@ -86,15 +93,25 @@ fn maybe_inject_private_config_failure(point: PrivateConfigFailurePoint) -> anyh
         let failure = failure.get();
         failure == Some(point)
             || (matches!(point, PrivateConfigFailurePoint::AfterInstall)
-                && failure
-                    == Some(PrivateConfigFailurePoint::
-                        SimulatedCrashAfterInstalledRollbackTargetRemoval))
+                && failure == Some(PrivateConfigFailurePoint::SimulatedCrashDuringRollbackCleanup))
     }) {
         anyhow::bail!("injected private-config publication failure at {point:?}");
     }
 
     #[cfg(not(test))]
     let _ = point;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn maybe_inject_private_config_cleanup_failure() -> anyhow::Result<()> {
+    #[cfg(test)]
+    if PRIVATE_CONFIG_FAILURE.with(|failure| {
+        failure.get() == Some(PrivateConfigFailurePoint::SimulatedCrashDuringRollbackCleanup)
+    }) {
+        anyhow::bail!("simulated process crash during private-config recursive cleanup");
+    }
+
     Ok(())
 }
 
@@ -274,19 +291,25 @@ fn private_config_remove_tree_at(parent: &File, name: &CStr) -> anyhow::Result<(
         if kind.contains(SFlag::S_IFDIR) {
             private_config_remove_tree_at(&directory, child.as_c_str())?;
             match unlinkat(&directory, child.as_c_str(), UnlinkatFlags::RemoveDir) {
-                Ok(()) | Err(nix::errno::Errno::ENOENT) => {}
+                Ok(()) => maybe_inject_private_config_cleanup_failure()?,
+                Err(nix::errno::Errno::ENOENT) => {}
                 Err(error) => return Err(error.into()),
             }
         } else {
             match unlinkat(&directory, child.as_c_str(), UnlinkatFlags::NoRemoveDir) {
-                Ok(()) | Err(nix::errno::Errno::ENOENT) => {}
+                Ok(()) => maybe_inject_private_config_cleanup_failure()?,
+                Err(nix::errno::Errno::ENOENT) => {}
                 Err(error) => return Err(error.into()),
             }
         }
     }
     drop(directory);
     match unlinkat(parent, name, UnlinkatFlags::RemoveDir) {
-        Ok(()) | Err(nix::errno::Errno::ENOENT) => Ok(()),
+        Ok(()) => {
+            maybe_inject_private_config_cleanup_failure()?;
+            Ok(())
+        }
+        Err(nix::errno::Errno::ENOENT) => Ok(()),
         Err(error) => Err(error.into()),
     }
 }
@@ -519,7 +542,7 @@ fn private_config_stage(parent: &File) -> anyhow::Result<PrivateConfigStage<'_>>
 #[cfg(unix)]
 fn private_config_transaction_names(
     transaction: &PrivateConfigTransaction,
-) -> anyhow::Result<(CString, CString, Option<CString>)> {
+) -> anyhow::Result<(CString, CString, Option<CString>, Option<CString>)> {
     let target = private_config_name(&transaction.target)?;
     let staged = private_config_name(&transaction.staged)?;
     let previous = transaction
@@ -527,19 +550,28 @@ fn private_config_transaction_names(
         .as_deref()
         .map(private_config_name)
         .transpose()?;
+    let cleanup = transaction
+        .cleanup
+        .as_deref()
+        .map(private_config_name)
+        .transpose()?;
     anyhow::ensure!(
         transaction.target != PRIVATE_CONFIG_TRANSACTION_FILE
             && transaction.staged != PRIVATE_CONFIG_TRANSACTION_FILE
-            && transaction.previous.as_deref() != Some(PRIVATE_CONFIG_TRANSACTION_FILE),
+            && transaction.previous.as_deref() != Some(PRIVATE_CONFIG_TRANSACTION_FILE)
+            && transaction.cleanup.as_deref() != Some(PRIVATE_CONFIG_TRANSACTION_FILE),
         "private config transaction journal targets its own journal"
     );
     anyhow::ensure!(
         transaction.target != transaction.staged
             && transaction.previous.as_deref() != Some(transaction.target.as_str())
-            && transaction.previous.as_deref() != Some(transaction.staged.as_str()),
+            && transaction.previous.as_deref() != Some(transaction.staged.as_str())
+            && transaction.cleanup.as_deref() != Some(transaction.target.as_str())
+            && transaction.cleanup.as_deref() != Some(transaction.staged.as_str())
+            && !(transaction.cleanup.is_some() && transaction.cleanup == transaction.previous),
         "private config transaction journal contains duplicate paths"
     );
-    Ok((target, staged, previous))
+    Ok((target, staged, previous, cleanup))
 }
 
 #[cfg(unix)]
@@ -565,7 +597,13 @@ fn private_config_persist_transaction(
         PrivateConfigTransactionPhase::Installed => {
             maybe_inject_private_config_failure(PrivateConfigFailurePoint::JournalAfterInstalled)?;
         }
-        PrivateConfigTransactionPhase::Prepared => {}
+        PrivateConfigTransactionPhase::Prepared
+        | PrivateConfigTransactionPhase::RollbackPrepared
+        | PrivateConfigTransactionPhase::RollbackTargetQuarantined
+        | PrivateConfigTransactionPhase::RollbackTargetRemoved
+        | PrivateConfigTransactionPhase::RollbackRestored
+        | PrivateConfigTransactionPhase::PreviousCleanupPrepared
+        | PrivateConfigTransactionPhase::PreviousQuarantined => {}
     }
     Ok(())
 }
@@ -574,6 +612,355 @@ fn private_config_persist_transaction(
 fn private_config_clear_transaction(publication: &PrivateConfigPublication) -> anyhow::Result<()> {
     private_config_remove_file_at(&publication.parent, PRIVATE_CONFIG_TRANSACTION_FILE)?;
     publication.parent.sync_all()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_directory_exists(parent: &File, name: &CStr) -> anyhow::Result<bool> {
+    Ok(open_private_config_directory(parent, name)?.is_some())
+}
+
+#[cfg(unix)]
+fn private_config_remove_tree_and_sync(
+    publication: &PrivateConfigPublication,
+    name: &CStr,
+) -> anyhow::Result<()> {
+    private_config_remove_tree_at(&publication.parent, name)?;
+    publication.parent.sync_all()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_prepare_rollback(
+    publication: &PrivateConfigPublication,
+    transaction: &mut PrivateConfigTransaction,
+) -> anyhow::Result<()> {
+    if transaction.cleanup.is_none() {
+        transaction.cleanup = Some(private_config_allocate_sibling(
+            &publication.parent,
+            "jackin-private-config-rollback",
+        )?);
+    }
+    transaction.phase = PrivateConfigTransactionPhase::RollbackPrepared;
+    private_config_persist_transaction(publication, transaction)
+}
+
+#[cfg(unix)]
+fn private_config_rollback_transaction(
+    publication: &PrivateConfigPublication,
+    transaction: &mut PrivateConfigTransaction,
+    target: &CStr,
+    staged: &CStr,
+    previous: Option<&CStr>,
+) -> anyhow::Result<()> {
+    private_config_prepare_rollback(publication, transaction)?;
+    let cleanup = private_config_name(
+        transaction
+            .cleanup
+            .as_deref()
+            .context("rollback transaction has no cleanup directory")?,
+    )?;
+    let target_exists = private_config_directory_exists(&publication.parent, target)?;
+    let cleanup_exists = private_config_directory_exists(&publication.parent, cleanup.as_c_str())?;
+
+    anyhow::ensure!(
+        !(target_exists && cleanup_exists),
+        "private config rollback has live and quarantined target directories"
+    );
+    if target_exists {
+        renameat(
+            &publication.parent,
+            target,
+            &publication.parent,
+            cleanup.as_c_str(),
+        )?;
+        publication.parent.sync_all()?;
+    }
+
+    transaction.phase = PrivateConfigTransactionPhase::RollbackTargetQuarantined;
+    private_config_persist_transaction(publication, transaction)?;
+
+    if private_config_directory_exists(&publication.parent, cleanup.as_c_str())? {
+        private_config_remove_tree_and_sync(publication, cleanup.as_c_str())?;
+    }
+    if private_config_directory_exists(&publication.parent, staged)? {
+        private_config_remove_tree_and_sync(publication, staged)?;
+    }
+
+    transaction.phase = PrivateConfigTransactionPhase::RollbackTargetRemoved;
+    private_config_persist_transaction(publication, transaction)?;
+
+    let target_exists = private_config_directory_exists(&publication.parent, target)?;
+    let previous_exists = previous
+        .map(|name| private_config_directory_exists(&publication.parent, name))
+        .transpose()?
+        .unwrap_or(false);
+    anyhow::ensure!(
+        !(target_exists && previous_exists),
+        "private config rollback has live target and previous directories after cleanup"
+    );
+    if let Some(previous) = previous {
+        if previous_exists {
+            anyhow::ensure!(
+                !target_exists,
+                "private config rollback target still exists before restore"
+            );
+            renameat(&publication.parent, previous, &publication.parent, target)?;
+            publication.parent.sync_all()?;
+        } else {
+            anyhow::ensure!(
+                target_exists,
+                "private config rollback lost both previous and target directories"
+            );
+        }
+    } else {
+        anyhow::ensure!(
+            !target_exists,
+            "private config rollback retained a target without a previous directory"
+        );
+    }
+    transaction.phase = PrivateConfigTransactionPhase::RollbackRestored;
+    private_config_persist_transaction(publication, transaction)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_recover_prepared(
+    publication: &PrivateConfigPublication,
+    transaction: &PrivateConfigTransaction,
+    target: &CStr,
+    staged: &CStr,
+    previous: Option<&CStr>,
+    cleanup: Option<&CStr>,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        cleanup.is_none(),
+        "prepared private config transaction has a cleanup directory"
+    );
+    let target_exists = private_config_directory_exists(&publication.parent, target)?;
+    let staged_exists = private_config_directory_exists(&publication.parent, staged)?;
+    let previous_exists = previous
+        .map(|name| private_config_directory_exists(&publication.parent, name))
+        .transpose()?
+        .unwrap_or(false);
+
+    if previous_exists {
+        anyhow::ensure!(
+            !target_exists,
+            "prepared private config transaction has both live and previous directories"
+        );
+        if staged_exists {
+            private_config_remove_tree_and_sync(publication, staged)?;
+        }
+        renameat(
+            &publication.parent,
+            previous.context("prepared transaction has no previous")?,
+            &publication.parent,
+            target,
+        )?;
+    } else if transaction.previous.is_some() {
+        anyhow::ensure!(
+            target_exists,
+            "prepared private config transaction lost both live and previous directories"
+        );
+        if staged_exists {
+            private_config_remove_tree_and_sync(publication, staged)?;
+        }
+    } else {
+        anyhow::ensure!(
+            target_exists || staged_exists,
+            "prepared private config transaction lost both live and staged directories"
+        );
+        if staged_exists {
+            private_config_remove_tree_and_sync(publication, staged)?;
+        }
+    }
+    publication.parent.sync_all()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_recover_previous_moved(
+    publication: &PrivateConfigPublication,
+    transaction: &mut PrivateConfigTransaction,
+    target: &CStr,
+    staged: &CStr,
+    previous: &CStr,
+    cleanup: Option<&CStr>,
+) -> anyhow::Result<()> {
+    let target_exists = private_config_directory_exists(&publication.parent, target)?;
+    let staged_exists = private_config_directory_exists(&publication.parent, staged)?;
+    let previous_exists = private_config_directory_exists(&publication.parent, previous)?;
+    if cleanup.is_some() || (target_exists && previous_exists) {
+        private_config_rollback_transaction(
+            publication,
+            transaction,
+            target,
+            staged,
+            Some(previous),
+        )?;
+        return Ok(());
+    }
+    if target_exists {
+        anyhow::ensure!(
+            !staged_exists,
+            "previous-moved private config transaction has live and staged directories"
+        );
+        // The previous tree was already durably removed. The remaining live
+        // tree is the only unambiguous publication result.
+        return Ok(());
+    }
+    anyhow::ensure!(
+        previous_exists,
+        "previous-moved private config transaction lost its previous directory"
+    );
+    if staged_exists {
+        private_config_remove_tree_and_sync(publication, staged)?;
+    }
+    renameat(&publication.parent, previous, &publication.parent, target)?;
+    publication.parent.sync_all()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_recover_installed(
+    publication: &PrivateConfigPublication,
+    transaction: &mut PrivateConfigTransaction,
+    target: &CStr,
+    staged: &CStr,
+    previous: Option<&CStr>,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !private_config_directory_exists(&publication.parent, staged)?,
+        "installed private config transaction has live and staged directories"
+    );
+    let target_exists = private_config_directory_exists(&publication.parent, target)?;
+    let previous_exists = previous
+        .map(|name| private_config_directory_exists(&publication.parent, name))
+        .transpose()?
+        .unwrap_or(false);
+    if let Some(previous) = previous {
+        if previous_exists {
+            private_config_rollback_transaction(
+                publication,
+                transaction,
+                target,
+                staged,
+                Some(previous),
+            )?;
+        } else {
+            anyhow::ensure!(
+                target_exists,
+                "installed private config transaction lost both target and previous directories"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_recover_rollback(
+    publication: &PrivateConfigPublication,
+    transaction: &mut PrivateConfigTransaction,
+    target: &CStr,
+    staged: &CStr,
+    previous: Option<&CStr>,
+) -> anyhow::Result<()> {
+    private_config_rollback_transaction(publication, transaction, target, staged, previous)
+}
+
+#[cfg(unix)]
+fn private_config_recover_rollback_target_removed(
+    publication: &PrivateConfigPublication,
+    transaction: &mut PrivateConfigTransaction,
+    target: &CStr,
+    previous: Option<&CStr>,
+) -> anyhow::Result<()> {
+    let target_exists = private_config_directory_exists(&publication.parent, target)?;
+    let previous_exists = previous
+        .map(|name| private_config_directory_exists(&publication.parent, name))
+        .transpose()?
+        .unwrap_or(false);
+    anyhow::ensure!(
+        !(target_exists && previous_exists),
+        "private config rollback has target and previous directories after target removal"
+    );
+    if let Some(previous) = previous {
+        if previous_exists {
+            anyhow::ensure!(
+                !target_exists,
+                "private config rollback target still exists before restore"
+            );
+            renameat(&publication.parent, previous, &publication.parent, target)?;
+            publication.parent.sync_all()?;
+        } else {
+            anyhow::ensure!(
+                target_exists,
+                "private config rollback lost both previous and target directories"
+            );
+        }
+    } else {
+        anyhow::ensure!(
+            !target_exists,
+            "private config rollback retained a target without a previous directory"
+        );
+    }
+    transaction.phase = PrivateConfigTransactionPhase::RollbackRestored;
+    private_config_persist_transaction(publication, transaction)
+}
+
+#[cfg(unix)]
+fn private_config_recover_rollback_restored(
+    publication: &PrivateConfigPublication,
+    target: &CStr,
+    previous: Option<&CStr>,
+) -> anyhow::Result<()> {
+    let target_exists = private_config_directory_exists(&publication.parent, target)?;
+    let previous_exists = previous
+        .map(|name| private_config_directory_exists(&publication.parent, name))
+        .transpose()?
+        .unwrap_or(false);
+    if previous.is_some() {
+        anyhow::ensure!(
+            target_exists && !previous_exists,
+            "restored private config transaction has no complete live tree"
+        );
+    } else {
+        anyhow::ensure!(
+            !target_exists && !previous_exists,
+            "first private config rollback retained a live tree"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn private_config_recover_previous_cleanup(
+    publication: &PrivateConfigPublication,
+    transaction: &mut PrivateConfigTransaction,
+    target: &CStr,
+    previous: &CStr,
+    cleanup: &CStr,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        private_config_directory_exists(&publication.parent, target)?,
+        "private config cleanup transaction lost its live target"
+    );
+    let previous_exists = private_config_directory_exists(&publication.parent, previous)?;
+    let cleanup_exists = private_config_directory_exists(&publication.parent, cleanup)?;
+    anyhow::ensure!(
+        !(previous_exists && cleanup_exists),
+        "private config cleanup transaction has both previous and quarantined directories"
+    );
+    if previous_exists {
+        renameat(&publication.parent, previous, &publication.parent, cleanup)?;
+        publication.parent.sync_all()?;
+    }
+    transaction.phase = PrivateConfigTransactionPhase::PreviousQuarantined;
+    private_config_persist_transaction(publication, transaction)?;
+    if private_config_directory_exists(&publication.parent, cleanup)? {
+        private_config_remove_tree_and_sync(publication, cleanup)?;
+    }
     Ok(())
 }
 
@@ -593,145 +980,74 @@ fn private_config_recover_transaction(
         "unsupported private config transaction schema {}",
         transaction.schema_version
     );
-    let (target, staged, previous) = private_config_transaction_names(&transaction)?;
-    let target_exists =
-        open_private_config_directory(&publication.parent, target.as_c_str())?.is_some();
-    let staged_exists =
-        open_private_config_directory(&publication.parent, staged.as_c_str())?.is_some();
-    let previous_exists = previous
-        .as_ref()
-        .map(|name| open_private_config_directory(&publication.parent, name.as_c_str()))
-        .transpose()?
-        .flatten()
-        .is_some();
-
+    let (target, staged, previous, cleanup) = private_config_transaction_names(&transaction)?;
+    let mut transaction = transaction;
     match transaction.phase {
-        PrivateConfigTransactionPhase::Prepared => {
-            if previous_exists {
-                anyhow::ensure!(
-                    !target_exists,
-                    "private config transaction has both live and previous directories"
-                );
-                renameat(
-                    &publication.parent,
-                    previous
-                        .as_ref()
-                        .context("prepared transaction has no previous")?
-                        .as_c_str(),
-                    &publication.parent,
-                    target.as_c_str(),
-                )?;
-            } else if transaction.previous.is_some() {
-                anyhow::ensure!(
-                    target_exists,
-                    "private config transaction lost both live and previous directories"
-                );
-            } else {
-                anyhow::ensure!(
-                    target_exists || staged_exists,
-                    "private config transaction lost both live and staged directories"
-                );
-            }
-            if staged_exists {
-                private_config_remove_tree_at(&publication.parent, staged.as_c_str())?;
-            }
-        }
+        PrivateConfigTransactionPhase::Prepared => private_config_recover_prepared(
+            publication,
+            &transaction,
+            target.as_c_str(),
+            staged.as_c_str(),
+            previous.as_deref(),
+            cleanup.as_deref(),
+        )?,
         PrivateConfigTransactionPhase::PreviousMoved => {
-            anyhow::ensure!(
-                transaction.previous.is_some(),
-                "previous-moved transaction has no previous directory"
-            );
-            match (target_exists, previous_exists) {
-                (true, true) => {
-                    anyhow::ensure!(
-                        !staged_exists,
-                        "private config transaction has ambiguous live, staged, and previous directories"
-                    );
-                    private_config_remove_tree_at(
-                        &publication.parent,
-                        previous
-                            .as_ref()
-                            .context("missing previous directory")?
-                            .as_c_str(),
-                    )?;
-                }
-                (false, true) => {
-                    if staged_exists {
-                        private_config_remove_tree_at(&publication.parent, staged.as_c_str())?;
-                    }
-                    renameat(
-                        &publication.parent,
-                        previous
-                            .as_ref()
-                            .context("missing previous directory")?
-                            .as_c_str(),
-                        &publication.parent,
-                        target.as_c_str(),
-                    )?;
-                }
-                (true, false) => {
-                    // The previous directory may have been durably deleted
-                    // before a crash. The live target proves publication won;
-                    // only an absent staged sibling makes this state unambiguous.
-                    anyhow::ensure!(
-                        !staged_exists,
-                        "private config transaction has ambiguous live and staged directories"
-                    );
-                }
-                (false, false) => {
-                    anyhow::bail!(
-                        "private config transaction lost its previous directory before recovery"
-                    );
-                }
-            }
+            private_config_recover_previous_moved(
+                publication,
+                &mut transaction,
+                target.as_c_str(),
+                staged.as_c_str(),
+                previous
+                    .as_deref()
+                    .context("previous-moved transaction has no previous")?,
+                cleanup.as_deref(),
+            )?;
         }
-        PrivateConfigTransactionPhase::Installed => {
-            match (target_exists, staged_exists, previous_exists) {
-                (true, false, false | true) => {
-                    if previous_exists {
-                        private_config_remove_tree_at(
-                            &publication.parent,
-                            previous
-                                .as_ref()
-                                .context("installed transaction has no previous")?
-                                .as_c_str(),
-                        )?;
-                    }
-                }
-                (true, true, _) => {
-                    anyhow::bail!(
-                        "installed private config transaction has live and staged directories"
-                    );
-                }
-                (false, false, true) => {
-                    // A failed post-install rollback can remove the new live
-                    // tree before the old tree is restored. The durable
-                    // Installed journal makes that gap recoverable.
-                    renameat(
-                        &publication.parent,
-                        previous
-                            .as_ref()
-                            .context("installed transaction has no previous")?
-                            .as_c_str(),
-                        &publication.parent,
-                        target.as_c_str(),
-                    )?;
-                }
-                (false, false, false) if transaction.previous.is_none() => {
-                    // First publication has no old tree to restore. Clearing
-                    // the journal makes the next launch retry normally.
-                }
-                (false, false, false) => {
-                    anyhow::bail!(
-                        "installed private config transaction lost its previous directory"
-                    );
-                }
-                (false, true, _) => {
-                    anyhow::bail!(
-                        "installed private config transaction has staged data but no live directory"
-                    );
-                }
-            }
+        PrivateConfigTransactionPhase::Installed => private_config_recover_installed(
+            publication,
+            &mut transaction,
+            target.as_c_str(),
+            staged.as_c_str(),
+            previous.as_deref(),
+        )?,
+        PrivateConfigTransactionPhase::RollbackPrepared
+        | PrivateConfigTransactionPhase::RollbackTargetQuarantined => {
+            private_config_recover_rollback(
+                publication,
+                &mut transaction,
+                target.as_c_str(),
+                staged.as_c_str(),
+                previous.as_deref(),
+            )?;
+        }
+        PrivateConfigTransactionPhase::RollbackTargetRemoved => {
+            private_config_recover_rollback_target_removed(
+                publication,
+                &mut transaction,
+                target.as_c_str(),
+                previous.as_deref(),
+            )?;
+        }
+        PrivateConfigTransactionPhase::RollbackRestored => {
+            private_config_recover_rollback_restored(
+                publication,
+                target.as_c_str(),
+                previous.as_deref(),
+            )?;
+        }
+        PrivateConfigTransactionPhase::PreviousCleanupPrepared
+        | PrivateConfigTransactionPhase::PreviousQuarantined => {
+            private_config_recover_previous_cleanup(
+                publication,
+                &mut transaction,
+                target.as_c_str(),
+                previous
+                    .as_deref()
+                    .context("private config cleanup has no previous directory")?,
+                cleanup
+                    .as_deref()
+                    .context("private config cleanup has no quarantine directory")?,
+            )?;
         }
     }
     publication.parent.sync_all()?;
@@ -739,44 +1055,32 @@ fn private_config_recover_transaction(
 }
 
 #[cfg(unix)]
-fn private_config_restore_swap(
-    publication: &PrivateConfigPublication,
-    target: &CStr,
-    previous: Option<&CStr>,
-    installed: bool,
-) -> anyhow::Result<()> {
-    if installed {
-        private_config_remove_tree_at(&publication.parent, target)?;
-        #[cfg(test)]
-        if PRIVATE_CONFIG_FAILURE.with(|failure| {
-            failure.get()
-                == Some(
-                    PrivateConfigFailurePoint::SimulatedCrashAfterInstalledRollbackTargetRemoval,
-                )
-        }) {
-            return Err(anyhow::anyhow!(
-                "simulated process crash after installed target removal"
-            ));
-        }
-    }
-    if let Some(previous) = previous {
-        renameat(&publication.parent, previous, &publication.parent, target)?;
-    }
-    publication.parent.sync_all()?;
-    Ok(())
-}
-
-#[cfg(unix)]
 fn private_config_abort_transaction(
     publication: &PrivateConfigPublication,
+    transaction: &mut PrivateConfigTransaction,
     target: &CStr,
+    staged: &CStr,
     previous: Option<&CStr>,
     installed: bool,
     cause: anyhow::Error,
 ) -> anyhow::Result<()> {
-    if let Err(rollback_error) =
-        private_config_restore_swap(publication, target, previous, installed)
-    {
+    let target_exists = private_config_directory_exists(&publication.parent, target)?;
+    let rollback_result = if installed || target_exists {
+        private_config_rollback_transaction(publication, transaction, target, staged, previous)
+    } else {
+        if private_config_directory_exists(&publication.parent, staged)? {
+            private_config_remove_tree_and_sync(publication, staged)?;
+        }
+        if let Some(previous) = previous {
+            anyhow::ensure!(
+                private_config_directory_exists(&publication.parent, previous)?,
+                "private config rollback lost its previous directory"
+            );
+            renameat(&publication.parent, previous, &publication.parent, target)?;
+        }
+        publication.parent.sync_all().map_err(anyhow::Error::from)
+    };
+    if let Err(rollback_error) = rollback_result {
         return Err(cause.context(format!(
             "private config publication failed and rollback failed: {rollback_error:#}"
         )));
@@ -790,25 +1094,21 @@ fn private_config_abort_transaction(
 }
 
 #[cfg(unix)]
-fn publish_private_config_directory_locked(
-    publication: &PrivateConfigPublication,
-    directory: &Path,
+fn private_config_prepare_stage<'a>(
+    parent: &'a File,
+    existing: Option<&File>,
     files: &[(&'static str, Vec<u8>)],
     remove_files: &[&str],
-) -> anyhow::Result<()> {
-    let target = private_config_target_name(publication, directory)?;
-    let existing = open_private_config_directory(&publication.parent, target.as_c_str())?;
+) -> anyhow::Result<PrivateConfigStage<'a>> {
     let existing_mode = existing
-        .as_ref()
         .map(|directory| {
             directory
                 .metadata()
                 .map(|metadata| metadata.permissions().mode())
         })
         .transpose()?;
-
-    let mut staged = private_config_stage(&publication.parent)?;
-    if let Some(existing) = existing.as_ref() {
+    let staged = private_config_stage(parent)?;
+    if let Some(existing) = existing {
         private_config_copy_tree(existing, &staged.directory)?;
         fchmod(
             &staged.directory,
@@ -819,12 +1119,88 @@ fn publish_private_config_directory_locked(
         private_config_remove_file_at(&staged.directory, name)?;
     }
     for (name, bytes) in files {
-        let mode = private_config_existing_mode(existing.as_ref(), name)?;
+        let mode = private_config_existing_mode(existing, name)?;
         private_config_write_file_at(&staged.directory, name, bytes, mode)?;
         maybe_inject_private_config_failure(PrivateConfigFailurePoint::StagedFile(name))?;
     }
     staged.directory.sync_all()?;
     maybe_inject_private_config_failure(PrivateConfigFailurePoint::BeforeSwap)?;
+    Ok(staged)
+}
+
+#[cfg(unix)]
+fn private_config_cleanup_previous(
+    publication: &PrivateConfigPublication,
+    transaction: &mut PrivateConfigTransaction,
+    previous: &CStr,
+) -> anyhow::Result<()> {
+    transaction.cleanup = Some(private_config_allocate_sibling(
+        &publication.parent,
+        "jackin-private-config-previous-cleanup",
+    )?);
+    transaction.phase = PrivateConfigTransactionPhase::PreviousCleanupPrepared;
+    if let Err(error) = private_config_persist_transaction(publication, transaction) {
+        return Err(
+            error.context("private config installed; previous cleanup journal was retained")
+        );
+    }
+    let cleanup = private_config_name(
+        transaction
+            .cleanup
+            .as_deref()
+            .context("private config cleanup has no quarantine directory")?,
+    )?;
+    if let Err(error) = renameat(
+        &publication.parent,
+        previous,
+        &publication.parent,
+        cleanup.as_c_str(),
+    ) {
+        return Err(anyhow::Error::from(error).context(
+            "private config installed; previous quarantine failed and the journal was retained",
+        ));
+    }
+    publication.parent.sync_all()?;
+    transaction.phase = PrivateConfigTransactionPhase::PreviousQuarantined;
+    if let Err(error) = private_config_persist_transaction(publication, transaction) {
+        return Err(
+            error.context("private config installed; previous quarantine journal was retained")
+        );
+    }
+    if let Err(error) = private_config_remove_tree_and_sync(publication, cleanup.as_c_str()) {
+        return Err(error.context(
+            "private config installed; previous cleanup failed and the journal was retained",
+        ));
+    }
+    #[cfg(test)]
+    if PRIVATE_CONFIG_FAILURE.with(|failure| {
+        failure.get() == Some(PrivateConfigFailurePoint::SimulatedCrashAfterPreviousDeletion)
+    }) {
+        return Err(anyhow::anyhow!(
+            "simulated process crash after previous private config deletion"
+        ));
+    }
+    // The PreviousQuarantined journal is already durable. If this fsync or
+    // journal cleanup fails, the next launch completes the cleanup path.
+    if let Err(error) = publication.parent.sync_all() {
+        return Err(anyhow::Error::new(error).context(
+            "private config installed; previous cleanup fsync failed and the journal was retained",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn publish_private_config_directory_locked(
+    publication: &PrivateConfigPublication,
+    directory: &Path,
+    files: &[(&'static str, Vec<u8>)],
+    remove_files: &[&str],
+) -> anyhow::Result<()> {
+    let target = private_config_target_name(publication, directory)?;
+    let existing = open_private_config_directory(&publication.parent, target.as_c_str())?;
+    let mut staged =
+        private_config_prepare_stage(&publication.parent, existing.as_ref(), files, remove_files)?;
 
     let previous_name = if existing.is_some() {
         Some(private_config_allocate_sibling(
@@ -843,6 +1219,7 @@ fn publish_private_config_directory_locked(
         target: target.to_string_lossy().into_owned(),
         staged: staged.name.to_string_lossy().into_owned(),
         previous: previous_name,
+        cleanup: None,
         phase: PrivateConfigTransactionPhase::Prepared,
     };
     private_config_persist_transaction(publication, &transaction)?;
@@ -854,11 +1231,14 @@ fn publish_private_config_directory_locked(
             &publication.parent,
             previous.as_c_str(),
         )?;
+        publication.parent.sync_all()?;
         transaction.phase = PrivateConfigTransactionPhase::PreviousMoved;
         if let Err(error) = private_config_persist_transaction(publication, &transaction) {
             return private_config_abort_transaction(
                 publication,
+                &mut transaction,
                 target.as_c_str(),
+                staged.name.as_c_str(),
                 Some(previous),
                 false,
                 error,
@@ -881,7 +1261,9 @@ fn publish_private_config_directory_locked(
     {
         return private_config_abort_transaction(
             publication,
+            &mut transaction,
             target.as_c_str(),
+            staged.name.as_c_str(),
             previous.as_deref(),
             false,
             error,
@@ -895,7 +1277,9 @@ fn publish_private_config_directory_locked(
     ) {
         return private_config_abort_transaction(
             publication,
+            &mut transaction,
             target.as_c_str(),
+            staged.name.as_c_str(),
             previous.as_deref(),
             false,
             error.into(),
@@ -906,7 +1290,9 @@ fn publish_private_config_directory_locked(
     if let Err(error) = private_config_persist_transaction(publication, &transaction) {
         return private_config_abort_transaction(
             publication,
+            &mut transaction,
             target.as_c_str(),
+            staged.name.as_c_str(),
             previous.as_deref(),
             true,
             error,
@@ -916,7 +1302,9 @@ fn publish_private_config_directory_locked(
     {
         return private_config_abort_transaction(
             publication,
+            &mut transaction,
             target.as_c_str(),
+            staged.name.as_c_str(),
             previous.as_deref(),
             true,
             error,
@@ -925,35 +1313,16 @@ fn publish_private_config_directory_locked(
     if let Err(error) = publication.parent.sync_all() {
         return private_config_abort_transaction(
             publication,
+            &mut transaction,
             target.as_c_str(),
+            staged.name.as_c_str(),
             previous.as_deref(),
             true,
             error.into(),
         );
     }
     if let Some(previous) = previous.as_ref() {
-        if let Err(error) = private_config_remove_tree_at(&publication.parent, previous.as_c_str())
-        {
-            return Err(error.context(
-                "private config installed; previous cleanup failed and the journal was retained",
-            ));
-        }
-        #[cfg(test)]
-        if PRIVATE_CONFIG_FAILURE.with(|failure| {
-            failure.get() == Some(PrivateConfigFailurePoint::SimulatedCrashAfterPreviousDeletion)
-        }) {
-            return Err(anyhow::anyhow!(
-                "simulated process crash after previous private config deletion"
-            ));
-        }
-        // The Installed journal is already durable. If this fsync or journal
-        // cleanup fails, the next launch sees the new live tree and completes
-        // the idempotent Installed recovery path.
-        if let Err(error) = publication.parent.sync_all() {
-            return Err(anyhow::Error::new(error).context(
-                "private config installed; previous cleanup fsync failed and the journal was retained",
-            ));
-        }
+        private_config_cleanup_previous(publication, &mut transaction, previous.as_c_str())?;
     }
     if let Err(error) = private_config_clear_transaction(publication) {
         return Err(error.context(
