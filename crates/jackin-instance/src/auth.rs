@@ -48,7 +48,7 @@ pub fn validate_sync_source_dir(
     source_dir: &Path,
     host_home: &Path,
 ) -> Result<(), SyncSourceValidationError> {
-    validate_sync_source_dir_for_provider(agent, None, source_dir, host_home)
+    validate_sync_source_dir_inner(agent, None, None, source_dir, host_home, false)
 }
 
 /// Validate one sync source with the selected provider identity when the
@@ -62,7 +62,7 @@ pub(crate) fn validate_sync_source_dir_for_provider(
     source_dir: &Path,
     host_home: &Path,
 ) -> Result<(), SyncSourceValidationError> {
-    validate_sync_source_dir_for_selection(agent, provider, None, source_dir, host_home)
+    validate_sync_source_dir_inner(agent, provider, None, source_dir, host_home, false)
 }
 
 /// Validate one sync source with both its provider and immutable store
@@ -74,6 +74,17 @@ pub(crate) fn validate_sync_source_dir_for_selection(
     selector: Option<&ProfileSelector>,
     source_dir: &Path,
     host_home: &Path,
+) -> Result<(), SyncSourceValidationError> {
+    validate_sync_source_dir_inner(agent, provider, selector, source_dir, host_home, true)
+}
+
+fn validate_sync_source_dir_inner(
+    agent: Agent,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+    source_dir: &Path,
+    host_home: &Path,
+    record_source_revision: bool,
 ) -> Result<(), SyncSourceValidationError> {
     let Ok(source_metadata) = std::fs::symlink_metadata(source_dir) else {
         return Err(SyncSourceValidationError::new(format!(
@@ -109,22 +120,30 @@ pub(crate) fn validate_sync_source_dir_for_selection(
                 )))
             }
         }
-        Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex"),
-        Agent::Grok => require_credential_file(source_dir, "auth.json", "Grok"),
-        Agent::Opencode => validate_opencode_source_dir(source_dir, provider),
+        Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex", record_source_revision),
+        Agent::Grok => require_credential_file(source_dir, "auth.json", "Grok", record_source_revision),
+        Agent::Opencode => validate_opencode_source_dir(source_dir, provider, record_source_revision),
         // Sync carries prefs only; the OAuth grant stays in the host Keychain.
-        Agent::Antigravity => require_credential_file(source_dir, "settings.json", "Antigravity"),
-        Agent::Gemini => require_credential_file(source_dir, "oauth_creds.json", "Gemini"),
-        Agent::Cursor => require_credential_file(source_dir, "auth.json", "Cursor"),
-        Agent::Muse => require_credential_file(source_dir, "auth.json", "Muse"),
+        Agent::Antigravity => require_credential_file(source_dir, "settings.json", "Antigravity", record_source_revision),
+        Agent::Gemini => require_credential_file(source_dir, "oauth_creds.json", "Gemini", record_source_revision),
+        Agent::Cursor => require_credential_file(source_dir, "auth.json", "Cursor", record_source_revision),
+        Agent::Muse => require_credential_file(source_dir, "auth.json", "Muse", record_source_revision),
         // Store-backed agents are re-enumerated and must still resolve to the
         // selected single-account source before their whole store is copied.
         Agent::Omp | Agent::Hermes => {
             validate_store_source_dir(agent, provider, selector, source_dir, host_home)
         }
-        Agent::Amp => {
-            require_credential_file(&amp_credentials_dir(source_dir), "secrets.json", "Amp")
-        }
+        Agent::Amp => match amp_credentials_dir(source_dir) {
+            Ok(directory) => require_credential_file(
+                &directory,
+                "secrets.json",
+                "Amp",
+                record_source_revision,
+            ),
+            Err(error) => Err(SyncSourceValidationError::new(format!(
+                "Amp source folder is unsafe: {error:#}"
+            ))),
+        },
         // Kimi syncs a directory tree rather than a single file.
         Agent::Kimi => {
             let config = std::fs::symlink_metadata(source_dir.join("config.toml"));
@@ -217,13 +236,24 @@ fn validate_hermes_source_shape(source_dir: &Path) -> Result<(), SyncSourceValid
 fn validate_opencode_source_dir(
     source_dir: &Path,
     provider: Option<AiProvider>,
+    record_source_revision: bool,
 ) -> Result<(), SyncSourceValidationError> {
     let auth_path = source_dir.join("auth.json");
-    let content = std::fs::read_to_string(&auth_path).map_err(|_| {
+    let (bytes, revision) = auth_directory::read_source_file(&auth_path, "OpenCode auth.json")
+        .map_err(|error| {
+        SyncSourceValidationError::new(format!(
+            "Not an OpenCode config folder: expected a regular auth.json directly inside {} ({error:#}).",
+            source_dir.display(),
+        ))
+    })?
+    .ok_or_else(|| {
         SyncSourceValidationError::new(format!(
             "Not an OpenCode config folder: expected auth.json directly inside {}.",
             source_dir.display()
         ))
+    })?;
+    let content = String::from_utf8(bytes).map_err(|_| {
+        SyncSourceValidationError::new("OpenCode auth.json is not valid UTF-8; no credentials were selected.")
     })?;
     if content.trim().is_empty() {
         return Err(SyncSourceValidationError::new(format!(
@@ -242,7 +272,15 @@ fn validate_opencode_source_dir(
             SyncSourceValidationError::new(format!(
                 "OpenCode auth.json cannot be selected safely: {reason}."
             ))
-        })
+        })?;
+    if record_source_revision {
+        auth_directory::record_validated_source_revision(&auth_path, revision).map_err(|error| {
+            SyncSourceValidationError::new(format!(
+                "OpenCode auth.json source could not be bound to validation: {error:#}"
+            ))
+        })?;
+    }
+    Ok(())
 }
 
 /// Return the one provider entry that may cross the role-state boundary.
@@ -306,12 +344,12 @@ fn usable_opencode_auth_entry(entry: &serde_json::Value) -> bool {
     }
 }
 
-pub(super) fn amp_credentials_dir(source: &Path) -> std::path::PathBuf {
+pub(super) fn amp_credentials_dir(source: &Path) -> anyhow::Result<std::path::PathBuf> {
     let nested = source.join("data/amp");
-    if nested.is_dir() {
-        nested
+    if auth_directory::directory_path_exists(&nested)? {
+        Ok(nested)
     } else {
-        source.to_path_buf()
+        Ok(source.to_path_buf())
     }
 }
 
@@ -320,18 +358,42 @@ fn require_credential_file(
     dir: &Path,
     name: &str,
     agent: &str,
+    record_source_revision: bool,
 ) -> Result<(), SyncSourceValidationError> {
-    match std::fs::read_to_string(dir.join(name)) {
-        Ok(content) if !content.trim().is_empty() => Ok(()),
-        Ok(_) => Err(SyncSourceValidationError::new(format!(
+    let path = dir.join(name);
+    let (bytes, revision) = auth_directory::read_source_file(&path, &format!("{agent} credential {name}"))
+        .map_err(|error| {
+            SyncSourceValidationError::new(format!(
+                "Not a {agent} config folder: expected a regular {name} directly inside {} ({error:#}).",
+                dir.display()
+            ))
+        })?
+        .ok_or_else(|| {
+            SyncSourceValidationError::new(format!(
+                "Not a {agent} config folder: expected {name} directly inside {}.",
+                dir.display()
+            ))
+        })?;
+    let content = String::from_utf8(bytes).map_err(|_| {
+        SyncSourceValidationError::new(format!(
+            "{agent} credential {name} in {} is not valid UTF-8.",
+            dir.display()
+        ))
+    })?;
+    if content.trim().is_empty() {
+        return Err(SyncSourceValidationError::new(format!(
             "{agent} credential {name} in {} is empty.",
             dir.display()
-        ))),
-        Err(_) => Err(SyncSourceValidationError::new(format!(
-            "Not a {agent} config folder: expected {name} directly inside {}.",
-            dir.display()
-        ))),
+        )));
     }
+    if record_source_revision {
+        auth_directory::record_validated_source_revision(&path, revision).map_err(|error| {
+            SyncSourceValidationError::new(format!(
+                "{agent} credential {name} source could not be bound to validation: {error:#}"
+            ))
+        })?;
+    }
+    Ok(())
 }
 
 impl RoleState {
