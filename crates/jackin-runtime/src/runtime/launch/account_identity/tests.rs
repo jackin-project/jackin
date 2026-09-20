@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use jackin_config::{AgentConfiguration, AppConfig};
+use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider, AppConfig};
+use jackin_core::{Agent, EnvValue};
 
 fn envelope() -> jackin_protocol::AgentCredentialEnv {
     serde_json::from_str(
@@ -39,6 +40,92 @@ fn credentials_writer_persists_one_staged_file_privately() {
 }
 
 #[test]
+fn credentials_writer_stages_same_account_oauth_routes_per_instance() {
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "shared".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Shared Claude".into(),
+            provider: AiProvider::Anthropic,
+            credential: AccountCredential::OAuthToken {
+                agent: Agent::Claude,
+                value: EnvValue::from("shared-oauth"),
+            },
+        },
+    );
+    config.accounts.insert(
+        "unselected".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Unselected Claude".into(),
+            provider: AiProvider::Anthropic,
+            credential: AccountCredential::OAuthToken {
+                agent: Agent::Claude,
+                value: EnvValue::from("unselected-oauth"),
+            },
+        },
+    );
+    for (id, endpoint) in [
+        ("claude-work", "https://work.example/v1"),
+        ("claude-personal", "https://personal.example/v1"),
+    ] {
+        config.agent_configurations.insert(
+            id.into(),
+            AgentConfiguration {
+                agent: Agent::Claude,
+                account: "shared".into(),
+                model: None,
+                base_url: Some(endpoint.into()),
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+    }
+    let ids = vec!["claude-work".into(), "claude-personal".into()];
+    let instances = jackin_config::resolve_launch(&config, None, "role", Some(&ids), None).unwrap();
+    let credentials = jackin_env::resolve_instance_env_with(
+        &config,
+        &instances,
+        None,
+        "role",
+        &jackin_env::OpCli::new(),
+        |_| Err(std::env::VarError::NotPresent),
+    )
+    .unwrap();
+
+    let temp = tempfile::tempdir().unwrap();
+    write_account_credentials(temp.path(), &credentials).unwrap();
+    let directory = temp.path().join("credentials");
+    assert_eq!(directory.read_dir().unwrap().count(), 2);
+    for (id, endpoint) in [
+        ("claude-work", "https://work.example/v1"),
+        ("claude-personal", "https://personal.example/v1"),
+    ] {
+        let path = directory.join(jackin_protocol::account_credentials_filename(id));
+        let staged: jackin_protocol::StagedInstanceCredential =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(staged.instance, id);
+        assert_eq!(staged.credential.agent, "claude");
+        assert_eq!(staged.credential.account_id, "shared");
+        assert_eq!(
+            staged.credential.env,
+            std::collections::BTreeMap::from([
+                ("ANTHROPIC_BASE_URL".into(), endpoint.into()),
+                ("CLAUDE_CODE_OAUTH_TOKEN".into(), "shared-oauth".into()),
+            ])
+        );
+        assert!(
+            !staged
+                .credential
+                .env
+                .values()
+                .any(|value| value == "unselected-oauth")
+        );
+    }
+}
+
+#[test]
 fn credentials_writer_revokes_stale_instance_files() {
     let temp = tempfile::tempdir().unwrap();
     write_account_credentials(temp.path(), &envelope()).unwrap();
@@ -65,7 +152,7 @@ fn fingerprint_covers_the_admitted_instance_set() {
     with_config.agent_configurations.insert(
         "primary".into(),
         AgentConfiguration {
-            agent: jackin_core::Agent::Claude,
+            agent: Agent::Claude,
             account: "work".into(),
             model: None,
             base_url: None,

@@ -2595,6 +2595,15 @@ fn profile_scan_candidate_skips_agents_without_native_billing() {
 }
 
 #[test]
+fn zshrc_provider_accepts_only_canonical_catalog_slugs() {
+    for provider in crate::AiProvider::ALL {
+        assert_eq!(zshrc_provider(provider.slug()), Some(*provider));
+    }
+    assert_eq!(zshrc_provider("kimi"), None);
+    assert_eq!(zshrc_provider("gemini"), None);
+}
+
+#[test]
 fn apply_zshrc_plan_seeds_verified_directories_and_op_refs() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -2698,7 +2707,7 @@ fn apply_zshrc_plan_skips_unverified_directories_and_unknown_vars() {
 }
 
 #[test]
-fn apply_zshrc_plan_persists_model_and_reports_unsupported_wrapper() {
+fn apply_zshrc_plan_persists_canonical_model_and_reports_unsupported_wrapper() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     minimal_config_file(&paths);
@@ -2719,7 +2728,7 @@ fn apply_zshrc_plan_persists_model_and_reports_unsupported_wrapper() {
         )
         .unwrap();
     let plan = crate::import_plan(&crate::parse_zshrc_source(
-        "kimi_key() { echo fixture; }\nKIMI_MODEL=kimi-k2\nKIMI_BASE_URL=https://api.kimi.example/v1\nKIMI_API_KEY=$(kimi_key)\n",
+        "kimi_key() { echo fixture; }\nMOONSHOT_MODEL=kimi-k2\nMOONSHOT_BASE_URL=https://api.kimi.example/v1\nKIMI_API_KEY=$(kimi_key)\n",
     ));
 
     let report = editor.apply_zshrc_plan(&plan).unwrap();
@@ -2737,6 +2746,67 @@ fn apply_zshrc_plan_persists_model_and_reports_unsupported_wrapper() {
             model: Some("kimi-k2".into()),
         }
     );
+}
+
+#[test]
+fn apply_zshrc_plan_leaves_provider_alias_models_unapplied() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    minimal_config_file(&paths);
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    for (id, name, provider, variable) in [
+        (
+            "moonshot-api-key",
+            "Kimi API",
+            crate::AiProvider::Moonshot,
+            "$KIMI_API_KEY",
+        ),
+        (
+            "google-api-key",
+            "Gemini API",
+            crate::AiProvider::Google,
+            "$GEMINI_API_KEY",
+        ),
+    ] {
+        editor
+            .upsert_account(
+                id,
+                &crate::AccountConfig {
+                    enabled: true,
+                    name: name.into(),
+                    provider,
+                    credential: crate::AccountCredential::ApiKey {
+                        value: EnvValue::Plain(variable.into()),
+                        base_url: None,
+                        model: None,
+                    },
+                },
+            )
+            .unwrap();
+    }
+
+    let plan = crate::import_plan(&crate::parse_zshrc_source(
+        "KIMI_MODEL=kimi-k2\nKIMI_BASE_URL=https://api.kimi.example/v1\nGEMINI_MODEL=gemini-2.5-pro\nGEMINI_BASE_URL=https://generativelanguage.example/v1\n",
+    ));
+    let report = editor.apply_zshrc_plan(&plan).unwrap();
+    let names: Vec<_> = report
+        .unapplied_zshrc_models
+        .iter()
+        .map(|model| model.name.as_str())
+        .collect();
+    assert_eq!(names, ["gemini", "kimi"]);
+
+    let config = editor.save().unwrap();
+    for id in ["moonshot-api-key", "google-api-key"] {
+        let crate::AccountCredential::ApiKey {
+            model, base_url, ..
+        } = &config.accounts[id].credential
+        else {
+            panic!("expected API-key account for {id}");
+        };
+        assert!(model.is_none(), "alias model applied to {id}");
+        assert!(base_url.is_none(), "alias endpoint applied to {id}");
+    }
 }
 
 #[test]

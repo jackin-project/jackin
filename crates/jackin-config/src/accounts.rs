@@ -491,6 +491,9 @@ impl AccountConfig {
             AccountCredential::Profile { .. } => {}
             AccountCredential::OAuthToken { value, .. } => {
                 env.insert("CLAUDE_CODE_OAUTH_TOKEN".into(), value.clone());
+                if let Some(url) = endpoint {
+                    env.insert("ANTHROPIC_BASE_URL".into(), EnvValue::from(url));
+                }
             }
             AccountCredential::ApiKey {
                 value,

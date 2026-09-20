@@ -259,6 +259,69 @@ fn same_account_claude_and_kimi_instances_keep_distinct_endpoints() {
 }
 
 #[test]
+fn same_account_claude_oauth_instances_stage_distinct_endpoints_and_isolate_secrets() {
+    let oauth_account = |name: &str, token: &str| AccountConfig {
+        enabled: true,
+        name: name.into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::OAuthToken {
+            agent: Agent::Claude,
+            value: EnvValue::from(token),
+        },
+    };
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert(
+        "shared".into(),
+        oauth_account("Shared Claude", "shared-oauth"),
+    );
+    cfg.accounts.insert(
+        "unselected".into(),
+        oauth_account("Unselected Claude", "unselected-oauth"),
+    );
+    for (id, endpoint) in [
+        ("claude-work", "https://work.example/v1"),
+        ("claude-personal", "https://personal.example/v1"),
+    ] {
+        cfg.agent_configurations.insert(
+            id.into(),
+            configuration_with_endpoint(Agent::Claude, "shared", None, endpoint),
+        );
+    }
+
+    let instances = launch(&cfg, &["claude-work", "claude-personal"]);
+    let credentials = resolve_instance_env_with(&cfg, &instances, None, "role", &NoSecrets, |_| {
+        Err(std::env::VarError::NotPresent)
+    })
+    .unwrap();
+
+    assert_eq!(credentials.schema_version(), 2);
+    assert_eq!(credentials.iter().count(), 2);
+    for (id, endpoint) in [
+        ("claude-work", "https://work.example/v1"),
+        ("claude-personal", "https://personal.example/v1"),
+    ] {
+        let envelope = credentials.instance(id).unwrap();
+        assert_eq!(envelope.agent, "claude");
+        assert_eq!(envelope.account_id, "shared");
+        assert_eq!(
+            envelope.env,
+            BTreeMap::from([
+                ("ANTHROPIC_BASE_URL".into(), endpoint.into()),
+                ("CLAUDE_CODE_OAUTH_TOKEN".into(), "shared-oauth".into()),
+            ])
+        );
+        assert!(
+            !envelope
+                .env
+                .values()
+                .any(|value| value == "unselected-oauth")
+        );
+    }
+    assert!(!format!("{credentials:?}").contains("shared-oauth"));
+    assert!(!format!("{credentials:?}").contains("unselected-oauth"));
+}
+
+#[test]
 fn invalid_instance_endpoint_fails_before_secret_resolution() {
     let mut cfg = AppConfig::default();
     cfg.accounts.insert(
