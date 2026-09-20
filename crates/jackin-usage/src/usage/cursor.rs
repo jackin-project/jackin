@@ -169,7 +169,9 @@ pub(crate) fn fetch_cursor_period_usage(token: &str) -> Result<CursorPeriodUsage
 }
 
 pub(crate) fn parse_cursor_period_usage(value: &serde_json::Value) -> Option<CursorPeriodUsage> {
-    let usage = value.get("usage")?;
+    // Live `GetCurrentPeriodUsage` returns `planUsage` at the top level; older
+    // captures nested it under `usage`. Accept both, preferring nested.
+    let usage = value.get("usage").unwrap_or(value);
     let plan = usage.get("planUsage")?;
     let total_percent_used = ["totalPercentUsed", "total_percent_used", "percentUsed"]
         .into_iter()

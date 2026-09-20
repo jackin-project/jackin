@@ -87,6 +87,34 @@ fn period_parses_with_team_inference() {
 }
 
 #[test]
+fn period_parses_top_level_live_shape() {
+    // Shape observed live 2026-09-21: `planUsage` at top level, no `usage`
+    // wrapper (usage counters rounded; no credentials involved).
+    let live = serde_json::json!({
+        "billingCycleStart": "1789542030000",
+        "billingCycleEnd": "1792134030000",
+        "planUsage": {
+            "totalSpend": 35950,
+            "includedSpend": 35950,
+            "remaining": 4050,
+            "limit": 40000,
+            "autoPercentUsed": 10.289,
+            "apiPercentUsed": 50.82,
+            "totalPercentUsed": 11.597
+        },
+        "spendLimitUsage": {"limitType": "user"},
+        "enabled": true
+    });
+    let usage = parse_cursor_period_usage(&live).expect("live shape parses");
+    assert!(usage.enabled);
+    assert!(!usage.is_team);
+    assert_eq!(usage.limit, Some(40000.0));
+    assert_eq!(usage.total_spend, Some(35950.0));
+    let buckets = cursor_period_buckets(&usage, None, 1_781_728_000);
+    assert_eq!(buckets[0].remaining_percent, Some(88));
+}
+
+#[test]
 fn plan_and_grants_parse() {
     assert_eq!(
         parse_cursor_plan_info(&serde_json::json!({"planName": "pro_plus"})),

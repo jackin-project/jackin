@@ -24,7 +24,7 @@ use crate::app_config::persist::{
 use crate::auth::GithubAuthMode;
 use crate::persist::{
     ConfigWriteGuard, StagedWrite, acquire_config_write_lock, commit_staged_config,
-    stage_atomic_write, stage_delete, validate_workspace_file_stem,
+    publication_journal_path, stage_atomic_write, stage_delete, validate_workspace_file_stem,
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
@@ -818,7 +818,8 @@ impl ConfigEditor {
                         deletes.push(delete);
                     }
                 }
-                commit_staged_config(&mut staged, &mut deletes)?;
+                let journal = publication_journal_path(&self.path);
+                commit_staged_config(&journal, &mut staged, &mut deletes)?;
                 Ok(config)
             })(),
         )
