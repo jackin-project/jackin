@@ -170,8 +170,14 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             },
         ],
     };
-    let profile_capability = capability_for_binding(&discovery.bindings[0]);
-    let env_capability = capability_for_binding(&discovery.bindings[1]);
+    let profile_capability = capability_for_binding(
+        &discovery.bindings[0],
+        discovery.config_generation.as_deref(),
+    );
+    let env_capability = capability_for_binding(
+        &discovery.bindings[1],
+        discovery.config_generation.as_deref(),
+    );
 
     let profile_only = forwarded_usage_capabilities(
         &discovery,
@@ -254,6 +260,53 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         UsageIdentityKindV1::ProviderStableHandle
     );
     assert_eq!(publication[&profile_capability].provenance_count, 2);
+}
+
+#[test]
+fn rotated_catalog_revision_rejects_in_flight_broker_result() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Claude,
+        identity: Some(CanonicalAccountIdentity {
+            surface: HostSurfaceId::Claude,
+            subject: CanonicalAccountSubject::ProviderId("provider-account".to_owned()),
+        }),
+        source_id: "source-0001".to_owned(),
+        capability_id: "capability-0001".to_owned(),
+        provenance: BTreeSet::from(["account work".to_owned()]),
+        source: ValidatedCredentialSource::Capability,
+    };
+    let old_capability = capability_for_binding(&binding, Some("generation-old"));
+    let current_capability = capability_for_binding(&binding, Some("generation-current"));
+    assert_ne!(old_capability, current_capability);
+
+    let temp = tempfile::tempdir().unwrap();
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
+        .unwrap();
+    runtime.discovery = Some(ValidatedUsageDiscovery {
+        config_generation: Some("generation-current".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![binding],
+    });
+
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: old_capability,
+            generation: 1,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(quota_view()),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+
+    assert!(runtime.discovered_views.is_empty());
+    assert!(runtime.discovered_provider_views.is_empty());
 }
 
 #[test]

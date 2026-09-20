@@ -534,6 +534,52 @@ fn disc_source_valid_profiles_resolve_without_network_or_fake_presence() {
 }
 
 #[test]
+fn disc_config_generation_rotates_capability_for_same_credential_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let profile = temp.path().join("codex-profile");
+    let scope = UsageDiscoveryScope::HostDesktop {
+        config_root: config_root.clone(),
+        operator_home: temp.path().join("home"),
+    };
+    write_codex_only_global(&config_root, &profile);
+    write_codex_auth(
+        &profile,
+        "account-1",
+        "eyJlbWFpbCI6ImFsaWNlQGV4YW1wbGUudGVzdCJ9",
+        "fixture-secret",
+    );
+    let reader = RecordingProfileReader::default();
+    let first = validate_usage_sources_with_reader(
+        discover_usage_sources(&scope, &NoEnvResolver).unwrap(),
+        &NoEnvResolver,
+        &reader,
+    );
+    let first_capability = crate::host::usage_broker_capabilities(&first)
+        .into_iter()
+        .next()
+        .unwrap();
+
+    write_registry(&config_root, &[("codex-renamed", Agent::Codex, &profile)]);
+    let second = validate_usage_sources_with_reader(
+        discover_usage_sources(&scope, &NoEnvResolver).unwrap(),
+        &NoEnvResolver,
+        &reader,
+    );
+    let second_capability = crate::host::usage_broker_capabilities(&second)
+        .into_iter()
+        .next()
+        .unwrap();
+
+    assert_eq!(
+        first.accounts[0].account_key,
+        second.accounts[0].account_key
+    );
+    assert_ne!(first.config_generation, second.config_generation);
+    assert_ne!(first_capability, second_capability);
+}
+
+#[test]
 fn disc_source_missing_and_malformed_profiles_are_isolated_diagnostics() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");

@@ -79,7 +79,10 @@ impl HostUsageRuntime {
                 discovery
                     .bindings
                     .iter()
-                    .find(|binding| capability_for_binding(binding) == capability)
+                    .find(|binding| {
+                        capability_for_binding(binding, discovery.config_generation.as_deref())
+                            == capability
+                    })
                     .cloned()
             });
             if let Some(binding) = binding {
@@ -338,7 +341,7 @@ pub fn forwarded_usage_capabilities(
             }
         })
         .filter(|binding| forwarding_requirement(binding).is_forwarded(sources))
-        .map(capability_for_binding)
+        .map(|binding| capability_for_binding(binding, discovery.config_generation.as_deref()))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
@@ -360,7 +363,7 @@ pub fn usage_capability_for_selected_account(
         .iter()
         .filter(|binding| binding.surface.id() == surface_id)
         .filter(|binding| binding.provenance.contains(&provenance))
-        .map(capability_for_binding)
+        .map(|binding| capability_for_binding(binding, discovery.config_generation.as_deref()))
         .collect::<BTreeSet<_>>();
     (capabilities.len() == 1)
         .then(|| capabilities.into_iter().next())
@@ -375,7 +378,7 @@ pub fn usage_broker_capabilities(
     discovery
         .bindings
         .iter()
-        .map(capability_for_binding)
+        .map(|binding| capability_for_binding(binding, discovery.config_generation.as_deref()))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
@@ -384,7 +387,7 @@ pub fn usage_broker_capabilities(
 fn usage_catalog_entries(discovery: &ValidatedUsageDiscovery) -> Vec<UsageCatalogEntry> {
     let mut source_ids = BTreeMap::<UsageAccountCapability, BTreeSet<String>>::new();
     for binding in &discovery.bindings {
-        let capability = capability_for_binding(binding);
+        let capability = capability_for_binding(binding, discovery.config_generation.as_deref());
         source_ids
             .entry(capability)
             .or_default()
@@ -769,7 +772,12 @@ fn rediscover_all_bindings(
             discovery
                 .bindings
                 .into_iter()
-                .map(|binding| (capability_for_binding(&binding), binding))
+                .map(|binding| {
+                    (
+                        capability_for_binding(&binding, discovery.config_generation.as_deref()),
+                        binding,
+                    )
+                })
                 .collect()
         })
 }
@@ -859,7 +867,7 @@ pub fn ensure_usage_broker(
 ) -> Result<UsageBrokerHandle, UsageCoordinationError> {
     let mut scoped_capabilities = BTreeMap::<String, Vec<ScopedCapability>>::new();
     for binding in &discovery.bindings {
-        let capability = capability_for_binding(binding);
+        let capability = capability_for_binding(binding, discovery.config_generation.as_deref());
         let requirement = forwarding_requirement(binding);
         for provenance in &binding.provenance {
             let scoped = scoped_capabilities.entry(provenance.clone()).or_default();
@@ -942,7 +950,10 @@ pub fn run_usage_broker_service(
     let mut bindings = BTreeMap::new();
     for binding in discovery.bindings {
         bindings
-            .entry(capability_for_binding(&binding))
+            .entry(capability_for_binding(
+                &binding,
+                discovery.config_generation.as_deref(),
+            ))
             .or_insert(binding);
     }
     let executor = Arc::new(DiscoveryProviderExecutor {
@@ -1731,11 +1742,20 @@ fn connect_probe(client: &UsageBrokerClient) -> bool {
 
 pub(super) fn capability_for_binding(
     binding: &ValidatedCredentialBinding,
+    catalog_revision: Option<&str>,
 ) -> UsageAccountCapability {
     let subject = if let Some(identity) = &binding.identity {
         identity.account_key()
     } else {
         format!("provisional-capability-v1:{}", binding.capability_id)
+    };
+    let subject = match catalog_revision {
+        Some(revision) => format!(
+            "usage-capability-v2:catalog-revision:{}:{revision}:subject:{}:{subject}",
+            revision.len(),
+            subject.len()
+        ),
+        None => subject,
     };
     let hashed = jackin_core::account_key_hash(binding.surface.id(), &subject);
     let account_id = hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned();
@@ -1754,7 +1774,7 @@ fn publication_identity_metadata(
     let mut evidence =
         BTreeMap::<UsageAccountCapability, (UsageIdentityKindV1, BTreeSet<String>)>::new();
     for binding in &discovery.bindings {
-        let capability = capability_for_binding(binding);
+        let capability = capability_for_binding(binding, discovery.config_generation.as_deref());
         let identity_kind = match binding.identity.as_ref().map(|identity| &identity.subject) {
             Some(CanonicalAccountSubject::ProviderId(_)) => UsageIdentityKindV1::ProviderAccountId,
             Some(
