@@ -1134,8 +1134,16 @@ mod auth_directory {
         anyhow::Error::new(error).context(action.to_owned())
     }
 
+    /// Normalize only lexical aliases. Accepted paths become absolute so the
+    /// lock identity is shared by relative and absolute spellings; symlinks
+    /// are deliberately not resolved here and are rejected by descriptor
+    /// traversal instead.
     fn normalize_path(path: &Path) -> anyhow::Result<PathBuf> {
-        let mut normalized = PathBuf::new();
+        let mut normalized = if path.is_absolute() {
+            PathBuf::new()
+        } else {
+            std::env::current_dir().context("finding auth path base directory")?
+        };
         for component in path.components() {
             match component {
                 std::path::Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
@@ -1143,11 +1151,7 @@ mod auth_directory {
                 std::path::Component::CurDir => {}
                 std::path::Component::Normal(component) => normalized.push(component),
                 std::path::Component::ParentDir => {
-                    anyhow::ensure!(
-                        normalized.pop(),
-                        "auth path contains parent traversal: {}",
-                        path.display()
-                    );
+                    let _ = normalized.pop();
                 }
             }
         }
@@ -1170,11 +1174,12 @@ mod auth_directory {
         Ok(normalized)
     }
 
-    fn path_key(path: &Path) -> String {
+    fn path_key(path: &Path) -> anyhow::Result<String> {
         use sha2::{Digest, Sha256};
+        let normalized = normalize_path(path)?;
         let mut digest = Sha256::new();
-        digest.update(path.as_os_str().as_bytes());
-        hex::encode(digest.finalize())
+        digest.update(normalized.as_os_str().as_bytes());
+        Ok(hex::encode(digest.finalize()))
     }
 
     fn cstring_name(path: &Path) -> anyhow::Result<CString> {
@@ -1254,6 +1259,14 @@ mod auth_directory {
     }
 
     fn open_parent(path: &Path, create: bool) -> anyhow::Result<(File, CString, PathBuf)> {
+        anyhow::ensure!(
+            matches!(
+                path.components().next_back(),
+                Some(std::path::Component::Normal(_))
+            ),
+            "auth path must have a normal final component: {}",
+            path.display()
+        );
         let path = normalize_path(path)?;
         let target = cstring_name(&path)?;
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
@@ -1716,7 +1729,7 @@ mod auth_directory {
 
     fn target_lock(path: &Path, create_parent: bool) -> anyhow::Result<TargetLock> {
         let (parent, target, normalized) = open_parent(path, create_parent)?;
-        let key = path_key(&normalized);
+        let key = path_key(&normalized)?;
         let (_lock_name, lock) = open_lock(&parent, &key)?;
         let journal = CString::new(format!(".jackin-auth-journal-{key}"))?;
         let target_lock = TargetLock {
@@ -1728,6 +1741,11 @@ mod auth_directory {
         };
         recover(&target_lock)?;
         Ok(target_lock)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn target_lock_key_for_test(path: &Path) -> anyhow::Result<String> {
+        path_key(path)
     }
 
     fn target_present(target: &TargetLock) -> anyhow::Result<bool> {

@@ -5,6 +5,7 @@
 #[cfg(unix)]
 use super::auth_directory::{
     FailurePoint, inject_failure, set_hermes_snapshot_hook, set_source_open_hook,
+    target_lock_key_for_test,
 };
 use super::{
     Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState,
@@ -14,6 +15,7 @@ use super::{
 use crate::PrepareResolvers;
 use jackin_config::{AiProvider, AuthForwardMode, ProfileSelector};
 use jackin_core::JackinPaths;
+use std::path::Path;
 use tempfile::tempdir;
 
 /// Provisioning derives its per-config-dir Keychain service through the shared
@@ -565,6 +567,26 @@ fn ignore_recovers_interrupted_swap_when_destination_is_absent() {
                 || name.starts_with(".jackin-auth-journal-")
         }),
         "Ignore must clean recovered transaction trees even without a target"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn auth_lock_identity_normalizes_relative_absolute_and_dot_aliases() {
+    let temp = tempdir().unwrap();
+    let absolute = temp.path().join("role/.kimi-code");
+    let dot_alias = temp.path().join("role/./.kimi-code");
+    assert_eq!(
+        target_lock_key_for_test(&absolute).unwrap(),
+        target_lock_key_for_test(&dot_alias).unwrap()
+    );
+
+    let current = std::env::current_dir().unwrap();
+    let relative = Path::new("target/./auth");
+    let absolute_from_relative = current.join("target/auth");
+    assert_eq!(
+        target_lock_key_for_test(relative).unwrap(),
+        target_lock_key_for_test(&absolute_from_relative).unwrap()
     );
 }
 
@@ -2051,7 +2073,6 @@ fn rejects_symlink_at_credentials_json() {
 }
 
 // Tests for `instance/auth` — amp auth tests.
-use std::path::Path;
 
 fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
     let host_home = temp.path().join("host_home");
