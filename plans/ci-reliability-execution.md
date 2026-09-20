@@ -81,3 +81,11 @@ main-sync code passed pinned Rust 1.97.1 formatting and strict Clippy.
 The overall CI reliability and 120-second performance goal remains open.
 Related partial Velnor implementation and authored audit reports are saved
 on fix/ci-validation-contract; that checkpoint is not merge-ready.
+
+## Pinned regeneration after task changes
+
+Policy run 35528422285 at aef775a2 rejected only generated-tree state.
+The exact published 4fa7a3a8 runtime scanned 40 units and 146 edges, then
+updated only the scan fingerprint (79aad67cd9452b50 → 4af3f105caf6426a).
+All generated workflow and runtime-contract bytes stayed identical. A second
+`--plain --check .` passed. Live policy verification follows this commit.
