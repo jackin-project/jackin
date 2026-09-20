@@ -443,3 +443,68 @@ fn configuration_match_roundtrip() {
     assert!(!account_configuration_matches(temp.path(), &rotated, None, "role").unwrap());
     assert!(!account_admission_matches(temp.path(), &rotated, None, "role").unwrap());
 }
+
+#[test]
+fn admission_record_rejects_rotation_between_staging_and_recording() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = jackin_core::JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let (config, admitted) = admitted_fingerprint_fixture();
+    std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+    let revision = AccountConfigRevision::acquire(&paths).unwrap();
+    let (rotation_started_tx, rotation_started_rx) = std::sync::mpsc::channel();
+    let (rotate_tx, rotate_rx) = std::sync::mpsc::channel();
+    let rotated_paths = paths.clone();
+    let mut rotated = config.clone();
+    if let AccountCredential::ApiKey { value, .. } =
+        &mut rotated.accounts.get_mut("a").unwrap().credential
+    {
+        *value = "rotated-a-key".into();
+    }
+    let rotation = std::thread::spawn(move || {
+        rotation_started_tx.send(()).unwrap();
+        rotate_rx.recv().unwrap();
+        std::fs::write(
+            &rotated_paths.config_file,
+            toml::to_string(&rotated).unwrap(),
+        )
+        .unwrap();
+    });
+    rotation_started_rx.recv().unwrap();
+
+    let credentials = jackin_env::resolve_instance_env_with(
+        &config,
+        &jackin_config::resolve_launch(&config, None, "role", None, Some(Agent::Claude)).unwrap(),
+        None,
+        "role",
+        &jackin_env::OpCli::new(),
+        |_| Err(std::env::VarError::NotPresent),
+    )
+    .unwrap();
+    let root = temp.path().join("instance");
+    write_account_credentials(&root, &credentials).unwrap();
+
+    rotate_tx.send(()).unwrap();
+    rotation.join().unwrap();
+
+    let error = record_account_configuration(AccountConfigurationRecord {
+        root: &root,
+        paths: &paths,
+        revision: &revision,
+        config: &config,
+        admission_config: &config,
+        workspace: None,
+        role: "role",
+        admitted: &admitted,
+    })
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("configuration changed during launch"),
+        "unexpected error: {error:#}"
+    );
+    assert!(!root.join(ACCOUNT_FINGERPRINT_FILE).exists());
+    assert!(!root.join("account-admission.sha256").exists());
+}

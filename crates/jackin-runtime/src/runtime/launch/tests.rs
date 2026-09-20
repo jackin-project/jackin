@@ -233,13 +233,18 @@ fn provision_restore_account_policy(
         .map(jackin_core::WorkspaceName::parse)
         .transpose()
         .unwrap();
+    let revision = super::account_identity::AccountConfigRevision::acquire(paths).unwrap();
     super::account_identity::record_account_configuration(
-        &paths.data_dir.join(&manifest.container_base),
-        paths,
-        config,
-        workspace.as_ref(),
-        &manifest.role_key,
-        &manifest.admitted_instances,
+        super::account_identity::AccountConfigurationRecord {
+            root: &paths.data_dir.join(&manifest.container_base),
+            paths,
+            revision: &revision,
+            config,
+            admission_config: config,
+            workspace: workspace.as_ref(),
+            role: &manifest.role_key,
+            admitted: &manifest.admitted_instances,
+        },
     )
     .unwrap();
 }
@@ -3090,6 +3095,7 @@ trusted = true
         },
     );
     config.default_launch = Some(vec!["codex-main".into()]);
+    std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
 
@@ -7618,6 +7624,7 @@ trusted = true
         },
     );
     config.default_launch = Some(vec!["claude-main".into()]);
+    std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
         String::new(),

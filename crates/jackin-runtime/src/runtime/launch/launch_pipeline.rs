@@ -788,6 +788,7 @@ pub(crate) async fn load_role_with(
         &str,
     ) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
+    let initial_account_revision = super::account_identity::AccountConfigRevision::acquire(paths)?;
     let selected_workspace = config
         .workspaces
         .contains_key(workspace.name.as_str())
@@ -797,6 +798,7 @@ pub(crate) async fn load_role_with(
         opts.account.is_none() || opts.configuration.is_none(),
         "account and configuration launch selections cannot both be supplied"
     );
+    let admission_config = config.clone();
     let mut account_config =
         opts.configuration
             .as_deref()
@@ -1105,6 +1107,7 @@ pub(crate) async fn load_role_with(
         confirm_trust_for_test,
     )?;
 
+    drop(initial_account_revision);
     persist_new_role_trust(
         paths,
         config,
@@ -1119,6 +1122,7 @@ pub(crate) async fn load_role_with(
             None,
         );
     }
+    let account_revision = super::account_identity::AccountConfigRevision::acquire(paths)?;
 
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
@@ -1591,6 +1595,8 @@ pub(crate) async fn load_role_with(
             rebuild,
             restore_pinned_sha,
             git_pull_join,
+            account_revision,
+            admission_config,
         })
         .await;
 
