@@ -684,6 +684,7 @@ fn scan_view_account() -> jackin_config::AccountConfig {
             agent: jackin_core::Agent::Claude,
             directory: "/home/op/.claude".into(),
             xdg_roots: None,
+            source_selector: None,
         },
     }
 }

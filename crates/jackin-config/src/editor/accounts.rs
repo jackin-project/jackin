@@ -186,13 +186,15 @@ fn same_credential_source(left: &AccountConfig, right: &AccountConfig) -> bool {
                 agent: a,
                 directory: x,
                 xdg_roots: rx,
+                source_selector: sx,
             },
             AccountCredential::Profile {
                 agent: b,
                 directory: y,
                 xdg_roots: ry,
+                source_selector: sy,
             },
-        ) => a == b && x == y && rx == ry,
+        ) => a == b && x == y && rx == ry && sx == sy,
         (
             AccountCredential::ApiKey {
                 value: x,

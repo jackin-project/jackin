@@ -62,6 +62,7 @@ fn scan_reference_variable_prints_only_validated_references() {
             agent: jackin_core::Agent::Claude,
             directory: "/tmp/probe".into(),
             xdg_roots: None,
+            source_selector: None,
         },
     };
     assert_eq!(scan_reference_variable(&profile), None);
@@ -313,6 +314,7 @@ fn disabling_account_prunes_bindings_at_all_scopes() {
                     agent: jackin_core::Agent::Claude,
                     directory: temp.path().join("profiles/work-1"),
                     xdg_roots: None,
+                    source_selector: None,
                 },
             },
         )
@@ -328,6 +330,7 @@ fn disabling_account_prunes_bindings_at_all_scopes() {
                     agent: jackin_core::Agent::Claude,
                     directory: temp.path().join("profiles/work-2"),
                     xdg_roots: None,
+                    source_selector: None,
                 },
             },
         )

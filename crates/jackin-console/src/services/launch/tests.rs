@@ -474,6 +474,7 @@ fn launch_accounts_require_workspace_assignment_and_agent_support() {
                     agent: Agent::Claude,
                     directory: format!("/profiles/{id}").into(),
                     xdg_roots: None,
+                    source_selector: None,
                 },
             },
         );

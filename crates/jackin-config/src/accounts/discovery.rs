@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use jackin_core::Agent;
 use serde_json::Value;
 
-use super::AiProvider;
+use super::{AiProvider, ProfileSelector};
 
 /// Find provider API-key references in an explicit environment snapshot.
 /// Returns variable names only; values never leave this boundary.
@@ -92,6 +92,8 @@ pub struct DiscoveredAccount {
     /// clients must carry this identity into the account registry; the
     /// directory alone is not an account selector.
     pub provider: Option<AiProvider>,
+    /// Immutable entry/profile identity for a multi-provider store.
+    pub source_selector: Option<ProfileSelector>,
     /// Selected source directory to store in the account registry.
     pub directory: PathBuf,
     /// Credential location which established this discovery.
@@ -204,6 +206,7 @@ fn inspect_directory(
             return Ok(Some(DiscoveredAccount {
                 agent,
                 provider: AiProvider::for_agent(agent),
+                source_selector: None,
                 directory: directory.to_path_buf(),
                 evidence: CredentialEvidence::Keychain("gemini".to_owned()),
             }));
@@ -252,6 +255,7 @@ fn inspect_directory(
         return Ok(Some(DiscoveredAccount {
             agent,
             provider: AiProvider::for_agent(agent),
+            source_selector: None,
             directory: directory.to_path_buf(),
             evidence: CredentialEvidence::File(file),
         }));
@@ -264,6 +268,7 @@ fn inspect_directory(
         return Ok(Some(DiscoveredAccount {
             agent,
             provider: AiProvider::for_agent(agent),
+            source_selector: None,
             directory: scope.normalized_config_dir,
             evidence: CredentialEvidence::Keychain(scope.service),
         }));
@@ -273,20 +278,32 @@ fn inspect_directory(
 
 /// Inspect a stores-backed agent directory via the `stores` enumerators.
 ///
-/// The first candidate's source file becomes the evidence location; secrets
-/// are dropped here and never leave the discovery boundary. An empty
-/// enumeration is an honest `Ok(None)` (no attributable credential found),
-/// and store failures map to the matching [`DiscoveryError`] category.
+/// A store is launchable only when exactly one candidate can be attributed to
+/// it. Selecting the first candidate from a multi-entry store would register
+/// an account whose later full-store mount exposes its siblings.
 fn inspect_store(
     agent: Agent,
     directory: &Path,
 ) -> Result<Option<DiscoveredAccount>, DiscoveryError> {
-    Ok(inspect_store_accounts(agent, directory)?.into_iter().next())
+    let mut accounts = inspect_store_accounts(agent, directory)?;
+    match accounts.len() {
+        0 => Ok(None),
+        1 => Ok(accounts.pop()),
+        _ => Err(DiscoveryError::Unsupported(match agent {
+            Agent::Omp => "omp credential store contains multiple entries",
+            Agent::Hermes => "Hermes credential store contains multiple profiles",
+            Agent::Opencode => "OpenCode auth store contains multiple entries",
+            _ => unreachable!("stores-backed agents only"),
+        })),
+    }
 }
 
 /// Inspect a store and retain every source-bound account candidate.
 ///
 /// `OpenCode` candidates are keyed by the provider entry in `auth.json`.
+/// Omp candidates use the provider/account entry plus optional profile label;
+/// Hermes candidates use the provider entry plus required profile name. Those
+/// exact dimensions are persisted as [`ProfileSelector`] values.
 /// Database-only stores are not launchable by the current profile contract, so
 /// they are rejected instead of registering candidates with no materializable
 /// source. A sibling database is ignored when a single usable `auth.json`
@@ -327,23 +344,47 @@ fn inspect_store_accounts(
                     accounts.push(DiscoveredAccount {
                         agent,
                         provider: Some(provider),
+                        source_selector: None,
                         directory: directory.to_path_buf(),
                         evidence: CredentialEvidence::File(candidate.source),
                     });
                 }
                 return Ok(accounts);
             }
-            Ok(candidates
-                .into_iter()
-                .next()
-                .map(|candidate| DiscoveredAccount {
+            let mut accounts = Vec::with_capacity(candidates.len());
+            for candidate in candidates {
+                let provider = candidate.provider.parse().map_err(|_| {
+                    DiscoveryError::Unsupported(
+                        "multi-provider store credential provider is not in jackin's catalog",
+                    )
+                })?;
+                let source_selector = Some(ProfileSelector {
+                    entry: candidate.provider,
+                    profile: candidate.profile,
+                });
+                accounts.push(DiscoveredAccount {
                     agent,
-                    provider: AiProvider::for_agent(agent),
+                    provider: Some(provider),
+                    source_selector,
                     directory: directory.to_path_buf(),
                     evidence: CredentialEvidence::File(candidate.source),
-                })
-                .into_iter()
-                .collect())
+                });
+            }
+            if matches!(agent, Agent::Omp | Agent::Hermes) && accounts.len() == 1 {
+                use super::stores::{hermes, omp};
+                match agent {
+                    Agent::Omp => {
+                        omp::validate_single_credential_store(directory)
+                            .map_err(map_store_error)?;
+                    }
+                    Agent::Hermes => {
+                        hermes::validate_single_profile_store(directory)
+                            .map_err(map_store_error)?;
+                    }
+                    _ => unreachable!("validated stores-backed agent"),
+                }
+            }
+            Ok(accounts)
         }
         Err(error) => Err(map_store_error(error)),
     }

@@ -248,14 +248,15 @@ fn build_account(args: &AddAccountArgs, paths: &JackinPaths) -> Result<AccountCo
         if !directory.is_dir() {
             bail!("account path must be a directory");
         }
-        let found = jackin_config::discover_account_directory(agent, &directory, &paths.home_dir)?;
-        if found.is_none() {
-            bail!("no {agent} authentication found in {}", directory.display());
-        }
+        let found = jackin_config::discover_account_directory(agent, &directory, &paths.home_dir)?
+            .with_context(|| {
+                format!("no {agent} authentication found in {}", directory.display())
+            })?;
         AccountCredential::Profile {
             agent,
             directory,
             xdg_roots: None,
+            source_selector: found.source_selector,
         }
     } else if args.oauth_token {
         let agent = args

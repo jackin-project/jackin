@@ -174,6 +174,7 @@ fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
                     agent: *agent,
                     directory: directory.to_path_buf(),
                     xdg_roots: None,
+                    source_selector: None,
                 },
             },
         );
@@ -463,6 +464,7 @@ fn write_codex_workspace(path: &Path, root: &Path) {
                 agent: Agent::Codex,
                 directory: root.to_path_buf(),
                 xdg_roots: None,
+                source_selector: None,
             },
         },
     );

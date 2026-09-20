@@ -7,7 +7,7 @@ use super::{
     validate_sync_source_dir_for_provider,
 };
 use crate::PrepareResolvers;
-use jackin_config::{AiProvider, AuthForwardMode};
+use jackin_config::{AiProvider, AuthForwardMode, ProfileSelector};
 use jackin_core::JackinPaths;
 use tempfile::tempdir;
 
@@ -194,6 +194,87 @@ fn opencode_source_validation_is_provider_bound_and_rejects_ambiguous_or_db_only
     )
     .unwrap_err();
     assert!(error.to_string().contains("expected auth.json"), "{error}");
+}
+
+#[test]
+fn hermes_sync_stages_only_the_selected_account_store() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.hermes");
+    let target_dir = temp.path().join("role/.hermes");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(
+        source_dir.join("config.yaml"),
+        "profiles:\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"selected-sentinel"}}"#,
+    )
+    .unwrap();
+
+    let (outcome, forward_auth) = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&ProfileSelector {
+            entry: "openai".to_owned(),
+            profile: Some("work".to_owned()),
+        }),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    let staged = std::fs::read_to_string(target_dir.join("auth.json")).unwrap();
+    assert!(staged.contains("selected-sentinel"));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&staged)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn hermes_sync_rejects_ambiguous_store_before_touching_role_state() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.hermes");
+    let target_dir = temp.path().join("role/.hermes");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::create_dir_all(&target_dir).unwrap();
+    std::fs::write(
+        source_dir.join("config.yaml"),
+        "profiles:\n  personal:\n    provider: anthropic\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"anthropic":{"type":"api","key":"personal-sentinel"},"openai":{"type":"api","key":"work-sentinel"}}"#,
+    )
+    .unwrap();
+    let stale = r#"{"stale":{"type":"api","key":"stale-sentinel"}}"#;
+    std::fs::write(target_dir.join("auth.json"), stale).unwrap();
+
+    let error = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&ProfileSelector {
+            entry: "openai".to_owned(),
+            profile: Some("work".to_owned()),
+        }),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("multiple profiles"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(target_dir.join("auth.json")).unwrap(),
+        stale
+    );
+    assert!(!target_dir.join("config.yaml").exists());
 }
 
 #[test]

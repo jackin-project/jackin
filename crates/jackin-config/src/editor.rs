@@ -113,6 +113,7 @@ fn profile_account_candidate(
     directory: PathBuf,
     name: String,
     xdg_roots: Option<crate::XdgRoots>,
+    source_selector: Option<crate::ProfileSelector>,
 ) -> (String, crate::AccountConfig) {
     (
         id,
@@ -124,6 +125,7 @@ fn profile_account_candidate(
                 agent,
                 directory,
                 xdg_roots,
+                source_selector,
             },
         },
     )
@@ -154,6 +156,7 @@ fn profile_scan_candidate(
             format!("{} default", discovered.agent.label())
         },
         None,
+        discovered.source_selector.clone(),
     ))
 }
 
@@ -280,13 +283,15 @@ fn scan_source_registered(
                     agent: a,
                     directory: x,
                     xdg_roots: rx,
+                    source_selector: sx,
                 },
                 AccountCredential::Profile {
                     agent: b,
                     directory: y,
                     xdg_roots: ry,
+                    source_selector: sy,
                 },
-            ) => a == b && x == y && rx == ry,
+            ) => a == b && x == y && rx == ry && sx == sy,
             (
                 AccountCredential::ApiKey {
                     value: x,
@@ -948,6 +953,7 @@ impl ConfigEditor {
                             agent: directory.agent,
                             directory: found.directory,
                             xdg_roots: None,
+                            source_selector: found.source_selector,
                         },
                     };
                     if known.contains_key(&id)
@@ -998,6 +1004,7 @@ impl ConfigEditor {
                             found.directory,
                             "Amp custom".to_owned(),
                             Some(roots.clone()),
+                            found.source_selector,
                         );
                         apply_xdg_profile_candidate(
                             self,

@@ -1906,6 +1906,7 @@ fn scan_profile_account(directory: &str) -> jackin_config::AccountConfig {
             agent: jackin_core::Agent::Claude,
             directory: directory.into(),
             xdg_roots: None,
+            source_selector: None,
         },
     }
 }

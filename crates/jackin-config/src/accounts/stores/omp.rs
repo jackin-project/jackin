@@ -66,6 +66,24 @@ pub(crate) fn enumerate_omp_credentials(db_path: &Path) -> Result<Vec<StoreCandi
     parse_omp_database(&db, wal.as_deref(), db_path)
 }
 
+/// Prove that an Omp store has exactly one usable credential entry before a
+/// whole-database sync is allowed. The runtime has no safe `SQLite` writer for
+/// filtering arbitrary schemas, so ambiguous stores fail closed.
+pub(crate) fn validate_single_credential_store(dir: &Path) -> Result<(), StoreError> {
+    let candidates = enumerate_omp_credentials(&dir.join("agent/agent.db"))?;
+    if candidates.len() == 1 {
+        Ok(())
+    } else if candidates.is_empty() {
+        Err(StoreError::Unsupported(
+            "omp credential store has no usable entry",
+        ))
+    } else {
+        Err(StoreError::Unsupported(
+            "omp credential store contains multiple entries",
+        ))
+    }
+}
+
 fn parse_omp_database(
     db: &[u8],
     wal: Option<&[u8]>,
