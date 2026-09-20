@@ -925,11 +925,61 @@ impl ConfigEditor {
         let excluded = existing.account_scan_exclusions;
         let mut known = existing.accounts;
         let home = self.home_dir.clone();
-        for directory in &plan.directories {
+        self.apply_zshrc_directories(&plan.directories, &home, &mut known, &excluded, &mut report)?;
+        self.apply_zshrc_xdg_roots(
+            plan.xdg_roots.as_ref(),
+            &home,
+            &mut known,
+            &excluded,
+            &mut report,
+        )?;
+        self.apply_zshrc_op_refs(
+            &plan.op_refs,
+            &plan.models,
+            &mut known,
+            &excluded,
+            &mut report,
+        )?;
+        self.apply_zshrc_models(&plan.models, &mut known, &mut report)?;
+        // Arbitrary shell wrappers cannot safely be executed or serialized
+        // into the current launch protocol. Retain the parsed call sites in
+        // the report so callers surface them instead of dropping them.
+        report.unapplied_zshrc_wrappers = plan.wrappers.clone();
+        Ok(report)
+    }
+
+    fn register_zshrc_account(
+        &mut self,
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+        id: String,
+        account: crate::AccountConfig,
+    ) -> crate::ConfigResult<()> {
+        if scan_candidate_is_blocked(known, excluded, &id, &account) {
+            return Ok(());
+        }
+        self.upsert_account(&id, &account)?;
+        known.insert(id.clone(), account.clone());
+        report.added_accounts.push(id.clone());
+        report.added.push((id, account));
+        report.changed = true;
+        Ok(())
+    }
+
+    fn apply_zshrc_directories(
+        &mut self,
+        directories: &[crate::DirectoryCandidate],
+        home: &Path,
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        for directory in directories {
             let Some(provider) = crate::AiProvider::for_agent(directory.agent) else {
                 continue;
             };
-            match crate::discover_account_directory(directory.agent, &directory.directory, &home) {
+            match crate::discover_account_directory(directory.agent, &directory.directory, home) {
                 Ok(Some(found)) => {
                     // Shell overrides are distinct profiles from the
                     // default-home discovery entry. Reusing
@@ -947,14 +997,7 @@ impl ConfigEditor {
                             source_selector: found.source_selector,
                         },
                     };
-                    if scan_candidate_is_blocked(&known, &excluded, &id, &account) {
-                        continue;
-                    }
-                    self.upsert_account(&id, &account)?;
-                    known.insert(id.clone(), account.clone());
-                    report.added_accounts.push(id.clone());
-                    report.added.push((id, account));
-                    report.changed = true;
+                    self.register_zshrc_account(known, excluded, report, id, account)?;
                 }
                 Ok(None) => {}
                 Err(error) => report.issues.push(crate::DiscoveryIssue {
@@ -964,56 +1007,78 @@ impl ConfigEditor {
                 }),
             }
         }
-        if let Some(roots) = &plan.xdg_roots {
-            let opencode_data = roots.data.join("opencode");
-            let opencode_config = roots.config.join("opencode");
-            if opencode_data.exists() || opencode_config.exists() {
-                // The generic XDG triple is currently an Amp profile contract.
-                // OpenCode's data root has provider-keyed auth and may also
-                // contain a database; without an explicit source directory,
-                // importing it as Amp would persist an unrelated identity.
-                report.unapplied_zshrc_xdg_roots.push(roots.clone());
-                report.issues.push(crate::DiscoveryIssue {
-                    agent: jackin_core::Agent::Opencode,
-                    directory: opencode_data,
-                    error: crate::DiscoveryError::Unsupported(
-                        "OpenCode XDG roots from shell imports require an explicit profile directory",
-                    ),
-                });
-            } else {
-                let directory = roots.data.join("amp");
-                let provider = crate::AiProvider::Amp;
-                match crate::discover_account_directory(jackin_core::Agent::Amp, &directory, &home)
-                {
-                    Ok(Some(found)) => {
-                        let candidate = profile_account_candidate(
-                            "custom-amp".to_owned(),
-                            jackin_core::Agent::Amp,
-                            provider,
-                            found.directory,
-                            "Amp custom".to_owned(),
-                            Some(roots.clone()),
-                            found.source_selector,
-                        );
-                        apply_xdg_profile_candidate(
-                            self,
-                            &mut known,
-                            &excluded,
-                            &mut report,
-                            roots,
-                            Some(candidate),
-                        )?;
-                    }
-                    Ok(None) => report.unapplied_zshrc_xdg_roots.push(roots.clone()),
-                    Err(error) => report.issues.push(crate::DiscoveryIssue {
-                        agent: jackin_core::Agent::Amp,
-                        directory,
-                        error,
-                    }),
+        Ok(())
+    }
+
+    fn apply_zshrc_xdg_roots(
+        &mut self,
+        roots: Option<&crate::XdgRoots>,
+        home: &Path,
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        let Some(roots) = roots else {
+            return Ok(());
+        };
+        let opencode_data = roots.data.join("opencode");
+        let opencode_config = roots.config.join("opencode");
+        if opencode_data.exists() || opencode_config.exists() {
+            // The generic XDG triple is currently an Amp profile contract.
+            // OpenCode's data root has provider-keyed auth and may also
+            // contain a database; without an explicit source directory,
+            // importing it as Amp would persist an unrelated identity.
+            report.unapplied_zshrc_xdg_roots.push(roots.clone());
+            report.issues.push(crate::DiscoveryIssue {
+                agent: jackin_core::Agent::Opencode,
+                directory: opencode_data,
+                error: crate::DiscoveryError::Unsupported(
+                    "OpenCode XDG roots from shell imports require an explicit profile directory",
+                ),
+            });
+        } else {
+            let directory = roots.data.join("amp");
+            let provider = crate::AiProvider::Amp;
+            match crate::discover_account_directory(jackin_core::Agent::Amp, &directory, home) {
+                Ok(Some(found)) => {
+                    let candidate = profile_account_candidate(
+                        "custom-amp".to_owned(),
+                        jackin_core::Agent::Amp,
+                        provider,
+                        found.directory,
+                        "Amp custom".to_owned(),
+                        Some(roots.clone()),
+                        found.source_selector,
+                    );
+                    apply_xdg_profile_candidate(
+                        self,
+                        known,
+                        excluded,
+                        report,
+                        roots,
+                        Some(candidate),
+                    )?;
                 }
+                Ok(None) => report.unapplied_zshrc_xdg_roots.push(roots.clone()),
+                Err(error) => report.issues.push(crate::DiscoveryIssue {
+                    agent: jackin_core::Agent::Amp,
+                    directory,
+                    error,
+                }),
             }
         }
-        for op_ref in &plan.op_refs {
+        Ok(())
+    }
+
+    fn apply_zshrc_op_refs(
+        &mut self,
+        op_refs: &[crate::OpReadCandidate],
+        models: &[crate::ModelProfile],
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        for op_ref in op_refs {
             if op_ref.reference.on_demand {
                 continue;
             }
@@ -1026,8 +1091,7 @@ impl ConfigEditor {
                     .into_iter()
                     .next()
                     .map(|(provider, _)| {
-                        let base_url = plan
-                            .models
+                        let base_url = models
                             .iter()
                             .find(|model| zshrc_provider(&model.name) == Some(provider))
                             .and_then(|model| model.base_url.clone());
@@ -1041,16 +1105,18 @@ impl ConfigEditor {
             let Some((id, account)) = seeded else {
                 continue;
             };
-            if scan_candidate_is_blocked(&known, &excluded, &id, &account) {
-                continue;
-            }
-            self.upsert_account(&id, &account)?;
-            known.insert(id.clone(), account.clone());
-            report.added_accounts.push(id.clone());
-            report.added.push((id, account));
-            report.changed = true;
+            self.register_zshrc_account(known, excluded, report, id, account)?;
         }
-        for model in &plan.models {
+        Ok(())
+    }
+
+    fn apply_zshrc_models(
+        &mut self,
+        models: &[crate::ModelProfile],
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        for model in models {
             let Some(provider) = zshrc_provider(&model.name) else {
                 report.unapplied_zshrc_models.push(model.clone());
                 continue;
@@ -1082,11 +1148,7 @@ impl ConfigEditor {
                 report.changed = true;
             }
         }
-        // Arbitrary shell wrappers cannot safely be executed or serialized
-        // into the current launch protocol. Retain the parsed call sites in
-        // the report so callers surface them instead of dropping them.
-        report.unapplied_zshrc_wrappers = plan.wrappers.clone();
-        Ok(report)
+        Ok(())
     }
 
     /// Atomic write + return a fresh `AppConfig` parsed from the
