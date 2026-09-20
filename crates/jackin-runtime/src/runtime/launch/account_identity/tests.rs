@@ -399,7 +399,7 @@ fn fingerprint_excludes_manifest_state_labels_and_ambient_bindings() {
         .insert("d".into(), api_key_account("d"));
     ambient_changed
         .account_bindings
-        .insert(Agent::Claude, "d".into());
+        .insert(Agent::Codex, "d".into());
     assert_eq!(
         before,
         account_configuration_fingerprint(&ambient_changed, None, "role", &admitted).unwrap()

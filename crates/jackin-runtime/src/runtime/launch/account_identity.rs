@@ -160,8 +160,9 @@ pub fn account_configuration_fingerprint(
     role: &str,
     admitted: &[AdmittedInstance],
 ) -> anyhow::Result<String> {
-    // `role` remains an input for the shared call shape; role defaults and
-    // bindings are intentionally not hashed after admission.
+    // Role defaults are not hashed after admission. The binding for an
+    // admitted agent remains a relevant capability revision: changing it can
+    // change which credential a reconnect would authorize.
     let _ = role;
     let ws = configured_workspace(config, workspace)?;
     let mut admitted = admitted.to_vec();
@@ -205,6 +206,12 @@ pub fn account_configuration_fingerprint(
                     configuration.invoked_via_wrapper.clone(),
                 )
             });
+        let binding = ws
+            .and_then(|workspace| workspace.roles.get(role))
+            .and_then(|role| role.account_bindings.get(&instance.agent))
+            .or_else(|| ws.and_then(|workspace| workspace.account_bindings.get(&instance.agent)))
+            .or_else(|| config.account_bindings.get(&instance.agent))
+            .cloned();
         capability_revisions.insert(
             instance.config_id.clone(),
             (
@@ -218,11 +225,12 @@ pub fn account_configuration_fingerprint(
                         .iter()
                         .any(|account_id| account_id == &instance.account_id)
                 }),
+                binding,
             ),
         );
     }
     let bytes = serde_json::to_vec(&(
-        "account-config-v6-admitted-revisions",
+        "account-config-v7-admitted-revisions",
         admitted_identities,
         credential_revisions,
         capability_revisions,
