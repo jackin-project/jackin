@@ -112,12 +112,12 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@89f82dd8b287f46a3cf4c0920f341f6ca6c736db
         with:
-          rev: 0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+          rev: 89f82dd8b287f46a3cf4c0920f341f6ca6c736db
       - name: Set trusted workflow policy revision
         if: steps.retention-gate.outputs.skip != 'true'
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=0dc79895ff1c5e88be7c3822c437e1c5b5282e12" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=89f82dd8b287f46a3cf4c0920f341f6ca6c736db" >> "$GITHUB_ENV"
       - name: Sweep closed-PR merge-ref caches
         if: steps.retention-gate.outputs.skip != 'true'
         env:

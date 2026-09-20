@@ -38,6 +38,10 @@ on:
         required: false
         type: boolean
         default: false
+      mbx_enabled:
+        required: false
+        type: boolean
+        default: false
       mbx_compat:
         required: false
         type: string
@@ -248,12 +252,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-0dc79895ff1c5e88be7c3822c437e1c5b5282e12-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-89f82dd8b287f46a3cf4c0920f341f6ca6c736db-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+          EXPECTED_REVISION: 89f82dd8b287f46a3cf4c0920f341f6ca6c736db
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -267,7 +271,7 @@ jobs:
       - name: Add Velnor workflow runtime to PATH
         shell: bash
         env:
-          EXPECTED_REVISION: 0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+          EXPECTED_REVISION: 89f82dd8b287f46a3cf4c0920f341f6ca6c736db
         run: |
           set -euo pipefail
           home="$RUNNER_TEMP/velnor-workflow-runtime-artifact"
@@ -574,7 +578,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@89f82dd8b287f46a3cf4c0920f341f6ca6c736db
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github
@@ -771,7 +775,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@89f82dd8b287f46a3cf4c0920f341f6ca6c736db
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: velnor

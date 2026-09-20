@@ -38,6 +38,10 @@ on:
         required: false
         type: boolean
         default: false
+      mbx_enabled:
+        required: false
+        type: boolean
+        default: false
       mbx_compat:
         required: false
         type: string
@@ -127,7 +131,7 @@ jobs:
   verify-github-hosted:
     name: "GitHub · hosted"
     if: ${{ inputs.provider == 'github-hosted' && contains(inputs.selected_units, format('"unit_id":"{0}"', inputs.unit)) && ((github.event_name == 'workflow_dispatch' && contains(format(',{0},', github.event.inputs.providers), ',github-hosted,')) || (github.event_name != 'workflow_dispatch')) }}
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - name: Mark CI job start
@@ -168,11 +172,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@89f82dd8b287f46a3cf4c0920f341f6ca6c736db
         with:
-          rev: 0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+          rev: 89f82dd8b287f46a3cf4c0920f341f6ca6c736db
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=0dc79895ff1c5e88be7c3822c437e1c5b5282e12" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=89f82dd8b287f46a3cf4c0920f341f6ca6c736db" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -326,7 +330,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@89f82dd8b287f46a3cf4c0920f341f6ca6c736db
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github
