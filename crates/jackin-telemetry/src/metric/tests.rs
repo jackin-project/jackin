@@ -229,6 +229,98 @@ fn meter_installation_drop_releases_provider_and_series_state() {
 }
 
 #[test]
+fn meter_detach_waits_for_in_flight_facade_read_guard() {
+    let _lock = METER_TEST_LOCK.lock().expect("meter test lock");
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::SdkMeterProvider;
+
+    let provider = SdkMeterProvider::builder().build();
+    let installation = install(&provider.meter("concurrent-detach"))
+        .expect("concurrent detach meter installation");
+    let in_flight = INSTRUMENTS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(0);
+    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(0);
+    let worker = std::thread::spawn(move || {
+        let mut installation = installation;
+        installation.detach_inner(|| ready_tx.send(()).expect("detach worker ready"));
+        done_tx.send(()).expect("detach worker done");
+    });
+
+    ready_rx
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .expect("detach worker reached the facade write");
+    assert!(done_rx.try_recv().is_err(), "detach ignored the read guard");
+    drop(in_flight);
+    done_rx
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .expect("detach worker completed after read guard release");
+    worker.join().expect("detach worker join");
+    assert!(
+        INSTRUMENTS
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_none()
+    );
+}
+
+#[test]
+fn detached_facade_drops_late_write_before_metric_flush() {
+    let _lock = METER_TEST_LOCK.lock().expect("meter test lock");
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+
+    let exporter = InMemoryMetricExporter::default();
+    let provider = SdkMeterProvider::builder()
+        .with_reader(PeriodicReader::builder(exporter.clone()).build())
+        .build();
+    let mut installation =
+        install(&provider.meter("late-write-fence")).expect("late-write fence meter installation");
+    let writer_gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let writer_gate_clone = std::sync::Arc::clone(&writer_gate);
+    let writer = std::thread::spawn(move || {
+        writer_gate_clone.wait();
+        counter(&TELEMETRY_VALIDATE).add(1, &[])
+    });
+
+    installation.detach();
+    writer_gate.wait();
+    writer
+        .join()
+        .expect("late metric writer join")
+        .expect("detached facade write is a no-op");
+    provider.force_flush().expect("metric flush");
+    let exported = exporter.get_finished_metrics().expect("metric export");
+    assert!(
+        !exported
+            .iter()
+            .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
+            .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+            .any(|metric| metric.name() == TELEMETRY_VALIDATE.name())
+    );
+}
+
+#[test]
+fn detached_meter_installation_keeps_generation_until_drop() {
+    let _lock = METER_TEST_LOCK.lock().expect("meter test lock");
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::SdkMeterProvider;
+
+    let first_provider = SdkMeterProvider::builder().build();
+    let mut first_installation =
+        install(&first_provider.meter("detached-generation")).expect("first meter installation");
+    first_installation.detach();
+
+    let second_provider = SdkMeterProvider::builder().build();
+    assert!(install(&second_provider.meter("blocked-generation"),).is_err());
+
+    drop(first_installation);
+    let _second_installation = install(&second_provider.meter("next-generation"))
+        .expect("next meter installation after retired lease drop");
+}
+
+#[test]
 fn series_identity_is_order_independent_and_duplicates_reject() {
     let first = [
         Attr {

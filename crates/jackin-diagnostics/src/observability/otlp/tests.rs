@@ -134,7 +134,7 @@ fn provider_shutdown_order_is_tracer_logger_meter() {
     let (export, _subscriber) = super::test_layers(false, "unused");
     let meter = opentelemetry_sdk::metrics::SdkMeterProvider::builder().build();
     let generation = super::super::health::set_active_signals();
-    let providers = super::OtlpProviders {
+    let mut providers = super::OtlpProviders {
         tracer: export.tracer_provider,
         logger: export.logger_provider,
         meter,
@@ -148,6 +148,7 @@ fn provider_shutdown_order_is_tracer_logger_meter() {
     assert_eq!(
         *super::SHUTDOWN_ORDER.lock().expect("order lock"),
         [
+            "detach.meter",
             "flush.tracer",
             "flush.logger",
             "flush.meter",

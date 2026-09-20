@@ -531,7 +531,15 @@ mod otlp {
         /// wrong-protocol backend would fail completely silently. `shutdown`
         /// errors stay quiet — by then the data is already flushed-or-lost and a
         /// second notice adds only noise.
-        fn flush_and_shutdown(&self, deadline: std::time::Instant) -> bool {
+        fn flush_and_shutdown(&mut self, deadline: std::time::Instant) -> bool {
+            if let Some(installation) = self._meter_installation.as_mut() {
+                installation.detach();
+            }
+            #[cfg(test)]
+            SHUTDOWN_ORDER
+                .lock()
+                .expect("shutdown order lock")
+                .push("detach.meter");
             let (trace_flush, log_flush, metric_flush) = self.force_flush_all(deadline);
             #[cfg(test)]
             SHUTDOWN_ORDER
@@ -1872,7 +1880,7 @@ mod otlp {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reap_flush_workers();
-        let providers = PROVIDERS.lock().ok().and_then(|mut slot| slot.take());
+        let mut providers = PROVIDERS.lock().ok().and_then(|mut slot| slot.take());
         let generation = providers.as_ref().map(|providers| providers.generation);
         let runtime = OTEL_RUNTIME.lock().ok().and_then(|mut slot| slot.take());
         if providers.is_none() && runtime.is_none() {
@@ -1880,7 +1888,7 @@ mod otlp {
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         let succeeded = providers
-            .as_ref()
+            .as_mut()
             .is_none_or(|providers| providers.flush_and_shutdown(deadline));
         drop(providers);
         if let Some(runtime) = runtime {

@@ -152,7 +152,10 @@ impl MeterReservation {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(instruments);
         state.reserved = false;
         state.active_generation = Some(generation);
-        Ok(MeterInstallation { generation })
+        Ok(MeterInstallation {
+            generation,
+            retired_instruments: None,
+        })
     }
 }
 
@@ -169,13 +172,55 @@ impl Drop for MeterReservation {
 
 /// Owns the installed facade instruments for one meter-provider lifecycle.
 ///
-/// Dropping the installation removes the provider-bound instruments and clears
-/// their bounded-series registry, allowing a later provider to be installed in
-/// the same process without retaining state from the retired provider.
+/// Detaching or dropping the installation removes the provider-bound facade and
+/// clears its bounded-series registry. Dropping the installation also releases
+/// the retained handles, allowing a later provider to be installed in the same
+/// process without retaining state from the retired provider.
 #[must_use = "the meter installation must live as long as its meter provider"]
 #[derive(Debug)]
 pub struct MeterInstallation {
     generation: u64,
+    retired_instruments: Option<InstalledInstruments>,
+}
+
+impl MeterInstallation {
+    /// Detach the facade from the active provider while retaining its handles
+    /// until this installation is dropped.
+    ///
+    /// The write lock waits for every in-flight metric operation that acquired
+    /// the facade read lock. Calls that begin after the detach observe an empty
+    /// facade and become no-ops instead of recording into a retiring provider.
+    /// The generation remains active until the installation is dropped, so a
+    /// replacement provider cannot be installed while the retired handles are
+    /// still owned by this lease.
+    pub fn detach(&mut self) {
+        self.detach_inner(|| {});
+    }
+
+    fn detach_inner(&mut self, before_write: impl FnOnce()) {
+        if self.retired_instruments.is_some() {
+            return;
+        }
+
+        let state = METER_STATE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.active_generation != Some(self.generation) {
+            return;
+        }
+
+        before_write();
+        self.retired_instruments = INSTRUMENTS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(series) = SERIES.get() {
+            series
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
+        }
+    }
 }
 
 impl Drop for MeterInstallation {
@@ -186,17 +231,25 @@ impl Drop for MeterInstallation {
         if state.active_generation != Some(self.generation) {
             return;
         }
-        INSTRUMENTS
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        state.active_generation = None;
-        if let Some(series) = SERIES.get() {
-            series
-                .lock()
+
+        if self.retired_instruments.is_none() {
+            INSTRUMENTS
+                .write()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clear();
+                .take();
+            if let Some(series) = SERIES.get() {
+                series
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clear();
+            }
         }
+        // A detached installation owns the retired handles until this point,
+        // after the provider has completed its shutdown. Drop them while the
+        // generation is still held so the next provider cannot overlap this
+        // provider-bound ownership.
+        drop(self.retired_instruments.take());
+        state.active_generation = None;
     }
 }
 
