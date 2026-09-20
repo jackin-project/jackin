@@ -341,9 +341,25 @@ pub(crate) fn is_overview_provider_row(value: &str) -> bool {
 }
 
 pub(crate) fn is_overview_provider_label(label: &str) -> bool {
+    // Tab labels carry a ` · {account}` suffix so same-provider accounts stay
+    // individually visible; match on the provider head.
+    let head = label.split(" · ").next().unwrap_or(label);
     matches!(
-        label,
-        "OpenAI" | "Anthropic" | "Amp" | "xAI" | "Z.AI" | "Kimi" | "MiniMax"
+        head,
+        "OpenAI"
+            | "Anthropic"
+            | "Amp"
+            | "xAI"
+            | "Z.AI"
+            | "Kimi"
+            | "MiniMax"
+            | "Cursor"
+            | "OpenRouter"
+            | "Muse"
+            | "Copilot"
+            | "Antigravity"
+            | "Gemini"
+            | "OpenCode"
     )
 }
 

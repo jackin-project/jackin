@@ -92,6 +92,30 @@ fn usage_focused_roundtrips() {
 }
 
 #[test]
+fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
+    let tab = UsageProviderTab {
+        id: "sha256:abc".to_owned(),
+        label: "Anthropic".to_owned(),
+        status_label: "fresh".to_owned(),
+        account_label: "a@example.com".to_owned(),
+        plan_label: None,
+        source_label: None,
+        active: true,
+    };
+    let decoded: UsageProviderTab =
+        serde_json::from_str(&serde_json::to_string(&tab).unwrap()).unwrap();
+    assert_eq!(decoded, tab);
+    // Tabs persisted before the id field decode with an empty id rather than
+    // failing; the producer always stamps real ids.
+    let legacy: UsageProviderTab = serde_json::from_str(
+        r#"{"label":"Anthropic","status_label":"fresh","account_label":"a@example.com","plan_label":null,"source_label":null,"active":true}"#,
+    )
+    .unwrap();
+    assert_eq!(legacy.id, "");
+    assert_eq!(legacy.label, "Anthropic");
+}
+
+#[test]
 fn token_usage_roundtrips_present_and_absent() {
     // Request side.
     let json = serde_json::to_string(&ClientMsg::TokenUsage { session_id: 9 }).unwrap();

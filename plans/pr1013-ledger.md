@@ -28,9 +28,9 @@ Missing live credentials stay explicit gaps, never passes.
 
 | ID | Defect | Evidence | Status |
 |---|---|---|---|
-| D-UI1 | Console `from_projection` drops `metric_groups`, plan, issues, cred-expiry, quota_state, raw % | `crates/jackin-console/src/tui/screens/usage.rs:176-214` vs `jackin-protocol/src/usage_broker.rs:894-1006` | BLOCKED, repair dispatched |
-| D-UI2 | Capsule one tab per provider; same-provider accounts collapse; 7-surface hardcode excludes Cursor/OpenRouter/Copilot/Antigravity/Gemini/OpenCode/omp/Hermes | `crates/jackin-usage/src/usage/view.rs:493-552`, `control.rs:921-935`, `dialog/usage.rs:119-137` | BLOCKED, repair dispatched |
-| D-SEC1 | P1 review: Landlock grants only cwd; workspace mounts outside workdir + worktree git dir `/jackin/host/...` denied | `crates/jackin-capsule/src/process_isolation.rs:249-398`, thread 4057673954 | BLOCKED, repair dispatched |
+| D-UI1 | Console `from_projection` dropped `metric_groups`, plan, issues, cred-expiry, quota_state, raw % | Fixed 2667023b: UsageMetricGroup mirrors V1; console 1335 + clippy clean (author + independent) | LANDED |
+| D-UI2 | Capsule one tab per provider; same-provider accounts collapsed | Fixed a414f596: id-keyed per-account tabs, disambiguated labels, id focus/refresh; protocol 116 + usage 482 + capsule 867 green | LANDED |
+| D-SEC1 | P1 Landlock: only cwd granted; workspace/worktree mounts denied | ADOPTED parallel ef0c6d31 (exact-stamped workspace_mounts + worktree_git_targets, validated, additive); merged 258e173a; 869/869 green | LANDED |
 | D-SEC2 | No durable multi-file publication journal; crash-between-renames skew unrecovered | `persist.rs` TODO, `TODO.md:78-83` | BLOCKED, design needed |
 | D-SEC3 | Teardown uses bare `remove_dir_all` (symlink/replacement races) | `cleanup.rs`, `isolation/cleanup.rs` | UNVERIFIED, needs repro |
 | D-BR1 | Broker: no cancel; join timeout keeps ownership; lease acquired post-discovery (stale catalog risk, per WS5/HANDOFF) | `coordinator`, `broker.rs`, `view.rs:1-16` | UNVERIFIED, needs repro |
