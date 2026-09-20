@@ -19,7 +19,7 @@ jobs:
   renovate:
     name: Renovate dependencies
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
-    runs-on: [self-hosted, velnor-target-mvp]
+    runs-on: ubuntu-26.04
     timeout-minutes: 120
     env:
       RENOVATE_HAS_TOKEN: ${{ secrets.RENOVATE_TOKEN != '' }}

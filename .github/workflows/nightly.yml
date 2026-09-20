@@ -7,11 +7,13 @@ on:
     - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
-      providers:
-        description: Comma-separated provider subset of [github-hosted, velnor]
+      runner:
+        description: Execution backend
         required: false
-        default: github-hosted
-        type: string
+        default: github
+        type: choice
+        options:
+          - github
       scope:
         description: Verification scope
         required: true
@@ -55,7 +57,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           DEFAULT_BRANCH: main
-          DISPATCH_PROVIDERS: ${{ github.event.inputs.providers || 'github-hosted' }}
+          DISPATCH_RUNNER: ${{ github.event.inputs.runner || 'github' }}
           DISPATCH_SCOPE: ${{ github.event.inputs.scope || 'full' }}
           DISPATCH_BASE_SHA: ${{ github.event.inputs.base_sha || format('refs/heads/{0}', github.event.repository.default_branch) }}
         shell: bash
@@ -64,7 +66,7 @@ jobs:
           gh workflow run ci-main.yml \
             -R "$GITHUB_REPOSITORY" \
             --ref "$DEFAULT_BRANCH" \
-            -f providers="$DISPATCH_PROVIDERS" \
+            -f runner="$DISPATCH_RUNNER" \
             -f scope="$DISPATCH_SCOPE" \
             -f base_sha="$DISPATCH_BASE_SHA"
   nightly-red-to-signal:

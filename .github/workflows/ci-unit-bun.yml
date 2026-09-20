@@ -9,9 +9,6 @@ on:
       selected_units:
         required: true
         type: string
-      selected_unit_ids:
-        required: true
-        type: string
       scope:
         required: true
         type: string
@@ -24,10 +21,7 @@ on:
       head_sha:
         required: true
         type: string
-      plan_digest:
-        required: true
-        type: string
-      provider:
+      lane:
         required: true
         type: string
       mise_tools:
@@ -110,14 +104,10 @@ on:
         required: false
         type: boolean
         default: false
-      unit_platform:
+      apple_executor:
         required: false
-        type: string
-        default: ""
-      unit_trust:
-        required: false
-        type: string
-        default: ""
+        type: boolean
+        default: false
       unit_dependencies:
         required: false
         type: string
@@ -128,9 +118,9 @@ on:
         default: ""
 
 jobs:
-  verify-github-hosted:
-    name: "GitHub · hosted"
-    if: ${{ inputs.provider == 'github-hosted' && contains(inputs.selected_units, format('"unit_id":"{0}"', inputs.unit)) && ((github.event_name == 'workflow_dispatch' && contains(format(',{0},', github.event.inputs.providers), ',github-hosted,')) || (github.event_name != 'workflow_dispatch')) }}
+  verify-github:
+    name: GitHub
+    if: ${{ inputs.lane == 'github' && contains(format(',{0},', inputs.selected_units), format(',{0},', inputs.unit)) && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
@@ -156,13 +146,13 @@ jobs:
           UNIT_ID: ${{ inputs.unit }}
           UNIT_DEPENDENCIES: ${{ inputs.unit_dependencies }}
           UNIT_ADMISSION: ${{ inputs.unit_admission }}
-          UNIT_PROVIDER: ${{ inputs.provider }}
+          UNIT_LANE: ${{ inputs.lane }}
         run: |
           {
             echo '## Unit dependencies'
             echo
             echo "- Unit: $UNIT_ID"
-            echo "- Provider: $UNIT_PROVIDER"
+            echo "- Lane: $UNIT_LANE"
             echo "- Admission: $UNIT_ADMISSION"
             if [[ -z "$UNIT_DEPENDENCIES" ]]; then
               echo '- Dependencies: none'
@@ -221,20 +211,18 @@ jobs:
           SELECTION_BASE_SHA: ${{ inputs.base_sha }}
           SELECTION_HEAD_SHA: ${{ inputs.head_sha }}
           SELECTION_SCOPE: ${{ inputs.scope }}
-          SELECTION_UNITS: ${{ inputs.selected_unit_ids }}
+          SELECTION_UNITS: ${{ inputs.selected_units }}
           SELECTION_FULL_UNITS: ${{ inputs.full_units }}
-          SELECTION_PLAN_DIGEST: ${{ inputs.plan_digest }}
         run: |
           set -euo pipefail
           mkdir -p .velnor-ci-selection
           {
-            printf 'version=2\n'
+            printf 'version=1\n'
             printf 'base_sha=%s\n' "$SELECTION_BASE_SHA"
             printf 'head_sha=%s\n' "$SELECTION_HEAD_SHA"
             printf 'scope=%s\n' "$SELECTION_SCOPE"
             printf 'units=%s\n' "$SELECTION_UNITS"
             printf 'full_units=%s\n' "$SELECTION_FULL_UNITS"
-            printf 'plan_digest=%s\n' "$SELECTION_PLAN_DIGEST"
           } > .velnor-ci-selection/velnor-ci-selection
       - name: Mark selection transport end
         if: always()
@@ -268,9 +256,9 @@ jobs:
         with:
           path: |
             ${{ inputs.cache_paths }}
-          key: ci-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-bun-${{ hashFiles(inputs.cache_key_files) }}
+          key: ci-${{ runner.os }}-${{ runner.arch }}-bun-${{ hashFiles(inputs.cache_key_files) }}
           restore-keys: |
-            ci-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-bun-
+            ci-${{ runner.os }}-${{ runner.arch }}-bun-
       - name: Mark cache prep end
         if: always()
         run: |
@@ -335,7 +323,7 @@ jobs:
         with:
           path: |
             ${{ inputs.cache_paths }}
-          key: ci-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-bun-${{ hashFiles(inputs.cache_key_files) }}
+          key: ci-${{ runner.os }}-${{ runner.arch }}-bun-${{ hashFiles(inputs.cache_key_files) }}
       - name: Mark cleanup end
         if: always()
         run: |
@@ -356,181 +344,4 @@ jobs:
           ci_lane: github
           cache_cargo_primary: ${{ steps.cache.outputs.cache-primary-key }}
           cache_cargo_matched: ${{ steps.cache.outputs.cache-matched-key }}
-
-  verify-velnor:
-    name: velnor
-    if: ${{ inputs.provider == 'velnor' && contains(inputs.selected_units, format('"unit_id":"{0}"', inputs.unit)) && (((github.event_name == 'workflow_dispatch' && contains(format(',{0},', github.event.inputs.providers), ',velnor,')) || (false)) && (!(github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork || github.event.pull_request.user.type == 'Bot')))) }}
-    runs-on: [self-hosted, velnor-target-mvp]
-    timeout-minutes: 45
-    steps:
-      - name: Mark CI job start
-        if: always()
-        run: |
-          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
-          umask 077
-          mkdir -p "$timing_dir"
-          marker="$timing_dir/JOB_STARTED"
-          if [[ ! -e "$marker" ]]; then
-            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
-              chmod 0444 "$marker" 2>/dev/null || true
-            fi
-          fi
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ inputs.head_sha }}
-      - name: Record unit dependencies
-        env:
-          UNIT_ID: ${{ inputs.unit }}
-          UNIT_DEPENDENCIES: ${{ inputs.unit_dependencies }}
-          UNIT_ADMISSION: ${{ inputs.unit_admission }}
-          UNIT_PROVIDER: ${{ inputs.provider }}
-        run: |
-          {
-            echo '## Unit dependencies'
-            echo
-            echo "- Unit: $UNIT_ID"
-            echo "- Provider: $UNIT_PROVIDER"
-            echo "- Admission: $UNIT_ADMISSION"
-            if [[ -z "$UNIT_DEPENDENCIES" ]]; then
-              echo '- Dependencies: none'
-            else
-              echo "- Dependencies: $UNIT_DEPENDENCIES"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Mark runner setup end
-        if: always()
-        run: |
-          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
-          umask 077
-          mkdir -p "$timing_dir"
-          marker="$timing_dir/RUNNER_SETUP_ENDED"
-          if [[ ! -e "$marker" ]]; then
-            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
-              chmod 0444 "$marker" 2>/dev/null || true
-            fi
-          fi
-      - name: Materialize Velnor CI selection
-        shell: bash
-        env:
-          SELECTION_BASE_SHA: ${{ inputs.base_sha }}
-          SELECTION_HEAD_SHA: ${{ inputs.head_sha }}
-          SELECTION_SCOPE: ${{ inputs.scope }}
-          SELECTION_UNITS: ${{ inputs.selected_unit_ids }}
-          SELECTION_FULL_UNITS: ${{ inputs.full_units }}
-          SELECTION_PLAN_DIGEST: ${{ inputs.plan_digest }}
-        run: |
-          set -euo pipefail
-          mkdir -p .velnor-ci-selection
-          {
-            printf 'version=2\n'
-            printf 'base_sha=%s\n' "$SELECTION_BASE_SHA"
-            printf 'head_sha=%s\n' "$SELECTION_HEAD_SHA"
-            printf 'scope=%s\n' "$SELECTION_SCOPE"
-            printf 'units=%s\n' "$SELECTION_UNITS"
-            printf 'full_units=%s\n' "$SELECTION_FULL_UNITS"
-            printf 'plan_digest=%s\n' "$SELECTION_PLAN_DIGEST"
-          } > .velnor-ci-selection/velnor-ci-selection
-      - name: Mark selection transport end
-        if: always()
-        run: |
-          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
-          umask 077
-          mkdir -p "$timing_dir"
-          marker="$timing_dir/SELECTION_ENDED"
-          if [[ ! -e "$marker" ]]; then
-            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
-              chmod 0444 "$marker" 2>/dev/null || true
-            fi
-          fi
-      - name: Mark tool bootstrap end
-        if: always()
-        run: |
-          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
-          umask 077
-          mkdir -p "$timing_dir"
-          marker="$timing_dir/TOOL_BOOTSTRAP_ENDED"
-          if [[ ! -e "$marker" ]]; then
-            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
-              chmod 0444 "$marker" 2>/dev/null || true
-            fi
-          fi
-      - name: Mark cache prep end
-        if: always()
-        run: |
-          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
-          umask 077
-          mkdir -p "$timing_dir"
-          marker="$timing_dir/CACHE_PREP_ENDED"
-          if [[ ! -e "$marker" ]]; then
-            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
-              chmod 0444 "$marker" 2>/dev/null || true
-            fi
-          fi
-      - name: Mark cargo fetch end
-        if: always()
-        run: |
-          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
-          umask 077
-          mkdir -p "$timing_dir"
-          marker="$timing_dir/CARGO_FETCH_ENDED"
-          if [[ ! -e "$marker" ]]; then
-            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
-              chmod 0444 "$marker" 2>/dev/null || true
-            fi
-          fi
-      - name: Run unit checks
-        env:
-          CI_SCOPE: ${{ inputs.scope }}
-          CI_UNIT_ID: ${{ inputs.unit }}
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ inputs.base_sha }}
-          HEAD_SHA: ${{ inputs.head_sha }}
-          VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
-          MISE_AUTO_INSTALL: "false"
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_NOT_FOUND_AUTO_INSTALL: "false"
-        run: |
-          set -o pipefail
-          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
-          umask 077
-          mkdir -p "$timing_dir"
-          marker="$timing_dir/CHECKS_STARTED"
-          if [[ ! -e "$marker" ]]; then
-            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
-              chmod 0444 "$marker" 2>/dev/null || true
-            fi
-          fi
-          rc=0
-          velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" 2>&1 | tee "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
-          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
-          umask 077
-          mkdir -p "$timing_dir"
-          marker="$timing_dir/CHECKS_ENDED"
-          if [[ ! -e "$marker" ]]; then
-            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
-              chmod 0444 "$marker" 2>/dev/null || true
-            fi
-          fi
-          exit $rc
-      - name: Mark cleanup end
-        if: always()
-        run: |
-          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
-          umask 077
-          mkdir -p "$timing_dir"
-          marker="$timing_dir/CLEANUP_ENDED"
-          if [[ ! -e "$marker" ]]; then
-            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
-              chmod 0444 "$marker" 2>/dev/null || true
-            fi
-          fi
-      - name: Report phase timings and cache outcomes
-        if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
-        with:
-          job_label: ${{ inputs.unit }}
-          ci_lane: velnor
-          host_warm_layers: cargo
 
