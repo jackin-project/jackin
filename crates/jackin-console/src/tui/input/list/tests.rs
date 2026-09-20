@@ -212,6 +212,7 @@ fn commit_new_session_picker(
                 name: provider.slug().to_owned(),
                 provider,
                 agents: vec![agent],
+                configuration_id: None,
                 instance_id: Some(provider.slug().to_owned()),
             }
         })
@@ -503,6 +504,7 @@ fn new_session_commit_ignores_accounts_offered_to_other_agents() {
         name: "O".into(),
         provider: jackin_config::AiProvider::OpenAi,
         agents: vec![jackin_core::Agent::Codex],
+        configuration_id: None,
         instance_id: Some("codex-o".into()),
     }];
     state.inline_new_session_picker = Some(("jackin-demo-architect".into(), picker, accounts));

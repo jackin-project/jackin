@@ -399,7 +399,7 @@ impl RoleState {
                         if needs_write {
                             write_private_file(hosts_yml, &content)?;
                         } else {
-                            repair_permissions(hosts_yml);
+                            repair_permissions(hosts_yml)?;
                         }
                         Ok(GithubProvisionOutcome::Synced {
                             token: resolved.token,
@@ -407,7 +407,7 @@ impl RoleState {
                         })
                     }
                     HostGhResolution::Missing(reason) => {
-                        repair_permissions(hosts_yml);
+                        repair_permissions(hosts_yml)?;
                         Ok(GithubProvisionOutcome::HostMissing { reason })
                     }
                 }
@@ -659,8 +659,8 @@ impl RoleState {
                     }
                     // Repair permissions on pre-existing auth files that
                     // may have legacy permissive modes (e.g. 0644).
-                    repair_permissions(account_json);
-                    repair_permissions(credentials_json);
+                    repair_permissions(account_json)?;
+                    repair_permissions(credentials_json)?;
                     AuthProvisionOutcome::HostMissing
                 }
             }
@@ -720,8 +720,8 @@ impl RoleState {
                     if !account_json.exists() {
                         write_private_file(account_json, "{}")?;
                     }
-                    repair_permissions(account_json);
-                    repair_permissions(credentials_json);
+                    repair_permissions(account_json)?;
+                    repair_permissions(credentials_json)?;
                     AuthProvisionOutcome::HostMissing
                 }
             }
@@ -1007,7 +1007,7 @@ impl RoleState {
             let content = match std::fs::read_to_string(host_auth_json) {
                 Ok(content) if content.trim().is_empty() => {
                     if auth_json.exists() {
-                        repair_permissions(auth_json);
+                        repair_permissions(auth_json)?;
                     }
                     return Ok((
                         AuthProvisionOutcome::HostMissing,
@@ -1017,7 +1017,7 @@ impl RoleState {
                 Ok(content) => content,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     if auth_json.exists() {
-                        repair_permissions(auth_json);
+                        repair_permissions(auth_json)?;
                     }
                     return Ok((
                         AuthProvisionOutcome::HostMissing,
@@ -1041,7 +1041,7 @@ impl RoleState {
                 .context("serializing selected OpenCode credential")?;
             let unchanged = std::fs::read(auth_json).is_ok_and(|existing| existing == selected);
             if unchanged {
-                repair_permissions(auth_json);
+                repair_permissions(auth_json)?;
             } else {
                 write_private_bytes(auth_json, &selected)
                     .context("writing selected OpenCode credential")?;
@@ -1456,7 +1456,7 @@ fn provision_single_blob_credential(
                     host_path.display()
                 );
                 if target.exists() {
-                    repair_permissions(target);
+                    repair_permissions(target)?;
                 }
                 AuthProvisionOutcome::HostMissing
             }
@@ -1466,7 +1466,7 @@ fn provision_single_blob_credential(
                 // single-file bind mount into the running container.
                 let unchanged = std::fs::read(target).is_ok_and(|existing| existing == content);
                 if unchanged {
-                    repair_permissions(target);
+                    repair_permissions(target)?;
                 } else {
                     write_private_bytes(target, &content).with_context(|| {
                         format!(
@@ -1479,7 +1479,7 @@ fn provision_single_blob_credential(
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 if target.exists() {
-                    repair_permissions(target);
+                    repair_permissions(target)?;
                 }
                 AuthProvisionOutcome::HostMissing
             }
@@ -1569,7 +1569,7 @@ fn provision_single_file_credential(
                     host_path.display()
                 );
                 if target.exists() {
-                    repair_permissions(target);
+                    repair_permissions(target)?;
                 }
                 AuthProvisionOutcome::HostMissing
             }
@@ -1588,7 +1588,7 @@ fn provision_single_file_credential(
                 let unchanged =
                     std::fs::read_to_string(target).is_ok_and(|existing| existing == content);
                 if unchanged {
-                    repair_permissions(target);
+                    repair_permissions(target)?;
                 } else {
                     write_private_file(target, &content).with_context(|| {
                         format!(
@@ -1601,7 +1601,7 @@ fn provision_single_file_credential(
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 if target.exists() {
-                    repair_permissions(target);
+                    repair_permissions(target)?;
                 }
                 AuthProvisionOutcome::HostMissing
             }
@@ -1895,44 +1895,103 @@ pub(super) fn create_private_file_if_absent(path: &Path, content: &[u8]) -> anyh
     }
 }
 
-/// Tighten permissions on an existing file to `0o600`. No-op on
-/// symlinks, non-Unix, or missing files. Errors are logged rather
-/// than returned: callers are mid-Sync and must not abort the launch,
-/// but a silent chmod failure on a credential file is a security
-/// regression.
-fn repair_permissions(path: &Path) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PermissionRepairFailure {
+    Stat,
+    Chmod,
+    Verify,
+}
+
+#[cfg(test)]
+thread_local! {
+    static PERMISSION_REPAIR_FAILURE: std::cell::Cell<Option<PermissionRepairFailure>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+struct PermissionRepairFailureGuard;
+
+#[cfg(test)]
+impl Drop for PermissionRepairFailureGuard {
+    fn drop(&mut self) {
+        PERMISSION_REPAIR_FAILURE.with(|failure| failure.set(None));
+    }
+}
+
+#[cfg(test)]
+fn inject_permission_repair_failure(
+    failure: PermissionRepairFailure,
+) -> PermissionRepairFailureGuard {
+    PERMISSION_REPAIR_FAILURE.with(|injected| injected.set(Some(failure)));
+    PermissionRepairFailureGuard
+}
+
+fn maybe_inject_permission_repair_failure(stage: PermissionRepairFailure) -> anyhow::Result<()> {
+    #[cfg(test)]
+    {
+        if PERMISSION_REPAIR_FAILURE.with(std::cell::Cell::get) == Some(stage) {
+            anyhow::bail!("injected credential permission repair failure at {stage:?}");
+        }
+    }
+    #[cfg(not(test))]
+    let _ = stage;
+    Ok(())
+}
+
+/// Tighten permissions on an existing credential file to `0o600`.
+///
+/// Missing files are allowed because callers use this helper on optional
+/// credentials. Any failure while inspecting, chmod-ing, or verifying an
+/// existing path is returned so launch provisioning fails closed rather than
+/// continuing with potentially exposed credentials.
+fn repair_permissions(path: &Path) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        match std::fs::symlink_metadata(path) {
-            Ok(meta) => {
-                if meta.file_type().is_symlink() {
-                    eprintln!(
-                        "[jackin] warning: refusing to chmod symlink at {}",
-                        path.display()
-                    );
-                    return;
-                }
-                if meta.is_file()
-                    && let Err(e) =
-                        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-                {
-                    eprintln!(
-                        "[jackin] warning: failed to chmod 0o600 on {}: {e}",
-                        path.display()
-                    );
-                }
+        maybe_inject_permission_repair_failure(PermissionRepairFailure::Stat)?;
+        let meta = match std::fs::symlink_metadata(path) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                return Err(anyhow::Error::new(error).context(format!(
+                    "stat existing credential file at {}",
+                    path.display()
+                )));
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                eprintln!("[jackin] warning: stat failed on {}: {e}", path.display());
-            }
-        }
+        };
+        anyhow::ensure!(
+            !meta.file_type().is_symlink(),
+            "refusing to repair credential symlink at {}",
+            path.display()
+        );
+        anyhow::ensure!(
+            meta.is_file(),
+            "refusing to repair non-regular credential path at {}",
+            path.display()
+        );
+
+        maybe_inject_permission_repair_failure(PermissionRepairFailure::Chmod)?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("chmod 0o600 on credential file at {}", path.display()))?;
+
+        maybe_inject_permission_repair_failure(PermissionRepairFailure::Verify)?;
+        let verified = std::fs::symlink_metadata(path)
+            .with_context(|| format!("verify credential file permissions at {}", path.display()))?;
+        anyhow::ensure!(
+            !verified.file_type().is_symlink() && verified.is_file(),
+            "credential path changed during permission repair at {}",
+            path.display()
+        );
+        anyhow::ensure!(
+            verified.permissions().mode() & 0o7777 == 0o600,
+            "credential file at {} is not exactly mode 0600 after repair",
+            path.display()
+        );
     }
     #[cfg(not(unix))]
     {
-        drop(path);
+        let _ = path;
     }
+    Ok(())
 }
 
 #[cfg(test)]

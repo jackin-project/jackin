@@ -493,12 +493,18 @@ pub fn secret_env_lines<'a, S>(
                 let Some(value) = value_for(scope, key) else {
                     continue;
                 };
+                let account_owned = jackin_core::is_account_env(key);
+                let value = if account_owned {
+                    SecretValueDisplay::Plain("[account credential hidden]")
+                } else {
+                    value
+                };
                 lines.push(render_secret_key_line(
                     selected,
                     gutter,
                     key,
                     value,
-                    !is_unmasked(scope, key),
+                    account_owned || !is_unmasked(scope, key),
                     frame.area_width,
                     SECRET_LABEL_COL_WIDTH,
                 ));

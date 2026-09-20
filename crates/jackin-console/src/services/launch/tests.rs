@@ -351,7 +351,7 @@ fn admitted_account_choices_fail_atomically_on_invalid_default() {
 }
 
 #[test]
-fn account_choices_for_instances_dedupe_and_sort() {
+fn account_choices_for_instances_preserve_configuration_identity_and_sort() {
     let temp = tempfile::tempdir().unwrap();
     let config = admission_config(temp.path());
     let instances = resolve_launch(
@@ -367,6 +367,12 @@ fn account_choices_for_instances_dedupe_and_sort() {
     assert_eq!(
         rows.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
         vec!["a-claude", "z-claude"]
+    );
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.configuration_id.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("claude-a"), Some("claude-z")]
     );
     assert!(
         rows.iter().all(|row| row.agents.contains(&Agent::Claude)),

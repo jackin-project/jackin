@@ -892,6 +892,7 @@ where
             selector,
             agent,
             account,
+            configuration,
         } => {
             let Some(input) = take_pending_launch_plan(state) else {
                 return Ok(ConsoleLoopFlow::Exit(None));
@@ -918,6 +919,7 @@ where
                     workspace,
                     agent,
                     account,
+                    configuration,
                 },
             )));
         }

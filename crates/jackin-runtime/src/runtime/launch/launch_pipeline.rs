@@ -793,23 +793,44 @@ pub(crate) async fn load_role_with(
         .contains_key(workspace.name.as_str())
         .then(|| WorkspaceName::parse(&workspace.name))
         .transpose()?;
-    let mut account_config = opts
-        .account
-        .as_deref()
-        .map(|id| {
-            let agent = opts
-                .agent
-                .or(workspace.default_agent)
-                .ok_or_else(|| anyhow::anyhow!("select an agent when selecting an account"))?;
-            super::programmatic::with_account_selection(
-                config,
-                agent,
-                selected_workspace.as_ref(),
-                &selector.key(),
-                id,
-            )
-        })
-        .transpose()?;
+    anyhow::ensure!(
+        opts.account.is_none() || opts.configuration.is_none(),
+        "account and configuration launch selections cannot both be supplied"
+    );
+    let mut account_config =
+        opts.configuration
+            .as_deref()
+            .map(|configuration| {
+                let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
+                    anyhow::anyhow!("select an agent when selecting a configuration")
+                })?;
+                super::programmatic::with_configuration_selection(
+                    config,
+                    agent,
+                    selected_workspace.as_ref(),
+                    &selector.key(),
+                    configuration,
+                )
+            })
+            .transpose()?;
+    if account_config.is_none() {
+        account_config =
+            opts.account
+                .as_deref()
+                .map(|id| {
+                    let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
+                        anyhow::anyhow!("select an agent when selecting an account")
+                    })?;
+                    super::programmatic::with_account_selection(
+                        config,
+                        agent,
+                        selected_workspace.as_ref(),
+                        &selector.key(),
+                        id,
+                    )
+                })
+                .transpose()?;
+    }
     let config = account_config.as_mut().unwrap_or(config);
 
     // Pre-launch garbage collection is independent from git identity probes.
@@ -870,6 +891,7 @@ pub(crate) async fn load_role_with(
         && opts.role_branch.is_none()
         && !opts.rebuild
         && opts.account.is_none()
+        && opts.configuration.is_none()
     {
         if let Some(agent) = selected_agent_before_role {
             match super::resolve_current_restore_candidate_timed(
@@ -1129,7 +1151,7 @@ pub(crate) async fn load_role_with(
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
         Some(container.clone())
-    } else if opts.rebuild || opts.account.is_some() {
+    } else if opts.rebuild || opts.account.is_some() || opts.configuration.is_some() {
         // `--rebuild` skips the early gate above (it is `&& !opts.rebuild && opts.account.is_none()`), so
         // a forced rebuild actually falls through to *this* resolution. Without
         // the same guard here, `resolve_restore_candidate` would still return

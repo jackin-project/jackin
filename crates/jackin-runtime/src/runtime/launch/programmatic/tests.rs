@@ -334,18 +334,19 @@ fn launch_selection_rejects_wrapper_template_before_any_selection_is_admitted() 
 }
 
 #[test]
-fn launch_selection_with_admitting_defaults_keeps_them() {
+fn launch_selection_with_admitting_defaults_narrows_to_selected_account() {
     let (mut config, workspace) = two_account_config();
     config.workspaces.get_mut("work").unwrap().default_launch =
         Some(vec!["codex-main".into(), "codex-alt".into()]);
 
     let selected =
         with_account_selection(&config, Agent::Codex, Some(&workspace), "codex", "shared").unwrap();
-    // The pick is admitted: no ephemeral override is synthesized and the
-    // sibling instance survives.
+    // The pick is admitted, but the sibling account is not part of this
+    // launch. The inherited workspace list stays intact for other callers;
+    // this launch gets a role-local exact override.
     assert_eq!(
         selected.workspaces["work"].roles["codex"].default_launch,
-        None
+        Some(vec!["codex-alt".to_owned()])
     );
     assert_eq!(
         selected.workspaces["work"].default_launch,
@@ -353,7 +354,34 @@ fn launch_selection_with_admitting_defaults_keeps_them() {
     );
     let instances =
         jackin_config::resolve_launch(&selected, Some(&workspace), "codex", None, None).unwrap();
-    assert_eq!(instances.len(), 2);
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].config_id, "codex-alt");
+    assert_eq!(instances[0].account_id, "shared");
+}
+
+#[test]
+fn configuration_selection_narrows_to_exact_configuration() {
+    let (mut config, workspace) = two_account_config();
+    config.workspaces.get_mut("work").unwrap().default_launch =
+        Some(vec!["codex-main".into(), "codex-alt".into()]);
+
+    let selected = with_configuration_selection(
+        &config,
+        Agent::Codex,
+        Some(&workspace),
+        "codex",
+        "codex-main",
+    )
+    .unwrap();
+    assert_eq!(
+        selected.workspaces["work"].roles["codex"].default_launch,
+        Some(vec!["codex-main".to_owned()])
+    );
+    let instances =
+        jackin_config::resolve_launch(&selected, Some(&workspace), "codex", None, None).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].config_id, "codex-main");
+    assert_eq!(instances[0].account_id, "private");
 }
 
 #[test]

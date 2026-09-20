@@ -90,7 +90,7 @@ workdir = "/workspace/prod"
                 workspace: "prod".to_owned(),
                 role: "agent-smith".to_owned(),
             },
-            "OPENAI_API_KEY",
+            "SERVICE_TOKEN",
             "op://Work/OpenAI/default".into(),
         )
         .unwrap();
@@ -102,7 +102,7 @@ workdir = "/workspace/prod"
         "missing nested table: {out}"
     );
     assert!(
-        out.contains(r#"OPENAI_API_KEY = "op://Work/OpenAI/default""#),
+        out.contains(r#"SERVICE_TOKEN = "op://Work/OpenAI/default""#),
         "missing entry: {out}"
     );
 }
@@ -252,20 +252,20 @@ workdir = "/workspace/prod"
     };
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
-        .set_env_var(&scope, "OPENAI_API_KEY", "op://Work/OpenAI/default".into())
+        .set_env_var(&scope, "SERVICE_TOKEN", "op://Work/OpenAI/default".into())
         .unwrap();
     assert!(
-        editor.remove_env_var(&scope, "OPENAI_API_KEY"),
+        editor.remove_env_var(&scope, "SERVICE_TOKEN"),
         "first remove should return true"
     );
     assert!(
-        !editor.remove_env_var(&scope, "OPENAI_API_KEY"),
+        !editor.remove_env_var(&scope, "SERVICE_TOKEN"),
         "second remove should return false"
     );
     editor.save().unwrap();
 
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
-    assert!(!out.contains("OPENAI_API_KEY"), "key not purged: {out}");
+    assert!(!out.contains("SERVICE_TOKEN"), "key not purged: {out}");
 }
 
 #[test]
@@ -1467,7 +1467,7 @@ fn set_env_var_writes_inline_table_for_op_ref() {
     editor
         .set_env_var(
             &EnvScope::Global,
-            "CLAUDE_CODE_OAUTH_TOKEN",
+            "SERVICE_TOKEN",
             EnvValue::OpRef(OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "Private/Claude/security/auth token".into(),
@@ -1481,7 +1481,7 @@ fn set_env_var_writes_inline_table_for_op_ref() {
     let serialized = std::fs::read_to_string(&paths.config_file).unwrap();
     // Inline-table form, not a scalar string with quoted JSON.
     assert!(
-            serialized.contains(r#"CLAUDE_CODE_OAUTH_TOKEN = { op = "op://abc/def/fld", path = "Private/Claude/security/auth token" }"#),
+            serialized.contains(r#"SERVICE_TOKEN = { op = "op://abc/def/fld", path = "Private/Claude/security/auth token" }"#),
             "expected inline-table emit, got:\n{serialized}"
         );
 }
@@ -1499,7 +1499,7 @@ fn set_env_var_persists_op_ref_account() {
     editor
         .set_env_var(
             &EnvScope::Global,
-            "CLAUDE_CODE_OAUTH_TOKEN",
+            "SERVICE_TOKEN",
             EnvValue::OpRef(OpRef {
                 op: "op://abc/def/fld".into(),
                 path: "Work/Claude/auth token".into(),
@@ -1515,10 +1515,35 @@ fn set_env_var_persists_op_ref_account() {
     let saved = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(
             saved.contains(
-                r#"CLAUDE_CODE_OAUTH_TOKEN = { op = "op://abc/def/fld", path = "Work/Claude/auth token", account = "WORKACCT" }"#
+                r#"SERVICE_TOKEN = { op = "op://abc/def/fld", path = "Work/Claude/auth token", account = "WORKACCT" }"#
             ),
             "expected account key in inline table, got:\n{saved}"
         );
+}
+
+#[test]
+fn set_env_var_rejects_account_owned_credentials_without_persisting_value() {
+    use jackin_core::EnvValue;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(&paths.config_file, "[env]\nSAFE = \"keep\"\n").unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let error = editor
+        .set_env_var(
+            &EnvScope::Global,
+            "ANTHROPIC_API_KEY",
+            EnvValue::Plain("account-owned-sentinel".into()),
+        )
+        .unwrap_err();
+
+    assert!(error.to_string().contains("account credentials"));
+    editor.save().unwrap();
+    let serialized = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(!serialized.contains("account-owned-sentinel"));
+    assert!(serialized.contains("SAFE = \"keep\""));
 }
 
 #[test]

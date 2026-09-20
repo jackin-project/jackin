@@ -762,6 +762,11 @@ fn handle_workspace_env(
                     "env name {key:?} is reserved by the jackin runtime and cannot be set"
                 );
             }
+            if jackin_core::is_account_env(&key) {
+                anyhow::bail!(
+                    "env name {key:?} belongs to account credentials and cannot be set here"
+                );
+            }
             config.require_workspace(
                 &WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?,
             )?;
