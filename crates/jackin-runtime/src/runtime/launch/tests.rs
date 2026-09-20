@@ -239,6 +239,7 @@ fn provision_restore_account_policy(
         config,
         workspace.as_ref(),
         &manifest.role_key,
+        &manifest.admitted_instances,
     )
     .unwrap();
 }
@@ -9637,6 +9638,25 @@ fn metadata_file_mount_instances_require_recreation_after_layout_change() {
     use std::fmt::Write as _;
     let temp = tempdir().unwrap();
     let config = AppConfig::default();
+    let manifest = crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+        container_base: "fixture",
+        workspace_name: None,
+        workspace_label: "fixture",
+        workdir: "/workspace",
+        host_workdir_fingerprint: "fixture",
+        role_key: "role",
+        role_display_name: "Role",
+        agent_runtime: jackin_core::Agent::Claude,
+        role_source_git: "",
+        role_source_ref: None,
+        image_tag: "fixture",
+        docker: crate::instance::DockerResources::from_container_name("fixture"),
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    });
+    manifest.write(temp.path()).unwrap();
     let old_policy = serde_json::to_vec(&serde_json::json!([
         "account-config-v1",
         {},
@@ -9651,7 +9671,7 @@ fn metadata_file_mount_instances_require_recreation_after_layout_change() {
     }
     std::fs::write(temp.path().join("account-config.sha256"), old_digest).unwrap();
     assert!(!super::account_configuration_matches(temp.path(), &config, None, "role").unwrap());
-    let current = super::account_configuration_fingerprint(&config, None, "role").unwrap();
+    let current = super::account_configuration_fingerprint(&config, None, "role", &[]).unwrap();
     std::fs::write(temp.path().join("account-config.sha256"), current).unwrap();
     assert!(super::account_configuration_matches(temp.path(), &config, None, "role").unwrap());
 }
