@@ -364,7 +364,8 @@ pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mu
 }
 
 /// Resolve global discovery, ensure the host broker, then start one scoped relay.
-/// Broker startup failure remains fail-closed through an unavailable client.
+/// Broker activation failure is returned; a dead fallback client is not a
+/// valid production relay authority.
 pub(crate) async fn prepare_for_container(
     launch: UsageRelayLaunch<'_>,
 ) -> Result<(UsageRelayGuard, CanonicalLaunchUsageCapabilities)> {
@@ -396,7 +397,8 @@ pub(crate) async fn prepare_for_container(
     })
     .await
     .context("usage broker preparation task panicked")?;
-    let (client, capabilities, canonical_launch_usage_capabilities) = prepared;
+    let (client, capabilities, canonical_launch_usage_capabilities) =
+        prepared.context("usage broker activation failed")?;
     if capabilities.is_empty() {
         return Ok((
             UsageRelayGuard {
@@ -415,7 +417,7 @@ pub(crate) async fn prepare_for_container(
         fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
     }
     Ok((
-        start_guard(socket_path, client, capabilities, peer_capabilities),
+        start_guard(socket_path, client, capabilities, peer_capabilities)?,
         canonical_launch_usage_capabilities,
     ))
 }
@@ -439,7 +441,7 @@ pub async fn prepare_for_docker_container(
             )
         })
         .await
-        .context("usage broker preparation task panicked")?;
+        .context("usage broker preparation task panicked")??;
     Ok(PreparedUsageRelay {
         broker,
         capabilities,
@@ -551,13 +553,13 @@ fn start_guard(
     client: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
     peer_capabilities: RelayPeerCapabilities,
-) -> UsageRelayGuard {
-    let task = start(socket_path.clone(), client, capabilities, peer_capabilities).ok();
-    UsageRelayGuard {
-        task,
+) -> Result<UsageRelayGuard> {
+    let task = start(socket_path.clone(), client, capabilities, peer_capabilities)?;
+    Ok(UsageRelayGuard {
+        task: Some(task),
         socket_path: Some(socket_path),
         shutdown: None,
-    }
+    })
 }
 
 fn prepare_broker_client(
@@ -565,32 +567,27 @@ fn prepare_broker_client(
     workspace_name: Option<&str>,
     role_key: &str,
     forwarded_sources: &ForwardedUsageSources,
-) -> (
+) -> Result<(
     UsageBrokerClient,
     Vec<UsageAccountCapability>,
     CanonicalLaunchUsageCapabilities,
-) {
+)> {
     let broker_config = UsageBrokerConfig::for_data_dir(paths.data_dir.clone());
     let fallback = broker_config.client();
     if paths.test_layout {
-        return (
+        return Ok((
             fallback,
             Vec::new(),
             CanonicalLaunchUsageCapabilities::default(),
-        );
+        ));
     }
     let resolver = Arc::new(CachedProviderCredentialResolver::new(RuntimeSecretSource));
     let scope = jackin_usage::host::UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
         operator_home: paths.home_dir.clone(),
     };
-    let Ok(catalog) = discover_usage_sources(&scope, resolver.as_ref()) else {
-        return (
-            fallback,
-            Vec::new(),
-            CanonicalLaunchUsageCapabilities::default(),
-        );
-    };
+    let catalog = discover_usage_sources(&scope, resolver.as_ref())
+        .map_err(|error| anyhow::anyhow!("usage account discovery failed: {error}"))?;
     let discovery = validate_usage_sources(catalog, resolver.as_ref());
     let scope_label = workspace_name.map_or_else(
         || format!("role {role_key}"),
@@ -602,15 +599,15 @@ fn prepare_broker_client(
         canonical_capabilities_for_launch(&discovery, forwarded_sources, &allowed);
     let client = jackin_usage::host::ensure_usage_broker(broker_config, scope, discovery, resolver)
         .map(|handle| handle.client)
-        .unwrap_or(fallback);
+        .map_err(|error| anyhow::anyhow!("usage broker activation failed: {}", error.message))?;
     if capabilities.is_empty() {
-        return (
+        return Ok((
             client,
             capabilities,
             CanonicalLaunchUsageCapabilities::default(),
-        );
+        ));
     }
-    (client, capabilities, canonical_launch_usage_capabilities)
+    Ok((client, capabilities, canonical_launch_usage_capabilities))
 }
 
 fn canonical_capabilities_for_launch(

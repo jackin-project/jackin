@@ -54,6 +54,19 @@ pub use discovery::{
     UsageSourceCandidateDescriptor, ValidatedUsageDiscovery, discover_usage_sources,
     host_credential_root_matrix, validate_usage_sources,
 };
+
+/// A successful discovery scan staged against one runtime catalog generation.
+/// The stage is committed only after broker activation succeeds and its base
+/// generation still matches.
+#[derive(Debug, Clone)]
+pub struct StagedUsageDiscovery {
+    /// Runtime discovery generation observed before the scan.
+    pub base_generation: u64,
+    /// Whether the successful scan changes catalog membership or revisions.
+    pub changed: bool,
+    /// Fresh, validated discovery result.
+    pub discovery: ValidatedUsageDiscovery,
+}
 pub use projection::{NormalizedUsageDestination, UsageDestination, normalize_destination};
 
 /// Relative data-dir subtree for menu-bar durable state.
@@ -637,6 +650,8 @@ pub struct HostUsageRuntime {
     desktop_detected_surfaces: HashSet<String>,
     /// Last completed current-membership discovery generation.
     discovery: Option<ValidatedUsageDiscovery>,
+    /// Monotonic local freshness fence for staged discovery commits.
+    discovery_generation: u64,
     /// Last quota snapshots fetched from explicit current discovery sources.
     discovered_views: BTreeMap<(HostSurfaceId, String), FocusedUsageView>,
     /// Explicit source state without authenticated account identity yet.
@@ -669,6 +684,7 @@ impl HostUsageRuntime {
             probe_policy: HostProbePolicy::Live,
             desktop_detected_surfaces: HashSet::new(),
             discovery: None,
+            discovery_generation: 0,
             discovered_views: BTreeMap::new(),
             discovered_provider_views: BTreeMap::new(),
             discovery_scope: None,
@@ -695,7 +711,18 @@ impl HostUsageRuntime {
             discover_usage_sources(&config.discovery_scope, resolver)?,
             resolver,
         );
-        self.open_prepared(config, Some(discovered))
+        self.open_with_validated_discovery(config, discovered)
+    }
+
+    /// Open after a caller has completed a fresh, validated discovery scan.
+    /// The typed discovery result is committed only after all config checks
+    /// pass, so broker activation can publish against the same generation.
+    pub fn open_with_validated_discovery(
+        &mut self,
+        config: HostRuntimeConfig,
+        discovery: ValidatedUsageDiscovery,
+    ) -> Result<(), String> {
+        self.open_prepared(config, Some(discovery))
     }
 
     fn open_prepared(
@@ -703,26 +730,7 @@ impl HostUsageRuntime {
         config: HostRuntimeConfig,
         discovery: Option<ValidatedUsageDiscovery>,
     ) -> Result<(), String> {
-        let enabled = if config.enabled_surface_ids.is_empty() {
-            HostSurfaceId::ALL
-                .iter()
-                .map(|surface| surface.id().to_owned())
-                .collect::<HashSet<_>>()
-        } else {
-            let unknown = config
-                .enabled_surface_ids
-                .iter()
-                .filter(|id| HostSurfaceId::from_id(id).is_none())
-                .cloned()
-                .collect::<Vec<_>>();
-            if !unknown.is_empty() {
-                return Err(format!(
-                    "unknown enabled surface ids: {}",
-                    unknown.join(", ")
-                ));
-            }
-            config.enabled_surface_ids.iter().cloned().collect()
-        };
+        let enabled = enabled_surface_ids(&config)?;
         let data_dir_changed = self
             .data_dir
             .as_ref()
@@ -757,6 +765,7 @@ impl HostUsageRuntime {
         self.probe_policy = config.probe_policy;
         self.discovery_scope = Some(config.discovery_scope);
         self.discovery = discovery;
+        self.discovery_generation = self.discovery_generation.saturating_add(1);
         self.discovered_views.clear();
         self.discovered_provider_views.clear();
         self.desktop_detected_surfaces.clear();
@@ -1655,6 +1664,28 @@ impl HostUsageRuntime {
             self.events.pop_front();
         }
     }
+}
+
+fn enabled_surface_ids(config: &HostRuntimeConfig) -> Result<HashSet<String>, String> {
+    if config.enabled_surface_ids.is_empty() {
+        return Ok(HostSurfaceId::ALL
+            .iter()
+            .map(|surface| surface.id().to_owned())
+            .collect());
+    }
+    let unknown = config
+        .enabled_surface_ids
+        .iter()
+        .filter(|id| HostSurfaceId::from_id(id).is_none())
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unknown.is_empty() {
+        return Err(format!(
+            "unknown enabled surface ids: {}",
+            unknown.join(", ")
+        ));
+    }
+    Ok(config.enabled_surface_ids.iter().cloned().collect())
 }
 
 fn discovered_account_keys(
