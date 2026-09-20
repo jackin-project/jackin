@@ -7,7 +7,7 @@ use crate::{OpRunner, resolve_env_value};
 use jackin_config::{AccountConfig, AccountCredential, AppConfig};
 use jackin_core::{Agent, WorkspaceName};
 use jackin_protocol::{AgentCredentialEnv, InstanceCredentialEnv};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 // Codex/OpenCode consume the selected model from their private configuration,
 // not from the credential environment. The CLI model override is applied
@@ -40,19 +40,6 @@ fn account_for_credential_resolution(
 #[must_use]
 pub fn is_account_env(name: &str) -> bool {
     jackin_core::is_account_env(name)
-        || matches!(
-            name,
-            "HOME"
-                | "CLAUDE_CONFIG_DIR"
-                | "CODEX_HOME"
-                | "KIMI_HOME"
-                | "AMP_HOME"
-                | "OPENCODE_CONFIG"
-                | "OPENCODE_CONFIG_DIR"
-                | "OPENCODE_CONFIG_CONTENT"
-                | "XDG_CONFIG_HOME"
-                | "XDG_DATA_HOME"
-        )
 }
 
 /// Resolve credentials for the admitted launch instances.
@@ -78,6 +65,15 @@ where
     H: Fn(&str) -> Result<String, std::env::VarError> + Send + Sync,
 {
     let mut resolved_instances = BTreeMap::new();
+    let mut config_ids = BTreeSet::new();
+    for instance in instances {
+        anyhow::ensure!(
+            config_ids.insert(instance.config_id.as_str()),
+            "duplicate account instance id {:?}",
+            instance.config_id
+        );
+    }
+
     for instance in instances {
         let account = config
             .accounts
