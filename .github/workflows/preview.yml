@@ -46,11 +46,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@d20d4d1d17590cca85b501d982cbaad70d42c641
         with:
-          rev: 0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+          rev: d20d4d1d17590cca85b501d982cbaad70d42c641
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=0dc79895ff1c5e88be7c3822c437e1c5b5282e12" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=d20d4d1d17590cca85b501d982cbaad70d42c641" >> "$GITHUB_ENV"
       - name: Set up Mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -762,7 +762,7 @@ jobs:
           download_dir="$transaction_dir/download"
           immutable_public=0
           trap 'rm -rf -- "$transaction_dir"' EXIT
-          
+
           remote_tag_sha() {
             local tag_name="$1"
             local sha
@@ -772,7 +772,7 @@ jobs:
             fi
             printf '%s\n' "$sha"
           }
-          
+
           verify_asset_bytes() {
             local release_tag="$1"
             local names_file="$2"
@@ -800,7 +800,7 @@ jobs:
               }
             done < "$names_file"
           }
-          
+
           {
             printf '%s\n' 'release-manifest.json'
             printf '%s\n' 'identity.json'
@@ -832,13 +832,13 @@ jobs:
             printf '%s\n' 'capsule-manifest.json'
             printf '%s\n' 'capsule-manifest.json.bundle'
           } | LC_ALL=C sort > "$expected_assets"
-          
+
           tag_sha="$(remote_tag_sha "$tag")"
           if [ -n "$tag_sha" ] && [ "$tag_sha" != "$EXPECTED_SOURCE_COMMIT" ]; then
             echo "::error::immutable release tag resolves to an unexpected source commit" >&2
             exit 1
           fi
-          
+
           if ! gh api --repo "$GITHUB_REPOSITORY" -i "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > "$release_json" 2>/dev/null; then
             :
           fi
@@ -886,14 +886,14 @@ jobs:
               exit 1
               ;;
           esac
-          
+
           if [ "$immutable_public" = 0 ]; then
             while IFS= read -r asset_name; do
               if ! grep -Fqx -- "$asset_name" "$existing_assets"; then
                 gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "$PACKAGE_DIR/$asset_name"
               fi
             done < "$expected_assets"
-          
+
             staged_body="$(gh api --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
             jq -e --arg tag "$tag" --arg title "$title" --argjson prerelease "$RELEASE_PRERELEASE" \
               '.draft == true and .prerelease == $prerelease and .tag_name == $tag and .name == $title' <<<"$staged_body" >/dev/null \
@@ -908,7 +908,7 @@ jobs:
               "repos/$GITHUB_REPOSITORY/releases/$(jq -er '.id' <<<"$staged_body")" \
               -F draft=false -F "prerelease=$RELEASE_PRERELEASE" -F make_latest=false >/dev/null
           fi
-          
+
           immutable_body="$(gh api --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
           jq -e --arg tag "$tag" --arg title "$title" --argjson prerelease "$RELEASE_PRERELEASE" \
             '(.draft | not) and .prerelease == $prerelease and .tag_name == $tag and .name == $title' <<<"$immutable_body" >/dev/null \
@@ -1271,7 +1271,7 @@ jobs:
           candidate_version="$(jq -er '.version | strings' "$published_dir/release-manifest.json")"
           had_release=0
           mutated=0
-          
+
           remote_tag_sha() {
             local tag_name="$1"
             local sha
@@ -1281,7 +1281,7 @@ jobs:
             fi
             printf '%s\n' "$sha"
           }
-          
+
           validate_existing_rolling_release() {
             local body="$1"
             local source_dir="$2"
@@ -1290,7 +1290,7 @@ jobs:
             local manifest_assets="$transaction_dir/live-manifest-assets"
             local downloaded_assets="$transaction_dir/live-downloaded-assets"
             local name expected_digest actual_digest api_digest
-          
+
             jq -e --arg tag "$rolling_tag" --argjson prerelease "$RELEASE_PRERELEASE" '
               (.draft | type == "boolean") and .prerelease == $prerelease and .tag_name == $tag and
               (.id | type == "number") and
@@ -1304,7 +1304,7 @@ jobs:
             ' <<<"$body" >/dev/null
             test -s "$manifest"
             test -s "$identity"
-          
+
             jq -e '
               keys == ["assets","schema","source_commit","source_ref","source_repository","supporting_assets","version"] and
               (.assets | type == "array" and
@@ -1322,7 +1322,7 @@ jobs:
               ((.assets + .supporting_assets | map(.name)) as $names |
                 ($names | unique | length) == ($names | length))
             ' "$manifest" >/dev/null
-          
+
             old_source_commit="$(jq -er '.source_commit | strings' "$manifest")"
             old_version="$(jq -er '.version | strings' "$manifest")"
             [[ "$old_source_commit" =~ ^[0-9a-f]{40}$ ]] || {
@@ -1362,7 +1362,7 @@ jobs:
                .source_repository == $repository and .source_ref == $source_ref and
                .source_digest == $commit and .manifest == $rolling_manifest[0]' "$identity" >/dev/null
             jq -e --arg name "$RELEASE_TITLE_PREFIX $old_version" '.name == $name' <<<"$body" >/dev/null
-          
+
             {
               printf '%s\n' "release-manifest.json" "identity.json"
               jq -r '(.assets[] | .name), (.supporting_assets[] | .name)' "$manifest"
@@ -1377,7 +1377,7 @@ jobs:
               echo "::error::existing rolling release download differs from its live asset set" >&2
               return 1
             }
-          
+
             while IFS=$'\t' read -r name expected_digest; do
               test -s "$source_dir/$name"
               actual_digest="$(sha256sum -- "$source_dir/$name" | awk '{print $1}')"
@@ -1393,7 +1393,7 @@ jobs:
                 return 1
               }
             done < <(jq -r '.assets[] | [.name, .digest] | @tsv' <<<"$body")
-          
+
             if ! git -C source cat-file -e "${old_source_commit}^{commit}"; then
               echo "::error::existing rolling source commit is not present in the checked-out history" >&2
               return 1
@@ -1403,7 +1403,7 @@ jobs:
               return 1
             fi
           }
-          
+
           discard_stale_rolling_draft() {
             local stale_tag_sha
             echo "::warning::discarding incomplete rolling draft and retrying publication" >&2
@@ -1424,7 +1424,7 @@ jobs:
             : > "$old_assets"
             rm -rf -- "$rollback_dir"
           }
-          
+
           verify_restored_assets() {
             local source_dir="$1"
             local expected_names="$2"
@@ -1483,7 +1483,7 @@ jobs:
               fi
             done < "$expected_names"
           }
-          
+
           rollback() {
             local status="$1"
             trap - ERR
@@ -1543,7 +1543,7 @@ jobs:
           }
           trap 'rollback "$?"' ERR
           trap 'rm -rf -- "$transaction_dir"' EXIT
-          
+
           {
             printf '%s\n' 'release-manifest.json'
             printf '%s\n' 'identity.json'
@@ -1574,9 +1574,9 @@ jobs:
             printf '%s\n' 'SHA256SUMS'
             printf '%s\n' 'capsule-manifest.json'
             printf '%s\n' 'capsule-manifest.json.bundle'
-          
+
           } | LC_ALL=C sort > "$expected_assets"
-          
+
           if ! staged_body="$(gh api --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/tags/$staged_tag")"; then
             echo "::error::verified immutable staging release is missing" >&2
             exit 1
@@ -1586,7 +1586,7 @@ jobs:
           cmp -s "$expected_assets" "$staged_assets" || { echo "::error::immutable staging release asset set is not exact" >&2; exit 1; }
           staged_tag_sha="$(remote_tag_sha "$staged_tag")"
           [ "$staged_tag_sha" = "$EXPECTED_SOURCE_COMMIT" ] || { echo "::error::immutable staging tag does not resolve to the verified source commit" >&2; exit 1; }
-          
+
           if gh api --repo "$GITHUB_REPOSITORY" -i "repos/$GITHUB_REPOSITORY/releases/tags/$rolling_tag" > "$rolling_response" 2>/dev/null; then
             :
           fi
@@ -1636,7 +1636,7 @@ jobs:
                   exit 1
                 fi
               fi
-          
+
               ;;
             404)
               test -z "$(remote_tag_sha "$rolling_tag")" || { echo "::error::rolling tag exists without a release; refusing to overwrite it" >&2; exit 1; }
@@ -1646,7 +1646,7 @@ jobs:
               exit 1
               ;;
           esac
-          
+
           if [ "$had_release" = 0 ]; then
             mutated=1
             create_json="$(gh api --method POST --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases" \
@@ -1659,7 +1659,7 @@ jobs:
             mutated=1
             gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id" -F draft=true >/dev/null
           fi
-          
+
           # The immutable source-bound release is the candidate staging record.  Copy its
           # already-verified files only while the rolling release remains a draft; draft
           # publication is the visibility boundary, so readers never see mixed assets.
@@ -1693,13 +1693,13 @@ jobs:
             "$published_dir/SHA256SUMS" \
             "$published_dir/capsule-manifest.json" \
             "$published_dir/capsule-manifest.json.bundle"
-          
-          
+
+
           rolling_stage_json="$(gh api --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/$rolling_release_id")"
           jq -e --arg tag "$rolling_tag" --argjson prerelease "$RELEASE_PRERELEASE" '.draft == true and .prerelease == $prerelease and .tag_name == $tag' <<<"$rolling_stage_json" >/dev/null
           jq -r '.assets[].name' <<<"$rolling_stage_json" | LC_ALL=C sort > "$rolling_staged_assets"
           cmp -s "$expected_assets" "$rolling_staged_assets" || { echo "::error::staged rolling release asset set is not exact" >&2; exit 1; }
-          
+
           if [ "$had_release" = 1 ]; then
             gh api --method PATCH --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/git/refs/tags/$rolling_tag" -f "sha=$EXPECTED_SOURCE_COMMIT" -F force=true >/dev/null
           fi
@@ -1707,7 +1707,7 @@ jobs:
             -f "name=$RELEASE_TITLE_PREFIX $candidate_version" \
             -f "body=Verified package release from $EXPECTED_SOURCE_COMMIT" \
             -F draft=false -F "prerelease=$RELEASE_PRERELEASE" -F make_latest=false >/dev/null
-          
+
           new_tag_sha="$(remote_tag_sha "$rolling_tag")"
           [ "$new_tag_sha" = "$EXPECTED_SOURCE_COMMIT" ] || { echo "::error::rolling tag does not resolve to the verified source commit" >&2; exit 1; }
           rolling_post_json="$(gh api --repo "$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/releases/tags/$rolling_tag")"
@@ -1986,7 +1986,7 @@ jobs:
                     verify_sha256_sidecar "$dir/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256" "$dir/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"
                     printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
                     printf 'source_commit=%s\n' "$source_commit" >> "$GITHUB_OUTPUT"
-          
+
           for payload in \
             'jackin-aarch64-apple-darwin.tar.gz' \
             'jackin-x86_64-apple-darwin.tar.gz' \

@@ -17,7 +17,7 @@ concurrency:
 jobs:
   desktop-merge:
     name: "Desktop merge cadence"
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
     env:
       CARGO_TERM_COLOR: always

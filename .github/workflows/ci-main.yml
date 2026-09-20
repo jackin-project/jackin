@@ -60,11 +60,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@d20d4d1d17590cca85b501d982cbaad70d42c641
         with:
-          rev: 0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+          rev: d20d4d1d17590cca85b501d982cbaad70d42c641
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=0dc79895ff1c5e88be7c3822c437e1c5b5282e12" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=d20d4d1d17590cca85b501d982cbaad70d42c641" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -82,7 +82,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+          EXPECTED_REVISION: d20d4d1d17590cca85b501d982cbaad70d42c641
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -101,7 +101,7 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-0dc79895ff1c5e88be7c3822c437e1c5b5282e12-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-d20d4d1d17590cca85b501d982cbaad70d42c641-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
@@ -140,9 +140,9 @@ jobs:
           fi
           git checkout --quiet --detach "$HEAD_SHA"
       - name: Set up Velnor workflow runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@d20d4d1d17590cca85b501d982cbaad70d42c641
         with:
-          rev: 0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+          rev: d20d4d1d17590cca85b501d982cbaad70d42c641
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Read declared generator pin
         id: pin
@@ -155,13 +155,13 @@ jobs:
           echo "value=$pin" >> "$GITHUB_OUTPUT"
       - name: Set up declared generator product
         id: renderer
-        if: steps.pin.outputs.value != '0dc79895ff1c5e88be7c3822c437e1c5b5282e12'
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+        if: steps.pin.outputs.value != 'd20d4d1d17590cca85b501d982cbaad70d42c641'
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@d20d4d1d17590cca85b501d982cbaad70d42c641
         with:
           rev: ${{ steps.pin.outputs.value }}
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Resolve declared generator product
-        if: steps.pin.outputs.value != '0dc79895ff1c5e88be7c3822c437e1c5b5282e12'
+        if: steps.pin.outputs.value != 'd20d4d1d17590cca85b501d982cbaad70d42c641'
         run: |
           set -euo pipefail
           binary="$HOME/.cache/velnor/workflow-runtime/${{ steps.renderer.outputs.closure }}/bin/velnor-workflow"
@@ -195,7 +195,7 @@ jobs:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-          VELNOR_WORKFLOW_POLICY_REVISION: 0dc79895ff1c5e88be7c3822c437e1c5b5282e12
+          VELNOR_WORKFLOW_POLICY_REVISION: d20d4d1d17590cca85b501d982cbaad70d42c641
         run: |
           set -euo pipefail
           velnor-workflow policy \
