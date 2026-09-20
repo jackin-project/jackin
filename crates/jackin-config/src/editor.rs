@@ -17,9 +17,10 @@ use jackin_core::{EnvValue, JackinPaths, WorkspaceName};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::app_config::AppConfig;
-use crate::app_config::persist::{load_split_config, validate_reserved_env_names};
+use crate::app_config::persist::{
+    load_config_contents, load_split_config, validate_reserved_env_names,
+};
 use crate::auth::GithubAuthMode;
-use crate::migrations;
 use crate::persist::{
     ConfigWriteGuard, StagedWrite, acquire_config_write_lock, atomic_write, stage_atomic_write,
     validate_workspace_file_stem,
@@ -135,10 +136,8 @@ impl ConfigEditor {
             initial.validate_accounts()?;
             atomic_write(&paths.config_file, &toml::to_string_pretty(&initial)?)?;
         }
-        migrations::migrate_config_file_if_needed(&paths.config_file)?;
-        let raw = std::fs::read_to_string(&paths.config_file)
-            .with_context(|| format!("reading {}", paths.config_file.display()))?;
-        drop(load_split_config(paths, Some(raw))?);
+        let raw = load_config_contents(paths)?;
+        drop(load_split_config(paths, raw)?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw

@@ -692,18 +692,22 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> crate::ConfigResult<()
     )))
 }
 
-/// `true` when `raw` is legacy-versioned and still embeds non-empty `[workspaces]`.
+/// `true` when `raw` still embeds non-empty `[workspaces]` tables.
+///
+/// Every embedded-workspace document must take the in-memory migration and
+/// split path. A versioned document can still require splitting, and writing
+/// its schema migration first would mutate the global file before a conflicting
+/// split file is rejected.
 pub fn config_needs_split_migration(raw: &str) -> crate::ConfigResult<bool> {
     let doc: DocumentMut = raw.parse().context("parsing config.toml")?;
-    let version = migrations::doc_version(&doc, "config")?;
     let has_legacy_workspaces = doc
         .get("workspaces")
         .and_then(toml_edit::Item::as_table)
         .is_some_and(|workspaces| !workspaces.is_empty());
-    Ok(version == migrations::SchemaVersion::Legacy && has_legacy_workspaces)
+    Ok(has_legacy_workspaces)
 }
 
-fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<Option<String>> {
+pub(crate) fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<Option<String>> {
     match std::fs::read_to_string(&paths.config_file) {
         Ok(raw) if config_needs_split_migration(&raw)? => Ok(Some(raw)),
         Ok(_) => {
