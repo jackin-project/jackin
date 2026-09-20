@@ -1,7 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Read-only enumerator for XDG data `opencode` credential stores.
+//! Read-only parser for XDG data `opencode` credential stores.
+//!
+//! The production source-bound boundary is deliberately auth-only: account
+//! discovery, provisioning, and usage accept one native `opencode-go` entry
+//! from `auth.json`. The `SQLite` parser and combined-store enumerator below are
+//! compiled only for unit-test audit fixtures; they are not canonical
+//! production discovery and cannot produce launchable or usage profiles.
 //!
 //! Authentication material lives in two sibling files, and either may be
 //! absent:
@@ -13,16 +19,11 @@
 //!   row per credential with columns such as `id`, `integration_id`,
 //!   `label`, `value`, `connector_id`, `method_id`, and `active`.
 //!
-//! Enumeration selects only entries holding a non-blank secret and returns
-//! one [`StoreCandidate`](super::StoreCandidate) per entry: `auth.json`
-//! providers sorted by name first, then `credential` rows in rowid order.
-//! The whole store is never copied: blank or unshaped entries are skipped,
-//! and only the selected secrets are cloned into candidates.
-//!
-//! The database is parsed through the shared [`sqlite`](super::sqlite)
-//! reader (no `rusqlite`, no Turso, no writes, no checkpoints). Rows whose
-//! `active` column is explicitly falsy (`0`, `"false"`, `"no"`, `"off"`,
-//! blank) are skipped; rows without the column are kept.
+//! Auth parsing selects only entries holding a non-blank secret. The
+//! test-only combined parser also inspects `SQLite` rows through the shared
+//! [`sqlite`](super::sqlite) reader (no `rusqlite`, no Turso, no writes, no
+//! checkpoints); that audit path is intentionally unavailable to production
+//! discovery.
 
 use std::path::Path;
 
