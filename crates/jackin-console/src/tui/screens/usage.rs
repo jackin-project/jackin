@@ -3,13 +3,17 @@
 
 //! Simple Console Usage route.
 //!
-//! Rust supplies already ordered account/window values. This module owns only
-//! the Console split, focus, and Capsule-shaped meter adaptation.
+//! Rust supplies already ordered account/window/group values. This module owns
+//! only the Console split, focus, and Capsule-shaped meter adaptation.
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_protocol::usage_broker::{UsageFreshnessPhaseV1, UsageLifecycleV1, UsagePercent};
+use jackin_protocol::usage_broker::{
+    UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageIssueV1,
+    UsageLifecycleV1, UsageMetricGroupKindV1, UsageMetricPeriodV1, UsageMetricScopeV1,
+    UsageMetricValueV1, UsagePercent, UsageQuotaStateV1, UsageWindowCategoryV1,
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -51,12 +55,19 @@ pub struct UsageRefreshRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageWindow {
     pub window_id: String,
+    pub rank: u32,
+    pub category: UsageWindowCategoryV1,
     pub label: String,
     pub value: String,
     pub reset: String,
     pub remaining_percent: Option<u8>,
+    pub remaining_raw_percent: Option<i32>,
     pub used_percent: Option<u8>,
+    pub used_raw_percent: Option<i32>,
     pub reset_at_epoch: Option<i64>,
+    pub quota_state: UsageQuotaStateV1,
+    pub pace_label: Option<String>,
+    pub runs_out_label: Option<String>,
 }
 
 impl UsageWindow {
@@ -72,6 +83,49 @@ impl UsageWindow {
     }
 }
 
+/// One independently fetched typed metric group, mirroring the canonical
+/// [`jackin_protocol::usage_broker::UsageMetricGroupV1`] field for field.
+/// Reset (`reset_at_epoch`), renewal (`renews_at_epoch`), and balance-expiry
+/// timestamps stay separate facts and are never merged at render time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageMetricGroup {
+    pub group_id: String,
+    pub rank: u32,
+    pub kind: UsageMetricGroupKindV1,
+    pub label: String,
+    pub scope: UsageMetricScopeV1,
+    pub observed_at_epoch: Option<i64>,
+    pub fetched_at_epoch: i64,
+    pub last_success_at_epoch: Option<i64>,
+    pub phase: UsageFreshnessPhaseV1,
+    pub is_stale: bool,
+    pub quota_state: UsageQuotaStateV1,
+    pub value: UsageMetricValueV1,
+    pub reset_at_epoch: Option<i64>,
+    pub renews_at_epoch: Option<i64>,
+    pub issues: Vec<UsageIssueV1>,
+}
+
+impl UsageMetricGroup {
+    /// Meter geometry for window-kind groups only. Every other kind carries
+    /// no percentage and must render no bar at all — never a fabricated one.
+    #[must_use]
+    pub fn meter_percent(&self) -> Option<u8> {
+        if let UsageMetricValueV1::Window {
+            remaining_percent,
+            used_percent,
+            ..
+        } = &self.value
+        {
+            remaining_percent
+                .map(UsagePercent::get)
+                .or_else(|| used_percent.map(|used| 100_u8.saturating_sub(used.get().min(100))))
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageAccount {
     pub provider_id: String,
@@ -84,8 +138,21 @@ pub struct UsageAccount {
     pub lifecycle: UsageLifecycleV1,
     pub freshness_phase: UsageFreshnessPhaseV1,
     pub last_good_at_epoch: Option<i64>,
+    pub retry_at_epoch: Option<i64>,
     pub is_stale: bool,
+    /// Non-secret evidence kind backing the canonical id. `None` while
+    /// `unresolved`: no identity evidence exists yet.
+    pub identity_kind: Option<UsageIdentityKindV1>,
+    pub plan_label: Option<String>,
+    /// Credential/auth-session expiry. Never a quota reset and never a
+    /// subscription renewal — those live on windows and plan groups.
+    pub credential_expires_at_epoch: Option<i64>,
+    /// Sanitized account/window-scoped issues.
+    pub issues: Vec<UsageIssueV1>,
+    /// Sanitized provider-scoped issues for this account's provider group.
+    pub provider_issues: Vec<UsageIssueV1>,
     pub windows: Vec<UsageWindow>,
+    pub metric_groups: Vec<UsageMetricGroup>,
 }
 
 impl UsageAccount {
@@ -95,6 +162,18 @@ impl UsageAccount {
     #[must_use]
     pub fn stable_id(&self) -> String {
         format!("{}:{}", self.provider_id, self.canonical_account_id)
+    }
+
+    /// Total sanitized issue count across account, provider, and group scopes.
+    #[must_use]
+    pub fn issue_count(&self) -> usize {
+        self.issues.len()
+            + self.provider_issues.len()
+            + self
+                .metric_groups
+                .iter()
+                .map(|group| group.issues.len())
+                .sum::<usize>()
     }
 }
 
@@ -107,6 +186,8 @@ pub struct UsageScreenState {
     pub scroll: u16,
     pub notice: Option<String>,
     pub generated_at_epoch: Option<i64>,
+    /// Sanitized projection-scoped issues from the latest publication.
+    pub projection_issues: Vec<UsageIssueV1>,
     pub refresh_due: bool,
     pub force_refresh_pending: bool,
     pub refresh_generation: u64,
@@ -128,6 +209,7 @@ impl Clone for UsageScreenState {
             scroll: self.scroll,
             notice: self.notice.clone(),
             generated_at_epoch: self.generated_at_epoch,
+            projection_issues: self.projection_issues.clone(),
             refresh_due: self.refresh_due,
             force_refresh_pending: self.force_refresh_pending,
             refresh_generation: self.refresh_generation,
@@ -146,6 +228,7 @@ impl PartialEq for UsageScreenState {
             && self.scroll == other.scroll
             && self.notice == other.notice
             && self.generated_at_epoch == other.generated_at_epoch
+            && self.projection_issues == other.projection_issues
             && self.refresh_due == other.refresh_due
             && self.force_refresh_pending == other.force_refresh_pending
             && self.refresh_generation == other.refresh_generation
@@ -189,12 +272,40 @@ impl UsageScreenState {
                     .iter()
                     .map(|window| UsageWindow {
                         window_id: window.window_id.clone(),
+                        rank: window.rank,
+                        category: window.category,
                         label: window.label.clone(),
                         value: window.value_label.clone(),
                         reset: window.reset_label.clone(),
                         remaining_percent: window.remaining_percent.map(UsagePercent::get),
+                        remaining_raw_percent: window.remaining_raw_percent,
                         used_percent: window.used_percent.map(UsagePercent::get),
+                        used_raw_percent: window.used_raw_percent,
                         reset_at_epoch: window.reset_at_epoch,
+                        quota_state: window.quota_state,
+                        pace_label: window.pace_label.clone(),
+                        runs_out_label: window.runs_out_label.clone(),
+                    })
+                    .collect();
+                let metric_groups = account
+                    .metric_groups
+                    .iter()
+                    .map(|group| UsageMetricGroup {
+                        group_id: group.group_id.clone(),
+                        rank: group.rank,
+                        kind: group.kind,
+                        label: group.label.clone(),
+                        scope: group.scope.clone(),
+                        observed_at_epoch: group.observed_at_epoch,
+                        fetched_at_epoch: group.fetched_at_epoch,
+                        last_success_at_epoch: group.last_success_at_epoch,
+                        phase: group.phase,
+                        is_stale: group.is_stale,
+                        quota_state: group.quota_state,
+                        value: group.value.clone(),
+                        reset_at_epoch: group.reset_at_epoch,
+                        renews_at_epoch: group.renews_at_epoch,
+                        issues: group.issues.clone(),
                     })
                     .collect();
                 accounts.push(UsageAccount {
@@ -207,8 +318,15 @@ impl UsageScreenState {
                     lifecycle: account.lifecycle,
                     freshness_phase: account.freshness.phase,
                     last_good_at_epoch: account.freshness.last_good_at_epoch,
+                    retry_at_epoch: account.freshness.retry_at_epoch,
                     is_stale: account.freshness.is_stale,
+                    identity_kind: Some(account.identity_kind),
+                    plan_label: account.plan_label.clone(),
+                    credential_expires_at_epoch: account.credential_expires_at_epoch,
+                    issues: account.issues.clone(),
+                    provider_issues: provider.issues.clone(),
                     windows,
+                    metric_groups,
                 });
             }
         }
@@ -242,8 +360,15 @@ impl UsageScreenState {
                 lifecycle: unresolved.state,
                 freshness_phase: UsageFreshnessPhaseV1::Failed,
                 last_good_at_epoch: None,
+                retry_at_epoch: None,
                 is_stale: false,
+                identity_kind: None,
+                plan_label: None,
+                credential_expires_at_epoch: None,
+                issues: unresolved.issues.clone(),
+                provider_issues: Vec::new(),
                 windows: Vec::new(),
+                metric_groups: Vec::new(),
             });
         }
 
@@ -272,6 +397,7 @@ impl UsageScreenState {
             accounts,
             notice,
             generated_at_epoch: Some(projection.generated_at_epoch),
+            projection_issues: projection.issues.clone(),
             ..Self::default()
         }
     }
@@ -423,6 +549,341 @@ fn lifecycle_label(lifecycle: UsageLifecycleV1) -> &'static str {
     }
 }
 
+fn quota_state_label(state: UsageQuotaStateV1) -> &'static str {
+    match state {
+        UsageQuotaStateV1::Available => "available",
+        UsageQuotaStateV1::NotStarted => "not started",
+        UsageQuotaStateV1::Warning => "warning",
+        UsageQuotaStateV1::Exhausted => "exhausted",
+        UsageQuotaStateV1::Unsupported => "unsupported",
+        UsageQuotaStateV1::Unavailable => "unavailable",
+        UsageQuotaStateV1::NoPermission => "no permission",
+        UsageQuotaStateV1::Unknown => "unknown",
+        UsageQuotaStateV1::NotApplicable => "n/a",
+        UsageQuotaStateV1::Error => "error",
+    }
+}
+
+fn metric_group_kind_label(kind: UsageMetricGroupKindV1) -> &'static str {
+    match kind {
+        UsageMetricGroupKindV1::Window => "window",
+        UsageMetricGroupKindV1::Balance => "balance",
+        UsageMetricGroupKindV1::SpendCap => "spend cap",
+        UsageMetricGroupKindV1::TokenTotals => "token totals",
+        UsageMetricGroupKindV1::RateLimit => "rate limit",
+        UsageMetricGroupKindV1::Plan => "plan",
+    }
+}
+
+fn identity_kind_label(kind: UsageIdentityKindV1) -> &'static str {
+    match kind {
+        UsageIdentityKindV1::ProviderAccountId => "provider account id",
+        UsageIdentityKindV1::ProviderStableHandle => "provider handle",
+    }
+}
+
+/// Past-age bucket shared by account and group freshness labels.
+fn past_age_label(age_secs: i64) -> String {
+    if age_secs < 60 {
+        "just now".to_owned()
+    } else if age_secs < 3_600 {
+        format!("{}m ago", age_secs / 60)
+    } else if age_secs < 86_400 {
+        format!("{}h ago", age_secs / 3_600)
+    } else {
+        format!("{}d ago", age_secs / 86_400)
+    }
+}
+
+/// Relative time for a reset/renewal/expiry/retry epoch against an explicit
+/// `now`. Pure so tests stay deterministic; render passes wall-clock time.
+/// Past mirrors the freshness buckets; future uses `in …` buckets.
+fn relative_time_label(now_epoch: i64, epoch: i64) -> String {
+    if epoch >= now_epoch {
+        let ahead = epoch.saturating_sub(now_epoch);
+        if ahead < 60 {
+            "in under a minute".to_owned()
+        } else if ahead < 3_600 {
+            format!("in {}m", ahead / 60)
+        } else if ahead < 86_400 {
+            format!("in {}h", ahead / 3_600)
+        } else {
+            format!("in {}d", ahead / 86_400)
+        }
+    } else {
+        past_age_label(now_epoch.saturating_sub(epoch))
+    }
+}
+
+/// Credential/auth-session expiry as one relative fact. Derived only from the
+/// canonical expiry epoch: already-passed reads `expired …`, future reads
+/// `expires …`. Never confused with a quota reset or subscription renewal.
+fn credential_expiry_label(now_epoch: i64, expires_at_epoch: i64) -> String {
+    if expires_at_epoch < now_epoch {
+        format!(
+            "expired {}",
+            past_age_label(now_epoch.saturating_sub(expires_at_epoch))
+        )
+    } else {
+        format!(
+            "expires {}",
+            relative_time_label(now_epoch, expires_at_epoch)
+        )
+    }
+}
+
+/// Operator-facing freshness age for one metric group. Staleness is per
+/// group: a fresh sibling never makes retained old data fresh.
+#[must_use]
+pub fn group_freshness_label(now_epoch: i64, group: &UsageMetricGroup) -> String {
+    if group.phase == UsageFreshnessPhaseV1::Refreshing {
+        return "refreshing…".to_owned();
+    }
+    let Some(last_success) = group.last_success_at_epoch else {
+        return "never updated".to_owned();
+    };
+    let age = past_age_label(now_epoch.saturating_sub(last_success).max(0));
+    if group.is_stale
+        || matches!(
+            group.phase,
+            UsageFreshnessPhaseV1::Stale | UsageFreshnessPhaseV1::Failed
+        )
+    {
+        format!("stale · updated {age}")
+    } else {
+        format!("updated {age}")
+    }
+}
+
+fn duration_label(secs: u64) -> String {
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3_600 {
+        format!("{}m", secs / 60)
+    } else if secs < 86_400 {
+        format!("{}h", secs / 3_600)
+    } else {
+        format!("{}d", secs / 86_400)
+    }
+}
+
+fn metric_period_label(period: &UsageMetricPeriodV1) -> Option<String> {
+    match period {
+        UsageMetricPeriodV1::Rolling { window_secs } => {
+            Some(format!("rolling {}", duration_label(*window_secs)))
+        }
+        UsageMetricPeriodV1::Calendar { granularity } => Some(
+            match granularity {
+                UsageCalendarPeriodV1::Daily => "daily",
+                UsageCalendarPeriodV1::Weekly => "weekly",
+                UsageCalendarPeriodV1::Monthly => "monthly",
+            }
+            .to_owned(),
+        ),
+        UsageMetricPeriodV1::ProviderDefined => Some("provider-defined period".to_owned()),
+        UsageMetricPeriodV1::Unknown => None,
+    }
+}
+
+/// One percent side (`remaining` or `used`) as display text. The raw provider
+/// value rides along only when it differs from clamped geometry, so overage
+/// stays honest without duplicating equal values.
+fn percent_side_summary(clamped: Option<u8>, raw: Option<i32>, word: &str) -> Option<String> {
+    match (clamped, raw) {
+        (Some(percent), Some(raw)) if i32::from(percent) != raw => {
+            Some(format!("{percent}% {word} (raw {raw}%)"))
+        }
+        (Some(percent), _) => Some(format!("{percent}% {word}")),
+        (None, Some(raw)) => Some(format!("raw {raw}% {word}")),
+        (None, None) => None,
+    }
+}
+
+fn window_percent_summary(
+    remaining: Option<u8>,
+    remaining_raw: Option<i32>,
+    used: Option<u8>,
+    used_raw: Option<i32>,
+) -> Option<String> {
+    percent_side_summary(remaining, remaining_raw, "remaining")
+        .or_else(|| percent_side_summary(used, used_raw, "used"))
+}
+
+/// Raw-percent note for a principal window, shown only when a raw value is
+/// present and differs from the clamped geometry the bar uses.
+fn raw_percent_note(window: &UsageWindow) -> Option<String> {
+    for (clamped, raw, word) in [
+        (
+            window.remaining_percent,
+            window.remaining_raw_percent,
+            "remaining",
+        ),
+        (window.used_percent, window.used_raw_percent, "used"),
+    ] {
+        if let Some(raw) = raw
+            && clamped.is_none_or(|percent| i32::from(percent) != raw)
+        {
+            return Some(format!("raw {word} {raw}%"));
+        }
+    }
+    None
+}
+
+/// One-line typed value summary for a metric group. `None` means the provider
+/// supplied no displayable value — callers render no value line at all rather
+/// than a fabricated zero.
+fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
+    match &group.value {
+        UsageMetricValueV1::Window {
+            remaining_percent,
+            remaining_raw_percent,
+            used_percent,
+            used_raw_percent,
+            period,
+            unit,
+        } => {
+            let mut parts = Vec::new();
+            if let Some(percent) = window_percent_summary(
+                remaining_percent.map(UsagePercent::get),
+                *remaining_raw_percent,
+                used_percent.map(UsagePercent::get),
+                *used_raw_percent,
+            ) {
+                parts.push(percent);
+            }
+            if let Some(unit) = unit.as_deref().filter(|unit| !unit.trim().is_empty()) {
+                parts.push((*unit).to_owned());
+            }
+            if let Some(period) = metric_period_label(period) {
+                parts.push(period);
+            }
+            (!parts.is_empty()).then(|| parts.join(" · "))
+        }
+        UsageMetricValueV1::Balance { amount, .. } => Some(amount.to_string()),
+        UsageMetricValueV1::SpendCap {
+            cap,
+            spent,
+            remaining,
+        } => {
+            let mut parts = Vec::new();
+            match cap {
+                Some(cap) => parts.push(format!("cap {cap}")),
+                None => parts.push("uncapped".to_owned()),
+            }
+            if let Some(spent) = spent {
+                parts.push(format!("spent {spent}"));
+            }
+            if let Some(remaining) = remaining {
+                parts.push(format!("remaining {remaining}"));
+            }
+            Some(parts.join(" · "))
+        }
+        UsageMetricValueV1::TokenTotals {
+            input,
+            output,
+            cached,
+            reasoning,
+            interval_label,
+        } => {
+            let mut parts = Vec::new();
+            for (count, word) in [
+                (*input, "input"),
+                (*output, "output"),
+                (*cached, "cached"),
+                (*reasoning, "reasoning"),
+            ] {
+                if let Some(count) = count {
+                    parts.push(format!("{word} {count}"));
+                }
+            }
+            if let Some(label) = interval_label
+                .as_deref()
+                .filter(|label| !label.trim().is_empty())
+            {
+                parts.push((*label).to_owned());
+            }
+            (!parts.is_empty()).then(|| parts.join(" · "))
+        }
+        UsageMetricValueV1::RateLimit {
+            limit,
+            remaining,
+            window_label,
+        } => {
+            let mut parts = Vec::new();
+            if let Some(limit) = limit {
+                parts.push(format!("limit {limit}"));
+            }
+            if let Some(remaining) = remaining {
+                parts.push(format!("remaining {remaining}"));
+            }
+            if let Some(label) = window_label
+                .as_deref()
+                .filter(|label| !label.trim().is_empty())
+            {
+                parts.push((*label).to_owned());
+            }
+            (!parts.is_empty()).then(|| parts.join(" · "))
+        }
+        UsageMetricValueV1::Plan { plan_label, tier } => {
+            let mut parts = Vec::new();
+            if let Some(label) = plan_label
+                .as_deref()
+                .filter(|label| !label.trim().is_empty())
+            {
+                parts.push((*label).to_owned());
+            }
+            if let Some(tier) = tier.as_ref().filter(|tier| !tier.trim().is_empty()) {
+                parts.push(format!("tier {tier}"));
+            }
+            (!parts.is_empty()).then(|| parts.join(" · "))
+        }
+    }
+}
+
+/// Non-secret scope labels locating a group inside its account. `None` means
+/// the provider did not scope the group on any axis.
+fn metric_scope_summary(scope: &UsageMetricScopeV1) -> Option<String> {
+    let mut parts = Vec::new();
+    for (label, word) in [
+        (&scope.service, "service"),
+        (&scope.model, "model"),
+        (&scope.pool, "pool"),
+        (&scope.key_id, "key"),
+    ] {
+        if let Some(label) = label.as_ref().filter(|label| !label.trim().is_empty()) {
+            parts.push(format!("{word} {label}"));
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+/// One sanitized issue as display text: the Rust-owned operator message with
+/// its stable code, plus a broker-owned retry time when one is present.
+fn issue_text(issue: &UsageIssueV1, now_epoch: i64) -> String {
+    let mut text = match (
+        issue.message.trim().is_empty(),
+        issue.code.trim().is_empty(),
+    ) {
+        (false, false) => format!("{} ({})", issue.message.trim(), issue.code.trim()),
+        (false, true) => issue.message.trim().to_owned(),
+        (true, false) => issue.code.trim().to_owned(),
+        (true, true) => "issue".to_owned(),
+    };
+    if let Some(retry_at) = issue.retry_at_epoch {
+        text.push_str(&format!(
+            " · retry {}",
+            relative_time_label(now_epoch, retry_at)
+        ));
+    }
+    text
+}
+
+fn non_empty_label(label: Option<&String>) -> Option<&str> {
+    label
+        .map(String::as_str)
+        .filter(|label| !label.trim().is_empty())
+}
+
 /// Operator-facing freshness age for one account. Pure over an explicit
 /// `now` so tests stay deterministic; render passes wall-clock time.
 #[must_use]
@@ -434,15 +895,7 @@ pub fn freshness_age_label(now_epoch: i64, account: &UsageAccount) -> String {
         return "never updated".to_owned();
     };
     let age_secs = now_epoch.saturating_sub(last_good).max(0);
-    let age = if age_secs < 60 {
-        "just now".to_owned()
-    } else if age_secs < 3_600 {
-        format!("{}m ago", age_secs / 60)
-    } else if age_secs < 86_400 {
-        format!("{}h ago", age_secs / 3_600)
-    } else {
-        format!("{}d ago", age_secs / 86_400)
-    };
+    let age = past_age_label(age_secs);
     if account.is_stale
         || matches!(
             account.freshness_phase,
@@ -567,13 +1020,25 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
             format!("  {cursor}{}", account.account),
             row_style(selected),
         )));
+        let mut sub = format!(
+            "      {} · {} · {}",
+            account.status,
+            summary,
+            freshness_age_label(now, account)
+        );
+        if let Some(plan) = non_empty_label(account.plan_label.as_ref()) {
+            sub.push_str(&format!(" · {plan}"));
+        }
+        let issue_count = account.issue_count();
+        if issue_count > 0 {
+            sub.push_str(&format!(
+                " · {} issue{}",
+                issue_count,
+                if issue_count == 1 { "" } else { "s" }
+            ));
+        }
         lines.push(Line::from(Span::styled(
-            format!(
-                "      {} · {} · {}",
-                account.status,
-                summary,
-                freshness_age_label(now, account)
-            ),
+            sub,
             Style::default().fg(Color::DarkGray),
         )));
         if let Some(window) = account.windows.first()
@@ -617,6 +1082,15 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
         for account in &screen.accounts {
             append_overview_account(&mut lines, account, width, now);
         }
+        for issue in &screen.projection_issues {
+            lines.push(Line::from(Span::styled(
+                format!("  {}", issue_text(issue, now)),
+                Style::default().fg(Color::Yellow),
+            )));
+        }
+        if !screen.projection_issues.is_empty() {
+            lines.push(Line::from(""));
+        }
         if let Some(notice) = &screen.notice {
             lines.push(Line::from(Span::styled(
                 notice.clone(),
@@ -637,14 +1111,31 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
         Line::from(format!("Provider  {}", account.provider)),
         Line::from(format!("Account   {}", account.account)),
         Line::from(format!("Status    {}", account.status)),
-        Line::from(format!("Freshness {}", freshness_age_label(now, account))),
-        Line::from(""),
-        Line::from("Limits"),
     ];
+    if let Some(plan) = non_empty_label(account.plan_label.as_ref()) {
+        lines.push(Line::from(format!("Plan      {plan}")));
+    }
+    if let Some(identity) = account.identity_kind.map(identity_kind_label) {
+        lines.push(Line::from(format!("Identity  {identity}")));
+    }
+    if let Some(expires_at) = account.credential_expires_at_epoch {
+        lines.push(Line::from(format!(
+            "Credential {}",
+            credential_expiry_label(now, expires_at)
+        )));
+    }
+    let mut freshness = freshness_age_label(now, account);
+    if let Some(retry_at) = account.retry_at_epoch {
+        freshness.push_str(&format!(" · retry {}", relative_time_label(now, retry_at)));
+    }
+    lines.push(Line::from(format!("Freshness {freshness}")));
+    lines.push(Line::from(""));
+    lines.push(Line::from("Limits"));
     if screen.refresh_in_flight() {
         lines.push(refreshing_line());
         lines.push(Line::from(""));
     }
+    let width = area.width.saturating_sub(8).max(8) as usize;
     for window in &account.windows {
         lines.push(Line::from(Span::styled(
             format!("  {}", window.label),
@@ -652,7 +1143,6 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         )));
-        let width = area.width.saturating_sub(8).max(8) as usize;
         if let Some(bar) = meter_line(width, window.meter_percent()) {
             lines.push(Line::from(Span::styled(
                 bar,
@@ -665,6 +1155,18 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
             format!("  {} · {}", window.value, window.reset)
         };
         lines.push(Line::from(detail));
+        append_window_extra(&mut lines, window);
+        lines.push(Line::from(""));
+    }
+    if !account.metric_groups.is_empty() {
+        lines.push(Line::from("Metric groups"));
+        for group in &account.metric_groups {
+            append_metric_group(&mut lines, group, width, now);
+        }
+    }
+    if !account.issues.is_empty() || !account.provider_issues.is_empty() {
+        lines.push(Line::from("Issues"));
+        append_account_issue_lines(&mut lines, account, now);
         lines.push(Line::from(""));
     }
     if let Some(notice) = &screen.notice {
@@ -689,6 +1191,48 @@ fn refreshing_line() -> Line<'static> {
     ))
 }
 
+/// Quota state, raw-percent, and pace detail shared by the detail view and
+/// the overview panel. The `Available` state is silent: it is the default and
+/// the meter already shows it.
+fn append_window_extra(lines: &mut Vec<Line<'static>>, window: &UsageWindow) {
+    if window.quota_state != UsageQuotaStateV1::Available {
+        lines.push(Line::from(format!(
+            "  quota: {}",
+            quota_state_label(window.quota_state)
+        )));
+    }
+    if let Some(note) = raw_percent_note(window) {
+        lines.push(Line::from(format!("  {note}")));
+    }
+    if let Some(pace) = non_empty_label(window.pace_label.as_ref()) {
+        lines.push(Line::from(format!("  pace: {pace}")));
+    }
+    if let Some(runs_out) = non_empty_label(window.runs_out_label.as_ref()) {
+        lines.push(Line::from(format!("  runs out: {runs_out}")));
+    }
+}
+
+/// Account- and provider-scoped issue lines shared by the detail view and
+/// the overview panel.
+fn append_account_issue_lines(
+    lines: &mut Vec<Line<'static>>,
+    account: &UsageAccount,
+    now_epoch: i64,
+) {
+    for issue in &account.issues {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", issue_text(issue, now_epoch)),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
+    for issue in &account.provider_issues {
+        lines.push(Line::from(Span::styled(
+            format!("  provider: {}", issue_text(issue, now_epoch)),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
+}
+
 fn append_overview_window(lines: &mut Vec<Line<'static>>, window: &UsageWindow, width: usize) {
     if !window.label.is_empty() {
         lines.push(Line::from(Span::styled(
@@ -708,6 +1252,120 @@ fn append_overview_window(lines: &mut Vec<Line<'static>>, window: &UsageWindow, 
         format!("  {} · {}", window.value, window.reset)
     };
     lines.push(Line::from(detail));
+    append_window_extra(lines, window);
+}
+
+/// One metric group as a compact overview row: label plus typed value, with
+/// reset/renewal facts and group issues on following lines.
+fn append_overview_group(lines: &mut Vec<Line<'static>>, group: &UsageMetricGroup, now_epoch: i64) {
+    match metric_group_value_summary(group) {
+        Some(summary) => lines.push(Line::from(format!("  {}: {summary}", group.label))),
+        None => lines.push(Line::from(format!(
+            "  {} ({} · {})",
+            group.label,
+            metric_group_kind_label(group.kind),
+            quota_state_label(group.quota_state),
+        ))),
+    }
+    append_group_schedule_lines(lines, group, now_epoch);
+    for issue in &group.issues {
+        lines.push(Line::from(Span::styled(
+            format!("  [{}] {}", group.label, issue_text(issue, now_epoch)),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
+}
+
+/// Reset, renewal, and balance-expiry facts for one group. Each timestamp
+/// renders under its own word — reset is never shown as renewal or expiry —
+/// and absent timestamps render nothing at all.
+fn append_group_schedule_lines(
+    lines: &mut Vec<Line<'static>>,
+    group: &UsageMetricGroup,
+    now_epoch: i64,
+) {
+    if let Some(reset_at) = group.reset_at_epoch {
+        lines.push(Line::from(format!(
+            "  resets {}",
+            relative_time_label(now_epoch, reset_at)
+        )));
+    }
+    if let Some(renews_at) = group.renews_at_epoch {
+        lines.push(Line::from(format!(
+            "  renews {}",
+            relative_time_label(now_epoch, renews_at)
+        )));
+    }
+    if let UsageMetricValueV1::Balance {
+        expires_at_epoch: Some(expires_at),
+        ..
+    } = &group.value
+    {
+        lines.push(Line::from(format!(
+            "  expires {}",
+            relative_time_label(now_epoch, *expires_at)
+        )));
+    }
+}
+
+/// One metric group as a full detail block: kind, quota state, and per-group
+/// freshness in the header, then scope, typed value, schedule, provenance,
+/// and group-scoped issues.
+fn append_metric_group(
+    lines: &mut Vec<Line<'static>>,
+    group: &UsageMetricGroup,
+    width: usize,
+    now_epoch: i64,
+) {
+    lines.push(Line::from(Span::styled(
+        format!(
+            "  {} ({} · {} · {})",
+            group.label,
+            metric_group_kind_label(group.kind),
+            quota_state_label(group.quota_state),
+            group_freshness_label(now_epoch, group),
+        ),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    )));
+    if let Some(scope) = metric_scope_summary(&group.scope) {
+        lines.push(Line::from(Span::styled(
+            format!("  scope: {scope}"),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    if let Some(bar) = meter_line(width, group.meter_percent()) {
+        lines.push(Line::from(Span::styled(
+            bar,
+            meter_style(group.meter_percent().unwrap_or(0)),
+        )));
+    }
+    if let Some(summary) = metric_group_value_summary(group) {
+        lines.push(Line::from(format!("  {summary}")));
+    }
+    append_group_schedule_lines(lines, group, now_epoch);
+    let mut fetched = format!(
+        "  fetched {}",
+        relative_time_label(now_epoch, group.fetched_at_epoch)
+    );
+    if let Some(observed_at) = group.observed_at_epoch {
+        fetched.push_str(&format!(
+            " · observed {}",
+            relative_time_label(now_epoch, observed_at)
+        ));
+    }
+    lines.push(Line::from(Span::styled(
+        fetched,
+        Style::default().fg(Color::DarkGray),
+    )));
+    for issue in &group.issues {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", issue_text(issue, now_epoch)),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
+    lines.push(Line::from(""));
 }
 
 fn append_overview_account(
@@ -724,13 +1382,26 @@ fn append_overview_account(
         format!("  {}", freshness_age_label(now_epoch, account)),
         Style::default().fg(Color::DarkGray),
     )));
-    if account.windows.is_empty() {
+    if let Some(plan) = non_empty_label(account.plan_label.as_ref()) {
+        lines.push(Line::from(format!("  Plan {plan}")));
+    }
+    if let Some(expires_at) = account.credential_expires_at_epoch {
+        lines.push(Line::from(format!(
+            "  Credential {}",
+            credential_expiry_label(now_epoch, expires_at)
+        )));
+    }
+    if account.windows.is_empty() && account.metric_groups.is_empty() {
         lines.push(Line::from(format!("  {}", account.status)));
     } else {
         for window in &account.windows {
             append_overview_window(lines, window, width);
         }
+        for group in &account.metric_groups {
+            append_overview_group(lines, group, now_epoch);
+        }
     }
+    append_account_issue_lines(lines, account, now_epoch);
     lines.push(Line::from(""));
 }
 
