@@ -27,9 +27,7 @@ use chrono::{DateTime, Utc};
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
 use std::io;
-#[cfg(test)]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::process::Command;
 use std::sync::Arc;
@@ -1155,6 +1153,39 @@ async fn reject_invalid_attach_handshake(stream: &mut UnixStream) {
 }
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
+///
+/// # Errors
+///
+/// Returns an error when daemon initialization, socket setup, session
+/// management, or the event loop fails.
+pub async fn run_daemon(
+    initial_agent: String,
+    launch_config: CapsuleConfig,
+    telemetry: &mut crate::telemetry::FlushGuard,
+) -> Result<()> {
+    crate::pid1::install_sigchld_reaper();
+    run_daemon_loop(
+        initial_agent,
+        launch_config,
+        telemetry,
+        Path::new(socket::SOCKET_PATH),
+    )
+    .await
+}
+
+/// Test-only daemon entry point. Installing the PID1 reaper would race the
+/// session's child-wait task on hosts whose fallback reaper cannot distinguish
+/// managed children.
+#[cfg(test)]
+async fn run_daemon_for_test(
+    initial_agent: String,
+    launch_config: CapsuleConfig,
+    telemetry: &mut crate::telemetry::FlushGuard,
+    socket_path: &Path,
+) -> Result<()> {
+    run_daemon_loop(initial_agent, launch_config, telemetry, socket_path).await
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "Top-level daemon entry point: spawns the event loop, the attach \
@@ -1163,13 +1194,12 @@ async fn reject_invalid_attach_handshake(stream: &mut UnixStream) {
               deferred-parallel-pass plan as the launch fns — the inline shape \
               preserves captured-runtime state across stages."
 )]
-pub async fn run_daemon(
+async fn run_daemon_loop(
     initial_agent: String,
     launch_config: CapsuleConfig,
     telemetry: &mut crate::telemetry::FlushGuard,
+    socket_path: &Path,
 ) -> Result<()> {
-    crate::pid1::install_sigchld_reaper();
-
     let rows = std::env::var("JACKIN_ROWS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -1195,7 +1225,7 @@ pub async fn run_daemon(
     // path removes first-tab-only scrollback/chrome differences.
     let mut pending_initial_spawn = Some(initial_spawn);
 
-    let mut new_clients = socket::start_listener()?;
+    let mut new_clients = socket::start_listener_at(socket_path)?;
     telemetry.listener_ready();
     // Screen rule packs: the universal detector. Loaded once; the embedded
     // packs are validated, so a load failure means a broken build — log and
