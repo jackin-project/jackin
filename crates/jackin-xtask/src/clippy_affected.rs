@@ -668,9 +668,15 @@ fn skip_block_comment(source: &str) -> Option<&str> {
     None
 }
 
-/// Parse a `"…"` literal; `None` on non-literals and non-trivial escapes.
+/// Parse a `"…"` or raw `r"…" | r#"…"# | …` literal; `None` on
+/// non-literals. Every literal form that compiles in `#[path = …]` /
+/// `include_*!` position must parse here: the `#[path]` consumer relies on
+/// `None` meaning "never compiles" to skip silently instead of widening.
 fn parse_string_literal(source: &str) -> Option<(String, usize)> {
     let bytes = source.as_bytes();
+    if bytes.first() == Some(&b'r') {
+        return parse_raw_string_literal(source);
+    }
     if bytes.first() != Some(&b'"') {
         return None;
     }
@@ -681,12 +687,7 @@ fn parse_string_literal(source: &str) -> Option<(String, usize)> {
             b'"' => return Some((literal, index + 1)),
             b'\\' => {
                 index += 1;
-                match bytes.get(index) {
-                    Some(b'"') => literal.push('"'),
-                    Some(b'\\') => literal.push('\\'),
-                    _ => return None,
-                }
-                index += 1;
+                index = push_escape(source, &mut literal, index)?;
             }
             _ => {
                 let char = source[index..].chars().next()?;
@@ -696,6 +697,110 @@ fn parse_string_literal(source: &str) -> Option<(String, usize)> {
         }
     }
     None
+}
+
+/// Parse `r` + `#`* + `"` … `"` + `#`*; `None` on byte strings
+/// (`rb"…"`, `br"…"`) and unterminated literals. Byte strings never
+/// compile in path/include position, so rejecting them keeps the
+/// `#[path]` silent-skip sound while `include_*!` widens.
+fn parse_raw_string_literal(source: &str) -> Option<(String, usize)> {
+    let bytes = source.as_bytes();
+    let mut hashes = 0;
+    while bytes.get(1 + hashes) == Some(&b'#') {
+        hashes += 1;
+    }
+    if bytes.get(1 + hashes) != Some(&b'"') {
+        return None;
+    }
+    let content_start = 2 + hashes;
+    let mut index = content_start;
+    while index < bytes.len() {
+        let after = index + 1 + hashes;
+        let closes = bytes[index] == b'"'
+            && after <= bytes.len()
+            && bytes[index + 1..after].iter().all(|byte| *byte == b'#')
+            // A longer hash run means this quote is literal content.
+            && bytes.get(after) != Some(&b'#');
+        if closes {
+            return Some((source[content_start..index].to_owned(), after));
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Push one `\\` escape starting at `index` (the char after the
+/// backslash); returns the index after the escape, or `None` when the
+/// escape is malformed. Malformed escapes never compile, so `None`
+/// keeps both consumers sound (silent skip / widen respectively).
+fn push_escape(source: &str, literal: &mut String, index: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    match bytes.get(index) {
+        Some(b'n') => {
+            literal.push('\n');
+            Some(index + 1)
+        }
+        Some(b'r') => {
+            literal.push('\r');
+            Some(index + 1)
+        }
+        Some(b't') => {
+            literal.push('\t');
+            Some(index + 1)
+        }
+        Some(b'\\') => {
+            literal.push('\\');
+            Some(index + 1)
+        }
+        Some(b'0') => {
+            literal.push('\0');
+            Some(index + 1)
+        }
+        Some(b'\'') => {
+            literal.push('\'');
+            Some(index + 1)
+        }
+        Some(b'"') => {
+            literal.push('"');
+            Some(index + 1)
+        }
+        Some(b'x') => {
+            let digits = source.get(index + 1..index + 3)?;
+            let value = u8::from_str_radix(digits, 16).ok()?;
+            // `\x80`+ never compiles in a `str` literal; reject it so the
+            // `#[path]` silent-skip stays sound.
+            if value > 0x7F {
+                return None;
+            }
+            literal.push(char::from(value));
+            Some(index + 3)
+        }
+        Some(b'u') => {
+            let rest = source.get(index + 1..)?;
+            let open = rest.strip_prefix('{')?;
+            let close = open.find('}')?;
+            let digits = open.get(..close)?;
+            if digits.is_empty() || digits.len() > 6 {
+                return None;
+            }
+            let value = u32::from_str_radix(digits, 16).ok()?;
+            literal.push(char::from_u32(value)?);
+            Some(index + 1 + 1 + close + 1)
+        }
+        Some(b'\n') => {
+            // Line continuation: skip the newline and leading whitespace.
+            let rest = source.get(index + 1..)?;
+            let skipped = rest.len() - rest.trim_start().len();
+            Some(index + 1 + skipped)
+        }
+        Some(b'\r') => {
+            // `\` + CRLF is also a line continuation.
+            let rest = source.get(index + 1..)?.strip_prefix('\n')?;
+            let skipped = rest.len() - rest.trim_start().len();
+            Some(index + 2 + skipped)
+        }
+        _ => None,
+    }
 }
 
 fn record_literal(

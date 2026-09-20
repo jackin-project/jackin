@@ -381,6 +381,73 @@ fn scanner_widens_only_on_compilable_non_literals() {
 }
 
 #[test]
+fn scanner_records_raw_string_path_and_include_literals() {
+    let mut inputs = InputOwners::default();
+    let file = Path::new("crates/p/src/lib.rs");
+    let scope = Path::new("crates/p");
+    scan_source_inputs(
+        concat!(
+            "#[path",
+            " = r\"../../../shared.rs\"]\n",
+            "mod shared;\n",
+            "const A: &str = include_str!",
+            "(r##\"../../../quoted\"#.txt\"##);\n",
+        ),
+        file,
+        scope,
+        Some("p"),
+        None,
+        &mut inputs,
+    );
+    assert!(!inputs.unknown);
+    assert!(inputs.members.contains_key(Path::new("shared.rs")));
+    assert!(inputs.members.contains_key(Path::new("quoted\"#.txt")));
+}
+
+#[test]
+fn scanner_parses_all_compilable_cooked_escapes() {
+    // Every escape below compiles in a `str` literal, so the `#[path]`
+    // consumer must record (not silently skip) each of them.
+    assert_eq!(
+        parse_string_literal(r#""a\nb""#),
+        Some(("a\nb".to_owned(), 6))
+    );
+    assert_eq!(
+        parse_string_literal(r#""a\tb""#),
+        Some(("a\tb".to_owned(), 6))
+    );
+    assert_eq!(
+        parse_string_literal(r#""a\rb""#),
+        Some(("a\rb".to_owned(), 6))
+    );
+    assert_eq!(
+        parse_string_literal(r#""a\0b""#),
+        Some(("a\0b".to_owned(), 6))
+    );
+    assert_eq!(
+        parse_string_literal(r#""a\'b""#),
+        Some(("a'b".to_owned(), 6))
+    );
+    assert_eq!(
+        parse_string_literal(r#""\x2fb""#),
+        Some(("/b".to_owned(), 7))
+    );
+    assert_eq!(
+        parse_string_literal(r#""\u{2f}b""#),
+        Some(("/b".to_owned(), 9))
+    );
+    assert_eq!(
+        parse_string_literal("\"a\\\n   b\""),
+        Some(("ab".to_owned(), 9))
+    );
+    // Non-`str` literals never compile in path/include position.
+    assert_eq!(parse_string_literal("rb\"a\""), None);
+    assert_eq!(parse_string_literal("br\"a\""), None);
+    assert_eq!(parse_string_literal("\"\\x80\""), None);
+    assert_eq!(parse_string_literal("concat!(\"a\")"), None);
+}
+
+#[test]
 fn scanner_skips_path_like_attributes() {
     let mut inputs = InputOwners::default();
     let file = Path::new("crates/p/src/lib.rs");
