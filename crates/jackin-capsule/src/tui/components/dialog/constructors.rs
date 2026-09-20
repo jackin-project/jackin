@@ -15,6 +15,7 @@ use super::{
 };
 
 impl Dialog {
+    #[must_use]
     pub fn new_command_palette(close_label: PaletteCloseLabel) -> Self {
         Self::CommandPalette {
             selected: 0,
@@ -28,14 +29,17 @@ impl Dialog {
         Self::RenameTab { tab_idx, input }
     }
 
+    #[must_use]
     pub fn new_export_file() -> Self {
         Self::new_export_file_with_post_action(false, false)
     }
 
+    #[must_use]
     pub fn new_export_file_and_reveal() -> Self {
         Self::new_export_file_with_post_action(true, false)
     }
 
+    #[must_use]
     pub fn new_export_file_and_open() -> Self {
         Self::new_export_file_with_post_action(false, true)
     }
@@ -51,6 +55,7 @@ impl Dialog {
         }
     }
 
+    #[must_use]
     pub fn new_split_direction_picker() -> Self {
         Self::SplitDirectionPicker {
             selected: 0,
@@ -58,6 +63,7 @@ impl Dialog {
         }
     }
 
+    #[must_use]
     pub fn new_close_target_picker() -> Self {
         Self::CloseTargetPicker {
             selected: 0,
@@ -65,6 +71,7 @@ impl Dialog {
         }
     }
 
+    #[must_use]
     pub fn new_confirm_action(kind: ConfirmKind) -> Self {
         Self::ConfirmAction {
             kind,
@@ -79,6 +86,7 @@ impl Dialog {
     /// keeps the "no agents installed" case working (the layout
     /// degenerates to `[Section("shells"), Shell]`, first selectable
     /// is still `1`).
+    #[must_use]
     pub fn new_agent_picker(agents: Vec<String>, intent: PickerIntent) -> Self {
         let filter = String::new();
         let visible = picker_filtered_rows(&agents, &filter);

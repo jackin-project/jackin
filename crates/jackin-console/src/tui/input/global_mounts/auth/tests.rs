@@ -146,7 +146,7 @@ fn profile_account_records_exact_selected_directory() {
     .with_source_folder(Some("/accounts/codex-work".into()), None);
     persist_settings_auth_form(&mut auth, &mut env, &form);
     assert!(
-        matches!(&auth.pending["openai-1"].credential, jackin_config::AccountCredential::Profile { agent: jackin_core::Agent::Codex, directory } if directory == std::path::Path::new("/accounts/codex-work"))
+        matches!(&auth.pending["openai-1"].credential, jackin_config::AccountCredential::Profile { agent: jackin_core::Agent::Codex, directory, .. } if directory == std::path::Path::new("/accounts/codex-work"))
     );
 }
 

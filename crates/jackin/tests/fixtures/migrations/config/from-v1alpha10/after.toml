@@ -1,4 +1,4 @@
-version = "v1alpha11"
+version = "v1alpha12"
 # Operator comment preserved across the bootstrap-stamp migration.
 [accounts.personal]
 name = "Personal"

@@ -48,6 +48,18 @@ pub use crate::tui::screens::settings::model::{
     SettingsTrustRow, SettingsTrustState,
 };
 pub use crate::tui::screens::usage::{UsageAccount, UsageScreenState};
+
+/// Console-owned Usage route state: the persistent screen plus its
+/// visibility. Grouped so `ManagerState` stays under the excessive-bools
+/// budget and the two fields move together.
+#[derive(Debug, Default)]
+pub struct UsageRouteState {
+    /// Focus/scroll/refresh state, created on first open and kept alive so
+    /// the heartbeat keeps refreshing while the route is offscreen.
+    pub screen: Option<UsageScreenState>,
+    /// Whether the Usage route is currently visible.
+    pub visible: bool,
+}
 pub use crate::tui::screens::workspaces::model::{
     ManagerHoverTarget, ManagerListRow, WorkspaceSummary,
 };
@@ -83,6 +95,7 @@ pub type ManagerInstanceRefreshSnapshot = crate::tui::subscriptions::InstanceRef
     jackin_core::InstanceIndexEntry,
     jackin_core::SessionRecord,
     jackin_protocol::InstanceSnapshot,
+    crate::services::launch::LiveInstanceAdmission,
 >;
 pub type ManagerConfigSaveResult =
     crate::tui::subscriptions::ConfigSaveResult<AppConfig, jackin_config::RoleSource>;
@@ -242,17 +255,15 @@ pub struct ManagerState<'a> {
     /// `container_base`, the agent picker, and a provider list. The list is
     /// currently always empty: host config cannot prove which `ZAI_API_KEY`
     /// the already-running daemon captured, so provider choice for a running
-    /// container is made in the multiplexer (daemon-owned), not here. The
-    /// field stays so a future daemon-queried list can populate it.
+    /// container is made from the last live manifest admission refresh.
     pub inline_new_session_picker: Option<(
         String,
         AgentChoiceState,
         Vec<crate::services::launch::AccountChoice>,
     )>,
     /// Provider picker shown after the agent is committed in
-    /// `inline_new_session_picker` when its provider list has 2+ entries.
-    /// Dormant while that list is always empty (see above); kept wired for
-    /// the future daemon-queried flow. Context is the target `container`.
+    /// `inline_new_session_picker` when its live admission list has 2+
+    /// entries. Context is the target `container`.
     pub inline_account_picker: Option<AccountPickerState<String>>,
     /// Provider picker for the initial workspace launch (before the container
     /// exists). Shown after the operator commits an agent choice and
@@ -300,6 +311,12 @@ pub struct ManagerState<'a> {
     pub(in crate::tui) file_browser_commit_rx:
         Option<BlockingSubscription<PendingFileBrowserCommit>>,
     pub(in crate::tui) config_save_rx: Option<BlockingSubscription<ManagerConfigSaveResult>>,
+    pub(in crate::tui) account_scan_rx: Option<
+        BlockingSubscription<(
+            u64,
+            Result<crate::tui::screens::settings::model::AccountScanOutcome, String>,
+        )>,
+    >,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.
@@ -319,6 +336,11 @@ pub struct ManagerState<'a> {
     /// Containers whose manifests could not be read during the last
     /// `refresh_instances` pass. Cleared on every successful index load.
     pub(in crate::tui) instance_session_errors: HashSet<String>,
+    /// Exact account/agent/config-ID admissions read from live manifests,
+    /// keyed by `container_base`. Missing means the live manifest could not
+    /// prove an admission set, so the new-session picker must offer nothing.
+    pub live_instance_admissions:
+        HashMap<String, Vec<crate::services::launch::LiveInstanceAdmission>>,
     /// Live tab/pane snapshot per running instance keyed by
     /// `container_base`. Populated each `refresh_instances` tick by
     /// fetching from the daemon's bind-mounted socket at
@@ -337,8 +359,13 @@ pub struct ManagerState<'a> {
     /// across re-entries to the preview pane so the operator's last
     /// selection survives a `Esc → ↑/↓ → Tab` round-trip.
     pub preview_pane_cursor: HashMap<String, usize>,
-    /// Console-owned focus/scroll state for the Usage route; Some opens it.
-    pub usage_screen: Option<UsageScreenState>,
+    /// Console-owned Usage route state (screen + visibility). The screen is
+    /// created on first open and kept alive afterwards so the heartbeat
+    /// keeps refreshing broker data while the route is offscreen; closing
+    /// the route hides it without destroying screen state, so periodic
+    /// refreshes continue offscreen and selection survives a close/reopen
+    /// round-trip.
+    pub usage: UsageRouteState,
     /// Rust-owned usage rows staged before the Usage route is opened.
     pub usage_accounts: Vec<UsageAccount>,
     /// Rust-owned usage discovery notice shown by the Usage route.

@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use super::{dispatch, unavailable, write_response};
 use crate::coordinator::UsageCoordinator;
 use jackin_protocol::usage_broker::{
-    UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageProjectionV1,
+    UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse,
 };
 
 // The broker contract includes twenty simultaneous Capsule clients plus Desktop.
@@ -20,7 +20,7 @@ const MAX_WAIT_TASKS: usize = 32;
 pub(super) struct WaitPool {
     coordinator: Arc<UsageCoordinator>,
     build_id: Arc<str>,
-    projection: Arc<Mutex<UsageProjectionV1>>,
+    publisher: super::publish::ProjectionPublisher,
     workers: Mutex<Vec<std::thread::JoinHandle<()>>>,
 }
 
@@ -28,12 +28,12 @@ impl WaitPool {
     pub(super) fn new(
         coordinator: Arc<UsageCoordinator>,
         build_id: Arc<str>,
-        projection: Arc<Mutex<UsageProjectionV1>>,
+        publisher: super::publish::ProjectionPublisher,
     ) -> Self {
         Self {
             coordinator,
             build_id,
-            projection,
+            publisher,
             workers: Mutex::new(Vec::new()),
         }
     }
@@ -64,12 +64,12 @@ impl WaitPool {
         };
         let coordinator = Arc::clone(&self.coordinator);
         let build_id = Arc::clone(&self.build_id);
-        let projection = Arc::clone(&self.projection);
+        let publisher = self.publisher.clone();
         if let Ok(worker) = jackin_telemetry::spawn::thread_joined_named(
             "usage-broker-wait".to_owned(),
             move || {
                 account_for_dispatch_time(&mut request.operation, accepted.elapsed());
-                let response = dispatch(&coordinator, request, &build_id, &projection);
+                let response = dispatch(&coordinator, request, &build_id, &publisher);
                 write_response(&mut worker_stream, response);
             },
         ) {
@@ -108,7 +108,7 @@ pub(super) const fn is_wait(operation: &UsageBrokerOperation) -> bool {
     matches!(
         operation,
         UsageBrokerOperation::Join { .. }
-            | UsageBrokerOperation::JoinForSurface { .. }
+            | UsageBrokerOperation::JoinForCapability { .. }
             | UsageBrokerOperation::JoinPublication { .. }
             | UsageBrokerOperation::JoinPublicationForSurface { .. }
     )
@@ -116,7 +116,7 @@ pub(super) const fn is_wait(operation: &UsageBrokerOperation) -> bool {
 
 fn account_for_dispatch_time(operation: &mut UsageBrokerOperation, elapsed: Duration) {
     let (UsageBrokerOperation::Join { timeout_ms, .. }
-    | UsageBrokerOperation::JoinForSurface { timeout_ms, .. }
+    | UsageBrokerOperation::JoinForCapability { timeout_ms, .. }
     | UsageBrokerOperation::JoinPublication { timeout_ms, .. }
     | UsageBrokerOperation::JoinPublicationForSurface { timeout_ms, .. }) = operation
     else {

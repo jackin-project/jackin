@@ -17,8 +17,8 @@ use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 
+use crate::instance::RoleState;
 use crate::instance::naming::dind_certs_volume;
-use crate::instance::{PrepareResolvers, RoleState};
 use crate::runtime::identity::GitIdentity;
 
 use super::progress_helpers::StepCounter;
@@ -139,6 +139,29 @@ fn emit_isolation_decision(
     jackin_diagnostics::operation::isolation_decision(workspace, network, dind);
 }
 
+/// Initial daemon argv: the first admitted instance (launch order) for
+/// the launch agent. Falls back to the first admitted instance of any
+/// agent, then to the bare slug for legacy launches without instances.
+/// An exact config ID always resolves at the daemon's spawn gate; a bare
+/// slug is rejected when several instances share the runtime.
+fn initial_daemon_argv(
+    agent: jackin_core::Agent,
+    capsule_config: &jackin_protocol::CapsuleConfig,
+) -> &str {
+    let slug = agent.slug();
+    capsule_config
+        .instances
+        .iter()
+        .find(|id| {
+            capsule_config
+                .agents
+                .get(id.as_str())
+                .is_some_and(|candidate| candidate == slug)
+        })
+        .or_else(|| capsule_config.instances.first())
+        .map_or(slug, String::as_str)
+}
+
 fn emit_post_run_failure(is_firewall: bool) {
     if is_firewall {
         jackin_diagnostics::operation::isolation_firewall_failed(
@@ -173,7 +196,6 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     let paths_owned = paths.clone();
     let home_dir = paths.home_dir.clone();
     let container_name = container_name.to_owned();
-    let manifest = prewarm.manifest.clone();
     let config = prewarm.config.clone();
     let workspace_name = prewarm.workspace_name.to_owned();
     let role_key = prewarm.role_key.to_owned();
@@ -215,13 +237,25 @@ pub(crate) fn spawn_sibling_auth_prewarm(
 
     Some(jackin_telemetry::spawn::joined_blocking(move || {
         let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
-        let selections = match super::capsule_setup::account_auth_selections(
-            &config,
-            ws.as_ref(),
-            &role_key,
-            &sibling_agents,
-        ) {
-            Ok(selections) => selections,
+        let instances: Vec<jackin_config::ResolvedInstance> =
+            match jackin_config::resolve_launch(&config, ws.as_ref(), &role_key, None, None) {
+                Ok(instances) => instances
+                    .into_iter()
+                    .filter(|instance| sibling_agents.contains(&instance.agent))
+                    .collect(),
+                Err(error) => {
+                    if let Some(run) = active_run {
+                        run.compact("sibling_auth_prewarm_failed", &error.to_string());
+                    }
+                    return;
+                }
+            };
+        // Sibling instances keep their config-ID keys so this
+        // concurrent prewarm lands in the same slots the foreground
+        // prepare owns; sibling agents without instances get a
+        // placeholder Ignore binding each.
+        let mut bindings = match super::capsule_setup::instance_auth_bindings(&config, &instances) {
+            Ok(bindings) => bindings,
             Err(error) => {
                 if let Some(run) = active_run {
                     run.compact("sibling_auth_prewarm_failed", &error.to_string());
@@ -229,26 +263,21 @@ pub(crate) fn spawn_sibling_auth_prewarm(
                 return;
             }
         };
-        let resolve_mode = |agent| {
-            selections
-                .get(&agent)
-                .map_or(jackin_config::AuthForwardMode::Ignore, |(mode, _)| *mode)
-        };
-        let resolve_sync_src = |agent| {
-            selections
-                .get(&agent)
-                .and_then(|(_, directory)| directory.clone())
-        };
-        let result = RoleState::prewarm_auth_for_agents(
+        for agent in &sibling_agents {
+            if !instances.iter().any(|instance| instance.agent == *agent) {
+                bindings.push(crate::instance::InstanceAuthBinding::new(
+                    "default",
+                    *agent,
+                    jackin_config::AuthForwardMode::Ignore,
+                    None,
+                ));
+            }
+        }
+        let result = RoleState::prewarm_auth_for_bindings(
             &paths_owned,
             &container_name,
-            &manifest,
-            &PrepareResolvers {
-                auth_modes: &resolve_mode,
-                sync_source_dirs: &resolve_sync_src,
-            },
+            &bindings,
             &home_dir,
-            &sibling_agents,
         );
         let timing_done = match &result {
             Ok(count) => format!("{count} slots"),
@@ -419,7 +448,10 @@ pub(crate) async fn launch_role_runtime(
     let class_label = format!("jackin.class={}", selector.key());
     let display_label = format!("jackin.display.name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
-    let docker_cert_path = "DOCKER_CERT_PATH=/jackin/run/dind-certs/client";
+    let docker_cert_path = format!(
+        "DOCKER_CERT_PATH={}",
+        jackin_core::container_paths::DIND_CERTS_CLIENT_DIR
+    );
     let dind_hostname = format!("{}={dind}", jackin_core::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let role_container_name_env = format!(
         "{}={container_name}",
@@ -447,7 +479,10 @@ pub(crate) async fn launch_role_runtime(
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = super::agent_mounts(state);
     let gh_config_mount = super::github_config_mount(state);
-    let certs_agent_mount = format!("{certs_volume}:/jackin/run/dind-certs/client:ro");
+    let certs_agent_mount = format!(
+        "{certs_volume}:{}:ro",
+        jackin_core::container_paths::DIND_CERTS_CLIENT_DIR
+    );
 
     // Start detached with a persistent TTY, then attach separately.  This
     // decouples the container's lifetime from the foreground attach, so
@@ -588,22 +623,13 @@ pub(crate) async fn launch_role_runtime(
         );
     }
 
-    // Run the container as the host operator's UID (group 0). Matching the host
-    // UID makes host-owned bind mounts transparently read/write, and the
-    // derived image bakes that same UID into image-owned `/home/agent` paths —
-    // see `identity::host_run_as_user`. `HOME` is set explicitly so shells and
-    // the agent CLIs resolve the bind-mounted home even before any passwd lookup.
-    let run_as_user = crate::runtime::identity::host_run_as_user();
-    if let Some(ref user) = run_as_user {
-        run_args.extend_from_slice(&[
-            "--user",
-            user.as_str(),
-            "--group-add",
-            "0",
-            "-e",
-            "HOME=/home/agent",
-        ]);
-    }
+    // The capsule supervisor must start as root so it can create a distinct
+    // Unix identity and install the required per-session Landlock boundary.
+    // Agent sessions immediately drop to their admitted slot identity before
+    // executing any agent code. DAC capabilities are retained only so shared
+    // host workspaces remain writable; Landlock denies those capabilities from
+    // reaching sibling home/auth paths.
+    run_args.extend_from_slice(&["--user", "0:0", "-e", "HOME=/home/agent"]);
 
     run_args.extend_from_slice(&[
         // JACKIN_* runtime metadata is injected by jackin, not declared in role manifests.
@@ -625,7 +651,7 @@ pub(crate) async fn launch_role_runtime(
             "-e",
             "DOCKER_TLS_VERIFY=1",
             "-e",
-            docker_cert_path,
+            docker_cert_path.as_str(),
             "-e",
             &dind_hostname,
         ]);
@@ -808,15 +834,7 @@ pub(crate) async fn launch_role_runtime(
     // is the local debug sink below). Coarse `agent_auth_mode` reflects whether the
     // selected agent's auth was provisioned; richer posture is owned by WP7.
     if *debug {
-        let agent_auth_mode = match agent.slug() {
-            "claude" => state.auth.claude.is_some(),
-            "codex" => state.auth.codex.is_some(),
-            "amp" => state.auth.amp.is_some(),
-            "kimi" => state.auth.kimi.is_some(),
-            "opencode" => state.auth.opencode.is_some(),
-            "grok" => state.auth.grok.is_some(),
-            _ => false,
-        };
+        let agent_auth_mode = state.auth.for_agent(*agent).is_some();
         let session_contract = crate::runtime::docker_profile::format_session_contract(
             *profile,
             &profile_source.to_string(),
@@ -903,33 +921,60 @@ pub(crate) async fn launch_role_runtime(
     run_args.extend_from_slice(&["--label", &image_label]);
     // Host-side bind-mount of the daemon's socket directory. Pre-create
     // host-side so Docker does not materialise the target itself as
-    // root:root 0755. The dir is owned by the host operator (this process)
-    // and the container runs as that same UID/GID (`--user`), so the `agent`
-    // user creates jackin.sock with no special directory mode. The socket
-    // file itself gets 0o600 from inside the capsule. The same directory
-    // carries Capsule's normalized launch config.
+    // root:root 0755. The root capsule supervisor owns the socket and its
+    // normalized launch config; session clients use the separate host.sock
+    // capability path.
+    let mut capsule_config = (*capsule_config).clone();
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
-    let capsule_config_contents = super::capsule_config_contents(capsule_config)
+    let prepared_usage_relay =
+        crate::usage_relay::prepare_for_stdio_tunnel(crate::usage_relay::UsageRelayLaunch {
+            paths,
+            workspace_name: (!sibling_auth_prewarm.workspace_name.is_empty())
+                .then_some(sibling_auth_prewarm.workspace_name),
+            role_key: sibling_auth_prewarm.role_key,
+            launch_config: &capsule_config,
+            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch_config(
+                state,
+                resolved_env,
+                &capsule_config,
+            ),
+        })
+        .await
+        .context("starting scoped usage relay")?;
+    prepared_usage_relay.apply_to_launch_config(&mut capsule_config);
+    let capsule_config_contents = super::capsule_config_contents(&capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-    // Runtime passwd/group entries for the host UID/GID so `getpwuid`/`$HOME`
-    // resolve to the `agent` user inside the container even though the image
-    // only bakes UID 1000. Consumed via `libnss-extrausers` (see
-    // docker/construct). Shared files depend only on the host UID/GID; written
-    // atomically (per-container temp + rename) so a concurrent launch can't
-    // read torn files at mount time, and only when the bytes actually change
-    // so the rename can't swap the inode out from under a live `:ro` bind
-    // mount in an already-running container.
+    // Runtime passwd/group entries for the slot UIDs so `getpwuid` works in
+    // agent tools even though the image only bakes UID 1000. Consumed via
+    // libnss-extrausers (see docker/construct). Written atomically per
+    // container so a concurrent launch cannot read torn files.
     let extrausers_passwd = paths.jackin_home.join("extrausers").join("passwd");
     let extrausers_group = paths.jackin_home.join("extrausers").join("group");
-    let extrausers_entries = match (
-        crate::runtime::identity::host_uid(),
-        crate::runtime::identity::host_gid(),
-    ) {
-        (Some(uid), Some(gid)) => Some((
-            format!("agent:x:{uid}:{gid}:agent:/home/agent:/bin/zsh\n"),
-            format!("agent-host:x:{gid}:agent\n"),
-        )),
-        _ => None,
+    let extrausers_entries = if capsule_config.instance_identities.is_empty()
+        && capsule_config.shell_identity.is_none()
+    {
+        None
+    } else {
+        use std::fmt::Write as _;
+        let mut passwd = String::new();
+        let mut group = String::new();
+        for (index, identity) in capsule_config.instance_identities.values().enumerate() {
+            writeln!(
+                passwd,
+                "jackin-slot-{index}:x:{}:{}:jackin slot {index}:/home/agent:/bin/zsh",
+                identity.uid, identity.gid
+            )?;
+            writeln!(group, "jackin-slot-{index}:x:{}:", identity.gid)?;
+        }
+        if let Some(identity) = capsule_config.shell_identity {
+            writeln!(
+                passwd,
+                "jackin-shell:x:{}:{}:jackin shell:/home/agent:/bin/zsh",
+                identity.uid, identity.gid
+            )?;
+            writeln!(group, "jackin-shell:x:{}:", identity.gid)?;
+        }
+        Some((passwd, group))
     };
     let extrausers_tmp = extrausers_passwd.with_file_name(format!("passwd.{container_name}.tmp"));
     let extrausers_group_tmp =
@@ -988,19 +1033,8 @@ pub(crate) async fn launch_role_runtime(
         },
     );
     prepare_socket_dir_result?;
-    let prepared_usage_relay =
-        crate::usage_relay::prepare_for_stdio_tunnel(crate::usage_relay::UsageRelayLaunch {
-            paths,
-            workspace_name: (!sibling_auth_prewarm.workspace_name.is_empty())
-                .then_some(sibling_auth_prewarm.workspace_name),
-            role_key: sibling_auth_prewarm.role_key,
-            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch(
-                state,
-                resolved_env,
-            ),
-        })
-        .await
-        .context("starting scoped usage relay")?;
+    // The single usage-relay preparation runs before agent.toml serialization
+    // above, so canonical per-instance authorities land in the mounted config.
     // Start the jackin-exec host credential resolver for this container's
     // on-demand bindings. Its socket lands in the dir just prepared (bind-
     // mounted to /jackin/run), so the in-container capsule reaches it at
@@ -1045,10 +1079,13 @@ pub(crate) async fn launch_role_runtime(
         );
     }
     run_args.push(image);
-    // Pass the initial agent as the container command argument. The
+    // Pass the initial instance as the container command argument. The
     // daemon uses it only to choose the first tab; per-session
-    // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
-    run_args.push(agent.slug());
+    // `JACKIN_AGENT` is set later when spawning an actual agent PTY. A
+    // bare agent slug is ambiguous when several admitted instances share
+    // the runtime, and the daemon's spawn gate rejects it — so resolve to
+    // an exact instance config ID whenever instances are admitted.
+    run_args.push(initial_daemon_argv(*agent, &capsule_config));
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "docker_run_role",
@@ -1437,3 +1474,6 @@ pub(crate) const fn capsule_otlp_allowlist_host(
         None
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -45,6 +45,17 @@ pub enum SplitDirectionGeometry {
     TopBottom,
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "The rounded ratio is explicitly clamped to the representable non-negative u16 range."
+)]
+fn ratio_to_cells(size: u16, ratio: f32) -> u16 {
+    (f32::from(size) * ratio)
+        .round()
+        .clamp(0.0, f32::from(u16::MAX)) as u16
+}
+
 /// A concrete rectangle in terminal coordinates (1-based row/col).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rect {
@@ -55,6 +66,7 @@ pub struct Rect {
 }
 
 impl Rect {
+    #[must_use]
     pub const fn new(row: u16, col: u16, rows: u16, cols: u16) -> Self {
         Self {
             row,
@@ -106,6 +118,7 @@ impl Rect {
     }
 }
 
+#[must_use]
 pub fn available_content_rows(term_rows: u16) -> u16 {
     term_rows
         .saturating_sub(STATUS_BAR_ROWS)
@@ -115,10 +128,12 @@ pub fn available_content_rows(term_rows: u16) -> u16 {
         .saturating_sub(CAPSULE_HINT_SEPARATOR_ROWS)
 }
 
+#[must_use]
 pub fn content_rect(content_rows: u16, term_cols: u16) -> Rect {
     Rect::new(STATUS_BAR_ROWS, 0, content_rows, term_cols)
 }
 
+#[must_use]
 pub fn split_spawn_inner_size(direction: SplitDirectionGeometry, from_rect: Rect) -> (u16, u16) {
     match direction {
         SplitDirectionGeometry::LeftRight => (
@@ -132,6 +147,7 @@ pub fn split_spawn_inner_size(direction: SplitDirectionGeometry, from_rect: Rect
     }
 }
 
+#[must_use]
 pub fn local_mouse_position(inner: Rect, row: u16, col: u16) -> Option<(u16, u16)> {
     if row < inner.row || row >= inner.row + inner.rows {
         return None;
@@ -150,15 +166,12 @@ impl PaneTree {
     /// one-cell inset before laying out the agent's content.
     /// Adjacent panes share no gap — their borders sit immediately
     /// next to each other, matching zellij's `││` interior look.
+    #[must_use]
     pub fn leaves(&self, rect: Rect) -> Vec<(u64, Rect)> {
         match self {
             Self::Leaf(id) => vec![(*id, rect)],
             Self::HSplit { left, right, ratio } => {
-                #[expect(
-                    clippy::cast_sign_loss,
-                    reason = "ratio is a layout fraction in 0..=1; cols are non-negative"
-                )]
-                let left_cols = ((f32::from(rect.cols) * ratio).round() as u16)
+                let left_cols = ratio_to_cells(rect.cols, *ratio)
                     .max(1)
                     .min(rect.cols.saturating_sub(1));
                 let right_cols = rect.cols - left_cols;
@@ -169,11 +182,7 @@ impl PaneTree {
                 v
             }
             Self::VSplit { top, bottom, ratio } => {
-                #[expect(
-                    clippy::cast_sign_loss,
-                    reason = "ratio is a layout fraction in 0..=1; rows are non-negative"
-                )]
-                let top_rows = ((f32::from(rect.rows) * ratio).round() as u16)
+                let top_rows = ratio_to_cells(rect.rows, *ratio)
                     .max(1)
                     .min(rect.rows.saturating_sub(1));
                 let bot_rows = rect.rows - top_rows;
@@ -325,6 +334,7 @@ impl PaneTree {
     }
 
     /// Find the leaf ID adjacent in direction from `from_id`, or None.
+    #[must_use]
     pub fn adjacent(&self, rect: Rect, from_id: u64, dir: Direction) -> Option<u64> {
         let leaves = self.leaves(rect);
         let from_rect = leaves.iter().find(|(id, _)| *id == from_id)?.1;
@@ -422,6 +432,7 @@ impl PaneTree {
         }
     }
 
+    #[must_use]
     pub fn all_ids(&self) -> Vec<u64> {
         match self {
             Self::Leaf(id) => vec![*id],
@@ -486,6 +497,7 @@ impl PaneTree {
     /// Returns `(path, orient, split_rect)` so the daemon can save
     /// enough state to re-apply the drag without re-walking on each
     /// motion event.
+    #[must_use]
     pub fn border_at(
         &self,
         rect: Rect,
@@ -495,11 +507,7 @@ impl PaneTree {
         match self {
             Self::Leaf(_) => None,
             Self::HSplit { left, right, ratio } => {
-                #[expect(
-                    clippy::cast_sign_loss,
-                    reason = "ratio is a layout fraction in 0..=1; cols are non-negative"
-                )]
-                let left_cols = ((f32::from(rect.cols) * ratio).round() as u16)
+                let left_cols = ratio_to_cells(rect.cols, *ratio)
                     .max(1)
                     .min(rect.cols.saturating_sub(1));
                 let right_cols = rect.cols - left_cols;
@@ -524,11 +532,7 @@ impl PaneTree {
                 None
             }
             Self::VSplit { top, bottom, ratio } => {
-                #[expect(
-                    clippy::cast_sign_loss,
-                    reason = "ratio is a layout fraction in 0..=1; rows are non-negative"
-                )]
-                let top_rows = ((f32::from(rect.rows) * ratio).round() as u16)
+                let top_rows = ratio_to_cells(rect.rows, *ratio)
                     .max(1)
                     .min(rect.rows.saturating_sub(1));
                 let bot_rows = rect.rows - top_rows;
@@ -608,6 +612,7 @@ pub const SPLIT_RATIO_DEFAULT: f32 = 0.5;
 /// Clamp a ratio into `[SPLIT_RATIO_MIN, SPLIT_RATIO_MAX]`. NaN must be
 /// rejected before this is called — `f32::clamp` propagates NaN, and
 /// a NaN ratio cast to `u16` later collapses a pane.
+#[must_use]
 pub fn clamp_split_ratio(r: f32) -> f32 {
     debug_assert!(
         r.is_finite(),
@@ -630,6 +635,13 @@ pub struct Tab {
     /// because it is a tab property, not a process property. Injected into every
     /// child process as `JACKIN_AGENT_CODENAME`.
     pub codename: String,
+    /// Instance config ID of the session that created this tab, or `None`
+    /// for shell-created tabs. Splits may add panes from other instances;
+    /// per-pane identity lives on `Session`.
+    pub instance: Option<String>,
+    /// Owning account ID of the tab-creating session, or `None` for
+    /// shell-created tabs.
+    pub account_id: Option<String>,
 }
 
 impl Tab {
@@ -645,17 +657,22 @@ impl Tab {
             focused_id: session_id,
             zoomed: None,
             codename: codename.into(),
+            instance: None,
+            account_id: None,
         }
     }
 
+    #[must_use]
     pub fn label(&self) -> &str {
         self.custom_label.as_deref().unwrap_or(&self.auto_label)
     }
 
+    #[must_use]
     pub fn label_owned(&self) -> String {
         self.label().to_owned()
     }
 
+    #[must_use]
     pub fn custom_label(&self) -> Option<&str> {
         self.custom_label.as_deref()
     }

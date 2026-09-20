@@ -60,6 +60,7 @@ pub use account_identity::{
 pub use programmatic::{
     CLAUDE_EFFORT_ENV, CLAUDE_MODEL_ENV, CODEX_LANE_EFFORT_ENV, CODEX_LANE_MODEL_ENV, IdentitySink,
     LaunchedInstance, LoadOptionsError, lane_agent_env, with_account_selection,
+    with_configuration_selection,
 };
 
 mod launch_pipeline;
@@ -150,6 +151,10 @@ pub struct LoadOptions {
     /// the account; the override applies only to the selected agent.
     pub account: Option<String>,
 
+    /// Exact agent configuration selected for this launch. This takes
+    /// precedence over `account`; callers must not supply both.
+    pub configuration: Option<String>,
+
     /// Exact model id for the launched agent, overriding the role manifest's
     /// `[<agent>].model`. Also passed to the in-container Codex role hook so
     /// the hook and the capsule daemon cannot disagree (D-078).
@@ -235,8 +240,8 @@ use progress_helpers::{
 };
 
 pub(crate) use mounts::{
-    Backend, agent_mounts, build_workspace_mount_strings, build_workspace_mounts,
-    github_config_mount, resolve_backend,
+    Backend, agent_mounts, apple_agent_mounts, build_workspace_mount_strings,
+    build_workspace_mounts, github_config_mount, resolve_backend,
 };
 
 #[cfg(test)]

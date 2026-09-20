@@ -326,6 +326,22 @@ fn validate_settings_env_rejects_empty_and_reserved_keys() {
 }
 
 #[test]
+fn validate_settings_env_rejects_account_owned_credentials_without_echoing_value() {
+    let env = SettingsEnvConfig {
+        env: [(
+            "ANTHROPIC_API_KEY".to_owned(),
+            "settings-sentinel".to_owned(),
+        )]
+        .into(),
+        roles: BTreeMap::default(),
+    };
+
+    let error = validate_settings_env(&env, &[]).unwrap_err().to_string();
+    assert!(error.contains("account credentials"), "got {error}");
+    assert!(!error.contains("settings-sentinel"), "got {error}");
+}
+
+#[test]
 fn settings_save_round_trips_multiple_accounts_and_github_independently() {
     let temp = tempfile::tempdir().unwrap();
     let paths = jackin_core::JackinPaths::for_tests(temp.path());

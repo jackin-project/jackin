@@ -99,8 +99,8 @@ if mode == "gated-refresh":
     mode = "refresh"
 if mode == "refresh":
     initial = call({
-        "operation": "refresh_for_surface",
-        "surface_id": "claude",
+        "operation": "refresh_for_capability",
+        "capability": {"account_id": "account-a", "surface_id": "claude"},
         "observed_generation": 0,
         "force": True,
     })
@@ -108,15 +108,15 @@ if mode == "refresh":
     with open("/jackin/run/requested", "w", encoding="utf-8") as marker:
         marker.write(str(initial["state"]["generation"]))
     response = call({
-        "operation": "join_for_surface",
-        "surface_id": "claude",
+        "operation": "join_for_capability",
+        "capability": {"account_id": "account-a", "surface_id": "claude"},
         "generation": initial["state"]["generation"],
         "timeout_ms": 30000,
     })
 elif mode == "request":
     response = call({
-        "operation": "refresh_for_surface",
-        "surface_id": "claude",
+        "operation": "refresh_for_capability",
+        "capability": {"account_id": "account-a", "surface_id": "claude"},
         "observed_generation": 0,
         "force": True,
     })
@@ -130,8 +130,8 @@ elif mode == "unauthorized":
     assert response["status"] == "error", response
     assert response["error"]["kind"] == "unauthorized", response
     missing = call({
-        "operation": "current_for_surface",
-        "surface_id": "codex",
+        "operation": "current_for_capability",
+        "capability": {"account_id": "account-b", "surface_id": "codex"},
     })
     assert missing["status"] == "error", missing
     assert missing["error"]["kind"] == "unauthorized", missing

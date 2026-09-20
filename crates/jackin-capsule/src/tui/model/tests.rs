@@ -293,11 +293,15 @@ fn tab_auto_label_tracks_visible_pane_makeup() {
 
 #[test]
 fn visible_agent_label_formats_shell_agent_and_provider() {
-    assert_eq!(visible_agent_label(None, None), "Shell");
-    assert_eq!(visible_agent_label(Some("claude"), None), "Claude");
+    assert_eq!(visible_agent_label(None, None, None), "Shell");
+    assert_eq!(visible_agent_label(None, Some("claude"), None), "Claude");
     assert_eq!(
-        visible_agent_label(Some("claude"), Some("Z.AI")),
+        visible_agent_label(None, Some("claude"), Some("Z.AI")),
         "Claude (Z.AI)"
+    );
+    assert_eq!(
+        visible_agent_label(Some("Claude · Work"), Some("claude"), Some("Z.AI")),
+        "Claude · Work"
     );
 }
 
@@ -329,6 +333,7 @@ fn visible_agent_state_mapping_uses_protocol_state() {
 fn visible_tab_pane_kind_uses_tui_agent_labeling() {
     assert_eq!(
         visible_tab_pane_kind(VisibleTabPaneFacts {
+            instance_label: None,
             agent_slug: Some("claude"),
             provider_label: Some("Z.AI"),
         }),
@@ -336,6 +341,15 @@ fn visible_tab_pane_kind_uses_tui_agent_labeling() {
     );
     assert_eq!(
         visible_tab_pane_kind(VisibleTabPaneFacts {
+            instance_label: Some("Claude · Work"),
+            agent_slug: Some("claude"),
+            provider_label: Some("Z.AI"),
+        }),
+        VisibleTabPaneKind::Agent("Claude · Work".into())
+    );
+    assert_eq!(
+        visible_tab_pane_kind(VisibleTabPaneFacts {
+            instance_label: None,
             agent_slug: None,
             provider_label: Some("ignored"),
         }),

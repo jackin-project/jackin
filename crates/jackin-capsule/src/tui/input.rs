@@ -79,7 +79,7 @@ pub(crate) fn mouse_event_allowed_for_mode(
         return true;
     }
 
-    let motion = button & 0b100000 != 0;
+    let motion = button & 0b10_0000 != 0;
     let passive_motion = motion && button & 0b11 == 3;
     match mode {
         termpane::MouseProtocolMode::None => false,
@@ -302,6 +302,7 @@ impl Default for InputParser {
 }
 
 impl InputParser {
+    #[must_use]
     pub fn new(prefix: Option<u8>, palette_key: Option<u8>) -> Self {
         Self {
             prefix,
@@ -315,12 +316,14 @@ impl InputParser {
     /// `true` while the parser is between the prefix byte and its
     /// next command key. Exposed so UI layers can react to prefix
     /// state without peeking into the parser state machine.
+    #[must_use]
     pub fn is_awaiting_prefix(&self) -> bool {
         matches!(self.state, State::PrefixAwait)
     }
 
     /// Whether the prefix-mode (`Ctrl+B …`) is active. Affects the
     /// status-bar hint format.
+    #[must_use]
     pub fn prefix_enabled(&self) -> bool {
         self.prefix.is_some()
     }
@@ -328,6 +331,7 @@ impl InputParser {
     /// The resolved palette-key byte, or `None` when palette mode is disabled.
     /// Used by the hint builder to render the correct key glyph when the
     /// operator has overridden `JACKIN_PALETTE_KEY`.
+    #[must_use]
     pub fn palette_key(&self) -> Option<u8> {
         self.palette_key
     }
@@ -424,9 +428,9 @@ impl InputParser {
                     self.seq.push(b);
                     let seq = std::mem::take(&mut self.seq);
                     match classify_csi(&seq, self.palette_key) {
-                        Some(Some(ev)) => events.push(ev),
-                        Some(None) => {}
-                        None => events.push(InputEvent::Data(seq)),
+                        CsiClassification::Event(ev) => events.push(ev),
+                        CsiClassification::Suppress => {}
+                        CsiClassification::Unknown => events.push(InputEvent::Data(seq)),
                     }
                     self.state = State::Idle;
                 }
@@ -451,14 +455,14 @@ impl InputParser {
                             self.in_paste = true;
                         } else {
                             // classify_csi returns an explicit "drop this
-                            // sequence" outcome via Some(None) so kitty
+                            // sequence" outcome via Suppress so kitty
                             // key-release events (and any future
                             // suppress-class CSI) never reach the agent
                             // or the dialog as garbage Data bytes.
                             match classify_csi(&seq, self.palette_key) {
-                                Some(Some(ev)) => events.push(ev),
-                                Some(None) => {}
-                                None => events.push(InputEvent::Data(seq)),
+                                CsiClassification::Event(ev) => events.push(ev),
+                                CsiClassification::Suppress => {}
+                                CsiClassification::Unknown => events.push(InputEvent::Data(seq)),
                             }
                         }
                         self.state = State::Idle;
@@ -535,6 +539,7 @@ impl InputParser {
 
     /// Whether the parser is mid-escape and the daemon should arm an
     /// `escape-time` timer. Cleared after `flush_pending_esc`.
+    #[must_use]
     pub fn esc_pending(&self) -> bool {
         matches!(self.state, State::EscStart) && !self.seq.is_empty()
     }
@@ -549,6 +554,7 @@ fn flush(data: &mut Vec<u8>, events: &mut Vec<InputEvent>) {
     }
 }
 
+#[must_use]
 pub fn parse_prefix(s: &str) -> Option<u8> {
     parse_key_binding(s)
 }
@@ -559,6 +565,7 @@ pub fn parse_prefix(s: &str) -> Option<u8> {
 /// - `C-Space` or `C-@` - `Ctrl+Space` / `Ctrl+@`, maps to `0x00`
 /// - A single ASCII control byte in hex form `0xNN`
 /// - A single literal byte
+#[must_use]
 pub fn parse_key_binding(s: &str) -> Option<u8> {
     let s = s.trim();
     if let Some(rest) = s.strip_prefix("C-").or_else(|| s.strip_prefix("c-")) {
@@ -645,13 +652,19 @@ fn parse_xterm_modify_other_keys(seq: &[u8]) -> Option<(u32, u32)> {
 ///   `Some(None)`      → classified as "suppress" — emit nothing
 ///                       (kitty key-release and terminal-report replies).
 ///   `Some(Some(ev))`  → classified, caller emits `ev`.
-fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent>> {
+enum CsiClassification {
+    Unknown,
+    Suppress,
+    Event(InputEvent),
+}
+
+fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> CsiClassification {
     // Focus in / out.
     if seq == b"\x1b[I" {
-        return Some(Some(InputEvent::FocusIn));
+        return CsiClassification::Event(InputEvent::FocusIn);
     }
     if seq == b"\x1b[O" {
-        return Some(Some(InputEvent::FocusOut));
+        return CsiClassification::Event(InputEvent::FocusOut);
     }
     // Kitty / CSI-u Escape and control keys. Once a focused agent enables the
     // kitty keyboard protocol, many terminals encode Esc as `CSI 27 ... u`
@@ -664,17 +677,22 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
         .strip_prefix(b"\x1b[")
         .and_then(|body| body.strip_suffix(b"u"))
     {
-        let (codepoint, modifier, event) = parse_csi_u_key(rest)?;
+        let Some((codepoint, modifier, event)) = parse_csi_u_key(rest) else {
+            return CsiClassification::Unknown;
+        };
         if event == Some(3) {
-            return Some(None);
+            return CsiClassification::Suppress;
         }
         if codepoint == 27 && modifier.unwrap_or(1) == 1 {
-            return Some(Some(InputEvent::Data(b"\x1b".to_vec())));
+            return CsiClassification::Event(InputEvent::Data(b"\x1b".to_vec()));
         }
         if matches!(event, None | Some(1 | 2))
             && let Some(control) = csi_u_control_byte(codepoint, modifier)
         {
-            return dispatch_control_byte(control, palette_key).map(Some);
+            return dispatch_control_byte(control, palette_key)
+                .map_or(CsiClassification::Unknown, |event| {
+                    CsiClassification::Event(event)
+                });
         }
     }
     // Xterm window-report replies (`CSI ... t`) are generated by the
@@ -686,7 +704,7 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
     // command text. Keep this paired with the output-side `CSI ... t`
     // passthrough suppression in `session::apply_passthrough_policy` for `UnhandledCsi`.
     if matches!(seq.last(), Some(b't')) {
-        return Some(None);
+        return CsiClassification::Suppress;
     }
     // Ghostty may emit xterm modifyOtherKeys for Shift+Enter as
     // `CSI 27 ; 2 ; 13 ~` before the focused agent has negotiated
@@ -695,7 +713,7 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
     // xterm form, so normalize this one editor-critical key while
     // leaving the rest of modifyOtherKeys byte-for-byte.
     if let Some((13, 2)) = parse_xterm_modify_other_keys(seq) {
-        return Some(Some(InputEvent::Data(b"\x1b[13;2u".to_vec())));
+        return CsiClassification::Event(InputEvent::Data(b"\x1b[13;2u".to_vec()));
     }
     // Other Ctrl+key combos (palette key, Ctrl+Q, …) encoded as xterm
     // modifyOtherKeys by terminals that haven't negotiated CSI-u mode — dispatch
@@ -703,7 +721,10 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
     if let Some((codepoint, modifier)) = parse_xterm_modify_other_keys(seq)
         && let Some(control) = csi_u_control_byte(codepoint, Some(modifier))
     {
-        return dispatch_control_byte(control, palette_key).map(Some);
+        return dispatch_control_byte(control, palette_key)
+            .map_or(CsiClassification::Unknown, |event| {
+                CsiClassification::Event(event)
+            });
     }
     // Arrow keys.
     //
@@ -759,7 +780,7 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
         // safety since older or non-conformant terminals may omit the
         // event tag.
         if event == 3 {
-            return Some(None);
+            return CsiClassification::Suppress;
         }
 
         if modifier == 4 {
@@ -770,7 +791,7 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
                 b'D' => crate::tui::keymap::ResizePaneAction::Left,
                 _ => unreachable!("kitty arrow parser only calls resize mapping for arrow bytes"),
             };
-            return Some(Some(action.to_input_event()));
+            return CsiClassification::Event(action.to_input_event());
         }
 
         // No modifier and an event tag was present (kitty form) →
@@ -782,7 +803,7 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
         if modifier == 1 && body.contains(&b':') {
             let mut plain = b"\x1b[".to_vec();
             plain.push(final_byte);
-            return Some(Some(InputEvent::Data(plain)));
+            return CsiClassification::Event(InputEvent::Data(plain));
         }
     }
     // SGR mouse: ESC [ < ... M/m
@@ -798,16 +819,16 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
         if let Some(p) = params
             && p.len() >= 3
         {
-            let button = p[0] as u8;
-            let col = (p[1] as u16).saturating_sub(1);
-            let row = (p[2] as u16).saturating_sub(1);
+            let button = u8::try_from(p[0]).unwrap_or(u8::MAX);
+            let col = u16::try_from(p[1]).unwrap_or(u16::MAX).saturating_sub(1);
+            let row = u16::try_from(p[2]).unwrap_or(u16::MAX).saturating_sub(1);
             if *final_byte == b'M' {
-                return Some(Some(InputEvent::MousePress { col, row, button }));
+                return CsiClassification::Event(InputEvent::MousePress { col, row, button });
             }
-            return Some(Some(InputEvent::MouseRelease { col, row, button }));
+            return CsiClassification::Event(InputEvent::MouseRelease { col, row, button });
         }
     }
-    None
+    CsiClassification::Unknown
 }
 
 /// Dispatch a bare control byte through the capsule-level keymap. Returns the
@@ -855,7 +876,7 @@ fn classify_x10_mouse(seq: &[u8]) -> Option<InputEvent> {
     let button = seq[3].checked_sub(32)?;
     let col = u16::from(seq[4]).checked_sub(33)?;
     let row = u16::from(seq[5]).checked_sub(33)?;
-    if button & 0b11 == 3 && button & 0b100000 == 0 {
+    if button & 0b11 == 3 && button & 0b10_0000 == 0 {
         return Some(InputEvent::MouseRelease {
             col,
             row,

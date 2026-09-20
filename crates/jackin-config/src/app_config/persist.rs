@@ -55,6 +55,12 @@ impl LoadedConfig {
         validate_editor_config_semantics(&self.config)
     }
 
+    /// Mutable access for first-run bootstrap scans, which register
+    /// discovered accounts before the editor validates and commits.
+    pub(crate) fn config_mut(&mut self) -> &mut AppConfig {
+        &mut self.config
+    }
+
     pub(crate) fn commit(self) -> crate::ConfigResult<AppConfig> {
         let Self {
             config,
@@ -379,6 +385,7 @@ fn parse_global_config(
         migrations::CONFIG_MIGRATIONS,
     )?;
     migrate_embedded_op_accounts(&mut doc).map_err(|_| ConfigSourceIssue::Malformed)?;
+    migrate_embedded_workspaces(&mut doc)?;
     let mut config: AppConfig =
         toml::from_str(&doc.to_string()).map_err(|_| ConfigSourceIssue::Malformed)?;
     let raw_embedded = std::mem::take(&mut config.workspaces);
@@ -565,6 +572,15 @@ pub(crate) fn load_split_config_locked(
             );
             let migrated = migrated_from?.is_some();
             migrate_embedded_op_accounts(&mut doc)?;
+            // Legacy embedded workspaces predate per-workspace schema
+            // versions; migrate each through WORKSPACE_MIGRATIONS before
+            // strict parse, otherwise unknown agent tables brick the load
+            // (`WorkspaceConfig` denies unknown fields).
+            migrate_embedded_workspaces(&mut doc).map_err(|issue| {
+                ConfigError::msg(format!(
+                    "migrating embedded workspace configuration: {issue:?}"
+                ))
+            })?;
             let serialized = doc.to_string();
             if migrated {
                 migrated_global_contents = Some(serialized.clone());
@@ -621,7 +637,32 @@ pub(crate) fn load_split_config_locked(
     })
 }
 
-/// Upgrade embedded legacy fields before strict `WorkspaceConfig` deserialization.
+/// Run the complete workspace migration chain before strict deserialization.
+fn migrate_embedded_workspaces(doc: &mut DocumentMut) -> Result<(), ConfigSourceIssue> {
+    let Some(workspaces) = doc
+        .get_mut("workspaces")
+        .and_then(toml_edit::Item::as_table_mut)
+    else {
+        return Ok(());
+    };
+    for (_, item) in workspaces.iter_mut() {
+        let Some(table) = item.as_table_mut() else {
+            continue;
+        };
+        let mut workspace = DocumentMut::new();
+        *workspace.as_table_mut() = table.clone();
+        let workspace = migrate_document_in_memory(
+            &workspace.to_string(),
+            "workspace config",
+            CURRENT_WORKSPACE_VERSION,
+            migrations::WORKSPACE_MIGRATIONS,
+        )?;
+        *table = workspace.as_table().clone();
+    }
+    Ok(())
+}
+
+/// Upgrade embedded legacy `op_account` fields before strict deserialization.
 fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     let Some(workspaces) = doc
         .get_mut("workspaces")
@@ -956,7 +997,7 @@ impl AppConfig {
         // while preserving one writer scope for the tree.
         let builtins_changed = config.sync_builtin_agents();
         if builtins_changed {
-            let mut editor = ConfigEditor::open_with_lock(paths, lock)?;
+            let (mut editor, _) = ConfigEditor::open_with_lock(paths, lock)?;
             for &(name, git) in super::roles::BUILTIN_ROLES {
                 editor.upsert_builtin_agent(name, git);
             }

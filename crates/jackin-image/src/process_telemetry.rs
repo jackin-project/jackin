@@ -46,6 +46,12 @@ pub(crate) const fn agent_executable(agent: jackin_core::Agent) -> ProcessExecut
         jackin_core::Agent::Kimi => ProcessExecutableName::Kimi,
         jackin_core::Agent::Opencode => ProcessExecutableName::Opencode,
         jackin_core::Agent::Grok => ProcessExecutableName::Grok,
+        jackin_core::Agent::Antigravity => ProcessExecutableName::Agy,
+        jackin_core::Agent::Gemini => ProcessExecutableName::Gemini,
+        jackin_core::Agent::Cursor => ProcessExecutableName::CursorAgent,
+        jackin_core::Agent::Muse => ProcessExecutableName::Muse,
+        jackin_core::Agent::Omp => ProcessExecutableName::Omp,
+        jackin_core::Agent::Hermes => ProcessExecutableName::Hermes,
     }
 }
 

@@ -1,4 +1,4 @@
 from_version = "v1alpha10"
-target_version = "v1alpha11"
+target_version = "v1alpha12"
 target_version_shipped = "2026-09-17"
-summary = "Stamp an initialized [bootstrap] sentinel so upgrades never rescan; existing account fields remain unchanged."
+summary = "Stamp an already-initialized [bootstrap] sentinel so upgrades never rescan; agent configurations and default launch lists arrive via serde defaults."

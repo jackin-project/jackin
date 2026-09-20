@@ -27,7 +27,7 @@ fn waitpid_wnohang_returns_exit_status_after_synchronous_wait() {
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn /bin/true");
-    let pid = Pid::from_raw(child.id() as i32);
+    let pid = Pid::from_raw(i32::try_from(child.id()).unwrap_or(i32::MAX));
     let status = child.wait().expect("wait /bin/true");
     assert!(status.success());
     let probe = waitpid(pid, Some(WaitPidFlag::WNOHANG));
@@ -45,7 +45,7 @@ fn reap_zombies_does_not_steal_registered_session_child() {
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn /bin/true");
-    let pid = Pid::from_raw(child.id() as i32);
+    let pid = Pid::from_raw(i32::try_from(child.id()).unwrap_or(i32::MAX));
     register_managed_child(child.id());
     waitid(Id::Pid(pid), WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT)
         .expect("child should exit but remain waitable");

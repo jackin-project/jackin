@@ -35,6 +35,7 @@ chrono       = { workspace = true, features = ["clock"] }
 sha2         = { workspace = true }
 hex          = { workspace = true }
 fs4          = { workspace = true }
+nix          = { workspace = true, features = ["dir", "fs", "user"] }
 serde_yaml_ng = { workspace = true }
 directories  = { workspace = true }
 tempfile     = { workspace = true }

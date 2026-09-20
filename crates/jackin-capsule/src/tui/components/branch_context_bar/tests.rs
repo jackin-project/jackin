@@ -185,9 +185,9 @@ fn right_chunks_order_usage_container_run_id() {
     )
     .expect("layout");
 
-    let usage = layout.usage_region.expect("usage region");
-    let container = layout.container_region.expect("container region");
-    let run = layout.debug_chip_region.expect("run id region");
+    let usage = layout.usage.expect("usage region");
+    let container = layout.container.expect("container region");
+    let run = layout.debug_chip.expect("run id region");
 
     assert!(
         usage.start < container.start,
@@ -244,7 +244,7 @@ fn hit_rejects_columns_outside_region() {
         "jk-test",
     )
     .expect("layout fits");
-    let region = layout.left_region.expect("left region present");
+    let region = layout.left.expect("left region present");
     let left_start = region.start;
     let left_end = region.end;
     assert_eq!(
@@ -339,7 +339,8 @@ fn hover_highlights_click_targets() {
         Some(crate::tui::model::HoverTarget::Container),
     );
     assert!(text.contains("jk-test-container"));
-    let chunk_x = text.find("jk-test-container").expect("container chunk") as u16;
+    let chunk_x =
+        u16::try_from(text.find("jk-test-container").expect("container chunk")).unwrap_or(u16::MAX);
     assert_eq!(
         container[(chunk_x, 23)].fg,
         hover_fg,
@@ -355,7 +356,7 @@ fn hover_highlights_click_targets() {
         "jk-test-container",
         Some(crate::tui::model::HoverTarget::UsageStatus),
     );
-    let chunk_x = text.find("Session 37%").expect("usage chunk") as u16;
+    let chunk_x = u16::try_from(text.find("Session 37%").expect("usage chunk")).unwrap_or(u16::MAX);
     assert_eq!(
         usage[(chunk_x, 23)].fg,
         hover_fg,

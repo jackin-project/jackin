@@ -39,6 +39,14 @@ pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 /// and `no` suppress explicit jackin❯ host-open URL actions while leaving
 /// normal terminal OSC 8 passthrough under `JACKIN_OSC_HYPERLINK`.
 pub const JACKIN_OPEN_LINKS_ENV_NAME: &str = "JACKIN_OPEN_LINKS";
+/// Codex model selected for one Capsule pane by the role hook contract.
+pub const CODEX_LANE_MODEL_ENV_NAME: &str = "JACKIN_LANE_CODEX_MODEL";
+/// Codex reasoning effort selected for one Capsule pane by the role hook contract.
+pub const CODEX_LANE_EFFORT_ENV_NAME: &str = "JACKIN_LANE_CODEX_EFFORT";
+/// Claude model selected for one Capsule pane.
+pub const CLAUDE_MODEL_ENV_NAME: &str = "ANTHROPIC_MODEL";
+/// Claude reasoning effort selected for one Capsule pane.
+pub const CLAUDE_EFFORT_ENV_NAME: &str = "CLAUDE_CODE_EFFORT_LEVEL";
 /// Z.AI API key env name.
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
 /// Anthropic API key env name (Claude `api_key` mode).
@@ -62,6 +70,21 @@ pub const KIMI_API_KEY_ENV_NAME: &str = "KIMI_API_KEY";
 pub const OPENCODE_API_KEY_ENV_NAME: &str = "OPENCODE_API_KEY";
 /// xAI API key env name (Grok Build).
 pub const XAI_API_KEY_ENV_NAME: &str = "XAI_API_KEY";
+/// Gemini API key env name (Antigravity `agy` + Gemini CLI `api_key` mode).
+///
+/// Documented Google AI Studio key variable; both Google-fronted agents
+/// accept it.
+pub const GEMINI_API_KEY_ENV_NAME: &str = "GEMINI_API_KEY";
+/// Google API key alias accepted by Google-fronted agents.
+pub const GOOGLE_API_KEY_ENV_NAME: &str = "GOOGLE_API_KEY";
+/// Cursor API key env name (`cursor-agent api_key` mode; verified in
+/// `cursor-agent --help` alongside `CURSOR_API_ENDPOINT`).
+pub const CURSOR_API_KEY_ENV_NAME: &str = "CURSOR_API_KEY";
+/// Meta API key env name (Muse `api_key` mode; overrides keychain login
+/// per `muse login --help`).
+pub const META_API_KEY_ENV_NAME: &str = "META_API_KEY";
+/// `OpenRouter` API key env name (multi-provider clients only; no native agent).
+pub const OPENROUTER_API_KEY_ENV_NAME: &str = "OPENROUTER_API_KEY";
 /// Grok ACP deployment credential accepted by the Grok CLI.
 pub const GROK_DEPLOYMENT_KEY_ENV_NAME: &str = "GROK_DEPLOYMENT_KEY";
 /// GitHub CLI token env name (`gh`).
@@ -92,6 +115,14 @@ pub enum UsageCredentialOwner {
     Minimax,
     /// `OpenCode` (registered for launch consistency; Desktop excludes it).
     OpenCode,
+    /// Google (Antigravity + Gemini CLI).
+    Google,
+    /// Cursor.
+    Cursor,
+    /// Meta (Muse).
+    Meta,
+    /// `OpenRouter` (multi-provider clients only).
+    OpenRouter,
 }
 
 /// One governed environment credential name and its exact provider owner.
@@ -152,6 +183,26 @@ pub const USAGE_CREDENTIAL_ENV_REGISTRY: &[UsageCredentialEnvName] = &[
         name: OPENCODE_API_KEY_ENV_NAME,
         owner: UsageCredentialOwner::OpenCode,
     },
+    UsageCredentialEnvName {
+        name: GEMINI_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Google,
+    },
+    UsageCredentialEnvName {
+        name: GOOGLE_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Google,
+    },
+    UsageCredentialEnvName {
+        name: CURSOR_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Cursor,
+    },
+    UsageCredentialEnvName {
+        name: META_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Meta,
+    },
+    UsageCredentialEnvName {
+        name: OPENROUTER_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::OpenRouter,
+    },
 ];
 
 /// Network mode injected by jackin into role containers (`allowlist`, `open`, `none`).
@@ -189,6 +240,10 @@ pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_FIREWALL_INSTALLED_ENV_NAME, None),
     (JACKIN_NETWORK_ENFORCEMENT_ENV_NAME, None),
     (JACKIN_SUDO_ENV_NAME, None),
+    (CODEX_LANE_MODEL_ENV_NAME, None),
+    (CODEX_LANE_EFFORT_ENV_NAME, None),
+    (CLAUDE_MODEL_ENV_NAME, None),
+    (CLAUDE_EFFORT_ENV_NAME, None),
 ];
 
 /// Returns `true` if `name` is a runtime-reserved env var name.

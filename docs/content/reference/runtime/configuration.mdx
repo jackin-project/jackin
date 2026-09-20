@@ -42,7 +42,11 @@ Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather t
 - **Restore the full setup on a new machine** by checking out the dotfile repo and running `chezmoi apply` (or equivalent), with no manual TOML reconstruction.
 - **Diff a single workspace** in PR review without seeing churn in unrelated workspaces, which is impossible when every change touches a shared `[workspaces.*]` block.
 
-The global config carries `version = "v1alpha11"`; each workspace file carries its own `version = "v1alpha9"` stamp, so a dotfile-managed setup that is partially old (some workspaces stamped, some not) migrates per-file on first load. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
+Each file carries its own schema-version stamp (`v1alpha12` for
+`config.toml`, `v1alpha10` for workspace files), so a dotfile-managed setup
+that is partially old (some workspaces stamped, some not) migrates per-file on
+first load. See [Schema Versions](/reference/runtime/schema-versions/) for the
+full version history and migration matrix.
 
 ## config.toml schema
 
@@ -52,12 +56,28 @@ schema reference; `docs_commands` compares them with the serde structs. */}
 {/* config-key: AccountConfig.name */}
 {/* config-key: AccountConfig.provider */}
 {/* config-key: AccountConfig.credential */}
+{/* config-key: AgentConfiguration.account */}
+{/* config-key: AgentConfiguration.agent */}
+{/* config-key: AgentConfiguration.base_url */}
+{/* config-key: AgentConfiguration.display_label */}
+{/* config-key: AgentConfiguration.invoked_via_wrapper */}
+{/* config-key: AgentConfiguration.model */}
 {/* config-key: AppConfig.accounts */}
 {/* config-key: AppConfig.account_bindings */}
+{/* config-key: AppConfig.account_scan_exclusions */}
+{/* config-key: AppConfig.agent_configurations */}
 {/* config-key: AppConfig.bootstrap */}
+{/* config-key: AppConfig.default_launch */}
+{/* config-key: BootstrapState.fresh_install */}
+{/* config-key: BootstrapState.version */}
 {/* config-key: WorkspaceConfig.accounts */}
 {/* config-key: WorkspaceConfig.account_bindings */}
+{/* config-key: WorkspaceConfig.default_launch */}
 {/* config-key: WorkspaceRoleOverride.account_bindings */}
+{/* config-key: WorkspaceRoleOverride.default_launch */}
+{/* config-key: XdgRoots.cache */}
+{/* config-key: XdgRoots.config */}
+{/* config-key: XdgRoots.data */}
 {/* config-key: AppConfig.dirty_exit_policy */}
 {/* config-key: AppConfig.docker */}
 {/* config-key: AppConfig.env */}
@@ -69,8 +89,6 @@ schema reference; `docs_commands` compares them with the serde structs. */}
 {/* config-key: AppConfig.telemetry */}
 {/* config-key: AppConfig.version */}
 {/* config-key: AppConfig.workspaces */}
-{/* config-key: BootstrapState.fresh_install */}
-{/* config-key: BootstrapState.version */}
 {/* config-key: DockerConfig.grants */}
 {/* config-key: DockerConfig.mounts */}
 {/* config-key: DockerConfig.profile */}
@@ -112,13 +130,15 @@ schema reference; `docs_commands` compares them with the serde structs. */}
 {/* config-key: WorkspaceRoleOverride.env */}
 {/* config-key: WorkspaceRoleOverride.github */}
 {/* config-key: WorkspaceRuntimeConfig.backend */}
+{/* config-key: WrapperSpec.args */}
+{/* config-key: WrapperSpec.identity */}
 
 The configuration is TOML. Global settings live at
 `~/.config/jackin/config.toml`; saved workspaces live one-per-file under
 `~/.config/jackin/workspaces/`. The CLI and console manage both locations
 for you, so you generally don't need to edit them by hand.
 
-Top-level `version` is the config schema version. jackin❯ writes `version = "v1alpha11"` to `config.toml` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
+Top-level `version` is the config schema version. jackin❯ writes `version = "v1alpha12"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
 ### Runtime backend selection
 
@@ -194,6 +214,56 @@ Role selections must belong to the workspace allowlist. A global `account_bindin
 API credentials can use literal values, environment references, or 1Password `EnvValue` references. Supported cross-provider accounts can set `base_url` and `model`. Credential routing derives from the selected account; ordinary operator environment layers cannot override governed account credentials.
 
 `ConfigEditor` owns atomic registry and assignment edits. Account removal prunes references. Profile discovery runs once at first initialization; explicit rescanning is available through `jackin account scan`. See [Agent Accounts](/guides/authentication/agents/) for setup and the breaking migration.
+
+Named agent configurations describe launchable instances — one agent plus one
+account plus optional model/endpoint overrides. Several configurations may share
+one account (and its quota); each becomes a separately labeled instance such as
+`Claude · Work`:
+
+```toml
+[agent_configurations.claude-work]
+agent = "claude"
+account = "work"
+model = "opus-4-6"
+
+[agent_configurations.codex-zai]
+agent = "codex"
+account = "zai"
+base_url = "https://api.z.ai/api/coding/paas/v4"
+```
+
+The `default_launch` list (global, per workspace, per role) selects the instances
+a launch starts. Precedence is one-launch selection, then role, workspace, and
+global defaults, then the sole eligible instance. An explicit scope replaces
+inherited scopes entirely; inherited global candidates filter by workspace
+authorization, while explicit selections validate atomically and never fall back
+silently. An explicit empty list means shell-only.
+
+Amp and OpenCode profiles may pin explicit XDG roots when state splits across
+data, config, and cache homes:
+
+```toml
+[accounts.amp-scent.credential.xdg_roots]
+data = "/Users/operator/.amp-scentbird/data"
+config = "/Users/operator/.amp-scentbird/config"
+cache = "/Users/operator/.amp-scentbird/cache"
+```
+
+The configured cache directory is preserved as the host-side source. Each
+selected instance receives a unique container target such as
+`/home/agent/.cache/amp` or `/home/agent/.cache/opencode`; secondary instances
+get a slot suffix. Reusing or nesting configured cache roots across selected
+instances is rejected because it would break per-instance isolation. Without
+an explicit cache root, jackin creates the equivalent cache directory under
+the instance's managed `home/` state.
+
+The `[bootstrap]` sentinel records first-run initialization. A missing config
+file scans once on creation; an installer-created empty config carries
+`fresh_install = true` and scans exactly once; older configs without the
+sentinel migrate as already initialized and never rescan or resurrect removed
+accounts. Deliberately removed accounts also leave a secret-free source
+fingerprint in `account_scan_exclusions`, so an explicit scan cannot recreate
+the same account until it is registered directly again.
 
 ### GitHub CLI auth-forward settings
 
@@ -400,8 +470,10 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `home/.claude/` (including `.claude.json`) | Durable Claude Code home state, including conversation history, runtime-local plugins, account metadata, and settings written during the session |
 | `home/.codex/` | Durable Codex home state, including conversation history, runtime-local config, and login state created inside the session |
 | `home/.local/share/amp/` | Durable Amp data state created inside the session |
+| `home/.cache/amp[-<slot>]/` | Per-instance Amp XDG cache target; an explicit `XdgRoots.cache` is mounted here from its configured host root |
 | `home/.kimi-code/` | Durable Kimi home state, including runtime-local config and login state created inside the session |
 | `home/.local/share/opencode/` | Durable OpenCode data state (auth credentials, model preferences) created inside the session |
+| `home/.cache/opencode[-<slot>]/` | Per-instance OpenCode XDG cache target; an explicit `XdgRoots.cache` is mounted here from its configured host root |
 | `home/.grok/` | Durable Grok home state, including runtime-local config, auth files copied from `/jackin/grok/`, and cache written during the session |
 | `state/` | jackin❯ runtime state mounted at `/jackin/state`, including the `setup_once` marker |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |

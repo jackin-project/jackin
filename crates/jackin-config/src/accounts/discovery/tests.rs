@@ -21,6 +21,26 @@ fn environment_discovery_returns_names_without_secret_values() {
 }
 
 #[test]
+fn environment_candidates_keep_the_matching_endpoint_without_secret_values() {
+    let environment = std::collections::BTreeMap::from([
+        ("OPENAI_API_KEY".to_owned(), "sensitive-fixture".to_owned()),
+        (
+            "OPENAI_BASE_URL".to_owned(),
+            "https://proxy.example/v1".to_owned(),
+        ),
+    ]);
+    let found = discover_environment_account_candidates(&environment);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].provider, AiProvider::OpenAi);
+    assert_eq!(found[0].variable, "OPENAI_API_KEY");
+    assert_eq!(
+        found[0].base_url.as_deref(),
+        Some("https://proxy.example/v1")
+    );
+    assert!(!format!("{found:?}").contains("sensitive-fixture"));
+}
+
+#[test]
 fn environment_aliases_use_first_nonempty_reference_per_provider() {
     for (provider, primary, alias) in [
         (AiProvider::Moonshot, "KIMI_API_KEY", "MOONSHOT_API_KEY"),
@@ -73,7 +93,7 @@ fn recognizes_each_agents_credentials_and_rejects_metadata() {
         (
             Agent::Opencode,
             "auth.json",
-            r#"{"anthropic":{"type":"oauth","refresh":"fixture"}}"#,
+            r#"{"opencode-go":{"type":"api","key":"fixture"}}"#,
         ),
         (
             Agent::Grok,
@@ -97,6 +117,105 @@ fn recognizes_each_agents_credentials_and_rejects_metadata() {
         assert_eq!(found.evidence, CredentialEvidence::File(path));
         assert!(!format!("{found:?}").contains("fixture"));
     }
+}
+
+#[test]
+fn opencode_default_discovery_rejects_multi_entry_before_persistence() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home
+        .path()
+        .join(Agent::Opencode.runtime().state_paths().credential_dir);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{
+            "anthropic":{"type":"api","key":"anthropic-sentinel"},
+            "opencode-go":{"type":"api","key":"opencode-sentinel"}
+        }"#,
+    )
+    .unwrap();
+
+    let report = discover_default_accounts(home.path());
+    assert!(
+        !report
+            .accounts
+            .iter()
+            .any(|account| account.agent == Agent::Opencode)
+    );
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Opencode)
+        .expect("ambiguous OpenCode auth is reported");
+    assert_eq!(
+        issue.error,
+        DiscoveryError::Unsupported(
+            "OpenCode auth.json must contain exactly one provider credential"
+        )
+    );
+    assert!(!format!("{issue:?}").contains("sentinel"));
+}
+
+#[test]
+fn opencode_default_discovery_uses_auth_entry_when_database_coexists() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home
+        .path()
+        .join(Agent::Opencode.runtime().state_paths().credential_dir);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"opencode-sentinel"}}"#,
+    )
+    .unwrap();
+    std::fs::write(directory.join("opencode.db"), b"database fixture").unwrap();
+
+    let report = discover_default_accounts(home.path());
+    let accounts = report
+        .accounts
+        .iter()
+        .filter(|account| account.agent == Agent::Opencode)
+        .collect::<Vec<_>>();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].provider, Some(AiProvider::Opencode));
+    assert_eq!(accounts[0].directory, directory);
+    assert!(
+        report
+            .issues
+            .iter()
+            .all(|issue| issue.agent != Agent::Opencode)
+    );
+    assert!(!format!("{accounts:?}").contains("sentinel"));
+}
+
+#[test]
+fn opencode_database_only_source_fails_closed_without_registering_account() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home
+        .path()
+        .join(Agent::Opencode.runtime().state_paths().credential_dir);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("opencode.db"), b"database fixture").unwrap();
+
+    let report = discover_default_accounts(home.path());
+    assert!(
+        !report
+            .accounts
+            .iter()
+            .any(|account| account.agent == Agent::Opencode)
+    );
+    let issue = report
+        .issues
+        .iter()
+        .find(|issue| issue.agent == Agent::Opencode)
+        .expect("unsupported OpenCode database is reported");
+    assert_eq!(
+        issue.error,
+        DiscoveryError::Unsupported(
+            "OpenCode database credentials require a source-bound auth.json profile"
+        )
+    );
+    assert!(!format!("{issue:?}").contains("database fixture"));
 }
 
 #[test]
@@ -165,6 +284,164 @@ fn coding_api_aliases_are_discovered() {
 }
 
 #[test]
+fn new_provider_keys_are_discovered() {
+    for (provider, name) in [
+        (AiProvider::Google, "GEMINI_API_KEY"),
+        (AiProvider::Google, "GOOGLE_API_KEY"),
+        (AiProvider::Cursor, "CURSOR_API_KEY"),
+        (AiProvider::Meta, "META_API_KEY"),
+        (AiProvider::OpenRouter, "OPENROUTER_API_KEY"),
+    ] {
+        let env = std::collections::BTreeMap::from([(name.into(), "fixture-key".into())]);
+        assert_eq!(
+            discover_environment_accounts(&env),
+            [(provider, name.into())]
+        );
+        assert!(jackin_core::is_account_env(name));
+    }
+    // Canonical name wins over the alias.
+    let env = std::collections::BTreeMap::from([
+        ("GEMINI_API_KEY".to_owned(), "primary-fixture".to_owned()),
+        ("GOOGLE_API_KEY".to_owned(), "alias-fixture".to_owned()),
+    ]);
+    assert_eq!(
+        discover_environment_accounts(&env),
+        [(AiProvider::Google, "GEMINI_API_KEY".to_owned())]
+    );
+}
+
+#[test]
+fn recognizes_new_single_file_agents_and_rejects_metadata() {
+    let fixtures = [
+        (
+            Agent::Gemini,
+            "oauth_creds.json",
+            r#"{"access_token":"fixture","refresh_token":"fixture"}"#,
+        ),
+        (
+            Agent::Cursor,
+            "auth.json",
+            r#"{"accessToken":"fixture","refreshToken":"fixture"}"#,
+        ),
+        (
+            Agent::Muse,
+            "auth.json",
+            r#"{"schema_version":2,"providers":{"meta":{"user_email":"op@example.com"}}}"#,
+        ),
+    ];
+    for (agent, filename, content) in fixtures {
+        let home = tempfile::tempdir().unwrap();
+        let directory = home
+            .path()
+            .join(agent.runtime().state_paths().credential_dir);
+        let path = directory.join(filename);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let inspect = || inspect_directory(agent, &directory, home.path(), |_| false);
+        assert_eq!(inspect().unwrap(), None, "empty directory for {agent}");
+        std::fs::write(&path, "{}").unwrap();
+        assert_eq!(inspect().unwrap(), None, "metadata for {agent}");
+        std::fs::write(&path, content).unwrap();
+        let found = inspect().unwrap().unwrap();
+        assert_eq!(found.evidence, CredentialEvidence::File(path));
+        assert!(!format!("{found:?}").contains("fixture"));
+    }
+}
+
+#[test]
+fn antigravity_discovery_is_keychain_only() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".gemini/antigravity-cli");
+    std::fs::create_dir_all(&directory).unwrap();
+    // settings.json holds prefs, never credentials: no evidence without the
+    // Keychain singleton, even when the file exists and parses.
+    std::fs::write(directory.join("settings.json"), r#"{"model":"fixture"}"#).unwrap();
+    assert_eq!(
+        inspect_directory(Agent::Antigravity, &directory, home.path(), |_| false).unwrap(),
+        None
+    );
+    let found = inspect_directory(Agent::Antigravity, &directory, home.path(), |service| {
+        assert_eq!(service, "gemini");
+        true
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        found.evidence,
+        CredentialEvidence::Keychain("gemini".to_owned())
+    );
+}
+
+#[test]
+fn hermes_discovery_enumerates_profiles_through_stores() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".hermes");
+    std::fs::create_dir_all(&directory).unwrap();
+    let inspect = || inspect_directory(Agent::Hermes, &directory, home.path(), |_| false);
+    assert_eq!(inspect().unwrap(), None, "empty directory");
+    // auth.json alone, without an attributable profile, is not an account.
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"fixture"}}"#,
+    )
+    .unwrap();
+    assert_eq!(inspect().unwrap(), None, "profile-less store");
+    std::fs::write(
+        directory.join("config.yaml"),
+        "profiles:\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    let found = inspect().unwrap().unwrap();
+    assert_eq!(found.provider, Some(AiProvider::OpenAi));
+    assert_eq!(
+        found.source_selector,
+        Some(ProfileSelector {
+            entry: "openai".to_owned(),
+            profile: Some("work".to_owned()),
+        })
+    );
+    assert_eq!(
+        found.evidence,
+        CredentialEvidence::File(directory.join("auth.json"))
+    );
+    assert!(!format!("{found:?}").contains("fixture"));
+}
+
+#[test]
+fn hermes_discovery_rejects_ambiguous_profiles_without_exposing_secrets() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".hermes");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("config.yaml"),
+        "profiles:\n  personal:\n    provider: anthropic\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("auth.json"),
+        r#"{"anthropic":{"type":"api","key":"personal-sentinel"},"openai":{"type":"api","key":"work-sentinel"}}"#,
+    )
+    .unwrap();
+
+    let error = inspect_directory(Agent::Hermes, &directory, home.path(), |_| false).unwrap_err();
+    assert_eq!(
+        error,
+        DiscoveryError::Unsupported("Hermes credential store contains multiple profiles")
+    );
+    assert!(!format!("{error:?}").contains("sentinel"));
+}
+
+#[test]
+fn omp_discovery_without_database_is_not_an_account() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".omp");
+    std::fs::create_dir_all(&directory).unwrap();
+    assert_eq!(
+        inspect_directory(Agent::Omp, &directory, home.path(), |_| false).unwrap(),
+        None
+    );
+}
+
+#[test]
 fn kimi_default_discovery_accepts_cli_home_without_duplicate_accounts() {
     let home = tempfile::tempdir().unwrap();
     // Keep the default Claude probe filesystem-only on macOS.
@@ -191,6 +468,59 @@ fn kimi_default_discovery_accepts_cli_home_without_duplicate_accounts() {
         assert_eq!(accounts.len(), 1);
         assert_eq!(accounts[0].directory, directory);
     }
+}
+
+#[test]
+fn kimi_discovery_prefers_live_env_grant_over_drained_base_file() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".kimi-code");
+    std::fs::create_dir_all(directory.join("credentials")).unwrap();
+    std::fs::write(
+        directory.join("credentials/kimi-code.json"),
+        r#"{"access_token":"","refresh_token":"","expires_at":0,"scope":"kimi-code"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("credentials/kimi-code-env-fixture.json"),
+        r#"{"access_token":"fixture-live","refresh_token":"fixture-refresh","expires_at":9999999999,"scope":"kimi-code"}"#,
+    )
+    .unwrap();
+    let found = inspect_directory(Agent::Kimi, &directory, home.path(), |_| false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        found.evidence,
+        CredentialEvidence::File(directory.join("credentials/kimi-code-env-fixture.json"))
+    );
+    assert!(!format!("{found:?}").contains("fixture-live"));
+}
+
+#[test]
+fn kimi_discovery_ignores_newer_env_grant_directories() {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".kimi-code");
+    let credentials = directory.join("credentials");
+    std::fs::create_dir_all(&credentials).unwrap();
+    std::fs::write(
+        credentials.join("kimi-code.json"),
+        r#"{"access_token":"","refresh_token":"","expires_at":0,"scope":"kimi-code"}"#,
+    )
+    .unwrap();
+    let valid = credentials.join("kimi-code-env-valid.json");
+    std::fs::write(
+        &valid,
+        r#"{"access_token":"fixture-live","refresh_token":"fixture-refresh","expires_at":9999999999,"scope":"kimi-code"}"#,
+    )
+    .unwrap();
+    let newer_directory = credentials.join("kimi-code-env-newer.json");
+    std::fs::create_dir(&newer_directory).unwrap();
+    filetime::set_file_mtime(&valid, filetime::FileTime::from_unix_time(1, 0)).unwrap();
+    filetime::set_file_mtime(&newer_directory, filetime::FileTime::from_unix_time(2, 0)).unwrap();
+
+    let found = inspect_directory(Agent::Kimi, &directory, home.path(), |_| false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.evidence, CredentialEvidence::File(valid));
 }
 
 #[test]

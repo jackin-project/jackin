@@ -82,6 +82,7 @@ impl ExecPickerState {
     }
 
     /// Returns the selected items as host.sock credential bindings.
+    #[must_use]
     pub fn selected_refs(&self) -> Vec<jackin_protocol::ExecBinding> {
         self.items
             .iter()
@@ -134,6 +135,10 @@ async fn read_framed(stream: &mut UnixStream, max: usize) -> Result<Vec<u8>> {
 /// paths cannot drift. The read intentionally has no timeout — the host
 /// resolver may block on `op read`'s Touch ID prompt for as long as the
 /// operator takes.
+/// # Errors
+///
+/// Returns an error when the host socket cannot be connected, the request
+/// cannot be written, or the reply is invalid or reports failure.
 pub async fn resolve_credentials(
     host_sock_path: &str,
     refs: Vec<jackin_protocol::ExecBinding>,
@@ -207,6 +212,10 @@ pub async fn resolve_credentials(
 ///
 /// Transport is [`jackin_process`] with **no read timeout** — the operator
 /// (or `op` Touch ID) may take arbitrarily long; see also `resolve_credentials`.
+/// # Errors
+///
+/// Returns an error when the configured command cannot be started or its
+/// output cannot be collected.
 pub async fn execute_command(
     command: &str,
     args: &[String],
@@ -248,7 +257,8 @@ pub async fn execute_command(
         if err_hits > 0 {
             stderr = stderr.replace(secret, "[redacted by jackin']");
         }
-        redacted_count += (out_hits + err_hits) as u32;
+        redacted_count = redacted_count
+            .saturating_add(u32::try_from(out_hits.saturating_add(err_hits)).unwrap_or(u32::MAX));
     }
     // PEM block redaction is global — `redact_pem` scrubs *any* PEM block, not a
     // specific secret's — so run it once per stream when any key-type secret is
@@ -325,14 +335,29 @@ fn exec_control_request(
     command: String,
     args: Vec<String>,
     ctx: jackin_protocol::TelemetryContext,
+    session_capability: Option<String>,
 ) -> ControlRequest {
     let msg = ClientMsg::ExecCommand { command, args };
-    ControlRequest { ctx, msg }
+    ControlRequest {
+        ctx,
+        session_capability,
+        msg,
+    }
+}
+
+fn inherited_session_capability() -> Option<String> {
+    std::env::var(jackin_protocol::SESSION_CAPABILITY_ENV)
+        .ok()
+        .filter(|value| !value.is_empty())
 }
 
 /// Run `jackin-exec` and return the result as a captured struct instead of
 /// writing to stdout/stderr and calling `process::exit`. Used by the MCP
 /// server to return structured output to Claude Code.
+/// # Errors
+///
+/// Returns an error when command arguments are invalid, the daemon cannot be
+/// reached, or the command request fails.
 pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
     if args.is_empty() {
         bail!("usage: jackin-exec <command> [args…]");
@@ -366,7 +391,9 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
         jackin_telemetry::propagation::inject(&mut ctx);
     }
     let request = match msg {
-        ClientMsg::ExecCommand { command, args } => exec_control_request(command, args, ctx),
+        ClientMsg::ExecCommand { command, args } => {
+            exec_control_request(command, args, ctx, inherited_session_capability())
+        }
         _ => unreachable!("constructed ExecCommand above"),
     };
     let result = async {
@@ -439,6 +466,10 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
     clippy::exit,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
+/// # Errors
+///
+/// Returns an error when command arguments are invalid, the daemon request
+/// fails, or output cannot be written.
 pub async fn run(args: &[String]) -> Result<()> {
     let capture = run_capture(args).await?;
 

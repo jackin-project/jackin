@@ -17,25 +17,37 @@
 //! - `agent/adapters/opencode.rs` — `OpencodeRuntime`
 
 pub(crate) mod amp;
+pub(crate) mod antigravity;
 pub(crate) mod claude;
 pub(crate) mod codex;
+pub(crate) mod cursor;
+pub(crate) mod gemini;
 pub(crate) mod grok;
+pub(crate) mod hermes;
 pub(crate) mod kimi;
+pub(crate) mod muse;
+pub(crate) mod omp;
 pub(crate) mod opencode;
 
 pub(crate) use amp::AmpRuntime;
+pub(crate) use antigravity::AntigravityRuntime;
 
 #[cfg(test)]
 mod tests;
 pub(crate) use claude::ClaudeRuntime;
 pub(crate) use codex::CodexRuntime;
+pub(crate) use cursor::CursorRuntime;
+pub(crate) use gemini::GeminiRuntime;
 pub(crate) use grok::GrokRuntime;
+pub(crate) use hermes::HermesRuntime;
 pub(crate) use kimi::KimiRuntime;
+pub(crate) use muse::MuseRuntime;
+pub(crate) use omp::OmpRuntime;
 pub(crate) use opencode::OpencodeRuntime;
 
 use super::runtime::AgentRuntime;
 
-/// All six built-in adapters in the canonical declaration order.
+/// All twelve built-in adapters in the canonical declaration order.
 ///
 /// Adding a new runtime is one new file + one line here.
 pub(crate) const fn registry() -> &'static [&'static dyn AgentRuntime] {
@@ -46,5 +58,11 @@ pub(crate) const fn registry() -> &'static [&'static dyn AgentRuntime] {
         &KimiRuntime,
         &OpencodeRuntime,
         &GrokRuntime,
+        &AntigravityRuntime,
+        &GeminiRuntime,
+        &CursorRuntime,
+        &MuseRuntime,
+        &OmpRuntime,
+        &HermesRuntime,
     ]
 }

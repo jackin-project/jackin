@@ -11,17 +11,28 @@ use super::{
 
 impl Multiplexer {
     /// Split the focused pane and spawn a session of the operator's
-    /// choice inside it. `agent_slug = None` opens a shell. Used by
+    /// choice inside it. `instance = None` opens a shell. Used by
     /// the `AgentPicker` → Split flow so the operator picks the new
     /// pane's identity instead of cloning the source pane's agent.
+    /// The target resolves exactly like a fresh spawn: unknown or
+    /// ambiguous agent slugs fail rather than substituting an instance.
     pub(super) fn split_focused_into(
         &mut self,
         direction: SplitDirection,
-        agent_slug: Option<String>,
+        instance: Option<String>,
         env_overrides: &[(String, String)],
         provider_label: Option<&str>,
     ) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
+        let instance = instance
+            .map(|raw| {
+                self.launch_env
+                    .launch_config
+                    .resolve_instance(&raw)
+                    .map(str::to_owned)
+                    .map_err(|reason| anyhow::anyhow!("rejected spawn target {raw:?}: {reason}"))
+            })
+            .transpose()?;
         // Any selection / drag-resize is anchored to a specific pane
         // rect that this reflow is about to invalidate.
         self.cancel_drag();
@@ -48,23 +59,43 @@ impl Multiplexer {
         let (spawn_rows, spawn_cols) = split_spawn_inner_size(split_geometry, from_rect);
         let env_passthrough = self.env_for_spawn(env_overrides);
         let launch = self.session_launch(
-            agent_slug.as_deref(),
+            instance.as_deref(),
             provider_label,
             &env_passthrough,
             &tab_codename,
-        );
-        let agent_for_history = agent_slug.clone();
-        let (session, new_id) = Session::spawn(
-            &launch.label,
-            agent_slug,
-            provider_label.map(|label| crate::session::SessionProvider {
-                label: label.to_owned(),
-                env_overrides: env_overrides.to_vec(),
-            }),
+        )?;
+        let agent_for_history = instance.clone();
+        let account_for_session = instance
+            .as_deref()
+            .and_then(|id| self.launch_env.launch_config.account_for_instance(id))
+            .map(str::to_owned);
+        let usage_capability = instance.as_deref().and_then(|id| {
+            self.launch_env
+                .launch_config
+                .usage_capability_for_instance(id)
+        });
+        let identity = instance
+            .as_deref()
+            .and_then(|id| self.launch_env.launch_config.identity_for_instance(id))
+            .or(self.launch_env.launch_config.shell_identity)
+            .ok_or_else(|| anyhow::anyhow!("split target has no isolated Unix identity"))?;
+        let (mut session, new_id) = Session::spawn(
+            crate::session::SessionSpawnSpec {
+                label: launch.label.clone(),
+                agent: instance,
+                account_id: account_for_session,
+                identity,
+                provider: provider_label.map(|label| crate::session::SessionProvider {
+                    label: label.to_owned(),
+                    env_overrides: env_overrides.to_vec(),
+                }),
+                cache_dir: launch.cache_dir,
+            },
             launch.cmd,
             self.session_terminal(spawn_rows, spawn_cols),
             self.control.event_tx.clone(),
         )?;
+        session.usage_capability = usage_capability.cloned();
         self.session_supervisor.sessions.insert(new_id, session);
         self.record_agent_history(
             new_id,
@@ -106,10 +137,10 @@ impl Multiplexer {
     /// the source pane's runtime.
     pub(super) fn split_focused(&mut self, direction: SplitDirection) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
-        let (agent_slug, provider_env_overrides, provider_label) = self.focused_spawn_metadata();
+        let (instance, provider_env_overrides, provider_label) = self.focused_spawn_metadata();
         self.split_focused_into(
             direction,
-            agent_slug,
+            instance,
             &provider_env_overrides,
             provider_label.as_deref(),
         )
@@ -299,8 +330,22 @@ impl Multiplexer {
                     .provider
                     .as_ref()
                     .map(|provider| provider.label.as_str());
+                // Sessions store instance config IDs; tabs show the
+                // per-instance label. Unknown IDs (hand-built test
+                // sessions) render verbatim.
+                let slug = session.agent.as_deref().map(|stored| {
+                    self.launch_env
+                        .launch_config
+                        .agent_for_instance(stored)
+                        .unwrap_or(stored)
+                });
+                let instance_label = session
+                    .agent
+                    .as_deref()
+                    .and_then(|stored| self.launch_env.launch_config.label_for_instance(stored));
                 crate::tui::model::visible_tab_pane_kind(crate::tui::model::VisibleTabPaneFacts {
-                    agent_slug: session.agent.as_deref(),
+                    instance_label,
+                    agent_slug: slug,
                     provider_label,
                 })
             })
@@ -408,7 +453,7 @@ impl Multiplexer {
             && let Some(s) = self.session_supervisor.sessions.get(o)
             && s.focus_events_enabled()
         {
-            s.send_input(b"\x1b[O");
+            let _sent = s.send_input(b"\x1b[O");
         }
         // Cursor and mode state for the newly focused pane are reconciled
         // by the next composed frame (§3.4) — no assertion site here.
@@ -416,7 +461,7 @@ impl Multiplexer {
             && let Some(s) = self.session_supervisor.sessions.get(n)
             && s.focus_events_enabled()
         {
-            s.send_input(b"\x1b[I");
+            let _sent = s.send_input(b"\x1b[I");
         }
     }
 

@@ -500,6 +500,7 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
         docker: None,
+        default_launch: None,
     };
     let err =
         validate_workspace_config(&WorkspaceName::parse("ws").unwrap(), &workspace).unwrap_err();

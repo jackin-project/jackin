@@ -226,6 +226,10 @@ const NAMESPACE_TEST_FIXTURES: &[(&str, &str)] = &[
         "jackin.prewarm",
     ),
     (
+        "crates/jackin-runtime/src/runtime/launch/capsule_setup/tests.rs",
+        "jackin.role.toml",
+    ),
+    (
         "crates/jackin-runtime/src/runtime/discovery/tests.rs",
         "jackin.display.name",
     ),

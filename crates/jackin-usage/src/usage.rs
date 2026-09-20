@@ -12,7 +12,7 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
-use jackin_core::container_paths;
+use jackin_core::{account_key_hash, container_paths};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::future::Future;
@@ -37,12 +37,19 @@ pub(crate) mod process_telemetry;
 mod format;
 
 mod amp;
+mod antigravity;
 mod claude;
 mod codex;
+mod cursor;
+mod gemini;
 mod grok;
+mod hermes;
 mod kimi;
 mod minimax;
+mod muse;
+mod omp;
 mod opencode;
+mod openrouter;
 mod refresh;
 mod view;
 mod zai;
@@ -52,9 +59,21 @@ mod zai;
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::amp::{
-    AmpSuccessContext, AmpUsage, AmpWorkspaceBalance, amp_api_key_snapshot, amp_snapshot,
-    amp_view_from_usage, fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key,
-    parse_amp_usage_output,
+    AmpRenewal, AmpSubscription, AmpSubscriptionKind, AmpSuccessContext, AmpUsage,
+    AmpWorkspaceBalance, amp_api_key_snapshot, amp_snapshot, amp_view_from_usage,
+    fetch_amp_api_usage, fetch_amp_cli_usage, load_amp_api_key, parse_amp_usage_output,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use self::antigravity::{
+    ANTIGRAVITY_MIN_JSON_VERSION, AntigravityCredits, AntigravityFamily, AntigravityPool,
+    AntigravityUsage, AntigravityWindow, agy_version_supports_json, antigravity_buckets,
+    antigravity_cli_version, antigravity_credits_bucket, antigravity_identity_from_value,
+    antigravity_plan_from_value, antigravity_snapshot, fetch_antigravity_cli_credits,
+    fetch_antigravity_cli_usage, parse_agy_version, parse_antigravity_credits_output,
+    parse_antigravity_usage_output,
 };
 pub use self::claude::ClaudeUsageDiagnostic;
 #[expect(
@@ -67,11 +86,12 @@ pub(crate) use self::claude::{
     ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeQuotaWindow,
     ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution, claude_account_identity,
     claude_code_user_agent, claude_code_user_agent_with, claude_code_version_from_text,
-    claude_email_from_value, claude_oauth_candidates, claude_oauth_from_value,
-    claude_organization_type_from_value, claude_snapshot, claude_spend_bucket,
-    claude_view_from_wave, claude_wave_policy, fetch_claude_cli_usage, fetch_claude_oauth_usage,
-    load_claude_account_email, normalize_claude_spend, push_claude_dollar_windows,
-    read_claude_keychain_item, resolve_claude_wave,
+    claude_email_from_value, claude_error_is_scope_restriction, claude_oauth_candidates,
+    claude_oauth_from_value, claude_organization_type_from_value, claude_provider_error_label,
+    claude_snapshot, claude_spend_bucket, claude_view_from_wave, claude_wave_policy,
+    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
+    normalize_claude_spend, push_claude_dollar_windows, read_claude_keychain_item,
+    resolve_claude_wave,
 };
 #[cfg(test)]
 pub(crate) use self::claude::{
@@ -93,10 +113,40 @@ pub(crate) use self::codex::{
     codex_account_identity, codex_account_label_from_id_token, codex_auth_candidates,
     codex_oauth_from_value, codex_plan_display_name, codex_plan_exact_display,
     codex_plan_word_display, codex_profile_snapshot, codex_refresh_request_body,
-    codex_rpc_notification, codex_rpc_request, codex_snapshot, fetch_codex_oauth_reset_credits,
-    fetch_codex_oauth_usage, fetch_codex_oauth_usage_refreshing, fetch_codex_rpc_usage,
-    push_codex_window, refresh_codex_access_token, resolve_codex_base_url,
+    codex_rpc_notification, codex_rpc_request, codex_snapshot, decode_codex_rpc_usage,
+    fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage, fetch_codex_oauth_usage_refreshing,
+    fetch_codex_rpc_usage, push_codex_window, refresh_codex_access_token, resolve_codex_base_url,
     resolve_codex_reset_credits_url, resolve_codex_usage_url,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use self::cursor::{
+    CursorAuth, CursorEnterpriseScope, CursorMemberSpend, CursorPeriodUsage, CursorRequestUsage,
+    CursorSandUsage, CursorTeamSpend, CursorUsageEvents, CursorUsageSummary, cursor_auth_path,
+    cursor_credits_bucket, cursor_dashboard_base, cursor_dashboard_post, cursor_dashboard_url,
+    cursor_default_base, cursor_enterprise_snapshot, cursor_events_buckets,
+    cursor_needs_request_fallback, cursor_period_buckets, cursor_request_bucket, cursor_rest_get,
+    cursor_sand_bucket, cursor_session_cookie, cursor_snapshot, cursor_summary_buckets,
+    cursor_team_spend_buckets, cursor_teams_events_url, cursor_teams_spend_url,
+    cursor_user_id_from_token, fetch_cursor_credit_grants, fetch_cursor_period_usage,
+    fetch_cursor_plan_info, fetch_cursor_request_usage, fetch_cursor_sand_usage,
+    fetch_cursor_stripe_balance, fetch_cursor_team_spend, fetch_cursor_usage_events,
+    fetch_cursor_usage_summary, load_cursor_auth, load_cursor_cli_identity,
+    parse_cursor_credit_grants, parse_cursor_period_usage, parse_cursor_plan_info,
+    parse_cursor_request_usage, parse_cursor_sand_usage, parse_cursor_stripe_balance,
+    parse_cursor_team_spend, parse_cursor_usage_events, parse_cursor_usage_summary,
+};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use self::gemini::{
+    GEMINI_CONSUMER_OAUTH_END, GeminiEntitlement, GeminiProjectQuota,
+    gemini_consumer_oauth_retired, gemini_credential_origin, gemini_credential_presence,
+    gemini_error_needs_migration, gemini_migration_action, gemini_oauth_creds_path,
+    gemini_quota_buckets, gemini_snapshot, parse_gemini_entitlement, parse_gemini_project_quotas,
 };
 #[expect(
     unused_imports,
@@ -215,11 +265,14 @@ pub(crate) struct CachedUsage {
 pub struct UsageRefreshTarget {
     pub agent: String,
     pub provider: Option<String>,
+    /// Exact broker authority for the selected account. Surface labels are
+    /// presentation only and must never route a refresh.
+    pub capability: jackin_protocol::usage_broker::UsageAccountCapability,
 }
 
 impl UsageRefreshTarget {
     pub(crate) fn cache_key(&self) -> String {
-        canonical_usage_cache_key(&self.agent, self.provider.as_deref())
+        usage_cache_key_for_broker_account(&self.agent, self.provider.as_deref(), &self.capability)
     }
 }
 
@@ -321,12 +374,39 @@ impl UsageCache {
         &mut self,
         agent: &str,
         focused_provider: Option<&str>,
-        view: FocusedUsageView,
+        mut view: FocusedUsageView,
     ) {
-        self.snapshots.insert(
-            canonical_usage_cache_key(agent, focused_provider),
-            CachedUsage { view },
-        );
+        if view.focused_agent.is_none() {
+            view.focused_agent = Some(agent.to_owned());
+        }
+        if view.focused_provider.is_none() {
+            view.focused_provider = focused_provider.map(str::to_owned);
+        }
+        let cache_key = stable_cache_account_label(&view.account.account_label)
+            .map(|_| usage_cache_key_for_view(agent, focused_provider, &view))
+            .or_else(|| cached_usage_key_for_target(&self.snapshots, agent, focused_provider))
+            .unwrap_or_else(|| canonical_usage_cache_key(agent, focused_provider));
+        self.snapshots.insert(cache_key, CachedUsage { view });
+    }
+
+    /// Test-only helper for an exact account snapshot. Production broker
+    /// adoption always uses this same capability-qualified key.
+    #[doc(hidden)]
+    pub fn insert_snapshot_for_capability_for_test(
+        &mut self,
+        agent: &str,
+        focused_provider: Option<&str>,
+        capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+        mut view: FocusedUsageView,
+    ) {
+        if view.focused_agent.is_none() {
+            view.focused_agent = Some(agent.to_owned());
+        }
+        if view.focused_provider.is_none() {
+            view.focused_provider = focused_provider.map(str::to_owned);
+        }
+        let cache_key = usage_cache_key_for_broker_account(agent, focused_provider, capability);
+        self.snapshots.insert(cache_key, CachedUsage { view });
     }
 
     /// Bench/test helper: write materialized accounts to `path` instead of the
@@ -352,8 +432,7 @@ impl UsageCache {
         // Label-only fast path: the status bar needs just `status_bar_label`, which
         // `cached_focused_usage_view`'s clone + enrich/mark-active never touch. Read
         // it straight from the stored view instead of cloning the whole snapshot.
-        let cache_key = canonical_usage_cache_key(agent, focused_provider);
-        if let Some(cached) = self.snapshots.get(&cache_key) {
+        if let Some(cached) = cached_usage_for_target(&self.snapshots, agent, focused_provider) {
             return Some(cached.view.status_bar_label.clone());
         }
         // A focused agent with no snapshot yet is mid-load — show `refreshing`
@@ -361,6 +440,31 @@ impl UsageCache {
         // segment is hidden only when there is no focused agent at all (the
         // `focused_agent?` above returns `None` → caller renders nothing).
         Some("refreshing".to_owned())
+    }
+
+    /// Exact-account status-bar lookup used by Capsule sessions. A missing
+    /// capability is intentionally treated as not yet loaded; it must never
+    /// fall back to another account on the same provider surface.
+    pub fn focused_status_bar_label_for_capability(
+        &self,
+        focused_agent: Option<&str>,
+        focused_provider: Option<&str>,
+        capability: Option<&jackin_protocol::usage_broker::UsageAccountCapability>,
+    ) -> Option<String> {
+        let agent = focused_agent?;
+        let Some(capability) = capability else {
+            return Some("refreshing".to_owned());
+        };
+        if !capability_matches_surface(agent, focused_provider, capability) {
+            return Some("usage unavailable".to_owned());
+        }
+        Some(
+            cached_usage_for_capability(&self.snapshots, agent, focused_provider, capability)
+                .map_or_else(
+                    || "refreshing".to_owned(),
+                    |cached| cached.view.status_bar_label.clone(),
+                ),
+        )
     }
 
     pub fn account_snapshot_views(&self) -> Vec<AccountUsageSnapshotView> {
@@ -388,13 +492,63 @@ impl UsageCache {
         cached_refreshing_view(agent, focused_provider, now)
     }
 
+    /// Exact-account focused snapshot. Surface-only cache selection is not
+    /// acceptable for a Capsule with duplicate provider accounts.
+    pub fn focused_snapshot_for_capability(
+        &mut self,
+        focused_agent: Option<&str>,
+        focused_provider: Option<&str>,
+        capability: Option<&jackin_protocol::usage_broker::UsageAccountCapability>,
+    ) -> FocusedUsageView {
+        let Some(agent) = focused_agent else {
+            if let Some(provider) = focused_provider {
+                return cached_unavailable_view("usage", Some(provider), now_epoch());
+            }
+            return FocusedUsageView::unavailable("no focused agent session", now_epoch());
+        };
+        let now = now_epoch();
+        let Some(capability) = capability else {
+            return cached_refreshing_view(agent, focused_provider, now);
+        };
+        if !capability_matches_surface(agent, focused_provider, capability) {
+            return cached_unavailable_view(agent, focused_provider, now);
+        }
+        if let Some(view) =
+            self.cached_focused_usage_view_for_capability(agent, focused_provider, capability)
+        {
+            return view;
+        }
+        cached_refreshing_view(agent, focused_provider, now)
+    }
+
     pub(crate) fn cached_focused_usage_view(
         &self,
         agent: &str,
         focused_provider: Option<&str>,
     ) -> Option<FocusedUsageView> {
-        let cache_key = canonical_usage_cache_key(agent, focused_provider);
-        let mut view = self.snapshots.get(&cache_key)?.view.clone();
+        let mut view = cached_usage_for_target(&self.snapshots, agent, focused_provider)
+            .map(|cached| cached.view.clone())?;
+        refresh_cached_updated_label(&mut view, now_epoch());
+        if view.focused_agent.is_none() {
+            view.focused_agent = Some(agent.to_owned());
+        }
+        if view.focused_provider.is_none() {
+            view.focused_provider = focused_provider.map(str::to_owned);
+        }
+        enrich_provider_tabs(&mut view, &self.snapshots);
+        mark_active_tab(&mut view);
+        Some(view)
+    }
+
+    fn cached_focused_usage_view_for_capability(
+        &self,
+        agent: &str,
+        focused_provider: Option<&str>,
+        capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+    ) -> Option<FocusedUsageView> {
+        let mut view =
+            cached_usage_for_capability(&self.snapshots, agent, focused_provider, capability)
+                .map(|cached| cached.view.clone())?;
         refresh_cached_updated_label(&mut view, now_epoch());
         if view.focused_agent.is_none() {
             view.focused_agent = Some(agent.to_owned());
@@ -433,6 +587,122 @@ pub(crate) fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&s
         return format!("{agent}:{}", focused_provider.unwrap_or_default());
     }
     surface.label().to_owned()
+}
+
+fn usage_cache_key_for_view(
+    agent: &str,
+    focused_provider: Option<&str>,
+    view: &FocusedUsageView,
+) -> String {
+    let base = canonical_usage_cache_key(agent, focused_provider);
+    let Some(label) = stable_cache_account_label(&view.account.account_label) else {
+        return base;
+    };
+    let surface = resolve_surface(agent, focused_provider);
+    let surface_id = surface.id().unwrap_or(agent);
+    let evidence = format!(
+        "usage-cache-account-v1:{}:{}",
+        length_prefixed(surface_id),
+        length_prefixed(&label),
+    );
+    let hash = account_key_hash("usage-cache-account-v1", &evidence);
+    let hash = hash.strip_prefix("sha256:").unwrap_or(&hash);
+    format!("{base}:account-{hash}")
+}
+
+fn usage_cache_key_for_broker_account(
+    agent: &str,
+    focused_provider: Option<&str>,
+    capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+) -> String {
+    format!(
+        "{}:account-id-v1:{}:{}",
+        canonical_usage_cache_key(agent, focused_provider),
+        capability.surface_id,
+        capability.account_id,
+    )
+}
+
+fn stable_cache_account_label(label: &str) -> Option<String> {
+    let label = label.trim();
+    if label.is_empty()
+        || label.eq_ignore_ascii_case("account unavailable")
+        || label.eq_ignore_ascii_case("unknown")
+        || label.eq_ignore_ascii_case("current host login")
+        || label.eq_ignore_ascii_case("refreshing")
+    {
+        None
+    } else {
+        Some(label.to_lowercase())
+    }
+}
+
+fn length_prefixed(value: &str) -> String {
+    format!("{}:{value}", value.len())
+}
+
+fn cache_view_matches_target(
+    view: &FocusedUsageView,
+    agent: &str,
+    focused_provider: Option<&str>,
+) -> bool {
+    let target_surface = resolve_surface(agent, focused_provider);
+    let view_surface = resolve_surface(
+        view.focused_agent.as_deref().unwrap_or_default(),
+        view.focused_provider
+            .as_deref()
+            .or(Some(view.account.provider_label.as_str())),
+    );
+    if target_surface == UsageSurface::Unsupported {
+        view.focused_agent.as_deref() == Some(agent)
+            && view.focused_provider.as_deref() == focused_provider
+    } else {
+        view_surface == target_surface
+    }
+}
+
+fn cache_key_matches_target(key: &str, agent: &str, focused_provider: Option<&str>) -> bool {
+    let base = canonical_usage_cache_key(agent, focused_provider);
+    key == base || key.starts_with(&format!("{base}:account-"))
+}
+
+fn cached_usage_for_target<'a>(
+    snapshots: &'a HashMap<String, CachedUsage>,
+    agent: &str,
+    focused_provider: Option<&str>,
+) -> Option<&'a CachedUsage> {
+    let key = cached_usage_key_for_target(snapshots, agent, focused_provider)?;
+    snapshots.get(&key)
+}
+
+fn cached_usage_for_capability<'a>(
+    snapshots: &'a HashMap<String, CachedUsage>,
+    agent: &str,
+    focused_provider: Option<&str>,
+    capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+) -> Option<&'a CachedUsage> {
+    let key = usage_cache_key_for_broker_account(agent, focused_provider, capability);
+    snapshots.get(&key)
+}
+
+fn cached_usage_key_for_target(
+    snapshots: &HashMap<String, CachedUsage>,
+    agent: &str,
+    focused_provider: Option<&str>,
+) -> Option<String> {
+    snapshots
+        .iter()
+        .filter(|(key, cached)| {
+            cache_key_matches_target(key, agent, focused_provider)
+                || cache_view_matches_target(&cached.view, agent, focused_provider)
+        })
+        .max_by(|(left_key, left), (right_key, right)| {
+            left.view
+                .fetched_at_epoch
+                .cmp(&right.view.fetched_at_epoch)
+                .then_with(|| left_key.cmp(right_key))
+        })
+        .map(|(key, _)| key.clone())
 }
 
 pub(crate) fn env_dir_or_home(env_var: &str, home_default: &str) -> PathBuf {
@@ -606,6 +876,17 @@ pub(crate) fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurfa
         "opencode" => UsageSurface::OpenCode,
         _ => UsageSurface::Unsupported,
     }
+}
+
+/// A session capability is an authority for exactly one provider surface. A
+/// presentation-tab override must not reuse it under another surface because
+/// that would route the refresh and cache entry under the wrong provider.
+pub(crate) fn capability_matches_surface(
+    agent: &str,
+    provider: Option<&str>,
+    capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+) -> bool {
+    resolve_surface(agent, provider).id() == Some(capability.surface_id.as_str())
 }
 
 /// Split an optional provider fetch into its `(data, error)` pair: `None` token

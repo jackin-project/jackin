@@ -339,6 +339,8 @@ fn account_editor_assignment_revokes_dependent_bindings() {
             credential: jackin_config::AccountCredential::Profile {
                 agent: jackin_core::Agent::Codex,
                 directory: "/host/codex-work".into(),
+                xdg_roots: None,
+                source_selector: None,
             },
         },
     );
@@ -1885,6 +1887,7 @@ fn enter_on_op_agent_key_row_is_noop() {
             env: ag_env,
             account_bindings: std::collections::BTreeMap::default(),
             github: None,
+            default_launch: None,
         },
     );
 
@@ -2169,6 +2172,7 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
             env: ag_env,
             account_bindings: std::collections::BTreeMap::default(),
             github: None,
+            default_launch: None,
         },
     );
     let mut state = ManagerState::from_config(&config, tmp.path());
@@ -2233,6 +2237,7 @@ fn cursor_skips_section_spacer_on_down_arrow() {
             env: ag_env,
             account_bindings: std::collections::BTreeMap::default(),
             github: None,
+            default_launch: None,
         },
     );
 

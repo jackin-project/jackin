@@ -98,6 +98,7 @@ impl SplitDirection {
     /// Operator-facing label for the `SplitDirectionPicker` rows and
     /// the menu hint footer. Glyphs match the cardinal arrows the
     /// operator presses to reach equivalent panes after the split.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Left => "← Left",
@@ -304,6 +305,7 @@ pub enum ConfirmKind {
 }
 
 impl ConfirmKind {
+    #[must_use]
     pub fn title(self) -> &'static str {
         match self {
             Self::ClosePane => "Close pane?",
@@ -312,6 +314,7 @@ impl ConfirmKind {
         }
     }
 
+    #[must_use]
     pub fn message(self) -> &'static str {
         match self {
             Self::ClosePane => "Reap the focused pane's agent. Unsaved state in that pane is lost.",
@@ -1030,15 +1033,16 @@ impl Dialog {
                 filter,
                 close_label,
                 ..
-            } => palette_filtered_indices(filter, *close_label).len() as u16,
+            } => u16::try_from(palette_filtered_indices(filter, *close_label).len())
+                .unwrap_or(u16::MAX),
             Self::SplitDirectionPicker { filter, .. } => {
-                split_direction_filtered_indices(filter).len() as u16
+                u16::try_from(split_direction_filtered_indices(filter).len()).unwrap_or(u16::MAX)
             }
             Self::CloseTargetPicker { filter, .. } => {
-                close_target_filtered_indices(filter).len() as u16
+                u16::try_from(close_target_filtered_indices(filter).len()).unwrap_or(u16::MAX)
             }
             Self::AgentPicker { agents, filter, .. } => {
-                picker_filtered_rows(agents, filter).len() as u16
+                u16::try_from(picker_filtered_rows(agents, filter).len()).unwrap_or(u16::MAX)
             }
             Self::RenameTab { .. }
             | Self::ExportFile { .. }
@@ -1130,6 +1134,7 @@ impl Dialog {
     /// Return true when `(row, col)` is a dialog hit target that will
     /// perform an action on click. The daemon uses this to drive OSC 22
     /// pointer-shape feedback without duplicating dialog layout maths.
+    #[must_use]
     pub fn clickable_at(
         &self,
         row: u16,
@@ -1213,7 +1218,11 @@ impl Dialog {
             Self::AgentPicker { agents, filter, .. } => {
                 let first_item_row = box_row + 3;
                 let visible = picker_filtered_rows(agents, filter);
-                if row < first_item_row || row >= first_item_row + visible.len() as u16 {
+                if row < first_item_row
+                    || row
+                        >= first_item_row
+                            .saturating_add(u16::try_from(visible.len()).unwrap_or(u16::MAX))
+                {
                     return false;
                 }
                 matches!(
@@ -1249,20 +1258,24 @@ impl Dialog {
                 close_label,
                 ..
             } => {
-                let items = palette_filtered_indices(filter, *close_label).len() as u16;
-                items + 4 // top + filter + pad + items + bottom
+                let items = u16::try_from(palette_filtered_indices(filter, *close_label).len())
+                    .unwrap_or(u16::MAX);
+                items.saturating_add(4) // top + filter + pad + items + bottom
             }
             Self::SplitDirectionPicker { filter, .. } => {
-                let items = split_direction_filtered_indices(filter).len() as u16;
-                items + 4
+                let items = u16::try_from(split_direction_filtered_indices(filter).len())
+                    .unwrap_or(u16::MAX);
+                items.saturating_add(4)
             }
             Self::CloseTargetPicker { filter, .. } => {
-                let items = close_target_filtered_indices(filter).len() as u16;
-                items + 4
+                let items =
+                    u16::try_from(close_target_filtered_indices(filter).len()).unwrap_or(u16::MAX);
+                items.saturating_add(4)
             }
             Self::AgentPicker { agents, filter, .. } => {
-                let items = picker_filtered_rows(agents, filter).len() as u16;
-                items + 4
+                let items =
+                    u16::try_from(picker_filtered_rows(agents, filter).len()).unwrap_or(u16::MAX);
+                items.saturating_add(4)
             }
             Self::RenameTab { .. } | Self::ExportFile { .. } => 5,
             Self::ContainerInfo { .. } => self.container_info_state().map_or(10, |state| {
@@ -1298,9 +1311,15 @@ impl Dialog {
             // No filter row: top border + items + bottom border.
             // Top border + command line + separator + one row per credential +
             // hint + bottom border.
-            Self::ExecPicker(state) => state.items.len() as u16 + 5,
-            Self::ExitDirty { summary, .. } => (summary.len() + EXIT_DIRTY_ROWS.len()) as u16 + 4,
-            Self::ExitInspect { lines, .. } => lines.len() as u16 + 4,
+            Self::ExecPicker(state) => u16::try_from(state.items.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(5),
+            Self::ExitDirty { summary, .. } => u16::try_from(summary.len() + EXIT_DIRTY_ROWS.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(4),
+            Self::ExitInspect { lines, .. } => u16::try_from(lines.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(4),
         };
         let content_height = crate::tui::layout::available_content_rows(term_rows).max(3);
         let max_height = if matches!(self, Self::Usage { .. }) {
@@ -1409,6 +1428,7 @@ impl Dialog {
         }
     }
 
+    #[must_use]
     pub fn has_copy_feedback(&self) -> bool {
         matches!(
             self,

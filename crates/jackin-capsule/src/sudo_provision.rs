@@ -48,6 +48,10 @@ fn sudo_action(granted: bool, present: bool) -> SudoAction {
     }
 }
 
+/// # Errors
+///
+/// Returns an error when the sudoers entry cannot be created, removed, or
+/// validated.
 pub fn provision() -> Result<()> {
     let granted = std::env::var(jackin_core::JACKIN_SUDO_ENV_NAME).as_deref() == Ok("1");
     let present = Path::new(SUDOERS_PATH).exists();

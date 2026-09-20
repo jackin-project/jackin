@@ -18,6 +18,7 @@ path = "src/lib.rs"
 [dependencies]
 jackin-core = { workspace = true }
 jackin-manifest = { workspace = true }
+jackin-telemetry = { workspace = true }
 anyhow = { workspace = true }
 
 [lints]

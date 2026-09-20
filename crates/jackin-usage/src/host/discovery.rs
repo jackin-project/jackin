@@ -19,7 +19,7 @@ use jackin_protocol::control::FocusedUsageView;
 
 use super::{
     CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId, HostUsageRuntime,
-    discovered_account_keys,
+    StagedUsageDiscovery, discovered_account_keys,
 };
 
 /// Discovery boundary: Desktop may scan host config; Capsule sees capabilities only.
@@ -90,6 +90,30 @@ pub fn host_credential_root_matrix() -> Vec<HostCredentialRootRow> {
             surface: "minimax",
             host_paths: "",
             env_vars: "MINIMAX_CODING_API_KEY, MINIMAX_API_KEY",
+            container_handoff: "",
+        },
+        HostCredentialRootRow {
+            surface: "google",
+            host_paths: "~/.gemini/antigravity-cli, ~/.gemini, $GEMINI_CLI_HOME",
+            env_vars: "GEMINI_API_KEY, GOOGLE_API_KEY",
+            container_handoff: container_paths::GEMINI_AUTH,
+        },
+        HostCredentialRootRow {
+            surface: "cursor",
+            host_paths: "~/.cursor, $CURSOR_CONFIG_DIR",
+            env_vars: "CURSOR_API_KEY",
+            container_handoff: container_paths::CURSOR_AUTH,
+        },
+        HostCredentialRootRow {
+            surface: "meta",
+            host_paths: "~/.config/muse",
+            env_vars: "META_API_KEY",
+            container_handoff: container_paths::MUSE_AUTH,
+        },
+        HostCredentialRootRow {
+            surface: "openrouter",
+            host_paths: "",
+            env_vars: "OPENROUTER_API_KEY",
             container_handoff: "",
         },
     ]
@@ -616,7 +640,10 @@ fn enumerate_registered_accounts(
         } else {
             None
         };
-        if let AccountCredential::Profile { agent, directory } = &account.credential {
+        if let AccountCredential::Profile {
+            agent, directory, ..
+        } = &account.credential
+        {
             let root = resolve_profile_root(operator_home, directory);
             candidates
                 .entry(CredentialSourceKey::Profile {
@@ -720,6 +747,10 @@ fn provider_surface(provider: AiProvider) -> (HostSurfaceId, UsageCredentialOwne
         AiProvider::Moonshot => (HostSurfaceId::Kimi, UsageCredentialOwner::Kimi),
         AiProvider::Zai => (HostSurfaceId::Zai, UsageCredentialOwner::Zai),
         AiProvider::Minimax => (HostSurfaceId::Minimax, UsageCredentialOwner::Minimax),
+        AiProvider::Google => (HostSurfaceId::Google, UsageCredentialOwner::Google),
+        AiProvider::Cursor => (HostSurfaceId::Cursor, UsageCredentialOwner::Cursor),
+        AiProvider::Meta => (HostSurfaceId::Meta, UsageCredentialOwner::Meta),
+        AiProvider::OpenRouter => (HostSurfaceId::OpenRouter, UsageCredentialOwner::OpenRouter),
     }
 }
 
@@ -844,8 +875,20 @@ fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourceKey) -> St
         CredentialSourceKey::Profile { agent, root } => {
             format!("profile-v1:{}:{}", agent.slug(), root.to_string_lossy())
         }
-        CredentialSourceKey::Env { surface, key, .. } => {
-            format!("env-v1:{}:{key}", surface.id())
+        CredentialSourceKey::Env {
+            surface,
+            handle,
+            key,
+        } => {
+            fn segment(value: &str) -> String {
+                format!("{}:{value}", value.len())
+            }
+            format!(
+                "env-v2:{}:{}:{}",
+                surface.id(),
+                segment(key),
+                segment(&handle.0)
+            )
         }
         CredentialSourceKey::Capability { .. } => unreachable!("returned above"),
     };
@@ -952,10 +995,11 @@ fn validate_usage_sources_with_reader(
                         account_label
                             .as_ref()
                             .filter(|label| !label.trim().is_empty())
-                            .map(|label| {
-                                CanonicalAccountSubject::ProviderStableHandle(
-                                    label.trim().to_owned(),
-                                )
+                            .map(|_| {
+                                // A label is presentation evidence only. Keep
+                                // source identity when the provider did not
+                                // return a stronger canonical subject.
+                                CanonicalAccountSubject::SourceCapability(capability_id.clone())
                             })
                     });
                 let Some(subject) = subject else {
@@ -1224,6 +1268,89 @@ fn profile_identity(
         }
         Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
         Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),
+        // Antigravity's grant lives in the host Keychain singleton, which the
+        // file-based reader cannot probe: usage sees no usable credential.
+        // A Keychain-backed probe belongs to the usage lane.
+        Agent::Antigravity => ProfileValidation::Missing,
+        Agent::Gemini => anonymous_when_present(reader, &root.join("oauth_creds.json")),
+        Agent::Cursor => cursor_profile_identity(reader, root),
+        Agent::Muse => muse_profile_identity(reader, &root.join("auth.json")),
+        // SQLite store: presence (not content) is verified; table parsing
+        // belongs to a later lane.
+        Agent::Omp => {
+            if reader.exists(&root.join("agent/agent.db")) {
+                ProfileValidation::Anonymous(None)
+            } else {
+                ProfileValidation::Missing
+            }
+        }
+        Agent::Hermes => anonymous_when_present(reader, &root.join("auth.json")),
+    }
+}
+
+/// File present (any JSON shape) → anonymous binding; missing/denied/
+/// malformed propagate truthfully. Used for agents whose identity
+/// extraction is deferred to the usage lane.
+fn anonymous_when_present(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
+    match read_json(reader, path) {
+        Ok(Some(_)) => ProfileValidation::Anonymous(None),
+        Ok(None) => ProfileValidation::Missing,
+        Err(outcome) => outcome,
+    }
+}
+
+/// Cursor identity comes from the sibling `cli-config.json` (`authInfo`
+/// email), verified locally; the tokens themselves live in `auth.json`.
+fn cursor_profile_identity(reader: &dyn ProfileCredentialReader, root: &Path) -> ProfileValidation {
+    match read_json(reader, &root.join("auth.json")) {
+        Ok(None) => return ProfileValidation::Missing,
+        Err(outcome) => return outcome,
+        Ok(Some(_)) => {}
+    }
+    let label = read_json(reader, &root.join("cli-config.json"))
+        .ok()
+        .flatten()
+        .and_then(|config| {
+            let info = config.get("authInfo")?;
+            info.get("email")
+                .or_else(|| info.get("displayName"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .map(str::to_owned)
+        });
+    match label {
+        Some(label) => ProfileValidation::Authenticated {
+            provider_id: None,
+            account_label: Some(label),
+            material: None,
+        },
+        None => ProfileValidation::Anonymous(None),
+    }
+}
+
+/// Muse identity comes from `auth.json` (`providers.meta.user_email`),
+/// verified locally; the secret itself stays in the host Keychain.
+fn muse_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
+    let value = match read_json(reader, path) {
+        Ok(Some(value)) => value,
+        Ok(None) => return ProfileValidation::Missing,
+        Err(outcome) => return outcome,
+    };
+    let label = value
+        .pointer("/providers/meta/user_email")
+        .or_else(|| value.pointer("/providers/meta/user_full_name"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(str::to_owned);
+    match label {
+        Some(label) => ProfileValidation::Authenticated {
+            provider_id: None,
+            account_label: Some(label),
+            material: None,
+        },
+        None => ProfileValidation::Anonymous(None),
     }
 }
 
@@ -1232,12 +1359,31 @@ fn opencode_profile_identity(
     path: &Path,
 ) -> ProfileValidation {
     match reader.read(path) {
-        ProfileReadOutcome::Missing => ProfileValidation::Missing,
+        ProfileReadOutcome::Missing => {
+            if path
+                .parent()
+                .map(|parent| parent.join("opencode.db"))
+                .is_some_and(|database| reader.exists(&database))
+            {
+                // Database-only OpenCode stores have no materializable auth
+                // source. Do not advertise a usage profile until the database
+                // credential identity can be carried through launch binding.
+                ProfileValidation::Malformed
+            } else {
+                ProfileValidation::Missing
+            }
+        }
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
         ProfileReadOutcome::Bytes(bytes) => {
             let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
                 return ProfileValidation::Malformed;
             };
+            let Some(entries) = value.as_object() else {
+                return ProfileValidation::Malformed;
+            };
+            if entries.len() != 1 {
+                return ProfileValidation::Malformed;
+            }
             let entry = value.get("opencode-go");
             let Some(entry) = entry else {
                 return ProfileValidation::Missing;
@@ -1528,6 +1674,74 @@ pub(super) fn refresh_credential_binding(
 }
 
 impl HostUsageRuntime {
+    /// Run one fresh, read-only discovery scan. A failed scan returns `None`
+    /// and never hands stale credentials back to broker rotation.
+    pub fn stage_discovery(
+        &mut self,
+        resolver: &dyn ProviderCredentialEnvResolver,
+    ) -> Result<Option<StagedUsageDiscovery>, String> {
+        self.require_open()?;
+        let Some(scope) = self.discovery_scope.clone() else {
+            return Ok(None);
+        };
+        resolver.begin_manual_retry();
+        let Ok(catalog) = discover_usage_sources(&scope, resolver) else {
+            self.push_event(
+                "discovery_failed",
+                None,
+                Some("current account discovery unavailable".to_owned()),
+            );
+            return Ok(None);
+        };
+        let discovered = validate_usage_sources(catalog, resolver);
+        let changed = self.discovery.as_ref().is_none_or(|current| {
+            super::broker::usage_catalog_entries(current)
+                != super::broker::usage_catalog_entries(&discovered)
+        });
+        Ok(Some(StagedUsageDiscovery {
+            base_generation: self.discovery_generation,
+            changed,
+            discovery: discovered,
+        }))
+    }
+
+    /// Commit a successful discovery stage after broker activation. The local
+    /// generation fence rejects an older scan even when its catalog revision
+    /// string happens to match the newer scan.
+    pub fn commit_staged_discovery(
+        &mut self,
+        staged: StagedUsageDiscovery,
+    ) -> Result<bool, String> {
+        self.require_open()?;
+        if staged.base_generation != self.discovery_generation {
+            return Err("stale usage discovery stage".to_owned());
+        }
+        if !staged.changed {
+            self.push_event("discovery_reconciled", None, Some("unchanged".to_owned()));
+            return Ok(false);
+        }
+        let current = discovered_account_keys(Some(&staged.discovery));
+        self.discovery = Some(staged.discovery);
+        self.discovery_generation = self.discovery_generation.saturating_add(1);
+        self.discovered_views.retain(|key, _| current.contains(key));
+        let active = self
+            .broker_phases
+            .iter()
+            .filter(|(_, phase)| phase.is_active())
+            .map(|(capability, _)| capability.clone())
+            .collect::<Vec<_>>();
+        self.broker_phases.clear();
+        for capability in active {
+            self.push_event(
+                "broker_phase_changed",
+                Some(&capability.surface_id),
+                Some("failed".to_owned()),
+            );
+        }
+        self.push_event("discovery_reconciled", None, Some("changed".to_owned()));
+        Ok(true)
+    }
+
     /// Rescan the retained Rust discovery scope without dispatching provider probes.
     ///
     /// This is the manual-refresh reconciliation boundary used before broker
@@ -1537,36 +1751,10 @@ impl HostUsageRuntime {
         &mut self,
         resolver: &dyn ProviderCredentialEnvResolver,
     ) -> Result<bool, String> {
-        self.require_open()?;
-        let Some(scope) = self.discovery_scope.clone() else {
+        let Some(staged) = self.stage_discovery(resolver)? else {
             return Ok(false);
         };
-        resolver.begin_manual_retry();
-        let Ok(catalog) = discover_usage_sources(&scope, resolver) else {
-            self.push_event(
-                "discovery_failed",
-                None,
-                Some("current account discovery unavailable".to_owned()),
-            );
-            return Ok(false);
-        };
-        let discovered = validate_usage_sources(catalog, resolver);
-        let changed = self
-            .discovery
-            .as_ref()
-            .map(|current| &current.config_generation)
-            != Some(&discovered.config_generation);
-        self.discovery = Some(discovered);
-        if changed {
-            let current = discovered_account_keys(self.discovery.as_ref());
-            self.discovered_views.retain(|key, _| current.contains(key));
-        }
-        self.push_event(
-            "discovery_reconciled",
-            None,
-            Some(if changed { "changed" } else { "unchanged" }.to_owned()),
-        );
-        Ok(changed)
+        self.commit_staged_discovery(staged)
     }
 
     pub(super) fn record_discovered_snapshot(
@@ -1574,10 +1762,11 @@ impl HostUsageRuntime {
         binding: &ValidatedCredentialBinding,
         mut view: FocusedUsageView,
     ) {
-        let identity = binding
-            .identity
-            .clone()
-            .or_else(|| CanonicalAccountIdentity::from_view(binding.surface, &view));
+        let identity = binding.identity.clone().or_else(|| {
+            CanonicalAccountIdentity::from_view(binding.surface, &view).map(|_| {
+                CanonicalAccountIdentity::source_capability(binding.surface, &binding.capability_id)
+            })
+        });
         let Some(identity) = identity else {
             let error = view.last_error.clone();
             let kind = if error.is_some() {

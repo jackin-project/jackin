@@ -85,6 +85,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             env: role_env,
             account_bindings: std::collections::BTreeMap::default(),
             github: None,
+            default_launch: None,
         },
     );
     let ws = WorkspaceConfig {

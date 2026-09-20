@@ -164,10 +164,33 @@ pub struct AgentStatePaths {
     /// path copies a single file.  `None` for directory-based provisioning
     /// (Kimi, Claude multi-file).
     pub credential_file: Option<&'static str>,
-    /// Name of the environment variable that governs the agent's data
-    /// directory — used as the operator hint in the Source Folder picker
-    /// (Defect 46 Phase B).
-    pub folder_env_var: Option<&'static str>,
+    /// Config-folder environment variable governing the agent's data
+    /// directory — also used as the operator hint in the Source Folder
+    /// picker (Defect 46 Phase B). `None` when the client honors no such
+    /// variable (the agent then admits a single account per container).
+    pub folder_env_var: Option<FolderVar>,
+}
+
+/// An agent's config-folder environment variable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FolderVar {
+    /// Variable name (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …).
+    pub name: &'static str,
+    /// How the variable maps to the config home.
+    pub kind: FolderVarKind,
+}
+
+/// How a [`FolderVar`] maps to the agent's config home.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderVarKind {
+    /// The variable names the config dir verbatim.
+    Dir,
+    /// The variable names the parent to which `credential_dir` is
+    /// appended (`GEMINI_CLI_HOME` + `.gemini`).
+    Parent,
+    /// The variable names the XDG data root; the client appends its own
+    /// subpath (`XDG_DATA_HOME` + `amp/`).
+    XdgRoot,
 }
 
 impl AgentStatePaths {

@@ -33,7 +33,7 @@ A launch-time account choice must also belong to the workspace. Missing or inval
 
 ## Breaking configuration change
 
-The account registry replaces the old per-agent `auth_forward` and `sync_source_dir` policy tables. Global config uses schema `v1alpha11`; workspace files use `v1alpha9`.
+The account registry replaces the old per-agent `auth_forward` and `sync_source_dir` policy tables. Global config uses schema `v1alpha12`; workspace files use `v1alpha10`.
 
 Old agent policy tables are rejected before migration writes a file. Remove those tables from global, workspace, and role configuration, register their credential sources as named accounts, then assign account IDs to the appropriate workspaces. Existing files are not silently converted into credential grants.
 

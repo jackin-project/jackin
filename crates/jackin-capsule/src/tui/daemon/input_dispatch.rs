@@ -191,7 +191,7 @@ impl Multiplexer {
                 // push it on top of the SplitDirectionPicker so Esc
                 // walks the operator one step back instead of
                 // closing the whole flow.
-                let agents = self.launch_env.available_agents.clone();
+                let agents = self.launch_env.available_instances.clone();
                 self.dialog_push(Dialog::new_agent_picker(
                     agents,
                     PickerIntent::Split(direction),
@@ -360,7 +360,7 @@ impl Multiplexer {
                 self.invalidate_for(&Action::OpenRenameTab(idx));
             }
             Action::OpenAgentPicker(intent) => {
-                let agents = self.launch_env.available_agents.clone();
+                let agents = self.launch_env.available_instances.clone();
                 self.dialog_push(Dialog::new_agent_picker(agents, intent));
                 self.invalidate_for(&Action::OpenAgentPicker(intent));
             }
@@ -447,7 +447,7 @@ impl Multiplexer {
                     && let Some(session) = self.session_supervisor.sessions.get(focused)
                     && session.focus_events_enabled()
                 {
-                    session.send_input(bytes);
+                    let _sent = session.send_input(bytes);
                 }
             }
             Action::MouseChromeUpdate { row, col, button } => {
@@ -507,7 +507,7 @@ impl Multiplexer {
                         button,
                     )
                 {
-                    session.send_input(&buf);
+                    let _sent = session.send_input(&buf);
                     return;
                 }
                 if filled == 0 {
@@ -845,7 +845,7 @@ impl Multiplexer {
                 // explicitly choose between that agent and a Shell;
                 // jumping straight into the agent would surprise an
                 // operator who picked "New tab" to open a shell.
-                let agents = self.launch_env.available_agents.clone();
+                let agents = self.launch_env.available_instances.clone();
                 self.dialog_push(Dialog::new_agent_picker(agents, intent));
             }
             PaletteCommandRoute::NextTab => {

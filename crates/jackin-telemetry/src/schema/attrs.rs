@@ -325,7 +325,20 @@ pub const GEN_AI_AGENT_NAME_DEF: super::AttributeMetadata = super::AttributeMeta
     name: GEN_AI_AGENT_NAME,
     description: "Generative AI agent name.",
     value_type: super::ValueType::String,
-    allowed_values: &["claude", "codex", "amp", "kimi", "opencode", "grok"],
+    allowed_values: &[
+        "claude",
+        "codex",
+        "amp",
+        "kimi",
+        "opencode",
+        "grok",
+        "antigravity",
+        "gemini",
+        "cursor",
+        "muse",
+        "omp",
+        "hermes",
+    ],
 };
 // registry-type: string
 pub const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";
@@ -357,6 +370,10 @@ pub const GEN_AI_PROVIDER_NAME_DEF: super::AttributeMetadata = super::AttributeM
         "zai",
         "minimax",
         "kimi",
+        "google",
+        "cursor",
+        "meta",
+        "openrouter",
     ],
 };
 // registry-type: enum
@@ -465,6 +482,12 @@ pub const PROCESS_EXECUTABLE_NAME_DEF: super::AttributeMetadata = super::Attribu
         "kimi",
         "opencode",
         "grok",
+        "agy",
+        "gemini",
+        "cursor-agent",
+        "muse",
+        "omp",
+        "hermes",
         "configured_command",
         "other",
     ],

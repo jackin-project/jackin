@@ -429,7 +429,7 @@ pub fn render_derived_dockerfile(
     const SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS: &str = "\
 ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
       || cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\
-    && install -d -o agent -g 0 /jackin/run /jackin/state
+    && install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials
 ";
     let shell_title_and_runtime_dir_commands = SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS;
 

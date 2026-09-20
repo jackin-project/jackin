@@ -19,7 +19,7 @@ All implementation landed on this branch. Operator and contributor detail now li
 
 - **Security implementation** — threat model, the six `auth.rs` security functions, `shellfirm`/`tirith` rationale, and the YOLO-flag contract for all five agents → [/reference/security-implementation/](/reference/security-implementation/).
 - **Release verification** — cosign keyless verification, SLSA provenance, SBOM inspection, and capsule-manifest auditing → [/getting-started/verifying-releases/](/getting-started/verifying-releases/).
-- **CI signing** — cosign `sign-blob` bundles, `actions/attest-build-provenance` SLSA attestations, and `syft` CycloneDX SBOMs for every archive in <RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile> and <RepoFile path=".github/workflows/preview.yml">.github/workflows/preview.yml</RepoFile>; the capsule build jobs additionally produce a signed `capsule-manifest.json` + `capsule-manifest.json.bundle`.
+- **CI signing** — cosign `sign-blob` bundles, `actions/attest-build-provenance` SLSA attestations, and `syft` CycloneDX SBOMs for every archive in <RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile> and the planned `.github/workflows/preview.yml` rolling-preview workflow (the SAN pin in `capsule_binary.rs` already accepts it); the capsule build jobs additionally produce a signed `capsule-manifest.json` + `capsule-manifest.json.bundle`.
 - **Operator artifact verification** — `cargo xtask release-verify <archive>.tar.gz` checks the published `.sha256`, cosign bundle identity/issuer, GitHub artifact attestation, and SBOM JSON. The gate passed against `jackin-dev-v0.1.13` (`jackin-dev-0.1.13-aarch64-unknown-linux-gnu.tar.gz`, published 2026-07-02) on 2026-07-04, and a tampered archive copy failed closed at the digest check.
 - **In-process verification** — `fetch_and_verify_manifest` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> verifies the cosign bundle (embedded Sigstore production Rekor key via `ManualTrustRoot`, no TUF network call), pins the certificate SAN to the `release.yml` / `preview.yml` signing workflows, and hard-aborts on any failure — no warn-and-continue. The `JACKIN_CAPSULE_BIN` override and Homebrew-packaged binaries bypass the download path unchanged.
 
@@ -61,6 +61,6 @@ This item retires once the capsule download path has been clean-cache verified e
 
 - <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> — `fetch_and_verify_manifest`, embedded Rekor key, SAN identity check
 - <RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile> — tagged-release signing + capsule manifest
-- <RepoFile path=".github/workflows/preview.yml">.github/workflows/preview.yml</RepoFile> — rolling-preview signing + capsule manifest
+- `.github/workflows/preview.yml` (planned, not yet in the tree) — rolling-preview signing + capsule manifest
 - [/reference/security-implementation/](/reference/security-implementation/) — contributor-facing security internals
 - [/getting-started/verifying-releases/](/getting-started/verifying-releases/) — operator-facing verification guide

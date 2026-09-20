@@ -723,6 +723,37 @@ fn mark_construct_ready(steps: &mut super::StepCounter) {
     steps.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
 }
 
+/// Auth mode for the launch breadcrumb only: per-instance modes are
+/// authoritative and resolve later in orchestrate.
+///
+/// A single-account selection resolves directly. When several accounts
+/// support the launch agent (a multi-instance launch), no single account
+/// resolves, so the breadcrumb falls back to the launch agent's first
+/// admitted instance from [`jackin_config::resolve_launch`]. A launch
+/// that admits no instance for the agent reports `Ignore`.
+fn breadcrumb_auth_mode(
+    config: &AppConfig,
+    agent: jackin_core::Agent,
+    workspace: Option<&WorkspaceName>,
+    role_key: &str,
+) -> anyhow::Result<jackin_config::AuthForwardMode> {
+    if let Ok(selected) = jackin_config::resolve_account(config, agent, workspace, role_key) {
+        return Ok(selected.map_or(
+            jackin_config::AuthForwardMode::Ignore,
+            jackin_config::AccountConfig::auth_mode,
+        ));
+    }
+    let instances = jackin_config::resolve_launch(config, workspace, role_key, None, Some(agent))?;
+    Ok(instances
+        .iter()
+        .find(|instance| instance.agent == agent)
+        .and_then(|instance| config.accounts.get(&instance.account_id))
+        .map_or(
+            jackin_config::AuthForwardMode::Ignore,
+            jackin_config::AccountConfig::auth_mode,
+        ))
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "Top-level launch pipeline that drives run_launch_core with preflight \
@@ -757,28 +788,51 @@ pub(crate) async fn load_role_with(
         &str,
     ) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
+    let initial_account_revision = super::account_identity::AccountConfigRevision::acquire(paths)?;
     let selected_workspace = config
         .workspaces
         .contains_key(workspace.name.as_str())
         .then(|| WorkspaceName::parse(&workspace.name))
         .transpose()?;
-    let mut account_config = opts
-        .account
-        .as_deref()
-        .map(|id| {
-            let agent = opts
-                .agent
-                .or(workspace.default_agent)
-                .ok_or_else(|| anyhow::anyhow!("select an agent when selecting an account"))?;
-            super::programmatic::with_account_selection(
-                config,
-                agent,
-                selected_workspace.as_ref(),
-                &selector.key(),
-                id,
-            )
-        })
-        .transpose()?;
+    anyhow::ensure!(
+        opts.account.is_none() || opts.configuration.is_none(),
+        "account and configuration launch selections cannot both be supplied"
+    );
+    let admission_config = config.clone();
+    let mut account_config =
+        opts.configuration
+            .as_deref()
+            .map(|configuration| {
+                let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
+                    anyhow::anyhow!("select an agent when selecting a configuration")
+                })?;
+                super::programmatic::with_configuration_selection(
+                    config,
+                    agent,
+                    selected_workspace.as_ref(),
+                    &selector.key(),
+                    configuration,
+                )
+            })
+            .transpose()?;
+    if account_config.is_none() {
+        account_config =
+            opts.account
+                .as_deref()
+                .map(|id| {
+                    let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
+                        anyhow::anyhow!("select an agent when selecting an account")
+                    })?;
+                    super::programmatic::with_account_selection(
+                        config,
+                        agent,
+                        selected_workspace.as_ref(),
+                        &selector.key(),
+                        id,
+                    )
+                })
+                .transpose()?;
+    }
     let config = account_config.as_mut().unwrap_or(config);
 
     // Pre-launch garbage collection is independent from git identity probes.
@@ -839,6 +893,7 @@ pub(crate) async fn load_role_with(
         && opts.role_branch.is_none()
         && !opts.rebuild
         && opts.account.is_none()
+        && opts.configuration.is_none()
     {
         if let Some(agent) = selected_agent_before_role {
             match super::resolve_current_restore_candidate_timed(
@@ -1052,6 +1107,7 @@ pub(crate) async fn load_role_with(
         confirm_trust_for_test,
     )?;
 
+    drop(initial_account_revision);
     persist_new_role_trust(
         paths,
         config,
@@ -1066,6 +1122,7 @@ pub(crate) async fn load_role_with(
             None,
         );
     }
+    let account_revision = super::account_identity::AccountConfigRevision::acquire(paths)?;
 
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
@@ -1098,7 +1155,7 @@ pub(crate) async fn load_role_with(
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
         Some(container.clone())
-    } else if opts.rebuild || opts.account.is_some() {
+    } else if opts.rebuild || opts.account.is_some() || opts.configuration.is_some() {
         // `--rebuild` skips the early gate above (it is `&& !opts.rebuild && opts.account.is_none()`), so
         // a forced rebuild actually falls through to *this* resolution. Without
         // the same guard here, `resolve_restore_candidate` would still return
@@ -1360,11 +1417,7 @@ pub(crate) async fn load_role_with(
     let auth_workspace = workspace_name
         .as_deref()
         .and_then(|n| WorkspaceName::parse(n).ok());
-    let auth_mode =
-        jackin_config::resolve_account(config, agent, auth_workspace.as_ref(), &role_key)?.map_or(
-            jackin_config::AuthForwardMode::Ignore,
-            jackin_config::AccountConfig::auth_mode,
-        );
+    let auth_mode = breadcrumb_auth_mode(config, agent, auth_workspace.as_ref(), &role_key)?;
     let operator_env = await_operator_env(operator_env).await?;
 
     // Resolve env vars (interactive prompts happen here, before build)
@@ -1435,13 +1488,6 @@ pub(crate) async fn load_role_with(
         } else {
             merged_vars.push((k.clone(), v.clone()));
         }
-    }
-    // Model and effort travel as the exact keys the in-container role hook
-    // writes into `$CODEX_HOME/config.toml` (Codex) or Claude Code reads from
-    // the environment, so the hook and the capsule daemon agree (D-078).
-    for (k, v) in super::lane_agent_env(agent, opts.model.as_deref(), opts.effort) {
-        merged_vars.retain(|(mk, _)| *mk != k);
-        merged_vars.push((k, v));
     }
     inject_workspace_mise_env(&mut merged_vars, workspace);
 
@@ -1549,6 +1595,8 @@ pub(crate) async fn load_role_with(
             rebuild,
             restore_pinned_sha,
             git_pull_join,
+            account_revision,
+            admission_config,
         })
         .await;
 

@@ -227,6 +227,7 @@ impl Dialog {
         )
     }
 
+    #[must_use]
     pub fn new_usage(view: jackin_protocol::control::FocusedUsageView) -> Self {
         Self::new_usage_with_tab(view, UsageDialogTab::Provider)
     }

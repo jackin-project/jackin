@@ -49,7 +49,7 @@ const MAX_DEPTH: usize = 5;
 const RENDER_ROOT_NAMES: &[&str] = &["render", "compose_pending_frame", "compose_ratatui_frame"];
 
 impl<'tcx> LateLintPass<'tcx> for RenderThreadPurity {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, reason = "rustc LateLintPass::check_fn signature is fixed")]
     fn check_fn(
         &mut self,
         cx: &LateContext<'tcx>,
@@ -225,7 +225,10 @@ fn typeck_for_fn<'tcx>(
     Some(cx.tcx.typeck(fn_def))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "call-graph walk threads explicit context; grouping would obscure the traversal"
+)]
 fn check_callee<'tcx>(
     cx: &LateContext<'tcx>,
     callee: &'tcx Expr<'tcx>,

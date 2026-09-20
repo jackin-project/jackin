@@ -10,6 +10,8 @@ pub enum ImageError {
     NoAttemptsMade,
     #[error("expected a 64-char hex sha256, got {got:?}")]
     InvalidSha256Hex { got: String },
+    #[error("expected a 128-char hex sha512, got {got:?}")]
+    InvalidSha512Hex { got: String },
     #[error("{archive} is missing member {member}")]
     ArchiveMemberMissing {
         archive: std::path::PathBuf,

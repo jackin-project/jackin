@@ -3,10 +3,45 @@
 
 //! Tests for `session`.
 use super::{
-    AgentState, OscPolicy, Session, SessionEvent, SessionTerminal, agent_model_args,
+    AgentSpawnSpec, AgentState, EXPLICIT_CAPABILITY_ENV_NAMES, OscPolicy, SESSION_ENV_PASSTHROUGH,
+    Session, SessionEvent, SessionSpawnSpec, SessionTerminal, agent_model_args,
     build_agent_command, build_shell_command, child_exit_reason, emit_pty_exit, emit_pty_spawn,
-    inject_status_env, osc8_uri_is_safe, pty_exit_error_type, pty_exit_reason, validate_agent_slug,
+    inject_status_env, isolated_wrapper_args, osc8_uri_is_safe, pty_exit_error_type,
+    pty_exit_reason, validate_spawn_token_syntax,
 };
+
+/// Primary-layout spawn spec for `agent`/`instance`.
+fn spawn_spec<'a>(
+    agent: &'a str,
+    instance: &'a str,
+    auth_mode: Option<&'a str>,
+    env_passthrough: &'a [(String, String)],
+) -> AgentSpawnSpec<'a> {
+    let (home_dir, forwarded_dir) = match agent {
+        "claude" => (
+            jackin_core::container_paths::CLAUDE_CONFIG_DIR,
+            "/jackin/claude",
+        ),
+        "codex" => ("/home/agent/.codex", "/jackin/codex"),
+        _ => ("/home/agent/.test", "/jackin/test"),
+    };
+    AgentSpawnSpec {
+        agent,
+        instance,
+        home_dir,
+        forwarded_dir,
+        model: None,
+        effort: None,
+        auth_mode,
+        env_passthrough,
+        cwd: Path::new("/workspace"),
+        codename: "test",
+        identity: jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    }
+}
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -59,7 +94,7 @@ impl MasterPty for NullMasterPty {
         Ok(Box::new(std::io::sink()))
     }
     #[cfg(unix)]
-    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
         None
     }
     #[cfg(unix)]
@@ -98,7 +133,7 @@ impl MasterPty for RecordingMasterPty {
         self.inner.take_writer()
     }
     #[cfg(unix)]
-    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
         self.inner.process_group_leader()
     }
     #[cfg(unix)]
@@ -717,11 +752,93 @@ fn drain_clears_pending_between_calls() {
 #[test]
 fn build_agent_command_overrides_stale_agent_env() {
     let env = vec![("JACKIN_AGENT".to_owned(), "claude".to_owned())];
-    let cmd = build_agent_command("codex", None, None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command(&spawn_spec("codex", "codex-work", None, &env));
 
     assert_eq!(
         cmd.get_env("JACKIN_AGENT").and_then(|value| value.to_str()),
         Some("codex")
+    );
+}
+
+#[test]
+fn amp_command_exports_xdg_data_home_as_durable_parent() {
+    let empty: Vec<(String, String)> = Vec::new();
+    let spec = AgentSpawnSpec {
+        agent: "amp",
+        instance: "amp",
+        home_dir: "/home/agent/.local/share",
+        forwarded_dir: "/jackin/amp",
+        model: None,
+        effort: None,
+        auth_mode: Some("sync"),
+        env_passthrough: &empty,
+        cwd: Path::new("/workspace"),
+        codename: "test",
+        identity: jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    };
+    let command = build_agent_command(&spec);
+
+    assert_eq!(
+        command
+            .get_env("XDG_DATA_HOME")
+            .and_then(|value| value.to_str()),
+        Some("/home/agent/.local/share")
+    );
+}
+
+#[test]
+fn agent_and_shell_children_require_explicit_github_capability() {
+    let inherited = EXPLICIT_CAPABILITY_ENV_NAMES
+        .iter()
+        .map(|name| ((*name).to_owned(), "ambient-secret".to_owned()))
+        .collect::<Vec<_>>();
+    let agent = build_agent_command(&spawn_spec("codex", "codex-work", None, &inherited));
+    let shell = build_shell_command(
+        &inherited,
+        Path::new("/workspace"),
+        "test",
+        jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    );
+
+    for name in EXPLICIT_CAPABILITY_ENV_NAMES {
+        assert!(agent.get_env(name).is_none(), "agent inherited {name}");
+        assert!(shell.get_env(name).is_none(), "shell inherited {name}");
+        assert!(
+            !SESSION_ENV_PASSTHROUGH.contains(name),
+            "ambient capability {name} is still in the session allowlist"
+        );
+    }
+}
+
+#[test]
+fn isolated_wrapper_carries_instance_identity_into_session_exec() {
+    let args = isolated_wrapper_args(
+        jackin_protocol::SessionIdentity {
+            uid: 2_017,
+            gid: 2_017,
+        },
+        Some("claude-personal"),
+        "/jackin/runtime/entrypoint.sh",
+    );
+    let args = args
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        args,
+        vec![
+            "__isolated-exec",
+            "claude-personal",
+            "2017",
+            "2017",
+            "/jackin/runtime/entrypoint.sh",
+        ]
     );
 }
 
@@ -731,14 +848,7 @@ fn build_agent_command_injects_only_bounded_auth_mode() {
         jackin_protocol::AUTH_MODE_ENV.to_owned(),
         "private-stale-mode".to_owned(),
     )];
-    let cmd = build_agent_command(
-        "codex",
-        None,
-        Some("api_key"),
-        &env,
-        Path::new("/workspace"),
-        "test",
-    );
+    let cmd = build_agent_command(&spawn_spec("codex", "codex-work", Some("api_key"), &env));
 
     assert_eq!(
         cmd.get_env(jackin_protocol::AUTH_MODE_ENV)
@@ -750,7 +860,7 @@ fn build_agent_command_injects_only_bounded_auth_mode() {
 #[test]
 fn build_agent_command_uses_stable_pane_term() {
     let env = vec![("TERM".to_owned(), "xterm-ghostty".to_owned())];
-    let cmd = build_agent_command("codex", None, None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command(&spawn_spec("codex", "codex-work", None, &env));
 
     assert_eq!(
         cmd.get_env("TERM").and_then(|value| value.to_str()),
@@ -761,7 +871,7 @@ fn build_agent_command_uses_stable_pane_term() {
 #[test]
 fn build_agent_command_advertises_truecolor() {
     let env = vec![("COLORTERM".to_owned(), "24bit".to_owned())];
-    let cmd = build_agent_command("claude", None, None, &env, Path::new("/workspace"), "test");
+    let cmd = build_agent_command(&spawn_spec("claude", "claude-work", None, &env));
 
     assert_eq!(
         cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
@@ -772,7 +882,15 @@ fn build_agent_command_advertises_truecolor() {
 #[test]
 fn build_shell_command_advertises_truecolor() {
     let env = vec![("COLORTERM".to_owned(), "false".to_owned())];
-    let cmd = build_shell_command(&env, Path::new("/workspace"), "test");
+    let cmd = build_shell_command(
+        &env,
+        Path::new("/workspace"),
+        "test",
+        jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    );
 
     assert_eq!(
         cmd.get_env("COLORTERM").and_then(|value| value.to_str()),
@@ -795,6 +913,14 @@ fn agent_model_args_match_cli_contracts() {
         vec!["--model", "kimi-k2"]
     );
     assert_eq!(
+        agent_model_args("omp", Some("openrouter/sonnet")),
+        vec!["--model", "openrouter/sonnet"]
+    );
+    assert_eq!(
+        agent_model_args("hermes", Some("openrouter/sonnet")),
+        vec!["--model", "openrouter/sonnet"]
+    );
+    assert_eq!(
         agent_model_args("opencode", Some("zai/glm")),
         vec!["-m", "zai/glm"]
     );
@@ -809,7 +935,15 @@ fn agent_model_args_match_cli_contracts() {
 #[test]
 fn build_shell_command_removes_stale_agent_env() {
     let env = vec![("JACKIN_AGENT".to_owned(), "claude".to_owned())];
-    let cmd = build_shell_command(&env, Path::new("/workspace"), "test");
+    let cmd = build_shell_command(
+        &env,
+        Path::new("/workspace"),
+        "test",
+        jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    );
 
     assert!(cmd.get_env("JACKIN_AGENT").is_none());
 }
@@ -1098,24 +1232,62 @@ fn clear_runtime_authority_drops_state_and_counters() {
 #[test]
 fn agent_session_gets_status_reporter_env() {
     let mut cmd = CommandBuilder::new("/bin/true");
-    inject_status_env(&mut cmd, 42, Some("codex"));
+    inject_status_env(&mut cmd, 42, Some("codex"), None, "test-capability");
     let get = |k| cmd.get_env(k).and_then(|v| v.to_str());
-    assert_eq!(get("JACKIN_SESSION_ID"), Some("42"));
+    assert_eq!(get(jackin_protocol::SESSION_ID_ENV), Some("42"));
+    assert_eq!(get(jackin_protocol::ISOLATION_SESSION_ID_ENV), Some("42"));
     assert_eq!(get("JACKIN_AGENT_RUNTIME"), Some("codex"));
     assert_eq!(get("JACKIN_STATUS_SOURCE"), Some("hook-codex-42"));
     assert_eq!(get("JACKIN_STATUS_SOCKET"), Some("/jackin/run/jackin.sock"));
+    assert_eq!(
+        get(jackin_protocol::SESSION_CAPABILITY_ENV),
+        Some("test-capability")
+    );
+    assert_eq!(get("TMPDIR"), Some("/jackin/run/sessions/42/tmp"));
+    assert_eq!(
+        get("JACKIN_SESSION_STATE_DIR"),
+        Some("/jackin/run/sessions/42/state")
+    );
+    assert_eq!(get("XDG_CACHE_HOME"), Some("/jackin/run/sessions/42/cache"));
 }
 
 #[test]
-fn shell_session_gets_only_status_socket() {
+fn configured_xdg_cache_root_overrides_session_cache() {
+    let mut cmd = CommandBuilder::new("/bin/true");
+    inject_status_env(
+        &mut cmd,
+        42,
+        Some("amp"),
+        Some("/home/agent/.cache/amp"),
+        "test-capability",
+    );
+    assert_eq!(
+        cmd.get_env("XDG_CACHE_HOME")
+            .and_then(|value| value.to_str()),
+        Some("/home/agent/.cache/amp")
+    );
+}
+
+#[test]
+fn shell_session_gets_private_paths_and_no_agent_status_identity() {
     let mut cmd = CommandBuilder::new("/bin/zsh");
-    inject_status_env(&mut cmd, 7, None);
-    assert!(cmd.get_env("JACKIN_SESSION_ID").is_none());
+    inject_status_env(&mut cmd, 7, None, None, "shell-capability");
+    assert!(cmd.get_env(jackin_protocol::SESSION_ID_ENV).is_none());
+    assert_eq!(
+        cmd.get_env(jackin_protocol::ISOLATION_SESSION_ID_ENV)
+            .and_then(|v| v.to_str()),
+        Some("7")
+    );
     assert!(cmd.get_env("JACKIN_AGENT_RUNTIME").is_none());
     assert!(cmd.get_env("JACKIN_STATUS_SOURCE").is_none());
     assert_eq!(
         cmd.get_env("JACKIN_STATUS_SOCKET").and_then(|v| v.to_str()),
         Some("/jackin/run/jackin.sock")
+    );
+    assert_eq!(
+        cmd.get_env(jackin_protocol::SESSION_CAPABILITY_ENV)
+            .and_then(|v| v.to_str()),
+        Some("shell-capability")
     );
 }
 
@@ -1147,30 +1319,19 @@ fn osc8_uri_unsafe_schemes_rejected() {
 }
 
 #[test]
-fn validate_agent_slug_rejects_typical_attacks() {
-    let supported = Vec::new();
-    validate_agent_slug("", &supported).unwrap_err();
-    validate_agent_slug("--debug", &supported).unwrap_err();
-    validate_agent_slug("claude\n; rm -rf /", &supported).unwrap_err();
-    validate_agent_slug("claude codex", &supported).unwrap_err();
-    validate_agent_slug("claude\0", &supported).unwrap_err();
+fn validate_spawn_token_syntax_rejects_typical_attacks() {
+    validate_spawn_token_syntax("").unwrap_err();
+    validate_spawn_token_syntax("--debug").unwrap_err();
+    validate_spawn_token_syntax("claude\n; rm -rf /").unwrap_err();
+    validate_spawn_token_syntax("claude codex").unwrap_err();
+    validate_spawn_token_syntax("claude\0").unwrap_err();
 }
 
 #[test]
-fn validate_agent_slug_accepts_well_formed_slug_when_no_allowlist() {
-    let supported = Vec::new();
-    validate_agent_slug("claude", &supported).unwrap();
-    validate_agent_slug("codex", &supported).unwrap();
-}
-
-#[test]
-fn validate_agent_slug_rejects_slug_outside_launch_config_allowlist() {
-    let supported = vec!["claude".to_owned()];
-    validate_agent_slug("claude", &supported).unwrap();
-    assert_eq!(
-        validate_agent_slug("codex", &supported).unwrap_err(),
-        "not in launch config allowlist"
-    );
+fn validate_spawn_token_syntax_accepts_well_formed_tokens() {
+    validate_spawn_token_syntax("claude").unwrap();
+    validate_spawn_token_syntax("work@claude").unwrap();
+    validate_spawn_token_syntax("codex").unwrap();
 }
 
 // ── exit-reason classification ────────────────────────────────────────────
@@ -1272,7 +1433,52 @@ fn pty_spawn_exit_pair_is_bounded_and_does_not_export_wait_errors() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spawn_records_instance_identity_on_session() {
+    let (event_tx, _event_rx) = mpsc::unbounded_channel();
+    let mut command = CommandBuilder::new("/bin/sh");
+    command.arg("-c");
+    command.arg("exit 0");
+    let terminal = SessionTerminal {
+        rows: 24,
+        cols: 80,
+        row_arena: termpane::RowArena::default(),
+        default_fg: None,
+        default_bg: None,
+    };
+
+    let (session, _id) = Session::spawn(
+        SessionSpawnSpec {
+            label: "Claude · Work".to_owned(),
+            agent: Some("claude-work".to_owned()),
+            account_id: Some("work".to_owned()),
+            identity: jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+            provider: None,
+            cache_dir: None,
+        },
+        command,
+        terminal,
+        event_tx,
+    )
+    .expect("spawn real PTY session");
+    assert_eq!(session.label, "Claude · Work");
+    assert_eq!(session.agent.as_deref(), Some("claude-work"));
+    assert_eq!(session.account_id.as_deref(), Some("work"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content() {
+    if crate::process_telemetry::run_wire_test_in_child(
+        "session::tests::conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content",
+        "JACKIN_SESSION_WIRE_CHILD",
+    )
+    .expect("dispatch isolated session wire test")
+    {
+        return;
+    }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),
@@ -1292,9 +1498,17 @@ async fn conformance_wire_real_pty_spawn_stream_and_exit_exclude_private_content
     };
 
     let (_session, session_id) = Session::spawn(
-        "wire-private-tab-label",
-        Some("codex".to_owned()),
-        None,
+        SessionSpawnSpec {
+            label: "wire-private-tab-label".to_owned(),
+            agent: Some("codex".to_owned()),
+            account_id: Some("acc-codex".to_owned()),
+            identity: jackin_protocol::SessionIdentity {
+                uid: 2_002,
+                gid: 2_002,
+            },
+            provider: None,
+            cache_dir: None,
+        },
         command,
         terminal,
         event_tx,
@@ -1503,7 +1717,7 @@ impl MasterPty for FaultMasterPty {
         }))
     }
     #[cfg(unix)]
-    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
         None
     }
     #[cfg(unix)]
@@ -1681,68 +1895,184 @@ fn bare_claude_notification_payload_authors_authority() {
     assert_eq!(a.grade, AuthorityGrade::Partial);
 }
 
+fn v2_credentials_fixture() -> jackin_protocol::AgentCredentialEnv {
+    serde_json::from_value(serde_json::json!({
+        "schema_version": 2,
+        "instances": {
+            "opencode-personal": {
+                "agent": "opencode",
+                "account_id": "acc-personal",
+                "env": {"ANTHROPIC_API_KEY": "personal-secret"},
+            },
+            "claude-work": {
+                "agent": "claude",
+                "account_id": "acc-work",
+                "env": {"ANTHROPIC_API_KEY": "work-secret"},
+            },
+            "claude-personal": {
+                "agent": "claude",
+                "account_id": "acc-personal",
+                "env": {"ANTHROPIC_API_KEY": "personal-secret"},
+            },
+        },
+    }))
+    .expect("v2 fixture must decode")
+}
+
 #[test]
-fn account_credentials_are_scoped_to_selected_agent_and_mode() {
-    let credentials = jackin_protocol::AgentCredentialEnv::new(std::collections::BTreeMap::from([
-        (
-            "opencode".into(),
-            std::collections::BTreeMap::from([(
-                "ANTHROPIC_API_KEY".into(),
-                "personal-secret".into(),
-            )]),
-        ),
-        (
-            "claude".into(),
-            std::collections::BTreeMap::from([("ANTHROPIC_API_KEY".into(), "work-secret".into())]),
-        ),
-    ]));
+fn account_credentials_are_scoped_to_selected_instance_and_mode() {
+    let credentials = v2_credentials_fixture();
     let hostile_passthrough = vec![("ANTHROPIC_API_KEY".into(), "wrong-secret".into())];
     for mode in ["sync", "ignore"] {
-        let mut cmd = build_agent_command(
+        let mut cmd = build_agent_command(&spawn_spec(
             "claude",
-            None,
+            "claude-work",
             Some(mode),
             &hostile_passthrough,
-            Path::new("/workspace"),
-            "test",
-        );
-        super::apply_account_env(&mut cmd, "claude", Some(mode), &credentials);
+        ));
+        super::apply_account_env(&mut cmd, "claude-work", Some(mode), &credentials);
         assert!(cmd.get_env("ANTHROPIC_API_KEY").is_none());
     }
-    let mut cmd = build_agent_command(
+    let mut cmd = build_agent_command(&spawn_spec(
         "claude",
-        None,
+        "claude-work",
         Some("api_key"),
         &hostile_passthrough,
-        Path::new("/workspace"),
-        "test",
-    );
-    super::apply_account_env(&mut cmd, "claude", Some("api_key"), &credentials);
+    ));
+    super::apply_account_env(&mut cmd, "claude-work", Some("api_key"), &credentials);
     assert_eq!(
         cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
         Some("work-secret")
     );
     assert!(cmd.get_env("OPENAI_API_KEY").is_none());
-    let shell = build_shell_command(&hostile_passthrough, Path::new("/workspace"), "test");
+    // Same agent, sibling instance: only its own env lands, never the other
+    // claude instance's secret.
+    let mut cmd = build_agent_command(&spawn_spec(
+        "claude",
+        "claude-work",
+        Some("api_key"),
+        &hostile_passthrough,
+    ));
+    super::apply_account_env(&mut cmd, "claude-personal", Some("api_key"), &credentials);
+    assert_eq!(
+        cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
+        Some("personal-secret")
+    );
+    let shell = build_shell_command(
+        &hostile_passthrough,
+        Path::new("/workspace"),
+        "test",
+        jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    );
     assert!(shell.get_env("ANTHROPIC_API_KEY").is_none());
 }
 
 #[test]
-fn unassigned_agent_cannot_inherit_another_agents_provider_key() {
-    let credentials =
-        jackin_protocol::AgentCredentialEnv::new(std::collections::BTreeMap::from([(
-            "opencode".into(),
-            std::collections::BTreeMap::from([("OPENAI_API_KEY".into(), "opencode-secret".into())]),
-        )]));
-    let mut cmd = build_agent_command(
-        "codex",
-        None,
+fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected() {
+    let credentials: jackin_protocol::AgentCredentialEnv =
+        serde_json::from_value(serde_json::json!({
+            "schema_version": 2,
+            "instances": {
+                "gemini-work": {
+                    "agent": "gemini",
+                    "account_id": "acc-work",
+                    "env": {"GEMINI_API_KEY": "work-secret"},
+                },
+                "gemini-personal": {
+                    "agent": "gemini",
+                    "account_id": "acc-personal",
+                    "env": {"GEMINI_API_KEY": "personal-secret"},
+                },
+            },
+        }))
+        .expect("v2 fixture must decode");
+    let ambient = vec![(
+        jackin_core::GOOGLE_API_KEY_ENV_NAME.to_owned(),
+        "ambient-secret".to_owned(),
+    )];
+
+    let mut unselected = build_agent_command(&spawn_spec(
+        "gemini",
+        "gemini-unselected",
         Some("ignore"),
-        &[],
-        Path::new("/workspace"),
-        "test",
+        &ambient,
+    ));
+    super::apply_account_env(
+        &mut unselected,
+        "gemini-unselected",
+        Some("ignore"),
+        &credentials,
     );
-    super::apply_account_env(&mut cmd, "codex", Some("ignore"), &credentials);
+    assert!(
+        unselected
+            .get_env(jackin_core::GOOGLE_API_KEY_ENV_NAME)
+            .is_none()
+    );
+    assert!(
+        unselected
+            .get_env(jackin_core::GEMINI_API_KEY_ENV_NAME)
+            .is_none()
+    );
+
+    let mut work = build_agent_command(&spawn_spec(
+        "gemini",
+        "gemini-work",
+        Some("api_key"),
+        &ambient,
+    ));
+    super::apply_account_env(&mut work, "gemini-work", Some("api_key"), &credentials);
+    assert_eq!(
+        work.get_env(jackin_core::GEMINI_API_KEY_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("work-secret")
+    );
+    assert!(work.get_env(jackin_core::GOOGLE_API_KEY_ENV_NAME).is_none());
+
+    let mut personal = build_agent_command(&spawn_spec(
+        "gemini",
+        "gemini-personal",
+        Some("api_key"),
+        &ambient,
+    ));
+    super::apply_account_env(
+        &mut personal,
+        "gemini-personal",
+        Some("api_key"),
+        &credentials,
+    );
+    assert_eq!(
+        personal
+            .get_env(jackin_core::GEMINI_API_KEY_ENV_NAME)
+            .and_then(|value| value.to_str()),
+        Some("personal-secret")
+    );
+    assert!(
+        personal
+            .get_env(jackin_core::GOOGLE_API_KEY_ENV_NAME)
+            .is_none()
+    );
+}
+
+#[test]
+fn unassigned_instance_cannot_inherit_another_instances_provider_key() {
+    let credentials: jackin_protocol::AgentCredentialEnv =
+        serde_json::from_value(serde_json::json!({
+            "schema_version": 2,
+            "instances": {
+                "opencode-personal": {
+                    "agent": "opencode",
+                    "account_id": "acc-personal",
+                    "env": {"OPENAI_API_KEY": "opencode-secret"},
+                },
+            },
+        }))
+        .expect("v2 fixture must decode");
+    let empty: Vec<(String, String)> = Vec::new();
+    let mut cmd = build_agent_command(&spawn_spec("codex", "codex-work", Some("ignore"), &empty));
+    super::apply_account_env(&mut cmd, "codex-work", Some("ignore"), &credentials);
     assert!(cmd.get_env("OPENAI_API_KEY").is_none());
     assert!(!format!("{credentials:?}").contains("opencode-secret"));
 }
@@ -1751,14 +2081,12 @@ fn unassigned_agent_cannot_inherit_another_agents_provider_key() {
 fn claude_session_owns_its_durable_config_directory_for_every_auth_mode() {
     let passthrough = vec![("CLAUDE_CONFIG_DIR".to_owned(), "/stale-profile".to_owned())];
     for mode in ["sync", "api_key", "oauth_token", "ignore"] {
-        let command = build_agent_command(
+        let command = build_agent_command(&spawn_spec(
             "claude",
-            None,
+            "claude-work",
             Some(mode),
             &passthrough,
-            Path::new("/workspace"),
-            "test",
-        );
+        ));
         assert_eq!(
             command.get_env("CLAUDE_CONFIG_DIR"),
             Some(std::ffi::OsStr::new(
@@ -1766,4 +2094,63 @@ fn claude_session_owns_its_durable_config_directory_for_every_auth_mode() {
             ))
         );
     }
+}
+
+#[test]
+fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
+    let hostile = vec![
+        ("CLAUDE_CONFIG_DIR".to_owned(), "/stale-profile".to_owned()),
+        ("CODEX_HOME".to_owned(), "/foreign-codex".to_owned()),
+    ];
+    let spec = AgentSpawnSpec {
+        agent: "claude",
+        instance: "claude-personal",
+        home_dir: "/home/agent/.claude-claude-personal",
+        forwarded_dir: "/jackin/claude-claude-personal",
+        model: None,
+        effort: None,
+        auth_mode: Some("sync"),
+        env_passthrough: &hostile,
+        cwd: Path::new("/workspace"),
+        codename: "test",
+        identity: jackin_protocol::SessionIdentity {
+            uid: 2_001,
+            gid: 2_001,
+        },
+    };
+    let cmd = build_agent_command(&spec);
+    let env = |name: &str| cmd.get_env(name).and_then(|v| v.to_str());
+    assert_eq!(
+        env("CLAUDE_CONFIG_DIR"),
+        Some("/home/agent/.claude-claude-personal")
+    );
+    assert!(env("CODEX_HOME").is_none());
+    assert_eq!(env(jackin_protocol::INSTANCE_ENV), Some("claude-personal"));
+    assert_eq!(
+        env(jackin_protocol::INSTANCE_FORWARDED_DIR_ENV),
+        Some("/jackin/claude-claude-personal")
+    );
+    assert_eq!(env("JACKIN_AGENT"), Some("claude"));
+
+    // A codex pane never inherits another runtime's folder var either.
+    let spec = AgentSpawnSpec {
+        agent: "codex",
+        instance: "codex-work",
+        home_dir: "/home/agent/.codex",
+        forwarded_dir: "/jackin/codex",
+        model: None,
+        effort: None,
+        auth_mode: Some("sync"),
+        env_passthrough: &hostile,
+        cwd: Path::new("/workspace"),
+        codename: "test",
+        identity: jackin_protocol::SessionIdentity {
+            uid: 2_002,
+            gid: 2_002,
+        },
+    };
+    let cmd = build_agent_command(&spec);
+    let env = |name: &str| cmd.get_env(name).and_then(|v| v.to_str());
+    assert_eq!(env("CODEX_HOME"), Some("/home/agent/.codex"));
+    assert!(env("CLAUDE_CONFIG_DIR").is_none());
 }

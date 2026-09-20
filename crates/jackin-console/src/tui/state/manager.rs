@@ -165,15 +165,17 @@ impl ManagerState<'_> {
             file_browser_listing_rx: None,
             file_browser_commit_rx: None,
             config_save_rx: None,
+            account_scan_rx: None,
             instances_last_error: None,
             expanded_workspaces: BTreeSet::new(),
             current_dir_expanded: false,
             instance_sessions: HashMap::new(),
             instance_session_errors: HashSet::new(),
+            live_instance_admissions: HashMap::new(),
             instance_snapshots: HashMap::new(),
             preview_focused: false,
             preview_pane_cursor: HashMap::new(),
-            usage_screen: None,
+            usage: super::UsageRouteState::default(),
             usage_accounts: Vec::new(),
             usage_notice: None,
         }
@@ -631,6 +633,39 @@ impl ManagerState<'_> {
         self.config_save_rx.is_some()
     }
 
+    pub fn begin_account_scan(
+        &mut self,
+        rx: BlockingSubscription<(
+            u64,
+            Result<crate::tui::screens::settings::model::AccountScanOutcome, String>,
+        )>,
+    ) {
+        self.account_scan_rx = Some(rx);
+    }
+
+    pub const fn account_scan_in_flight(&self) -> bool {
+        self.account_scan_rx.is_some()
+    }
+
+    pub fn poll_account_scan(
+        &mut self,
+    ) -> Option<(
+        u64,
+        Result<crate::tui::screens::settings::model::AccountScanOutcome, String>,
+    )> {
+        let rx = self.account_scan_rx.as_mut()?;
+        let result = match rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => {
+                self.account_scan_rx = None;
+                return None;
+            }
+        };
+        self.account_scan_rx = None;
+        Some(result)
+    }
+
     pub fn poll_mount_info_refresh(&mut self) -> Option<PendingMountInfoRefresh> {
         let rx = self.mount_info_refresh_rx.as_mut()?;
         let result = match rx.poll_next() {
@@ -839,6 +874,7 @@ impl ManagerState<'_> {
         self.instances = snapshot.instances;
         self.instance_sessions = snapshot.sessions;
         self.instance_session_errors = snapshot.session_errors;
+        self.live_instance_admissions = snapshot.admissions;
         self.instance_snapshots = snapshot.snapshots;
         self.instances_refresh_interval = snapshot.next_interval;
         self.instances_last_error = None;
@@ -856,6 +892,7 @@ impl ManagerState<'_> {
         self.instances.clear();
         self.instance_sessions.clear();
         self.instance_session_errors.clear();
+        self.live_instance_admissions.clear();
         self.expanded_workspaces.clear();
         // Mirror the Ok-branch cleanup of the snapshot-derived
         // surfaces — without this they accumulate stale entries keyed

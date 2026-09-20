@@ -3,8 +3,10 @@
 
 //! Account registry edits under the existing config write lock.
 use super::{ConfigEditor, table_path_mut, validate_candidate};
+use crate::accounts::account_source_fingerprint;
 use crate::{AccountConfig, ConfigError, ConfigResult, validate_account_id};
 use jackin_core::{Agent, WorkspaceName};
+use std::collections::{BTreeMap, BTreeSet};
 use toml_edit::{DocumentMut, Item};
 
 impl ConfigEditor {
@@ -33,7 +35,9 @@ impl ConfigEditor {
                 remove_bindings(doc.as_table_mut(), id);
                 remove_role_bindings(doc, id);
             }
+            prune_agent_configurations(&mut candidate, &mut workspaces, id)?;
         }
+        remove_scan_exclusion(&mut candidate, &account_source_fingerprint(account));
         validate_candidate(&candidate.to_string(), &workspaces)?;
         self.doc = candidate;
         self.workspace_docs = workspaces;
@@ -61,6 +65,12 @@ impl ConfigEditor {
     /// # Errors
     /// Returns an error if the account does not exist or the candidate is invalid.
     pub fn remove_account(&mut self, id: &str) -> ConfigResult<()> {
+        let existing: crate::AppConfig = toml::from_str(&self.doc.to_string())?;
+        let account = existing
+            .accounts
+            .get(id)
+            .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
+        let source_fingerprint = account_source_fingerprint(account);
         let mut candidate = self.doc.clone();
         if candidate
             .get_mut("accounts")
@@ -78,6 +88,8 @@ impl ConfigEditor {
             remove_bindings(doc.as_table_mut(), id);
             remove_role_bindings(doc, id);
         }
+        prune_agent_configurations(&mut candidate, &mut workspaces, id)?;
+        add_scan_exclusion(&mut candidate, &source_fingerprint);
         validate_candidate(&candidate.to_string(), &workspaces)?;
         self.doc = candidate;
         self.workspace_docs = workspaces;
@@ -164,39 +176,7 @@ impl ConfigEditor {
 }
 
 fn same_credential_source(left: &AccountConfig, right: &AccountConfig) -> bool {
-    use crate::AccountCredential;
-    if left.provider != right.provider {
-        return false;
-    }
-    match (&left.credential, &right.credential) {
-        (
-            AccountCredential::Profile {
-                agent: a,
-                directory: x,
-            },
-            AccountCredential::Profile {
-                agent: b,
-                directory: y,
-            },
-        ) => a == b && x == y,
-        (
-            AccountCredential::ApiKey {
-                value: x,
-                base_url: a,
-                ..
-            },
-            AccountCredential::ApiKey {
-                value: y,
-                base_url: b,
-                ..
-            },
-        ) => x == y && a == b,
-        (
-            AccountCredential::OAuthToken { agent: a, value: x },
-            AccountCredential::OAuthToken { agent: b, value: y },
-        ) => a == b && x == y,
-        _ => false,
-    }
+    account_source_fingerprint(left) == account_source_fingerprint(right)
 }
 fn remove_bindings(table: &mut toml_edit::Table, id: &str) {
     if let Some(bindings) = table
@@ -215,6 +195,90 @@ fn remove_role_bindings(doc: &mut DocumentMut, id: &str) {
         if let Some(table) = role.as_table_mut() {
             remove_bindings(table, id);
         }
+    }
+}
+
+fn prune_agent_configurations(
+    global: &mut DocumentMut,
+    workspaces: &mut BTreeMap<String, DocumentMut>,
+    account_id: &str,
+) -> ConfigResult<()> {
+    let config: crate::AppConfig = toml::from_str(&global.to_string())?;
+    let removed: BTreeSet<String> = config
+        .agent_configurations
+        .iter()
+        .filter(|(_, configuration)| configuration.account == account_id)
+        .map(|(id, _)| id.clone())
+        .collect();
+    if removed.is_empty() {
+        return Ok(());
+    }
+
+    if let Some(configurations) = global
+        .get_mut("agent_configurations")
+        .and_then(Item::as_table_mut)
+    {
+        for id in &removed {
+            configurations.remove(id);
+        }
+        if configurations.is_empty() {
+            global.remove("agent_configurations");
+        }
+    }
+    scrub_default_launch(global, &removed);
+    for workspace in workspaces.values_mut() {
+        scrub_default_launch(workspace, &removed);
+        if let Some(roles) = workspace.get_mut("roles").and_then(Item::as_table_mut) {
+            for (_, role) in roles.iter_mut() {
+                if let Some(role) = role.as_table_mut() {
+                    scrub_default_launch_table(role, &removed);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn scrub_default_launch(doc: &mut DocumentMut, removed: &BTreeSet<String>) {
+    scrub_default_launch_table(doc.as_table_mut(), removed);
+}
+
+fn scrub_default_launch_table(table: &mut toml_edit::Table, removed: &BTreeSet<String>) {
+    if let Some(ids) = table.get_mut("default_launch").and_then(Item::as_array_mut) {
+        ids.retain(|id| id.as_str().is_none_or(|id| !removed.contains(id)));
+    }
+}
+
+fn add_scan_exclusion(doc: &mut DocumentMut, fingerprint: &str) {
+    if let Some(exclusions) = doc
+        .get_mut("account_scan_exclusions")
+        .and_then(Item::as_array_mut)
+    {
+        if !exclusions
+            .iter()
+            .any(|value| value.as_str() == Some(fingerprint))
+        {
+            exclusions.push(fingerprint);
+        }
+        return;
+    }
+    let mut exclusions = toml_edit::Array::new();
+    exclusions.push(fingerprint);
+    doc.insert("account_scan_exclusions", toml_edit::value(exclusions));
+}
+
+fn remove_scan_exclusion(doc: &mut DocumentMut, fingerprint: &str) {
+    let remove_field = if let Some(exclusions) = doc
+        .get_mut("account_scan_exclusions")
+        .and_then(Item::as_array_mut)
+    {
+        exclusions.retain(|value| value.as_str() != Some(fingerprint));
+        exclusions.is_empty()
+    } else {
+        false
+    };
+    if remove_field {
+        doc.remove("account_scan_exclusions");
     }
 }
 

@@ -3,8 +3,11 @@
 
 use super::*;
 use jackin_protocol::usage_broker::{
-    USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerOperation, UsageCoordinationError,
+    USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability, UsageBrokerOperation, UsageCatalogEntry,
+    UsageCoordinationError,
 };
+use jackin_protocol::{CapsuleConfig, SessionIdentity};
+use std::collections::BTreeMap;
 use tokio::io::BufReader;
 
 #[tokio::test]
@@ -14,15 +17,19 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
     let (mut host_response_writer, proxy_input) = tokio::io::duplex(64 * 1024);
     let (proxy_output, host_request_reader) = tokio::io::duplex(64 * 1024);
     let proxy_socket = socket.clone();
+    let shared = capability("shared");
+    let forced_peer = PeerIdentity {
+        pid: Some(9),
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let authorization = UsageRelayAuthorization::for_peer(forced_peer, shared.clone());
     let proxy = tokio::spawn(async move {
         run_at_with_peer(
             &proxy_socket,
             DEFAULT_CAPSULE_SUPERVISOR_PID,
-            Some(PeerIdentity {
-                pid: Some(9),
-                uid: 2_001,
-                gid: 2_001,
-            }),
+            authorization,
+            Some(forced_peer),
             proxy_input,
             proxy_output,
         )
@@ -30,8 +37,20 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
     });
     wait_for_socket(&socket).await;
 
-    let first = tokio::spawn(send_request(socket.clone(), "claude"));
-    let second = tokio::spawn(send_request(socket, "codex"));
+    let first = tokio::spawn(send_request(
+        socket.clone(),
+        UsageBrokerOperation::CurrentForCapability {
+            capability: shared.clone(),
+        },
+    ));
+    let second = tokio::spawn(send_request(
+        socket,
+        UsageBrokerOperation::RefreshForCapability {
+            capability: shared,
+            observed_generation: 0,
+            force: true,
+        },
+    ));
     let mut requests = BufReader::new(host_request_reader);
     let mut frames = Vec::new();
     for _ in 0..2 {
@@ -41,8 +60,9 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
     }
     frames.reverse();
     for frame in frames {
-        let surface = match frame.request.operation {
-            UsageBrokerOperation::CurrentForSurface { surface_id } => surface_id,
+        let message = match frame.request.operation {
+            UsageBrokerOperation::CurrentForCapability { .. } => "current",
+            UsageBrokerOperation::RefreshForCapability { .. } => "refresh",
             operation => panic!("unexpected operation: {operation:?}"),
         };
         let response = UsageRelayTunnelResponse {
@@ -50,7 +70,7 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
             response: UsageBrokerResponse::Error {
                 error: UsageCoordinationError {
                     kind: UsageCoordinationErrorKind::Unauthorized,
-                    message: surface,
+                    message: message.to_owned(),
                 },
             },
         };
@@ -59,19 +79,191 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
         host_response_writer.write_all(&bytes).await.unwrap();
     }
 
-    assert_eq!(error_message(first.await.unwrap()), "claude");
-    assert_eq!(error_message(second.await.unwrap()), "codex");
+    assert_eq!(error_message(first.await.unwrap()), "current");
+    assert_eq!(error_message(second.await.unwrap()), "refresh");
     proxy.abort();
 }
 
-async fn send_request(socket: std::path::PathBuf, surface: &str) -> UsageBrokerResponse {
+#[test]
+fn usage_relay_binds_session_peer_to_its_capability() {
+    let account_a = capability("account-a");
+    let account_b = capability("account-b");
+    let config = CapsuleConfig {
+        instances: vec!["session-a".to_owned(), "session-b".to_owned()],
+        usage_capabilities: BTreeMap::from([
+            ("session-a".to_owned(), account_a.clone()),
+            ("session-b".to_owned(), account_b.clone()),
+        ]),
+        instance_identities: BTreeMap::from([
+            (
+                "session-a".to_owned(),
+                SessionIdentity {
+                    uid: 2_001,
+                    gid: 2_001,
+                },
+            ),
+            (
+                "session-b".to_owned(),
+                SessionIdentity {
+                    uid: 2_002,
+                    gid: 2_002,
+                },
+            ),
+        ]),
+        ..CapsuleConfig::default()
+    };
+    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let peer_a = PeerIdentity {
+        pid: None,
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let peer_b = PeerIdentity {
+        pid: None,
+        uid: 2_002,
+        gid: 2_002,
+    };
+
+    assert!(authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Some(peer_a),
+        &UsageBrokerOperation::CurrentForCapability {
+            capability: account_a,
+        },
+    ));
+    assert!(!authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Some(peer_a),
+        &UsageBrokerOperation::CurrentForCapability {
+            capability: account_b.clone(),
+        },
+    ));
+    assert!(authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Some(peer_b),
+        &UsageBrokerOperation::CurrentForCapability {
+            capability: account_b,
+        },
+    ));
+    assert!(!authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        None,
+        &UsageBrokerOperation::CurrentForCapability {
+            capability: capability("account-a"),
+        },
+    ));
+}
+
+#[test]
+fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
+    let account = capability("account-a");
+    let config = CapsuleConfig {
+        instances: vec!["session-a".to_owned()],
+        usage_capabilities: BTreeMap::from([("session-a".to_owned(), account.clone())]),
+        instance_identities: BTreeMap::from([(
+            "session-a".to_owned(),
+            SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        )]),
+        ..CapsuleConfig::default()
+    };
+    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let operation = UsageBrokerOperation::CurrentForCapability {
+        capability: account,
+    };
+
+    assert!(!authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Some(PeerIdentity {
+            pid: Some(2),
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+    assert!(!authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Some(PeerIdentity {
+            pid: None,
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+    assert!(!authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 1,
+        }),
+        &operation,
+    ));
+    assert!(authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+}
+
+#[test]
+fn usage_relay_rejects_host_only_catalog_reconciliation() {
+    let account = capability("account-a");
+    let config = CapsuleConfig {
+        instances: vec!["session-a".to_owned()],
+        usage_capabilities: BTreeMap::from([("session-a".to_owned(), account.clone())]),
+        instance_identities: BTreeMap::from([(
+            "session-a".to_owned(),
+            SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        )]),
+        ..CapsuleConfig::default()
+    };
+    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let operation = UsageBrokerOperation::ReconcileCatalog {
+        expected_projection_id: None,
+        catalog_revision: "catalog-2".to_owned(),
+        entries: vec![UsageCatalogEntry {
+            capability: account,
+            revision: "credential-2".to_owned(),
+        }],
+    };
+
+    assert!(!authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 0,
+        }),
+        &operation,
+    ));
+}
+
+fn capability(account_id: &str) -> UsageAccountCapability {
+    UsageAccountCapability {
+        account_id: account_id.to_owned(),
+        surface_id: "claude".to_owned(),
+    }
+}
+
+async fn send_request(
+    socket: std::path::PathBuf,
+    operation: UsageBrokerOperation,
+) -> UsageBrokerResponse {
     let mut stream = UnixStream::connect(socket).await.unwrap();
     let request = UsageBrokerRequest {
         protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
         build_id: env!("CARGO_PKG_VERSION").to_owned(),
-        operation: UsageBrokerOperation::CurrentForSurface {
-            surface_id: surface.to_owned(),
-        },
+        operation,
     };
     let mut bytes = serde_json::to_vec(&request).unwrap();
     bytes.push(b'\n');
@@ -169,4 +361,169 @@ fn parse_supervisor_pid_defaults_and_rejects_invalid_values() {
     assert_eq!(parse_supervisor_pid(Ok("2".to_owned())).unwrap(), 2);
     let _zero = parse_supervisor_pid(Ok("0".to_owned())).unwrap_err();
     let _garbage = parse_supervisor_pid(Ok("nope".to_owned())).unwrap_err();
+}
+
+#[test]
+fn usage_relay_supervisor_pid_parameter_selects_the_root_bypass() {
+    let (authorization, account) = single_session_authorization(2_001, 2_001, "account-a");
+    let operation = UsageBrokerOperation::CurrentForCapability {
+        capability: account,
+    };
+    let apple_supervisor = Some(PeerIdentity {
+        pid: Some(jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID),
+        uid: 0,
+        gid: 0,
+    });
+    assert!(authorization.authorizes(
+        jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID,
+        apple_supervisor,
+        &operation,
+    ));
+    assert!(!authorization.authorizes(
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        apple_supervisor,
+        &operation,
+    ));
+}
+
+#[tokio::test]
+async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages() {
+    let (authorization, account_a) = single_session_authorization(2_001, 2_001, "account-a");
+    let supervisor_pid = jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID;
+
+    // Root peer at the Apple supervisor PID with an in-launch capability is
+    // relayed to the host instead of denied.
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("usage.sock");
+    let (mut host_response_writer, proxy_input) = tokio::io::duplex(64 * 1024);
+    let (proxy_output, host_request_reader) = tokio::io::duplex(64 * 1024);
+    let proxy_socket = socket.clone();
+    let proxy_authorization = authorization.clone();
+    let proxy = tokio::spawn(async move {
+        run_at_with_peer(
+            &proxy_socket,
+            supervisor_pid,
+            proxy_authorization,
+            Some(PeerIdentity {
+                pid: Some(supervisor_pid),
+                uid: 0,
+                gid: 0,
+            }),
+            proxy_input,
+            proxy_output,
+        )
+        .await
+    });
+    wait_for_socket(&socket).await;
+    let client = tokio::spawn(send_request(
+        socket,
+        UsageBrokerOperation::CurrentForCapability {
+            capability: account_a.clone(),
+        },
+    ));
+    let mut requests = BufReader::new(host_request_reader);
+    let mut line = String::new();
+    requests.read_line(&mut line).await.unwrap();
+    let frame = serde_json::from_str::<UsageRelayTunnelRequest>(line.trim()).unwrap();
+    let response = UsageRelayTunnelResponse {
+        request_id: frame.request_id,
+        response: UsageBrokerResponse::Error {
+            error: UsageCoordinationError {
+                kind: UsageCoordinationErrorKind::Unavailable,
+                message: "relayed".to_owned(),
+            },
+        },
+    };
+    let mut bytes = serde_json::to_vec(&response).unwrap();
+    bytes.push(b'\n');
+    host_response_writer.write_all(&bytes).await.unwrap();
+    assert_eq!(error_message(client.await.unwrap()), "relayed");
+    proxy.abort();
+
+    // Root peer at the wrong PID fails the supervisor gate.
+    let denied = denied_relay_response(
+        authorization.clone(),
+        supervisor_pid,
+        PeerIdentity {
+            pid: Some(9),
+            uid: 0,
+            gid: 0,
+        },
+        UsageBrokerOperation::CurrentForCapability {
+            capability: account_a.clone(),
+        },
+    )
+    .await;
+    assert_eq!(
+        error_message(denied),
+        "usage relay peer is not the Capsule supervisor"
+    );
+
+    // Session peer presenting a foreign capability fails the capability gate.
+    let denied = denied_relay_response(
+        authorization,
+        supervisor_pid,
+        PeerIdentity {
+            pid: None,
+            uid: 2_001,
+            gid: 2_001,
+        },
+        UsageBrokerOperation::CurrentForCapability {
+            capability: capability("account-b"),
+        },
+    )
+    .await;
+    assert_eq!(
+        error_message(denied),
+        "usage account capability is not authorized"
+    );
+}
+
+fn single_session_authorization(
+    uid: u32,
+    gid: u32,
+    account_id: &str,
+) -> (UsageRelayAuthorization, UsageAccountCapability) {
+    let account = capability(account_id);
+    let config = CapsuleConfig {
+        instances: vec!["session-a".to_owned()],
+        usage_capabilities: BTreeMap::from([("session-a".to_owned(), account.clone())]),
+        instance_identities: BTreeMap::from([(
+            "session-a".to_owned(),
+            SessionIdentity { uid, gid },
+        )]),
+        ..CapsuleConfig::default()
+    };
+    (
+        UsageRelayAuthorization::from_config(&config).unwrap(),
+        account,
+    )
+}
+
+async fn denied_relay_response(
+    authorization: UsageRelayAuthorization,
+    supervisor_pid: u32,
+    peer: PeerIdentity,
+    operation: UsageBrokerOperation,
+) -> UsageBrokerResponse {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("usage.sock");
+    let (_host_response_writer, proxy_input) = tokio::io::duplex(64 * 1024);
+    let (proxy_output, _host_request_reader) = tokio::io::duplex(64 * 1024);
+    let proxy_socket = socket.clone();
+    let proxy = tokio::spawn(async move {
+        run_at_with_peer(
+            &proxy_socket,
+            supervisor_pid,
+            authorization,
+            Some(peer),
+            proxy_input,
+            proxy_output,
+        )
+        .await
+    });
+    wait_for_socket(&socket).await;
+    let response = send_request(socket, operation).await;
+    proxy.abort();
+    response
 }

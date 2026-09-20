@@ -30,6 +30,7 @@ directories = { workspace = true }
 fs4 = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
+shell-words = "1"
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
@@ -37,6 +38,7 @@ jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-otlp-testbed = { workspace = true }
 proptest = { workspace = true }
 tempfile = { workspace = true }
+filetime = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 

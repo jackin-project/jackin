@@ -106,6 +106,9 @@ pub(crate) fn execute_manager_effect(
             execute_settings_save(state, config, paths);
             true
         }
+        ManagerEffect::Console(ConsoleEffect::RequestUsageRefresh) => {
+            crate::console::adapter::run::execute_usage_refresh_effect(state, paths)
+        }
         ManagerEffect::StartRoleRegistration {
             raw,
             key,
@@ -166,7 +169,23 @@ pub(crate) fn execute_manager_effect(
             execute_op_commit_validation(state, op_ref, is_settings);
             true
         }
+        ManagerEffect::StartAccountScan { generation } => {
+            execute_account_scan_start(state, paths, generation)
+        }
     }
+}
+
+fn execute_account_scan_start(
+    state: &mut ManagerState<'_>,
+    paths: &jackin_core::JackinPaths,
+    generation: u64,
+) -> bool {
+    if state.account_scan_in_flight() {
+        return false;
+    }
+    let rx = crate::console::services::config::start_account_scan(paths.clone(), generation);
+    state.begin_account_scan(rx);
+    false
 }
 
 fn execute_container_info_copy(state: &mut ManagerState<'_>, row: usize, payload: &str) -> bool {
@@ -810,6 +829,16 @@ pub fn poll_background_messages(
     }
     if let Some(result) = state.poll_config_save() {
         messages.push(ManagerBackgroundEvent::ConfigSaveFinished(result));
+    }
+    if let Some((generation, result)) = state.poll_account_scan() {
+        messages.push(ManagerBackgroundEvent::Message(
+            ManagerMessage::Settings(
+                jackin_console::tui::screens::settings::message::SettingsMessage::AccountScanCompleted {
+                    generation,
+                    result,
+                },
+            ),
+        ));
     }
     messages
 }

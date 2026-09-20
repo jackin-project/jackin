@@ -1,5 +1,7 @@
 use std::sync::Mutex;
 
+use jackin_protocol::control::UsageConfidence;
+
 use super::*;
 
 type ResolverCall = (Option<String>, Option<String>, Vec<String>);
@@ -57,6 +59,25 @@ impl ProfileCredentialReader for RecordingProfileReader {
     }
 }
 
+struct SyntheticDatabaseOnlyReader;
+
+impl ProfileCredentialReader for SyntheticDatabaseOnlyReader {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        path.file_name().and_then(std::ffi::OsStr::to_str) == Some("opencode.db")
+    }
+
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        panic!("Claude is ignored in source-validation fixtures")
+    }
+}
+
 impl ProviderCredentialEnvResolver for FakeEnvResolver {
     fn resolve_provider_credentials(
         &self,
@@ -92,6 +113,53 @@ impl ProviderCredentialEnvResolver for FakeEnvResolver {
     }
 }
 
+#[test]
+fn opencode_profile_requires_one_auth_entry_and_ignores_sibling_database() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("opencode");
+    std::fs::create_dir_all(&root).unwrap();
+    let auth = root.join("auth.json");
+    let reader = RecordingProfileReader::default();
+
+    std::fs::write(
+        &auth,
+        r#"{"anthropic":{"type":"api","key":"fixture-a"},"opencode-go":{"type":"api","key":"fixture-go"}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Malformed
+    ));
+
+    std::fs::write(
+        &auth,
+        r#"{"opencode-go":{"type":"api","key":"fixture-go"}}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("opencode.db"), b"database fixture").unwrap();
+    assert!(matches!(
+        opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Anonymous(Some(_))
+    ));
+
+    std::fs::remove_file(&auth).unwrap();
+    assert!(matches!(
+        opencode_profile_identity(&reader, &auth),
+        ProfileValidation::Malformed
+    ));
+}
+
+#[test]
+fn opencode_profile_database_only_uses_reader_abstraction() {
+    let reader = SyntheticDatabaseOnlyReader;
+    let auth = Path::new("/synthetic/opencode/auth.json");
+
+    assert!(matches!(
+        opencode_profile_identity(&reader, auth),
+        ProfileValidation::Malformed
+    ));
+}
+
 fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
     let mut config = AppConfig::default();
     for (id, agent, directory) in entries {
@@ -100,10 +168,13 @@ fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
             jackin_config::AccountConfig {
                 enabled: true,
                 name: (*id).to_owned(),
-                provider: AiProvider::for_agent(*agent),
+                provider: AiProvider::for_agent(*agent)
+                    .expect("registry fixtures use native-provider agents"),
                 credential: AccountCredential::Profile {
                     agent: *agent,
                     directory: directory.to_path_buf(),
+                    xdg_roots: None,
+                    source_selector: None,
                 },
             },
         );
@@ -114,6 +185,27 @@ fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
         toml::to_string(&config).unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+fn env_capability_ids_isolate_distinct_opaque_credentials() {
+    let first = CredentialSourceKey::Env {
+        surface: HostSurfaceId::Zai,
+        handle: OpaqueCredentialHandle::new("credential-1"),
+        key: "ZAI_API_KEY".to_owned(),
+    };
+    let second = CredentialSourceKey::Env {
+        surface: HostSurfaceId::Zai,
+        handle: OpaqueCredentialHandle::new("credential-2"),
+        key: "ZAI_API_KEY".to_owned(),
+    };
+
+    let first_id = source_capability_id(HostSurfaceId::Zai, &first);
+    let second_id = source_capability_id(HostSurfaceId::Zai, &second);
+    assert_ne!(first_id, second_id);
+    assert_eq!(first_id, source_capability_id(HostSurfaceId::Zai, &first));
+    assert!(!first_id.contains("credential-1"));
+    assert!(!second_id.contains("credential-2"));
 }
 
 #[test]
@@ -253,6 +345,106 @@ fn disc_scope_capsule_uses_only_forwarded_capabilities() {
     assert!(resolver.calls.lock().unwrap().is_empty());
 }
 
+#[test]
+fn disc_same_provider_sources_with_same_labels_keep_source_capabilities_distinct() {
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::Capsule {
+            forwarded_accounts: vec![
+                ForwardedUsageAccount {
+                    surface_id: "codex".to_owned(),
+                    capability_id: "capability-a".to_owned(),
+                    account_label: Some("same@example.test".to_owned()),
+                },
+                ForwardedUsageAccount {
+                    surface_id: "codex".to_owned(),
+                    capability_id: "capability-b".to_owned(),
+                    account_label: Some("same@example.test".to_owned()),
+                },
+            ],
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+
+    assert_eq!(validated.accounts.len(), 2);
+    assert_eq!(validated.bindings.len(), 2);
+    assert_eq!(
+        validated
+            .accounts
+            .iter()
+            .map(|account| account.account_key.as_str())
+            .collect::<BTreeSet<_>>()
+            .len(),
+        2
+    );
+    assert!(validated.accounts.iter().all(|account| {
+        matches!(
+            account.identity.subject,
+            CanonicalAccountSubject::SourceCapability(_)
+        )
+    }));
+    assert!(
+        validated
+            .accounts
+            .iter()
+            .all(|account| account.source_ids.len() == 1)
+    );
+}
+
+#[test]
+fn disc_unresolved_same_labels_do_not_overwrite_discovered_views() {
+    let temp = tempfile::tempdir().unwrap();
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::Capsule {
+            forwarded_accounts: vec![
+                ForwardedUsageAccount {
+                    surface_id: "codex".to_owned(),
+                    capability_id: "capability-a".to_owned(),
+                    account_label: None,
+                },
+                ForwardedUsageAccount {
+                    surface_id: "codex".to_owned(),
+                    capability_id: "capability-b".to_owned(),
+                    account_label: None,
+                },
+            ],
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    let bindings = validated.bindings.clone();
+
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
+        .unwrap();
+    runtime.discovery = Some(validated);
+
+    for (index, binding) in bindings.iter().enumerate() {
+        let mut view = FocusedUsageView::unavailable("fixture", index as i64);
+        view.focused_agent = Some("codex".to_owned());
+        view.focused_provider = Some("OpenAI".to_owned());
+        view.account.provider_label = "OpenAI / Codex".to_owned();
+        view.account.account_label = "same@example.test".to_owned();
+        view.confidence = UsageConfidence::Authoritative;
+        view.status_bar_label = format!("source-{index}");
+        runtime.record_discovered_snapshot(binding, view);
+    }
+
+    assert_eq!(runtime.discovered_views.len(), 2);
+    assert_eq!(
+        runtime
+            .discovered_views
+            .values()
+            .map(|view| view.status_bar_label.as_str())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["source-0", "source-1"])
+    );
+}
+
 fn write_codex_only_global(config_root: &Path, codex_root: &Path) {
     write_registry(config_root, &[("codex", Agent::Codex, codex_root)]);
 }
@@ -271,6 +463,8 @@ fn write_codex_workspace(path: &Path, root: &Path) {
             credential: AccountCredential::Profile {
                 agent: Agent::Codex,
                 directory: root.to_path_buf(),
+                xdg_roots: None,
+                source_selector: None,
             },
         },
     );
@@ -337,6 +531,52 @@ fn disc_source_valid_profiles_resolve_without_network_or_fake_presence() {
     let debug = format!("{validated:?}");
     assert!(!debug.contains("fixture-secret"));
     assert!(!debug.contains(profile.to_string_lossy().as_ref()));
+}
+
+#[test]
+fn disc_config_generation_rotates_capability_for_same_credential_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let profile = temp.path().join("codex-profile");
+    let scope = UsageDiscoveryScope::HostDesktop {
+        config_root: config_root.clone(),
+        operator_home: temp.path().join("home"),
+    };
+    write_codex_only_global(&config_root, &profile);
+    write_codex_auth(
+        &profile,
+        "account-1",
+        "eyJlbWFpbCI6ImFsaWNlQGV4YW1wbGUudGVzdCJ9",
+        "fixture-secret",
+    );
+    let reader = RecordingProfileReader::default();
+    let first = validate_usage_sources_with_reader(
+        discover_usage_sources(&scope, &NoEnvResolver).unwrap(),
+        &NoEnvResolver,
+        &reader,
+    );
+    let first_capability = crate::host::usage_broker_capabilities(&first)
+        .into_iter()
+        .next()
+        .unwrap();
+
+    write_registry(&config_root, &[("codex-renamed", Agent::Codex, &profile)]);
+    let second = validate_usage_sources_with_reader(
+        discover_usage_sources(&scope, &NoEnvResolver).unwrap(),
+        &NoEnvResolver,
+        &reader,
+    );
+    let second_capability = crate::host::usage_broker_capabilities(&second)
+        .into_iter()
+        .next()
+        .unwrap();
+
+    assert_eq!(
+        first.accounts[0].account_key,
+        second.accounts[0].account_key
+    );
+    assert_ne!(first.config_generation, second.config_generation);
+    assert_ne!(first_capability, second_capability);
 }
 
 #[test]

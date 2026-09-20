@@ -3,7 +3,7 @@
 
 //! Container-local usage socket bridged over a host-started stdio tunnel.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -11,9 +11,11 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use jackin_protocol::usage_broker::{
-    USAGE_BROKER_MAX_FRAME_BYTES, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
-    UsageCoordinationErrorKind, UsageRelayTunnelRequest, UsageRelayTunnelResponse,
+    USAGE_BROKER_MAX_FRAME_BYTES, UsageAccountCapability, UsageBrokerOperation, UsageBrokerRequest,
+    UsageBrokerResponse, UsageCoordinationError, UsageCoordinationErrorKind,
+    UsageRelayTunnelRequest, UsageRelayTunnelResponse,
 };
+use jackin_protocol::{CapsuleConfig, SessionIdentity};
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
     AsyncWriteExt as _, BufReader,
@@ -27,18 +29,117 @@ const DEFAULT_CAPSULE_SUPERVISOR_PID: u32 = 1;
 
 type Pending = Arc<Mutex<BTreeMap<u64, oneshot::Sender<UsageBrokerResponse>>>>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct PeerIdentity {
     pid: Option<u32>,
     uid: u32,
     gid: u32,
 }
 
+/// Immutable capability binding loaded from the host-validated Capsule config.
+/// Session peers get exactly one capability through their kernel UID/GID; the
+/// root Capsule supervisor may use the launch-wide set for daemon refreshes.
+#[derive(Debug, Clone, Default)]
+struct UsageRelayAuthorization {
+    by_peer: BTreeMap<(u32, u32), UsageAccountCapability>,
+    launch_capabilities: BTreeSet<UsageAccountCapability>,
+}
+
+impl UsageRelayAuthorization {
+    fn from_config(config: &CapsuleConfig) -> Result<Self> {
+        let mut authorization = Self::default();
+        for (instance, capability) in &config.usage_capabilities {
+            anyhow::ensure!(
+                config
+                    .instances
+                    .iter()
+                    .any(|candidate| candidate == instance),
+                "usage capability names an instance outside the configured allowlist"
+            );
+            anyhow::ensure!(
+                !capability.account_id.is_empty() && !capability.surface_id.is_empty(),
+                "usage capability for instance {instance:?} is empty"
+            );
+            let identity = config.identity_for_instance(instance).ok_or_else(|| {
+                anyhow::anyhow!("usage instance {instance:?} has no Unix identity")
+            })?;
+            let peer = PeerIdentity::from(identity);
+            anyhow::ensure!(
+                authorization
+                    .by_peer
+                    .insert((peer.uid, peer.gid), capability.clone())
+                    .is_none(),
+                "multiple usage instances share Unix identity {peer:?}"
+            );
+            authorization.launch_capabilities.insert(capability.clone());
+        }
+        Ok(authorization)
+    }
+
+    fn authorizes(
+        &self,
+        supervisor_pid: u32,
+        peer: Option<PeerIdentity>,
+        operation: &UsageBrokerOperation,
+    ) -> bool {
+        let Some(capability) = operation_capability(operation) else {
+            return false;
+        };
+        let Some(peer) = peer else {
+            return false;
+        };
+        if peer.uid == 0 && peer.gid == 0 && peer.pid == Some(supervisor_pid) {
+            return self.launch_capabilities.contains(capability);
+        }
+        self.by_peer.get(&(peer.uid, peer.gid)) == Some(capability)
+    }
+
+    #[cfg(test)]
+    fn for_peer(peer: PeerIdentity, capability: UsageAccountCapability) -> Self {
+        Self {
+            by_peer: BTreeMap::from([((peer.uid, peer.gid), capability.clone())]),
+            launch_capabilities: BTreeSet::from([capability]),
+        }
+    }
+}
+
+impl From<SessionIdentity> for PeerIdentity {
+    fn from(identity: SessionIdentity) -> Self {
+        Self {
+            pid: None,
+            uid: identity.uid,
+            gid: identity.gid,
+        }
+    }
+}
+
+fn operation_capability(operation: &UsageBrokerOperation) -> Option<&UsageAccountCapability> {
+    match operation {
+        UsageBrokerOperation::CurrentForCapability { capability }
+        | UsageBrokerOperation::RefreshForCapability { capability, .. }
+        | UsageBrokerOperation::JoinForCapability { capability, .. }
+        | UsageBrokerOperation::Current { capability }
+        | UsageBrokerOperation::Refresh { capability, .. }
+        | UsageBrokerOperation::Join { capability, .. } => Some(capability),
+        UsageBrokerOperation::CurrentProjection
+        | UsageBrokerOperation::RequestRefresh { .. }
+        | UsageBrokerOperation::JoinPublication { .. }
+        | UsageBrokerOperation::ReconcileCatalog { .. }
+        | UsageBrokerOperation::CurrentProjectionForSurface
+        | UsageBrokerOperation::RequestRefreshForSurface { .. }
+        | UsageBrokerOperation::JoinPublicationForSurface { .. } => None,
+    }
+}
+
 /// Bind the Capsule-local scoped usage socket and bridge requests over stdio.
 pub(crate) async fn run() -> Result<()> {
+    let config = crate::config::load().context("loading Capsule config for usage relay")?;
+    let authorization = UsageRelayAuthorization::from_config(&config)
+        .context("building usage relay session authorization")?;
     run_at(
         Path::new(jackin_core::container_paths::USAGE_SOCK),
         load_supervisor_pid()?,
+        authorization,
         tokio::io::stdin(),
         tokio::io::stdout(),
     )
@@ -85,17 +186,32 @@ fn peer_identity(stream: &UnixStream) -> Option<PeerIdentity> {
     })
 }
 
-async fn run_at<R, W>(socket_path: &Path, supervisor_pid: u32, input: R, output: W) -> Result<()>
+async fn run_at<R, W>(
+    socket_path: &Path,
+    supervisor_pid: u32,
+    authorization: UsageRelayAuthorization,
+    input: R,
+    output: W,
+) -> Result<()>
 where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    run_at_with_peer(socket_path, supervisor_pid, None, input, output).await
+    run_at_with_peer(
+        socket_path,
+        supervisor_pid,
+        authorization,
+        None,
+        input,
+        output,
+    )
+    .await
 }
 
 async fn run_at_with_peer<R, W>(
     socket_path: &Path,
     supervisor_pid: u32,
+    authorization: UsageRelayAuthorization,
     forced_peer: Option<PeerIdentity>,
     input: R,
     output: W,
@@ -121,6 +237,7 @@ where
         std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
     }
     let _cleanup = SocketCleanup(socket_path.to_path_buf());
+    let authorization = Arc::new(authorization);
     let pending: Pending = Arc::new(Mutex::new(BTreeMap::new()));
     let request_ids = Arc::new(AtomicU64::new(1));
     let (requests, mut request_rx) = mpsc::channel::<UsageRelayTunnelRequest>(TUNNEL_CAPACITY);
@@ -149,11 +266,20 @@ where
                 let (stream, _) = accepted?;
                 let requests = requests.clone();
                 let pending = Arc::clone(&pending);
+                let authorization = Arc::clone(&authorization);
                 let peer = forced_peer.or_else(|| peer_identity(&stream));
                 let request_id = request_ids.fetch_add(1, Ordering::Relaxed);
                 drop(jackin_telemetry::spawn::spawn_stream(
                     "usage_relay.local_request",
-                    handle_local(stream, request_id, requests, pending, supervisor_pid, peer),
+                    handle_local(
+                        stream,
+                        request_id,
+                        requests,
+                        pending,
+                        supervisor_pid,
+                        authorization,
+                        peer,
+                    ),
                 ));
             }
             result = &mut reader => {
@@ -174,14 +300,19 @@ async fn handle_local(
     requests: mpsc::Sender<UsageRelayTunnelRequest>,
     pending: Pending,
     supervisor_pid: u32,
+    authorization: Arc<UsageRelayAuthorization>,
     peer: Option<PeerIdentity>,
 ) {
     let request = {
         let mut reader = BufReader::new(&mut stream);
         read_frame::<_, UsageBrokerRequest>(&mut reader).await
     };
+    let supervisor_ok = supervisor_peer_allows(supervisor_pid, peer);
     let response = match request {
-        Ok(request) if supervisor_peer_allows(supervisor_pid, peer) => {
+        Ok(request)
+            if supervisor_ok
+                && authorization.authorizes(supervisor_pid, peer, &request.operation) =>
+        {
             let (response_tx, response_rx) = oneshot::channel();
             pending.lock().await.insert(request_id, response_tx);
             let tunneled = UsageRelayTunnelRequest {
@@ -200,10 +331,20 @@ async fn handle_local(
                 unavailable_response()
             }
         }
-        Ok(_) => unauthorized_response(),
+        Ok(_) if supervisor_ok => capability_unauthorized_response(),
+        Ok(_) => supervisor_unauthorized_response(),
         Err(_) => protocol_response(),
     };
     drop(write_frame(&mut stream, &response).await);
+}
+
+fn capability_unauthorized_response() -> UsageBrokerResponse {
+    UsageBrokerResponse::Error {
+        error: UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unauthorized,
+            message: "usage account capability is not authorized".to_owned(),
+        },
+    }
 }
 
 async fn fail_pending(pending: &Pending) {
@@ -263,7 +404,7 @@ fn protocol_response() -> UsageBrokerResponse {
     }
 }
 
-fn unauthorized_response() -> UsageBrokerResponse {
+fn supervisor_unauthorized_response() -> UsageBrokerResponse {
     UsageBrokerResponse::Error {
         error: UsageCoordinationError {
             kind: UsageCoordinationErrorKind::Unauthorized,
