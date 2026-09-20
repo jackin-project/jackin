@@ -39,8 +39,11 @@ Each entry is one upgrade path the current binary applies. <RepoFile path="crate
 | Config (`config.toml`) | `v1alpha11` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha11/meta.toml</RepoFile> |
 
 **Summary**: deliberate account removal records a secret-free credential-source
-fingerprint in `account_scan_exclusions`. Explicit account scans skip that
-source after reload; direct account registration clears the matching exclusion.
+fingerprint in `account_scan_exclusions`. Multi-provider profile credentials
+also persist the exact `source_selector.entry` and optional
+`source_selector.profile` fields for the selected source-store identity.
+Explicit account scans skip that source after reload; direct account
+registration clears the matching exclusion.
 
 ### Config `v1alpha11` and workspace `v1alpha10` — 2026-09-17
 
@@ -587,11 +590,11 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[telemetry].categories` | string array | No | `v1alpha9` | Persisted telemetry category allowlist such as `docker` or `launch`; empty means no category filter |
 | `[accounts.<id>]` | table | No | `v1alpha10` | Named account configuration |
 | `[accounts.<id>].name` | string | Yes | `v1alpha10` | Human-readable account display name |
-| `[accounts.<id>].provider` | string | Yes | `v1alpha10` | Credential issuer: `anthropic`, `openai`, `moonshot`, `zai`, `minimax`, or `amp` |
+| `[accounts.<id>].provider` | string | Yes | `v1alpha10` | Credential issuer; canonical provider slugs: `anthropic`, `openai`, `amp`, `xai`, `opencode`, `moonshot`, `zai`, `minimax`, `google`, `cursor`, `meta`, or `openrouter` |
 | `[accounts.<id>].enabled` | bool | No | `v1alpha10` | Whether this account may authenticate launches; defaults to `true` |
 | `[accounts.<id>.credential]` | table | Yes | `v1alpha10` | Credential source configuration |
 | `[accounts.<id>.credential].type` | string | Yes | `v1alpha10` | Credential type: `profile`, `api_key`, or `oauth_token` |
-| `[accounts.<id>.credential].agent` | string | Conditional | `v1alpha10` | Target agent for `profile` and `oauth_token` credentials (`claude`, `codex`, `amp`, `kimi`, `opencode`) |
+| `[accounts.<id>.credential].agent` | string | Conditional | `v1alpha10` | Target agent for `profile` and `oauth_token` credentials; canonical agent slugs: `claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`, `antigravity`, `gemini`, `cursor`, `muse`, `omp`, or `hermes` |
 | `[accounts.<id>.credential].directory` | string | Conditional | `v1alpha10` | Host directory containing credentials for `profile` credentials |
 | `[accounts.<id>.credential.source_selector]` | table | No | `v1alpha12` | Source-bound entry/profile identity for Omp and Hermes profile credentials |
 | `[accounts.<id>.credential.source_selector].entry` | string | Yes when selector is present | `v1alpha12` | Exact provider/account key in the source store |
