@@ -210,12 +210,18 @@ fn cadence_tasks_define_the_canonical_graph() {
     );
     assert_subsequence(
         task_block(&mise, "desktop-merge"),
-        &["{ task = \"desktop-ci\" }", "{ task = \"desktop-test-ui\" }"],
+        &[
+            "{ task = \"desktop-ci\" }",
+            "{ task = \"desktop-test-ui\" }",
+        ],
         "desktop-merge",
     );
     assert_subsequence(
         task_block(&mise, "desktop-scheduled"),
-        &["{ task = \"desktop-merge\" }", "{ task = \"desktop-deadcode\" }"],
+        &[
+            "{ task = \"desktop-merge\" }",
+            "{ task = \"desktop-deadcode\" }",
+        ],
         "desktop-scheduled",
     );
 }
