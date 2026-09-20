@@ -19,6 +19,24 @@ fn instance_config(instances: &[(&str, &str, &str)]) -> CapsuleConfig {
             .iter()
             .map(|(id, mode, _)| ((*id).to_owned(), (*mode).to_owned()))
             .collect(),
+        credential_provider_surfaces: instances
+            .iter()
+            .filter_map(|(id, _, agent)| {
+                let surface = match *agent {
+                    "claude" => "claude",
+                    "codex" => "codex",
+                    "amp" => "amp",
+                    "grok" => "grok",
+                    "kimi" => "kimi",
+                    "opencode" | "omp" | "hermes" => "opencode",
+                    "antigravity" | "gemini" => "google",
+                    "cursor" => "cursor",
+                    "muse" => "meta",
+                    _ => return None,
+                };
+                Some(((*id).to_owned(), surface.to_owned()))
+            })
+            .collect(),
         accounts: instances
             .iter()
             .map(|(id, _, _)| {
@@ -176,13 +194,9 @@ fn protected_credentials_reject_profile_mode_and_arbitrary_environment() {
 #[test]
 fn protected_credentials_reject_foreign_codex_provider_and_oauth_keys() {
     let mut config = instance_config(&[("codex-work", "api_key", "codex")]);
-    config.usage_capabilities.insert(
-        "codex-work".to_owned(),
-        jackin_protocol::usage_broker::UsageAccountCapability {
-            account_id: "acc-codex".to_owned(),
-            surface_id: "zai".to_owned(),
-        },
-    );
+    config
+        .credential_provider_surfaces
+        .insert("codex-work".to_owned(), "zai".to_owned());
     let routed = v2_credentials(serde_json::json!({
         "schema_version": 2,
         "instances": {
@@ -216,8 +230,10 @@ fn protected_credentials_reject_foreign_codex_provider_and_oauth_keys() {
     assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     assert!(!error.to_string().contains("foreign-claude-sentinel"));
 
-    config.usage_capabilities.clear();
-    let routed_without_provider_capability = v2_credentials(serde_json::json!({
+    config
+        .credential_provider_surfaces
+        .insert("codex-work".to_owned(), "kimi".to_owned());
+    let routed_kimi = v2_credentials(serde_json::json!({
         "schema_version": 2,
         "instances": {
             "codex-work": {
@@ -230,9 +246,10 @@ fn protected_credentials_reject_foreign_codex_provider_and_oauth_keys() {
             },
         },
     }));
-    validate_agent_credentials(&config, &routed_without_provider_capability).unwrap();
+    validate_agent_credentials(&config, &routed_kimi).unwrap();
 
-    let ambiguous_without_provider_capability = v2_credentials(serde_json::json!({
+    config.credential_provider_surfaces.clear();
+    let missing_provider_surface = v2_credentials(serde_json::json!({
         "schema_version": 2,
         "instances": {
             "codex-work": {
@@ -245,19 +262,15 @@ fn protected_credentials_reject_foreign_codex_provider_and_oauth_keys() {
             },
         },
     }));
-    assert!(validate_agent_credentials(&config, &ambiguous_without_provider_capability).is_err());
+    assert!(validate_agent_credentials(&config, &missing_provider_surface).is_err());
 }
 
 #[test]
 fn protected_credentials_reject_foreign_opencode_provider_and_oauth_keys() {
     let mut config = instance_config(&[("opencode-work", "api_key", "opencode")]);
-    config.usage_capabilities.insert(
-        "opencode-work".to_owned(),
-        jackin_protocol::usage_broker::UsageAccountCapability {
-            account_id: "opencode-work".to_owned(),
-            surface_id: "claude".to_owned(),
-        },
-    );
+    config
+        .credential_provider_surfaces
+        .insert("opencode-work".to_owned(), "claude".to_owned());
     let valid = v2_credentials(serde_json::json!({
         "schema_version": 2,
         "instances": {

@@ -258,6 +258,10 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
             ("personal@codex".to_owned(), "personal-openai".to_owned()),
             ("work@codex".to_owned(), "work-openai".to_owned()),
         ]),
+        credential_provider_surfaces: BTreeMap::from([
+            ("personal@codex".to_owned(), "codex".to_owned()),
+            ("work@codex".to_owned(), "codex".to_owned()),
+        ]),
         usage_capabilities: BTreeMap::from([
             (
                 "personal@codex".to_owned(),

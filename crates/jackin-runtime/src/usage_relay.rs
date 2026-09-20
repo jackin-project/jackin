@@ -322,14 +322,7 @@ pub fn forwarded_sources_from_launch_config(
     let mut sources = forwarded_sources_from_launch(state, resolved_env);
     sources.selected_account_ids = launch_config.accounts.values().cloned().collect();
     for (instance_id, account_id) in &launch_config.accounts {
-        let surface = launch_config
-            .credential_provider_surface_for_instance(instance_id)
-            .or_else(|| {
-                launch_config
-                    .usage_capability_for_instance(instance_id)
-                    .map(|capability| capability.surface_id.as_str())
-            });
-        if let Some(surface) = surface {
+        if let Some(surface) = launch_config.credential_provider_surface_for_instance(instance_id) {
             sources
                 .selected_account_surfaces
                 .entry(account_id.clone())
@@ -339,10 +332,10 @@ pub fn forwarded_sources_from_launch_config(
     sources
 }
 
-/// Populate the Capsule launch contract with canonical usage authorities for
-/// every admitted instance. An unknown account or provider leaves that entry
-/// absent; the Capsule then fails closed for usage refresh instead of falling
-/// back to a same-surface account.
+/// Populate the Capsule launch contract with selected credential surfaces and
+/// canonical usage authorities for every admitted instance. An unknown account
+/// or provider leaves both entries absent; credential injection and usage
+/// refresh then fail closed instead of falling back to a same-surface account.
 pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mut CapsuleConfig) {
     for instance_id in &launch_config.instances {
         let Some(account_id) = launch_config.accounts.get(instance_id) else {

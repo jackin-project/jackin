@@ -2014,6 +2014,9 @@ pub(crate) fn apply_account_env(
         if entry.agent != command_agent {
             return;
         }
+        let Some(provider_surface) = provider_surface else {
+            return;
+        };
         let Ok(allowed) = crate::config::allowed_account_env_names(
             &entry.agent,
             auth_mode.unwrap_or_default(),

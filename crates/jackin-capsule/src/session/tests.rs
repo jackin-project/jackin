@@ -1939,7 +1939,13 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
         Some("api_key"),
         &hostile_passthrough,
     ));
-    super::apply_account_env(&mut cmd, "claude-work", Some("api_key"), None, &credentials);
+    super::apply_account_env(
+        &mut cmd,
+        "claude-work",
+        Some("api_key"),
+        Some("claude"),
+        &credentials,
+    );
     assert_eq!(
         cmd.get_env("ANTHROPIC_API_KEY").and_then(|v| v.to_str()),
         Some("work-secret")
@@ -1957,7 +1963,7 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
         &mut cmd,
         "claude-personal",
         Some("api_key"),
-        None,
+        Some("claude"),
         &credentials,
     );
     assert_eq!(
@@ -2033,7 +2039,7 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         &mut codex,
         "codex-routed",
         Some("api_key"),
-        None,
+        Some("kimi"),
         &credentials,
     );
     assert_eq!(
@@ -2061,7 +2067,7 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         &mut opencode,
         "opencode-routed",
         Some("api_key"),
-        None,
+        Some("claude"),
         &credentials,
     );
     assert_eq!(
@@ -2083,7 +2089,7 @@ fn account_env_injection_is_bounded_by_agent_provider_and_auth_family() {
         &mut claude,
         "claude-oauth",
         Some("oauth_token"),
-        None,
+        Some("claude"),
         &credentials,
     );
     assert_eq!(
@@ -2206,7 +2212,7 @@ fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected(
         &mut work,
         "gemini-work",
         Some("api_key"),
-        None,
+        Some("google"),
         &credentials,
     );
     assert_eq!(
@@ -2226,7 +2232,7 @@ fn google_alias_is_scrubbed_from_siblings_while_selected_credential_is_injected(
         &mut personal,
         "gemini-personal",
         Some("api_key"),
-        None,
+        Some("google"),
         &credentials,
     );
     assert_eq!(

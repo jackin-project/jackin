@@ -9591,6 +9591,8 @@ fn daemon_session_boundary_keeps_account_credentials_per_instance() {
         ("work".into(), "sync".into()),
         ("personal".into(), "api_key".into()),
     ]);
+    mux.launch_env.launch_config.credential_provider_surfaces =
+        BTreeMap::from([("personal".into(), "claude".into())]);
     mux.launch_env.launch_config.instance_home_dirs = BTreeMap::from([
         ("work".into(), "/home/agent/.claude".into()),
         ("personal".into(), "/home/agent/.local".into()),
@@ -9647,7 +9649,6 @@ fn daemon_session_boundary_keeps_account_credentials_per_instance() {
                 "account_id": "acc-personal",
                 "env": {
                     "ANTHROPIC_API_KEY": "opencode-anthropic",
-                    "OPENAI_API_KEY": "opencode-openai",
                 },
             },
         },
@@ -9669,13 +9670,7 @@ fn daemon_session_boundary_keeps_account_credentials_per_instance() {
             .and_then(|v| v.to_str()),
         Some("opencode-anthropic")
     );
-    assert_eq!(
-        launch
-            .cmd
-            .get_env("OPENAI_API_KEY")
-            .and_then(|v| v.to_str()),
-        Some("opencode-openai")
-    );
+    assert!(launch.cmd.get_env("OPENAI_API_KEY").is_none());
     assert!(
         mux.session_launch(Some("missing"), None, &ambient, "test")
             .is_err()

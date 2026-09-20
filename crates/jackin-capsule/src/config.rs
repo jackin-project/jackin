@@ -414,44 +414,39 @@ const OPENAI_BASE_URL_ENV_NAME: &str = "OPENAI_BASE_URL";
 const KIMI_BASE_URL_ENV_NAME: &str = "KIMI_BASE_URL";
 
 /// Return the exact account-owned environment names that one admitted agent
-/// may receive. `provider_surface` is the selected account's usage surface
-/// when the host carried that authority into the Capsule config. A missing
-/// surface uses the agent's closed compatibility contract so unsupported
-/// provider variables still cannot cross an agent boundary.
+/// may receive. `provider_surface` is the selected account's credential
+/// routing surface. The caller must prove the surface before asking for an
+/// allowlist; unsupported provider variables cannot cross an agent boundary.
 pub(crate) fn allowed_account_env_names(
     agent_slug: &str,
     auth_mode: &str,
-    provider_surface: Option<&str>,
+    provider_surface: &str,
 ) -> Result<BTreeSet<&'static str>> {
     let agent = jackin_core::Agent::from_slug(agent_slug)
         .ok_or_else(|| anyhow::anyhow!("unknown agent runtime {agent_slug:?}"))?;
-    if let Some(surface) = provider_surface
-        && !matches!(
-            surface,
-            "claude"
-                | "codex"
-                | "amp"
-                | "grok"
-                | "zai"
-                | "kimi"
-                | "minimax"
-                | "opencode"
-                | "google"
-                | "cursor"
-                | "meta"
-                | "openrouter"
-        )
-    {
-        anyhow::bail!("unknown provider surface {surface:?}");
+    if !matches!(
+        provider_surface,
+        "claude"
+            | "codex"
+            | "amp"
+            | "grok"
+            | "zai"
+            | "kimi"
+            | "minimax"
+            | "opencode"
+            | "google"
+            | "cursor"
+            | "meta"
+            | "openrouter"
+    ) {
+        anyhow::bail!("unknown provider surface {provider_surface:?}");
     }
 
     let mut allowed = BTreeSet::new();
     match auth_mode {
         "sync" | "ignore" => return Ok(allowed),
         "oauth_token" => {
-            if agent != jackin_core::Agent::Claude
-                || provider_surface.is_some_and(|surface| surface != "claude")
-            {
+            if agent != jackin_core::Agent::Claude || provider_surface != "claude" {
                 return Ok(allowed);
             }
             allowed.insert(jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME);
@@ -473,48 +468,35 @@ pub(crate) fn allowed_account_env_names(
                 ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV_NAME,
             ]);
             match provider_surface {
-                None | Some("claude") => {
+                "claude" => {
                     allowed.insert(jackin_core::ANTHROPIC_API_KEY_ENV_NAME);
                     allowed.insert(ANTHROPIC_BASE_URL_ENV_NAME);
                 }
-                Some("kimi" | "zai" | "minimax") => {
+                "kimi" | "zai" | "minimax" => {
                     allowed.insert(ANTHROPIC_AUTH_TOKEN_ENV_NAME);
                     allowed.insert(ANTHROPIC_BASE_URL_ENV_NAME);
                 }
-                Some(_) => return Ok(BTreeSet::new()),
+                _ => return Ok(BTreeSet::new()),
             }
         }
         jackin_core::Agent::Codex => match provider_surface {
-            None => {
-                allowed.extend([
-                    jackin_core::OPENAI_API_KEY_ENV_NAME,
-                    jackin_core::KIMI_API_KEY_ENV_NAME,
-                    jackin_core::MINIMAX_API_KEY_ENV_NAME,
-                    OPENAI_BASE_URL_ENV_NAME,
-                ]);
-            }
-            Some("codex" | "zai") => {
+            "codex" | "zai" => {
                 allowed.insert(jackin_core::OPENAI_API_KEY_ENV_NAME);
                 allowed.insert(OPENAI_BASE_URL_ENV_NAME);
             }
-            Some("kimi") => {
+            "kimi" => {
                 allowed.insert(jackin_core::KIMI_API_KEY_ENV_NAME);
                 allowed.insert(OPENAI_BASE_URL_ENV_NAME);
             }
-            Some("minimax") => {
+            "minimax" => {
                 allowed.insert(jackin_core::MINIMAX_API_KEY_ENV_NAME);
                 allowed.insert(OPENAI_BASE_URL_ENV_NAME);
             }
-            Some(_) => return Ok(BTreeSet::new()),
+            _ => return Ok(BTreeSet::new()),
         },
         jackin_core::Agent::Opencode | jackin_core::Agent::Omp | jackin_core::Agent::Hermes => {
-            match provider_surface {
-                Some(surface) => {
-                    if let Some(name) = multi_provider_key(surface) {
-                        allowed.insert(name);
-                    }
-                }
-                None => allowed.extend(MULTI_PROVIDER_ENV_NAMES),
+            if let Some(name) = multi_provider_key(provider_surface) {
+                allowed.insert(name);
             }
         }
         jackin_core::Agent::Amp => insert_native_key(
@@ -560,20 +542,6 @@ pub(crate) fn allowed_account_env_names(
     Ok(allowed)
 }
 
-const MULTI_PROVIDER_ENV_NAMES: [&str; 11] = [
-    jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
-    jackin_core::OPENAI_API_KEY_ENV_NAME,
-    jackin_core::XAI_API_KEY_ENV_NAME,
-    "MOONSHOT_API_KEY",
-    "ZHIPU_API_KEY",
-    jackin_core::MINIMAX_API_KEY_ENV_NAME,
-    jackin_core::GEMINI_API_KEY_ENV_NAME,
-    jackin_core::CURSOR_API_KEY_ENV_NAME,
-    jackin_core::META_API_KEY_ENV_NAME,
-    jackin_core::OPENROUTER_API_KEY_ENV_NAME,
-    jackin_core::OPENCODE_API_KEY_ENV_NAME,
-];
-
 fn multi_provider_key(surface: &str) -> Option<&'static str> {
     match surface {
         "claude" => Some(jackin_core::ANTHROPIC_API_KEY_ENV_NAME),
@@ -594,11 +562,11 @@ fn multi_provider_key(surface: &str) -> Option<&'static str> {
 
 fn insert_native_key(
     allowed: &mut BTreeSet<&'static str>,
-    provider_surface: Option<&str>,
+    provider_surface: &str,
     expected_surface: &str,
     key: &'static str,
 ) {
-    if provider_surface.is_none_or(|surface| surface == expected_surface) {
+    if provider_surface == expected_surface {
         allowed.insert(key);
     }
 }
@@ -624,14 +592,25 @@ fn validate_agent_credentials(
         if matches!(
             config.auth_mode_for_instance(instance),
             Some("api_key" | "oauth_token")
-        ) && credentials
-            .for_instance(instance)
-            .is_none_or(std::collections::BTreeMap::is_empty)
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "missing protected credentials for configured account",
-            ));
+        ) {
+            if config
+                .credential_provider_surface_for_instance(instance)
+                .is_none()
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "missing credential provider surface for configured account",
+                ));
+            }
+            if credentials
+                .for_instance(instance)
+                .is_none_or(std::collections::BTreeMap::is_empty)
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "missing protected credentials for configured account",
+                ));
+            }
         }
     }
     for (instance, entry) in credentials.iter() {
@@ -647,16 +626,17 @@ fn validate_agent_credentials(
                 "protected account credentials name an instance without an account",
             ));
         };
+        let Some(provider_surface) = config.credential_provider_surface_for_instance(instance)
+        else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "protected account credentials have no provider surface",
+            ));
+        };
         let allowed = allowed_account_env_names(
             expected_agent,
             config.auth_mode_for_instance(instance).unwrap_or_default(),
-            config
-                .credential_provider_surface_for_instance(instance)
-                .or_else(|| {
-                    config
-                        .usage_capability_for_instance(instance)
-                        .map(|capability| capability.surface_id.as_str())
-                }),
+            provider_surface,
         )
         .map_err(|_| {
             std::io::Error::new(
