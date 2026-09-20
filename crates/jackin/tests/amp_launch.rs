@@ -10,7 +10,7 @@ use common::{
 };
 
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
-use jackin_config::AppConfig;
+use jackin_config::{AccountConfig, AccountCredential, AiProvider, AppConfig, ConfigEditor};
 use jackin_core::Agent;
 use jackin_core::JackinPaths;
 use jackin_core::MountIsolation;
@@ -216,7 +216,13 @@ async fn amp_launch_profile_account_mounts_secrets_json_in_docker_run() {
 
     std::fs::write(
         &paths.config_file,
-        r#"[roles.the-architect]
+        r#"default_launch = ["amp-main"]
+
+[agent_configurations.amp-main]
+agent = "amp"
+account = "amp-profile"
+
+[roles.the-architect]
 git = "https://github.com/jackin-project/jackin-the-architect.git"
 trusted = true
 "#,
@@ -242,33 +248,33 @@ agents = ["amp"]
     )
     .unwrap();
 
-    let mut config = AppConfig::load_or_init(&paths).unwrap();
-    config.accounts.insert(
-        "amp-profile".into(),
-        jackin_config::AccountConfig {
-            enabled: true,
-            name: "Amp profile".into(),
-            provider: jackin_config::AiProvider::Amp,
-            credential: jackin_config::AccountCredential::Profile {
-                agent: Agent::Amp,
-                directory: amp_dir,
-                xdg_roots: None,
-                source_selector: None,
-            },
-        },
-    );
-    config.agent_configurations.insert(
-        "amp-main".into(),
-        jackin_config::AgentConfiguration {
+    let amp_account = AccountConfig {
+        enabled: true,
+        name: "Amp profile".into(),
+        provider: AiProvider::Amp,
+        credential: AccountCredential::Profile {
             agent: Agent::Amp,
-            account: "amp-profile".into(),
-            model: None,
-            base_url: None,
-            display_label: None,
-            invoked_via_wrapper: None,
+            directory: amp_dir,
+            xdg_roots: None,
+            source_selector: None,
         },
+    };
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.upsert_account("amp-profile", &amp_account).unwrap();
+    let mut config = editor.save().unwrap();
+    let persisted_config = AppConfig::load_or_init(&paths).unwrap();
+    assert_eq!(
+        config.accounts, persisted_config.accounts,
+        "launch account registry must match persisted configuration"
     );
-    config.default_launch = Some(vec!["amp-main".into()]);
+    assert_eq!(
+        config.agent_configurations, persisted_config.agent_configurations,
+        "launch agent configurations must match persisted configuration"
+    );
+    assert_eq!(
+        config.default_launch, persisted_config.default_launch,
+        "launch defaults must match persisted configuration"
+    );
     let workspace = ResolvedWorkspace {
         name: String::new(),
         label: repo_dir.display().to_string(),
