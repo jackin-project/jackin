@@ -46,6 +46,38 @@ fn config_lock_competing_editors_serialize() {
 }
 
 #[test]
+fn open_leaves_versioned_config_unchanged_when_workspace_split_conflicts() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let versioned = r#"version = "v1alpha10"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+"#;
+    std::fs::write(&paths.config_file, versioned).unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("prod.toml"),
+        format!(
+            "version = \"{}\"\nworkdir = \"/other\"\n",
+            crate::CURRENT_WORKSPACE_VERSION
+        ),
+    )
+    .unwrap();
+
+    let err = ConfigEditor::open(&paths).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("already exists with different contents")
+    );
+    let out = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert_eq!(out, versioned);
+    assert!(out.contains("version = \"v1alpha10\""));
+    assert!(!out.contains("[bootstrap]"));
+}
+
+#[test]
 fn set_env_var_creates_global_env_table() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

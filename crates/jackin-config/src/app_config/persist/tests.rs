@@ -431,6 +431,35 @@ workdir = "/workspace/prod"
 }
 
 #[test]
+fn failed_split_migration_leaves_versioned_config_unchanged() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let versioned = r#"version = "v1alpha10"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+"#;
+    std::fs::write(&paths.config_file, versioned).unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("prod.toml"),
+        format!("version = \"{CURRENT_WORKSPACE_VERSION}\"\nworkdir = \"/other\"\n"),
+    )
+    .unwrap();
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("already exists with different contents")
+    );
+    let out = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert_eq!(out, versioned);
+    assert!(out.contains("version = \"v1alpha10\""));
+    assert!(!out.contains("[bootstrap]"));
+}
+
+#[test]
 fn empty_legacy_workspaces_table_still_gets_version_stamp() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -467,12 +496,12 @@ fn config_needs_split_migration_returns_false_for_legacy_without_workspaces() {
 }
 
 #[test]
-fn config_needs_split_migration_returns_false_for_versioned_with_workspaces() {
-    // Versioned config with a leftover `[workspaces.X]` table: split
-    // migration is skipped here because `load_split_config` will
-    // `std::mem::take` and split-migrate the workspaces.
+fn config_needs_split_migration_returns_true_for_versioned_with_workspaces() {
+    // Versioned config with a leftover `[workspaces.X]` table still needs the
+    // in-memory split path, so a later split conflict cannot leave the global
+    // file partially migrated.
     let raw = "version = \"v1alpha1\"\n\n[workspaces.prod]\nworkdir = \"/workspace/prod\"\n";
-    assert!(!config_needs_split_migration(raw).unwrap());
+    assert!(config_needs_split_migration(raw).unwrap());
 }
 
 #[test]
