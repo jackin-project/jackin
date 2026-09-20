@@ -38,6 +38,23 @@ pub(crate) struct LoadedConfig {
 }
 
 impl LoadedConfig {
+    pub(crate) fn add_pending_write(&mut self, path: PathBuf, contents: String) {
+        self.pending_writes
+            .push(PendingConfigWrite { path, contents });
+    }
+
+    pub(crate) fn has_pending_writes(&self) -> bool {
+        !self.pending_writes.is_empty()
+    }
+
+    pub(crate) fn validate(&self) -> crate::ConfigResult<()> {
+        validate_config_semantics(&self.config)
+    }
+
+    pub(crate) fn validate_for_editor(&self) -> crate::ConfigResult<()> {
+        validate_editor_config_semantics(&self.config)
+    }
+
     pub(crate) fn commit(self) -> crate::ConfigResult<AppConfig> {
         let Self {
             config,
@@ -455,7 +472,9 @@ pub fn load_split_config(
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
     let _lock = acquire_config_write_lock(&paths.config_file)?;
-    load_split_config_locked(paths, contents_opt)?.commit()
+    let loaded = load_split_config_locked(paths, contents_opt)?;
+    loaded.validate()?;
+    loaded.commit()
 }
 
 pub(crate) fn load_split_config_locked(
@@ -811,6 +830,17 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> crate::ConfigResult<()
         "config contains reserved jackin runtime env vars:\n{}",
         offenses.join("\n")
     )))
+}
+
+fn validate_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
+    validate_reserved_env_names(config)?;
+    config.validate_accounts()?;
+    config.validate_workspaces()
+}
+
+fn validate_editor_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
+    validate_reserved_env_names(config)?;
+    config.validate_accounts()
 }
 
 /// `true` when `raw` still embeds non-empty `[workspaces]` tables.

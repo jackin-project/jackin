@@ -22,7 +22,7 @@ use crate::app_config::persist::{
 };
 use crate::auth::GithubAuthMode;
 use crate::persist::{
-    ConfigWriteGuard, StagedWrite, acquire_config_write_lock, atomic_write, commit_staged_config,
+    ConfigWriteGuard, StagedWrite, acquire_config_write_lock, commit_staged_config,
     stage_atomic_write, stage_delete, validate_workspace_file_stem,
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
@@ -88,7 +88,9 @@ impl ConfigEditor {
         lock: ConfigWriteGuard,
     ) -> crate::ConfigResult<Self> {
         paths.ensure_base_dirs()?;
-        if !paths.config_file.exists() {
+        let initial_contents = if paths.config_file.exists() {
+            None
+        } else {
             let mut initial = AppConfig::default();
             initial.sync_builtin_agents();
             for discovered in crate::discover_default_accounts(&paths.home_dir).accounts {
@@ -141,10 +143,23 @@ impl ConfigEditor {
                 );
             }
             initial.validate_accounts()?;
-            atomic_write(&paths.config_file, &toml::to_string_pretty(&initial)?)?;
+            Some(toml::to_string_pretty(&initial)?)
+        };
+        let raw = match initial_contents.as_ref() {
+            Some(contents) => Some(contents.clone()),
+            None => load_config_contents(paths)?,
+        };
+        let mut loaded = load_split_config_locked(paths, raw)?;
+        if let Some(contents) = initial_contents {
+            loaded.add_pending_write(paths.config_file.clone(), contents);
         }
-        let raw = load_config_contents(paths)?;
-        drop(load_split_config_locked(paths, raw)?.commit()?);
+        if loaded.has_pending_writes() {
+            // Match `validate_candidate`'s editor contract. Workspace geometry
+            // remains editable through create/edit; account and reserved-env
+            // semantics must pass before migration bytes are committed.
+            loaded.validate_for_editor()?;
+        }
+        drop(loaded.commit()?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw

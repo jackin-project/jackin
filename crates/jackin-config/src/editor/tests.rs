@@ -33,6 +33,20 @@ fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, Vec<u8>)>> {
     Some(files)
 }
 
+fn assert_no_staged_writes(paths: &JackinPaths) {
+    for directory in [&paths.config_dir, &paths.workspaces_dir] {
+        let entries = std::fs::read_dir(directory).unwrap();
+        for entry in entries {
+            let entry = entry.unwrap();
+            assert!(
+                !entry.file_name().to_string_lossy().contains(".tmp."),
+                "staged file leaked: {}",
+                entry.path().display()
+            );
+        }
+    }
+}
+
 #[test]
 fn config_lock_fresh_editor_bootstraps_without_recursive_acquisition() {
     let temp = tempdir().unwrap();
@@ -94,6 +108,27 @@ workdir = "/workspace/prod"
     assert_eq!(out, versioned);
     assert!(out.contains("version = \"v1alpha10\""));
     assert!(!out.contains("[bootstrap]"));
+}
+
+#[test]
+fn open_leaves_semantically_invalid_migration_unchanged() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let global_before = b"version = \"v1alpha10\"\n\n[account_bindings]\nclaude = \"missing\"\n";
+    let workspace_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/prod\"\n";
+    std::fs::write(&paths.config_file, global_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("prod.toml"), workspace_before).unwrap();
+    let workspace_tree_before = workspace_tree_bytes(&paths);
+
+    let err = ConfigEditor::open(&paths).unwrap_err();
+
+    assert!(err.to_string().contains("unknown account"), "{err:#}");
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(workspace_tree_bytes(&paths), workspace_tree_before);
+    assert_no_staged_writes(&paths);
 }
 
 #[test]

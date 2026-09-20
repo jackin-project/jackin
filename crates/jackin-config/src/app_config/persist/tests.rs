@@ -558,6 +558,31 @@ fn failed_split_validation_leaves_global_and_workspace_files_unchanged() {
 }
 
 #[test]
+fn load_split_config_leaves_semantically_invalid_migration_unchanged() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let global_before = b"version = \"v1alpha10\"\n\n[account_bindings]\nclaude = \"missing\"\n";
+    let workspace_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/prod\"\n";
+    std::fs::write(&paths.config_file, global_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("prod.toml"), workspace_before).unwrap();
+    let workspace_tree_before = workspace_tree_bytes(&paths);
+
+    let err = load_split_config(
+        &paths,
+        Some(String::from_utf8_lossy(global_before).into_owned()),
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("unknown account"), "{err:#}");
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(workspace_tree_bytes(&paths), workspace_tree_before);
+    assert_no_staged_writes(&paths);
+}
+
+#[test]
 fn failed_split_syntax_leaves_global_and_workspace_files_unchanged() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -653,6 +678,20 @@ fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, Vec<u8>)>> {
         .collect::<Vec<_>>();
     files.sort_by(|left, right| left.0.cmp(&right.0));
     Some(files)
+}
+
+fn assert_no_staged_writes(paths: &JackinPaths) {
+    for directory in [&paths.config_dir, &paths.workspaces_dir] {
+        let entries = std::fs::read_dir(directory).unwrap();
+        for entry in entries {
+            let entry = entry.unwrap();
+            assert!(
+                !entry.file_name().to_string_lossy().contains(".tmp."),
+                "staged file leaked: {}",
+                entry.path().display()
+            );
+        }
+    }
 }
 
 #[test]
