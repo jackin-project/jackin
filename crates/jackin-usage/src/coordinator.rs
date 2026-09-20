@@ -838,18 +838,7 @@ impl UsageCoordinator {
                     return Err(error);
                 }
                 state.blocked.remove(capability);
-                if envelope.phase.is_terminal() {
-                    let Some(entry) = state.accounts.get_mut(capability) else {
-                        return Err(unavailable_error());
-                    };
-                    if !entry
-                        .history
-                        .iter()
-                        .any(|view| view.generation == envelope.generation)
-                    {
-                        entry.record_terminal();
-                    }
-                }
+                record_blocked_terminal(&mut state, capability, &envelope)?;
                 self.shared.changed.notify_all();
             }
             if state.accounts.contains_key(capability) {
@@ -1301,6 +1290,28 @@ fn cadence_jitter_seed(capability: &UsageAccountCapability, generation: u64) -> 
         seed = seed.wrapping_mul(0x0100_0000_01b3);
     }
     seed
+}
+
+fn record_blocked_terminal(
+    state: &mut CoordinatorState,
+    capability: &UsageAccountCapability,
+    envelope: &AccountStateEnvelope,
+) -> Result<(), UsageCoordinationError> {
+    if !envelope.phase.is_terminal() {
+        return Ok(());
+    }
+    let Some(entry) = state.accounts.get_mut(capability) else {
+        return Err(unavailable_error());
+    };
+    if entry
+        .history
+        .iter()
+        .any(|view| view.generation == envelope.generation)
+    {
+        return Ok(());
+    }
+    entry.record_terminal();
+    Ok(())
 }
 
 fn generation_view(envelope: &AccountStateEnvelope) -> UsageGenerationView {
