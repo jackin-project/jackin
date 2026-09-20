@@ -16,6 +16,8 @@ struct MemoryStore {
     purges: Mutex<Vec<UsageAccountCapability>>,
     load_error: Mutex<Option<StateStoreError>>,
     store_error: Mutex<Option<StateStoreError>>,
+    store_calls: AtomicUsize,
+    fail_store_calls: Mutex<Vec<usize>>,
 }
 
 impl AccountStateStore for MemoryStore {
@@ -37,6 +39,10 @@ impl AccountStateStore for MemoryStore {
     ) -> Result<(), StateStoreError> {
         if let Some(error) = *self.store_error.lock().unwrap() {
             return Err(error);
+        }
+        let call = self.store_calls.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.fail_store_calls.lock().unwrap().contains(&call) {
+            return Err(StateStoreError::Unavailable);
         }
         self.states
             .lock()
@@ -481,6 +487,100 @@ fn coordinator_unavailable_or_corrupt_state_makes_zero_provider_calls() {
         result.unwrap_err();
         assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
     }
+}
+
+#[test]
+fn coordinator_updating_store_failure_terminalizes_generation_and_retries() {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(MemoryStore::default());
+    *store.fail_store_calls.lock().unwrap() = vec![2];
+    let coordinator = coordinator(
+        Arc::clone(&executor),
+        Arc::clone(&store),
+        UsageCoordinatorConfig::default(),
+    );
+    let account = capability("account-a");
+
+    let queued = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(queued.generation, 1);
+    let failed = join_ok(&coordinator, &account, queued.generation, 1_001);
+
+    assert_eq!(failed.phase, UsageRefreshPhase::Failed);
+    assert_eq!(
+        failed.error.unwrap().kind,
+        UsageCoordinationErrorKind::Unavailable
+    );
+    assert!(coordinator.is_idle());
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(store.store_calls.load(Ordering::SeqCst), 3);
+    let persisted = store
+        .states
+        .lock()
+        .unwrap()
+        .get(&account)
+        .cloned()
+        .expect("failed generation persisted");
+    assert_eq!(persisted.generation, 1);
+    assert_eq!(persisted.phase, UsageRefreshPhase::Failed);
+
+    let retry = coordinator
+        .request_refresh(&account, failed.generation, true, 1_000_000)
+        .unwrap();
+    assert_eq!(retry.generation, 2);
+    executor.wait_started(1);
+    executor.release(1);
+    let completed = join_ok(&coordinator, &account, retry.generation, 1_000_001);
+    assert_eq!(completed.phase, UsageRefreshPhase::Completed);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn coordinator_recovers_terminal_store_failure_before_reusing_generation_owner() {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(MemoryStore::default());
+    *store.fail_store_calls.lock().unwrap() = vec![2, 3];
+    let coordinator = coordinator(
+        Arc::clone(&executor),
+        Arc::clone(&store),
+        UsageCoordinatorConfig::default(),
+    );
+    let account = capability("account-a");
+
+    let queued = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    assert_eq!(queued.generation, 1);
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !coordinator.is_idle() {
+        assert!(Instant::now() < deadline, "failed generation stayed active");
+        std::thread::yield_now();
+    }
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(store.store_calls.load(Ordering::SeqCst), 3);
+
+    // The store's next write succeeds. Loading the blocked in-memory state
+    // must first persist its terminal phase, then release the single-flight owner.
+    let failed = coordinator.current(&account, 1_001).unwrap();
+    assert_eq!(failed.generation, 1);
+    assert_eq!(failed.phase, UsageRefreshPhase::Failed);
+    assert_eq!(store.store_calls.load(Ordering::SeqCst), 4);
+
+    let retry = coordinator
+        .request_refresh(&account, failed.generation, true, 1_000_000)
+        .unwrap();
+    assert_eq!(retry.generation, 2);
+    executor.wait_started(1);
+    executor.release(1);
+    let completed = join_ok(&coordinator, &account, retry.generation, 1_000_001);
+    assert_eq!(completed.phase, UsageRefreshPhase::Completed);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]
