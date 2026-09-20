@@ -1,56 +1,21 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fs;
+use std::path::PathBuf;
 
-use super::{is_release_asset, release_already_exists, release_assets, release_missing};
-
-#[test]
-fn classifies_release_lookup_failures() {
-    assert!(release_missing("release not found"));
-    assert!(release_missing("HTTP 404: Not Found"));
-    assert!(!release_missing("HTTP 503: unavailable"));
-    assert!(release_already_exists(
-        "a release with the same tag name already exists: preview"
-    ));
-    assert!(!release_already_exists("permission denied"));
-}
+use super::{PublishPreviewArgs, retired_publish_preview};
 
 #[test]
-fn selects_only_public_preview_assets() {
-    for accepted in [
-        "jackin-x86_64-unknown-linux-gnu.tar.gz",
-        "jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256",
-        "jackin-aarch64-apple-darwin.tar.gz.bundle",
-        "jackin-aarch64-apple-darwin.tar.gz.sbom.json",
-        "capsule-manifest.json",
-        "capsule-manifest.json.bundle",
-        "release-manifest.json",
-        "identity.json",
-        "SHA256SUMS",
-        "jackin-0.6.0-preview.411+bf7df07-aarch64-apple-darwin.tar.gz",
-    ] {
-        assert!(is_release_asset(accepted.as_ref()), "{accepted}");
-    }
-    for rejected in [
-        "cargo-timing.html".to_owned(),
-        "notes.txt".to_owned(),
-        ["jackin", "zip"].join("."),
-    ] {
-        assert!(!is_release_asset(rejected.as_ref()), "{rejected}");
-    }
-}
-
-#[test]
-fn sorts_selected_assets() {
-    let directory = tempfile::tempdir().unwrap();
-    fs::write(directory.path().join("jackin-z.tar.gz"), []).unwrap();
-    fs::write(directory.path().join("jackin-a.tar.gz"), []).unwrap();
-    fs::write(directory.path().join("private.txt"), []).unwrap();
-    let assets = release_assets(directory.path()).unwrap();
-    let names = assets
-        .iter()
-        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
-        .collect::<Vec<_>>();
-    assert_eq!(names, ["jackin-a.tar.gz", "jackin-z.tar.gz"]);
+fn publish_preview_is_retired_without_mutation() {
+    let error = retired_publish_preview(PublishPreviewArgs {
+        repository: "jackin-project/jackin".to_owned(),
+        tag: "preview".to_owned(),
+        version: "0.6.4-preview.1+0123456".to_owned(),
+        sha: "0123456789012345678901234567890123456789".to_owned(),
+        assets: PathBuf::from("artifacts"),
+    })
+    .expect_err("retired publisher must fail closed");
+    let message = error.to_string();
+    assert!(message.contains("retired"));
+    assert!(message.contains("release-preview-package"));
 }
