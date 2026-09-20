@@ -27,6 +27,43 @@ use crate::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
 
 const READ_ONLY_SNAPSHOT_ATTEMPTS: usize = 3;
 
+struct PendingConfigWrite {
+    path: PathBuf,
+    contents: String,
+}
+
+pub(crate) struct LoadedConfig {
+    config: AppConfig,
+    pending_writes: Vec<PendingConfigWrite>,
+}
+
+impl LoadedConfig {
+    pub(crate) fn commit(self) -> crate::ConfigResult<AppConfig> {
+        let Self {
+            config,
+            pending_writes,
+        } = self;
+
+        commit_pending_config_writes(pending_writes)?;
+        Ok(config)
+    }
+}
+
+fn commit_pending_config_writes(
+    pending_writes: Vec<PendingConfigWrite>,
+) -> crate::ConfigResult<()> {
+    for write in &pending_writes {
+        ensure_replaceable_target(&write.path)?;
+    }
+
+    let mut staged = Vec::with_capacity(pending_writes.len());
+    for write in pending_writes {
+        staged.push(stage_atomic_write(&write.path, &write.contents)?);
+    }
+    let mut deletes = Vec::new();
+    commit_staged_config(&mut staged, &mut deletes)
+}
+
 /// Stable content generation for one admitted config tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigGeneration(String);
@@ -418,42 +455,97 @@ pub fn load_split_config(
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
     let _lock = acquire_config_write_lock(&paths.config_file)?;
-    load_split_config_locked(paths, contents_opt)
+    load_split_config_locked(paths, contents_opt)?.commit()
 }
 
 pub(crate) fn load_split_config_locked(
     paths: &JackinPaths,
     contents_opt: Option<String>,
-) -> crate::ConfigResult<AppConfig> {
+) -> crate::ConfigResult<LoadedConfig> {
     // Capture legacy per-workspace `op_account` from the raw TOML before
     // the typed parse below drops it: `WorkspaceConfig` no longer has that
     // field (it moved onto each op ref in v1alpha5), so a typed round-trip
     // would silently lose it for operators still on an embedded
-    // `[workspaces.*]` config. See `migrate_legacy_workspaces`.
+    // `[workspaces.*]` config. See `plan_legacy_workspace_writes`.
     let legacy_op_accounts = match contents_opt.as_deref() {
         Some(c) => legacy_workspace_op_accounts(c)?,
         None => BTreeMap::new(),
     };
 
+    let mut migrated_global_contents = None;
     let mut config: AppConfig = match contents_opt {
         Some(c) => {
             let mut doc: DocumentMut = c
                 .parse()
                 .context("parsing embedded workspace configuration")?;
-            migrate_config_document_in_memory(&mut doc)?;
+            let migrated_from = migrations::migrate_document_if_needed(
+                &mut doc,
+                "config",
+                CURRENT_CONFIG_VERSION,
+                migrations::CONFIG_MIGRATIONS,
+            );
+            migrations::emit_migration_result(
+                "global",
+                CURRENT_CONFIG_VERSION,
+                migrations::CONFIG_MIGRATIONS,
+                &migrated_from,
+            );
+            let migrated = migrated_from?.is_some();
             migrate_embedded_op_accounts(&mut doc)?;
-            toml::from_str(&doc.to_string())?
+            let serialized = doc.to_string();
+            if migrated {
+                migrated_global_contents = Some(serialized.clone());
+            }
+            toml::from_str(&serialized)?
         }
         None => AppConfig::default(),
     };
 
     let legacy_workspaces = std::mem::take(&mut config.workspaces);
+    let mut pending_writes = Vec::new();
+    let mut global_write = None;
     if !legacy_workspaces.is_empty() {
-        migrate_legacy_workspaces(paths, &config, &legacy_workspaces, &legacy_op_accounts)?;
+        // Lossy: serde round-trip drops comments and blank lines from
+        // `config.toml`. Acceptable here because this path runs once at
+        // legacy migration; steady-state edits go through `ConfigEditor`.
+        let global_contents = toml::to_string_pretty(&config).with_context(|| {
+            format!(
+                "serializing migrated global config for {}",
+                paths.config_file.display()
+            )
+        })?;
+        pending_writes.extend(plan_legacy_workspace_writes(
+            paths,
+            &legacy_workspaces,
+            &legacy_op_accounts,
+        )?);
+        global_write = Some(PendingConfigWrite {
+            path: paths.config_file.clone(),
+            contents: global_contents,
+        });
+    } else if let Some(contents) = migrated_global_contents {
+        global_write = Some(PendingConfigWrite {
+            path: paths.config_file.clone(),
+            contents,
+        });
     }
 
-    config.workspaces = load_workspace_files_locked(&paths.workspaces_dir)?;
-    Ok(config)
+    let (mut split_workspaces, split_writes) = load_workspace_files_locked(&paths.workspaces_dir)?;
+    pending_writes.extend(split_writes);
+    if let Some(global_write) = global_write {
+        // Keep the global rewrite last: it remains the migration commit
+        // marker, while the transaction restores earlier split files if a
+        // later rename or directory sync fails.
+        pending_writes.push(global_write);
+    }
+    for (name, workspace) in legacy_workspaces {
+        split_workspaces.entry(name).or_insert(workspace);
+    }
+    config.workspaces = split_workspaces;
+    Ok(LoadedConfig {
+        config,
+        pending_writes,
+    })
 }
 
 /// Upgrade embedded legacy fields before strict `WorkspaceConfig` deserialization.
@@ -479,23 +571,6 @@ fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()
     Ok(())
 }
 
-/// Apply global schema migrations before a legacy embedded workspace is split
-/// out. The split path must keep this in memory so a conflicting workspace
-/// file still leaves the legacy global file untouched.
-fn migrate_config_document_in_memory(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
-    let old = migrations::doc_version(doc, "config")?;
-    let current = migrations::parse_version(CURRENT_CONFIG_VERSION)?;
-    if old > current {
-        return Err(ConfigError::msg(format!(
-            "config is at {old}, this binary only understands up to {CURRENT_CONFIG_VERSION}; upgrade jackin"
-        )));
-    }
-    if old < current {
-        migrations::apply_migrations(doc, &old, &current, migrations::CONFIG_MIGRATIONS, "config")?;
-    }
-    Ok(())
-}
-
 /// Read and migrate every `*.toml` workspace file under `workspaces_dir`.
 pub fn load_workspace_files(
     workspaces_dir: &Path,
@@ -505,16 +580,18 @@ pub fn load_workspace_files(
         .unwrap_or(workspaces_dir)
         .join("config.toml");
     let _lock = acquire_config_write_lock(&config_file)?;
-    load_workspace_files_locked(workspaces_dir)
+    let (workspaces, pending_writes) = load_workspace_files_locked(workspaces_dir)?;
+    commit_pending_config_writes(pending_writes)?;
+    Ok(workspaces)
 }
 
-pub(crate) fn load_workspace_files_locked(
+fn load_workspace_files_locked(
     workspaces_dir: &Path,
-) -> crate::ConfigResult<BTreeMap<String, WorkspaceConfig>> {
+) -> crate::ConfigResult<(BTreeMap<String, WorkspaceConfig>, Vec<PendingConfigWrite>)> {
     let mut workspaces = BTreeMap::new();
     let entries = match std::fs::read_dir(workspaces_dir) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(workspaces),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((workspaces, Vec::new())),
         Err(e) => {
             return Err(anyhow::Error::new(e)
                 .context(format!(
@@ -577,21 +654,17 @@ pub(crate) fn load_workspace_files_locked(
             }
         };
         if migrated_from.is_some() {
-            pending_writes.push((path.clone(), raw.clone()));
+            pending_writes.push(PendingConfigWrite {
+                path: path.clone(),
+                contents: raw.clone(),
+            });
         }
         let workspace = toml::from_str(&raw)
             .with_context(|| format!("parsing workspace config {}", path.display()))?;
         workspaces.insert(name.into_inner(), workspace);
     }
 
-    let mut staged = Vec::with_capacity(pending_writes.len());
-    for (path, contents) in pending_writes {
-        ensure_replaceable_target(&path)?;
-        staged.push(stage_atomic_write(&path, &contents)?);
-    }
-    let mut deletes = Vec::new();
-    commit_staged_config(&mut staged, &mut deletes)?;
-    Ok(workspaces)
+    Ok((workspaces, pending_writes))
 }
 
 /// Extract `[workspaces.<name>].op_account` string values from a raw
@@ -629,51 +702,6 @@ fn legacy_workspace_op_accounts(contents: &str) -> anyhow::Result<BTreeMap<Strin
     Ok(out)
 }
 
-fn migrate_legacy_workspaces(
-    paths: &JackinPaths,
-    global_config: &AppConfig,
-    workspaces: &BTreeMap<String, WorkspaceConfig>,
-    legacy_op_accounts: &BTreeMap<String, String>,
-) -> anyhow::Result<()> {
-    // Lossy: serde round-trip drops comments and blank lines from
-    // `config.toml`. Acceptable here because this path runs once at legacy
-    // migration; steady-state edits go through `ConfigEditor`.
-    let global_contents = toml::to_string_pretty(global_config).with_context(|| {
-        format!(
-            "serializing migrated global config for {}",
-            paths.config_file.display()
-        )
-    })?;
-    let workspace_writes = plan_legacy_workspace_writes(paths, workspaces, legacy_op_accounts)?;
-
-    // Crash-recovery ordering: the global rewrite is the commit point. If
-    // we crash before it, the legacy `[workspaces.*]` tables remain
-    // authoritative and the next load_or_init re-runs this function. The
-    // exists+equal short-circuit in the planning pass keeps that re-entry
-    // idempotent.
-    if !workspace_writes.is_empty() {
-        std::fs::create_dir_all(&paths.workspaces_dir).with_context(|| {
-            format!(
-                "creating workspaces directory {}",
-                paths.workspaces_dir.display()
-            )
-        })?;
-    }
-    let mut staged = Vec::with_capacity(workspace_writes.len() + 1);
-    for (path, contents) in workspace_writes {
-        ensure_replaceable_target(&path)?;
-        staged.push(stage_atomic_write(&path, &contents)?);
-    }
-    ensure_replaceable_target(&paths.config_file)?;
-    // Keep the global rewrite last: it remains the migration commit marker,
-    // while the transaction restores earlier split files if a later rename
-    // or directory sync fails.
-    staged.push(stage_atomic_write(&paths.config_file, &global_contents)?);
-    let mut deletes = Vec::new();
-    commit_staged_config(&mut staged, &mut deletes)?;
-    Ok(())
-}
-
 /// Validate every embedded workspace and plan only the split files that need
 /// to be created. This pass must stay read/compute-only: both
 /// `AppConfig::load_or_init` and `ConfigEditor::open` depend on a conflict in
@@ -682,7 +710,7 @@ fn plan_legacy_workspace_writes(
     paths: &JackinPaths,
     workspaces: &BTreeMap<String, WorkspaceConfig>,
     legacy_op_accounts: &BTreeMap<String, String>,
-) -> anyhow::Result<Vec<(PathBuf, String)>> {
+) -> anyhow::Result<Vec<PendingConfigWrite>> {
     let mut writes = Vec::new();
     for (name, workspace) in workspaces {
         validate_workspace_file_stem(name)?;
@@ -716,7 +744,7 @@ fn plan_legacy_workspace_writes(
             ))
             .into());
         }
-        writes.push((path, contents));
+        writes.push(PendingConfigWrite { path, contents });
     }
     Ok(writes)
 }
@@ -801,17 +829,11 @@ pub fn config_needs_split_migration(raw: &str) -> crate::ConfigResult<bool> {
 }
 
 pub(crate) fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<Option<String>> {
+    // Keep migration read-only here. `load_split_config_locked` combines the
+    // global and split plans, validates the complete config, then commits them
+    // under the caller's write lock.
     match std::fs::read_to_string(&paths.config_file) {
-        Ok(raw) if config_needs_split_migration(&raw)? => Ok(Some(raw)),
-        Ok(_) => {
-            migrations::migrate_config_file_if_needed(&paths.config_file)?;
-            std::fs::read_to_string(&paths.config_file)
-                .with_context(|| {
-                    format!("re-reading {} after migration", paths.config_file.display())
-                })
-                .map(Some)
-                .map_err(Into::into)
-        }
+        Ok(raw) => Ok(Some(raw)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(anyhow::Error::new(error)
             .context(format!("reading {}", paths.config_file.display()))
@@ -826,26 +848,28 @@ impl AppConfig {
         let lock = acquire_config_write_lock(&paths.config_file)?;
         let loaded = (|| {
             let contents_opt = load_config_contents(paths)?;
-            load_split_config_locked(paths, contents_opt)
+            let loaded = load_split_config_locked(paths, contents_opt)?;
+
+            crate::telemetry::finish_operation(
+                jackin_telemetry::schema::enums::ConfigScope::Global,
+                jackin_telemetry::schema::enums::ConfigOperation::Validate,
+                (|| {
+                    validate_reserved_env_names(&loaded.config)?;
+                    loaded.config.validate_accounts()
+                })(),
+            )?;
+            crate::telemetry::finish_operation(
+                jackin_telemetry::schema::enums::ConfigScope::Workspace,
+                jackin_telemetry::schema::enums::ConfigOperation::Validate,
+                loaded.config.validate_workspaces(),
+            )?;
+
+            loaded.commit()
         })();
         let mut config = crate::telemetry::finish_operation(
             jackin_telemetry::schema::enums::ConfigScope::Global,
             jackin_telemetry::schema::enums::ConfigOperation::Load,
             loaded,
-        )?;
-
-        // Pre-sync validation: gives the operator a reserved-name error
-        // rather than save()'s "rejecting candidate config" wrapper.
-        // ConfigEditor::save runs the same check via validate_candidate;
-        // this call covers the path where save() is never invoked because
-        // builtins did not drift.
-        crate::telemetry::finish_operation(
-            jackin_telemetry::schema::enums::ConfigScope::Global,
-            jackin_telemetry::schema::enums::ConfigOperation::Validate,
-            (|| {
-                validate_reserved_env_names(&config)?;
-                config.validate_accounts()
-            })(),
         )?;
 
         // Keep the exclusive lock across migration, builtin repair, and all
@@ -863,12 +887,6 @@ impl AppConfig {
         } else {
             drop(lock);
         }
-
-        crate::telemetry::finish_operation(
-            jackin_telemetry::schema::enums::ConfigScope::Workspace,
-            jackin_telemetry::schema::enums::ConfigOperation::Validate,
-            config.validate_workspaces(),
-        )?;
         Ok(config)
     }
 }

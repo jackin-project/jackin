@@ -472,7 +472,21 @@ pub(crate) fn migrate_file_contents_if_needed(
     let mut doc: DocumentMut = raw
         .parse()
         .with_context(|| format!("parsing {}", path.display()))?;
-    let old_version = doc_version(&doc, label)?;
+    let migrated_from = migrate_document_if_needed(&mut doc, label, current_raw, migrations)?;
+    if migrated_from.is_none() {
+        return Ok((raw, None));
+    }
+    Ok((doc.to_string(), migrated_from))
+}
+
+/// Migrate one parsed document without writing it.
+pub(crate) fn migrate_document_if_needed(
+    doc: &mut DocumentMut,
+    label: &str,
+    current_raw: &str,
+    migrations: &[MigrationStep],
+) -> crate::ConfigResult<Option<SchemaVersion>> {
+    let old_version = doc_version(doc, label)?;
     let current = parse_version(current_raw)?;
 
     if old_version > current {
@@ -481,11 +495,11 @@ pub(crate) fn migrate_file_contents_if_needed(
         )));
     }
     if old_version == current {
-        return Ok((raw, None));
+        return Ok(None);
     }
 
-    apply_migrations(&mut doc, &old_version, &current, migrations, label)?;
-    Ok((doc.to_string(), Some(old_version)))
+    apply_migrations(doc, &old_version, &current, migrations, label)?;
+    Ok(Some(old_version))
 }
 
 /// Walk the registry from `old_version` to `current_version`, mutating `doc` in place.

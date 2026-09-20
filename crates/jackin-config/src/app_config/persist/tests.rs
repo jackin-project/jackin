@@ -536,6 +536,50 @@ workdir = "/workspace/prod"
 }
 
 #[test]
+fn failed_split_validation_leaves_global_and_workspace_files_unchanged() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let global_before = b"version = \"v1alpha10\"\n";
+    let alpha_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/alpha\"\n\n[[mounts]]\nsrc = \"/tmp/alpha\"\ndst = \"/workspace/alpha\"\n";
+    let broken_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/broken\"\n";
+    std::fs::write(&paths.config_file, global_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("alpha.toml"), alpha_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("broken.toml"), broken_before).unwrap();
+    let workspace_tree_before = workspace_tree_bytes(&paths);
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+
+    assert!(err.to_string().contains("mount"), "{err:#}");
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(workspace_tree_bytes(&paths), workspace_tree_before);
+}
+
+#[test]
+fn failed_split_syntax_leaves_global_and_workspace_files_unchanged() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let global_before = b"version = \"v1alpha10\"\n";
+    let alpha_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/alpha\"\n\n[[mounts]]\nsrc = \"/tmp/alpha\"\ndst = \"/workspace/alpha\"\n";
+    let broken_before = b"version = \"v1alpha8\"\nworkdir = [\n";
+    std::fs::write(&paths.config_file, global_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("alpha.toml"), alpha_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("broken.toml"), broken_before).unwrap();
+    let workspace_tree_before = workspace_tree_bytes(&paths);
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+
+    assert!(err.to_string().contains("parsing"), "{err:#}");
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(workspace_tree_bytes(&paths), workspace_tree_before);
+}
+
+#[test]
 fn empty_legacy_workspaces_table_still_gets_version_stamp() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

@@ -132,6 +132,27 @@ workdir = "/workspace/prod"
 }
 
 #[test]
+fn open_leaves_standalone_old_config_unchanged_when_split_syntax_fails() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let global_before = b"version = \"v1alpha10\"\n";
+    let alpha_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/alpha\"\n\n[[mounts]]\nsrc = \"/tmp/alpha\"\ndst = \"/workspace/alpha\"\n";
+    let broken_before = b"version = \"v1alpha8\"\nworkdir = [\n";
+    std::fs::write(&paths.config_file, global_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("alpha.toml"), alpha_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("broken.toml"), broken_before).unwrap();
+    let workspace_tree_before = workspace_tree_bytes(&paths);
+
+    let err = ConfigEditor::open(&paths).unwrap_err();
+
+    assert!(err.to_string().contains("parsing"), "{err:#}");
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(workspace_tree_bytes(&paths), workspace_tree_before);
+}
+
+#[test]
 fn save_commit_failure_does_not_leave_earlier_files_committed() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

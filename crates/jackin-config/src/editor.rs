@@ -144,7 +144,7 @@ impl ConfigEditor {
             atomic_write(&paths.config_file, &toml::to_string_pretty(&initial)?)?;
         }
         let raw = load_config_contents(paths)?;
-        drop(load_split_config_locked(paths, raw)?);
+        drop(load_split_config_locked(paths, raw)?.commit()?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw
