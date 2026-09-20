@@ -288,14 +288,25 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     // Build AppleContainerSpec — delegates all arg formatting to the client.
     // JACKIN_CAPSULE_FORCE_DAEMON=1 enables daemon mode without PID 1 (vminitd
     // is PID 1 inside apple/container VMs; capsule runs as entrypoint at PID 2+).
-    let mut env: Vec<(String, String)> =
-        vec![("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned())];
+    let mut env: Vec<(String, String)> = vec![
+        ("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned()),
+        (
+            // vminitd is PID 1; Capsule entrypoint is launched after it. This
+            // is the Apple launch contract, not a runtime probe of the live PID.
+            jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV.to_owned(),
+            jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID.to_string(),
+        ),
+    ];
     if debug {
         env.push(("JACKIN_TELEMETRY_LEVEL".to_owned(), "debug".to_owned()));
     }
     let host_env_entries = env_pairs
         .iter()
-        .filter(|(key, _)| key != "JACKIN_CAPSULE_FORCE_DAEMON" && key != "JACKIN_DEBUG")
+        .filter(|(key, _)| {
+            key != "JACKIN_CAPSULE_FORCE_DAEMON"
+                && key != jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV
+                && key != "JACKIN_DEBUG"
+        })
         .cloned()
         .collect::<Vec<_>>();
     let mut capsule_config = capsule_config.clone();
@@ -306,11 +317,13 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         env.push(("JACKIN_EXEC_BINDINGS".to_owned(), names));
     }
 
-    // socket dir bind-mount to /jackin/run: carries Capsule's launch config
-    // (agent.toml, which the daemon requires at startup) and host.sock.
+    // Apple Container's UDS relay does not preserve guest peer credentials, so
+    // usage traffic uses the same Capsule-local stdio proxy as Docker. Only
+    // the launch config is file-mounted; mounting a host socket directory is
+    // not a valid Apple Container transport for Unix sockets.
     let socket_dir = paths.jackin_home.join("sockets").join(container_name);
-    let (usage_relay_guard, canonical_launch_usage_capabilities) =
-        crate::usage_relay::prepare_for_container(crate::usage_relay::UsageRelayLaunch {
+    let prepared_usage_relay =
+        crate::usage_relay::prepare_for_stdio_tunnel(crate::usage_relay::UsageRelayLaunch {
             paths,
             workspace_name,
             role_key,
@@ -320,17 +333,27 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
                 resolved_env,
                 &capsule_config,
             ),
-            socket_dir: socket_dir.clone(),
         })
         .await
         .context("starting scoped usage relay")?;
-    canonical_launch_usage_capabilities.apply_to_launch_config(&mut capsule_config);
+    prepared_usage_relay.apply_to_launch_config(&mut capsule_config);
     let capsule_config_contents = super::launch::capsule_config_contents(&capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
     super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
-    let _usage_relay_guard = usage_relay_guard;
     let mut container_mounts = mounts.to_vec();
-    container_mounts.push(crate::usage_relay::apple_runtime_mount(socket_dir));
+    container_mounts.push(crate::usage_relay::apple_runtime_mount(socket_dir.clone()));
+    if !capsule_config.exec_bindings.is_empty() {
+        drop(crate::exec_host::start_bound_for_container(
+            &paths.jackin_home,
+            container_name,
+            &capsule_config.exec_bindings,
+        )?);
+        container_mounts.push(AppleContainerMount::new(
+            socket_dir.join("host.sock"),
+            jackin_protocol::HOST_SOCK_CONTAINER_PATH,
+            false,
+        ));
+    }
 
     let host_env_file =
         super::launch::create_host_env_file(&paths.jackin_home, container_name, &host_env_entries)
@@ -351,6 +374,9 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     drop(host_env_file);
     run_result
         .context("container run failed — required capabilities or image may be unavailable")?;
+    let _usage_relay_guard =
+        crate::usage_relay::start_apple_tunnel(container_name, prepared_usage_relay)
+            .context("starting scoped usage stdio tunnel")?;
 
     // Write instance manifest.
     let container_state = paths.data_dir.join(container_name);
@@ -380,17 +406,6 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         }),
     );
     manifest.write(&container_state)?;
-    // Start the host.sock credential resolver before the blocking attach call.
-    // Detached on purpose: the spawned task runs for the session independently
-    // of this handle (matches the Docker launch path). No socket is needed
-    // when the workspace declares no on-demand credentials.
-    if !capsule_config.exec_bindings.is_empty() {
-        drop(crate::exec_host::start_for_container(
-            &paths.jackin_home,
-            container_name,
-            &capsule_config.exec_bindings,
-        ));
-    }
 
     // Wait for capsule daemon readiness.
     wait_for_capsule(container_name).await?;

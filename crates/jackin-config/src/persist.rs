@@ -55,6 +55,22 @@ pub(crate) struct ConfigWriteGuard {
 pub(crate) struct StagedWrite {
     target: PathBuf,
     tmp: PathBuf,
+    original: TargetState,
+    committed: bool,
+}
+
+#[derive(Debug)]
+enum TargetState {
+    Missing,
+    File(Vec<u8>),
+    Other,
+}
+
+/// A staged deletion that can be restored if a later config mutation fails.
+#[derive(Debug)]
+pub(crate) struct StagedDelete {
+    target: PathBuf,
+    original: Vec<u8>,
     committed: bool,
 }
 
@@ -226,14 +242,23 @@ fn recorded_holder(lock_path: &Path) -> String {
 
 /// Write `contents` to `path` via a unique staged file then rename.
 pub fn atomic_write(path: &Path, contents: &str) -> crate::ConfigResult<()> {
-    stage_atomic_write(path, contents)?.commit()
+    let mut staged = stage_atomic_write(path, contents)?;
+    staged.commit()
 }
 
 pub(crate) fn stage_atomic_write(path: &Path, contents: &str) -> crate::ConfigResult<StagedWrite> {
+    stage_atomic_write_bytes(path, contents.as_bytes())
+}
+
+pub(crate) fn stage_atomic_write_bytes(
+    path: &Path,
+    contents: &[u8],
+) -> crate::ConfigResult<StagedWrite> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory {}", parent.display()))?;
     }
+    let original = target_state(path);
     // Place the `.tmp` marker mid-filename rather than as the extension so
     // `load_workspace_files`'s `extension == "toml"` filter ignores leftover
     // staged files. PID + counter make the suffix unique across processes
@@ -250,21 +275,106 @@ pub(crate) fn stage_atomic_write(path: &Path, contents: &str) -> crate::ConfigRe
     Ok(StagedWrite {
         target: path.to_path_buf(),
         tmp,
+        original,
         committed: false,
     })
 }
 
-fn stage_write(tmp: &Path, contents: &str) -> anyhow::Result<()> {
+fn stage_write(tmp: &Path, contents: &[u8]) -> anyhow::Result<()> {
     let mut file = open_staged_private(tmp)?;
-    if let Err(err) = file
-        .write_all(contents.as_bytes())
-        .and_then(|()| file.sync_all())
-    {
+    if let Err(err) = file.write_all(contents).and_then(|()| file.sync_all()) {
         drop(file);
         drop(std::fs::remove_file(tmp));
         return Err(err.into());
     }
     Ok(())
+}
+
+fn target_state(path: &Path) -> TargetState {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => match std::fs::read(path) {
+            Ok(contents) => TargetState::File(contents),
+            Err(_) => TargetState::Other,
+        },
+        Ok(_) => TargetState::Other,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => TargetState::Missing,
+        Err(_) => TargetState::Other,
+    }
+}
+
+/// Reject a target that cannot be atomically replaced by a regular file.
+pub(crate) fn ensure_replaceable_target(path: &Path) -> crate::ConfigResult<()> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(()),
+        Ok(_) => Err(crate::ConfigError::msg(format!(
+            "config target {} is not a regular file",
+            path.display()
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Stage removal of one regular config file. Missing files are already gone.
+pub(crate) fn stage_delete(path: &Path) -> crate::ConfigResult<Option<StagedDelete>> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(Some(StagedDelete {
+            target: path.to_path_buf(),
+            original: std::fs::read(path)?,
+            committed: false,
+        })),
+        Ok(_) => Err(crate::ConfigError::msg(format!(
+            "config target {} is not a regular file",
+            path.display()
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Commit every staged config mutation, restoring committed targets if a
+/// later rename, delete, or directory sync fails.
+pub(crate) fn commit_staged_config(
+    writes: &mut [StagedWrite],
+    deletes: &mut [StagedDelete],
+) -> crate::ConfigResult<()> {
+    for write in writes.iter_mut() {
+        if let Err(error) = write.commit() {
+            return rollback_staged_config(writes, deletes, error);
+        }
+    }
+    for delete in deletes.iter_mut() {
+        if let Err(error) = delete.commit() {
+            return rollback_staged_config(writes, deletes, error);
+        }
+    }
+    Ok(())
+}
+
+fn rollback_staged_config(
+    writes: &mut [StagedWrite],
+    deletes: &mut [StagedDelete],
+    error: crate::ConfigError,
+) -> crate::ConfigResult<()> {
+    let mut rollback_errors = Vec::new();
+    for delete in deletes.iter_mut().rev() {
+        if let Err(rollback_error) = delete.rollback() {
+            rollback_errors.push(rollback_error.to_string());
+        }
+    }
+    for write in writes.iter_mut().rev() {
+        if let Err(rollback_error) = write.rollback() {
+            rollback_errors.push(rollback_error.to_string());
+        }
+    }
+    if rollback_errors.is_empty() {
+        Err(error)
+    } else {
+        Err(crate::ConfigError::msg(format!(
+            "{error}; config rollback failed: {}",
+            rollback_errors.join("; ")
+        )))
+    }
 }
 
 fn open_staged_private(path: &Path) -> std::io::Result<File> {
@@ -304,7 +414,7 @@ impl StagedWrite {
         &self.tmp
     }
 
-    pub(crate) fn commit(mut self) -> crate::ConfigResult<()> {
+    pub(crate) fn commit(&mut self) -> crate::ConfigResult<()> {
         std::fs::rename(&self.tmp, &self.target).map_err(|rename_err| {
             anyhow::Error::new(rename_err).context(format!(
                 "renaming {} -> {}",
@@ -315,6 +425,54 @@ impl StagedWrite {
         self.committed = true;
         sync_parent(&self.target)
     }
+
+    fn rollback(&mut self) -> crate::ConfigResult<()> {
+        if !self.committed {
+            return Ok(());
+        }
+        let result = match &self.original {
+            TargetState::Missing => match std::fs::remove_file(&self.target) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.into()),
+            },
+            TargetState::File(contents) => restore_bytes(&self.target, contents),
+            TargetState::Other => Err(crate::ConfigError::msg(format!(
+                "cannot restore non-file config target {}",
+                self.target.display()
+            ))),
+        };
+        if result.is_ok() {
+            self.committed = false;
+        }
+        result
+    }
+}
+
+impl StagedDelete {
+    fn commit(&mut self) -> crate::ConfigResult<()> {
+        std::fs::remove_file(&self.target).map_err(|error| {
+            anyhow::Error::new(error).context(format!("removing {}", self.target.display()))
+        })?;
+        self.committed = true;
+        sync_parent(&self.target)
+    }
+
+    fn rollback(&mut self) -> crate::ConfigResult<()> {
+        if !self.committed {
+            return Ok(());
+        }
+        let result = restore_bytes(&self.target, &self.original);
+        if result.is_ok() {
+            self.committed = false;
+        }
+        result
+    }
+}
+
+fn restore_bytes(path: &Path, contents: &[u8]) -> crate::ConfigResult<()> {
+    let mut staged = stage_atomic_write_bytes(path, contents)?;
+    staged.commit()
 }
 
 impl Drop for StagedWrite {

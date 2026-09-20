@@ -3,9 +3,12 @@
 
 //! Tests for `persist`.
 use super::*;
+use crate::persist::{acquire_config_write_lock, atomic_write};
 use crate::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
 use jackin_core::JackinPaths;
 use std::path::Path;
+use std::sync::mpsc;
+use std::time::Duration as TestDuration;
 use tempfile::tempdir;
 
 fn wait_for_mtime_tick() {
@@ -39,6 +42,46 @@ fn sync_does_not_rewrite_config_when_already_current() {
         .unwrap();
 
     assert_eq!(mtime_before, mtime_after);
+}
+
+#[test]
+fn load_or_init_waits_for_an_existing_config_writer() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+
+    let writer = acquire_config_write_lock(&paths.config_file).unwrap();
+    let (done_tx, done_rx) = mpsc::channel();
+    let worker_paths = paths.clone();
+    let worker = std::thread::spawn(move || {
+        let result = AppConfig::load_or_init(&worker_paths);
+        done_tx.send(result.is_ok()).unwrap();
+    });
+
+    assert!(matches!(
+        done_rx.recv_timeout(TestDuration::from_millis(50)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    drop(writer);
+    assert!(done_rx.recv_timeout(TestDuration::from_secs(1)).unwrap());
+    worker.join().unwrap();
+}
+
+#[test]
+fn split_migration_does_not_commit_an_earlier_file_when_a_later_file_is_unreadable() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let alpha_path = paths.workspaces_dir.join("alpha.toml");
+    let alpha_before = b"version = \"v1alpha1\"\nworkdir = \"/workspace/alpha\"\n";
+    std::fs::write(&alpha_path, alpha_before).unwrap();
+    std::fs::create_dir(paths.workspaces_dir.join("zulu.toml")).unwrap();
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+    assert!(err.to_string().contains("reading"), "{err:#}");
+    assert_eq!(std::fs::read(&alpha_path).unwrap(), alpha_before);
 }
 
 #[test]
@@ -507,6 +550,84 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
 }
 
 #[test]
+fn legacy_split_migration_accepts_equivalent_mixed_version_workspace() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let legacy = r#"[workspaces.prod]
+workdir = "/workspace/prod"
+op_account = "WORKACCT"
+
+[[workspaces.prod.mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+
+[workspaces.prod.env]
+TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
+"#;
+    std::fs::write(&paths.config_file, legacy).unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("prod.toml"),
+        r#"version = "v1alpha4"
+workdir = "/workspace/prod"
+op_account = "WORKACCT"
+
+[[mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+
+[env]
+TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
+"#,
+    )
+    .unwrap();
+
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    assert!(config.workspaces.contains_key("prod"));
+
+    let split = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
+    assert!(
+        split.contains(&format!(r#"version = "{CURRENT_WORKSPACE_VERSION}""#)),
+        "{split}"
+    );
+    assert!(split.contains(r#"account = "WORKACCT""#), "{split}");
+    assert!(!split.contains("op_account"), "{split}");
+}
+
+#[test]
+fn split_workspace_rejects_legacy_op_account_after_migration_edge() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("current.toml"),
+        format!(
+            r#"version = "{CURRENT_WORKSPACE_VERSION}"
+workdir = "/workspace/current"
+op_account = "MISLABELED"
+
+[[mounts]]
+src = "/tmp/current"
+dst = "/workspace/current"
+"#
+        ),
+    )
+    .unwrap();
+
+    let snapshot = load_read_only_config_snapshot(&paths).unwrap();
+
+    assert_eq!(
+        snapshot.diagnostics,
+        vec![ConfigSourceDiagnostic {
+            scope: ConfigSourceScope::Workspace("current".to_owned()),
+            issue: ConfigSourceIssue::Malformed,
+        }]
+    );
+}
+
+#[test]
 fn failed_split_migration_leaves_legacy_config_unchanged() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -532,6 +653,137 @@ workdir = "/workspace/prod"
             .contains("already exists with different contents")
     );
     assert_eq!(out, legacy);
+}
+
+#[test]
+fn failed_split_migration_leaves_versioned_config_unchanged() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let versioned = r#"version = "v1alpha10"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+"#;
+    std::fs::write(&paths.config_file, versioned).unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("prod.toml"),
+        format!("version = \"{CURRENT_WORKSPACE_VERSION}\"\nworkdir = \"/other\"\n"),
+    )
+    .unwrap();
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("already exists with different contents")
+    );
+    let out = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert_eq!(out, versioned);
+    assert!(out.contains("version = \"v1alpha10\""));
+    assert!(!out.contains("[bootstrap]"));
+}
+
+#[test]
+fn failed_split_migration_leaves_every_workspace_file_unchanged_on_later_conflict() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let versioned = r#"version = "v1alpha10"
+
+[workspaces.alpha]
+workdir = "/workspace/alpha"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+"#;
+    std::fs::write(&paths.config_file, versioned).unwrap();
+    let existing_prod =
+        format!("version = \"{CURRENT_WORKSPACE_VERSION}\"\nworkdir = \"/other\"\n");
+    std::fs::write(paths.workspaces_dir.join("prod.toml"), &existing_prod).unwrap();
+    let before_tree = workspace_tree_bytes(&paths);
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("already exists with different contents")
+    );
+    assert_eq!(
+        std::fs::read(&paths.config_file).unwrap(),
+        versioned.as_bytes()
+    );
+    assert_eq!(workspace_tree_bytes(&paths), before_tree);
+    assert!(!paths.workspaces_dir.join("alpha.toml").exists());
+}
+
+#[test]
+fn failed_split_validation_leaves_global_and_workspace_files_unchanged() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let global_before = b"version = \"v1alpha10\"\n";
+    let alpha_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/alpha\"\n\n[[mounts]]\nsrc = \"/tmp/alpha\"\ndst = \"/workspace/alpha\"\n";
+    let broken_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/broken\"\n";
+    std::fs::write(&paths.config_file, global_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("alpha.toml"), alpha_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("broken.toml"), broken_before).unwrap();
+    let workspace_tree_before = workspace_tree_bytes(&paths);
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+
+    assert!(err.to_string().contains("mount"), "{err:#}");
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(workspace_tree_bytes(&paths), workspace_tree_before);
+}
+
+#[test]
+fn load_split_config_leaves_semantically_invalid_migration_unchanged() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let global_before = b"version = \"v1alpha10\"\n\n[account_bindings]\nclaude = \"missing\"\n";
+    let workspace_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/prod\"\n";
+    std::fs::write(&paths.config_file, global_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("prod.toml"), workspace_before).unwrap();
+    let workspace_tree_before = workspace_tree_bytes(&paths);
+
+    let err = load_split_config(
+        &paths,
+        Some(String::from_utf8_lossy(global_before).into_owned()),
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("unknown account"), "{err:#}");
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(workspace_tree_bytes(&paths), workspace_tree_before);
+    assert_no_staged_writes(&paths);
+}
+
+#[test]
+fn failed_split_syntax_leaves_global_and_workspace_files_unchanged() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let global_before = b"version = \"v1alpha10\"\n";
+    let alpha_before = b"version = \"v1alpha8\"\nworkdir = \"/workspace/alpha\"\n\n[[mounts]]\nsrc = \"/tmp/alpha\"\ndst = \"/workspace/alpha\"\n";
+    let broken_before = b"version = \"v1alpha8\"\nworkdir = [\n";
+    std::fs::write(&paths.config_file, global_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("alpha.toml"), alpha_before).unwrap();
+    std::fs::write(paths.workspaces_dir.join("broken.toml"), broken_before).unwrap();
+    let workspace_tree_before = workspace_tree_bytes(&paths);
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+
+    assert!(err.to_string().contains("parsing"), "{err:#}");
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(workspace_tree_bytes(&paths), workspace_tree_before);
 }
 
 #[test]
@@ -571,12 +823,12 @@ fn config_needs_split_migration_returns_false_for_legacy_without_workspaces() {
 }
 
 #[test]
-fn config_needs_split_migration_returns_false_for_versioned_with_workspaces() {
-    // Versioned config with a leftover `[workspaces.X]` table: split
-    // migration is skipped here because `load_split_config` will
-    // `std::mem::take` and split-migrate the workspaces.
+fn config_needs_split_migration_returns_true_for_versioned_with_workspaces() {
+    // Versioned config with a leftover `[workspaces.X]` table still needs the
+    // in-memory split path, so a later split conflict cannot leave the global
+    // file partially migrated.
     let raw = "version = \"v1alpha1\"\n\n[workspaces.prod]\nworkdir = \"/workspace/prod\"\n";
-    assert!(!config_needs_split_migration(raw).unwrap());
+    assert!(config_needs_split_migration(raw).unwrap());
 }
 
 #[test]
@@ -589,6 +841,39 @@ fn config_needs_split_migration_returns_true_for_legacy_with_workspaces() {
 fn config_needs_split_migration_returns_false_for_empty_workspaces_table() {
     let raw = "[workspaces]\n";
     assert!(!config_needs_split_migration(raw).unwrap());
+}
+
+fn workspace_tree_bytes(paths: &JackinPaths) -> Option<Vec<(String, Vec<u8>)>> {
+    let entries = match std::fs::read_dir(&paths.workspaces_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(error) => panic!("reading workspace tree: {error}"),
+    };
+    let mut files = entries
+        .map(|entry| {
+            let entry = entry.unwrap();
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                std::fs::read(entry.path()).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    Some(files)
+}
+
+fn assert_no_staged_writes(paths: &JackinPaths) {
+    for directory in [&paths.config_dir, &paths.workspaces_dir] {
+        let entries = std::fs::read_dir(directory).unwrap();
+        for entry in entries {
+            let entry = entry.unwrap();
+            assert!(
+                !entry.file_name().to_string_lossy().contains(".tmp."),
+                "staged file leaked: {}",
+                entry.path().display()
+            );
+        }
+    }
 }
 
 #[test]
@@ -926,6 +1211,30 @@ fn disc_read_only_newer_version_is_typed_and_sanitized() {
         format!("{:?}", snapshot.diagnostics)
             .find(temp.path().to_str().unwrap())
             .is_none()
+    );
+}
+
+#[test]
+fn disc_read_only_newer_workspace_version_preserves_diagnostic() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("future.toml"),
+        r#"version = "v99alpha1"
+workdir = "/workspace/future"
+"#,
+    )
+    .unwrap();
+
+    let snapshot = load_read_only_config_snapshot(&paths).unwrap();
+
+    assert_eq!(
+        snapshot.diagnostics,
+        vec![ConfigSourceDiagnostic {
+            scope: ConfigSourceScope::Workspace("future".to_owned()),
+            issue: ConfigSourceIssue::UnsupportedVersion,
+        }]
     );
 }
 

@@ -49,12 +49,23 @@ count. Provider-supplied `Retry-After` is preserved; otherwise one persisted loc
 backoff is shared across processes.
 
 The global broker socket, account catalog, credential sources, and state tree are
-never mounted into a container. Each Capsule receives only its isolated socket
-directory and a relay at `/jackin/run/usage.sock`; the relay's immutable allowlist is
-derived from credential capabilities actually forwarded at launch. Credentials
-created only inside a Capsule are not monitored until a separate secure-enrollment
-design exists. The former writable `/jackin/usage-shared` snapshot/cooldown/lock tree
-is removed and is not a fallback.
+never mounted into a container. Each Capsule receives a local relay at
+`/jackin/run/usage.sock`; the relay's immutable allowlist is derived from credential
+capabilities actually forwarded at launch. Credentials created only inside a Capsule
+are not monitored until a separate secure-enrollment design exists. The former
+writable `/jackin/usage-shared` snapshot/cooldown/lock tree is removed and is not a
+fallback.
+
+Docker bind-mounts the per-container host socket directory at `/jackin/run` and
+starts the usage relay through a guest-local stdio proxy. The proxy treats the
+Docker Capsule daemon as `(pid=1, uid=0, gid=0)` unless launch metadata overrides
+`JACKIN_CAPSULE_SUPERVISOR_PID`. Apple Container does not preserve guest peer
+credentials across a host Unix-socket mount, so it file-mounts launch config (and
+`host.sock` when on-demand credentials exist) and uses the same guest-local proxy
+over a host-started stdio tunnel. Apple launch metadata identifies the Capsule
+supervisor as `(pid=2, uid=0, gid=0)` under `vminitd` PID 1 (entrypoint-after-init
+contract, not a runtime probe). Other root peers are rejected before the allowlist
+is consulted.
 
 The Docker relay proxy does not treat container root as the supervisor: launch-wide
 capabilities require the kernel peer tuple `(pid=1, uid=0, gid=0)`, which is the
@@ -84,7 +95,7 @@ What rule blocks:
 - Per-container scratch paths under `/tmp/jackin*` or `/var/run/jackin*`. jackin-owned and ephemeral goes under `/jackin/run/`.
 - Hard-coded paths in role-specific scripts bypassing convention because "just for one role." Roles author files under `/home/agent/` or in workspace; jackin-owned content stays under `/jackin/`.
 
-**Host-side state is separate convention.** Container and host roots deliberately parallel but not identical — host follows operator-home dotfile customs (`~/.jackin/`), container follows single-root `/jackin/` convention. Bind-mount mapping `~/.jackin/sockets/<container>/` to `/jackin/run/` is canonical shape.
+**Host-side state is separate convention.** Container and host roots deliberately parallel but not identical — host follows operator-home dotfile customs (`~/.jackin/`), container follows single-root `/jackin/` convention. Docker bind-mounts `~/.jackin/sockets/<container>/` to `/jackin/run/`. Apple Container file-mounts only the launch config and any host sockets that must exist before `container run`.
 
 Wanting new container-side path — place under `/jackin/` first, then justify in PR description if real constraint forces exception (e.g. third-party tool hard-coding `/run/<thing>` that can't be relocated). PRs introducing top-level jackin-owned path outside `/jackin/` without exception note rejected at review and path moved.
 

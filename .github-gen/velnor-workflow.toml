@@ -1,25 +1,26 @@
-schema = 2
+schema = 1
 
 [generator]
 repository = "jackin-project/jackin"
 # D19 pin: immutable Velnor source for this generated tree. The matching
-# published runtime is velnor-workflow-runtime-v1-8b96d5108550dfa6.
-revision = "0dc79895ff1c5e88be7c3822c437e1c5b5282e12"
+# published runtime is velnor-workflow-runtime-v1-af140ad4d8d84326
+# (closure af140ad4d8d84326d5676f626ce4261fd7914ac41d521d851484dcb8253270e7).
+revision = "4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
 
+# Runner placement: keep both backends for manual dispatch; automatic events
+# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
+# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
 [workflow]
-providers = ["github-hosted", "velnor"]
-automatic_providers = ["github-hosted"]
-default_dispatch_providers = ["github-hosted"]
-default_branch = "main"
-
-[workflow.selectors.github-hosted]
-runs_on = ["ubuntu-26.04"]
-
-[workflow.selectors.velnor]
-runs_on = ["self-hosted", "velnor-target-mvp"]
+runners = "github"
+automatic = "github"
+default_dispatch_runner = "github"
+automatic_lanes = "github"
+github_runner = "ubuntu-26.04"
+macos_runner = "macos-26"
+velnor_labels = ["self-hosted", "velnor-target-mvp"]
 
 [policy]
 ruleset_required_status_checks = ["ci-required"]
@@ -42,6 +43,7 @@ schedule = "0 6 * * *"
 token = "RENOVATE_TOKEN"
 config = "renovate.json"
 validate = true
+lanes = "github"
 author = "Renovate Bot <renovate@whitesourcesoftware.com>"
 signoff = true
 
@@ -138,16 +140,6 @@ branches = ["main"]
 # velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived
 # `docker build` is self-contained.
-#
-# The rust-jackin closure is too large for the GitHub-hosted runner's MBX
-# object-import staging quota: the observed restore was a 2.07 GiB archive and
-# `mbx cache import` expands it under `/tmp` before adopting objects. Keep the
-# useful Cargo registry/Git source cache, but opt this one unit out of the
-# unsafe MBX object transport. Other Rust units retain MBX.
-[[units]]
-id = "rust-jackin"
-mbx = false
-
 [[units]]
 id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
@@ -167,7 +159,7 @@ root = "native"
 watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
 ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-platform = "macos-arm64"
+capabilities = ["xcframework"]
 depends_on = ["rust-jackin-usage-ffi"]
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
@@ -181,7 +173,7 @@ mise_tools = ["rust", "cargo-binstall"]
 # the scanned base and overrides the platform requirement only.
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
-platform = "macos-arm64"
+capabilities = ["xcode"]
 
 # Desktop release (L10): tag-triggered tasks release over the canonical
 # desktop mise tasks. Each event runs exactly one self-contained job
@@ -237,55 +229,3 @@ EXPECTED_TEAM_ID = "${{ vars.JACKIN_DEVELOPER_ID_TEAM_ID }}"
 [[declare]]
 primitive = "release"
 file = "release.yml"
-
-[[declare]]
-primitive = "package-release"
-file = "preview.yml"
-[declare.args]
-build_tasks = ["release-preview-package"]
-package_dir = "dist/package"
-manifest_schema = "velnor.package-release.v1"
-source_repository = "jackin-project/jackin"
-source_ref = "refs/heads/main"
-payloads = [
-  "jackin-aarch64-apple-darwin.tar.gz",
-  "jackin-x86_64-apple-darwin.tar.gz",
-  "jackin-aarch64-unknown-linux-gnu.tar.gz",
-  "jackin-x86_64-unknown-linux-gnu.tar.gz",
-  "jackin-capsule-aarch64-unknown-linux-gnu.tar.gz",
-  "jackin-capsule-x86_64-unknown-linux-gnu.tar.gz",
-]
-supporting_assets = [
-  "jackin-aarch64-apple-darwin.tar.gz.sha256",
-  "jackin-aarch64-apple-darwin.tar.gz.bundle",
-  "jackin-aarch64-apple-darwin.tar.gz.sbom.json",
-  "jackin-x86_64-apple-darwin.tar.gz.sha256",
-  "jackin-x86_64-apple-darwin.tar.gz.bundle",
-  "jackin-x86_64-apple-darwin.tar.gz.sbom.json",
-  "jackin-aarch64-unknown-linux-gnu.tar.gz.sha256",
-  "jackin-aarch64-unknown-linux-gnu.tar.gz.bundle",
-  "jackin-aarch64-unknown-linux-gnu.tar.gz.sbom.json",
-  "jackin-x86_64-unknown-linux-gnu.tar.gz.sha256",
-  "jackin-x86_64-unknown-linux-gnu.tar.gz.bundle",
-  "jackin-x86_64-unknown-linux-gnu.tar.gz.sbom.json",
-  "jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256",
-  "jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.bundle",
-  "jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sbom.json",
-  "jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256",
-  "jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.bundle",
-  "jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sbom.json",
-  "SHA256SUMS",
-  "capsule-manifest.json",
-  "capsule-manifest.json.bundle",
-]
-channel = "preview"
-release_tag = "preview"
-github_release_type = "prerelease"
-publish_environment = "github-preview"
-release_title_prefix = "Preview"
-consumer_repository = "jackin-project/homebrew-tap"
-consumer_branch = "main"
-updater = "./scripts/package-update.sh"
-updater_token_secret = "TAP_TOKEN"
-update_commit_message = "chore: update verified jackin preview"
-concurrency_group = "jackin-package-release-preview"

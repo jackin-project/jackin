@@ -4,9 +4,6 @@
 //! Per-container allowlisted relay to the host-only usage broker.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::os::unix::ffi::OsStrExt as _;
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -16,8 +13,8 @@ use jackin_core::{JackinPaths, UsageCredentialEnvName, WorkspaceName};
 use jackin_protocol::CapsuleConfig;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
-    UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCoordinationError,
-    UsageCoordinationErrorKind, UsageRelayTunnelRequest, UsageRelayTunnelResponse,
+    UsageBrokerOperation, UsageBrokerResponse, UsageCoordinationError, UsageCoordinationErrorKind,
+    UsageRelayTunnelRequest, UsageRelayTunnelResponse,
 };
 use jackin_usage::coordinator::UsageCapabilitySet;
 use jackin_usage::host::{
@@ -30,10 +27,8 @@ use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
     AsyncWriteExt as _, BufReader,
 };
-use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, oneshot};
 
-const RELAY_SOCKET: &str = "usage.sock";
 const TUNNEL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub(crate) fn docker_runtime_mount(socket_dir: &Path) -> Result<String> {
@@ -53,9 +48,9 @@ pub(crate) fn apple_runtime_mount(
     socket_dir: PathBuf,
 ) -> crate::apple_container_client::AppleContainerMount {
     crate::apple_container_client::AppleContainerMount::new(
-        socket_dir,
-        jackin_core::container_paths::RUN_DIR,
-        false,
+        socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+        jackin_protocol::CAPSULE_CONFIG_PATH,
+        true,
     )
 }
 
@@ -136,8 +131,6 @@ pub struct UsageRelayLaunch<'a> {
     pub launch_config: &'a CapsuleConfig,
     /// Exact credential sources proven to enter this Capsule.
     pub forwarded_sources: ForwardedUsageSources,
-    /// Per-container host socket directory already mounted at `/jackin/run`.
-    pub socket_dir: PathBuf,
 }
 
 /// Resolved Capsule launch membership used by usage presentation.
@@ -164,7 +157,6 @@ pub fn resolved_launch_usage_inventory(config: &CapsuleConfig) -> ResolvedLaunch
 /// Session-lifetime relay ownership. Drop revokes the socket task.
 pub struct UsageRelayGuard {
     task: Option<tokio::task::JoinHandle<()>>,
-    socket_path: Option<PathBuf>,
     shutdown: Option<oneshot::Sender<()>>,
 }
 
@@ -196,9 +188,6 @@ impl Drop for UsageRelayGuard {
             let _sent = shutdown.send(());
         } else if let Some(task) = &self.task {
             task.abort();
-        }
-        if let Some(socket_path) = &self.socket_path {
-            drop(fs::remove_file(socket_path));
         }
     }
 }
@@ -362,71 +351,9 @@ pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mu
         );
     }
 }
-
-/// Resolve global discovery, ensure the host broker, then start one scoped relay.
-/// Broker activation failure is returned; a dead fallback client is not a
-/// valid production relay authority.
-pub(crate) async fn prepare_for_container(
-    launch: UsageRelayLaunch<'_>,
-) -> Result<(UsageRelayGuard, CanonicalLaunchUsageCapabilities)> {
-    let paths = launch.paths.clone();
-    let workspace_name = launch.workspace_name.map(str::to_owned);
-    let role_key = launch.role_key.to_owned();
-    let launch_config = launch.launch_config;
-    let forwarded_sources = launch.forwarded_sources;
-    let socket_dir = launch.socket_dir;
-    let socket_path = socket_dir.join(RELAY_SOCKET);
-    if socket_path.as_os_str().as_bytes().len() >= crate::runtime::attach::MAX_UNIX_SOCKET_PATH_LEN
-    {
-        return Ok((
-            UsageRelayGuard {
-                task: None,
-                socket_path: Some(socket_path),
-                shutdown: None,
-            },
-            CanonicalLaunchUsageCapabilities::default(),
-        ));
-    }
-    let prepared = jackin_telemetry::spawn::joined_blocking(move || {
-        prepare_broker_client(
-            &paths,
-            workspace_name.as_deref(),
-            &role_key,
-            &forwarded_sources,
-        )
-    })
-    .await
-    .context("usage broker preparation task panicked")?;
-    let (client, capabilities, canonical_launch_usage_capabilities) =
-        prepared.context("usage broker activation failed")?;
-    if capabilities.is_empty() {
-        return Ok((
-            UsageRelayGuard {
-                task: None,
-                socket_path: Some(socket_path),
-                shutdown: None,
-            },
-            CanonicalLaunchUsageCapabilities::default(),
-        ));
-    }
-    let peer_capabilities =
-        peer_capabilities_for_launch(launch_config, &canonical_launch_usage_capabilities)?;
-    if let Some(parent) = socket_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("creating usage relay directory {}", parent.display()))?;
-        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
-    }
-    Ok((
-        start_guard(socket_path, client, capabilities, peer_capabilities)?,
-        canonical_launch_usage_capabilities,
-    ))
-}
-
-/// Resolve one Docker Capsule's broker and immutable capability allowlist.
-/// The transport starts after `docker run`, through a host-owned stdio tunnel.
-pub async fn prepare_for_docker_container(
-    launch: UsageRelayLaunch<'_>,
-) -> Result<PreparedUsageRelay> {
+/// Resolve global discovery and ensure the host broker for one stdio relay.
+/// Broker startup failure remains fail-closed through an unavailable client.
+pub async fn prepare_for_stdio_tunnel(launch: UsageRelayLaunch<'_>) -> Result<PreparedUsageRelay> {
     let paths = launch.paths.clone();
     let workspace_name = launch.workspace_name.map(str::to_owned);
     let role_key = launch.role_key.to_owned();
@@ -472,6 +399,33 @@ pub fn start_docker_tunnel(
     )
 }
 
+const CAPSULE_SUPERVISOR_USER: &str = "0:0";
+
+/// Start the Apple Container stdio tunnel after the Capsule is running.
+pub fn start_apple_tunnel(
+    container_name: &str,
+    prepared: PreparedUsageRelay,
+) -> Result<UsageRelayGuard> {
+    start_tunnel_with_command(
+        prepared.broker,
+        prepared.capabilities,
+        "container",
+        apple_tunnel_args(container_name),
+    )
+}
+
+fn apple_tunnel_args(container_name: &str) -> Vec<String> {
+    vec![
+        "exec".to_owned(),
+        "-i".to_owned(),
+        "--user".to_owned(),
+        CAPSULE_SUPERVISOR_USER.to_owned(),
+        container_name.to_owned(),
+        jackin_core::container_paths::CAPSULE_BIN.to_owned(),
+        "usage-relay-proxy".to_owned(),
+    ]
+}
+
 /// Test seam for a real container proxy command using production tunnel framing.
 #[doc(hidden)]
 pub fn start_docker_tunnel_with_command(
@@ -480,20 +434,25 @@ pub fn start_docker_tunnel_with_command(
     capabilities: Vec<UsageAccountCapability>,
     proxy_command: &[String],
 ) -> Result<UsageRelayGuard> {
+    let mut args = vec!["exec".to_owned(), "-i".to_owned()];
+    args.push(container_name.to_owned());
+    args.extend_from_slice(proxy_command);
+    start_tunnel_with_command(broker, capabilities, "docker", args)
+}
+
+fn start_tunnel_with_command(
+    broker: UsageBrokerClient,
+    capabilities: Vec<UsageAccountCapability>,
+    program: &str,
+    args: Vec<String>,
+) -> Result<UsageRelayGuard> {
     if capabilities.is_empty() {
         return Ok(UsageRelayGuard {
             task: None,
-            socket_path: None,
             shutdown: None,
         });
     }
-    let mut args = vec![
-        "exec".to_owned(),
-        "-i".to_owned(),
-        container_name.to_owned(),
-    ];
-    args.extend_from_slice(proxy_command);
-    let request = jackin_process::ExecRequest::new("docker", args)
+    let request = jackin_process::ExecRequest::new(program, args)
         .stdin_mode(jackin_process::StdioMode::Capture)
         .stdout_mode(jackin_process::StdioMode::Capture)
         .stderr_mode(jackin_process::StdioMode::Inherit);
@@ -543,22 +502,7 @@ fn start_tunnel_process(
     });
     Ok(UsageRelayGuard {
         task: Some(task),
-        socket_path: None,
         shutdown: Some(shutdown),
-    })
-}
-
-fn start_guard(
-    socket_path: PathBuf,
-    client: UsageBrokerClient,
-    capabilities: Vec<UsageAccountCapability>,
-    peer_capabilities: RelayPeerCapabilities,
-) -> Result<UsageRelayGuard> {
-    let task = start(socket_path.clone(), client, capabilities, peer_capabilities)?;
-    Ok(UsageRelayGuard {
-        task: Some(task),
-        socket_path: Some(socket_path),
-        shutdown: None,
     })
 }
 
@@ -627,136 +571,6 @@ fn canonical_capabilities_for_launch(
                     .then_some(((account_id.clone(), surface_id.clone()), capability))
             })
             .collect(),
-    }
-}
-
-/// Start a relay at an explicit per-container socket path.
-pub fn start(
-    socket_path: PathBuf,
-    broker: UsageBrokerClient,
-    capabilities: Vec<UsageAccountCapability>,
-    peer_capabilities: BTreeMap<(u32, u32), UsageAccountCapability>,
-) -> Result<tokio::task::JoinHandle<()>> {
-    let allowlist = UsageCapabilitySet::new(capabilities);
-    drop(fs::remove_file(&socket_path));
-    let listener = UnixListener::bind(&socket_path)
-        .with_context(|| format!("binding scoped usage relay at {}", socket_path.display()))?;
-    fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
-    Ok(jackin_telemetry::spawn::spawn_stream(
-        "usage_relay.connection",
-        async move {
-            if let Err(_error) = run_listener(listener, broker, allowlist, peer_capabilities).await
-            {
-                let _recorded = jackin_telemetry::record_error(
-                    jackin_telemetry::schema::enums::ErrorType::RpcError,
-                );
-            }
-        },
-    ))
-}
-
-async fn run_listener(
-    listener: UnixListener,
-    broker: UsageBrokerClient,
-    allowlist: UsageCapabilitySet,
-    peer_capabilities: RelayPeerCapabilities,
-) -> Result<()> {
-    loop {
-        let (stream, _) = listener.accept().await?;
-        let broker = broker.clone();
-        let allowlist = allowlist.clone();
-        let peer_capabilities = peer_capabilities.clone();
-        drop(jackin_telemetry::spawn::spawn_stream(
-            "usage_relay.request",
-            async move {
-                drop(handle_connection(stream, broker, allowlist, peer_capabilities).await);
-            },
-        ));
-    }
-}
-
-async fn handle_connection(
-    stream: UnixStream,
-    broker: UsageBrokerClient,
-    allowlist: UsageCapabilitySet,
-    peer_capabilities: RelayPeerCapabilities,
-) -> Result<()> {
-    let peer = stream
-        .peer_cred()
-        .ok()
-        .map(|credentials| (credentials.uid(), credentials.gid()));
-    let (reader, mut writer) = stream.into_split();
-    let mut bytes = Vec::new();
-    let mut reader = BufReader::new(reader)
-        .take(u64::try_from(USAGE_BROKER_MAX_FRAME_BYTES).unwrap_or(u64::MAX) + 1);
-    let read = reader.read_until(b'\n', &mut bytes).await?;
-    let response =
-        if read == 0 || read > USAGE_BROKER_MAX_FRAME_BYTES || bytes.last() != Some(&b'\n') {
-            error_response(UsageCoordinationErrorKind::ProtocolMismatch)
-        } else {
-            bytes.pop();
-            match serde_json::from_slice::<UsageBrokerRequest>(&bytes) {
-                Ok(request)
-                    if request.protocol_version == USAGE_BROKER_PROTOCOL_VERSION
-                        && request.build_id == env!("CARGO_PKG_VERSION") =>
-                {
-                    if peer_authorized(peer, &request.operation, &allowlist, &peer_capabilities) {
-                        dispatch(request.operation, broker, allowlist).await
-                    } else {
-                        error_response(UsageCoordinationErrorKind::Unauthorized)
-                    }
-                }
-                _ => error_response(UsageCoordinationErrorKind::ProtocolMismatch),
-            }
-        };
-    let mut response = serde_json::to_vec(&response)?;
-    anyhow::ensure!(
-        response.len() < USAGE_BROKER_MAX_FRAME_BYTES,
-        "response too large"
-    );
-    response.push(b'\n');
-    writer.write_all(&response).await?;
-    Ok(())
-}
-
-fn peer_authorized(
-    peer: Option<(u32, u32)>,
-    operation: &UsageBrokerOperation,
-    allowlist: &UsageCapabilitySet,
-    peer_capabilities: &RelayPeerCapabilities,
-) -> bool {
-    let Some(capability) = operation_capability(operation) else {
-        return false;
-    };
-    let Some((uid, gid)) = peer else {
-        return false;
-    };
-    // This listener is used only by the Apple-container backend. Docker
-    // launches the capsule-local proxy instead, where the supervisor is
-    // authenticated by its kernel PID. Apple launches the capsule supervisor
-    // as root:root and does not provision sudo for session identities, so keep
-    // that backend-specific launch identity explicit rather than treating any
-    // UID 0 as a generic relay authority.
-    let is_apple_supervisor = (uid, gid) == (0, 0);
-    allowlist.authorize(capability).is_ok()
-        && (is_apple_supervisor || peer_capabilities.get(&(uid, gid)) == Some(capability))
-}
-
-fn operation_capability(operation: &UsageBrokerOperation) -> Option<&UsageAccountCapability> {
-    match operation {
-        UsageBrokerOperation::CurrentForCapability { capability }
-        | UsageBrokerOperation::RefreshForCapability { capability, .. }
-        | UsageBrokerOperation::JoinForCapability { capability, .. }
-        | UsageBrokerOperation::Current { capability }
-        | UsageBrokerOperation::Refresh { capability, .. }
-        | UsageBrokerOperation::Join { capability, .. } => Some(capability),
-        UsageBrokerOperation::CurrentProjection
-        | UsageBrokerOperation::RequestRefresh { .. }
-        | UsageBrokerOperation::JoinPublication { .. }
-        | UsageBrokerOperation::ReconcileCatalog { .. }
-        | UsageBrokerOperation::CurrentProjectionForSurface
-        | UsageBrokerOperation::RequestRefreshForSurface { .. }
-        | UsageBrokerOperation::JoinPublicationForSurface { .. } => None,
     }
 }
 

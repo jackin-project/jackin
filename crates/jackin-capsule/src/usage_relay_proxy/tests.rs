@@ -8,7 +8,6 @@ use jackin_protocol::usage_broker::{
 };
 use jackin_protocol::{CapsuleConfig, SessionIdentity};
 use std::collections::BTreeMap;
-use std::os::unix::fs::MetadataExt as _;
 use tokio::io::BufReader;
 
 #[tokio::test]
@@ -19,10 +18,22 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
     let (proxy_output, host_request_reader) = tokio::io::duplex(64 * 1024);
     let proxy_socket = socket.clone();
     let shared = capability("shared");
-    let authorization =
-        UsageRelayAuthorization::for_peer(current_peer(temp.path()), shared.clone());
+    let peer = PeerIdentity {
+        pid: Some(9),
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let authorization = UsageRelayAuthorization::for_peer(peer, shared.clone());
     let proxy = tokio::spawn(async move {
-        run_at(&proxy_socket, authorization, proxy_input, proxy_output).await
+        run_at_with_peer(
+            &proxy_socket,
+            authorization,
+            DEFAULT_CAPSULE_SUPERVISOR_PID,
+            Some(peer),
+            proxy_input,
+            proxy_output,
+        )
+        .await
     });
     wait_for_socket(&socket).await;
 
@@ -118,24 +129,28 @@ fn usage_relay_binds_session_peer_to_its_capability() {
         &UsageBrokerOperation::CurrentForCapability {
             capability: account_a,
         },
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
     ));
     assert!(!authorization.authorizes(
         Some(peer_a),
         &UsageBrokerOperation::CurrentForCapability {
             capability: account_b.clone(),
         },
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
     ));
     assert!(authorization.authorizes(
         Some(peer_b),
         &UsageBrokerOperation::CurrentForCapability {
             capability: account_b,
         },
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
     ));
     assert!(!authorization.authorizes(
         None,
         &UsageBrokerOperation::CurrentForCapability {
             capability: capability("account-a"),
         },
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
     ));
 }
 
@@ -159,14 +174,17 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
         capability: account,
     };
 
+    let apple_supervisor = Some(PeerIdentity {
+        pid: Some(2),
+        uid: 0,
+        gid: 0,
+    });
     assert!(!authorization.authorizes(
-        Some(PeerIdentity {
-            pid: Some(2),
-            uid: 0,
-            gid: 0,
-        }),
+        apple_supervisor,
         &operation,
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
     ));
+    assert!(authorization.authorizes(apple_supervisor, &operation, 2));
     assert!(!authorization.authorizes(
         Some(PeerIdentity {
             pid: None,
@@ -174,6 +192,7 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
             gid: 0,
         }),
         &operation,
+        2,
     ));
     assert!(!authorization.authorizes(
         Some(PeerIdentity {
@@ -182,6 +201,7 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
             gid: 1,
         }),
         &operation,
+        1,
     ));
     assert!(authorization.authorizes(
         Some(PeerIdentity {
@@ -190,6 +210,7 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
             gid: 0,
         }),
         &operation,
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
     ));
 }
 
@@ -225,6 +246,7 @@ fn usage_relay_rejects_host_only_catalog_reconciliation() {
             gid: 0,
         }),
         &operation,
+        DEFAULT_CAPSULE_SUPERVISOR_PID,
     ));
 }
 
@@ -232,15 +254,6 @@ fn capability(account_id: &str) -> UsageAccountCapability {
     UsageAccountCapability {
         account_id: account_id.to_owned(),
         surface_id: "claude".to_owned(),
-    }
-}
-
-fn current_peer(path: &Path) -> PeerIdentity {
-    let metadata = std::fs::metadata(path).unwrap();
-    PeerIdentity {
-        pid: Some(std::process::id()),
-        uid: metadata.uid(),
-        gid: metadata.gid(),
     }
 }
 
@@ -278,4 +291,76 @@ async fn wait_for_socket(socket: &Path) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     panic!("usage proxy socket was not created");
+}
+
+#[test]
+fn supervisor_peer_allows_only_exact_root_supervisor() {
+    assert!(!supervisor_peer_allows(2, None));
+    assert!(!supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 0,
+        }),
+    ));
+    assert!(!supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(3),
+            uid: 0,
+            gid: 0,
+        }),
+    ));
+    assert!(!supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(2),
+            uid: 2_001,
+            gid: 0,
+        }),
+    ));
+    assert!(!supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(2),
+            uid: 0,
+            gid: 1,
+        }),
+    ));
+    assert!(supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(2),
+            uid: 0,
+            gid: 0,
+        }),
+    ));
+    assert!(supervisor_peer_allows(
+        1,
+        Some(PeerIdentity {
+            pid: Some(1),
+            uid: 0,
+            gid: 0,
+        }),
+    ));
+    assert!(supervisor_peer_allows(
+        2,
+        Some(PeerIdentity {
+            pid: Some(9),
+            uid: 2_001,
+            gid: 2_001,
+        }),
+    ));
+}
+
+#[test]
+fn parse_supervisor_pid_defaults_and_rejects_invalid_values() {
+    assert_eq!(
+        parse_supervisor_pid(Err(std::env::VarError::NotPresent)).unwrap(),
+        DEFAULT_CAPSULE_SUPERVISOR_PID
+    );
+    assert_eq!(parse_supervisor_pid(Ok("2".to_owned())).unwrap(), 2);
+    let _zero = parse_supervisor_pid(Ok("0".to_owned())).unwrap_err();
+    let _garbage = parse_supervisor_pid(Ok("nope".to_owned())).unwrap_err();
 }

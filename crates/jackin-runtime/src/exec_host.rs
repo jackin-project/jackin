@@ -80,10 +80,10 @@ pub fn start(
 /// Start the host.sock listener for a named container.
 ///
 /// Resolves the per-container socket path under
-/// `<jackin_home>/sockets/<container>/host.sock` — the directory the launch
-/// path bind-mounts to `/jackin/run` — maps the operator's `exec_bindings`
-/// to the allowed-resolution set, and spawns the listener. Shared by both the
-/// Docker and apple-container launch paths.
+/// `<jackin_home>/sockets/<container>/host.sock`, maps the operator's
+/// `exec_bindings` to the allowed-resolution set, and spawns the listener.
+/// Docker uses this asynchronous bind because its runtime mount is a
+/// directory; Apple uses [`start_bound_for_container`] for its file mount.
 pub fn start_for_container(
     jackin_home: &Path,
     container_name: &str,
@@ -94,6 +94,50 @@ pub fn start_for_container(
         .join(container_name)
         .join("host.sock");
     start(sock_path, exec_bindings.to_vec())
+}
+
+/// Bind the host.sock listener before an Apple Container launch.
+///
+/// Apple Container requires a Unix socket to be mounted as an individual file;
+/// the source must therefore exist before `container run` inspects mounts.
+#[expect(
+    clippy::print_stderr,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub fn start_bound_for_container(
+    jackin_home: &Path,
+    container_name: &str,
+    exec_bindings: &[ExecBinding],
+) -> Result<tokio::task::JoinHandle<()>> {
+    let sock_path = jackin_home
+        .join("sockets")
+        .join(container_name)
+        .join("host.sock");
+    let open =
+        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
+    let listener = match bind_listener(&sock_path) {
+        Ok(listener) => listener,
+        Err(error) => {
+            jackin_telemetry::stream::complete_error(
+                open,
+                jackin_telemetry::schema::enums::ErrorType::IoError,
+            );
+            return Err(error);
+        }
+    };
+    jackin_telemetry::stream::complete_success(open);
+    let allowed_bindings = exec_bindings.to_vec();
+    Ok(jackin_telemetry::spawn::spawn_stream(
+        "exec_host.connection",
+        async move {
+            if run_bound_listener(listener, &allowed_bindings, CallerAuth::CapsuleDaemon)
+                .await
+                .is_err()
+            {
+                eprintln!("[jackin] warning: jackin-exec credential resolver unavailable");
+            }
+        },
+    ))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -138,6 +182,14 @@ async fn run_listener(
         }
     };
     jackin_telemetry::stream::complete_success(open);
+    run_bound_listener(listener, allowed_bindings, caller_auth).await
+}
+
+async fn run_bound_listener(
+    listener: UnixListener,
+    allowed_bindings: &[ExecBinding],
+    caller_auth: CallerAuth,
+) -> Result<()> {
     let _close = jackin_telemetry::stream::close_on_drop();
 
     loop {

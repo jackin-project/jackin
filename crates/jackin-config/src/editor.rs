@@ -19,12 +19,13 @@ use toml_edit::{DocumentMut, Item, Table};
 
 use crate::accounts::account_source_fingerprint;
 use crate::app_config::AppConfig;
-use crate::app_config::persist::{load_split_config_locked, validate_reserved_env_names};
+use crate::app_config::persist::{
+    load_config_contents, load_split_config_locked, validate_reserved_env_names,
+};
 use crate::auth::GithubAuthMode;
-use crate::migrations;
 use crate::persist::{
     ConfigWriteGuard, StagedWrite, acquire_config_write_lock, atomic_write, stage_atomic_write,
-    validate_workspace_file_stem,
+    stage_delete, validate_workspace_file_stem,
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
@@ -784,36 +785,63 @@ impl ConfigEditor {
     /// surface first-run discovery results (CLI report, Settings scan).
     pub fn open_detailed(paths: &JackinPaths) -> crate::ConfigResult<(Self, BootstrapReport)> {
         let lock = acquire_config_write_lock(&paths.config_file)?;
+        Self::open_with_lock_detailed(paths, lock)
+    }
+
+    pub(crate) fn open_with_lock(
+        paths: &JackinPaths,
+        lock: ConfigWriteGuard,
+    ) -> crate::ConfigResult<Self> {
+        Self::open_with_lock_detailed(paths, lock).map(|(editor, _)| editor)
+    }
+
+    fn open_with_lock_detailed(
+        paths: &JackinPaths,
+        lock: ConfigWriteGuard,
+    ) -> crate::ConfigResult<(Self, BootstrapReport)> {
         paths.ensure_base_dirs()?;
         recover_pending_publication(&paths.config_file)?;
         let mut report = BootstrapReport::default();
-        if !paths.config_file.exists() {
+        let initial_contents = if paths.config_file.exists() {
+            None
+        } else {
             let mut initial = AppConfig::default();
             initial.sync_builtin_agents();
             report = bootstrap_scan_accounts(&mut initial, &paths.home_dir);
             report.fresh_install = true;
             initial.bootstrap = Some(crate::BootstrapState::initialized());
             initial.validate_accounts()?;
-            atomic_write(&paths.config_file, &toml::to_string_pretty(&initial)?)?;
+            Some(toml::to_string_pretty(&initial)?)
+        };
+        let raw = match initial_contents.as_ref() {
+            Some(contents) => Some(contents.clone()),
+            None => load_config_contents(paths)?,
+        };
+        let mut loaded = load_split_config_locked(paths, raw)?;
+        if let Some(contents) = initial_contents.as_ref() {
+            loaded.add_pending_write(paths.config_file.clone(), contents.clone());
         }
-        migrations::migrate_config_file_if_needed_locked(&paths.config_file)?;
-        if has_fresh_install_marker(&paths.config_file)? {
+        if initial_contents.is_none() && has_fresh_install_marker(&paths.config_file)? {
             // Installer-created empty config: run the first scan exactly
-            // once, then clear the marker. The file is installer-shaped
-            // (no operator comments to preserve), so a typed round-trip
-            // write is safe.
-            let raw = std::fs::read_to_string(&paths.config_file)
-                .with_context(|| format!("reading {}", paths.config_file.display()))?;
-            let mut config = load_split_config_locked(paths, Some(raw))?;
-            report = bootstrap_scan_accounts(&mut config, &paths.home_dir);
+            // once. Preserve split workspaces while serializing only global
+            // config into the same migration transaction.
+            let config = loaded.config_mut();
+            let workspaces = std::mem::take(&mut config.workspaces);
+            report = bootstrap_scan_accounts(config, &paths.home_dir);
             report.fresh_install = true;
             config.bootstrap = Some(crate::BootstrapState::initialized());
             config.validate_accounts()?;
-            atomic_write(&paths.config_file, &toml::to_string_pretty(&config)?)?;
+            let contents = toml::to_string_pretty(config)?;
+            config.workspaces = workspaces;
+            loaded.add_pending_write(paths.config_file.clone(), contents);
         }
-        let raw = std::fs::read_to_string(&paths.config_file)
-            .with_context(|| format!("reading {}", paths.config_file.display()))?;
-        drop(load_split_config_locked(paths, Some(raw))?);
+        if loaded.has_pending_writes() {
+            // Match `validate_candidate`'s editor contract. Workspace geometry
+            // remains editable through create/edit; account and reserved-env
+            // semantics must pass before migration bytes are committed.
+            loaded.validate_for_editor()?;
+        }
+        drop(loaded.commit()?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw
@@ -1180,7 +1208,7 @@ impl ConfigEditor {
     ) -> crate::ConfigResult<AppConfig>
     where
         S: FnMut(&Path, &str) -> crate::ConfigResult<StagedWrite>,
-        C: FnMut(StagedWrite) -> crate::ConfigResult<()>,
+        C: FnMut(&mut StagedWrite) -> crate::ConfigResult<()>,
     {
         for name in self
             .workspace_docs
@@ -1208,18 +1236,6 @@ impl ConfigEditor {
             jackin_telemetry::schema::enums::ConfigOperation::Save,
             (|| {
                 std::fs::create_dir_all(&self.workspaces_dir)?;
-                for removed in &self.removed_workspaces {
-                    let path = self.workspace_file(removed);
-                    if let Ok(metadata) = std::fs::symlink_metadata(&path)
-                        && metadata.file_type().is_dir()
-                    {
-                        return Err(std::io::Error::other(format!(
-                            "cannot remove workspace directory {}",
-                            path.display()
-                        ))
-                        .into());
-                    }
-                }
                 let mut staged = Vec::with_capacity(self.workspace_docs.len() + 1);
                 staged.push(PendingWrite {
                     staged: stage(&self.path, &global_contents)?,
@@ -1229,6 +1245,13 @@ impl ConfigEditor {
                     staged.push(PendingWrite {
                         staged: stage(&target, &doc.to_string())?,
                     });
+                }
+
+                // Validate deletions before the publication journal claims them.
+                // The journal then owns their rollback and commit cleanup together
+                // with the global and workspace writes.
+                for removed in &self.removed_workspaces {
+                    drop(stage_delete(&self.workspace_file(removed))?);
                 }
 
                 let mut targets = BTreeSet::new();
@@ -1255,8 +1278,8 @@ impl ConfigEditor {
                     });
                 }
 
-                for pending in staged {
-                    if let Err(error) = commit(pending.staged) {
+                for mut pending in staged {
+                    if let Err(error) = commit(&mut pending.staged) {
                         return Err(match recover_pending_publication(&self.path) {
                             Ok(()) => error,
                             Err(recovery) => transaction_failure(error, recovery),

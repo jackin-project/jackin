@@ -19,6 +19,8 @@ pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVE
 pub const JACKIN_CONTAINER_NAME_ENV_NAME: &str = "JACKIN_CONTAINER_NAME";
 /// Stable instance id for the running container.
 pub const JACKIN_INSTANCE_ID_ENV_NAME: &str = "JACKIN_INSTANCE_ID";
+/// PID of the Capsule supervisor process authenticated by the usage relay.
+pub const JACKIN_CAPSULE_SUPERVISOR_PID_ENV_NAME: &str = "JACKIN_CAPSULE_SUPERVISOR_PID";
 /// Agent slug for the session (`claude`, `codex`, …).
 pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 /// Unique human-readable codename assigned to a Capsule tab at creation.
@@ -225,6 +227,7 @@ pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
     (JACKIN_CONTAINER_NAME_ENV_NAME, None),
     (JACKIN_INSTANCE_ID_ENV_NAME, None),
+    (JACKIN_CAPSULE_SUPERVISOR_PID_ENV_NAME, None),
     (JACKIN_AGENT_ENV_NAME, None),
     (JACKIN_AGENT_CODENAME_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),

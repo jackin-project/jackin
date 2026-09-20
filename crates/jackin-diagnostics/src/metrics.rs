@@ -57,6 +57,7 @@ pub fn incr_errors(_error_type: &str) {}
 struct TestRig {
     provider: opentelemetry_sdk::metrics::SdkMeterProvider,
     exporter: opentelemetry_sdk::metrics::InMemoryMetricExporter,
+    _installation: jackin_telemetry::MeterInstallation,
 }
 
 #[cfg(test)]
@@ -71,9 +72,13 @@ pub(crate) fn ensure_hot_path_test_rig() -> bool {
         let exporter = InMemoryMetricExporter::default();
         let reader = PeriodicReader::builder(exporter.clone()).build();
         let provider = SdkMeterProvider::builder().with_reader(reader).build();
-        jackin_telemetry::install(&provider.meter("jackin-telemetry-test"))
+        let installation = jackin_telemetry::install(&provider.meter("jackin-telemetry-test"))
             .expect("test meter installation");
-        TestRig { provider, exporter }
+        TestRig {
+            provider,
+            exporter,
+            _installation: installation,
+        }
     });
     true
 }

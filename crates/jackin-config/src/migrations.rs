@@ -393,7 +393,7 @@ pub(crate) fn migrate_workspace_file_if_needed_locked(path: &Path) -> crate::Con
         .map_err(ConfigError::telemetry_owned)
 }
 
-fn emit_migration_result(
+pub(crate) fn emit_migration_result(
     scope: &'static str,
     current: &'static str,
     migrations: &[MigrationStep],
@@ -473,12 +473,47 @@ pub fn migrate_file_if_needed(
     current_raw: &str,
     migrations: &[MigrationStep],
 ) -> crate::ConfigResult<Option<SchemaVersion>> {
+    migrate_file_contents_if_needed(path, label, current_raw, migrations).and_then(
+        |(contents, old_version)| {
+            if old_version.is_some() {
+                atomic_write(path, &contents)
+                    .with_context(|| format!("writing migrated {label} to {}", path.display()))?;
+            }
+            Ok(old_version)
+        },
+    )
+}
+
+/// Read and migrate one file without writing it.
+///
+/// The caller can validate and stage several migrated files before committing
+/// any of them, which is required for split configuration migrations.
+pub(crate) fn migrate_file_contents_if_needed(
+    path: &Path,
+    label: &str,
+    current_raw: &str,
+    migrations: &[MigrationStep],
+) -> crate::ConfigResult<(String, Option<SchemaVersion>)> {
     let raw =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let mut doc: DocumentMut = raw
         .parse()
         .with_context(|| format!("parsing {}", path.display()))?;
-    let old_version = doc_version(&doc, label)?;
+    let migrated_from = migrate_document_if_needed(&mut doc, label, current_raw, migrations)?;
+    if migrated_from.is_none() {
+        return Ok((raw, None));
+    }
+    Ok((doc.to_string(), migrated_from))
+}
+
+/// Migrate one parsed document without writing it.
+pub(crate) fn migrate_document_if_needed(
+    doc: &mut DocumentMut,
+    label: &str,
+    current_raw: &str,
+    migrations: &[MigrationStep],
+) -> crate::ConfigResult<Option<SchemaVersion>> {
+    let old_version = doc_version(doc, label)?;
     let current = parse_version(current_raw)?;
 
     if old_version > current {
@@ -490,9 +525,7 @@ pub fn migrate_file_if_needed(
         return Ok(None);
     }
 
-    apply_migrations(&mut doc, &old_version, &current, migrations, label)?;
-    atomic_write(path, &doc.to_string())
-        .with_context(|| format!("writing migrated {label} to {}", path.display()))?;
+    apply_migrations(doc, &old_version, &current, migrations, label)?;
     Ok(Some(old_version))
 }
 

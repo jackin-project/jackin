@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::os::unix::fs::MetadataExt as _;
-use std::path::Path;
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -259,7 +261,6 @@ async fn docker_relay_guard_requests_graceful_shutdown_before_detach() -> Result
     });
     let guard = UsageRelayGuard {
         task: Some(task),
-        socket_path: None,
         shutdown: Some(shutdown),
     };
 
@@ -305,7 +306,7 @@ async fn docker_relay_guard_closes_child_stdin_and_reaps_proxy() -> Result<()> {
 }
 
 #[test]
-fn usage_mount_uses_only_existing_runtime_directory_for_both_backends() {
+fn usage_mounts_preserve_backend_transport_contract() {
     let socket_dir = PathBuf::from("/host/jackin/sockets/fixture");
 
     let docker = docker_runtime_mount(&socket_dir).unwrap();
@@ -313,10 +314,31 @@ fn usage_mount_uses_only_existing_runtime_directory_for_both_backends() {
     assert!(!docker.contains("usage-shared"));
 
     let apple = apple_runtime_mount(socket_dir.clone());
-    assert_eq!(apple.source, socket_dir);
-    assert_eq!(apple.target, PathBuf::from("/jackin/run"));
-    assert!(!apple.readonly);
-    assert!(!apple.source.to_string_lossy().contains("usage-shared"));
+    assert_eq!(
+        apple.source,
+        socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME)
+    );
+    assert_eq!(
+        apple.target,
+        PathBuf::from(jackin_protocol::CAPSULE_CONFIG_PATH)
+    );
+    assert!(apple.readonly);
+}
+
+#[test]
+fn apple_usage_tunnel_executes_the_guest_proxy_as_the_supervisor() {
+    assert_eq!(
+        apple_tunnel_args("fixture"),
+        [
+            "exec",
+            "-i",
+            "--user",
+            "0:0",
+            "fixture",
+            "/jackin/runtime/jackin-capsule",
+            "usage-relay-proxy",
+        ]
+    );
 }
 
 #[test]
@@ -437,7 +459,7 @@ fn quota_view() -> FocusedUsageView {
 }
 
 #[tokio::test]
-async fn usage_relay_authorizes_only_exact_forwarded_account() {
+async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
     let temp = tempfile::tempdir().unwrap();
     let executor = Arc::new(CountingExecutor {
         calls: AtomicUsize::new(0),
@@ -449,66 +471,61 @@ async fn usage_relay_authorizes_only_exact_forwarded_account() {
         broker_executor,
     )
     .unwrap();
-    let socket = temp.path().join("usage.sock");
     let allowed = capability("allowed");
-    let denied = capability("denied");
-    let relay = start(
-        socket.clone(),
-        broker,
-        vec![allowed.clone()],
-        BTreeMap::from([(current_peer(temp.path()), allowed.clone())]),
-    )
-    .unwrap();
+    let allowlist = UsageCapabilitySet::new([allowed.clone()]);
 
-    let denied_response = send(
-        &socket,
-        UsageBrokerOperation::Refresh {
-            capability: denied,
-            observed_generation: 0,
-            force: true,
-        },
-    )
-    .await;
-    let UsageBrokerResponse::Error { error } = denied_response else {
-        panic!("denied capability returned state");
-    };
-    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
-
-    let denied_surface = send(
-        &socket,
+    let denied = dispatch(
         UsageBrokerOperation::RefreshForCapability {
             capability: capability("denied"),
             observed_generation: 0,
             force: true,
         },
+        broker.clone(),
+        allowlist.clone(),
     )
     .await;
-    let UsageBrokerResponse::Error { error } = denied_surface else {
-        panic!("denied surface returned state");
+    let UsageBrokerResponse::Error { error } = denied else {
+        panic!("denied capability returned state");
     };
     assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
-    let refresh = send(
-        &socket,
+    let unscoped = dispatch(
+        UsageBrokerOperation::RequestRefreshForSurface {
+            force: true,
+            observed_projection_id: None,
+        },
+        broker.clone(),
+        allowlist.clone(),
+    )
+    .await;
+    let UsageBrokerResponse::Error { error } = unscoped else {
+        panic!("unscoped projection returned state");
+    };
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    let refresh = dispatch(
         UsageBrokerOperation::RefreshForCapability {
             capability: allowed.clone(),
             observed_generation: 0,
             force: true,
         },
+        broker.clone(),
+        allowlist.clone(),
     )
     .await;
     let UsageBrokerResponse::State { state } = refresh else {
         panic!("allowed capability returned error");
     };
-    let terminal = send(
-        &socket,
+    let terminal = dispatch(
         UsageBrokerOperation::JoinForCapability {
             capability: allowed,
             generation: state.generation,
             timeout_ms: 2_000,
         },
+        broker,
+        allowlist,
     )
     .await;
     let UsageBrokerResponse::State { state } = terminal else {
@@ -516,115 +533,20 @@ async fn usage_relay_authorizes_only_exact_forwarded_account() {
     };
     assert_eq!(state.phase, UsageRefreshPhase::Completed);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
-    let metadata = fs::metadata(&socket).unwrap();
-    assert_eq!(metadata.mode() & 0o777, 0o600);
-    relay.abort();
-}
-
-#[tokio::test]
-async fn usage_relay_bind_failure_is_inactive_and_never_probes() {
-    let temp = tempfile::tempdir().unwrap();
-    let executor = Arc::new(CountingExecutor {
-        calls: AtomicUsize::new(0),
-    });
-    let concrete = Arc::clone(&executor);
-    let broker_executor: Arc<dyn UsageProviderExecutor> = concrete;
-    let broker = ensure_usage_broker_with_executor(
-        UsageBrokerConfig::for_data_dir(temp.path().join("data")),
-        broker_executor,
-    )
-    .unwrap();
-    let long_dir = temp.path().join("x".repeat(120));
-    fs::create_dir(&long_dir).unwrap();
-    let socket = long_dir.join("usage.sock");
-
-    let error = start_guard(
-        socket.clone(),
-        broker,
-        vec![capability("allowed")],
-        BTreeMap::new(),
-    )
-    .expect_err("relay bind failure must propagate");
-
-    assert!(error.to_string().contains("binding scoped usage relay"));
-    assert!(!socket.exists());
-    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
-}
-
-#[tokio::test]
-async fn usage_relay_impossible_socket_path_skips_discovery() {
-    let temp = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::resolve_with_env(temp.path(), None, None);
-    let socket_dir = temp.path().join("x".repeat(120));
-    let launch_config = CapsuleConfig::default();
-
-    let (guard, _) = prepare_for_container(UsageRelayLaunch {
-        paths: &paths,
-        workspace_name: Some("fixture"),
-        role_key: "role",
-        launch_config: &launch_config,
-        forwarded_sources: ForwardedUsageSources {
-            selected_account_ids: BTreeSet::new(),
-            selected_account_surfaces: BTreeMap::new(),
-            profile_surface_ids: BTreeSet::from(["claude".to_owned()]),
-            env_keys: BTreeSet::new(),
-        },
-        socket_dir,
-    })
-    .await
-    .unwrap();
-
-    assert!(guard.task.is_none());
-    assert!(!guard.socket_path.as_ref().unwrap().exists());
 }
 
 #[test]
-fn apple_usage_relay_supervisor_binding_is_root_root_only() {
-    let capability = capability("allowed");
-    let allowlist = UsageCapabilitySet::new(vec![capability.clone()]);
-    let peer_capabilities = BTreeMap::new();
-    let operation = UsageBrokerOperation::CurrentForCapability { capability };
-
-    assert!(peer_authorized(
-        Some((0, 0)),
-        &operation,
-        &allowlist,
-        &peer_capabilities,
-    ));
-    assert!(!peer_authorized(
-        Some((0, 1)),
-        &operation,
-        &allowlist,
-        &peer_capabilities,
-    ));
-    assert!(!peer_authorized(
-        None,
-        &operation,
-        &allowlist,
-        &peer_capabilities,
-    ));
-}
-
-fn current_peer(path: &Path) -> (u32, u32) {
-    let metadata = fs::metadata(path).unwrap();
-    (metadata.uid(), metadata.gid())
-}
-
-async fn send(socket: &Path, operation: UsageBrokerOperation) -> UsageBrokerResponse {
-    let mut stream = UnixStream::connect(socket).await.unwrap();
-    let request = UsageBrokerRequest {
-        protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
-        build_id: env!("CARGO_PKG_VERSION").to_owned(),
-        operation,
-    };
-    let mut bytes = serde_json::to_vec(&request).unwrap();
-    bytes.push(b'\n');
-    stream.write_all(&bytes).await.unwrap();
-    let mut response = Vec::new();
-    BufReader::new(stream)
-        .read_until(b'\n', &mut response)
-        .await
-        .unwrap();
-    response.pop();
-    serde_json::from_slice(&response).unwrap()
+fn empty_capabilities_do_not_start_a_tunnel_child() {
+    let temp = tempfile::tempdir().unwrap();
+    let broker = UsageBrokerConfig::for_data_dir(temp.path().join("data")).client();
+    let guard = start_apple_tunnel(
+        "fixture",
+        PreparedUsageRelay {
+            broker,
+            capabilities: vec![],
+            canonical_launch_usage_capabilities: CanonicalLaunchUsageCapabilities::default(),
+        },
+    )
+    .unwrap();
+    assert!(guard.task.is_none());
 }

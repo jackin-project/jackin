@@ -25,6 +25,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 
 const TUNNEL_CAPACITY: usize = 128;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(35);
+const DEFAULT_CAPSULE_SUPERVISOR_PID: u32 = 1;
 
 type Pending = Arc<Mutex<BTreeMap<u64, oneshot::Sender<UsageBrokerResponse>>>>;
 
@@ -34,8 +35,6 @@ struct PeerIdentity {
     uid: u32,
     gid: u32,
 }
-
-const CAPSULE_SUPERVISOR_PID: u32 = 1;
 
 /// Immutable capability binding loaded from the host-validated Capsule config.
 /// Session peers get exactly one capability through their kernel UID/GID; the
@@ -77,14 +76,19 @@ impl UsageRelayAuthorization {
         Ok(authorization)
     }
 
-    fn authorizes(&self, peer: Option<PeerIdentity>, operation: &UsageBrokerOperation) -> bool {
+    fn authorizes(
+        &self,
+        peer: Option<PeerIdentity>,
+        operation: &UsageBrokerOperation,
+        supervisor_pid: u32,
+    ) -> bool {
         let Some(capability) = operation_capability(operation) else {
             return false;
         };
         let Some(peer) = peer else {
             return false;
         };
-        if peer.uid == 0 && peer.gid == 0 && peer.pid == Some(CAPSULE_SUPERVISOR_PID) {
+        if peer.uid == 0 && peer.gid == 0 && peer.pid == Some(supervisor_pid) {
             return self.launch_capabilities.contains(capability);
         }
         self.by_peer.get(&(peer.uid, peer.gid)) == Some(capability)
@@ -132,9 +136,11 @@ pub(crate) async fn run() -> Result<()> {
     let config = crate::config::load().context("loading Capsule config for usage relay")?;
     let authorization = UsageRelayAuthorization::from_config(&config)
         .context("building usage relay session authorization")?;
+    let supervisor_pid = load_supervisor_pid()?;
     run_at(
         Path::new(jackin_core::container_paths::USAGE_SOCK),
         authorization,
+        supervisor_pid,
         tokio::io::stdin(),
         tokio::io::stdout(),
     )
@@ -144,6 +150,70 @@ pub(crate) async fn run() -> Result<()> {
 async fn run_at<R, W>(
     socket_path: &Path,
     authorization: UsageRelayAuthorization,
+    supervisor_pid: u32,
+    input: R,
+    output: W,
+) -> Result<()>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    run_at_with_peer(
+        socket_path,
+        authorization,
+        supervisor_pid,
+        None,
+        input,
+        output,
+    )
+    .await
+}
+
+fn load_supervisor_pid() -> Result<u32> {
+    parse_supervisor_pid(std::env::var(jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV))
+}
+
+fn parse_supervisor_pid(variable: Result<String, std::env::VarError>) -> Result<u32> {
+    let supervisor_pid = match variable {
+        Ok(value) => value.parse::<u32>().with_context(|| {
+            format!(
+                "invalid {} value {value:?}",
+                jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV
+            )
+        })?,
+        Err(std::env::VarError::NotPresent) => DEFAULT_CAPSULE_SUPERVISOR_PID,
+        Err(error) => return Err(error.into()),
+    };
+    anyhow::ensure!(
+        supervisor_pid > 0,
+        "Capsule supervisor PID must be positive"
+    );
+    Ok(supervisor_pid)
+}
+
+fn supervisor_peer_allows(supervisor_pid: u32, peer: Option<PeerIdentity>) -> bool {
+    let Some(peer) = peer else {
+        return false;
+    };
+    if peer.uid == 0 || peer.gid == 0 {
+        return peer.uid == 0 && peer.gid == 0 && peer.pid == Some(supervisor_pid);
+    }
+    true
+}
+
+fn peer_identity(stream: &UnixStream) -> Option<PeerIdentity> {
+    stream.peer_cred().ok().map(|credentials| PeerIdentity {
+        pid: credentials.pid().and_then(|pid| u32::try_from(pid).ok()),
+        uid: credentials.uid(),
+        gid: credentials.gid(),
+    })
+}
+
+async fn run_at_with_peer<R, W>(
+    socket_path: &Path,
+    authorization: UsageRelayAuthorization,
+    supervisor_pid: u32,
+    forced_peer: Option<PeerIdentity>,
     input: R,
     output: W,
 ) -> Result<()>
@@ -152,6 +222,14 @@ where
     W: AsyncWrite + Unpin + Send + 'static,
 {
     drop(std::fs::remove_file(socket_path));
+    if let Some(parent) = socket_path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "creating scoped usage socket directory {}",
+                parent.display()
+            )
+        })?;
+    }
     let listener = UnixListener::bind(socket_path)
         .with_context(|| format!("binding scoped usage socket at {}", socket_path.display()))?;
     #[cfg(unix)]
@@ -190,17 +268,19 @@ where
                 let requests = requests.clone();
                 let pending = Arc::clone(&pending);
                 let authorization = Arc::clone(&authorization);
-                let peer = stream.peer_cred().ok().map(|credentials| PeerIdentity {
-                    pid: credentials
-                        .pid()
-                        .and_then(|pid| u32::try_from(pid).ok()),
-                    uid: credentials.uid(),
-                    gid: credentials.gid(),
-                });
+                let peer = forced_peer.or_else(|| peer_identity(&stream));
                 let request_id = request_ids.fetch_add(1, Ordering::Relaxed);
                 drop(jackin_telemetry::spawn::spawn_stream(
                     "usage_relay.local_request",
-                    handle_local(stream, request_id, requests, pending, authorization, peer),
+                    handle_local(
+                        stream,
+                        request_id,
+                        requests,
+                        pending,
+                        authorization,
+                        supervisor_pid,
+                        peer,
+                    ),
                 ));
             }
             result = &mut reader => {
@@ -221,6 +301,7 @@ async fn handle_local(
     requests: mpsc::Sender<UsageRelayTunnelRequest>,
     pending: Pending,
     authorization: Arc<UsageRelayAuthorization>,
+    supervisor_pid: u32,
     peer: Option<PeerIdentity>,
 ) {
     let request = {
@@ -228,7 +309,10 @@ async fn handle_local(
         read_frame::<_, UsageBrokerRequest>(&mut reader).await
     };
     let response = match request {
-        Ok(request) if authorization.authorizes(peer, &request.operation) => {
+        Ok(request)
+            if supervisor_peer_allows(supervisor_pid, peer)
+                && authorization.authorizes(peer, &request.operation, supervisor_pid) =>
+        {
             let (response_tx, response_rx) = oneshot::channel();
             pending.lock().await.insert(request_id, response_tx);
             let tunneled = UsageRelayTunnelRequest {
@@ -315,6 +399,15 @@ fn protocol_response() -> UsageBrokerResponse {
         error: UsageCoordinationError {
             kind: UsageCoordinationErrorKind::ProtocolMismatch,
             message: "usage relay protocol mismatch".to_owned(),
+        },
+    }
+}
+
+fn unauthorized_response() -> UsageBrokerResponse {
+    UsageBrokerResponse::Error {
+        error: UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unauthorized,
+            message: "usage relay peer is not the Capsule supervisor".to_owned(),
         },
     }
 }
