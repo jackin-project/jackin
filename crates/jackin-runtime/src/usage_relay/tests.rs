@@ -379,7 +379,7 @@ fn hermetic_layout_never_starts_host_usage_discovery() {
     };
 
     let (_, capabilities, _) =
-        prepare_broker_client(&paths, Some("fixture"), "reviewer", &forwarded_sources);
+        prepare_broker_client(&paths, Some("fixture"), "reviewer", &forwarded_sources).unwrap();
 
     assert!(capabilities.is_empty());
     assert!(!paths.data_dir.exists());
@@ -538,14 +538,15 @@ async fn usage_relay_bind_failure_is_inactive_and_never_probes() {
     fs::create_dir(&long_dir).unwrap();
     let socket = long_dir.join("usage.sock");
 
-    let guard = start_guard(
+    let error = start_guard(
         socket.clone(),
         broker,
         vec![capability("allowed")],
         BTreeMap::new(),
-    );
+    )
+    .expect_err("relay bind failure must propagate");
 
-    assert!(guard.task.is_none());
+    assert!(error.to_string().contains("binding scoped usage relay"));
     assert!(!socket.exists());
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 }

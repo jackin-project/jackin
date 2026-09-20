@@ -155,14 +155,14 @@ impl ProjectionPublisher {
     }
 
     fn known_capabilities_locked(&self) -> Vec<UsageAccountCapability> {
+        let Ok(catalog) = self.catalog.lock() else {
+            return Vec::new();
+        };
         let known = self
             .known
             .lock()
             .map(|known| known.iter().cloned().collect::<Vec<_>>())
             .unwrap_or_default();
-        let Ok(catalog) = self.catalog.lock() else {
-            return Vec::new();
-        };
         catalog.as_ref().map_or(known.clone(), |catalog| {
             known
                 .into_iter()
@@ -178,60 +178,105 @@ impl ProjectionPublisher {
         entries: Vec<UsageCatalogEntry>,
         now_epoch: i64,
     ) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        self.reconcile_catalog_if_projection(None, catalog_revision, entries, now_epoch)
+    }
+
+    /// Replace the catalog only when the caller still owns the observed
+    /// publication lease. Every shared lock is acquired before durable or
+    /// coordinator mutation; the old envelope is restored if coordinator
+    /// reconciliation fails.
+    pub(crate) fn reconcile_catalog_if_projection(
+        &self,
+        expected_projection_id: Option<&str>,
+        catalog_revision: String,
+        entries: Vec<UsageCatalogEntry>,
+        now_epoch: i64,
+    ) -> Result<UsageProjectionV1, UsageCoordinationError> {
         let _catalog_lifecycle = self
             .catalog_lifecycle
             .lock()
             .map_err(|_| publisher_unavailable())?;
-        self.coordinator
-            .reconcile_catalog(entries.iter().cloned(), now_epoch)?;
-        let catalog = entries
-            .iter()
-            .map(|entry| (entry.capability.clone(), entry.revision.clone()))
-            .collect::<BTreeMap<_, _>>();
-        if let Ok(mut current) = self.catalog.lock() {
-            *current = Some(catalog.clone());
-        } else {
-            return Err(publisher_unavailable());
+        let mut current_catalog = self.catalog.lock().map_err(|_| publisher_unavailable())?;
+        let mut known = self.known.lock().map_err(|_| publisher_unavailable())?;
+        let mut published = self.published.lock().map_err(|_| publisher_unavailable())?;
+        let mut projection = self
+            .projection
+            .lock()
+            .map_err(|_| publisher_unavailable())?;
+        if expected_projection_id.is_some_and(|expected| expected != projection.projection_id) {
+            return Err(catalog_revision_conflict());
         }
-        if let Ok(mut known) = self.known.lock() {
-            known.retain(|capability| catalog.contains_key(capability));
-        } else {
-            return Err(publisher_unavailable());
+        let mut catalog = BTreeMap::new();
+        for entry in &entries {
+            if entry.revision.is_empty()
+                || catalog
+                    .insert(entry.capability.clone(), entry.revision.clone())
+                    .is_some()
+            {
+                return Err(publisher_corrupt_state());
+            }
         }
-        if let Ok(mut published) = self.published.lock() {
-            published.retain(|capability, _| catalog.contains_key(capability));
-        } else {
-            return Err(publisher_unavailable());
-        }
-        let Ok(mut projection) = self.projection.lock() else {
-            return Err(publisher_unavailable());
-        };
         let previous = projection.clone();
         let mut next = projection.clone();
-        retain_revoked_accounts(&mut next, &previous, &catalog);
+        retain_revoked_accounts(&mut next, &previous, &catalog, current_catalog.as_ref());
         next.discovery_revision = catalog_revision;
         next.broker_generation = next.broker_generation.saturating_add(1);
         next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
         next.generated_at_epoch = now_epoch;
         next.refresh_state = UsageProjectionRefreshStateV1::Idle;
         if next.validate().is_err() {
-            return Err(publisher_unavailable());
+            return Err(publisher_corrupt_state());
         }
+        let Ok(previous_envelope) = self.store.load() else {
+            return Err(publisher_unavailable());
+        };
         let envelope = ProjectionStateEnvelope {
             schema_version: 2,
             catalog_revision: next.discovery_revision.clone(),
             catalog: catalog_entries(&catalog),
             broker_instance_id: next.broker_instance_id.clone(),
             projection: next.clone(),
-            aliases: Vec::new(),
+            aliases: previous_envelope
+                .as_ref()
+                .map_or_else(Vec::new, |envelope| envelope.aliases.clone()),
             retry_deadline_epoch: None,
             success_deadline_epoch: None,
         };
         self.store
             .store(&envelope)
             .map_err(|_| publisher_unavailable())?;
+
+        if let Err(error) = self
+            .coordinator
+            .reconcile_catalog(entries.iter().cloned(), now_epoch)
+        {
+            let rollback = previous_envelope
+                .clone()
+                .unwrap_or_else(|| previous_envelope_for(&previous, current_catalog.as_ref()));
+            return match self.store.store(&rollback) {
+                Ok(()) => Err(error),
+                Err(_) => Err(publisher_unavailable()),
+            };
+        }
+
+        *current_catalog = Some(catalog.clone());
+        known.retain(|capability| catalog.contains_key(capability));
+        published.retain(|capability, _| catalog.contains_key(capability));
         *projection = next.clone();
         Ok(next)
+    }
+
+    /// Read one publication under the same boundary used for catalog
+    /// replacement and observed-capability admission.
+    pub(crate) fn current_projection(&self) -> Result<UsageProjectionV1, UsageCoordinationError> {
+        let _catalog_lifecycle = self
+            .catalog_lifecycle
+            .lock()
+            .map_err(|_| publisher_unavailable())?;
+        self.projection
+            .lock()
+            .map(|projection| projection.clone())
+            .map_err(|_| publisher_unavailable())
     }
 
     /// Merge every observed account's latest state and publish when anything
@@ -293,7 +338,7 @@ impl ProjectionPublisher {
         if let Ok(catalog) = self.catalog.lock()
             && let Some(catalog) = catalog.as_ref()
         {
-            retain_revoked_accounts(&mut next, &previous, catalog);
+            retain_revoked_accounts(&mut next, &previous, catalog, None);
         }
         next.broker_generation = next.broker_generation.saturating_add(1);
         next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
@@ -331,6 +376,7 @@ fn retain_revoked_accounts(
     projection: &mut UsageProjectionV1,
     previous: &UsageProjectionV1,
     catalog: &BTreeMap<UsageAccountCapability, String>,
+    previous_catalog: Option<&BTreeMap<UsageAccountCapability, String>>,
 ) {
     for provider in &mut projection.providers {
         provider.accounts.retain(|account| {
@@ -338,13 +384,28 @@ fn retain_revoked_accounts(
                 account_id: account.canonical_account_id.clone(),
                 surface_id: provider.provider_id.clone(),
             };
-            !(catalog.contains_key(&capability) && is_revoked_tombstone(account))
+            let revision_changed = previous_catalog.is_some_and(|previous_catalog| {
+                previous_catalog
+                    .get(&capability)
+                    .zip(catalog.get(&capability))
+                    .is_some_and(|(previous, current)| previous != current)
+            });
+            !(catalog.contains_key(&capability)
+                && !revision_changed
+                && is_revoked_tombstone(account))
         });
         for account in &mut provider.accounts {
-            if !catalog.contains_key(&UsageAccountCapability {
+            let capability = UsageAccountCapability {
                 account_id: account.canonical_account_id.clone(),
                 surface_id: provider.provider_id.clone(),
-            }) {
+            };
+            let revision_changed = previous_catalog.is_some_and(|previous_catalog| {
+                previous_catalog
+                    .get(&capability)
+                    .zip(catalog.get(&capability))
+                    .is_some_and(|(previous, current)| previous != current)
+            });
+            if !catalog.contains_key(&capability) || revision_changed {
                 mark_revoked(account);
             }
         }
@@ -405,6 +466,9 @@ fn mark_revoked(account: &mut UsageAccountV1) {
     account.lifecycle = UsageLifecycleV1::Unavailable;
     account.freshness.phase = UsageFreshnessPhaseV1::Failed;
     account.freshness.is_stale = true;
+    account.windows.clear();
+    account.metric_groups.clear();
+    account.issues.clear();
 }
 
 fn is_revoked_tombstone(account: &UsageAccountV1) -> bool {
@@ -772,6 +836,7 @@ fn issue_code(kind: UsageCoordinationErrorKind) -> String {
         UsageCoordinationErrorKind::Unavailable => "unavailable",
         UsageCoordinationErrorKind::Unauthorized => "unauthorized",
         UsageCoordinationErrorKind::CatalogRevoked => "catalog_revoked",
+        UsageCoordinationErrorKind::CatalogRevisionConflict => "catalog_revision_conflict",
         UsageCoordinationErrorKind::OwnerLost => "owner_lost",
         UsageCoordinationErrorKind::WaitTimeout => "wait_timeout",
         UsageCoordinationErrorKind::CorruptState => "corrupt_state",
@@ -784,10 +849,40 @@ fn issue_code(kind: UsageCoordinationErrorKind) -> String {
     .to_owned()
 }
 
+fn previous_envelope_for(
+    projection: &UsageProjectionV1,
+    catalog: Option<&BTreeMap<UsageAccountCapability, String>>,
+) -> ProjectionStateEnvelope {
+    ProjectionStateEnvelope {
+        schema_version: 2,
+        catalog_revision: projection.discovery_revision.clone(),
+        catalog: catalog.map(catalog_entries).unwrap_or_default(),
+        broker_instance_id: projection.broker_instance_id.clone(),
+        projection: projection.clone(),
+        aliases: Vec::new(),
+        retry_deadline_epoch: None,
+        success_deadline_epoch: None,
+    }
+}
+
 fn publisher_unavailable() -> UsageCoordinationError {
     UsageCoordinationError {
         kind: UsageCoordinationErrorKind::Unavailable,
         message: "usage projection publisher is unavailable".to_owned(),
+    }
+}
+
+fn publisher_corrupt_state() -> UsageCoordinationError {
+    UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::CorruptState,
+        message: "usage broker catalog is invalid".to_owned(),
+    }
+}
+
+fn catalog_revision_conflict() -> UsageCoordinationError {
+    UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::CatalogRevisionConflict,
+        message: "usage broker catalog publication lease is stale".to_owned(),
     }
 }
 
@@ -799,7 +894,10 @@ const fn issue_recoverability(kind: UsageCoordinationErrorKind) -> UsageIssueRec
         UsageCoordinationErrorKind::ProtocolMismatch
         | UsageCoordinationErrorKind::CorruptState
         | UsageCoordinationErrorKind::OwnerLost
-        | UsageCoordinationErrorKind::CatalogRevoked => UsageIssueRecoverabilityV1::Terminal,
+        | UsageCoordinationErrorKind::CatalogRevoked
+        | UsageCoordinationErrorKind::CatalogRevisionConflict => {
+            UsageIssueRecoverabilityV1::Terminal
+        }
         _ => UsageIssueRecoverabilityV1::Retryable,
     }
 }
@@ -808,6 +906,7 @@ const fn issue_recoverability(kind: UsageCoordinationErrorKind) -> UsageIssueRec
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -860,6 +959,31 @@ mod tests {
             _generation: u64,
         ) -> ProviderProbeOutcome {
             ProviderProbeOutcome::success(fresh_view())
+        }
+    }
+
+    struct FailingCatalogExecutor {
+        reconciles: AtomicUsize,
+    }
+
+    impl UsageProviderExecutor for FailingCatalogExecutor {
+        fn probe(
+            &self,
+            _capability: &UsageAccountCapability,
+            _generation: u64,
+        ) -> ProviderProbeOutcome {
+            ProviderProbeOutcome::success(fresh_view())
+        }
+
+        fn reconcile_catalog(
+            &self,
+            _entries: &[UsageCatalogEntry],
+        ) -> Result<(), UsageCoordinationError> {
+            self.reconciles.fetch_add(1, Ordering::SeqCst);
+            Err(UsageCoordinationError {
+                kind: UsageCoordinationErrorKind::ProviderUnavailable,
+                message: "fixture catalog reconciliation failed".to_owned(),
+            })
         }
     }
 
@@ -1344,5 +1468,136 @@ mod tests {
             )
             .unwrap();
         assert!(reintroduced.providers.is_empty());
+    }
+
+    #[test]
+    fn same_capability_revision_purges_stale_published_quota() {
+        let temp = tempfile::tempdir().unwrap();
+        let account = capability();
+        let old = UsageCatalogEntry {
+            capability: account.clone(),
+            revision: "credential-a".to_owned(),
+        };
+        let coordinator = Arc::new(UsageCoordinator::with_catalog(
+            Arc::new(ImmediateExecutor),
+            Arc::new(MemoryStore::default()),
+            UsageCoordinatorConfig::default(),
+            [old.clone()],
+        ));
+        let projection = Arc::new(Mutex::new(empty_projection()));
+        let publisher = ProjectionPublisher::new(
+            Arc::clone(&coordinator),
+            Arc::clone(&projection),
+            FileProjectionStateStore::under_data_dir(temp.path()),
+        )
+        .with_catalog([old]);
+
+        let generation = coordinator
+            .request_refresh(&account, 0, true, 1_000)
+            .unwrap()
+            .generation;
+        coordinator
+            .join_generation(&account, generation, Duration::from_secs(1), 1_001)
+            .unwrap();
+        publisher.observe(&account);
+        assert!(publisher.publish_due(1_001));
+
+        let current = publisher
+            .reconcile_catalog(
+                "catalog".to_owned(),
+                vec![UsageCatalogEntry {
+                    capability: account.clone(),
+                    revision: "credential-b".to_owned(),
+                }],
+                1_002,
+            )
+            .unwrap();
+        let row = &current.providers[0].accounts[0];
+        assert_eq!(row.status_label.as_deref(), Some("removed"));
+        assert!(row.windows.is_empty());
+        assert!(row.metric_groups.is_empty());
+        let reset = coordinator.current(&account, 1_002).unwrap();
+        assert_eq!(reset.phase, UsageRefreshPhase::Idle);
+        assert!(reset.snapshot.is_none());
+    }
+
+    #[test]
+    fn failed_catalog_executor_rolls_back_projection_and_catalog() {
+        let temp = tempfile::tempdir().unwrap();
+        let account = capability();
+        let old = UsageCatalogEntry {
+            capability: account.clone(),
+            revision: "credential-a".to_owned(),
+        };
+        let executor = Arc::new(FailingCatalogExecutor {
+            reconciles: AtomicUsize::new(0),
+        });
+        let broker_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+        let coordinator = Arc::new(UsageCoordinator::with_catalog(
+            broker_executor,
+            Arc::new(MemoryStore::default()),
+            UsageCoordinatorConfig::default(),
+            [old.clone()],
+        ));
+        let projection = Arc::new(Mutex::new(empty_projection()));
+        let store = FileProjectionStateStore::under_data_dir(temp.path());
+        let publisher = ProjectionPublisher::new(
+            Arc::clone(&coordinator),
+            Arc::clone(&projection),
+            store.clone(),
+        )
+        .with_catalog([old.clone()]);
+
+        let error = publisher
+            .reconcile_catalog("new-catalog".to_owned(), Vec::new(), 1_001)
+            .unwrap_err();
+        assert_eq!(error.kind, UsageCoordinationErrorKind::ProviderUnavailable);
+        assert_eq!(executor.reconciles.load(Ordering::SeqCst), 2);
+        assert_eq!(projection.lock().unwrap().discovery_revision, "catalog");
+        assert_eq!(
+            publisher.known_capabilities(),
+            Vec::<UsageAccountCapability>::new()
+        );
+        let persisted = store.load().unwrap().unwrap();
+        assert_eq!(persisted.catalog, vec![old]);
+        assert_eq!(persisted.projection.discovery_revision, "catalog");
+        assert_eq!(coordinator.current(&account, 1_001).unwrap().generation, 0);
+    }
+
+    #[test]
+    fn durable_projection_failure_does_not_activate_new_executor_catalog() {
+        let temp = tempfile::tempdir().unwrap();
+        let broker_dir = temp.path().join("usage-broker");
+        fs::create_dir_all(&broker_dir).unwrap();
+        fs::create_dir(broker_dir.join("projection.json")).unwrap();
+        let account = capability();
+        let old = UsageCatalogEntry {
+            capability: account.clone(),
+            revision: "credential-a".to_owned(),
+        };
+        let executor = Arc::new(FailingCatalogExecutor {
+            reconciles: AtomicUsize::new(0),
+        });
+        let broker_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+        let coordinator = Arc::new(UsageCoordinator::with_catalog(
+            broker_executor,
+            Arc::new(MemoryStore::default()),
+            UsageCoordinatorConfig::default(),
+            [old.clone()],
+        ));
+        let projection = Arc::new(Mutex::new(empty_projection()));
+        let publisher = ProjectionPublisher::new(
+            Arc::clone(&coordinator),
+            Arc::clone(&projection),
+            FileProjectionStateStore::under_data_dir(temp.path()),
+        )
+        .with_catalog([old]);
+
+        let error = publisher
+            .reconcile_catalog("new-catalog".to_owned(), Vec::new(), 1_001)
+            .unwrap_err();
+        assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+        assert_eq!(executor.reconciles.load(Ordering::SeqCst), 0);
+        assert_eq!(projection.lock().unwrap().discovery_revision, "catalog");
     }
 }
