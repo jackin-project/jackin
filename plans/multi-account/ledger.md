@@ -296,9 +296,27 @@ identity, fields, timestamps, and failure class. These are not converted to
 `unsupported` merely because current credentials/artifacts are absent. The
 mandatory H05–H10 gaps above remain separate from these optional provider lanes.
 
-## Provider lanes
+## Historical evidence retained for provenance only
 
-| Provider | Parser/semantic | Service/process | Container | Live Mac | Notes |
+Everything below this boundary is a report from an earlier lane, not current
+verification of PR #1002 at `176dcc0632f977a78d58443bde1b3ceb40304606`.
+Historical values such as `pass`, `container`, or `live` preserve what the
+earlier lane reported; they do not upgrade the exact-head `not_run` gaps in H05–
+H10 or the current provider table above. The referenced `/tmp` and `target`
+artifacts are not present in this audit worktree. A missing source SHA or raw
+artifact is recorded as missing instead of being inferred.
+
+### Historical provider lanes
+
+Common provenance: provider lane `01a0b122-2e86`, observed 2026-09-18. The
+surviving lane note did not record its source SHA. The follow-up Kimi discovery
+correction is source `06b64e2032fa39e8fd50662331c9ec4b519ffe89`; it does not
+revalidate the other historical rows. Referenced artifacts
+`/tmp/provider-catalog-ledger.md`, `/tmp/lane-*.md`,
+`/tmp/tracer/evidence.md`, and `/tmp/split.log` are absent here. Every value
+in this table is therefore historical-only.
+
+| Provider | Historical parser/semantic | Historical service/process | Historical container | Historical Live Mac | Notes |
 |---|---|---|---|---|---|
 | Claude/Anthropic | pass | pass | pass (tracer A/B) | capped (default session-limited; claude-b OAuth expired) | keychain creds, oauthAccount cache |
 | Codex/OpenAI | pass | pass | pass (tracer C) | live (ChatGPT login, claude+codex 3/3 green) | app-server 0.154.0, file backend |
@@ -316,7 +334,11 @@ mandatory H05–H10 gaps above remain separate from these optional provider lane
 | Gemini CLI | pass | pass | broker-only | unavail (NOT installed) | separate Google client |
 | MiniMax | pass | pass | broker-only | failed (canary-d in-band 1004 login fail; placeholder key) | shell provider routes verified |
 
-## Environment (T00, 2026-09-17)
+### Historical environment snapshot — T00 (2026-09-17)
+
+Source SHA: `21232c7e218026c2a3ecf34795acc9ca322330f6`. Provenance is the
+recorded T00 environment capture below; its raw command output is not retained
+in this worktree. This snapshot is not the current audit environment.
 
 - HEAD at session start: `21232c7e`, branch `feat/multi-account-support`, tree clean.
 - macOS 26.6.2 arm64; Rust 1.97.1; nextest 0.9.140; node 24.18; bun 1.3.14.
@@ -324,12 +346,22 @@ mandatory H05–H10 gaps above remain separate from these optional provider lane
   kimi 0.43.0, muse 1.3.0, cursor-agent 2026.09.10, grok-build 1.0.30,
   opencode 1.18.30. Missing: gemini, omp, hermes, mmx.
 
-## CI watch (PR #1002, head 6f0280c4, 2026-09-17)
+### Historical CI watch — PR #1002 (2026-09-17)
+
+Source SHA: `6f0280c4b0f1bc2e7196f2d276cf6262542f37ff`. Provenance is the
+GitHub Actions/check observation recorded below; no raw local log artifact is
+retained here. These results predate the exact-head audit.
 
 - `Rust · jackin` + `Rust · jackin-runtime`: FAILED at `Set up Mr. Boxington` (cache setup, before any build/test) — same mbx infra-flake signature as head 3c807144 (`Quota exceeded`), not code. Siblings (capsule/config/console/core/usage) PASS on this head. Rerun blocked while the workflow runs; the S4 push supersedes with a fresh full run.
 - `Policy` (Velnor workflow policy): FAILED on `generated-tree` drift vs pinned generator 06050c9f. Branch has zero diff vs main under `.github-gen/` + `.github/` — inherited main breakage, out of scope (generated files are never hand-edited). Recorded, not fixed.
 
-## Gates + console-live (post-compaction, 2026-09-17/18, head 06b64e20)
+### Historical gates and console-live (2026-09-17/18)
+
+Source SHAs: `06b64e2032fa39e8fd50662331c9ec4b519ffe89` for the post-compaction
+discovery/gate work and `a219c97e6cee87b01dff0a4f380cf97d2a7e4d68` for the
+full E2E/desktop observations. Provenance includes the JUnit path and `/tmp`
+paths named in the bullets; those artifacts are absent from this audit
+worktree. The results are historical-only and are not current H05–H10 proof.
 
 - Console-live: `jackin console --debug` under PTY, Settings → Accounts renders all
   accounts (canary-d masked, claude-b, 8 defaults, +Add rows); Ctrl-Q confirm exits 0.
@@ -401,7 +433,14 @@ mandatory H05–H10 gaps above remain separate from these optional provider lane
   `serve_one` now restores blocking mode first. Package 28/28 x6.
   Production broker unaffected (explicit WouldBlock loops with deadlines).
 
-## Provider live matrix (lane 01a0b122-2e86, Mac 2026-09-18; kimi gap closed by 06b64e20)
+### Historical provider live matrix (lane 01a0b122-2e86, Mac 2026-09-18)
+
+The surviving lane note does not record the matrix's source SHA. Its named
+follow-up source is `06b64e2032fa39e8fd50662331c9ec4b519ffe89` (Kimi discovery
+fix), but that does not prove the other rows at that source. The matrix's raw
+`/tmp` artifacts are absent. The entries below are historical reports only;
+current exact-head provider status is in the table above and H05–H10 remain
+open.
 
 - live-verified: codex (ChatGPT login), amp (alexey@zhokhov, credits), muse,
   cursor (stored token), grok (refresh OK), kimi (`kimi -p` exit 0; jackin
@@ -414,7 +453,12 @@ mandatory H05–H10 gaps above remain separate from these optional provider lane
 - failed: minimax canary-d (HTTP 200 in-band 1004 login fail; placeholder key).
 - Parsers: all 15 lanes exist with tests; `nextest -p jackin-usage` 442/442.
 
-## Split/resize live (2026-09-18, same tracer container)
+### Historical split/resize live (2026-09-18)
+
+Source SHA was not recorded in the surviving tracer note. Provenance is the
+same historical tracer container and the absent artifacts
+`/tmp/tracer/evidence.md` and `/tmp/split.log`; no current container/TUI proof
+is claimed.
 
 - Palette split Right with claude-personal: 2 panes, per-pane account_id/agent
   correct in snapshot; 2x Alt-Shift-Left moved divider col 40 -> 32; both panes
