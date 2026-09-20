@@ -31,6 +31,24 @@ use std::sync::atomic::AtomicU64;
 
 static AUTH_DIRECTORY_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(test)]
+thread_local! {
+    static AUTH_PATH_VALIDATION_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(super) fn set_auth_path_validation_hook(hook: Box<dyn FnOnce()>) {
+    AUTH_PATH_VALIDATION_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
+}
+
+fn run_auth_path_validation_hook() {
+    #[cfg(test)]
+    if let Some(hook) = AUTH_PATH_VALIDATION_HOOK.with(|slot| slot.borrow_mut().take()) {
+        hook();
+    }
+}
+
 /// Validate that `source_dir` carries the credential structure `agent`
 /// expects for sync-mode auth forwarding.
 ///
@@ -518,12 +536,20 @@ enum HostGhResolution {
 }
 
 /// Wipe a file if it exists, ignoring `NotFound` so the call is
-/// idempotent without a pre-stat that races with the unlink.
+/// idempotent while the Unix unlink remains relative to the opened parent.
 fn wipe_file_if_present(path: &Path) -> anyhow::Result<()> {
-    match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e.into()),
+    reject_auth_path(path)?;
+    #[cfg(unix)]
+    {
+        auth_directory::remove_file(path)
+    }
+    #[cfg(not(unix))]
+    {
+        match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -711,9 +737,7 @@ impl RoleState {
             // from the env instead. Without this file, the CLI shows the
             // "Select login method" prompt even when the env var is set.
             AuthForwardMode::OAuthToken => {
-                if credentials_json.exists() {
-                    std::fs::remove_file(credentials_json)?;
-                }
+                wipe_file_if_present(credentials_json)?;
                 write_private_file(account_json, r#"{"hasCompletedOnboarding":true}"#)?;
                 AuthProvisionOutcome::TokenMode
             }
@@ -767,9 +791,7 @@ impl RoleState {
                 AuthProvisionOutcome::Skipped
             }
             AuthForwardMode::OAuthToken => {
-                if credentials_json.exists() {
-                    std::fs::remove_file(credentials_json)?;
-                }
+                wipe_file_if_present(credentials_json)?;
                 write_private_file(account_json, r#"{"hasCompletedOnboarding":true}"#)?;
                 AuthProvisionOutcome::TokenMode
             }
@@ -1008,11 +1030,15 @@ mod auth_directory {
     use nix::sys::stat::{FileStat, Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
     use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
     use serde::{Deserialize, Serialize};
-    use std::ffi::{CStr, CString, OsString};
+    #[cfg(target_os = "macos")]
+    use std::ffi::OsString;
+    use std::ffi::{CStr, CString};
     use std::fs::File;
     use std::io::{Read, Write};
     use std::os::fd::OwnedFd;
-    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    use std::os::unix::ffi::OsStrExt;
+    #[cfg(target_os = "macos")]
+    use std::os::unix::ffi::OsStringExt;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::Ordering;
 
@@ -1084,6 +1110,8 @@ mod auth_directory {
             const { std::cell::RefCell::new(None) };
         static SOURCE_OPEN_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
             const { std::cell::RefCell::new(None) };
+        static SOURCE_ABSENT_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+            const { std::cell::RefCell::new(None) };
     }
 
     #[cfg(test)]
@@ -1096,6 +1124,11 @@ mod auth_directory {
         SOURCE_OPEN_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_source_absent_hook(hook: Box<dyn FnOnce()>) {
+        SOURCE_ABSENT_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
+    }
+
     pub(crate) fn run_hermes_snapshot_hook() {
         #[cfg(test)]
         if let Some(hook) = HERMES_SNAPSHOT_HOOK.with(|slot| slot.borrow_mut().take()) {
@@ -1106,6 +1139,13 @@ mod auth_directory {
     fn run_source_open_hook() {
         #[cfg(test)]
         if let Some(hook) = SOURCE_OPEN_HOOK.with(|slot| slot.borrow_mut().take()) {
+            hook();
+        }
+    }
+
+    fn run_source_absent_hook() {
+        #[cfg(test)]
+        if let Some(hook) = SOURCE_ABSENT_HOOK.with(|slot| slot.borrow_mut().take()) {
             hook();
         }
     }
@@ -1360,13 +1400,16 @@ mod auth_directory {
         Ok(())
     }
 
-    fn open_source_file(
+    fn open_source_file_with_hook(
         directory: &File,
         name: &CStr,
         expected: &FileStat,
         label: &str,
+        invoke_hook: bool,
     ) -> anyhow::Result<File> {
-        run_source_open_hook();
+        if invoke_hook {
+            run_source_open_hook();
+        }
         let fd = openat(
             directory,
             name,
@@ -1379,6 +1422,15 @@ mod auth_directory {
         validate_owned_stat(&actual, label, SFlag::S_IFREG)?;
         ensure_same_source_identity(expected, &actual, label)?;
         Ok(file)
+    }
+
+    fn open_source_file(
+        directory: &File,
+        name: &CStr,
+        expected: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<File> {
+        open_source_file_with_hook(directory, name, expected, label, true)
     }
 
     fn open_directory_at(directory: &File, name: &CStr, label: &str) -> anyhow::Result<File> {
@@ -1399,13 +1451,16 @@ mod auth_directory {
         Ok(file)
     }
 
-    fn open_source_directory_at(
+    fn open_source_directory_at_with_hook(
         directory: &File,
         name: &CStr,
         expected: &FileStat,
         label: &str,
+        invoke_hook: bool,
     ) -> anyhow::Result<File> {
-        run_source_open_hook();
+        if invoke_hook {
+            run_source_open_hook();
+        }
         let fd = openat(
             directory,
             name,
@@ -1422,6 +1477,15 @@ mod auth_directory {
         );
         ensure_same_source_identity(expected, &actual, label)?;
         Ok(file)
+    }
+
+    fn open_source_directory_at(
+        directory: &File,
+        name: &CStr,
+        expected: &FileStat,
+        label: &str,
+    ) -> anyhow::Result<File> {
+        open_source_directory_at_with_hook(directory, name, expected, label, true)
     }
 
     fn fsync_directory(directory: &File) -> anyhow::Result<()> {
@@ -1466,6 +1530,42 @@ mod auth_directory {
         Ok(bytes)
     }
 
+    pub(crate) fn read_locked_source_file(
+        source: &File,
+        components: &[&str],
+        label: &str,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
+        let Some((file_name_text, directory_names)) = components.split_last() else {
+            anyhow::bail!("{label} has no source path components");
+        };
+        let mut directory = source.try_clone()?;
+        for directory_name_text in directory_names {
+            let directory_name = source_name(directory_name_text)?;
+            let Some(stat) = source_entry_kind(&directory, &directory_name, label)? else {
+                return Ok(None);
+            };
+            validate_owned_stat(&stat, label, SFlag::S_IFDIR)?;
+            directory = open_source_directory_at_with_hook(
+                &directory,
+                &directory_name,
+                &stat,
+                label,
+                false,
+            )?;
+        }
+        let file_name = source_name(file_name_text)?;
+        let Some(stat) = source_entry_kind(&directory, &file_name, label)? else {
+            return Ok(None);
+        };
+        validate_owned_stat(&stat, label, SFlag::S_IFREG)?;
+        let file = open_source_file_with_hook(&directory, &file_name, &stat, label, true)?;
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut &file)
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("reading {label}"))?;
+        Ok(Some(bytes))
+    }
+
     fn write_private_file_at(
         directory: &File,
         name: &CStr,
@@ -1486,6 +1586,171 @@ mod auth_directory {
             .with_context(|| format!("writing {label}"))?;
         file.sync_all()
             .with_context(|| format!("syncing {label}"))?;
+        Ok(())
+    }
+
+    fn new_private_file_temporary(parent: &File) -> anyhow::Result<CString> {
+        for _ in 0..128 {
+            let sequence = AUTH_DIRECTORY_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let name = CString::new(format!(
+                ".jackin-auth-file-{}-{sequence}",
+                std::process::id()
+            ))?;
+            if entry_stat(parent, &name)?.is_none() {
+                return Ok(name);
+            }
+        }
+        anyhow::bail!("could not allocate a unique private auth file")
+    }
+
+    pub(crate) fn replace_private_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+        let (parent, target, normalized) = open_parent(path, false)?;
+        if let Some(stat) = entry_stat(&parent, &target)? {
+            anyhow::ensure!(
+                !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFLNK),
+                "refusing to write through symlink at {}",
+                normalized.display()
+            );
+        }
+        let temporary = new_private_file_temporary(&parent)?;
+        let result = (|| {
+            write_private_file_at(&parent, &temporary, bytes, "private auth file")?;
+            renameat(&parent, temporary.as_c_str(), &parent, target.as_c_str())
+                .map_err(|error| nix_error(error, "publishing private auth file"))?;
+            fsync_directory(&parent)
+        })();
+        if result.is_err() {
+            let _ignored_cleanup =
+                unlink_entry(&parent, &temporary, "removing failed private auth file");
+        }
+        result
+    }
+
+    pub(crate) fn create_private_file_if_absent(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+        let (parent, target, normalized) = open_parent(path, false)?;
+        let fd = match openat(
+            &parent,
+            target.as_c_str(),
+            OFlag::O_WRONLY
+                | OFlag::O_CREAT
+                | OFlag::O_EXCL
+                | OFlag::O_NOFOLLOW
+                | OFlag::O_CLOEXEC
+                | OFlag::O_NONBLOCK,
+            Mode::from_bits_truncate(0o600),
+        ) {
+            Ok(fd) => fd,
+            Err(Errno::EEXIST) => {
+                if let Some(stat) = entry_stat(&parent, &target)? {
+                    anyhow::ensure!(
+                        !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFLNK),
+                        "refusing to use auth path through symlink at {}",
+                        normalized.display()
+                    );
+                }
+                return Ok(());
+            }
+            Err(error) => return Err(nix_error(error, "creating private auth file")),
+        };
+        let file = owned_fd(fd);
+        let stat = fstat(&file).map_err(|error| nix_error(error, "statting private auth file"))?;
+        validate_owned_stat(&stat, "private auth file", SFlag::S_IFREG)?;
+        fchmod(&file, Mode::from_bits_truncate(0o600))
+            .map_err(|error| nix_error(error, "restricting private auth file"))?;
+        let mut file = file;
+        file.write_all(bytes)
+            .with_context(|| format!("writing private skeleton at {}", normalized.display()))?;
+        file.sync_all()
+            .with_context(|| format!("syncing private skeleton at {}", normalized.display()))
+    }
+
+    pub(crate) fn remove_file(path: &Path) -> anyhow::Result<()> {
+        let (parent, target, _) = match open_parent(path, false) {
+            Ok(value) => value,
+            Err(error)
+                if error
+                    .chain()
+                    .any(|cause| cause.downcast_ref::<Errno>() == Some(&Errno::ENOENT)) =>
+            {
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
+        match unlinkat(&parent, target.as_c_str(), UnlinkatFlags::NoRemoveDir) {
+            Ok(()) | Err(Errno::ENOENT) => Ok(()),
+            Err(error) => Err(nix_error(error, "removing private auth file")),
+        }
+    }
+
+    pub(crate) fn repair_file_permissions(path: &Path) -> anyhow::Result<()> {
+        let (parent, target, normalized) = match open_parent(path, false) {
+            Ok(value) => value,
+            Err(error)
+                if error
+                    .chain()
+                    .any(|cause| cause.downcast_ref::<Errno>() == Some(&Errno::ENOENT)) =>
+            {
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
+        super::maybe_inject_permission_repair_failure(super::PermissionRepairFailure::Stat)?;
+        let Some(expected) = entry_stat(&parent, &target)? else {
+            return Ok(());
+        };
+        let kind = SFlag::from_bits_truncate(expected.st_mode);
+        anyhow::ensure!(
+            kind.contains(SFlag::S_IFREG),
+            "refusing to repair non-regular credential path at {}",
+            normalized.display()
+        );
+        anyhow::ensure!(
+            expected.st_uid == geteuid().as_raw(),
+            "credential file at {} is not owned by the current user",
+            normalized.display()
+        );
+
+        super::maybe_inject_permission_repair_failure(super::PermissionRepairFailure::Chmod)?;
+        let file = openat(
+            &parent,
+            target.as_c_str(),
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|error| nix_error(error, "opening credential file for permission repair"))?;
+        let file = owned_fd(file);
+        let actual = fstat(&file)
+            .map_err(|error| nix_error(error, "statting credential file for permission repair"))?;
+        let actual_kind = SFlag::from_bits_truncate(actual.st_mode);
+        anyhow::ensure!(
+            actual_kind.contains(SFlag::S_IFREG),
+            "credential file has an unexpected file type"
+        );
+        anyhow::ensure!(
+            actual.st_uid == geteuid().as_raw(),
+            "credential file is not owned by the current user"
+        );
+        ensure_same_source_identity(
+            &expected,
+            &actual,
+            &format!("credential file {}", normalized.display()),
+        )?;
+        fchmod(&file, Mode::from_bits_truncate(0o600))
+            .map_err(|error| nix_error(error, "chmod 0o600 on credential file"))?;
+
+        super::maybe_inject_permission_repair_failure(super::PermissionRepairFailure::Verify)?;
+        let verified = fstat(&file)
+            .map_err(|error| nix_error(error, "verifying credential file permissions"))?;
+        ensure_same_source_identity(
+            &expected,
+            &verified,
+            &format!("credential file {}", normalized.display()),
+        )?;
+        anyhow::ensure!(
+            verified.st_mode & 0o7777 == 0o600,
+            "credential file at {} is not exactly mode 0600 after repair",
+            normalized.display()
+        );
         Ok(())
     }
 
@@ -1606,10 +1871,14 @@ mod auth_directory {
     pub(crate) fn lock_source_dir(path: &Path) -> anyhow::Result<Option<LockedSource>> {
         let (parent, name, normalized) = match open_parent(path, false) {
             Ok(value) => value,
-            Err(error) if error.downcast_ref::<Errno>() == Some(&Errno::ENOENT) => return Ok(None),
+            Err(error) if error.downcast_ref::<Errno>() == Some(&Errno::ENOENT) => {
+                run_source_absent_hook();
+                return Ok(None);
+            }
             Err(error) => return Err(error),
         };
         let Some(expected) = entry_stat(&parent, &name)? else {
+            run_source_absent_hook();
             return Ok(None);
         };
         validate_owned_stat(
@@ -1624,7 +1893,10 @@ mod auth_directory {
             Mode::empty(),
         ) {
             Ok(fd) => fd,
-            Err(Errno::ENOENT) => return Ok(None),
+            Err(Errno::ENOENT) => {
+                run_source_absent_hook();
+                return Ok(None);
+            }
             Err(error) => {
                 return Err(nix_error(
                     error,
@@ -2089,19 +2361,16 @@ mod auth_directory {
         fsync_directory(&target.parent)
     }
 
-    pub(crate) fn stage_auth_directory<F>(
-        target_dir: &Path,
+    fn stage_auth_directory_locked<F>(
+        target: TargetLock,
         host_dir: &Path,
+        source: Option<LockedSource>,
         populate: F,
     ) -> anyhow::Result<AuthProvisionOutcome>
     where
         F: FnOnce(&Path, &File, &File) -> anyhow::Result<()>,
     {
-        let target = target_lock(target_dir, true).map_err(|error| {
-            anyhow::anyhow!("opening auth target {}: {error:#}", target_dir.display())
-        })?;
-        let source = lock_source_dir(host_dir)?;
-        let outcome = if let Some(source) = &source {
+        let outcome = if let Some(source) = source.as_ref() {
             let (stage, directory) = new_stage(&target.parent, &target.key)?;
             if let Err(error) = populate(host_dir, &source.root, &directory) {
                 let _ignored_cleanup = remove_tree(&target.parent, &stage, "failed auth stage");
@@ -2119,6 +2388,40 @@ mod auth_directory {
             AuthProvisionOutcome::HostMissing
         };
         Ok(outcome)
+    }
+
+    pub(crate) fn stage_auth_directory<F>(
+        target_dir: &Path,
+        host_dir: &Path,
+        populate: F,
+    ) -> anyhow::Result<AuthProvisionOutcome>
+    where
+        F: FnOnce(&Path, &File, &File) -> anyhow::Result<()>,
+    {
+        // All source-backed directory transactions take locks in source ->
+        // target order. Hermes may already hold the source lock while it
+        // snapshots and validates, so Kimi must use the same order to avoid
+        // a cross-agent target/source lock cycle.
+        let source = lock_source_dir(host_dir)?;
+        let target = target_lock(target_dir, true).map_err(|error| {
+            anyhow::anyhow!("opening auth target {}: {error:#}", target_dir.display())
+        })?;
+        stage_auth_directory_locked(target, host_dir, source, populate)
+    }
+
+    pub(crate) fn stage_auth_directory_with_locked_source<F>(
+        target_dir: &Path,
+        host_dir: &Path,
+        source: Option<LockedSource>,
+        populate: F,
+    ) -> anyhow::Result<AuthProvisionOutcome>
+    where
+        F: FnOnce(&Path, &File, &File) -> anyhow::Result<()>,
+    {
+        let target = target_lock(target_dir, true).map_err(|error| {
+            anyhow::anyhow!("opening auth target {}: {error:#}", target_dir.display())
+        })?;
+        stage_auth_directory_locked(target, host_dir, source, populate)
     }
 
     pub(crate) fn wipe_auth_directory(target_dir: &Path) -> anyhow::Result<()> {
@@ -2521,6 +2824,34 @@ impl RoleState {
         provider: Option<AiProvider>,
         selector: Option<&ProfileSelector>,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        #[cfg(unix)]
+        if mode == AuthForwardMode::Sync {
+            let content = match auth_directory::lock_source_dir(source_dir)? {
+                Some(source) => {
+                    validate_store_source_dir(
+                        Agent::Omp,
+                        provider,
+                        selector,
+                        source_dir,
+                        source_dir,
+                    )?;
+                    auth_directory::read_locked_source_file(
+                        &source.root,
+                        &["agent", "agent.db"],
+                        "omp agent.db",
+                    )?
+                }
+                None => None,
+            };
+            return provision_single_blob_credential_from_content(
+                agent_db,
+                mode,
+                content,
+                "omp agent.db",
+                "omp",
+            );
+        }
+        #[cfg(not(unix))]
         if mode == AuthForwardMode::Sync && source_dir.exists() {
             validate_store_source_dir(Agent::Omp, provider, selector, source_dir, source_dir)?;
         }
@@ -2564,25 +2895,40 @@ impl RoleState {
         provider: Option<AiProvider>,
         selector: Option<&ProfileSelector>,
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
-        if mode == AuthForwardMode::Sync
-            && let Some(source) = auth_directory::lock_source_dir(source_dir)?
-        {
-            let snapshot = tempfile::tempdir().context("creating Hermes source snapshot")?;
-            let snapshot_root = auth_directory::open_directory_path(snapshot.path())?;
-            auth_directory::snapshot_source(&source.root, &snapshot_root)?;
-            validate_store_source_dir(
-                Agent::Hermes,
-                provider,
-                selector,
-                snapshot.path(),
-                snapshot.path(),
-            )?;
-            auth_directory::run_hermes_snapshot_hook();
-            // Keep the source lock held until the snapshot has been
-            // validated and the descriptor-safe destination swap has
-            // completed. The staged copy reads only the immutable
-            // snapshot, not the live source.
-            return provision_hermes_dir_credential(hermes_dir, snapshot.path(), mode);
+        #[cfg(unix)]
+        if mode == AuthForwardMode::Sync {
+            let source = auth_directory::lock_source_dir(source_dir)?;
+            if let Some(source) = source {
+                let snapshot = tempfile::tempdir().context("creating Hermes source snapshot")?;
+                let snapshot_root = auth_directory::open_directory_path(snapshot.path())?;
+                auth_directory::snapshot_source(&source.root, &snapshot_root)?;
+                validate_store_source_dir(
+                    Agent::Hermes,
+                    provider,
+                    selector,
+                    snapshot.path(),
+                    snapshot.path(),
+                )?;
+                auth_directory::run_hermes_snapshot_hook();
+                drop(snapshot_root);
+                let snapshot_source = auth_directory::lock_source_dir(snapshot.path())?
+                    .ok_or_else(|| anyhow::anyhow!("Hermes source snapshot disappeared"))?;
+                // Keep the source lock held until the snapshot has been
+                // validated and the descriptor-safe destination swap has
+                // completed. The staged copy reads only the immutable
+                // snapshot, not the live source.
+                return provision_hermes_dir_credential_from_locked_source(
+                    hermes_dir,
+                    snapshot.path(),
+                    Some(snapshot_source),
+                );
+            }
+            // The initial absence is authoritative for this launch. Do not
+            // perform a second path lookup: a source that appears now must
+            // be validated by a later launch before any store is copied.
+            return provision_hermes_dir_credential_from_locked_source(
+                hermes_dir, source_dir, None,
+            );
         }
         provision_hermes_dir_credential(hermes_dir, source_dir, mode)
     }
@@ -2652,6 +2998,44 @@ fn provision_hermes_dir_credential(
     Ok((outcome, forward_auth))
 }
 
+#[cfg(unix)]
+fn provision_hermes_dir_credential_from_locked_source(
+    target_dir: &Path,
+    host_dir: &Path,
+    source: Option<auth_directory::LockedSource>,
+) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+    const SYNC_FILES: &[&str] = &["config.yaml", ".env", "auth.json"];
+    let outcome = auth_directory::stage_auth_directory_with_locked_source(
+        target_dir,
+        host_dir,
+        source,
+        |host_dir, source, staged| {
+            for name in SYNC_FILES {
+                auth_directory::copy_optional_source_file(
+                    source,
+                    name,
+                    staged,
+                    name,
+                    &format!("reading {}", host_dir.join(name).display()),
+                )?;
+            }
+            auth_directory::copy_optional_source_tree(
+                source,
+                "profiles",
+                staged,
+                "profiles",
+                &format!("copying {}", host_dir.join("profiles").display()),
+            )?;
+            Ok(())
+        },
+    )?;
+    let forward_auth = matches!(
+        outcome,
+        AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
+    );
+    Ok((outcome, forward_auth))
+}
+
 /// Remove role-state Hermes auth files so a prior Sync run cannot leak
 /// credentials under env-driven modes.
 fn wipe_hermes_state(hermes_dir: &Path) -> anyhow::Result<()> {
@@ -2676,8 +3060,37 @@ fn provision_single_blob_credential(
     label: &str,
     agent_name: &str,
 ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
-    use anyhow::Context;
+    let content = if mode == AuthForwardMode::Sync {
+        match std::fs::read(host_path) {
+            Ok(content) => Some(content),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                let hint = match error.kind() {
+                    std::io::ErrorKind::PermissionDenied => {
+                        " (check host file permissions on the parent dir)"
+                    }
+                    _ => "",
+                };
+                return Err(anyhow::Error::new(error).context(format!(
+                    "failed to read host {}{}",
+                    host_path.display(),
+                    hint
+                )));
+            }
+        }
+    } else {
+        None
+    };
+    provision_single_blob_credential_from_content(target, mode, content, label, agent_name)
+}
 
+fn provision_single_blob_credential_from_content(
+    target: &Path,
+    mode: AuthForwardMode,
+    content: Option<Vec<u8>>,
+    label: &str,
+    agent_name: &str,
+) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
     reject_auth_path(target)?;
 
     let outcome = match mode {
@@ -2698,18 +3111,17 @@ fn provision_single_blob_credential(
             wipe_agent_file_state(target, label)?;
             AuthProvisionOutcome::Skipped
         }
-        AuthForwardMode::Sync => match std::fs::read(host_path) {
-            Ok(content) if content.is_empty() => {
+        AuthForwardMode::Sync => match content {
+            Some(content) if content.is_empty() => {
                 eprintln!(
-                    "[jackin] host {} is empty — treating as host-missing",
-                    host_path.display()
+                    "[jackin] host {agent_name} credential is empty — treating as host-missing"
                 );
                 if target.exists() {
                     repair_permissions(target)?;
                 }
                 AuthProvisionOutcome::HostMissing
             }
-            Ok(content) => {
+            Some(content) => {
                 // No-churn guard mirroring the UTF-8 provisioner: an
                 // unconditional atomic rename would invalidate a live
                 // single-file bind mount into the running container.
@@ -2726,24 +3138,11 @@ fn provision_single_blob_credential(
                 }
                 AuthProvisionOutcome::Synced
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            None => {
                 if target.exists() {
                     repair_permissions(target)?;
                 }
                 AuthProvisionOutcome::HostMissing
-            }
-            Err(e) => {
-                let hint = match e.kind() {
-                    std::io::ErrorKind::PermissionDenied => {
-                        " (check host file permissions on the parent dir)"
-                    }
-                    _ => "",
-                };
-                return Err(anyhow::Error::new(e).context(format!(
-                    "failed to read host {}{}",
-                    host_path.display(),
-                    hint
-                )));
             }
         },
     };
@@ -2941,9 +3340,7 @@ fn wipe_claude_state(account_json: &Path, credentials_json: &Path) -> anyhow::Re
     if !account_json.exists() || std::fs::read_to_string(account_json)? != "{}" {
         write_private_file(account_json, "{}")?;
     }
-    if credentials_json.exists() {
-        std::fs::remove_file(credentials_json)?;
-    }
+    wipe_file_if_present(credentials_json)?;
     Ok(())
 }
 
@@ -3094,6 +3491,7 @@ fn reject_auth_path(path: &Path) -> anyhow::Result<()> {
         }
         ancestor = current.parent();
     }
+    run_auth_path_validation_hook();
     Ok(())
 }
 
@@ -3116,10 +3514,9 @@ const fn is_platform_root_alias(_path: &Path) -> bool {
 /// may contain authentication credentials.
 ///
 /// Rejects symlinks to prevent a compromised role from redirecting
-/// writes to arbitrary host paths.  Uses `tempfile::NamedTempFile` to
-/// create an unpredictable temp file (opened with `O_EXCL`, so a
-/// pre-planted symlink at the temp path is impossible), then renames
-/// it to the destination — closing the TOCTOU window entirely.
+/// writes to arbitrary host paths. Unix writes use a descriptor-relative
+/// temporary file and `renameat` under the already opened parent directory,
+/// so ancestor replacement cannot redirect the operation.
 fn write_private_file(path: &Path, content: &str) -> anyhow::Result<()> {
     write_private_bytes(path, content.as_bytes())
 }
@@ -3130,22 +3527,7 @@ fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
 
     #[cfg(unix)]
     {
-        use std::io::Write;
-        use std::os::unix::fs::PermissionsExt;
-
-        let parent = path
-            .parent()
-            .ok_or_else(|| InstanceError::NoParentDirectory {
-                path: path.to_path_buf(),
-            })?;
-
-        // NamedTempFile uses O_EXCL internally, so it will never follow
-        // a pre-planted symlink.  The random suffix makes the path
-        // unpredictable.
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-        tmp.write_all(content)?;
-        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o600))?;
-        tmp.persist(path)?;
+        auth_directory::replace_private_file(path, content)?;
     }
     #[cfg(not(unix))]
     {
@@ -3162,28 +3544,32 @@ fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
 /// before a downstream consumer (e.g. the Claude CLI) may persist
 /// real state into the same path.
 pub(super) fn create_private_file_if_absent(path: &Path, content: &[u8]) -> anyhow::Result<()> {
+    #[cfg(not(unix))]
     use anyhow::Context;
     reject_auth_path(path)?;
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
+        auth_directory::create_private_file_if_absent(path, content)
     }
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "auth file provisioning is called from spawn_blocking during launch"
-    )]
-    match opts.open(path) {
-        Ok(mut file) => {
-            use std::io::Write;
-            file.write_all(content)
-                .with_context(|| format!("writing private skeleton at {}", path.display()))
+
+    #[cfg(not(unix))]
+    {
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "auth file provisioning is called from spawn_blocking during launch"
+        )]
+        match opts.open(path) {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(content)
+                    .with_context(|| format!("writing private skeleton at {}", path.display()))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+            Err(error) => Err(anyhow::Error::new(error)
+                .context(format!("creating private skeleton at {}", path.display()))),
         }
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
-        Err(error) => Err(anyhow::Error::new(error)
-            .context(format!("creating private skeleton at {}", path.display()))),
     }
 }
 
@@ -3239,46 +3625,7 @@ fn repair_permissions(path: &Path) -> anyhow::Result<()> {
     reject_auth_path(path)?;
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        maybe_inject_permission_repair_failure(PermissionRepairFailure::Stat)?;
-        let meta = match std::fs::symlink_metadata(path) {
-            Ok(meta) => meta,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => {
-                return Err(anyhow::Error::new(error).context(format!(
-                    "stat existing credential file at {}",
-                    path.display()
-                )));
-            }
-        };
-        anyhow::ensure!(
-            !meta.file_type().is_symlink(),
-            "refusing to repair credential symlink at {}",
-            path.display()
-        );
-        anyhow::ensure!(
-            meta.is_file(),
-            "refusing to repair non-regular credential path at {}",
-            path.display()
-        );
-
-        maybe_inject_permission_repair_failure(PermissionRepairFailure::Chmod)?;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("chmod 0o600 on credential file at {}", path.display()))?;
-
-        maybe_inject_permission_repair_failure(PermissionRepairFailure::Verify)?;
-        let verified = std::fs::symlink_metadata(path)
-            .with_context(|| format!("verify credential file permissions at {}", path.display()))?;
-        anyhow::ensure!(
-            !verified.file_type().is_symlink() && verified.is_file(),
-            "credential path changed during permission repair at {}",
-            path.display()
-        );
-        anyhow::ensure!(
-            verified.permissions().mode() & 0o7777 == 0o600,
-            "credential file at {} is not exactly mode 0600 after repair",
-            path.display()
-        );
+        auth_directory::repair_file_permissions(path)?;
     }
     #[cfg(not(unix))]
     {

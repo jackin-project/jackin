@@ -4,9 +4,11 @@
 //! Tests for `instance/auth` — tests.
 #[cfg(unix)]
 use super::auth_directory::{
-    FailurePoint, inject_failure, set_hermes_snapshot_hook, set_source_open_hook,
-    target_lock_key_for_test,
+    FailurePoint, inject_failure, set_hermes_snapshot_hook, set_source_absent_hook,
+    set_source_open_hook, target_lock_key_for_test,
 };
+#[cfg(unix)]
+use super::set_auth_path_validation_hook;
 use super::{
     Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState,
     inject_permission_repair_failure, repair_permissions, validate_sync_source_dir,
@@ -603,6 +605,35 @@ fn auth_lock_identity_normalizes_relative_absolute_and_dot_aliases() {
 
 #[cfg(unix)]
 #[test]
+fn private_file_write_does_not_follow_ancestor_replaced_after_validation() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let parent = temp.path().join("state/credentials");
+    let detached = temp.path().join("detached");
+    let decoy = temp.path().join("decoy");
+    std::fs::create_dir_all(&parent).unwrap();
+    std::fs::create_dir_all(&decoy).unwrap();
+    let target = parent.join("auth.json");
+    let parent_for_hook = parent.clone();
+    let detached_for_hook = detached.clone();
+    let decoy_for_hook = decoy.clone();
+    set_auth_path_validation_hook(Box::new(move || {
+        std::fs::rename(&parent_for_hook, &detached_for_hook).unwrap();
+        symlink(&decoy_for_hook, &parent_for_hook).unwrap();
+    }));
+
+    let error = super::write_private_file(&target, "secret").unwrap_err();
+    assert!(
+        error.to_string().contains("symlink traversal rejected"),
+        "{error:#}"
+    );
+    assert!(!detached.join("auth.json").exists());
+    assert!(!decoy.join("auth.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
 fn directory_swap_serializes_concurrent_replacements_per_target() {
     use std::sync::{Arc, Barrier};
 
@@ -757,6 +788,138 @@ fn source_entry_replacement_between_lstat_and_open_is_rejected() {
         !target_dir.exists(),
         "replaced source must not publish a tree"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_agent_db_replacement_between_validation_and_open_is_rejected() {
+    enum Field<'a> {
+        Text(&'a str),
+        Integer(u8),
+    }
+
+    fn record(fields: &[Field<'_>]) -> Vec<u8> {
+        let mut serials = Vec::new();
+        let mut body = Vec::new();
+        for field in fields {
+            match field {
+                Field::Text(value) => {
+                    serials.push(13 + 2 * value.len() as u8);
+                    body.extend_from_slice(value.as_bytes());
+                }
+                Field::Integer(value) => {
+                    serials.push(1);
+                    body.push(*value);
+                }
+            }
+        }
+        let mut payload = vec![(serials.len() + 1) as u8];
+        payload.extend(serials);
+        payload.extend(body);
+        let mut cell = vec![payload.len() as u8, 1];
+        cell.extend(payload);
+        cell
+    }
+
+    fn leaf_page(cell: &[u8], prefix: usize) -> Vec<u8> {
+        let mut page = vec![0_u8; 512];
+        let start = 512 - cell.len();
+        page[prefix] = 0x0d;
+        page[prefix + 3..prefix + 5].copy_from_slice(&1_u16.to_be_bytes());
+        page[prefix + 5..prefix + 7].copy_from_slice(&(start as u16).to_be_bytes());
+        page[prefix + 8..prefix + 10].copy_from_slice(&(start as u16).to_be_bytes());
+        page[start..].copy_from_slice(cell);
+        page
+    }
+
+    fn omp_database() -> Vec<u8> {
+        let schema = record(&[
+            Field::Text("table"),
+            Field::Text("credentials"),
+            Field::Text("credentials"),
+            Field::Integer(2),
+            Field::Text("CREATE TABLE credentials(provider TEXT,value TEXT)"),
+        ]);
+        let credential = record(&[Field::Text("openai"), Field::Text("selected-sentinel")]);
+        let mut database = vec![0_u8; 1024];
+        let mut schema_page = leaf_page(&schema, 100);
+        schema_page[..16].copy_from_slice(b"SQLite format 3\0");
+        schema_page[16..18].copy_from_slice(&512_u16.to_be_bytes());
+        schema_page[18] = 1;
+        schema_page[19] = 1;
+        database[..512].copy_from_slice(&schema_page);
+        database[512..].copy_from_slice(&leaf_page(&credential, 0));
+        database
+    }
+
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.omp");
+    let agent_dir = source_dir.join("agent");
+    let target_dir = temp.path().join("role");
+    std::fs::create_dir_all(&agent_dir).unwrap();
+    std::fs::create_dir_all(&target_dir).unwrap();
+    let agent_db = agent_dir.join("agent.db");
+    let replacement = agent_dir.join("replacement.db");
+    std::fs::write(&agent_db, omp_database()).unwrap();
+    std::fs::write(&replacement, b"replacement-db").unwrap();
+    let agent_db_for_hook = agent_db.clone();
+    let replacement_for_hook = replacement.clone();
+    set_source_open_hook(Box::new(move || {
+        std::fs::rename(&replacement_for_hook, &agent_db_for_hook).unwrap();
+    }));
+
+    let error = RoleState::provision_omp_auth_from_source_dir(
+        &target_dir.join("agent.db"),
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("replaced during secure open"),
+        "{error:#}"
+    );
+    assert!(!target_dir.join("agent.db").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn hermes_missing_source_does_not_copy_a_source_that_reappears_unvalidated() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.hermes");
+    let target_dir = temp.path().join("role/.hermes");
+    std::fs::create_dir_all(source_dir.parent().unwrap()).unwrap();
+    let source_for_hook = source_dir.clone();
+    set_source_absent_hook(Box::new(move || {
+        std::fs::create_dir_all(&source_for_hook).unwrap();
+        std::fs::write(
+            source_for_hook.join("config.yaml"),
+            "profiles:\n  other:\n    provider: anthropic\n",
+        )
+        .unwrap();
+        std::fs::write(
+            source_for_hook.join("auth.json"),
+            r#"{"anthropic":{"type":"api","key":"reappeared-sentinel"}}"#,
+        )
+        .unwrap();
+    }));
+
+    let (outcome, forward_auth) = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&ProfileSelector {
+            entry: "openai".to_owned(),
+            profile: Some("work".to_owned()),
+        }),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    assert!(forward_auth);
+    assert!(target_dir.is_dir());
+    assert!(std::fs::read_dir(&target_dir).unwrap().next().is_none());
 }
 
 #[cfg(unix)]
