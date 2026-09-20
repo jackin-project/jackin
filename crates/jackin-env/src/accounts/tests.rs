@@ -80,6 +80,61 @@ fn unknown_account_rejected() {
 }
 
 #[test]
+fn duplicate_instance_identity_fails_before_resolving_any_credentials() {
+    let claude_account = |name: &str, value: &str| AccountConfig {
+        enabled: true,
+        name: name.into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::ApiKey {
+            value: EnvValue::from(value),
+            base_url: None,
+            model: None,
+        },
+    };
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert(
+        "work".into(),
+        claude_account("Work Claude", "$WORK_ACCOUNT_TOKEN"),
+    );
+    cfg.accounts.insert(
+        "personal".into(),
+        claude_account("Personal Claude", "$PERSONAL_ACCOUNT_TOKEN"),
+    );
+    let instances = [
+        jackin_config::ResolvedInstance {
+            config_id: "claude-main".into(),
+            agent: Agent::Claude,
+            account_id: "work".into(),
+            model: None,
+            base_url: None,
+            xdg_roots: None,
+            label: "Work Claude".into(),
+            synthesized: false,
+        },
+        jackin_config::ResolvedInstance {
+            config_id: "claude-main".into(),
+            agent: Agent::Claude,
+            account_id: "personal".into(),
+            model: None,
+            base_url: None,
+            xdg_roots: None,
+            label: "Personal Claude".into(),
+            synthesized: false,
+        },
+    ];
+
+    let error = resolve_instance_env_with(&cfg, &instances, None, "role", &NoSecrets, |_| {
+        panic!("duplicate instance identity must fail before secret resolution")
+    })
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("duplicate account instance id"),
+        "{error:#}"
+    );
+}
+
+#[test]
 fn assigned_key_resolves_host_reference_without_reading_other_accounts() {
     let mut cfg = AppConfig::default();
     cfg.accounts.insert("work".into(), account("$WORK_TOKEN"));
@@ -513,17 +568,7 @@ fn on_demand_credential_rejected() {
 #[test]
 fn generic_env_cannot_bypass_account_admission() {
     let mut cfg = AppConfig::default();
-    cfg.env
-        .insert("OPENAI_API_KEY".into(), EnvValue::from("test-bypass"));
-    cfg.env
-        .insert("MOONSHOT_API_KEY".into(), EnvValue::from("test-bypass"));
-    for key in [
-        "KIMI_AUTH_TOKEN",
-        "kimi_auth_token",
-        "MINIMAX_CODING_API_KEY",
-        "Z_AI_API_KEY",
-        "GOOGLE_API_KEY",
-    ] {
+    for key in jackin_core::account_env_names() {
         cfg.env.insert(key.into(), EnvValue::from("test-bypass"));
     }
     cfg.env.insert("EDITOR".into(), EnvValue::from("vim"));
@@ -532,4 +577,113 @@ fn generic_env_cannot_bypass_account_admission() {
     })
     .unwrap();
     assert_eq!(env, BTreeMap::from([("EDITOR".into(), "vim".into())]));
+}
+
+#[test]
+fn selected_account_is_the_only_source_of_account_material() {
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert(
+        "work".into(),
+        AccountConfig {
+            enabled: true,
+            name: "Work Claude".into(),
+            provider: AiProvider::Anthropic,
+            credential: AccountCredential::ApiKey {
+                value: EnvValue::from("selected-account-secret"),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    cfg.agent_configurations
+        .insert("primary".into(), configuration(Agent::Claude, "work"));
+    for key in jackin_core::account_env_names() {
+        cfg.env
+            .insert(key.into(), EnvValue::from(format!("ambient-{key}")));
+    }
+
+    let operator_env = crate::resolve_operator_env_with(&cfg, None, None, &NoSecrets, |_| {
+        Ok("ambient-host-secret".into())
+    })
+    .unwrap();
+    assert!(operator_env.is_empty());
+
+    let credentials = resolve_instance_env_with(
+        &cfg,
+        &launch(&cfg, &["primary"]),
+        None,
+        "role",
+        &NoSecrets,
+        |_| Ok("ambient-host-secret".into()),
+    )
+    .unwrap();
+    let instance = credentials.instance("primary").unwrap();
+    assert_eq!(
+        instance.env,
+        BTreeMap::from([("ANTHROPIC_API_KEY".into(), "selected-account-secret".into())])
+    );
+    assert!(!format!("{credentials:?}").contains("ambient-"));
+}
+
+#[test]
+fn missing_selected_account_secret_does_not_fall_back_to_ambient_auth() {
+    let mut cfg = AppConfig::default();
+    cfg.accounts
+        .insert("work".into(), account("$SELECTED_WORK_TOKEN"));
+    cfg.agent_configurations
+        .insert("primary".into(), configuration(Agent::Codex, "work"));
+    cfg.env
+        .insert("OPENAI_API_KEY".into(), EnvValue::from("ambient-key"));
+    cfg.env.insert(
+        "OPENAI_BASE_URL".into(),
+        EnvValue::from("https://ambient.example/v1"),
+    );
+
+    let operator_env = crate::resolve_operator_env_with(&cfg, None, None, &NoSecrets, |name| {
+        Ok(format!("host-{name}"))
+    })
+    .unwrap();
+    assert!(operator_env.is_empty());
+
+    let error = resolve_instance_env_with(
+        &cfg,
+        &launch(&cfg, &["primary"]),
+        None,
+        "role",
+        &NoSecrets,
+        |name| {
+            assert_eq!(name, "SELECTED_WORK_TOKEN");
+            Err(std::env::VarError::NotPresent)
+        },
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("SELECTED_WORK_TOKEN"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn account_provider_cannot_authenticate_an_incompatible_agent() {
+    let mut cfg = AppConfig::default();
+    cfg.accounts.insert("work".into(), account("$WORK_TOKEN"));
+    let instance = jackin_config::ResolvedInstance {
+        config_id: "claude-work".into(),
+        agent: Agent::Claude,
+        account_id: "work".into(),
+        model: None,
+        base_url: Some("https://api.openai.com/v1".into()),
+        xdg_roots: None,
+        label: "Claude with OpenAI account".into(),
+        synthesized: false,
+    };
+
+    let error = resolve_instance_env_with(&cfg, &[instance], None, "role", &NoSecrets, |_| {
+        panic!("provider/client mismatch must fail before secret resolution")
+    })
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("cannot authenticate claude"),
+        "{error:#}"
+    );
 }
