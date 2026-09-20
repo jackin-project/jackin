@@ -132,6 +132,63 @@ workdir = "/workspace/prod"
 }
 
 #[test]
+fn save_commit_failure_does_not_leave_earlier_files_committed() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    let alpha_path = paths.workspaces_dir.join("alpha.toml");
+    let prod_path = paths.workspaces_dir.join("prod.toml");
+    let workspace = |name: &str| {
+        format!(
+            "version = \"{}\"\nworkdir = \"/workspace/{name}\"\n",
+            crate::CURRENT_WORKSPACE_VERSION
+        )
+    };
+    std::fs::write(&alpha_path, workspace("alpha")).unwrap();
+    std::fs::write(&prod_path, workspace("prod")).unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor
+        .set_env_var(&EnvScope::Global, "GLOBAL", "after".into())
+        .unwrap();
+    editor
+        .set_env_var(
+            &EnvScope::Workspace("alpha".to_owned()),
+            "ALPHA",
+            "after".into(),
+        )
+        .unwrap();
+    editor
+        .set_env_var(
+            &EnvScope::Workspace("prod".to_owned()),
+            "PROD",
+            "after".into(),
+        )
+        .unwrap();
+
+    let global_before = std::fs::read(&paths.config_file).unwrap();
+    let alpha_before = std::fs::read(&alpha_path).unwrap();
+    std::fs::remove_file(&prod_path).unwrap();
+    std::fs::create_dir(&prod_path).unwrap();
+
+    let err = editor.save().unwrap_err();
+    assert!(err.to_string().contains("renaming"), "{err:#}");
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), global_before);
+    assert_eq!(std::fs::read(&alpha_path).unwrap(), alpha_before);
+    let staged_leaks: Vec<_> = std::fs::read_dir(&paths.config_dir)
+        .unwrap()
+        .chain(std::fs::read_dir(&paths.workspaces_dir).unwrap())
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp."))
+        .collect();
+    assert!(
+        staged_leaks.is_empty(),
+        "rollback left staged files: {staged_leaks:?}"
+    );
+}
+
+#[test]
 fn set_env_var_creates_global_env_table() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

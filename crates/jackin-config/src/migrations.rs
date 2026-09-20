@@ -366,7 +366,7 @@ pub fn migrate_workspace_file_if_needed(path: &Path) -> crate::ConfigResult<bool
         .map_err(ConfigError::telemetry_owned)
 }
 
-fn emit_migration_result(
+pub(crate) fn emit_migration_result(
     scope: &'static str,
     current: &'static str,
     migrations: &[MigrationStep],
@@ -446,6 +446,27 @@ pub fn migrate_file_if_needed(
     current_raw: &str,
     migrations: &[MigrationStep],
 ) -> crate::ConfigResult<Option<SchemaVersion>> {
+    migrate_file_contents_if_needed(path, label, current_raw, migrations).and_then(
+        |(contents, old_version)| {
+            if old_version.is_some() {
+                atomic_write(path, &contents)
+                    .with_context(|| format!("writing migrated {label} to {}", path.display()))?;
+            }
+            Ok(old_version)
+        },
+    )
+}
+
+/// Read and migrate one file without writing it.
+///
+/// The caller can validate and stage several migrated files before committing
+/// any of them, which is required for split configuration migrations.
+pub(crate) fn migrate_file_contents_if_needed(
+    path: &Path,
+    label: &str,
+    current_raw: &str,
+    migrations: &[MigrationStep],
+) -> crate::ConfigResult<(String, Option<SchemaVersion>)> {
     let raw =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let mut doc: DocumentMut = raw
@@ -460,13 +481,11 @@ pub fn migrate_file_if_needed(
         )));
     }
     if old_version == current {
-        return Ok(None);
+        return Ok((raw, None));
     }
 
     apply_migrations(&mut doc, &old_version, &current, migrations, label)?;
-    atomic_write(path, &doc.to_string())
-        .with_context(|| format!("writing migrated {label} to {}", path.display()))?;
-    Ok(Some(old_version))
+    Ok((doc.to_string(), Some(old_version)))
 }
 
 /// Walk the registry from `old_version` to `current_version`, mutating `doc` in place.

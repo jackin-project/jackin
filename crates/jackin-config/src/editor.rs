@@ -18,12 +18,12 @@ use toml_edit::{DocumentMut, Item, Table};
 
 use crate::app_config::AppConfig;
 use crate::app_config::persist::{
-    load_config_contents, load_split_config, validate_reserved_env_names,
+    load_config_contents, load_split_config_locked, validate_reserved_env_names,
 };
 use crate::auth::GithubAuthMode;
 use crate::persist::{
-    ConfigWriteGuard, StagedWrite, acquire_config_write_lock, atomic_write, stage_atomic_write,
-    validate_workspace_file_stem,
+    ConfigWriteGuard, StagedWrite, acquire_config_write_lock, atomic_write, commit_staged_config,
+    stage_atomic_write, stage_delete, validate_workspace_file_stem,
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
@@ -80,6 +80,13 @@ impl ConfigEditor {
     /// the write lock, avoiding recursive editor acquisition.
     pub fn open(paths: &JackinPaths) -> crate::ConfigResult<Self> {
         let lock = acquire_config_write_lock(&paths.config_file)?;
+        Self::open_with_lock(paths, lock)
+    }
+
+    pub(crate) fn open_with_lock(
+        paths: &JackinPaths,
+        lock: ConfigWriteGuard,
+    ) -> crate::ConfigResult<Self> {
         paths.ensure_base_dirs()?;
         if !paths.config_file.exists() {
             let mut initial = AppConfig::default();
@@ -137,7 +144,7 @@ impl ConfigEditor {
             atomic_write(&paths.config_file, &toml::to_string_pretty(&initial)?)?;
         }
         let raw = load_config_contents(paths)?;
-        drop(load_split_config(paths, raw)?);
+        drop(load_split_config_locked(paths, raw)?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw
@@ -204,17 +211,13 @@ impl ConfigEditor {
                 for (name, doc) in &self.workspace_docs {
                     staged.push(stage(&self.workspace_file(name), &doc.to_string())?);
                 }
-                for write in staged {
-                    write.commit()?;
-                }
+                let mut deletes = Vec::with_capacity(self.removed_workspaces.len());
                 for removed in &self.removed_workspaces {
-                    let path = self.workspace_file(removed);
-                    match std::fs::remove_file(&path) {
-                        Ok(()) => {}
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => return Err(e.into()),
+                    if let Some(delete) = stage_delete(&self.workspace_file(removed))? {
+                        deletes.push(delete);
                     }
                 }
+                commit_staged_config(&mut staged, &mut deletes)?;
                 Ok(config)
             })(),
         )

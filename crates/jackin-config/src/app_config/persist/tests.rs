@@ -3,9 +3,12 @@
 
 //! Tests for `persist`.
 use super::*;
+use crate::persist::{acquire_config_write_lock, atomic_write};
 use crate::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
 use jackin_core::JackinPaths;
 use std::path::Path;
+use std::sync::mpsc;
+use std::time::Duration as TestDuration;
 use tempfile::tempdir;
 
 fn wait_for_mtime_tick() {
@@ -39,6 +42,46 @@ fn sync_does_not_rewrite_config_when_already_current() {
         .unwrap();
 
     assert_eq!(mtime_before, mtime_after);
+}
+
+#[test]
+fn load_or_init_waits_for_an_existing_config_writer() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+
+    let writer = acquire_config_write_lock(&paths.config_file).unwrap();
+    let (done_tx, done_rx) = mpsc::channel();
+    let worker_paths = paths.clone();
+    let worker = std::thread::spawn(move || {
+        let result = AppConfig::load_or_init(&worker_paths);
+        done_tx.send(result.is_ok()).unwrap();
+    });
+
+    assert!(matches!(
+        done_rx.recv_timeout(TestDuration::from_millis(50)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    drop(writer);
+    assert!(done_rx.recv_timeout(TestDuration::from_secs(1)).unwrap());
+    worker.join().unwrap();
+}
+
+#[test]
+fn split_migration_does_not_commit_an_earlier_file_when_a_later_file_is_unreadable() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    AppConfig::load_or_init(&paths).unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+
+    let alpha_path = paths.workspaces_dir.join("alpha.toml");
+    let alpha_before = b"version = \"v1alpha1\"\nworkdir = \"/workspace/alpha\"\n";
+    std::fs::write(&alpha_path, alpha_before).unwrap();
+    std::fs::create_dir(paths.workspaces_dir.join("zulu.toml")).unwrap();
+
+    let err = AppConfig::load_or_init(&paths).unwrap_err();
+    assert!(err.to_string().contains("reading"), "{err:#}");
+    assert_eq!(std::fs::read(&alpha_path).unwrap(), alpha_before);
 }
 
 #[test]

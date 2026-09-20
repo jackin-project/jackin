@@ -17,7 +17,10 @@ use toml_edit::DocumentMut;
 use super::AppConfig;
 use crate::editor::ConfigEditor;
 use crate::migrations;
-use crate::persist::{atomic_write, validate_workspace_file_stem};
+use crate::persist::{
+    acquire_config_write_lock, commit_staged_config, ensure_replaceable_target, stage_atomic_write,
+    validate_workspace_file_stem,
+};
 use crate::schema::WorkspaceConfig;
 use crate::validation::validate_workspace_config;
 use crate::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
@@ -414,6 +417,14 @@ pub fn load_split_config(
     paths: &JackinPaths,
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
+    let _lock = acquire_config_write_lock(&paths.config_file)?;
+    load_split_config_locked(paths, contents_opt)
+}
+
+pub(crate) fn load_split_config_locked(
+    paths: &JackinPaths,
+    contents_opt: Option<String>,
+) -> crate::ConfigResult<AppConfig> {
     // Capture legacy per-workspace `op_account` from the raw TOML before
     // the typed parse below drops it: `WorkspaceConfig` no longer has that
     // field (it moved onto each op ref in v1alpha5), so a typed round-trip
@@ -441,7 +452,7 @@ pub fn load_split_config(
         migrate_legacy_workspaces(paths, &config, &legacy_workspaces, &legacy_op_accounts)?;
     }
 
-    config.workspaces = load_workspace_files(&paths.workspaces_dir)?;
+    config.workspaces = load_workspace_files_locked(&paths.workspaces_dir)?;
     Ok(config)
 }
 
@@ -489,6 +500,17 @@ fn migrate_config_document_in_memory(doc: &mut DocumentMut) -> crate::ConfigResu
 pub fn load_workspace_files(
     workspaces_dir: &Path,
 ) -> crate::ConfigResult<BTreeMap<String, WorkspaceConfig>> {
+    let config_file = workspaces_dir
+        .parent()
+        .unwrap_or(workspaces_dir)
+        .join("config.toml");
+    let _lock = acquire_config_write_lock(&config_file)?;
+    load_workspace_files_locked(workspaces_dir)
+}
+
+pub(crate) fn load_workspace_files_locked(
+    workspaces_dir: &Path,
+) -> crate::ConfigResult<BTreeMap<String, WorkspaceConfig>> {
     let mut workspaces = BTreeMap::new();
     let entries = match std::fs::read_dir(workspaces_dir) {
         Ok(entries) => entries,
@@ -503,6 +525,7 @@ pub fn load_workspace_files(
         }
     };
 
+    let mut paths = Vec::new();
     for entry in entries {
         let entry = entry.with_context(|| {
             format!("scanning workspaces directory {}", workspaces_dir.display())
@@ -511,6 +534,12 @@ pub fn load_workspace_files(
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
+        paths.push(path);
+    }
+    paths.sort();
+
+    let mut pending_writes = Vec::new();
+    for path in paths {
         let stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
             anyhow::Error::from(ConfigError::msg(format!(
                 "invalid workspace filename {}",
@@ -519,13 +548,49 @@ pub fn load_workspace_files(
         })?;
         let name = WorkspaceName::parse(stem)
             .with_context(|| format!("invalid workspace filename {}", path.display()))?;
-        migrations::migrate_workspace_file_if_needed(&path)?;
-        let raw = std::fs::read_to_string(&path)
-            .with_context(|| format!("reading workspace config {}", path.display()))?;
+        let migration = migrations::migrate_file_contents_if_needed(
+            &path,
+            "workspace config",
+            CURRENT_WORKSPACE_VERSION,
+            migrations::WORKSPACE_MIGRATIONS,
+        );
+        let (raw, migrated_from) = match migration {
+            Ok((raw, migrated_from)) => {
+                let event_result = Ok(migrated_from.clone());
+                migrations::emit_migration_result(
+                    "workspace",
+                    CURRENT_WORKSPACE_VERSION,
+                    migrations::WORKSPACE_MIGRATIONS,
+                    &event_result,
+                );
+                (raw, migrated_from)
+            }
+            Err(error) => {
+                let event_result = Err(ConfigError::msg("workspace migration failed"));
+                migrations::emit_migration_result(
+                    "workspace",
+                    CURRENT_WORKSPACE_VERSION,
+                    migrations::WORKSPACE_MIGRATIONS,
+                    &event_result,
+                );
+                return Err(error);
+            }
+        };
+        if migrated_from.is_some() {
+            pending_writes.push((path.clone(), raw.clone()));
+        }
         let workspace = toml::from_str(&raw)
             .with_context(|| format!("parsing workspace config {}", path.display()))?;
         workspaces.insert(name.into_inner(), workspace);
     }
+
+    let mut staged = Vec::with_capacity(pending_writes.len());
+    for (path, contents) in pending_writes {
+        ensure_replaceable_target(&path)?;
+        staged.push(stage_atomic_write(&path, &contents)?);
+    }
+    let mut deletes = Vec::new();
+    commit_staged_config(&mut staged, &mut deletes)?;
     Ok(workspaces)
 }
 
@@ -594,11 +659,18 @@ fn migrate_legacy_workspaces(
             )
         })?;
     }
+    let mut staged = Vec::with_capacity(workspace_writes.len() + 1);
     for (path, contents) in workspace_writes {
-        atomic_write(&path, &contents)?;
+        ensure_replaceable_target(&path)?;
+        staged.push(stage_atomic_write(&path, &contents)?);
     }
-
-    atomic_write(&paths.config_file, &global_contents)?;
+    ensure_replaceable_target(&paths.config_file)?;
+    // Keep the global rewrite last: it remains the migration commit marker,
+    // while the transaction restores earlier split files if a later rename
+    // or directory sync fails.
+    staged.push(stage_atomic_write(&paths.config_file, &global_contents)?);
+    let mut deletes = Vec::new();
+    commit_staged_config(&mut staged, &mut deletes)?;
     Ok(())
 }
 
@@ -750,10 +822,11 @@ pub(crate) fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<O
 impl AppConfig {
     /// Load `config.toml` (migrate as needed), split workspaces, sync builtins, validate.
     pub fn load_or_init(paths: &JackinPaths) -> crate::ConfigResult<Self> {
+        paths.ensure_base_dirs()?;
+        let lock = acquire_config_write_lock(&paths.config_file)?;
         let loaded = (|| {
-            paths.ensure_base_dirs()?;
             let contents_opt = load_config_contents(paths)?;
-            load_split_config(paths, contents_opt)
+            load_split_config_locked(paths, contents_opt)
         })();
         let mut config = crate::telemetry::finish_operation(
             jackin_telemetry::schema::enums::ConfigScope::Global,
@@ -775,16 +848,20 @@ impl AppConfig {
             })(),
         )?;
 
+        // Keep the exclusive lock across migration, builtin repair, and all
+        // validation. Passing it into the editor avoids recursive acquisition
+        // while preserving one writer scope for the tree.
         let builtins_changed = config.sync_builtin_agents();
-
         if builtins_changed {
-            let mut editor = ConfigEditor::open(paths)?;
+            let mut editor = ConfigEditor::open_with_lock(paths, lock)?;
             for &(name, git) in super::roles::BUILTIN_ROLES {
                 editor.upsert_builtin_agent(name, git);
             }
             // Take save()'s post-write parse: it preserves [roles.X.env] that
             // sync_builtin_agents cleared in-memory.
             config = editor.save()?;
+        } else {
+            drop(lock);
         }
 
         crate::telemetry::finish_operation(
