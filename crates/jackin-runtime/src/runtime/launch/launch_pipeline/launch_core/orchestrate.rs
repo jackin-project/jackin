@@ -446,6 +446,7 @@ struct LaunchRuntime<'a, D, R> {
     network: &'a str,
     dind: &'a str,
     resolved_profile: (DockerSecurityProfile, ProfileSource),
+    account_revision: &'a super::super::super::account_identity::AccountConfigRevision,
     effective_grants: &'a EffectiveGrants,
     adopted_sidecar_was_used: bool,
     prepared: InstancePrepared,
@@ -1378,6 +1379,7 @@ where
         network: &launch.initialized.network,
         dind: &launch.initialized.dind,
         resolved_profile: launch.initialized.resolved_profile,
+        account_revision: &launch.account_revision,
         effective_grants: &launch.initialized.effective_grants,
         adopted_sidecar_was_used: launch.initialized.adopted_sidecar_was_used,
         prepared,
@@ -1604,6 +1606,7 @@ where
         network,
         dind,
         resolved_profile,
+        account_revision,
         effective_grants,
         adopted_sidecar_was_used,
         prepared:
@@ -1632,6 +1635,7 @@ where
         let mut mounts = super::super::super::build_workspace_mounts(&materialized)?;
         mounts.extend(super::super::super::apple_agent_mounts(&state)?);
         cleanup.run(docker).await;
+        account_revision.ensure_current(paths)?;
         crate::runtime::apple_container::launch(
             crate::runtime::apple_container::AppleContainerLaunch {
                 paths,
@@ -1709,6 +1713,7 @@ where
             role_key,
         },
         non_interactive: opts.non_interactive,
+        account_revision,
     };
     let launch_result = super::super::super::launch_role_runtime(&ctx, steps, docker, runner).await;
     complete_docker_launch(

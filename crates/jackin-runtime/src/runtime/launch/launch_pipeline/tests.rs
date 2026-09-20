@@ -446,6 +446,11 @@ fn conformance_wire_public_launch_controller_exports_complete_pipeline() -> anyh
             env: BTreeMap::new(),
         },
     );
+    std::fs::write(
+        &fixture.paths.config_file,
+        toml::to_string(&fixture.config).unwrap(),
+    )
+    .unwrap();
     fixture.runner = FakeRunner::for_load_agent([
         private_source.to_owned(),
         String::new(),

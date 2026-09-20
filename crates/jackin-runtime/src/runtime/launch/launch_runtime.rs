@@ -78,6 +78,8 @@ pub(crate) struct LaunchContext<'a> {
     /// and no foreground session is attached. There is no terminal to hand the
     /// capsule multiplexer, so attaching would fail rather than degrade.
     pub(crate) non_interactive: bool,
+    /// Immutable account/config generation lease held through container start.
+    pub(crate) account_revision: &'a super::account_identity::AccountConfigRevision,
 }
 
 pub(crate) struct SelectedImageRefresh<'a> {
@@ -371,6 +373,7 @@ pub(crate) async fn launch_role_runtime(
         sibling_prewarm,
         sibling_auth_prewarm,
         non_interactive,
+        account_revision,
     } = ctx;
 
     let certs_volume = dind_certs_volume(container_name);
@@ -1090,6 +1093,7 @@ pub(crate) async fn launch_role_runtime(
         "docker_run_role",
         Some(container_name),
     );
+    account_revision.ensure_current(paths)?;
     let run_role = runner.run("docker", &run_args, None, &docker_run_opts);
     let run_role_result = if let Some(progress) = steps.progress_mut() {
         progress.while_waiting(run_role).await

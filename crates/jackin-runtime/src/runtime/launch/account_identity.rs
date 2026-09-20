@@ -8,6 +8,7 @@
 )]
 
 use crate::instance::{AdmittedInstance, InstanceManifest};
+use anyhow::Context as _;
 use jackin_config::{AppConfig, ConfigGeneration, ConfigReadGuard, ReadOnlyConfigSnapshot};
 use jackin_core::WorkspaceName;
 use sha2::{Digest as _, Sha256};
@@ -17,33 +18,73 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const ACCOUNT_FINGERPRINT_FILE: &str = "account-config.sha256";
 
+#[derive(Debug)]
+pub(crate) struct GenerationLeaseViolation(String);
+
+impl std::fmt::Display for GenerationLeaseViolation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "generation lease admission failed: {}", self.0)
+    }
+}
+
+impl std::error::Error for GenerationLeaseViolation {}
+
 /// Immutable persisted-config revision held from launch account resolution
 /// through credential publication and admission recording.
-pub(super) struct AccountConfigRevision {
+pub(crate) struct AccountConfigRevision {
     generation: ConfigGeneration,
     _read_guard: ConfigReadGuard,
 }
 
 impl AccountConfigRevision {
-    pub(super) fn acquire(paths: &jackin_core::JackinPaths) -> anyhow::Result<Self> {
-        let before = verified_config_snapshot(paths)?;
-        let read_guard = jackin_config::acquire_config_read_lock(&paths.config_file)?;
-        let after = verified_config_snapshot(paths)?;
-        anyhow::ensure!(
-            before.generation == after.generation,
-            "configuration changed while starting launch; retry"
-        );
+    /// Acquire a strict immutable lease over the persisted config generation.
+    ///
+    /// The required lock makes absence of the writer lock an admission failure;
+    /// the generation check detects writers that bypass the advisory protocol.
+    pub(crate) fn acquire(paths: &jackin_core::JackinPaths) -> anyhow::Result<Self> {
+        Self::acquire_inner(paths, None).map_err(mark_generation_lease_error)
+    }
+
+    /// Acquire a lease only when the caller's in-memory config is the same
+    /// snapshot that was admitted from disk.
+    pub(crate) fn acquire_bound(
+        paths: &jackin_core::JackinPaths,
+        caller_config: &AppConfig,
+    ) -> anyhow::Result<Self> {
+        Self::acquire_inner(paths, Some(caller_config)).map_err(mark_generation_lease_error)
+    }
+
+    fn acquire_inner(
+        paths: &jackin_core::JackinPaths,
+        caller_config: Option<&AppConfig>,
+    ) -> anyhow::Result<Self> {
+        let read_guard = jackin_config::acquire_config_read_lock_required(&paths.config_file)?;
+        let snapshot = verified_config_snapshot(paths)?;
+        ensure_lock_file_present(paths)?;
+        if let Some(caller_config) = caller_config {
+            ensure_caller_snapshot_matches(caller_config, &snapshot.config)?;
+        }
         Ok(Self {
-            generation: after.generation,
+            generation: snapshot.generation,
             _read_guard: read_guard,
         })
     }
 
-    fn current_snapshot(
+    pub(crate) fn current_snapshot(
         &self,
         paths: &jackin_core::JackinPaths,
     ) -> anyhow::Result<ReadOnlyConfigSnapshot> {
+        self.current_snapshot_inner(paths)
+            .map_err(mark_generation_lease_error)
+    }
+
+    fn current_snapshot_inner(
+        &self,
+        paths: &jackin_core::JackinPaths,
+    ) -> anyhow::Result<ReadOnlyConfigSnapshot> {
+        let _read_guard = jackin_config::acquire_config_read_lock_required(&paths.config_file)?;
         let snapshot = verified_config_snapshot(paths)?;
+        ensure_lock_file_present(paths)?;
         anyhow::ensure!(
             snapshot.generation == self.generation,
             "configuration changed during launch; aborting credential publication"
@@ -51,9 +92,29 @@ impl AccountConfigRevision {
         Ok(snapshot)
     }
 
-    pub(super) fn ensure_current(&self, paths: &jackin_core::JackinPaths) -> anyhow::Result<()> {
+    pub(crate) fn ensure_current(&self, paths: &jackin_core::JackinPaths) -> anyhow::Result<()> {
         self.current_snapshot(paths).map(drop)
     }
+}
+
+fn mark_generation_lease_error(error: anyhow::Error) -> anyhow::Error {
+    let summary = error.to_string();
+    error.context(GenerationLeaseViolation(summary))
+}
+
+fn ensure_lock_file_present(paths: &jackin_core::JackinPaths) -> anyhow::Result<()> {
+    let lock_path = paths.config_file.with_file_name("config.lock");
+    std::fs::metadata(&lock_path)
+        .with_context(|| format!("required config lock is absent: {}", lock_path.display()))?;
+    Ok(())
+}
+
+fn ensure_caller_snapshot_matches(caller: &AppConfig, persisted: &AppConfig) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        serde_json::to_vec(caller)? == serde_json::to_vec(persisted)?,
+        "caller configuration snapshot is stale; reload configuration and retry"
+    );
+    Ok(())
 }
 
 fn verified_config_snapshot(

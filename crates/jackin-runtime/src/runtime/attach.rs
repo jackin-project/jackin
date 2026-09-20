@@ -364,13 +364,15 @@ fn git_policy_env_pairs(coauthor_trailer: bool, dco: bool) -> Vec<(&'static str,
 pub(crate) fn require_current_account_admission(
     paths: &JackinPaths,
     container_name: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<super::launch::AccountConfigRevision> {
+    let admission_lease = super::launch::AccountConfigRevision::acquire(paths)?;
     let root = paths.data_dir.join(container_name);
     let manifest = InstanceManifest::read(&root)
         .context("cannot verify this container's account policy; recreate it with `jackin load`")?;
     let manifest = refresh_registration_states(paths, &root, manifest)?;
     current_account_admission(paths, &root, &manifest)?;
-    Ok(())
+    admission_lease.ensure_current(paths)?;
+    Ok(admission_lease)
 }
 
 fn refresh_registration_states(
@@ -475,7 +477,12 @@ fn require_current_instance_admission(
     container_name: &str,
     agent: jackin_core::Agent,
     requested_instance_id: Option<&str>,
-) -> anyhow::Result<(InstanceManifest, Option<String>)> {
+) -> anyhow::Result<(
+    InstanceManifest,
+    Option<String>,
+    super::launch::AccountConfigRevision,
+)> {
+    let admission_lease = super::launch::AccountConfigRevision::acquire(paths)?;
     let root = paths.data_dir.join(container_name);
     let manifest = InstanceManifest::read(&root).context(
         "cannot verify this container's live instance admission; recreate it with `jackin load`",
@@ -562,7 +569,8 @@ fn require_current_instance_admission(
 
     // The capsule receives the same exact ID and performs the final immutable
     // launch-config admission check before creating the PTY.
-    Ok((manifest, Some(target_id)))
+    admission_lease.ensure_current(paths)?;
+    Ok((manifest, Some(target_id), admission_lease))
 }
 
 pub(super) async fn reconnect_or_create_session_with_focus(
@@ -572,9 +580,10 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    require_current_account_admission(paths, container_name)?;
+    let admission_lease = require_current_account_admission(paths, container_name)?;
     set_role_terminal_title(paths, container_name);
     wait_for_capsule_daemon(paths, container_name, docker).await?;
+    admission_lease.ensure_current(paths)?;
     if super::host_attach::host_attach_enabled(paths) {
         let outcome = super::host_attach::run_host_attach_session(
             paths,
@@ -603,6 +612,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         "capsule_client_exec",
         Some(container_name),
     );
+    admission_lease.ensure_current(paths)?;
     let outcome = runner
         .run(
             "docker",
@@ -643,7 +653,7 @@ pub(super) async fn start_or_reconnect_capsule_client(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    require_current_account_admission(paths, container_name)?;
+    let admission_lease = require_current_account_admission(paths, container_name)?;
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "restore_inspect",
@@ -664,6 +674,7 @@ pub(super) async fn start_or_reconnect_capsule_client(
             if let Some(dind_name) = resources.dind_container.as_deref() {
                 match docker.inspect_container_state(dind_name).await {
                     ContainerState::Stopped { .. } | ContainerState::Created => {
+                        admission_lease.ensure_current(paths)?;
                         drop(docker.start_container(dind_name).await);
                     }
                     _ => {}
@@ -675,6 +686,7 @@ pub(super) async fn start_or_reconnect_capsule_client(
                 "restore_start_container",
                 Some(container_name),
             );
+            admission_lease.ensure_current(paths)?;
             let start_result = docker
                 .start_container(container_name)
                 .await
@@ -764,7 +776,7 @@ async fn require_container_reachable(
     container_name: &str,
     docker: &impl DockerApi,
     stopped_hint: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<super::launch::AccountConfigRevision> {
     require_container_running(paths, container_name, docker, stopped_hint).await?;
     require_current_account_admission(paths, container_name)
 }
@@ -812,7 +824,7 @@ pub async fn spawn_shell_session(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    require_container_reachable(
+    let admission_lease = require_container_reachable(
         paths,
         container_name,
         docker,
@@ -822,6 +834,7 @@ pub async fn spawn_shell_session(
 
     set_role_terminal_title(paths, container_name);
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
+    admission_lease.ensure_current(paths)?;
     if super::host_attach::host_attach_enabled(paths) {
         let result = super::host_attach::run_host_attach_session(
             paths,
@@ -854,6 +867,7 @@ pub async fn spawn_shell_session(
         "shell_session_exec",
         Some(container_name),
     );
+    admission_lease.ensure_current(paths)?;
     let result = runner
         .run(
             "docker",
@@ -922,7 +936,7 @@ pub async fn spawn_agent_session(
     )
     .await?;
 
-    let (live_manifest, admitted_instance_id) =
+    let (live_manifest, admitted_instance_id, admission_lease) =
         require_current_instance_admission(paths, container_name, agent, requested_instance_id)?;
     let workdir = live_manifest.workdir.as_str();
     let spawn_target = admitted_instance_id
@@ -942,6 +956,7 @@ pub async fn spawn_agent_session(
                 .collect();
         session_env_overrides.extend(env_overrides.iter().cloned());
         let spawn_request = SpawnRequest::instance(spawn_target)?;
+        admission_lease.ensure_current(paths)?;
         let result = super::host_attach::run_host_attach_session(
             paths,
             container_name,
@@ -980,6 +995,7 @@ pub async fn spawn_agent_session(
         &timing_name,
         Some(container_name),
     );
+    admission_lease.ensure_current(paths)?;
     let result = runner
         .run(
             "docker",
@@ -1076,7 +1092,7 @@ pub(crate) async fn hardline_docker_agent_with_focus(
     );
     let attach_outcome = match container_state {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-            require_current_account_admission(paths, container_name)?;
+            let _admission_lease = require_current_account_admission(paths, container_name)?;
             jackin_host::caffeinate::reconcile(paths, docker, runner).await;
             reconnect_or_create_session_with_focus(
                 paths,
@@ -1134,7 +1150,10 @@ pub(crate) async fn hardline_docker_agent_with_focus(
     // on it: `finalize_reconnected_foreground_session` re-inspects the container
     // and reads exit-action.json, so it handles both a clean exit and a genuine
     // failure. Only a clean exit reaches here in practice; log and proceed.
-    if attach_outcome.is_err() {
+    if let Err(error) = attach_outcome {
+        if error.is::<super::launch::GenerationLeaseViolation>() {
+            return Err(error);
+        }
         let _warning = jackin_telemetry::record_recovered_degradation();
     }
 

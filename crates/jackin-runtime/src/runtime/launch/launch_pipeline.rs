@@ -788,7 +788,8 @@ pub(crate) async fn load_role_with(
         &str,
     ) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    let initial_account_revision = super::account_identity::AccountConfigRevision::acquire(paths)?;
+    let initial_account_revision =
+        super::account_identity::AccountConfigRevision::acquire_bound(paths, config)?;
     let selected_workspace = config
         .workspaces
         .contains_key(workspace.name.as_str())
@@ -1107,6 +1108,10 @@ pub(crate) async fn load_role_with(
         confirm_trust_for_test,
     )?;
 
+    // Do not release the caller-bound lease until all pre-admission work has
+    // been checked. A direct writer may bypass the advisory lock; fail before
+    // handing the config tree to the trust writer in that case.
+    initial_account_revision.ensure_current(paths)?;
     drop(initial_account_revision);
     persist_new_role_trust(
         paths,

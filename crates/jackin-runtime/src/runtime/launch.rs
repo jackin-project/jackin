@@ -26,6 +26,7 @@
 
 mod account_config;
 mod account_identity;
+pub(crate) use account_identity::{AccountConfigRevision, GenerationLeaseViolation};
 mod launch_dind;
 pub use launch_dind::DIND_IMAGE;
 pub(super) use launch_dind::create_role_network;
