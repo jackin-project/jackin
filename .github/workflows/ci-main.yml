@@ -2423,7 +2423,7 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-test-support"
       cargo_net_offline: true
-      unit_dependencies: "rust-jackin-core,rust-jackin-manifest"
+      unit_dependencies: "rust-jackin-core,rust-jackin-manifest,rust-jackin-telemetry"
       unit_admission: github
   github-rust-jackin-tui:
     name: "Rust · jackin-tui"
