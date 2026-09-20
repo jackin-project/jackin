@@ -31,12 +31,12 @@ Missing live credentials stay explicit gaps, never passes.
 | D-UI1 | Console `from_projection` dropped `metric_groups`, plan, issues, cred-expiry, quota_state, raw % | Fixed 2667023b: UsageMetricGroup mirrors V1; console 1335 + clippy clean (author + independent) | LANDED |
 | D-UI2 | Capsule one tab per provider; same-provider accounts collapsed | Fixed a414f596: id-keyed per-account tabs, disambiguated labels, id focus/refresh; protocol 116 + usage 482 + capsule 867 green | LANDED |
 | D-SEC1 | P1 Landlock: only cwd granted; workspace/worktree mounts denied | ADOPTED parallel ef0c6d31 (exact-stamped workspace_mounts + worktree_git_targets, validated, additive); merged 258e173a; 869/869 green | LANDED |
-| D-SEC2 | No durable multi-file publication journal; crash-between-renames skew unrecovered | `persist.rs` TODO, `TODO.md:78-83` | BLOCKED, design needed |
-| D-SEC3 | Teardown uses bare `remove_dir_all` (symlink/replacement races) | `cleanup.rs`, `isolation/cleanup.rs` | UNVERIFIED, needs repro |
-| D-BR1 | Broker: no cancel; join timeout keeps ownership; lease acquired post-discovery (stale catalog risk, per WS5/HANDOFF) | `coordinator`, `broker.rs`, `view.rs:1-16` | UNVERIFIED, needs repro |
-| D-PR1 | Several collectors/parsers lack production broker dispatch; closed provider enum | provider-research/catalog ledgers U1-U12 | UNVERIFIED, needs verification |
-| D-UI3 | No filter/sort/capacity-finder on either surface; Console Enter flips title only; severity/meter/freshness wording deltas Console vs Capsule | WS6 evidence; `usage.rs:250,478,635,766` | UNVERIFIED, scope for repair agents |
-| D-SEC4 | Supervisor gate binds root peer by env PID equality only (`peer.pid == supervisor_pid` grants launch-wide caps); PID reuse by another root process impersonates supervisor | `usage_relay_proxy.rs:80-96,171-179` | CONFIRMED by inspection; fix direction: start-time/token binding, not PID |
+| D-SEC2 | Publication had RAM-only rollback; crash-between-renames stranded skew | Fixed 1ddefbf6: fsync'd TOML journal + forward-roll on write-locked open + TransientConflict on read path; config 463 green | LANDED |
+| D-SEC3 | Teardown `remove_dir_all` races | CLEARED by inspection + empirical probe (links never followed, container dead before unlink, no attacker paths); symlink pin test 3b895698 | CLEARED |
+| D-BR1 | Stale-catalog race: stale discovery paired with fresh lease read ("no cancel"/"join ownership" cleared as intended design) | Fixed ee757118: activation flock + post-lease re-discovery + bounded CAS retry + empty-scan confirm; broker 41 green | LANDED |
+| D-PR1 | Cursor/Gemini/Antigravity/OpenRouter/Muse/omp/Hermes collectors exist with zero production callers; Copilot has no collector; closed enums at 3 layers | Verified at dispatch call sites (consolidation probe); wiring dispatched | BLOCKED, repair dispatched |
+| D-UI3 | Console Enter flipped title only; no filter/sort/capacity-finder; wording deltas | Fixed e8b98f42: summary/full toggle, s/f/c keys + hints, Capsule label alignment; console usage 34 green | LANDED |
+| D-SEC4 | Supervisor gate PID-equality impersonation | Fixed 4b324478: (pid, start_time) binding from /proc+SO_PEERCRED, fail-closed; relay 12 green | LANDED |
 | S10-auth | Local auth files PRESENT (presence only): Claude (~/.claude.json), Codex, Cursor, Grok. Absent: Kimi, Amp, OpenCode, Gemini paths | host inventory 2026-09-21 | Presence != valid auth; live checks must validate per account |
 | D-PR2 | Gemini adapter has no live fetch; omp/hermes attribution-only; token_monitor lacks Grok/Antigravity/Gemini/Cursor/Muse/omp/Hermes | WS2 evidence | UNVERIFIED, matrix work |
 
