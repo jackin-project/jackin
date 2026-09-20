@@ -403,14 +403,10 @@ fn current_account_admission(
 }
 
 /// Revalidate a requested new-session target against the manifest captured by
-/// the live container and the current host account policy. The exact config ID
-/// is selected before entering this function; the function never resolves an
-/// account by provider/name and never silently substitutes a same-agent row.
-///
-/// Empty admission is retained only for pre-admission manifests and cannot
-/// satisfy an explicit live-picker target. Such manifests retain the old
-/// unqualified agent path, whose capsule-side resolver still rejects an
-/// ambiguous slug.
+/// the live container and the current host account policy. Every v3 manifest
+/// must carry an explicit admission set; the function never resolves an
+/// account by provider/name and never silently substitutes an unqualified
+/// same-agent row.
 fn require_current_instance_admission(
     paths: &JackinPaths,
     container_name: &str,
@@ -421,14 +417,6 @@ fn require_current_instance_admission(
     let manifest = InstanceManifest::read(&root).context(
         "cannot verify this container's live instance admission; recreate it with `jackin load`",
     )?;
-    if manifest.admitted_instances.is_empty() {
-        anyhow::ensure!(
-            requested_instance_id.is_none(),
-            "requested instance is not admitted by the live container manifest; recreate it with `jackin load`"
-        );
-        current_account_admission(paths, &root, &manifest)?;
-        return Ok((manifest, None));
-    }
 
     let target = if let Some(requested) = requested_instance_id {
         manifest
