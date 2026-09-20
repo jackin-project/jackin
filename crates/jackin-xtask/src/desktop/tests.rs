@@ -197,25 +197,25 @@ fn cadence_tasks_define_the_canonical_graph() {
     assert_subsequence(
         task_block(&mise, "desktop-ci"),
         &[
-            "desktop-bindings-check",
-            "desktop-generate",
-            "desktop-format-check",
-            "desktop-lint",
-            "desktop-test\n",
-            "desktop-build",
-            "desktop test-swift",
-            "desktop-verify",
+            "{ task = \"desktop-bindings-check\" }",
+            "{ task = \"desktop-generate\" }",
+            "{ task = \"desktop-format-check\" }",
+            "{ task = \"desktop-lint\" }",
+            "{ task = \"desktop-test\" }",
+            "{ task = \"desktop-build\" }",
+            "{ task = \"desktop-test-swift\" }",
+            "{ task = \"desktop-verify\" }",
         ],
         "desktop-ci",
     );
     assert_subsequence(
         task_block(&mise, "desktop-merge"),
-        &["desktop-ci", "desktop-test-ui"],
+        &["{ task = \"desktop-ci\" }", "{ task = \"desktop-test-ui\" }"],
         "desktop-merge",
     );
     assert_subsequence(
         task_block(&mise, "desktop-scheduled"),
-        &["desktop-merge", "desktop-deadcode"],
+        &["{ task = \"desktop-merge\" }", "{ task = \"desktop-deadcode\" }"],
         "desktop-scheduled",
     );
 }

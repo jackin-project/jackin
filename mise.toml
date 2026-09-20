@@ -126,26 +126,29 @@ run = "cargo fmt --check"
 
 [tasks.desktop-bindings]
 description = "Generate boltffi Swift bindings for jackin❯ desktop"
+tools = { rust = "1.97.1", "cargo:boltffi_cli" = "0.30.1" }
 run = "cargo xtask desktop bindings"
 
 [tasks.desktop-bindings-check]
 description = "Fail when committed boltffi bindings drift from regeneration"
+tools = { rust = "1.97.1", "cargo:boltffi_cli" = "0.30.1" }
 run = "cargo xtask desktop bindings-check"
 
 [tasks.desktop-xcframework]
 description = "Build the arm64 static JackinUsageFFI XCFramework"
+tools = { rust = "1.97.1", "cargo:boltffi_cli" = "0.30.1" }
 run = "cargo xtask desktop xcframework"
 
 [tasks.swift-package-native-ci]
 description = "CI gate for native SwiftPM package (xcframework then build/test)"
-run = '''
-set -euo pipefail
-mise run desktop-xcframework
-cd native && swift build && swift test --parallel
-'''
+run = [
+  { task = "desktop-xcframework" },
+  "cd native && swift build && swift test --parallel",
+]
 
 [tasks.desktop-generate]
 description = "Regenerate the jackin❯ desktop Xcode project"
+tools = { xcodegen = "2.46.0" }
 run = "xcodegen generate --spec native/project.yml"
 
 [tasks.desktop-format]
@@ -160,20 +163,24 @@ run = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -
 
 [tasks.desktop-lint]
 description = "Fail on jackin❯ desktop SwiftLint violations"
+tools = { swiftlint = { version = "0.65.1", os = ["macos"] } }
 # No --config flag: an explicit config path disables SwiftLint's nested-config
 # discovery, which the per-directory test-policy and size-debt files rely on.
 run = "cd native && swiftlint lint --strict"
 
 [tasks.desktop-test-ui]
 description = "Run jackin❯ desktop UI tests against the real app host"
+tools = { ripgrep = "15.2.0", xcbeautify = { version = "3.2.1", os = ["macos"] } }
 run = "native/Scripts/run-ui-tests.sh"
 
 [tasks.desktop-deadcode]
 description = "Scan jackin❯ desktop for unused declarations"
+tools = { periphery = { version = "3.8.0", os = ["macos"] } }
 run = "cd native && periphery scan --project JackinDesktop.xcodeproj --schemes JackinDesktop --retain-public --retain-objc-accessible --retain-assign-only-properties --report-exclude '**/JackinUsageBindings/**' --strict --quiet"
 
 [tasks.desktop-build]
 description = "Build JackinDesktop.app (prints absolute path + how to run)"
+tools = { rust = "1.97.1", "cargo:boltffi_cli" = "0.30.1", xcodegen = "2.46.0" }
 usage = '''
 arg "[version]" help="CFBundleShortVersionString (e.g. 0.6.0)"
 arg "[build]" help="CFBundleVersion numeric build (e.g. 1)"
@@ -189,6 +196,7 @@ cargo xtask desktop build --version "$version" --build "$build"
 
 [tasks.desktop-verify]
 description = "Fail-closed verify of JackinDesktop.app (prints path + run hint)"
+tools = { rust = "1.97.1" }
 usage = '''
 arg "<app>" help="Path to JackinDesktop.app" default="native/dist/JackinDesktop.app"
 arg "[version]" help="Expected CFBundleShortVersionString"
@@ -206,7 +214,13 @@ cargo xtask desktop verify "${args[@]}"
 
 [tasks.desktop-test]
 description = "Host + pure Swift OpenUsage/CodexBar limits-only parity harnesses for Desktop"
+tools = { rust = "1.97.1", "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.140" }
 run = "cargo xtask desktop test"
+
+[tasks.desktop-test-swift]
+description = "Run the counted native SwiftPM unit tests"
+tools = { rust = "1.97.1" }
+run = "cargo xtask desktop test-swift"
 
 # Canonical cadence graph — one definition per command, CI and release invoke
 # these exact task names (see native/Design/UnifiedAgentUsage/SwiftProjectReadiness.md).
@@ -220,33 +234,30 @@ run = "cargo xtask desktop test"
 # resilience probes out of `desktop-ci`.
 [tasks.desktop-ci]
 description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
-run = '''
-set -euo pipefail
-mise run desktop-bindings-check
-mise run desktop-generate
-mise run desktop-format-check
-mise run desktop-lint
-mise run desktop-test
-mise run desktop-build
-cargo xtask desktop test-swift
-mise run desktop-verify
-'''
+run = [
+  { task = "desktop-bindings-check" },
+  { task = "desktop-generate" },
+  { task = "desktop-format-check" },
+  { task = "desktop-lint" },
+  { task = "desktop-test" },
+  { task = "desktop-build" },
+  { task = "desktop-test-swift" },
+  { task = "desktop-verify" },
+]
 
 [tasks.desktop-merge]
 description = "Merge cadence: PR graph plus UI tests against the real app host"
-run = '''
-set -euo pipefail
-mise run desktop-ci
-mise run desktop-test-ui
-'''
+run = [
+  { task = "desktop-ci" },
+  { task = "desktop-test-ui" },
+]
 
 [tasks.desktop-scheduled]
 description = "Scheduled cadence: merge graph plus dead-code scan"
-run = '''
-set -euo pipefail
-mise run desktop-merge
-mise run desktop-deadcode
-'''
+run = [
+  { task = "desktop-merge" },
+  { task = "desktop-deadcode" },
+]
 
 [tasks.desktop-run]
 description = "Launch JackinDesktop.app (menu bar only — no Dock icon)"
