@@ -68,7 +68,13 @@ pub(super) fn pty_command(
         .map(shell_quote)
         .collect::<Vec<_>>()
         .join(" ");
-    let full = format!("stty cols 120 rows 40 >/dev/null 2>&1; exec {invocation}");
+    // `quit undef`: the palette hotkey (`^\`, 0x1c) doubles as the tty
+    // VQUIT char. A script step gated on a boot-marker file can land
+    // while the child is still in cooked mode, and the line discipline
+    // would SIGQUIT the child instead of delivering a keypress — a
+    // coin-flip crash. Undefining VQUIT keeps every other discipline
+    // behavior (canonical mode, ICRNL for `\r` prompt answers) intact.
+    let full = format!("stty cols 120 rows 40 quit undef >/dev/null 2>&1; exec {invocation}");
     if cfg!(target_os = "macos") {
         // BSD `script` block-buffers pipe stdout (nothing arrives live), so
         // the transcript is followed through this file instead; see
