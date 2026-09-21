@@ -93,6 +93,21 @@ pub trait CommandRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
+    /// Run and return captured stdout+stderr merged (`2>&1` semantics).
+    ///
+    /// For post-mortem reads where the failure may live on either stream
+    /// (`docker logs` routes container-stdout/stderr to separate CLI
+    /// streams when the container has no TTY). The default impl returns
+    /// stdout only via [`CommandRunner::capture`]; runners that own real
+    /// processes must override it to merge both streams.
+    async fn capture_combined(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+    ) -> anyhow::Result<String> {
+        self.capture(program, args, cwd).await
+    }
     /// Like [`CommandRunner::capture`] but suppresses stdout from the debug stream and omits
     /// stderr from error messages. Use for commands whose output is a credential
     /// (e.g. `gh auth token`, `op read`) so the value never appears in debug logs.

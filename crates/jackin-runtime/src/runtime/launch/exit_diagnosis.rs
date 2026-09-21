@@ -83,8 +83,13 @@ pub(crate) async fn diagnose_with_state(
             // "docker logs CLI failed" — the latter is a post-mortem
             // signal the operator needs (daemon down, container gone)
             // rather than the empty body the prose body falls back to.
+            // Combined stdout+stderr: the container runs without a TTY so
+            // `docker logs` keeps the streams split, and capsule early
+            // failures (`Error: ...` from `main() -> Result`) print to
+            // stderr only — a stdout-only read reports "no log output"
+            // while discarding the real reason.
             let logs = match runner
-                .capture("docker", &["logs", "--tail", "40", container_name], None)
+                .capture_combined("docker", &["logs", "--tail", "40", container_name], None)
                 .await
             {
                 Ok(text) => {

@@ -273,10 +273,14 @@ pub(crate) struct CleanupClassified {
 
 // ── Failure helpers ────────────────────────────────────────────────────────
 
-/// Mid-pipeline failure: mark `FailedSetup` (best-effort) then run cleanup.
+/// Mid-pipeline failure: mark `FailedSetup` (best-effort) then run
+/// evidence-preserving cleanup.
 ///
 /// Order is intentional — suite A asserts cleanup Docker ops still run even
-/// when the status write fails or is skipped.
+/// when the status write fails or is skipped. The dead role container and
+/// its host socket dir (bind-mounted `agent.toml`) are preserved for
+/// post-mortem; only regenerable resources (`DinD`, certs volume, network)
+/// are torn down.
 pub(crate) async fn mark_failed_setup_then_cleanup(
     paths: &JackinPaths,
     container_state: &std::path::Path,
@@ -300,7 +304,7 @@ pub(crate) async fn mark_failed_setup_then_cleanup(
             run.compact("status", &message);
         }
     }
-    cleanup.run(docker).await;
+    cleanup.run_preserving_evidence(docker).await;
 }
 
 /// Grant-failure path: cleanup only (no `FailedSetup` — instance may not exist yet).

@@ -102,6 +102,64 @@ async fn capture_handles_large_stdout() {
     assert!(output.starts_with('x'));
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn capture_combined_merges_stdout_and_stderr() {
+    let mut runner = ShellRunner::default();
+
+    let output = runner
+        .capture_combined("sh", &["-c", "echo out; echo err >&2"], None)
+        .await
+        .unwrap();
+
+    assert!(
+        output.contains("out") && output.contains("err"),
+        "both streams must be present: {output:?}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn capture_combined_surfaces_stderr_only_output() {
+    // Pins the `docker logs` diagnose fix: stderr-only output (capsule
+    // `Error: ...` with no TTY) must survive combined capture while
+    // stdout-only `capture` still returns "" for the same command.
+    let mut runner = ShellRunner::default();
+
+    let combined = runner
+        .capture_combined("sh", &["-c", "echo 'Error: boom' >&2"], None)
+        .await
+        .unwrap();
+    assert_eq!(combined, "Error: boom");
+
+    let stdout_only = runner
+        .capture("sh", &["-c", "echo 'Error: boom' >&2"], None)
+        .await
+        .unwrap();
+    assert!(
+        stdout_only.is_empty(),
+        "stdout-only capture must stay stdout-only: {stdout_only:?}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn capture_combined_empty_streams_yield_empty() {
+    let mut runner = ShellRunner::default();
+
+    let output = runner.capture_combined("true", &[], None).await.unwrap();
+
+    assert!(output.is_empty(), "no output means empty: {output:?}");
+}
+
+#[test]
+fn merge_combined_output_joins_nonempty_streams() {
+    assert_eq!(merge_combined_output(b"", b""), "");
+    assert_eq!(merge_combined_output(b"out\n", b""), "out");
+    assert_eq!(merge_combined_output(b"", b"err\n"), "err");
+    assert_eq!(merge_combined_output(b"out\n", b"err\n"), "out\nerr");
+}
+
 #[test]
 fn redact_env_args_masks_dash_e_value() {
     let args = &[

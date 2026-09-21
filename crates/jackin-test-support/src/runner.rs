@@ -16,6 +16,10 @@ pub struct FakeRunner {
     pub fail_on: Vec<String>,
     pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
+    /// Outputs served to [`CommandRunner::capture_combined`] (stdout+stderr
+    /// merged). Separate from `capture_queue` so tests can prove which
+    /// capture a code path uses: seed one queue, leave the other empty.
+    pub combined_queue: VecDeque<String>,
     pub side_effects: Vec<(String, Box<dyn FnOnce()>)>,
     /// Optional test-only observation hook invoked for every command.
     pub command_hook: Option<fn(&str)>,
@@ -25,6 +29,13 @@ impl FakeRunner {
     pub fn with_capture_queue<const N: usize>(outputs: [String; N]) -> Self {
         Self {
             capture_queue: VecDeque::from(outputs),
+            ..Default::default()
+        }
+    }
+
+    pub fn with_combined_queue<const N: usize>(outputs: [String; N]) -> Self {
+        Self {
+            combined_queue: VecDeque::from(outputs),
             ..Default::default()
         }
     }
@@ -114,5 +125,17 @@ impl CommandRunner for FakeRunner {
         cwd: Option<&std::path::Path>,
     ) -> anyhow::Result<String> {
         self.capture(program, args, cwd).await
+    }
+
+    async fn capture_combined(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        _cwd: Option<&std::path::Path>,
+    ) -> anyhow::Result<String> {
+        let command = format!("{} {}", program, args.join(" "));
+        self.recorded.push(command.clone());
+        self.check_command(&command)?;
+        Ok(self.combined_queue.pop_front().unwrap_or_default())
     }
 }

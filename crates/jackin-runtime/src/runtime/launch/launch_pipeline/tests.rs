@@ -459,7 +459,7 @@ async fn run_launch_core_happy_path_returns_container_name() {
 }
 
 #[tokio::test]
-async fn run_launch_core_removes_container_if_generation_rotates_during_docker_run() {
+async fn run_launch_core_removes_stale_container_once_if_generation_rotates_during_docker_run() {
     let mut fix = LaunchCoreFixture::new();
     let mut rotated = fix.config.clone();
     rotated
@@ -477,14 +477,40 @@ async fn run_launch_core_removes_container_if_generation_rotates_during_docker_r
             .contains("configuration changed during launch"),
         "unexpected rotation error: {error:#}"
     );
+    // The generation guard (`ensure_current_or_remove_stale_container`)
+    // still force-removes the stale-credentials container directly — that
+    // is a security removal, not cleanup. The FailedSetup cleanup behind
+    // it (`handle_launch_failure`) preserves evidence, so the role `rm`
+    // must appear exactly once, alongside DinD/certs/network teardown.
+    let recorded = fix.docker.recorded.borrow();
+    let role_rm_count = recorded
+        .iter()
+        .filter(|call| *call == &format!("docker rm -f {}", fix.container_name))
+        .count();
+    assert_eq!(
+        role_rm_count, 1,
+        "stale container removed once by generation guard, never re-removed by cleanup: {recorded:?}",
+    );
+    let dind = crate::instance::naming::dind_container_name(&fix.container_name);
     assert!(
-        fix.docker
-            .recorded
-            .borrow()
+        recorded
             .iter()
-            .any(|call| call == &format!("docker rm -f {}", fix.container_name)),
-        "stale started container must be force-removed: {:?}",
-        fix.docker.recorded.borrow()
+            .any(|call| call == &format!("docker rm -f {dind}")),
+        "FailedSetup path must still tear down DinD; recorded: {recorded:?}",
+    );
+    let certs = crate::instance::naming::dind_certs_volume(&fix.container_name);
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker volume rm {certs}")),
+        "FailedSetup path must still tear down certs volume; recorded: {recorded:?}",
+    );
+    let network = crate::instance::naming::role_network_name(&fix.container_name);
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker network rm {network}")),
+        "FailedSetup path must still tear down network; recorded: {recorded:?}",
     );
 }
 

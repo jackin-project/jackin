@@ -505,7 +505,7 @@ async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() 
 
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue([
+    let mut runner = FakeRunner::with_combined_queue([
         "/jackin/runtime/entrypoint.sh: line 85: exec: codex: not found".to_owned(),
     ]);
     let err = diagnose_premature_exit(
@@ -546,7 +546,7 @@ async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
 
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue([String::new()]);
+    let mut runner = FakeRunner::with_combined_queue([String::new()]);
     let err = diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach)
         .await
         .expect("OOM-killed container is a premature exit");
@@ -618,7 +618,7 @@ async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
         }])),
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue(["panic: VT screen overflow".to_owned()]);
+    let mut runner = FakeRunner::with_combined_queue(["panic: VT screen overflow".to_owned()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
@@ -654,7 +654,7 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
         }])),
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue([String::new()]);
+    let mut runner = FakeRunner::with_combined_queue([String::new()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
@@ -683,7 +683,7 @@ async fn diagnose_premature_exit_reports_empty_docker_logs() {
         }])),
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue([String::new()]);
+    let mut runner = FakeRunner::with_combined_queue([String::new()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
@@ -696,6 +696,46 @@ async fn diagnose_premature_exit_reports_empty_docker_logs() {
     assert!(
         msg.contains("no log output"),
         "empty-log detail missing: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn diagnose_premature_exit_surfaces_stderr_only_docker_logs() {
+    // Capsule early failures (`Error: ...` from `main() -> Result`)
+    // print to stderr only, and the container runs without a TTY so
+    // `docker logs` keeps the streams split. The diagnose path must
+    // read the combined streams: stdout-only capture would report
+    // "no log output" while discarding the real reason.
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 1,
+            oom_killed: false,
+        }])),
+        ..Default::default()
+    };
+    // stdout queue deliberately empty: a stdout-only `docker logs`
+    // read would see "" and fall into the "no log output" branch.
+    let mut runner =
+        FakeRunner::with_combined_queue(["Error: missing /jackin/run/agent.toml".to_owned()]);
+    let err = diagnose_premature_exit(
+        &docker,
+        &mut runner,
+        "jk-the-architect",
+        ExitPhase::PreAttach,
+    )
+    .await
+    .expect("pre-attach exit 1 must produce a diagnostic error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Error: missing /jackin/run/agent.toml"),
+        "stderr-only reason must be surfaced, not discarded: {msg}"
+    );
+    assert!(
+        !msg.contains("no log output"),
+        "stderr-only logs must not take the empty-logs branch: {msg}"
     );
 }
 
@@ -4794,11 +4834,15 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
         "unexpected error: {error:#}"
     );
     let docker_recorded = docker.recorded.borrow();
+    // FailedSetup path preserves the role container for post-mortem
+    // (`docker logs`/`inspect`); only DinD/certs/network are torn down.
+    // (No role container exists yet at sidecar-start time, so there is
+    // nothing to preserve — the point is no `rm -f` is issued for it.)
     assert!(
-        docker_recorded
+        !docker_recorded
             .iter()
             .any(|call| call.starts_with("docker rm -f jk-") && !call.ends_with("-dind")),
-        "role container cleanup missing after sidecar failure: {docker_recorded:?}"
+        "role container must be preserved after sidecar failure: {docker_recorded:?}"
     );
     assert!(
         docker_recorded
@@ -6409,34 +6453,33 @@ plugins = ["code-review@claude-plugins-official"]
     let dind = format!("{container_name}-dind");
     let certs_volume = format!("{container_name}-dind-certs");
     let network = format!("{container_name}-net");
-    // Cleanup uses docker (bollard) for rm operations
+    // Cleanup uses docker (bollard) for rm operations. FailedSetup path
+    // preserves the role container for post-mortem (`docker logs`/`inspect`)
+    // while still tearing down DinD/certs/network.
+    let recorded = docker.recorded.borrow();
     assert!(
-        docker
-            .recorded
-            .borrow()
+        !recorded
             .iter()
-            .any(|call| call == &format!("docker rm -f {container_name}"))
+            .any(|call| call == &format!("docker rm -f {container_name}")),
+        "role container must be preserved for post-mortem: {recorded:?}",
     );
     assert!(
-        docker
-            .recorded
-            .borrow()
+        recorded
             .iter()
-            .any(|call| call == &format!("docker rm -f {dind}"))
+            .any(|call| call == &format!("docker rm -f {dind}")),
+        "DinD teardown missing after attached run failure: {recorded:?}",
     );
     assert!(
-        docker
-            .recorded
-            .borrow()
+        recorded
             .iter()
-            .any(|call| call == &format!("docker volume rm {certs_volume}"))
+            .any(|call| call == &format!("docker volume rm {certs_volume}")),
+        "cert volume teardown missing after attached run failure: {recorded:?}",
     );
     assert!(
-        docker
-            .recorded
-            .borrow()
+        recorded
             .iter()
-            .any(|call| call == &format!("docker network rm {network}"))
+            .any(|call| call == &format!("docker network rm {network}")),
+        "network teardown missing after attached run failure: {recorded:?}",
     );
 }
 

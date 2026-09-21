@@ -116,12 +116,15 @@ async fn mid_pipeline_failed_setup_still_runs_cleanup() {
         inspect_queue: std::cell::RefCell::new(VecDeque::new()),
         ..Default::default()
     };
+    let socket_dir = paths.jackin_home.join("sockets").join(container);
+    std::fs::create_dir_all(&socket_dir).unwrap();
+    std::fs::write(socket_dir.join("agent.toml"), b"[capsule]\n").unwrap();
     let cleanup = LoadCleanup::new(
         container.into(),
         format!("{container}-dind"),
         format!("{container}-certs"),
         format!("{container}-net"),
-        paths.jackin_home.join("sockets").join(container),
+        socket_dir.clone(),
     );
 
     mark_failed_setup_then_cleanup(
@@ -147,6 +150,85 @@ async fn mid_pipeline_failed_setup_still_runs_cleanup() {
             .iter()
             .any(|c| c == &format!("docker rm -f {container}-dind")),
         "FailedSetup path must still tear down DinD; recorded: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|c| c == &format!("docker volume rm {container}-certs")),
+        "FailedSetup path must still tear down certs volume; recorded: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|c| c == &format!("docker network rm {container}-net")),
+        "FailedSetup path must still tear down network; recorded: {recorded:?}"
+    );
+    assert!(
+        !recorded
+            .iter()
+            .any(|c| c == &format!("docker rm -f {container}")),
+        "FailedSetup path must preserve the dead role container for post-mortem; recorded: {recorded:?}"
+    );
+    assert!(
+        socket_dir.join("agent.toml").is_file(),
+        "FailedSetup path must preserve the socket dir (bind-mounted agent.toml)"
+    );
+}
+
+#[tokio::test]
+async fn failed_setup_cleanup_preserves_evidence_but_stays_disarmable() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container = "jk-failed-setup-evidence";
+    let socket_dir = paths.jackin_home.join("sockets").join(container);
+    std::fs::create_dir_all(&socket_dir).unwrap();
+    std::fs::write(socket_dir.join("agent.toml"), b"[capsule]\n").unwrap();
+
+    let docker = FakeDockerClient::default();
+    let mut cleanup = LoadCleanup::new(
+        container.into(),
+        format!("{container}-dind"),
+        format!("{container}-certs"),
+        format!("{container}-net"),
+        socket_dir.clone(),
+    );
+    cleanup.disarm();
+    cleanup.run_preserving_evidence(&docker).await;
+    assert!(
+        docker.recorded.borrow().is_empty(),
+        "disarmed cleanup must stay a no-op; recorded: {:?}",
+        docker.recorded.borrow()
+    );
+
+    let docker = FakeDockerClient::default();
+    let cleanup = LoadCleanup::new(
+        container.into(),
+        format!("{container}-dind"),
+        format!("{container}-certs"),
+        format!("{container}-net"),
+        socket_dir.clone(),
+    );
+    cleanup.run_preserving_evidence(&docker).await;
+    let recorded = docker.recorded.borrow();
+    for expected in [
+        format!("docker rm -f {container}-dind"),
+        format!("docker volume rm {container}-certs"),
+        format!("docker network rm {container}-net"),
+    ] {
+        assert!(
+            recorded.iter().any(|c| c == &expected),
+            "evidence-preserving cleanup must still remove {expected}; recorded: {recorded:?}"
+        );
+    }
+    assert!(
+        !recorded
+            .iter()
+            .any(|c| c == &format!("docker rm -f {container}")),
+        "evidence-preserving cleanup must not remove the role container; recorded: {recorded:?}"
+    );
+    assert!(
+        socket_dir.join("agent.toml").is_file(),
+        "evidence-preserving cleanup must not remove the socket dir"
     );
 }
 
