@@ -2,10 +2,22 @@ schema = 2
 
 [generator]
 repository = "jackin-project/jackin"
+# D19 pin: immutable Velnor source for this generated tree. The matching
+# published runtime is velnor-workflow-runtime-v1-6e504285922e7046
+# (closure 6e504285922e7046ad6709cc537883a09314e6fbd4d007108c89fbe63262a9a4,
+# built from 80bc420dae37ae459e2545af2362d0220fa70bb9; release
+# 2026-09-21T20:27:10Z with Sigstore attestations over binary + manifest,
+# verified manifest filter, digest, and binary --closure/--revision
+# self-report before pinning).
 revision = "80bc420dae37ae459e2545af2362d0220fa70bb9"
 
 [scan]
-exclude = ["native/Package.swift", "native/.swiftpm/**"]
+# native/Package.swift scans: the xcframework-first ordering the exclusion
+# used to protect now comes from the FFI product + prerequisite edge below,
+# so the unit is scan-derived (plain swift commands + prepended prepare)
+# instead of hand-declared. .swiftpm/ stays excluded: the filesystem scan
+# would otherwise read untracked SwiftPM workspace state as evidence.
+exclude = ["native/.swiftpm/**"]
 
 # Public repo: GitHub-hosted singleton (no velnor lanes). Automatic events
 # stay GitHub-only so ci-required is not blocked by queued self-hosted jobs
@@ -152,22 +164,32 @@ id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
 # XCFramework must exist before `swift build` resolves the binary target.
-# The ci task rebuilds it in-job on one macOS runner (separate jobs do not
-# share target/xcframework).
+# The FFI unit declares the framework as a product with no transportable
+# outputs, so the consumer rebuilds it in-job on one macOS runner (separate
+# jobs do not share target/xcframework): the prerequisite edge compiles to
+# depends_on plus a prepended `mise run desktop-xcframework` prepare step,
+# ahead of the scanned plain `swift build` / `swift test --parallel`.
+# Scan-derived (not hand-declared) so the D3 `reads` contract validates:
+# `reads` names scan-produced units only. kind/root restate the scan
+# (no-ops kept explicit); the scanned watch stands (a row `watch` would
+# replace it, dropping Sources/Tests non-swift coverage) — the xtask
+# coupling the old hand watch named is covered by crates/** in `reads`.
 # platform = "macos-arm64": s2 spelling of the s1 capabilities=["xcframework"]
 # Q4 obligation — without it this Apple-bound unit renders ubuntu + Linux
 # plan-artifact runtime.
-# depends_on (F2): FFI touches select this Swift consumer; selection coupling
-# only, no forced serialization (the unit rebuilds the XCFramework in-job).
+# depends_on (F2): kept beside the edge (the compiled edge appends the same
+# producer if missing); selection coupling only, no forced serialization.
 [[units]]
 id = "swift-package-native"
 kind = "swift"
 root = "native"
-watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
-ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 platform = "macos-arm64"
 depends_on = ["rust-jackin-usage-ffi"]
+
+[[units.prerequisites]]
+producer = "rust-jackin-usage-ffi"
+product = "xcframework"
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
@@ -205,6 +227,66 @@ product = "xcframework"
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
 platform = "macos-arm64"
+
+# Closed-world read contracts (D3) for the four opaque units the D3 planner
+# names mechanically (`select` fallback_reason on the AGENTS.md-only diff:
+# bun-jackin-docs runs unprovable package commands, both Swift units execute
+# `mise`, and rust-jackin-usage-ffi runs drift-gate shell the extractor
+# refuses to parse). Every entry claims `complete`, uniformly per unit: the
+# declared paths plus the scan watch are the unit's entire read set, so
+# unmatched paths provably exclude it. Truth basis (verdict-totality: no
+# path outside these globs can flip the unit's CI exit code):
+# - bun: CI = bun install (postinstall fumadocs-mdx) + bun run build
+#   (gen-crate-pages embeds crates/*/README.md, gates meta.json
+#   completeness; vite+fumadocs consume docs/; prerender fetches localhost)
+#   + bun test (two docs/ unit-test files, no filesystem reads). Toolchain
+#   is setup-bun latest, no mise. No root bun workspace exists.
+#   README link-existence only alters generated page bytes that no CI gate
+#   observes (check:repo-links is local-only), never the verdict.
+# - swift-package: CI = mise run desktop-xcframework (mise reads root task
+#   defs + tool versions) -> cargo xtask desktop xcframework (compiles xtask,
+#   resolves the whole workspace, builds the FFI closure; the one in-closure
+#   build script, jackin-diagnostics, only queries the rustc version) ->
+#   swift build/test in native/ (Package.swift has no external refs; tests
+#   self-scan native/ only).
+# - swift-xcodegen: same FFI prepare, then xcodegen generate (reads the spec)
+#   + xcodebuild build/test of the JackinDesktop scheme (generated project,
+#   sources, tests incl. UITests, resources, Info.plist — all under native/;
+#   the spec's only external ref is the in-job xcframework output path).
+# - ffi: CI = mbx fmt/clippy/nextest/doctest for the FFI package (crate +
+#   workspace resolve, cargo roots already in the scan watch) + the bindings
+#   drift gate (stage the committed bindings, boltffi pack apple compiling
+#   the FFI closure, byte-compare). crates/** bounds the pack's closure
+#   reads; native/** bounds the bindings staging (rot-proof: the exact
+#   bindings dir is generator-derived from boltffi.toml and could move
+#   within native/).
+# Globs are rot-proof supersets on purpose: precise per-file contracts would
+# silently rot the first time a fixture or script reads a new file, and a
+# false `complete` silently skips verification. No glob matches AGENTS.md.
+[[declare]]
+primitive = "watch-graph"
+
+[declare.args.reads]
+"bun-jackin-docs" = [
+  { paths = ["docs/**"], reason = "bun install/build/test run in docs/: vite+fumadocs consume content, src, configs, scripts, public; postinstall runs fumadocs-mdx; bun test discovers docs tests; toolchain is setup-bun latest with no mise", complete = true },
+  { paths = ["crates/**"], reason = "gen-crate-pages embeds crates/*/README.md and gates meta.json completeness on the set; README link-existence only alters generated bytes no CI gate observes", complete = true },
+]
+"rust-jackin-usage-ffi" = [
+  { paths = ["native/**"], reason = "the bindings drift gate stages and byte-compares the committed Swift bindings under native/; the exact bindings dir is generator-derived from boltffi.toml and could move within native/", complete = true },
+  { paths = ["crates/**"], reason = "mbx verifies the FFI package and the gate's boltffi pack compiles the FFI crate plus its in-workspace closure (usage, config, core, env, protocol, telemetry, diagnostics, process); dependency edges couple the same set", complete = true },
+]
+"swift-package-native" = [
+  { paths = ["native/**"], reason = "swift build/test run in native/: Package.swift targets, Sources/Tests/Tools/Scripts, generated boltffi bindings, and test self-scans of sources and swiftlint configs all live under native/", complete = true },
+  { paths = ["crates/**"], reason = "cargo xtask compiles jackin-xtask and cargo build resolves the whole workspace then compiles the FFI closure (usage-ffi plus usage, config, core, env, protocol, telemetry, diagnostics, process); the in-closure diagnostics build script only queries the rustc version", complete = true },
+  { paths = ["vendor/**", "Cargo.toml", "Cargo.lock", ".cargo/**", "rust-toolchain.toml"], reason = "cargo workspace inputs: root manifests (desktop-release profile), lockfile, cargo config, toolchain pin, vendored path sources", complete = true },
+  { paths = ["mise.toml", "mise.lock"], reason = "mise run reads root task defs and resolves tool versions (rust, cargo-binstall, sccache, boltffi_cli) for the task and mise-action", complete = true },
+]
+"swift-xcodegen-native-project-yml-jackindesktop" = [
+  { paths = ["native/**"], reason = "xcodegen generate reads the spec and xcodebuild build/test consume the generated project, sources, tests, resources, and Info.plist under native/; the spec's only external ref is the in-job xcframework output path", complete = true },
+  { paths = ["crates/**"], reason = "cargo xtask compiles jackin-xtask and cargo build resolves the whole workspace then compiles the FFI closure (usage-ffi plus usage, config, core, env, protocol, telemetry, diagnostics, process); the in-closure diagnostics build script only queries the rustc version", complete = true },
+  { paths = ["vendor/**", "Cargo.toml", "Cargo.lock", ".cargo/**", "rust-toolchain.toml"], reason = "cargo workspace inputs: root manifests (desktop-release profile), lockfile, cargo config, toolchain pin, vendored path sources", complete = true },
+  { paths = ["mise.toml", "mise.lock"], reason = "mise run reads root task defs and resolves tool versions (xcodegen plus the rust chain) for the prepare step and mise-action", complete = true },
+]
 
 # Desktop release (L10): tag-triggered tasks release over the canonical
 # desktop mise tasks. Each event runs exactly one self-contained job

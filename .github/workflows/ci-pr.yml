@@ -2697,6 +2697,7 @@ jobs:
         rust-toolchain
         rust-toolchain.toml
       mbx_freshness_files: |
+        crates/**
         crates/jackin-brand/**/*.rs
         crates/jackin-brand/benches/**
         crates/jackin-brand/examples/**
@@ -2770,6 +2771,7 @@ jobs:
         crates/jackin-usage/tests/**
         crates/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json
         mise.lock
+        native/**
       cache_paths: |
         ~/.cargo/registry
         ~/.cargo/git
@@ -2874,6 +2876,35 @@ jobs:
       unit_platform: linux-x64
       unit_trust: untrusted-ok
       unit_admission: github-hosted
+  github-hosted-swift-package-native:
+    name: "Swift · Apple · Swift package (native) · github-hosted — swift-package-native"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"swift-package-native"') && (true) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-swift.yml
+    with:
+      unit: swift-package-native
+      provider: github-hosted
+      selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "cargo-binstall rust cargo:sccache cargo:boltffi_cli"
+      cache_paths: "~/.swiftpm"
+      cache_key_files: |
+        .swift-version
+        .xcode-version
+        mise.lock
+        native/.swiftpm/Package.resolved
+        native/Package.resolved
+        native/Package.swift
+      apple_executor: true
+      unit_platform: macos-arm64
+      unit_trust: untrusted-ok
+      unit_dependencies: rust-jackin-usage-ffi
+      unit_admission: github-hosted
   github-hosted-swift-package-native-design-prototypes-unifiedagentusage:
     name: "Swift · Apple · Swift package (native/Design/Prototypes/UnifiedAgentUsage) · github-hosted — swift-package-native-design-prototypes-unifiedagentusage"
     if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"swift-package-native-design-prototypes-unifiedagentusage"') && (true) }}
@@ -2928,31 +2959,10 @@ jobs:
       unit_trust: untrusted-ok
       unit_dependencies: rust-jackin-usage-ffi
       unit_admission: github-hosted
-  github-hosted-swift-package-native:
-    name: "Swift · Apple ·  · github-hosted — swift-package-native"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"swift-package-native"') && (true) }}
-    needs: [plan]
-    uses: ./.github/workflows/ci-unit-swift.yml
-    with:
-      unit: swift-package-native
-      provider: github-hosted
-      selected_units: ${{ needs.plan.outputs.units }}
-      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
-      scope: ${{ needs.plan.outputs.scope }}
-      full_units: ${{ needs.plan.outputs.full_units }}
-      plan_digest: ${{ needs.plan.outputs.plan_digest }}
-      base_sha: ${{ needs.plan.outputs.base_sha }}
-      head_sha: ${{ needs.plan.outputs.head_sha }}
-      mise_tools: "cargo-binstall rust cargo:sccache cargo:boltffi_cli"
-      apple_executor: true
-      unit_platform: macos-arm64
-      unit_trust: untrusted-ok
-      unit_dependencies: rust-jackin-usage-ffi
-      unit_admission: github-hosted
   ci-required:
     name: ci-required
     if: ${{ !cancelled() }}
-    needs: [plan, github-hosted-bun-jackin-docs, github-hosted-docker-docker-construct, github-hosted-rust-arrayref, github-hosted-rust-jackin, github-hosted-rust-jackin-agent-status, github-hosted-rust-jackin-brand, github-hosted-rust-jackin-build-meta, github-hosted-rust-jackin-capsule, github-hosted-rust-jackin-config, github-hosted-rust-jackin-config-fuzz, github-hosted-rust-jackin-console, github-hosted-rust-jackin-core, github-hosted-rust-jackin-dev, github-hosted-rust-jackin-diagnostics, github-hosted-rust-jackin-docker, github-hosted-rust-jackin-env, github-hosted-rust-jackin-env-fuzz, github-hosted-rust-jackin-host, github-hosted-rust-jackin-image, github-hosted-rust-jackin-instance, github-hosted-rust-jackin-isolation, github-hosted-rust-jackin-launch, github-hosted-rust-jackin-manifest, github-hosted-rust-jackin-manifest-fuzz, github-hosted-rust-jackin-oppicker, github-hosted-rust-jackin-otlp-testbed, github-hosted-rust-jackin-pr-trailers, github-hosted-rust-jackin-process, github-hosted-rust-jackin-protocol, github-hosted-rust-jackin-protocol-fuzz, github-hosted-rust-jackin-runtime, github-hosted-rust-jackin-telemetry, github-hosted-rust-jackin-test-support, github-hosted-rust-jackin-tui, github-hosted-rust-jackin-usage, github-hosted-rust-jackin-usage-ffi, github-hosted-rust-jackin-xtask, github-hosted-rust-policy, github-hosted-swift-package-native-design-prototypes-unifiedagentusage, github-hosted-swift-xcodegen-native-project-yml-jackindesktop, github-hosted-swift-package-native]
+    needs: [plan, github-hosted-bun-jackin-docs, github-hosted-docker-docker-construct, github-hosted-rust-arrayref, github-hosted-rust-jackin, github-hosted-rust-jackin-agent-status, github-hosted-rust-jackin-brand, github-hosted-rust-jackin-build-meta, github-hosted-rust-jackin-capsule, github-hosted-rust-jackin-config, github-hosted-rust-jackin-config-fuzz, github-hosted-rust-jackin-console, github-hosted-rust-jackin-core, github-hosted-rust-jackin-dev, github-hosted-rust-jackin-diagnostics, github-hosted-rust-jackin-docker, github-hosted-rust-jackin-env, github-hosted-rust-jackin-env-fuzz, github-hosted-rust-jackin-host, github-hosted-rust-jackin-image, github-hosted-rust-jackin-instance, github-hosted-rust-jackin-isolation, github-hosted-rust-jackin-launch, github-hosted-rust-jackin-manifest, github-hosted-rust-jackin-manifest-fuzz, github-hosted-rust-jackin-oppicker, github-hosted-rust-jackin-otlp-testbed, github-hosted-rust-jackin-pr-trailers, github-hosted-rust-jackin-process, github-hosted-rust-jackin-protocol, github-hosted-rust-jackin-protocol-fuzz, github-hosted-rust-jackin-runtime, github-hosted-rust-jackin-telemetry, github-hosted-rust-jackin-test-support, github-hosted-rust-jackin-tui, github-hosted-rust-jackin-usage, github-hosted-rust-jackin-usage-ffi, github-hosted-rust-jackin-xtask, github-hosted-rust-policy, github-hosted-swift-package-native, github-hosted-swift-package-native-design-prototypes-unifiedagentusage, github-hosted-swift-xcodegen-native-project-yml-jackindesktop]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
@@ -3037,7 +3047,7 @@ jobs:
           SELECTED_UNITS: ${{ needs.plan.outputs.units }}
           PLAN_DIGEST: ${{ needs.plan.outputs.plan_digest }}
           EXCLUDED: ${{ needs.plan.outputs.excluded }}
-          EXPECTED_CALLERS: "[{\"job_id\":\"github-hosted-bun-jackin-docs\",\"provider\":\"github-hosted\",\"unit_id\":\"bun-jackin-docs\"},{\"job_id\":\"github-hosted-docker-docker-construct\",\"provider\":\"github-hosted\",\"unit_id\":\"docker-docker-construct\"},{\"job_id\":\"github-hosted-rust-arrayref\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-arrayref\"},{\"job_id\":\"github-hosted-rust-jackin\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin\"},{\"job_id\":\"github-hosted-rust-jackin-agent-status\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-agent-status\"},{\"job_id\":\"github-hosted-rust-jackin-brand\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-brand\"},{\"job_id\":\"github-hosted-rust-jackin-build-meta\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-build-meta\"},{\"job_id\":\"github-hosted-rust-jackin-capsule\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-capsule\"},{\"job_id\":\"github-hosted-rust-jackin-config\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-config\"},{\"job_id\":\"github-hosted-rust-jackin-config-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-config-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-console\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-console\"},{\"job_id\":\"github-hosted-rust-jackin-core\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-core\"},{\"job_id\":\"github-hosted-rust-jackin-dev\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-dev\"},{\"job_id\":\"github-hosted-rust-jackin-diagnostics\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-diagnostics\"},{\"job_id\":\"github-hosted-rust-jackin-docker\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-docker\"},{\"job_id\":\"github-hosted-rust-jackin-env\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-env\"},{\"job_id\":\"github-hosted-rust-jackin-env-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-env-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-host\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-host\"},{\"job_id\":\"github-hosted-rust-jackin-image\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-image\"},{\"job_id\":\"github-hosted-rust-jackin-instance\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-instance\"},{\"job_id\":\"github-hosted-rust-jackin-isolation\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-isolation\"},{\"job_id\":\"github-hosted-rust-jackin-launch\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-launch\"},{\"job_id\":\"github-hosted-rust-jackin-manifest\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-manifest\"},{\"job_id\":\"github-hosted-rust-jackin-manifest-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-manifest-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-oppicker\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-oppicker\"},{\"job_id\":\"github-hosted-rust-jackin-otlp-testbed\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-otlp-testbed\"},{\"job_id\":\"github-hosted-rust-jackin-pr-trailers\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-pr-trailers\"},{\"job_id\":\"github-hosted-rust-jackin-process\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-process\"},{\"job_id\":\"github-hosted-rust-jackin-protocol\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-protocol\"},{\"job_id\":\"github-hosted-rust-jackin-protocol-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-protocol-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-runtime\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-runtime\"},{\"job_id\":\"github-hosted-rust-jackin-telemetry\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-telemetry\"},{\"job_id\":\"github-hosted-rust-jackin-test-support\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-test-support\"},{\"job_id\":\"github-hosted-rust-jackin-tui\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-tui\"},{\"job_id\":\"github-hosted-rust-jackin-usage\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-usage\"},{\"job_id\":\"github-hosted-rust-jackin-usage-ffi\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-usage-ffi\"},{\"job_id\":\"github-hosted-rust-jackin-xtask\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-xtask\"},{\"job_id\":\"github-hosted-rust-policy\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-policy\"},{\"job_id\":\"github-hosted-swift-package-native-design-prototypes-unifiedagentusage\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-package-native-design-prototypes-unifiedagentusage\"},{\"job_id\":\"github-hosted-swift-xcodegen-native-project-yml-jackindesktop\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-xcodegen-native-project-yml-jackindesktop\"},{\"job_id\":\"github-hosted-swift-package-native\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-package-native\"}]"
+          EXPECTED_CALLERS: "[{\"job_id\":\"github-hosted-bun-jackin-docs\",\"provider\":\"github-hosted\",\"unit_id\":\"bun-jackin-docs\"},{\"job_id\":\"github-hosted-docker-docker-construct\",\"provider\":\"github-hosted\",\"unit_id\":\"docker-docker-construct\"},{\"job_id\":\"github-hosted-rust-arrayref\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-arrayref\"},{\"job_id\":\"github-hosted-rust-jackin\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin\"},{\"job_id\":\"github-hosted-rust-jackin-agent-status\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-agent-status\"},{\"job_id\":\"github-hosted-rust-jackin-brand\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-brand\"},{\"job_id\":\"github-hosted-rust-jackin-build-meta\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-build-meta\"},{\"job_id\":\"github-hosted-rust-jackin-capsule\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-capsule\"},{\"job_id\":\"github-hosted-rust-jackin-config\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-config\"},{\"job_id\":\"github-hosted-rust-jackin-config-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-config-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-console\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-console\"},{\"job_id\":\"github-hosted-rust-jackin-core\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-core\"},{\"job_id\":\"github-hosted-rust-jackin-dev\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-dev\"},{\"job_id\":\"github-hosted-rust-jackin-diagnostics\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-diagnostics\"},{\"job_id\":\"github-hosted-rust-jackin-docker\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-docker\"},{\"job_id\":\"github-hosted-rust-jackin-env\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-env\"},{\"job_id\":\"github-hosted-rust-jackin-env-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-env-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-host\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-host\"},{\"job_id\":\"github-hosted-rust-jackin-image\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-image\"},{\"job_id\":\"github-hosted-rust-jackin-instance\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-instance\"},{\"job_id\":\"github-hosted-rust-jackin-isolation\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-isolation\"},{\"job_id\":\"github-hosted-rust-jackin-launch\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-launch\"},{\"job_id\":\"github-hosted-rust-jackin-manifest\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-manifest\"},{\"job_id\":\"github-hosted-rust-jackin-manifest-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-manifest-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-oppicker\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-oppicker\"},{\"job_id\":\"github-hosted-rust-jackin-otlp-testbed\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-otlp-testbed\"},{\"job_id\":\"github-hosted-rust-jackin-pr-trailers\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-pr-trailers\"},{\"job_id\":\"github-hosted-rust-jackin-process\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-process\"},{\"job_id\":\"github-hosted-rust-jackin-protocol\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-protocol\"},{\"job_id\":\"github-hosted-rust-jackin-protocol-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-protocol-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-runtime\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-runtime\"},{\"job_id\":\"github-hosted-rust-jackin-telemetry\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-telemetry\"},{\"job_id\":\"github-hosted-rust-jackin-test-support\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-test-support\"},{\"job_id\":\"github-hosted-rust-jackin-tui\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-tui\"},{\"job_id\":\"github-hosted-rust-jackin-usage\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-usage\"},{\"job_id\":\"github-hosted-rust-jackin-usage-ffi\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-usage-ffi\"},{\"job_id\":\"github-hosted-rust-jackin-xtask\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-xtask\"},{\"job_id\":\"github-hosted-rust-policy\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-policy\"},{\"job_id\":\"github-hosted-swift-package-native\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-package-native\"},{\"job_id\":\"github-hosted-swift-package-native-design-prototypes-unifiedagentusage\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-package-native-design-prototypes-unifiedagentusage\"},{\"job_id\":\"github-hosted-swift-xcodegen-native-project-yml-jackindesktop\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-xcodegen-native-project-yml-jackindesktop\"}]"
           PROVIDER_ADMITTED_GITHUB_HOSTED: ${{ true }}
         shell: bash
         run: |
@@ -3944,6 +3954,29 @@ jobs:
               *) echo "unexpected CI job github-hosted-rust-policy ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
+          if plan_expects "swift-package-native" "github-hosted"; then
+            result="$(result_for_job github-hosted-swift-package-native)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
+              case "$result" in
+                success) ;;
+                skipped) echo "expected CI job github-hosted-swift-package-native was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-swift-package-native was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-swift-package-native did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-hosted-swift-package-native ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-hosted-swift-package-native)"
+            case "$result" in
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-swift-package-native succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-swift-package-native ran outside the expected set: $result" >&2; exit 1 ;;
+            esac
+          fi
           if plan_expects "swift-package-native-design-prototypes-unifiedagentusage" "github-hosted"; then
             result="$(result_for_job github-hosted-swift-package-native-design-prototypes-unifiedagentusage)"
             if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
@@ -3988,29 +4021,6 @@ jobs:
               skipped) ;;
               success) echo "unexpected CI job github-hosted-swift-xcodegen-native-project-yml-jackindesktop succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
               *) echo "unexpected CI job github-hosted-swift-xcodegen-native-project-yml-jackindesktop ran outside the expected set: $result" >&2; exit 1 ;;
-            esac
-          fi
-          if plan_expects "swift-package-native" "github-hosted"; then
-            result="$(result_for_job github-hosted-swift-package-native)"
-            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
-              case "$result" in
-                success) ;;
-                skipped) echo "expected CI job github-hosted-swift-package-native was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
-                cancelled) echo "expected CI job github-hosted-swift-package-native was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
-                *) echo "expected CI job github-hosted-swift-package-native did not pass: $result" >&2; exit 1 ;;
-              esac
-            else
-              case "$result" in
-                skipped) ;;
-                *) echo "selected CI job github-hosted-swift-package-native ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
-              esac
-            fi
-          else
-            result="$(result_for_job github-hosted-swift-package-native)"
-            case "$result" in
-              skipped) ;;
-              success) echo "unexpected CI job github-hosted-swift-package-native succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
-              *) echo "unexpected CI job github-hosted-swift-package-native ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
   required:
