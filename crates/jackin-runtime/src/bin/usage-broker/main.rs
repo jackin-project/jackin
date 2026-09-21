@@ -64,11 +64,28 @@ impl ProviderCredentialSecretSource for ServiceSecretSource {
 type ServiceResolver = CachedProviderCredentialResolver<ServiceSecretSource>;
 
 fn main() {
+    detach_from_activating_session();
     if let Err(error) = run() {
         let _write_result = writeln!(std::io::stderr(), "usage broker unavailable: {error:?}");
         std::process::exit(1);
     }
 }
+
+/// Survive the activating client's death so a later launch reuses this
+/// broker instead of failing closed on its fresh leader lease. The
+/// activator spawns us in its own session; when its terminal dies the
+/// kernel HUPs that session's groups, which would otherwise take a
+/// healthy broker down with the client. A new session has no
+/// controlling terminal, so the HUP never reaches us. Best-effort: a
+/// broker that cannot detach still serves; lease expiry still covers
+/// real crashes.
+#[cfg(unix)]
+fn detach_from_activating_session() {
+    let _detached = nix::unistd::setsid();
+}
+
+#[cfg(not(unix))]
+fn detach_from_activating_session() {}
 
 fn run() -> Result<(), String> {
     let args = std::env::args().collect::<Vec<_>>();
