@@ -243,6 +243,33 @@ All tasks below are prohibited until an explicit later resume. They replace the 
 
 **First resumption action:** T-001. **First unfinished engineering action after reconciliation/preservation:** T-003 (generic Velnor macOS mold policy), unless T-002 discovers a different unpreserved goal artifact requiring durable checkpoint first.
 
+### M.1 Required state corrections discovered during audit
+
+- `WT-J1044C` is not clean: detached `c52e912bd3757c4ca736be288b0e03779144b561` has 14 goal-shaped source/generated files (`3007 insertions/1472 deletions`) and staged additions of the Renovate static files, visibility source, and `.xcode-version`. It is a prospective migration render, not an audit-only workspace. T-002 must preserve/classify it before any change.
+- `WT-J1064A` is not clean: detached `f1402583e7552005d37a208472e21e6ac5539949` has five unstaged generator/evidence/unit-workflow files (12 additions/7 deletions). T-002 must preserve/classify it.
+- `WT-JREPORT` is not clean: `docs/report-live-results` at `0515ad33b9c96d01ffd5edaef838bd8b8a286b65` has two unstaged report files (33 additions/24 deletions) correcting selected-unit count, Apple jobs, and stale Desktop attribution. T-012 must preserve/classify and land it only after current fact review.
+- `WT-J1044` local `6f025e5a5ea3e8c645a15770fcb8a839c9494308` is behind remote #1044 head `6ff54ce541b2a5bf0a2a128b0fb814503a7d54c9` by eleven commits. Never use its local head as #1044 source without T-001 reconciliation. Primary `WT-J1` upstream is gone after #1053 merge.
+- Pre-audit E.2 says `WT-VPH` dirty at `690b3935`; state audit found `/private/tmp/velnor-regen-phases` clean on `fix/composable-regen-phases` `93cd45e9470245b8ecd69fbf1415107f27c8d27d`. Treat the older statement as historical/incorrect, not preservation proof.
+- Velnor has subordinate checkpoint resources not modeled in E.2: primary `/Users/donbeave/Projects/github/velnor` is `goal-handoff/generic-macos-swift-ci--1402ca52` at `8c904fbf1b82f74715d7236f171c2bcc05b877ea` with untracked goal handoff document; draft Velnor #1064 (`b85e4008`) and #1065 (`5496db7e`) plus Jackin #1069 (`c466c9`) and #1070 (`15a4fb`) require T-002 classification as subordinate, overlapping, or unrelated. A separate Velnor common directory reportedly has hundreds of worktrees; this handoff does **not** claim complete machine-wide Velnor inventory.
+- Draft #1068's historical head `baf2180` had Policy failure run `35662011770`, job `106539202142`: generated-tree state differed from render at Velnor `4dec6b9e`; DCO/Renovate passed. This is publication evidence, not engineering progress. T-015 records current draft checks but must not repair product/generated code during pause.
+
+### M.2 Detailed uncompleted original-goal obligations
+
+The matrix rows G-001–G-010 summarize categories; the following atomic expansion is authoritative for resumption and corrects any accidental implication that category mention equals closure.
+
+| Requirement | Required future outcome / acceptance evidence |
+|---|---|
+| G-011 | Preserve every #1044/#1052 obligation: typed SwiftPM/XcodeGen/BoltFFI producer-consumer placement; deployment floor/toolchain/SDK/profile; Desktop/bootstrap/UI/bindings/lint/release/dSYM/signing/attestation; Renovate writer/validator/schedule/identity/credential-by-reference; required contexts and trust policy; atomic generated state and double-render/no-diff. |
+| G-012 | Canonical whole-PR/merge-group selection must account for base movement, manifests/locks/features/toolchain/build scripts/generated inputs/renames/deletes; typed read contracts must remain conservative; prove docs no-work, exact affected/dependent selection, missing/stale/duplicate/forged/wrong-platform/failed receipts. |
+| G-013 | OpenRouter: shared typed transport/HTTP/decode/domain boundary; only actual applicable auth/missing credential yields login; deterministic port/path/message-contains-401 negative, actual 401, scope, malformed and connection tests; no ephemeral unreserved-port seam. |
+| G-014 | Render: shared injected reference instant; just-before/at/after day/expiry/freshness/retry boundaries, exact labels and production refresh behavior. |
+| G-015 | OTLP: deterministic ownership/readiness/completion/drain, duplicate/missing/delayed export reproduction, exact defined spans/parentage/redaction, no arbitrary filter/sleep/assertion weakening. |
+| G-016 | Velnor phases/lifecycle: preserve identities/order/no duplicate execution/failure/timing for ordinary and producer paths/cache reuse; promotion binds source/runtime/pin/config/generated state; base-advance/interacting-merge coverage and no candidate self-authorization. |
+| G-017 | Performance: reconstruct S1–S5, collect queue/trigger/runtime/tool/cache/compiler/test/aggregation/export telemetry and trust/integrity/outage/quota evidence; compare build/shard/cache alternatives; report all named cohorts and retain FAIL unless 120 seconds is actually proven. |
+| G-018 | Desktop: equivalent prospective-tree coverage, authoritative ruleset/Terraform policy, merge queue/strict-base/cancellation/queue overflow semantics, rapid advancing PR/main and duplicate/obsolete candidate tests; every main commit has accountable evidence. |
+| G-019 | Evidence/report/finalization: tested collector/rollup event schema and pagination/rerun/partial/duplicate/missing/rename/cancel handling; exact six-nines math discipline; correct report links/counts/statuses/PR #1053 body; final merged-SHA/recommendation/measurement/live-proof/adversarial/coverage/finding-status report. |
+| G-020 | Process: use actual agents with execution record and independent challengers; frequent DCO/co-authored commits/pushes; resolve every review thread with evidence before protected squash landing; no legacy aliases/shims/deprecations left by migration. |
+
 ## N. Audit record, fresh-reader test, and limitations
 
 - Historical pause snapshot is retained in A–K. This audit adds observations rather than rewriting its interruption facts.
