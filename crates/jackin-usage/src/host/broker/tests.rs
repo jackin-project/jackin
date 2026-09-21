@@ -1593,6 +1593,7 @@ fn scripted_discovery(
                 }),
                 source_id: format!("source-{index}"),
                 capability_id: format!("capability-{index}-{label}"),
+                credential_revision: format!("credential-revision-{index}-{label}"),
                 provenance: BTreeSet::from(["workspace sample role test".to_owned()]),
                 source: ValidatedCredentialSource::Capability,
             })

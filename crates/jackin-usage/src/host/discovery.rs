@@ -1206,7 +1206,8 @@ fn accumulate_validated_source(
     bindings: &mut Vec<ValidatedCredentialBinding>,
     accounts: &mut BTreeMap<CanonicalAccountIdentity, AccountAccumulator>,
 ) {
-    let (surface, source_id, capability_id, credential_revision, provenance, source, outcome) = parts;
+    let (surface, source_id, capability_id, credential_revision, provenance, source, outcome) =
+        parts;
     if let Some(identity) = attach_to {
         let label = match &outcome {
             ProfileValidation::Authenticated {

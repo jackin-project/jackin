@@ -1229,6 +1229,7 @@ fn test_binding(
         identity: None,
         source_id: "source-test".to_owned(),
         capability_id: "cap-test".to_owned(),
+        credential_revision: "credential-revision-test".to_owned(),
         provenance: BTreeSet::new(),
         source,
     }
