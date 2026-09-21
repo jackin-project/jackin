@@ -590,3 +590,40 @@ fn amp_instance_dir_exports_the_durable_data_parent() {
             .contains(&"/home/agent/.cache/amp".to_owned())
     );
 }
+
+/// F7 capability leg: an `account add --model <exact-id>` `OpenRouter` pin
+/// must reach the capsule model map byte-exact, winning over the role
+/// default. The id already carries the `openrouter/` provider qualifier,
+/// so the `OpenCode` provider pairing leaves it untouched.
+#[test]
+fn openrouter_account_pin_lands_byte_exact_in_capsule_models() {
+    const PIN: &str = "openrouter/anthropic/claude-sonnet-4";
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        "version = \"v1alpha5\"\ndockerfile = \"Dockerfile\"\nagents = [\"opencode\"]\n\n[opencode]\nmodel = \"opencode/big-pickle\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(temp.path()).unwrap();
+
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "or-model".into(),
+        api_key_account(AiProvider::OpenRouter, Some(PIN)),
+    );
+    let mut pinned = instance("oc-plain", Agent::Opencode, "or-model");
+    pinned.model = Some(PIN.to_owned());
+
+    let models =
+        resolved_instance_models(&config, &manifest, &[pinned], Agent::Opencode, None).unwrap();
+    assert_eq!(
+        models.get("oc-plain").map(String::as_str),
+        Some(PIN),
+        "the account pin must replace the role default without rewriting"
+    );
+}

@@ -111,6 +111,7 @@ fn selected_opencode_account_pairs_endpoint_key_and_model() {
         AiProvider::Zai,
         AiProvider::Minimax,
         AiProvider::Opencode,
+        AiProvider::OpenRouter,
     ] {
         let temp = tempfile::tempdir().unwrap();
         let mut config = AppConfig::default();
@@ -163,6 +164,45 @@ fn selected_opencode_account_pairs_endpoint_key_and_model() {
             format!("{id}/custom-model")
         );
     }
+}
+
+/// F7 container leg: an `account add --model <exact-id>` `OpenRouter` pin
+/// must land in `opencode.json` byte-exact.
+#[test]
+fn openrouter_pin_lands_byte_exact_in_opencode_json() {
+    const PIN: &str = "openrouter/anthropic/claude-sonnet-4";
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "or-model".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "or-model".into(),
+            provider: AiProvider::OpenRouter,
+            credential: AccountCredential::ApiKey {
+                value: "fixture-or-key".into(),
+                base_url: None,
+                model: Some(PIN.into()),
+            },
+        },
+    );
+    let instances = [instance(
+        "oc-plain",
+        Agent::Opencode,
+        "or-model",
+        Some(PIN),
+        None,
+    )];
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+    let contents =
+        std::fs::read_to_string(temp.path().join("home/.config/opencode/opencode.json")).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+    assert_eq!(parsed["model"], PIN);
+    assert!(
+        parsed["provider"]["openrouter"]["models"]
+            .get("anthropic/claude-sonnet-4")
+            .is_some()
+    );
 }
 
 #[test]

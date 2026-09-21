@@ -53,6 +53,8 @@ pub(crate) use trust::{
 mod image_plan;
 pub use image_plan::{LaunchImagePlan, resolve_launch_image_plan};
 
+mod dry_run;
+pub use dry_run::{DryRunIdentity, resolve_dry_run_identity};
 mod programmatic;
 pub use account_identity::{
     account_admission_matches, account_configuration_fingerprint, account_configuration_matches,
