@@ -177,8 +177,12 @@ where
         focus_session: Option<u64>,
         _runner: &mut impl CommandRunner,
     ) -> Result<()> {
-        super::attach::require_current_account_admission(paths, container_name)?;
-        crate::runtime::apple_container::reconnect(paths, container_name, focus_session).await
+        let admission_lease =
+            super::attach::require_current_account_admission(paths, container_name)?;
+        let result =
+            crate::runtime::apple_container::reconnect(paths, container_name, focus_session).await;
+        admission_lease.ensure_current(paths)?;
+        result
     }
 
     async fn hardline(
