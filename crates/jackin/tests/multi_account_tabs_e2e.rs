@@ -509,13 +509,20 @@ fn phase_c_reconnect(
     phase_ab: &PhaseAB,
 ) {
     let reconnect_done = completed_reconnect(home, container, phase_ab);
+    // Five live sessions make explicit-selector `hardline` prompt under a
+    // PTY; answer Reconnect (option 1) like the operator would.
+    let script = [PtyScriptStep {
+        wait_for: "Choose [1/4]",
+        input: "1\r",
+        wait_for_file: "",
+    }];
     let reconnected = run_in_pty_until_file(
         jackin,
         &["hardline", container],
         home,
         workspace_dir,
         extra_env,
-        &[],
+        &script,
         PtyFileSentinel {
             path: &workspace_dir.join("never-written.txt"),
             text: "unreachable",

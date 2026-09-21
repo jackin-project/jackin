@@ -264,7 +264,10 @@ impl Multiplexer {
                 let derived_home;
                 let home_dir = match derived_home_seq {
                     Some(seq) => {
-                        derived_home = format!("{base_home}/panes/{seq}");
+                        derived_home = format!(
+                            "{base_home}/{}/{seq}",
+                            jackin_core::container_paths::PANE_HOMES_DIR_NAME
+                        );
                         derived_home.as_str()
                     }
                     None => base_home,
