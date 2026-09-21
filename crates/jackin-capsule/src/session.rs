@@ -1777,7 +1777,11 @@ fn is_folder_env(name: &str) -> bool {
 /// Every agent folder var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …) is
 /// scrubbed and rejected from passthrough, then this instance's folder
 /// var is set to its own home: a stale or foreign value can never leak
-/// this pane into another account's credentials or history.
+/// this pane into another account's credentials or history. `HOME` is
+/// account-owned the same way (`account_env` strips the ambient value),
+/// so it is re-pointed at the instance home below: the slot root is the
+/// only mutable account path outside the private session root, while
+/// `/home/agent` itself is Landlock read-only.
 #[must_use]
 pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
     let mut cmd = isolated_command(
@@ -1810,6 +1814,11 @@ pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
         // durable directory mount rather than a file mounted at the home root.
         cmd.env(var.name, spec.home_dir);
     }
+    // `HOME` was stripped with the other account-owned roots above; point it
+    // at this instance's home so shells, hooks, and `$HOME`-relative tool
+    // state land in the pane's own writable slot root — never in another
+    // account's home and never in the read-only `/home/agent`.
+    cmd.env("HOME", spec.home_dir);
     cmd.env("JACKIN_AGENT", spec.agent);
     cmd.env(jackin_protocol::INSTANCE_ENV, spec.instance);
     cmd.env(
@@ -1890,6 +1899,13 @@ pub fn build_shell_command(
     remove_ambient_capability_env(&mut cmd);
     for name in jackin_core::account_env_names() {
         cmd.env_remove(name);
+    }
+    // Shells have no instance home: restore the daemon's container `HOME`
+    // (`/home/agent`, container-controlled rather than operator-controlled)
+    // so the shell and its tools resolve the shared container home instead
+    // of running with no home at all.
+    if let Ok(home) = std::env::var("HOME") {
+        cmd.env("HOME", home);
     }
     for (k, v) in env_passthrough {
         if !jackin_core::is_account_env(k) && !is_explicit_capability_env(k) {

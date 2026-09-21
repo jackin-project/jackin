@@ -949,6 +949,27 @@ fn build_shell_command_removes_stale_agent_env() {
 }
 
 #[test]
+fn build_shell_command_restores_container_home_and_rejects_foreign_home() {
+    let env = vec![("HOME".to_owned(), "/foreign-home".to_owned())];
+    let cmd = build_shell_command(
+        &env,
+        Path::new("/workspace"),
+        "test",
+        jackin_protocol::SessionIdentity {
+            uid: 2_000,
+            gid: 2_000,
+        },
+    );
+
+    let daemon_home = std::env::var("HOME").ok();
+    assert_eq!(
+        cmd.get_env("HOME").and_then(|value| value.to_str()),
+        daemon_home.as_deref(),
+        "shell keeps the daemon's container HOME, never a passthrough value"
+    );
+}
+
+#[test]
 fn pty_output_does_not_change_state() {
     // The old flap engine flipped state on every PTY byte (Idle→Working) and
     // could not hold a blocked dialog through its own repaint. After Phase 2,
@@ -2132,6 +2153,7 @@ fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
     let hostile = vec![
         ("CLAUDE_CONFIG_DIR".to_owned(), "/stale-profile".to_owned()),
         ("CODEX_HOME".to_owned(), "/foreign-codex".to_owned()),
+        ("HOME".to_owned(), "/foreign-home".to_owned()),
     ];
     let spec = AgentSpawnSpec {
         agent: "claude",
@@ -2156,6 +2178,7 @@ fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
         Some("/home/agent/.claude-claude-personal")
     );
     assert!(env("CODEX_HOME").is_none());
+    assert_eq!(env("HOME"), Some("/home/agent/.claude-claude-personal"));
     assert_eq!(env(jackin_protocol::INSTANCE_ENV), Some("claude-personal"));
     assert_eq!(
         env(jackin_protocol::INSTANCE_FORWARDED_DIR_ENV),
@@ -2183,6 +2206,7 @@ fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
     let cmd = build_agent_command(&spec);
     let env = |name: &str| cmd.get_env(name).and_then(|v| v.to_str());
     assert_eq!(env("CODEX_HOME"), Some("/home/agent/.codex"));
+    assert_eq!(env("HOME"), Some("/home/agent/.codex"));
     assert!(env("CLAUDE_CONFIG_DIR").is_none());
 }
 
