@@ -7,7 +7,7 @@ Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, se
 | Agent | Assignment | Result | Independent status |
 |---|---|---|---|
 | `/root/live_coordination` | Live PR/check/review inventory | #1053 Policy failure isolated to stale generator sidecar; #1044/#1052 overlap and have no reviews | parent rechecked GitHub run/logs |
-| `/root/policy_challenge` | Adversarial policy diagnosis | Exact pinned runtime changes only ownership-sidecar scan hash; `--check` passes after regeneration | parent reproduced with attested macOS runtime `01bc16b2` |
+| `/root/policy_challenge` | Adversarial policy diagnosis | Historical `01bc16b2` runtime changed only the ownership-sidecar scan hash; current D3 pin `7576f40f` passes `--check` after regeneration | parent reproduced with the exact published runtime in a clean checkout |
 | `/root/apple_migration` | Migration convergence | #1044 and #1052 are competing shapes; one current-runtime carrier must retain generic Apple discovery and Renovate | pending independent implementation/review |
 | `/root/product_openrouter` | OpenRouter incident | String-derived `401` classifier remains; typed transport/HTTP boundary required | implementation delegated separately |
 | `/root/product_clock_daemon` | Render/daemon incidents | Render samples wall clock repeatedly; daemon failure is export completion/ownership, not socket RPC deadline | implementation delegated separately for render; daemon lifecycle slice pending |

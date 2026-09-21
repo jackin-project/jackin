@@ -13,35 +13,42 @@ another owner or an earlier PR. Evidence record: [EXECUTION.md](EXECUTION.md).
 | Class | Observation | Run / job |
 |---|---|---|
 | Swift unit (green) | 25 min in-step (12:14→12:38), 13 min macOS queue before start | run 35597160258 |
-| Swift unit (green) | ~55 min in-step under contention | run 35598142741 (#1036) |
+| Swift unit (green) | 21 min 42 s job; 18 min 15 s unit checks | run 35598142741 (#1036) |
 | Swift unit | 26+ min queued without starting (runner starvation) | run 35602945743 (#1041) |
 | Full CI/Main | 18–32 min typical | session sample |
 | Desktop merge | was ~35 min, S1 cut ~22 min via bootstrap scoping | — |
 | Full matrix CI | 46 checks incl. macOS; queue + build dominate | runs 35598570563, 35611817500 |
 
-No measured class is within the 120 s objective. Nothing was exempted
-to get here: desktop, main, release-validate, cold-cache, and changed-dependency
-runs were all measured FAIL.
+No measured class is within the 120 s objective. The evidence above covers
+Swift, full CI/Main, and Desktop. Release validation, scheduled Desktop,
+cold-cache, and changed-dependency cohorts do not yet have comparable
+representative measurements and remain unproven, not measured FAIL.
 
 ### Why it fails (ranked)
 
-1. **Swift wall time (15–57 min).** Single `Swift · Apple` job builds + tests the
-   whole Swift surface serially. Proven genuine work, not mis-measurement.
+1. **Swift wall time (21–25 min).** The dominant native `Swift · Apple` job
+   builds + tests its Swift surface serially. Full CI renders two Swift units;
+   this evidence does not claim one job covers both. Proven genuine work, not
+   mis-measurement.
 2. **macOS queue starvation.** 13-min waits observed; jobs sit `queued` while
    Linux jobs drain. External capacity constraint (GitHub-hosted).
-3. **Full-matrix fan-in.** `plans/**` and other unwatched paths force FULL scope
-   (28–46 units); b8 probe live-proved a base-lag confound triggering full scope.
+3. **Full-matrix fan-in.** Global generator/state-sidecar changes force broad
+   work (28–46 units). D3's closed read contracts make unmatched paths
+   irrelevant/no-work for declared closed units, so `plans/**` is not a blanket
+   FULL trigger; current live probes still need to prove the selected set.
 4. **Repeated setup.** S1 fixed the Desktop bootstrap (−22 min); per-unit
-   duplication (tool install, cargo fetch, docker build) remains — see §10
-   program below, S2–S5 unimplemented.
+   duplication (tool install, cargo fetch, docker build) remains. S4's
+   selection/read-contract capability landed in D3, while reuse and bootstrap
+   slices remain unimplemented.
 
 ### What was tried
 
 - S1 (Desktop bootstrap scoping): landed, −22 min. Only realized gain.
-- Affected-selection narrowing: proven genuine (37/40 narrow-scope runs
-  adjudicated real, not drift) but wall-ineffective — Swift still dominates.
-- S2–S5 (unit setup dedup, shared caches, cross-workflow reuse, cold-bootstrap
-  slimming): scoped, not implemented.
+- Affected-selection narrowing: D3 landed generic closed read contracts;
+  post-adoption adversarial/live probes are still required. Earlier 37/40
+  narrow-scope adjudications remain historical evidence, not D3 proof.
+- S2, S3, and S5 (unit setup dedup, shared caches/cross-workflow reuse,
+  cold-bootstrap slimming): scoped, not implemented.
 
 ### Recommendations (ordered, with dependencies)
 
@@ -116,9 +123,10 @@ cannot prove 99.9999%. Claiming it would be fabrication.
 `65e9dfbd → 7eb2105d → 7e223f8c → c90bf147 → 08713c9b → 820ed5d6 → 799f5774 → 82ff0593 → 87521a95 → 68edddab`
 
 Cause: `desktop-merge.yml` concurrency group cancels the prior main's run when
-the next main pushes. Under rapid cadence (5+ mains/hour observed), only the
-tip's Desktop can ever finish. Cancellations are by-design supersede, not
-failures — but intermediate heads have zero Desktop evidence.
+the next main pushes. Under rapid cadence (5+ mains/hour observed), an
+intermediate Desktop may be cancelled before it finishes; it can finish when
+cadence permits. Cancellations are by-design supersede, not failures — but
+cancelled intermediate heads have zero Desktop evidence.
 
 Combined with the b6b finding (desktop-merge has no `pull_request` trigger),
 Desktop validation is main-only AND tip-only: the weakest coverage point in
@@ -176,9 +184,11 @@ the pipeline.
 - [ ] Converge #1044 and #1052 into one current-runtime schema-2 migration;
       preserve generic Apple discovery, Renovate behavior, and verified
       BoltFFI/XcodeGen producer-consumer materialization.
-- [ ] Implement S2–S5 reuse slices; re-measure per class.
+- [ ] Implement S2/S3/S5 reuse slices; run D3 selection adversarial/live probes;
+      re-measure per class.
 - [ ] Implement the tested first-attempt collector and scheduled rollup (#2.2).
 - [ ] Establish Desktop candidate coverage and lossless per-main evidence.
 - [ ] Repair Velnor D19 promotion and composable self-unit phases (#4a).
-- [ ] Land structural fixes and independent verification for all three product
-      defects (#4b).
+- [x] Land structural fixes and independent verification for all three product
+      defects (#4b); verify their merged-main verdicts and retain first-attempt
+      evidence.
