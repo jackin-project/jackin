@@ -347,15 +347,12 @@ fn run_host_snapshot(
             .validated_discovery()
             .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
         let broker_resolver: Arc<dyn ProviderCredentialEnvResolver> = resolver;
-        let handle = ensure_usage_broker(
-            broker_config,
-            discovery_scope,
-            discovery,
-            broker_resolver,
-        )
-        .map_err(|error| anyhow::anyhow!(error.message))?;
+        let handle =
+            ensure_usage_broker(broker_config, discovery_scope, discovery, broker_resolver)
+                .map_err(|error| anyhow::anyhow!(error.message))?;
         let client = &handle.client;
-        for capability in handle.capabilities
+        for capability in handle
+            .capabilities
             .into_iter()
             .filter(|capability| capability.surface_id == surface.id())
         {

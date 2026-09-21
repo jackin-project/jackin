@@ -69,11 +69,9 @@ pub(crate) fn load_console_usage_state(
     };
     use std::sync::Arc;
 
-    let resolver = Arc::new(
-        jackin_usage::host::CachedProviderCredentialResolver::new(
-            crate::cli::usage::CliUsageSecretSource,
-        ),
-    );
+    let resolver = Arc::new(jackin_usage::host::CachedProviderCredentialResolver::new(
+        crate::cli::usage::CliUsageSecretSource,
+    ));
     let discovery_scope = UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
         operator_home: paths.home_dir.clone(),
@@ -102,11 +100,9 @@ pub(crate) fn load_console_usage_state(
         broker_resolver,
     )
     .map_err(|error| anyhow::anyhow!(error.message))?;
-    for (capability, result) in request_usage_batch(
-        &handle.client,
-        handle.capabilities,
-        force_refresh,
-    ) {
+    for (capability, result) in
+        request_usage_batch(&handle.client, handle.capabilities, force_refresh)
+    {
         match result {
             Ok(view) => runtime
                 .apply_broker_generation(view)

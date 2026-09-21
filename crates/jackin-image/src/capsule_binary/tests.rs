@@ -265,7 +265,10 @@ fn download_failure_message_stable_names_versioned_asset_tag_and_url() {
     );
     assert!(msg.contains("JACKIN_CAPSULE_BIN"), "{msg}");
     assert!(msg.contains("build-jackin-capsule"), "{msg}");
-    assert!(msg.contains(&url), "attempted URL must always be shown: {msg}");
+    assert!(
+        msg.contains(&url),
+        "attempted URL must always be shown: {msg}"
+    );
     assert!(
         !msg.contains("releases/tag/preview"),
         "stable runbook must not blame the preview build: {msg}",
@@ -278,7 +281,10 @@ fn download_failure_message_preview_keeps_preview_runbook_and_url() {
     let msg = download_failure_message("0.6.5-dev+abc1234", &url, true);
     assert!(msg.contains("releases/tag/preview"), "{msg}");
     assert!(msg.contains("build-jackin-capsule"), "{msg}");
-    assert!(msg.contains(&url), "attempted URL must always be shown: {msg}");
+    assert!(
+        msg.contains(&url),
+        "attempted URL must always be shown: {msg}"
+    );
     assert!(
         !msg.contains("releases/tag/v0.6.5"),
         "preview runbook must not link a versioned tag: {msg}",
