@@ -129,6 +129,28 @@ pub(crate) fn attach_failure_error(container_name: &str, err: &anyhow::Error) ->
     anyhow::anyhow!("capsule attach failed for {container_name}: {err}")
 }
 
+/// Return whether a failed capsule attach is the known clean-shutdown socket
+/// close. Admission and generation errors must never use this recovery path,
+/// even when a concurrent container shutdown happens to make the lifecycle
+/// inspect look clean.
+pub(crate) fn is_known_socket_close(error: &anyhow::Error, state: &ContainerState) -> bool {
+    if !matches!(
+        state,
+        ContainerState::Stopped {
+            exit_code: 0,
+            oom_killed: false,
+        }
+    ) {
+        return false;
+    }
+
+    let detail = format!("{error:#}").to_ascii_lowercase();
+    detail.contains("early eof")
+        || detail.contains("attach socket closed")
+        || detail.contains("attach socket eof")
+        || (detail.contains("docker exec") && detail.contains("jackin-capsule"))
+}
+
 /// Query a container's post-attach state for use by `finalize_foreground_session`.
 ///
 /// Returns `AttachOutcome::still_running` when the container is still running

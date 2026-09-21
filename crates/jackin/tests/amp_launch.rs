@@ -261,20 +261,21 @@ agents = ["amp"]
     };
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.upsert_account("amp-profile", &amp_account).unwrap();
-    let mut config = editor.save().unwrap();
+    let saved_config = editor.save().unwrap();
     let persisted_config = AppConfig::load_or_init(&paths).unwrap();
     assert_eq!(
-        config.accounts, persisted_config.accounts,
+        saved_config.accounts, persisted_config.accounts,
         "launch account registry must match persisted configuration"
     );
     assert_eq!(
-        config.agent_configurations, persisted_config.agent_configurations,
+        saved_config.agent_configurations, persisted_config.agent_configurations,
         "launch agent configurations must match persisted configuration"
     );
     assert_eq!(
-        config.default_launch, persisted_config.default_launch,
+        saved_config.default_launch, persisted_config.default_launch,
         "launch defaults must match persisted configuration"
     );
+    let mut config = persisted_config;
     let workspace = ResolvedWorkspace {
         name: String::new(),
         label: repo_dir.display().to_string(),
