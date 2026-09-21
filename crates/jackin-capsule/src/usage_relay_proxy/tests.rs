@@ -674,6 +674,6 @@ fn parse_proc_stat_start_time_skips_comm_with_parens_and_spaces() {
     fields.push("987654".to_owned());
     fields.extend(["0".to_owned(), "0".to_owned()]);
     let stat = format!("42 (my ) proc) {}", fields.join(" "));
-    assert_eq!(parse_proc_stat_start_time(&stat), Some(987654));
+    assert_eq!(parse_proc_stat_start_time(&stat), Some(987_654));
     assert_eq!(parse_proc_stat_start_time("bogus"), None);
 }
