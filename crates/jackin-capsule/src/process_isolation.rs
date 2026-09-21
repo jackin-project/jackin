@@ -334,9 +334,16 @@ mod linux {
         // Image-baked tools and shell configuration are shared, but are not
         // account slots. They are read-only. Slot roots below are the only
         // mutable account paths outside the private session root.
+        // Grants must cover symlink targets, not just link parents: Landlock
+        // resolves symlinks before matching, so a tool reached through a
+        // granted dir still needs its real location granted. Upstream
+        // `claude install` links `/home/agent/.local/bin/claude` into
+        // `/home/agent/.local/share/claude/versions/<ver>`; without the
+        // target grant the exec fails with EACCES (exit 126).
         for path in [
             "/home/agent/.oh-my-zsh",
             "/home/agent/.local/bin",
+            "/home/agent/.local/share/claude",
             "/home/agent/.local/share/mise",
             "/home/agent/.local/state/mise",
             "/home/agent/.cache/mise",
@@ -1309,6 +1316,40 @@ mod tests {
         );
         assert_eq!(retained_capability_mask(), 1u32 << 1);
         assert_eq!(retained_capability_mask() & (1u32 << 3), 0);
+    }
+
+    #[test]
+    fn claude_installer_share_dir_is_granted_read_only() {
+        // Upstream `claude install` links `~/.local/bin/claude` into
+        // `~/.local/share/claude/versions/<ver>`. Landlock resolves the
+        // symlink before matching, so the link parent's grant is not
+        // enough: without this target grant the agent exec dies EACCES.
+        let config = CapsuleConfig {
+            instances: vec!["slot-a".to_owned()],
+            agents: BTreeMap::from([("slot-a".to_owned(), "claude".to_owned())]),
+            instance_home_dirs: BTreeMap::from([(
+                "slot-a".to_owned(),
+                "/home/agent/.claude-a".to_owned(),
+            )]),
+            instance_mount_paths: BTreeMap::from([(
+                "slot-a".to_owned(),
+                vec!["/home/agent/.claude-a".to_owned()],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let rules = rules_for(
+            &config,
+            Some("slot-a"),
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/7"),
+        )
+        .expect("construct Landlock rules");
+        let share = rules
+            .iter()
+            .find(|rule| rule.path == Path::new("/home/agent/.local/share/claude"))
+            .expect("claude installer share-dir rule");
+        assert_eq!(share.access, READ_ONLY);
+        assert!(!share.required);
     }
 
     #[test]
