@@ -14,7 +14,7 @@ use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
 };
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageRefreshPhase};
+use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCatalogEntry, UsageRefreshPhase};
 use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
 use jackin_usage::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
 use jackin_usage::host::{UsageBrokerConfig, ensure_usage_broker_with_executor};
@@ -125,6 +125,19 @@ fn usage_broker_child() -> Result<()> {
             executor,
         )
         .test_result()?;
+        // Mirror production activation (ensure → reconcile with current
+        // discovery): without this the owner persists an empty catalog, the
+        // post-kill recovery leader loads it as a gated-empty admission set,
+        // and every recovery refresh fails `CatalogRevoked`.
+        client
+            .reconcile_catalog(
+                "e2e-catalog-1".to_owned(),
+                vec![UsageCatalogEntry {
+                    capability: capability(),
+                    revision: "e2e-shared-account-1".to_owned(),
+                }],
+            )
+            .test_result()?;
         let state = client.refresh(capability(), 0, true).test_result()?;
         assert_eq!(state.generation, 1);
         wait_until(Duration::from_secs(10), || {

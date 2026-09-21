@@ -988,6 +988,17 @@ pub(crate) fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<O
 impl AppConfig {
     /// Load `config.toml` (migrate as needed), split workspaces, sync builtins, validate.
     pub fn load_or_init(paths: &JackinPaths) -> crate::ConfigResult<Self> {
+        Self::load_or_init_detailed(paths).map(|(config, _)| config)
+    }
+
+    /// [`load_or_init`](Self::load_or_init) plus the bootstrap report for
+    /// callers that surface first-run discovery results (the CLI `account
+    /// scan` report). The report carries accounts the builtin-sync open
+    /// imported; without it a first scan would print `Imported 0` for
+    /// accounts this load already registered.
+    pub fn load_or_init_detailed(
+        paths: &JackinPaths,
+    ) -> crate::ConfigResult<(Self, crate::BootstrapReport)> {
         paths.ensure_base_dirs()?;
         let lock = acquire_config_write_lock(&paths.config_file)?;
         // Lock acquisition already forward-rolled any pending publication.
@@ -1021,18 +1032,20 @@ impl AppConfig {
         // validation. Passing it into the editor avoids recursive acquisition
         // while preserving one writer scope for the tree.
         let builtins_changed = config.sync_builtin_agents();
-        if builtins_changed {
-            let (mut editor, _) = ConfigEditor::open_with_lock(paths, lock)?;
+        let bootstrap = if builtins_changed {
+            let (mut editor, report) = ConfigEditor::open_with_lock(paths, lock)?;
             for &(name, git) in super::roles::BUILTIN_ROLES {
                 editor.upsert_builtin_agent(name, git);
             }
             // Take save()'s post-write parse: it preserves [roles.X.env] that
             // sync_builtin_agents cleared in-memory.
             config = editor.save()?;
+            report
         } else {
             drop(lock);
-        }
-        Ok(config)
+            crate::BootstrapReport::default()
+        };
+        Ok((config, bootstrap))
     }
 }
 

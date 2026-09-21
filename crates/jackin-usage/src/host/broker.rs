@@ -66,6 +66,16 @@ impl HostUsageRuntime {
         self.require_open()?;
         let capability = state.capability.clone();
         self.broker_phases.insert(capability.clone(), state.phase);
+        let binding = self.discovery.as_ref().and_then(|discovery| {
+            discovery
+                .bindings
+                .iter()
+                .find(|binding| {
+                    capability_for_binding(binding, discovery.config_generation.as_deref())
+                        == capability
+                })
+                .cloned()
+        });
         if let Some(mut view) = state.snapshot {
             if let Some(error) = &state.error {
                 view.last_error = Some(error.message.clone());
@@ -75,20 +85,17 @@ impl HostUsageRuntime {
                     UsageSnapshotStatus::Stale
                 };
             }
-            let binding = self.discovery.as_ref().and_then(|discovery| {
-                discovery
-                    .bindings
-                    .iter()
-                    .find(|binding| {
-                        capability_for_binding(binding, discovery.config_generation.as_deref())
-                            == capability
-                    })
-                    .cloned()
-            });
-            if let Some(binding) = binding {
-                self.record_discovered_snapshot(&binding, view);
+            if let Some(binding) = &binding {
+                self.record_discovered_snapshot(binding, view);
             }
         } else if let Some(error) = &state.error {
+            // A failure without a snapshot means the broker holds no
+            // last-good quota for this capability, so recording an honest
+            // error view cannot clobber good data. Without it the snapshot
+            // surface would keep showing a stale placeholder forever.
+            if let Some(binding) = &binding {
+                self.record_broker_error_view(binding, error);
+            }
             self.push_event(
                 "probe_failed",
                 Some(&capability.surface_id),
@@ -114,6 +121,63 @@ impl HostUsageRuntime {
             ),
         );
         Ok(())
+    }
+
+    /// Record one broker failure as an honest snapshot-surface view.
+    ///
+    /// Identity bindings resolve to their canonical account row;
+    /// identity-less bindings stay surface-scoped so anonymous sources never
+    /// mint rows. The broker error message carries the collector's specific
+    /// gap reason.
+    fn record_broker_error_view(
+        &mut self,
+        binding: &ValidatedCredentialBinding,
+        error: &UsageCoordinationError,
+    ) {
+        let status = match error.kind {
+            UsageCoordinationErrorKind::NeedsSecret => UsageSnapshotStatus::NeedsSecret,
+            _ => UsageSnapshotStatus::Unavailable,
+        };
+        let (updated_label, status_bar_label) = match status {
+            UsageSnapshotStatus::NeedsSecret => ("Needs secret", "secret"),
+            _ => ("Unavailable", "usage unavailable"),
+        };
+        let mut view = jackin_protocol::control::FocusedUsageView::refreshing(
+            binding.surface.provider_label(),
+            chrono::Utc::now().timestamp(),
+        );
+        view.focused_agent = Some(binding.surface.agent_slug().to_owned());
+        view.status = status;
+        view.updated_label = updated_label.to_owned();
+        view.status_bar_label = status_bar_label.to_owned();
+        view.last_error = Some(error.message.clone());
+        if let Some(identity) = binding.identity.clone() {
+            let account_key = identity.account_key();
+            view.account.account_label = self
+                .discovered_views
+                .get(&(binding.surface, account_key.clone()))
+                .map(|view| view.account.account_label.clone())
+                .filter(|label| !label.trim().is_empty())
+                .or_else(|| {
+                    self.discovery.as_ref().and_then(|discovery| {
+                        discovery
+                            .accounts
+                            .iter()
+                            .find(|account| account.identity == identity)
+                            .map(|account| account.account_label.clone())
+                    })
+                })
+                .unwrap_or_default();
+            self.discovered_views
+                .insert((binding.surface, account_key), view);
+        } else {
+            // Surface-scoped honest error: never overwrite a recorded view
+            // from a sibling binding, and never mint an account row.
+            self.discovered_provider_views
+                .entry(binding.surface)
+                .or_insert(view);
+        }
+        self.push_event("snapshot_updated", Some(binding.surface.id()), None);
     }
 
     /// Surface one coordination failure without discarding last-good quota.
@@ -804,16 +868,19 @@ fn rediscover_all_bindings(
         .ok()
         .map(|catalog| validate_usage_sources(catalog, resolver))
         .map(|discovery| {
-            discovery
-                .bindings
-                .into_iter()
-                .map(|binding| {
-                    (
-                        capability_for_binding(&binding, discovery.config_generation.as_deref()),
-                        binding,
-                    )
-                })
-                .collect()
+            // First binding wins per capability, matching service startup:
+            // profile sources sort before env sources, so a merged canonical
+            // account refreshes through its strongest credential.
+            let mut bindings = BTreeMap::new();
+            for binding in discovery.bindings {
+                bindings
+                    .entry(capability_for_binding(
+                        &binding,
+                        discovery.config_generation.as_deref(),
+                    ))
+                    .or_insert(binding);
+            }
+            bindings
         })
 }
 
@@ -877,7 +944,10 @@ fn provider_probe_outcome(
         UsageSnapshotStatus::NeedsSecret | UsageSnapshotStatus::NeedsLogin => {
             ProviderProbeOutcome::Failure {
                 kind: UsageCoordinationErrorKind::NeedsSecret,
-                message: "usage provider credentials require operator action".to_owned(),
+                message: honest_probe_message(
+                    &view,
+                    "usage provider credentials require operator action",
+                ),
                 retry_at_epoch: None,
             }
         }
@@ -885,12 +955,28 @@ fn provider_probe_outcome(
         | UsageSnapshotStatus::Unavailable
         | UsageSnapshotStatus::Stale => ProviderProbeOutcome::Failure {
             kind: UsageCoordinationErrorKind::ProviderUnavailable,
-            message: "usage provider quota is unavailable".to_owned(),
+            message: honest_probe_message(&view, "usage provider quota is unavailable"),
             retry_at_epoch: None,
         },
         UsageSnapshotStatus::Unsupported => ProviderProbeOutcome::success(view),
         UsageSnapshotStatus::Fresh => ProviderProbeOutcome::success(view),
     }
+}
+
+/// Carry the collector's specific gap reason into a probe failure.
+///
+/// Failure kinds stay stable for retry matching; only the operator-facing
+/// message becomes specific. Views without their own reason keep the generic
+/// fallback.
+fn honest_probe_message(
+    view: &jackin_protocol::control::FocusedUsageView,
+    fallback: &str,
+) -> String {
+    view.last_error
+        .as_deref()
+        .filter(|message| !message.trim().is_empty())
+        .unwrap_or(fallback)
+        .to_owned()
 }
 
 /// Hold the inter-process activation lock across one

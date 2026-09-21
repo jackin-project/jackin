@@ -46,22 +46,20 @@ All UNVERIFIED on final candidate. Evidence owners in parentheses.
 
 | ID | Behavior | Status / evidence |
 |---|---|---|
-| P01 | First-run discovery imports logins; one damaged source blocks nothing | UNVERIFIED (accounts) |
-| P02 | Settings Scan draft/apply/cancel, preserves edits, explicit no-add/partial | UNVERIFIED (accounts+UI) |
-| P03 | Add subscription/profile/key/env/1Password; inference vs usage permission split; redacted | UNVERIFIED (accounts+credential review) |
-| P04 | Usage async refresh + detail incl metric groups, balances, resets, honest unavailable | BLOCKED on D-UI1/D-UI2 (usage+UI) |
-| P05 | Precedence: launch > workspace-role > workspace > global > sole-eligible; atomic reject | UNVERIFIED (accounts+runtime) |
-| P06 | Container admits exactly A/B/C; D absent incl direct relay requests | UNVERIFIED (runtime) |
-| P07 | Same identity across clients, no duplicate quota; exact OpenRouter model persists | UNVERIFIED (providers+accounts) |
-| P08 | Tabs/splits/reconnect/restore preserve account/provider/model/instance binding | UNVERIFIED (runtime+UI) |
-| P09 | Full catalog represented; every route proven or explicitly blocked with evidence | BLOCKED on D-PR1 (providers) |
-| P10 | Native/protocol parity, independent review, accurate handoff | UNVERIFIED (CI+reviewer) |
+| P01 | First-run discovery imports logins; one damaged source blocks nothing | S1 PASS @62c2eebf (/tmp/jackin-s1-acc1/artifacts/); wart F5: fresh scan under-reports count, fix dispatched |
+| P02 | Settings Scan draft/apply/cancel, preserves edits, explicit no-add/partial | S2 PASS @62c2eebf, genuine pty (29/29 checks, /tmp/jackin-st-s2s6/evidence/) |
+| P03 | Add subscription/profile/key/env/1Password; inference vs usage permission split; redacted | S3 FAIL @62c2eebf: F1 op:// hard-errors without `op`, F2 key accounts never refresh, F3 gap messages swallowed; fixes dispatched |
+| P04 | Usage async refresh + detail incl metric groups, balances, resets, honest unavailable | S4 host PASS @62c2eebf (/tmp/jackin-su-acc1002/s4/); container halves BLOCKED-no-runtime |
+| P05 | Precedence: launch > workspace-role > workspace > global > sole-eligible; atomic reject | S5 PASS @62c2eebf, 17-case matrix (/tmp/jackin-s5-acc1/artifacts/); finding F4 dry-run/launch drift, fix dispatched |
+| P06 | Container admits exactly A/B/C; D absent incl direct relay requests | S6-unit PASS @62c2eebf (dry-run + relay 15/15); container E2E BLOCKED (no docker/OrbStack; apple-container no kernel) |
+| P07 | Same identity across clients, no duplicate quota; exact OpenRouter model persists | S7 identity FAIL @62c2eebf (same F2: 2 caps not 1); model config leg PASS byte-exact, plan leg re-probe dispatched (F7) |
+| P08 | Tabs/splits/reconnect/restore preserve account/provider/model/instance binding | BLOCKED (needs running container) + unit partial PASS (relay 12/12, binding 3/3) |
+| P09 | Full catalog represented; every route proven or explicitly blocked with evidence | S9 host PASS @62c2eebf (12/12 surfaces honest); OrbStack lane BLOCKED (no OrbStack, macOS 27 vs 26) |
+| P10 | Native/protocol parity, independent review, accurate handoff | S10 wire/process PASS @62c2eebf (122+1088+631 green); F6 e2e flake fix dispatched; docker-e2e + desktop-release BLOCKED |
 
 ## Scenario matrix (goal §1-10)
 
-S1-S10 map to P-rows above; each needs exact commit, command/flow, env, pass/fail,
-evidence path. None executed on this candidate yet. Live-provider (S10) and
-macOS 26/OrbStack E2E (S9) have known env/credential gaps to record explicitly.
+S1-S10 map to P-rows above. First pass executed @62c2eebf (macOS 27 arm64, no containers, no live creds — env/credential gaps recorded per row, never passes). Evidence dirs /tmp/jackin-s1-acc1, /tmp/jackin-s3-acc1, /tmp/jackin-s5-acc1, /tmp/jackin-su-acc1002/{s4,s7,s9,s10}, /tmp/jackin-st-s2s6/evidence (transcripts + config snapshots + EVIDENCE.md indexes). Re-run FAIL rows after F1-F7 land.
 
 ## Full A01-H12 checklist
 

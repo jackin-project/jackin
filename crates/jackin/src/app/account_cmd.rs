@@ -14,6 +14,7 @@ pub(super) fn handle(
     command: AccountCommand,
     config: &AppConfig,
     paths: &JackinPaths,
+    startup: &jackin_config::BootstrapReport,
 ) -> Result<()> {
     match command {
         AccountCommand::List => {
@@ -24,7 +25,9 @@ pub(super) fn handle(
                 println!("No accounts. Run `jackin account scan` or `jackin account add --help`.");
             }
         }
-        AccountCommand::Scan => scan(paths)?,
+        AccountCommand::Scan => {
+            scan(paths, startup)?;
+        }
         AccountCommand::Enable { id } => set_enabled(config, paths, &id, true)?,
         AccountCommand::Disable { id } => set_enabled(config, paths, &id, false)?,
         AccountCommand::Default { id, agent } => {
@@ -77,7 +80,15 @@ fn set_enabled(config: &AppConfig, paths: &JackinPaths, id: &str, enabled: bool)
     Ok(())
 }
 
-fn scan(paths: &JackinPaths) -> Result<()> {
+/// Run `account scan`, returning the printed imported count.
+///
+/// `startup` is the bootstrap report from the process's config load: on a
+/// fresh config the load already imported default accounts, and the scan
+/// reports them as its own so the first scan prints the true imported
+/// count instead of `Imported 0`. Startup issues are deliberately not
+/// merged — `scan_for_accounts` re-discovers the same evidence issues, so
+/// merging would print each twice.
+fn scan(paths: &JackinPaths, startup: &jackin_config::BootstrapReport) -> Result<usize> {
     // One shared scan helper for every surface (CLI, Settings worker):
     // the open consumes any first-run marker, the scan imports default
     // evidence + environment, and the zshrc path seeds shell overrides.
@@ -89,7 +100,8 @@ fn scan(paths: &JackinPaths) -> Result<()> {
     if scan_report.changed || zshrc_report.changed {
         editor.save()?;
     }
-    let mut added = open_report.added;
+    let mut added = startup.added.clone();
+    added.extend(open_report.added);
     added.extend(scan_report.added);
     added.extend(zshrc_report.added);
     for (id, account) in &added {
@@ -112,7 +124,7 @@ fn scan(paths: &JackinPaths) -> Result<()> {
     println!(
         "Imported {added_count} account(s). Assign access with `jackin workspace account assign WORKSPACE ACCOUNT`."
     );
-    Ok(())
+    Ok(added_count)
 }
 
 /// `.zshrc`-import path of [`scan`]: parse the operator's shell env (if

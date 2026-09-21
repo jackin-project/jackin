@@ -124,6 +124,252 @@ fn discovery_provider_unsupported_views_remain_publishable_unsupported() {
 }
 
 #[test]
+fn discovery_provider_failures_carry_each_gap_reason() {
+    // Every gap kind keeps its failure category but renders the collector's
+    // specific message instead of the generic fallback. Payloads below are
+    // the collectors' real gap strings.
+    for (status, kind, gap) in [
+        (
+            UsageSnapshotStatus::Error,
+            UsageCoordinationErrorKind::ProviderUnavailable,
+            "Grok billing requires an authenticated profile",
+        ),
+        (
+            UsageSnapshotStatus::Unavailable,
+            UsageCoordinationErrorKind::ProviderUnavailable,
+            "Grok billing requires an authenticated profile",
+        ),
+        (
+            UsageSnapshotStatus::Stale,
+            UsageCoordinationErrorKind::ProviderUnavailable,
+            "Grok billing requires an authenticated profile",
+        ),
+        (
+            UsageSnapshotStatus::NeedsSecret,
+            UsageCoordinationErrorKind::NeedsSecret,
+            "Gemini auth not available to Capsule",
+        ),
+        (
+            UsageSnapshotStatus::NeedsLogin,
+            UsageCoordinationErrorKind::NeedsSecret,
+            "Grok auth not available to Capsule",
+        ),
+    ] {
+        let mut view = quota_view();
+        view.status = status;
+        view.last_error = Some(gap.to_owned());
+        let ProviderProbeOutcome::Failure {
+            kind: actual,
+            message,
+            ..
+        } = provider_probe_outcome(view)
+        else {
+            panic!("{status:?} provider view must not publish as success");
+        };
+        assert_eq!(actual, kind);
+        assert_eq!(message, gap);
+    }
+}
+
+#[test]
+fn discovery_provider_failures_without_reason_keep_generic_fallback() {
+    for (status, kind, fallback) in [
+        (
+            UsageSnapshotStatus::Error,
+            UsageCoordinationErrorKind::ProviderUnavailable,
+            "usage provider quota is unavailable",
+        ),
+        (
+            UsageSnapshotStatus::NeedsSecret,
+            UsageCoordinationErrorKind::NeedsSecret,
+            "usage provider credentials require operator action",
+        ),
+    ] {
+        for last_error in [None, Some(String::new()), Some("   ".to_owned())] {
+            let mut view = quota_view();
+            view.status = status;
+            view.last_error = last_error;
+            let ProviderProbeOutcome::Failure {
+                kind: actual,
+                message,
+                ..
+            } = provider_probe_outcome(view)
+            else {
+                panic!("{status:?} provider view must not publish as success");
+            };
+            assert_eq!(actual, kind);
+            assert_eq!(message, fallback);
+        }
+    }
+}
+
+struct FixedHandleResolver;
+
+impl ProviderCredentialEnvResolver for FixedHandleResolver {
+    fn resolve_provider_credentials(
+        &self,
+        config: &jackin_config::AppConfig,
+        _workspace: Option<&jackin_core::WorkspaceName>,
+        _role: Option<&str>,
+        keys: &[jackin_core::UsageCredentialEnvName],
+    ) -> Vec<crate::host::ProviderCredentialEnvResolution> {
+        keys.iter()
+            .filter(|entry| config.env.contains_key(entry.name))
+            .map(|entry| crate::host::ProviderCredentialEnvResolution {
+                key: entry.name.to_owned(),
+                outcome: crate::host::ProviderCredentialEnvOutcome::Resolved(
+                    crate::host::OpaqueCredentialHandle::new("fixture-credential-1"),
+                ),
+            })
+            .collect()
+    }
+}
+
+fn failed_generation(
+    capability: &UsageAccountCapability,
+    kind: UsageCoordinationErrorKind,
+    message: &str,
+) -> UsageGenerationView {
+    UsageGenerationView {
+        capability: capability.clone(),
+        generation: 1,
+        phase: UsageRefreshPhase::Failed,
+        snapshot: None,
+        error: Some(UsageCoordinationError {
+            kind,
+            message: message.to_owned(),
+        }),
+        retry_at_epoch: None,
+    }
+}
+
+#[test]
+fn broker_failure_without_snapshot_surfaces_honest_gap_in_snapshot() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let mut config = jackin_config::AppConfig::default();
+    config.accounts.insert(
+        "codex-key".to_owned(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "codex-key".to_owned(),
+            provider: jackin_config::AiProvider::OpenAi,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: jackin_config::EnvValue::Plain("fixture-openai-key".to_owned()),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    fs::create_dir_all(&config_root).unwrap();
+    fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let validated = validate_usage_sources(
+        discover_usage_sources(
+            &UsageDiscoveryScope::HostDesktop {
+                config_root,
+                operator_home: temp.path().join("home"),
+            },
+            &FixedHandleResolver,
+        )
+        .unwrap(),
+        &FixedHandleResolver,
+    );
+    assert_eq!(validated.accounts.len(), 1);
+    let capabilities = usage_broker_capabilities(&validated);
+    assert_eq!(capabilities.len(), 1);
+
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(
+            temp.path().join("data"),
+        ))
+        .unwrap();
+    runtime.discovery = Some(validated);
+    runtime
+        .apply_broker_generation(failed_generation(
+            &capabilities[0],
+            UsageCoordinationErrorKind::ProviderUnavailable,
+            "Grok billing requires an authenticated profile",
+        ))
+        .unwrap();
+
+    let view = runtime.snapshot("codex").unwrap();
+    assert!(!view.is_refreshing_placeholder());
+    assert_eq!(view.status, UsageSnapshotStatus::Unavailable);
+    assert_eq!(view.account.account_label, "codex-key");
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("Grok billing requires an authenticated profile")
+    );
+
+    // A later success still replaces the recorded error view.
+    let mut fresh = quota_view();
+    fresh.account.provider_label = "OpenAI / Codex".to_owned();
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: capabilities[0].clone(),
+            generation: 2,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(fresh),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    let view = runtime.snapshot("codex").unwrap();
+    assert_eq!(view.status, UsageSnapshotStatus::Fresh);
+}
+
+#[test]
+fn broker_failure_for_anonymous_source_stays_surface_scoped() {
+    let validated = validate_usage_sources(
+        discover_usage_sources(
+            &UsageDiscoveryScope::Capsule {
+                forwarded_accounts: vec![crate::host::ForwardedUsageAccount {
+                    surface_id: "codex".to_owned(),
+                    capability_id: "capability-a".to_owned(),
+                    account_label: None,
+                }],
+            },
+            &FixedHandleResolver,
+        )
+        .unwrap(),
+        &FixedHandleResolver,
+    );
+    assert!(validated.accounts.is_empty());
+    assert!(validated.bindings[0].identity.is_none());
+    let capabilities = usage_broker_capabilities(&validated);
+    assert_eq!(capabilities.len(), 1);
+
+    let temp = tempfile::tempdir().unwrap();
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(
+            temp.path().join("data"),
+        ))
+        .unwrap();
+    runtime.discovery = Some(validated);
+    runtime
+        .apply_broker_generation(failed_generation(
+            &capabilities[0],
+            UsageCoordinationErrorKind::NeedsSecret,
+            "Gemini auth not available to Capsule",
+        ))
+        .unwrap();
+
+    let view = runtime.snapshot("codex").unwrap();
+    assert_eq!(view.status, UsageSnapshotStatus::NeedsSecret);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("Gemini auth not available to Capsule")
+    );
+    assert!(runtime.list_accounts(None).unwrap().is_empty());
+}
+
+#[test]
 fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
 

@@ -1,9 +1,10 @@
-use super::{docker_startup_error, resolve_dry_run_identity, take_post_console_config};
+use super::{apply_dry_run_identity_json, docker_startup_error, take_post_console_config};
 use jackin_config::AppConfig;
 use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_core::Agent;
 use jackin_core::JackinPaths;
 use jackin_core::MountIsolation;
+use jackin_runtime::runtime::resolve_dry_run_identity;
 use tempfile::tempdir;
 
 #[test]
@@ -312,17 +313,18 @@ fn dry_run_identity_config() -> (AppConfig, jackin_core::WorkspaceName) {
 #[test]
 fn dry_run_identity_lists_every_instance_when_no_single_account_resolves() {
     let (config, ws) = dry_run_identity_config();
-    let (selected_id, instances) =
-        resolve_dry_run_identity(&config, Agent::Claude, Some(&ws), "smith").unwrap();
-    assert_eq!(selected_id, None);
-    let ids: Vec<&str> = instances
+    let identity =
+        resolve_dry_run_identity(&config, Agent::Claude, Some(&ws), "smith", false).unwrap();
+    assert_eq!(identity.account_id, None);
+    let ids: Vec<&str> = identity
+        .instances
         .iter()
         .map(|instance| instance.config_id.as_str())
         .collect();
     assert_eq!(ids, ["claude-work", "claude-personal", "codex-work"]);
-    assert_eq!(instances[0].label, "Claude · Work");
-    assert_eq!(instances[0].account_id, "a-claude");
-    assert_eq!(instances[2].label, "Codex · Work");
+    assert_eq!(identity.instances[0].label, "Claude · Work");
+    assert_eq!(identity.instances[0].account_id, "a-claude");
+    assert_eq!(identity.instances[2].label, "Codex · Work");
 }
 
 #[test]
@@ -334,8 +336,88 @@ fn dry_run_identity_keeps_single_account_shape_for_unambiguous_launches() {
         .get_mut(ws.as_str())
         .unwrap()
         .default_launch = None;
-    let (selected_id, instances) =
-        resolve_dry_run_identity(&config, Agent::Codex, Some(&ws), "smith").unwrap();
-    assert_eq!(selected_id.as_deref(), Some("c-codex"));
-    assert!(instances.is_empty());
+    let identity =
+        resolve_dry_run_identity(&config, Agent::Codex, Some(&ws), "smith", false).unwrap();
+    assert_eq!(identity.account_id.as_deref(), Some("c-codex"));
+    assert!(identity.instances.is_empty());
+}
+
+#[test]
+fn dry_run_identity_carries_the_account_model_pin() {
+    let (mut config, ws) = dry_run_identity_config();
+    config.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["c-codex".into()];
+    config
+        .workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .default_launch = None;
+    let jackin_config::AccountCredential::ApiKey { model, .. } =
+        &mut config.accounts.get_mut("c-codex").unwrap().credential
+    else {
+        panic!("fixture account must be an API-key account");
+    };
+    *model = Some("gpt-5-codex".to_owned());
+    let identity =
+        resolve_dry_run_identity(&config, Agent::Codex, Some(&ws), "smith", false).unwrap();
+    assert_eq!(identity.account_id.as_deref(), Some("c-codex"));
+    assert_eq!(identity.model.as_deref(), Some("gpt-5-codex"));
+}
+
+#[test]
+fn dry_run_json_emits_the_model_pin_at_top_level_and_per_instance() {
+    use jackin_config::ResolvedInstance;
+    let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
+    let mut plan = super::dry_run_plan_json(
+        &selector,
+        &dry_run_workspace(),
+        "claude",
+        None,
+        false,
+        &dry_run_image_plan(),
+    );
+    let identity = jackin_runtime::runtime::DryRunIdentity {
+        account_id: Some("a-claude".to_owned()),
+        model: Some("claude-opus-4-6".to_owned()),
+        instances: vec![ResolvedInstance {
+            config_id: "claude-work".to_owned(),
+            agent: Agent::Claude,
+            account_id: "a-claude".to_owned(),
+            model: Some("claude-opus-4-6".to_owned()),
+            base_url: None,
+            xdg_roots: None,
+            label: "Claude · Work".to_owned(),
+            synthesized: true,
+        }],
+    };
+    apply_dry_run_identity_json(&mut plan, &identity);
+    let data = &plan["data"];
+    assert_eq!(data["account"], "a-claude");
+    assert_eq!(data["model"], "claude-opus-4-6");
+    assert_eq!(data["instances"][0]["config_id"], "claude-work");
+    assert_eq!(data["instances"][0]["agent"], "claude");
+    assert_eq!(data["instances"][0]["account"], "a-claude");
+    assert_eq!(data["instances"][0]["label"], "Claude · Work");
+    assert_eq!(data["instances"][0]["model"], "claude-opus-4-6");
+}
+
+#[test]
+fn dry_run_json_reports_an_absent_model_pin_as_null_not_missing() {
+    let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
+    let mut plan = super::dry_run_plan_json(
+        &selector,
+        &dry_run_workspace(),
+        "codex",
+        None,
+        false,
+        &dry_run_image_plan(),
+    );
+    let identity = jackin_runtime::runtime::DryRunIdentity {
+        account_id: Some("c-codex".to_owned()),
+        model: None,
+        instances: Vec::new(),
+    };
+    apply_dry_run_identity_json(&mut plan, &identity);
+    let data = &plan["data"];
+    assert!(data["model"].is_null());
+    assert!(data["instances"].as_array().is_some_and(Vec::is_empty));
 }

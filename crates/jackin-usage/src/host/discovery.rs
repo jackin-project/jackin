@@ -621,6 +621,71 @@ fn discover_forwarded_sources(accounts: &[ForwardedUsageAccount]) -> UsageDiscov
     materialize_catalog(None, candidates, Vec::new())
 }
 
+/// Discovery-isolated alias for one governed registry entry.
+///
+/// Operator-env attribution retains out every account-governed name, so an
+/// account credential presented to a CLI-side secret source under its
+/// governed key resolves to `Missing` while broker-side sources (which read
+/// `config.env` directly) resolve it. Presenting the one isolated
+/// declaration under a non-governed alias keeps both resolvers on the same
+/// declaration; the governed name is still recorded on the discovered source
+/// for refresh routing and forwarding.
+fn usage_account_alias_entry(entry: UsageCredentialEnvName) -> UsageCredentialEnvName {
+    let name = match entry.name {
+        jackin_core::ANTHROPIC_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_ANTHROPIC_API_KEY",
+        jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME => {
+            "JACKIN_USAGE_ACCOUNT_CLAUDE_CODE_OAUTH_TOKEN"
+        }
+        jackin_core::OPENAI_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY",
+        jackin_core::AMP_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_AMP_API_KEY",
+        jackin_core::KIMI_CODE_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_KIMI_CODE_API_KEY",
+        jackin_core::KIMI_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_KIMI_API_KEY",
+        jackin_core::XAI_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_XAI_API_KEY",
+        jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_GROK_DEPLOYMENT_KEY",
+        jackin_core::ZAI_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_ZAI_API_KEY",
+        jackin_core::MINIMAX_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_MINIMAX_API_KEY",
+        jackin_core::OPENCODE_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_OPENCODE_API_KEY",
+        jackin_core::GEMINI_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_GEMINI_API_KEY",
+        jackin_core::GOOGLE_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_GOOGLE_API_KEY",
+        jackin_core::CURSOR_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_CURSOR_API_KEY",
+        jackin_core::META_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_META_API_KEY",
+        jackin_core::OPENROUTER_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_OPENROUTER_API_KEY",
+        _ => return entry,
+    };
+    UsageCredentialEnvName {
+        name,
+        owner: entry.owner,
+    }
+}
+
+/// Recover the governed registry name for one discovery-isolated alias.
+///
+/// Unknown names pass through unchanged so direct governed-name callers keep
+/// their existing cache identity.
+pub(super) fn governed_name_for_account_alias(name: &str) -> &str {
+    match name {
+        "JACKIN_USAGE_ACCOUNT_ANTHROPIC_API_KEY" => jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_CLAUDE_CODE_OAUTH_TOKEN" => {
+            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
+        }
+        "JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY" => jackin_core::OPENAI_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_AMP_API_KEY" => jackin_core::AMP_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_KIMI_CODE_API_KEY" => jackin_core::KIMI_CODE_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_KIMI_API_KEY" => jackin_core::KIMI_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_XAI_API_KEY" => jackin_core::XAI_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_GROK_DEPLOYMENT_KEY" => jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_ZAI_API_KEY" => jackin_core::ZAI_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_MINIMAX_API_KEY" => jackin_core::MINIMAX_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_OPENCODE_API_KEY" => jackin_core::OPENCODE_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_GEMINI_API_KEY" => jackin_core::GEMINI_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_GOOGLE_API_KEY" => jackin_core::GOOGLE_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_CURSOR_API_KEY" => jackin_core::CURSOR_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_META_API_KEY" => jackin_core::META_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_OPENROUTER_API_KEY" => jackin_core::OPENROUTER_API_KEY_ENV_NAME,
+        _ => name,
+    }
+}
+
 /// Registry entries are the sole discovery authority. Workspace references add
 /// provenance; they never cause an ambient profile or environment scan.
 fn enumerate_registered_accounts(
@@ -702,11 +767,12 @@ fn enumerate_registered_accounts(
             env: config.env.clone(),
             ..AppConfig::default()
         };
-        isolated.env.insert(entry.name.to_owned(), value.clone());
-        let resolutions = resolver.resolve_provider_credentials(&isolated, None, None, &[entry]);
+        let alias = usage_account_alias_entry(entry);
+        isolated.env.insert(alias.name.to_owned(), value.clone());
+        let resolutions = resolver.resolve_provider_credentials(&isolated, None, None, &[alias]);
         let outcome = resolutions
             .into_iter()
-            .find(|result| result.key == entry.name)
+            .find(|result| result.key == alias.name)
             .map_or(ProviderCredentialEnvOutcome::Missing, |result| {
                 result.outcome
             });
@@ -985,93 +1051,52 @@ fn validate_usage_sources_with_reader(
     let mut bindings = Vec::new();
     let mut accounts = BTreeMap::<CanonicalAccountIdentity, AccountAccumulator>::new();
 
-    for source in catalog.sources {
-        let (surface, source_id, capability_id, provenance, source, outcome) =
-            validate_source(source, env_resolver, profile_reader);
-
-        match outcome {
-            ProfileValidation::Authenticated {
-                provider_id,
-                account_label,
-                material: _,
-            } => {
-                let subject = provider_id
-                    .as_ref()
-                    .filter(|id| !id.trim().is_empty())
-                    .map(|id| CanonicalAccountSubject::ProviderId(id.trim().to_owned()))
-                    .or_else(|| {
-                        account_label
-                            .as_ref()
-                            .filter(|label| !label.trim().is_empty())
-                            .map(|_| {
-                                // A label is presentation evidence only. Keep
-                                // source identity when the provider did not
-                                // return a stronger canonical subject.
-                                CanonicalAccountSubject::SourceCapability(capability_id.clone())
-                            })
-                    });
-                let Some(subject) = subject else {
-                    bindings.push(ValidatedCredentialBinding {
-                        surface,
-                        identity: None,
-                        source_id,
-                        capability_id,
-                        provenance,
-                        source,
-                    });
-                    continue;
-                };
-                let identity = CanonicalAccountIdentity { surface, subject };
-                let label = account_label
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|label| !label.is_empty())
-                    .map(str::to_owned)
-                    .or_else(|| provider_id.clone())
-                    .unwrap_or_default();
-                let entry =
-                    accounts
-                        .entry(identity.clone())
-                        .or_insert_with(|| AccountAccumulator {
-                            label,
-                            provenance: BTreeSet::new(),
-                            source_ids: BTreeSet::new(),
-                        });
-                entry.provenance.extend(provenance.iter().cloned());
-                entry.source_ids.insert(source_id.clone());
-                bindings.push(ValidatedCredentialBinding {
-                    surface,
-                    identity: Some(identity),
-                    source_id,
-                    capability_id,
-                    provenance,
-                    source,
+    let validated: Vec<ValidatedSourceParts> = catalog
+        .sources
+        .into_iter()
+        .map(|source| validate_source(source, env_resolver, profile_reader))
+        .collect();
+    // Provider-issued identities per surface, from any source form. An
+    // anonymous env/key credential carries no identity evidence of its own;
+    // when exactly one same-surface provider identity exists, the key joins
+    // that canonical account instead of minting a source-scoped row.
+    let mut strong = BTreeMap::<HostSurfaceId, BTreeSet<CanonicalAccountIdentity>>::new();
+    for (surface, _, _, _, _, outcome) in &validated {
+        if let ProfileValidation::Authenticated {
+            provider_id: Some(id),
+            ..
+        } = outcome
+            && !id.trim().is_empty()
+        {
+            strong
+                .entry(*surface)
+                .or_default()
+                .insert(CanonicalAccountIdentity {
+                    surface: *surface,
+                    subject: CanonicalAccountSubject::ProviderId(id.trim().to_owned()),
                 });
-            }
-            ProfileValidation::Anonymous(_) => bindings.push(ValidatedCredentialBinding {
-                surface,
-                identity: None,
-                source_id,
-                capability_id,
-                provenance,
-                source,
-            }),
-            ProfileValidation::Missing => diagnostics.push(source_diagnostic(
-                surface,
-                &provenance,
-                UsageDiscoveryIssue::CredentialMissing,
-            )),
-            ProfileValidation::Denied => diagnostics.push(source_diagnostic(
-                surface,
-                &provenance,
-                UsageDiscoveryIssue::CredentialDenied,
-            )),
-            ProfileValidation::Malformed => diagnostics.push(source_diagnostic(
-                surface,
-                &provenance,
-                UsageDiscoveryIssue::CredentialMalformed,
-            )),
         }
+    }
+    let (primary, attachable): (Vec<ValidatedSourceParts>, Vec<ValidatedSourceParts>) = validated
+        .into_iter()
+        .partition(|parts| !is_attachable_env_source(&parts.4, &parts.5));
+    // Strong sources accumulate first so canonical labels come from
+    // authenticated evidence, never from an attached anonymous key.
+    for parts in primary {
+        accumulate_validated_source(parts, None, &mut diagnostics, &mut bindings, &mut accounts);
+    }
+    for parts in attachable {
+        let attach_to = match strong.get(&parts.0) {
+            Some(ids) if ids.len() == 1 => ids.iter().next().cloned(),
+            _ => None,
+        };
+        accumulate_validated_source(
+            parts,
+            attach_to,
+            &mut diagnostics,
+            &mut bindings,
+            &mut accounts,
+        );
     }
 
     let accounts = accounts
@@ -1092,6 +1117,159 @@ fn validate_usage_sources_with_reader(
         diagnostics,
         candidates: catalog.candidates,
         bindings,
+    }
+}
+
+/// Whether an env/key source proved no identity of its own.
+///
+/// Anonymous API-key/OAuth-token credentials are bearer material without
+/// local identity evidence. Unlike profiles (distinct local logins) and
+/// forwarded capabilities (a separate trust domain), they may join the one
+/// same-surface provider-authenticated account when it exists.
+fn is_attachable_env_source(
+    source: &ValidatedCredentialSource,
+    outcome: &ProfileValidation,
+) -> bool {
+    if !matches!(source, ValidatedCredentialSource::Env { .. }) {
+        return false;
+    }
+    match outcome {
+        ProfileValidation::Authenticated { provider_id, .. } => {
+            provider_id.as_deref().is_none_or(|id| id.trim().is_empty())
+        }
+        ProfileValidation::Anonymous(_) => true,
+        ProfileValidation::Missing | ProfileValidation::Denied | ProfileValidation::Malformed => {
+            false
+        }
+    }
+}
+
+fn accumulate_validated_source(
+    parts: ValidatedSourceParts,
+    attach_to: Option<CanonicalAccountIdentity>,
+    diagnostics: &mut Vec<UsageDiscoveryDiagnostic>,
+    bindings: &mut Vec<ValidatedCredentialBinding>,
+    accounts: &mut BTreeMap<CanonicalAccountIdentity, AccountAccumulator>,
+) {
+    let (surface, source_id, capability_id, provenance, source, outcome) = parts;
+    if let Some(identity) = attach_to {
+        let label = match &outcome {
+            ProfileValidation::Authenticated {
+                provider_id,
+                account_label,
+                ..
+            } => account_label
+                .as_deref()
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .map(str::to_owned)
+                .or_else(|| provider_id.clone())
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        let entry = accounts.entry(identity.clone()).or_insert_with(|| {
+            // Unreachable: the strong target accumulates first and always
+            // mints its account. The fallback keeps the merge total.
+            AccountAccumulator {
+                label,
+                provenance: BTreeSet::new(),
+                source_ids: BTreeSet::new(),
+            }
+        });
+        entry.provenance.extend(provenance.iter().cloned());
+        entry.source_ids.insert(source_id.clone());
+        bindings.push(ValidatedCredentialBinding {
+            surface,
+            identity: Some(identity),
+            source_id,
+            capability_id,
+            provenance,
+            source,
+        });
+        return;
+    }
+
+    match outcome {
+        ProfileValidation::Authenticated {
+            provider_id,
+            account_label,
+            material: _,
+        } => {
+            let subject = provider_id
+                .as_ref()
+                .filter(|id| !id.trim().is_empty())
+                .map(|id| CanonicalAccountSubject::ProviderId(id.trim().to_owned()))
+                .or_else(|| {
+                    account_label
+                        .as_ref()
+                        .filter(|label| !label.trim().is_empty())
+                        .map(|_| {
+                            // A label is presentation evidence only. Keep
+                            // source identity when the provider did not
+                            // return a stronger canonical subject.
+                            CanonicalAccountSubject::SourceCapability(capability_id.clone())
+                        })
+                });
+            let Some(subject) = subject else {
+                bindings.push(ValidatedCredentialBinding {
+                    surface,
+                    identity: None,
+                    source_id,
+                    capability_id,
+                    provenance,
+                    source,
+                });
+                return;
+            };
+            let identity = CanonicalAccountIdentity { surface, subject };
+            let label = account_label
+                .as_deref()
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .map(str::to_owned)
+                .or_else(|| provider_id.clone())
+                .unwrap_or_default();
+            let entry = accounts
+                .entry(identity.clone())
+                .or_insert_with(|| AccountAccumulator {
+                    label,
+                    provenance: BTreeSet::new(),
+                    source_ids: BTreeSet::new(),
+                });
+            entry.provenance.extend(provenance.iter().cloned());
+            entry.source_ids.insert(source_id.clone());
+            bindings.push(ValidatedCredentialBinding {
+                surface,
+                identity: Some(identity),
+                source_id,
+                capability_id,
+                provenance,
+                source,
+            });
+        }
+        ProfileValidation::Anonymous(_) => bindings.push(ValidatedCredentialBinding {
+            surface,
+            identity: None,
+            source_id,
+            capability_id,
+            provenance,
+            source,
+        }),
+        ProfileValidation::Missing => diagnostics.push(source_diagnostic(
+            surface,
+            &provenance,
+            UsageDiscoveryIssue::CredentialMissing,
+        )),
+        ProfileValidation::Denied => diagnostics.push(source_diagnostic(
+            surface,
+            &provenance,
+            UsageDiscoveryIssue::CredentialDenied,
+        )),
+        ProfileValidation::Malformed => diagnostics.push(source_diagnostic(
+            surface,
+            &provenance,
+            UsageDiscoveryIssue::CredentialMalformed,
+        )),
     }
 }
 
