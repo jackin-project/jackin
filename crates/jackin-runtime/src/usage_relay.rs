@@ -392,6 +392,9 @@ pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mu
         let Some(surface) = HostSurfaceId::from_provider_alias(account.provider.slug()) else {
             continue;
         };
+        launch_config
+            .credential_provider_surfaces
+            .insert(instance_id.clone(), surface.id().to_owned());
         launch_config.usage_capabilities.insert(
             instance_id.clone(),
             UsageAccountCapability {

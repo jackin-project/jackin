@@ -1246,6 +1246,7 @@ pub(crate) fn fetch_claude_oauth_usage(
             (reqwest::header::USER_AGENT, &user_agent),
         ],
     )
+    .map_err(|error| error.to_string())
 }
 
 pub(crate) fn claude_code_user_agent() -> String {

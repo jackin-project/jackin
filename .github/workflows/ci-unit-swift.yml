@@ -183,11 +183,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@690b3935d979bd5400bc82b1f7e68d139125acd3
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@eed474c4a1d9b071fd1b5de00c769c8997398e5a
         with:
-          rev: 690b3935d979bd5400bc82b1f7e68d139125acd3
+          rev: eed474c4a1d9b071fd1b5de00c769c8997398e5a
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=690b3935d979bd5400bc82b1f7e68d139125acd3" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=eed474c4a1d9b071fd1b5de00c769c8997398e5a" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -285,6 +285,7 @@ jobs:
             fi
           fi
       - name: Restore unit cache
+        if: ${{ inputs.cache_key_files != '' }}
         id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -368,7 +369,7 @@ jobs:
           fi
           exit $rc
       - name: Save unit cache
-        if: always() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.cache.outputs.cache-hit != 'true'
+        if: ${{ inputs.cache_key_files != '' && (always() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.cache.outputs.cache-hit != 'true') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -388,7 +389,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@690b3935d979bd5400bc82b1f7e68d139125acd3
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@eed474c4a1d9b071fd1b5de00c769c8997398e5a
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github
