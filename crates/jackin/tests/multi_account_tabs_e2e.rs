@@ -78,10 +78,7 @@ struct E2eRoleCleanup;
 
 impl Drop for E2eRoleCleanup {
     fn drop(&mut self) {
-        // TEMPORARY LIVE-REPRO: keep the container for post-mortem inspection.
-        if std::env::var_os("JACKIN_E2E_KEEP_CONTAINER").is_none() {
-            cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
-        }
+        cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
     }
 }
 
