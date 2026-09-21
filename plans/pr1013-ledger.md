@@ -95,3 +95,20 @@ there and unproven here. Re-verify per row after repairs land; do not bulk-pass.
    S3 tabs e2e split-spawn stall diagnosis on merged tree (boot-phase
    isolation proven; F11 harness fix may already resolve). Verify or record
    before final completion report.
+
+## Follow-up PR #1025 (branch followup/multi-account-restore, base ee1da0c6)
+
+Restores multi-account behaviors broken/lost after #1013 merged (9ee50f6a):
+
+- 26259655 fix(capsule): Landlock grants for derived pane homes + agent-keyed seed fragments.
+- 111fb952 fix(usage-broker): setsid() detach so relaunch reuses broker (orphan-lease restore failure).
+- 53a5ba94 test(e2e): answer hardline reconnect prompt; `stty quit undef` (VQUIT SIGQUIT flake).
+- 63206f21 fix(clippy): needless_borrow process_isolation.rs:240; used_underscore_binding broker_service_lifecycle.rs:204.
+
+CI episode 2026-09-21: capsule+runtime reds were both clippy lints in
+our code, NOT test failures. Telemetry-guard race theory DISPROVEN and
+reverted uncommitted: test_capsule_layers builds purely local providers
+with thread-local set_default (no process-global install, observability.rs:1590+);
+runtime has a single in-process init_wire_test_export user (host_daemon test;
+launch tests self-isolate via subprocess respawn), so no in-process race exists.
+Local verify @63206f21: clippy clean both crates, fmt clean, broker 2/2, capsule lib 892/892.
