@@ -1368,12 +1368,12 @@ pub(crate) fn provider_http_client() -> Result<reqwest::blocking::Client, String
         .map_err(|err| format!("provider HTTP client unavailable: {err}"))
 }
 
-pub(crate) fn provider_request<T>(
+pub(crate) fn provider_request<T, E>(
     provider: jackin_telemetry::schema::enums::ProviderName,
     method: &'static str,
     template: &'static str,
-    request: impl FnOnce() -> Result<T, String>,
-) -> Result<T, String> {
+    request: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
     let attrs = [
         jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_PROVIDER_NAME,
@@ -1405,6 +1405,28 @@ pub(crate) fn provider_request<T>(
     result
 }
 
+/// Failure classes preserved by the shared bearer-auth JSON fetcher.
+///
+/// Provider snapshots may map an HTTP auth status to `NeedsLogin`, but a
+/// transport or decode failure must remain an ordinary provider error even if
+/// its rendered message happens to contain the same digits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ProviderHttpError {
+    Transport(String),
+    HttpStatus { status: u16, message: String },
+    Decode(String),
+}
+
+impl std::fmt::Display for ProviderHttpError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transport(message) | Self::HttpStatus { message, .. } | Self::Decode(message) => {
+                formatter.write_str(message)
+            }
+        }
+    }
+}
+
 /// Shared GET → bearer-auth → JSON skeleton for provider quota endpoints. The
 /// caller supplies the human label (used verbatim in every error string so the
 /// per-provider wording is unchanged), the URL, the bearer token, and any extra
@@ -1417,9 +1439,9 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
     url: &str,
     token: &str,
     extra_headers: &[(reqwest::header::HeaderName, &str)],
-) -> Result<T, String> {
+) -> Result<T, ProviderHttpError> {
     provider_request(provider, "GET", template, || {
-        let client = provider_http_client()?;
+        let client = provider_http_client().map_err(ProviderHttpError::Transport)?;
         let mut request = client
             .get(url)
             .bearer_auth(token)
@@ -1427,16 +1449,19 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
         for (name, value) in extra_headers {
             request = request.header(name.clone(), *value);
         }
-        let response = request
-            .send()
-            .map_err(|err| format!("{label} request failed: {err}"))?;
+        let response = request.send().map_err(|err| {
+            ProviderHttpError::Transport(format!("{label} request failed: {err}"))
+        })?;
         let status = response.status();
         if !status.is_success() {
-            return Err(format!("{label} HTTP {status}"));
+            return Err(ProviderHttpError::HttpStatus {
+                status: status.as_u16(),
+                message: format!("{label} HTTP {status}"),
+            });
         }
         response
             .json::<T>()
-            .map_err(|err| format!("{label} decode failed: {err}"))
+            .map_err(|err| ProviderHttpError::Decode(format!("{label} decode failed: {err}")))
     })
 }
 

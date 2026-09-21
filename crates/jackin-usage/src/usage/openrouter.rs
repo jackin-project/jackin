@@ -385,7 +385,7 @@ pub(crate) fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) ->
 pub(crate) fn fetch_openrouter_key_usage(
     base_url: &str,
     key: &str,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, ProviderHttpError> {
     get_json_bearer::<serde_json::Value>(
         jackin_telemetry::schema::enums::ProviderName::Openrouter,
         "GET",
@@ -394,6 +394,13 @@ pub(crate) fn fetch_openrouter_key_usage(
         key,
         &[],
     )
+}
+
+fn openrouter_key_error_status(error: &ProviderHttpError) -> UsageSnapshotStatus {
+    match error {
+        ProviderHttpError::HttpStatus { status: 401, .. } => UsageSnapshotStatus::NeedsLogin,
+        _ => UsageSnapshotStatus::Error,
+    }
 }
 
 /// `/credits` never fails the snapshot: every outcome (including the typed 403
@@ -461,14 +468,29 @@ pub(crate) fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> F
     openrouter_snapshot_with_base(agent, key, &openrouter_base_url(), now)
 }
 
-/// Key snapshot against an explicit base: production resolves the base from
-/// env, hermetic tests point it at a dead port.
+/// Key snapshot against an explicit base.
 pub(crate) fn openrouter_snapshot_with_base(
     agent: &str,
     key: Option<&str>,
     base_url: &str,
     now: i64,
 ) -> FocusedUsageView {
+    openrouter_snapshot_with_key_fetch(agent, key, base_url, now, fetch_openrouter_key_usage)
+}
+
+/// Snapshot boundary with an injectable key fetch. Production supplies the
+/// shared HTTP fetcher; tests can drive transport/decode failures without
+/// relying on an unreserved local port.
+fn openrouter_snapshot_with_key_fetch<F>(
+    agent: &str,
+    key: Option<&str>,
+    base_url: &str,
+    now: i64,
+    fetch_key: F,
+) -> FocusedUsageView
+where
+    F: FnOnce(&str, &str) -> Result<serde_json::Value, ProviderHttpError>,
+{
     let Some(key) = key.filter(|key| !key.trim().is_empty()) else {
         return usage_view(UsageViewInput {
             agent,
@@ -494,13 +516,10 @@ pub(crate) fn openrouter_snapshot_with_base(
             last_error: Some("OpenRouter API key missing".to_owned()),
         });
     };
-    let key_result = fetch_openrouter_key_usage(base_url, key)
+    let key_result = fetch_key(base_url, key)
         .map_err(|error| {
-            if error.contains("401") {
-                (UsageSnapshotStatus::NeedsLogin, error)
-            } else {
-                (UsageSnapshotStatus::Error, error)
-            }
+            let status = openrouter_key_error_status(&error);
+            (status, error.to_string())
         })
         .and_then(|value| {
             parse_openrouter_key_usage(value, now)
