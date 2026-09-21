@@ -6,13 +6,6 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      runner:
-        description: Execution backend
-        required: false
-        default: github
-        type: choice
-        options:
-          - github
       scope:
         description: Verification scope
         required: true
@@ -45,7 +38,10 @@ jobs:
       base_sha: ${{ steps.plan.outputs.base_sha }}
       head_sha: ${{ steps.plan.outputs.head_sha }}
       units: ${{ steps.plan.outputs.units }}
+      unit_ids: ${{ steps.plan.outputs.unit_ids }}
       full_units: ${{ steps.plan.outputs.full_units }}
+      plan_digest: ${{ steps.plan.outputs.plan_digest }}
+      excluded: ${{ steps.plan.outputs.excluded }}
       bun_matrix: ${{ steps.plan.outputs.bun_matrix }}
       docker_matrix: ${{ steps.plan.outputs.docker_matrix }}
       rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
@@ -64,12 +60,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         id: runtime
-        if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@7576f40fead6b1d55732c1d87b3b6bbe1b283301
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
         with:
-          rev: 7576f40fead6b1d55732c1d87b3b6bbe1b283301
+          rev: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=7576f40fead6b1d55732c1d87b3b6bbe1b283301" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -77,8 +72,9 @@ jobs:
           CI_SCOPE_OVERRIDE: ${{ github.event.inputs.scope || '' }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
           HEAD_SHA: ${{ github.sha }}
+          VELNOR_PROVIDERS: github-hosted
+          VELNOR_EVENT_TRUSTED: ${{ (!(github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork || github.event.pull_request.user.type == 'Bot'))) && 'true' || 'false' }}
           VELNOR_EXPECTED_WORK_FILE: .velnor-ci-expected-work/expected-work.json
-          VELNOR_LANES: ${{ github.event.inputs.runner || 'github' }}
         run: |
           set -euo pipefail
           if [[ -z "${CI_SCOPE_OVERRIDE:-}" ]]; then unset CI_SCOPE_OVERRIDE; fi
@@ -95,7 +91,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 7576f40fead6b1d55732c1d87b3b6bbe1b283301
+          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -114,58 +110,68 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-7576f40fead6b1d55732c1d87b3b6bbe1b283301-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
-  github-bun-jackin-docs:
-    name: "Bun · Bun package (jackin-docs)"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',bun-jackin-docs,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-bun-jackin-docs:
+    name: "Bun · Bun package (jackin-docs) · github-hosted — bun-jackin-docs"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"bun-jackin-docs"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-bun.yml
     with:
       unit: bun-jackin-docs
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       cache_paths: "~/.bun/install/cache"
       cache_key_files: |
         docs/package.json
         docs/bun.lock
-      unit_admission: github
-  github-docker-docker-construct:
-    name: "Docker · Docker (docker/construct)"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',docker-docker-construct,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
+  github-hosted-docker-docker-construct:
+    name: "Docker · Docker (docker/construct) · github-hosted — docker-docker-construct"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"docker-docker-construct"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-docker.yml
     with:
       unit: docker-docker-construct
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
-      unit_admission: github
-  github-rust-arrayref:
-    name: "Rust · arrayref"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-arrayref,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
+  github-hosted-rust-arrayref:
+    name: "Rust · arrayref · github-hosted — rust-arrayref"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-arrayref"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-arrayref
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: c1bb2bec564d
+      mbx_compat: "3ba2868c0b60"
       mbx_dependency_files: |
         .cargo/**
         rust-toolchain
@@ -189,24 +195,28 @@ jobs:
         rust-toolchain
       cargo_root: "vendor/arrayref"
       cargo_net_offline: true
-      unit_admission: github
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin:
-    name: "Rust · jackin"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin:
+    name: "Rust · jackin · github-hosted — rust-jackin"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: d4d8ae52f17d
+      mbx_compat: "53b3fc397e74"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -357,25 +367,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-config,rust-jackin-console,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-env,rust-jackin-image,rust-jackin-launch,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-runtime,rust-jackin-telemetry,rust-jackin-test-support,rust-jackin-tui,rust-jackin-usage"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-agent-status:
-    name: "Rust · jackin-agent-status"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-agent-status,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-agent-status:
+    name: "Rust · jackin-agent-status · github-hosted — rust-jackin-agent-status"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-agent-status"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-agent-status
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: ae1e63e88f80
+      mbx_compat: bc95fc5a4445
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -414,25 +428,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-agent-status"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-core,rust-jackin-protocol"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-brand:
-    name: "Rust · jackin-brand"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-brand,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-brand:
+    name: "Rust · jackin-brand · github-hosted — rust-jackin-brand"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-brand"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-brand
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "79190c680e32"
+      mbx_compat: c4cd73f046ed
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -455,24 +473,28 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-brand"
       cargo_net_offline: true
-      unit_admission: github
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-build-meta:
-    name: "Rust · jackin-build-meta"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-build-meta,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-build-meta:
+    name: "Rust · jackin-build-meta · github-hosted — rust-jackin-build-meta"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-build-meta"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-build-meta
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "5c53c9b823a8"
+      mbx_compat: "51ec08c00908"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -500,25 +522,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-build-meta"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-jackin-process
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-capsule:
-    name: "Rust · jackin-capsule"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-capsule,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-capsule:
+    name: "Rust · jackin-capsule · github-hosted — rust-jackin-capsule"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-capsule"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-capsule
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "55dc1c3cc66e"
+      mbx_compat: "5b51f83d797b"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -622,25 +648,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-capsule"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-agent-status,rust-jackin-brand,rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-tui,rust-jackin-usage"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-config:
-    name: "Rust · jackin-config"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-config:
+    name: "Rust · jackin-config · github-hosted — rust-jackin-config"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-config"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-config
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: feabb06ad2e7
+      mbx_compat: fba1f4621517
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -684,25 +714,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-config"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-config-fuzz:
-    name: "Rust · jackin-config-fuzz"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-config-fuzz:
+    name: "Rust · jackin-config-fuzz · github-hosted — rust-jackin-config-fuzz"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-config-fuzz"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-config-fuzz
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "4db990676c00"
+      mbx_compat: "8d660c2cbfed"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -753,25 +787,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-config/fuzz"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-jackin-config
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test"
-  github-rust-jackin-console:
-    name: "Rust · jackin-console"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-console,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-console:
+    name: "Rust · jackin-console · github-hosted — rust-jackin-console"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-console"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-console
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "5ff2a384a8a9"
+      mbx_compat: "0501eaf48bcc"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -851,25 +889,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-console"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-env,rust-jackin-oppicker,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-tui"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-core:
-    name: "Rust · jackin-core"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-core,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-core:
+    name: "Rust · jackin-core · github-hosted — rust-jackin-core"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-core"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-core
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: c3a660a7fe0e
+      mbx_compat: "8cca665e7147"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -892,24 +934,28 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-core"
       cargo_net_offline: true
-      unit_admission: github
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-dev:
-    name: "Rust · jackin-dev"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-dev,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-dev:
+    name: "Rust · jackin-dev · github-hosted — rust-jackin-dev"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-dev"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-dev
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "9f07ff282eb8"
+      mbx_compat: b562cf726b82
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -932,24 +978,28 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-dev"
       cargo_net_offline: true
-      unit_admission: github
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test"
-  github-rust-jackin-diagnostics:
-    name: "Rust · jackin-diagnostics"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-diagnostics,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-diagnostics:
+    name: "Rust · jackin-diagnostics · github-hosted — rust-jackin-diagnostics"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-diagnostics"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-diagnostics
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: a698122e1948
+      mbx_compat: ca512e4981c9
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -988,25 +1038,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-diagnostics"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-core,rust-jackin-otlp-testbed,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-docker:
-    name: "Rust · jackin-docker"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-docker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-docker:
+    name: "Rust · jackin-docker · github-hosted — rust-jackin-docker"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-docker"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-docker
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "70cf80dbe965"
+      mbx_compat: "900daddd19be"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1061,25 +1115,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-docker"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-env:
-    name: "Rust · jackin-env"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-env:
+    name: "Rust · jackin-env · github-hosted — rust-jackin-env"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-env"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-env
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: fe4982e96228
+      mbx_compat: f568736ee88a
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1139,25 +1197,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-env"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-env-fuzz:
-    name: "Rust · jackin-env-fuzz"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-env-fuzz:
+    name: "Rust · jackin-env-fuzz · github-hosted — rust-jackin-env-fuzz"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-env-fuzz"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-env-fuzz
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: ad6fd84ba238
+      mbx_compat: ea3ef03fd516
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1224,25 +1286,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-env/fuzz"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-env"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test"
-  github-rust-jackin-host:
-    name: "Rust · jackin-host"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-host,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-host:
+    name: "Rust · jackin-host · github-hosted — rust-jackin-host"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-host"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-host
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "377aac94fa50"
+      mbx_compat: fbb5d2eb9df4
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1323,25 +1389,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-host"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-image:
-    name: "Rust · jackin-image"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-image,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-image:
+    name: "Rust · jackin-image · github-hosted — rust-jackin-image"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-image"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-image
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: fea806cdf2e7
+      mbx_compat: b22492088951
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1417,25 +1487,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-image"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-instance:
-    name: "Rust · jackin-instance"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-instance,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-instance:
+    name: "Rust · jackin-instance · github-hosted — rust-jackin-instance"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-instance"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-instance
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: b42e9baf5660
+      mbx_compat: ba9e6ee26981
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1494,25 +1568,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-instance"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-manifest,rust-jackin-process,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-isolation:
-    name: "Rust · jackin-isolation"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-isolation,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-isolation:
+    name: "Rust · jackin-isolation · github-hosted — rust-jackin-isolation"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-isolation"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-isolation
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "9f832e6cb07a"
+      mbx_compat: "907a5ac0b4f3"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1593,25 +1671,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-isolation"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-launch:
-    name: "Rust · jackin-launch"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-launch,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-launch:
+    name: "Rust · jackin-launch · github-hosted — rust-jackin-launch"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-launch"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-launch
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "659d6c1dc35b"
+      mbx_compat: "48863733a332"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1676,25 +1758,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-launch"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-telemetry,rust-jackin-tui"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-manifest:
-    name: "Rust · jackin-manifest"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-manifest:
+    name: "Rust · jackin-manifest · github-hosted — rust-jackin-manifest"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-manifest"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-manifest
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "4694d328844d"
+      mbx_compat: "7c77952e93b9"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1743,25 +1829,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-manifest"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-config,rust-jackin-core"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-manifest-fuzz:
-    name: "Rust · jackin-manifest-fuzz"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-manifest-fuzz:
+    name: "Rust · jackin-manifest-fuzz · github-hosted — rust-jackin-manifest-fuzz"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-manifest-fuzz"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-manifest-fuzz
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: b4b5dd8b62e0
+      mbx_compat: a9c374842551
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1817,25 +1907,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-manifest/fuzz"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-jackin-manifest
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test"
-  github-rust-jackin-oppicker:
-    name: "Rust · jackin-oppicker"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-oppicker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-oppicker:
+    name: "Rust · jackin-oppicker · github-hosted — rust-jackin-oppicker"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-oppicker"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-oppicker
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: d6e165a32ea9
+      mbx_compat: aa3da64c28e9
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1868,25 +1962,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-oppicker"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-core,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-otlp-testbed:
-    name: "Rust · jackin-otlp-testbed"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-otlp-testbed,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-otlp-testbed:
+    name: "Rust · jackin-otlp-testbed · github-hosted — rust-jackin-otlp-testbed"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-otlp-testbed"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-otlp-testbed
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: b03100b6e894
+      mbx_compat: "22569301184e"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1914,25 +2012,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-otlp-testbed"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-jackin-telemetry
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-pr-trailers:
-    name: "Rust · jackin-pr-trailers"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-pr-trailers,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-pr-trailers:
+    name: "Rust · jackin-pr-trailers · github-hosted — rust-jackin-pr-trailers"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-pr-trailers"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-pr-trailers
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "707e86e8d863"
+      mbx_compat: e07086bfc5b6
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1960,25 +2062,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-pr-trailers"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-jackin-process
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test"
-  github-rust-jackin-process:
-    name: "Rust · jackin-process"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-process,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-process:
+    name: "Rust · jackin-process · github-hosted — rust-jackin-process"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-process"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-process
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "1670062b1119"
+      mbx_compat: "4f07174e187a"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2001,24 +2107,28 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-process"
       cargo_net_offline: true
-      unit_admission: github
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-protocol:
-    name: "Rust · jackin-protocol"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-protocol:
+    name: "Rust · jackin-protocol · github-hosted — rust-jackin-protocol"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-protocol"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-protocol
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: fde671f90d70
+      mbx_compat: "26f6ff6becda"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2052,25 +2162,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-protocol"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-core,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-protocol-fuzz:
-    name: "Rust · jackin-protocol-fuzz"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-protocol-fuzz:
+    name: "Rust · jackin-protocol-fuzz · github-hosted — rust-jackin-protocol-fuzz"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-protocol-fuzz"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-protocol-fuzz
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: fc575fc82677
+      mbx_compat: "54e5edded480"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2111,25 +2225,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-protocol/fuzz"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-jackin-protocol
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test"
-  github-rust-jackin-runtime:
-    name: "Rust · jackin-runtime"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-runtime,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-runtime:
+    name: "Rust · jackin-runtime · github-hosted — rust-jackin-runtime"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-runtime"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-runtime
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "1b2a1149415c"
+      mbx_compat: ae6b209ee920
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2273,25 +2391,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-runtime"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-env,rust-jackin-host,rust-jackin-image,rust-jackin-instance,rust-jackin-isolation,rust-jackin-launch,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support,rust-jackin-usage"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-telemetry:
-    name: "Rust · jackin-telemetry"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-telemetry,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-telemetry:
+    name: "Rust · jackin-telemetry · github-hosted — rust-jackin-telemetry"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-telemetry"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-telemetry
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "2b9af5bb6d6e"
+      mbx_compat: "6b8497e61a6d"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2314,24 +2436,28 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-telemetry"
       cargo_net_offline: true
-      unit_admission: github
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-test-support:
-    name: "Rust · jackin-test-support"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-test-support,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-test-support:
+    name: "Rust · jackin-test-support · github-hosted — rust-jackin-test-support"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-test-support"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-test-support
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: c7f26978bf35
+      mbx_compat: "4315d7d21e81"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2385,25 +2511,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-test-support"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-core,rust-jackin-manifest,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-tui:
-    name: "Rust · jackin-tui"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-tui,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-tui:
+    name: "Rust · jackin-tui · github-hosted — rust-jackin-tui"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-tui"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-tui
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "5d6cdb1e4878"
+      mbx_compat: "109f91dd2266"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2431,25 +2561,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-tui"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-jackin-brand
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-usage:
-    name: "Rust · jackin-usage"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-usage:
+    name: "Rust · jackin-usage · github-hosted — rust-jackin-usage"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-usage"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-usage
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "9be9adf88698"
+      mbx_compat: bd21338db8e5
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2534,25 +2668,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-usage"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-config,rust-jackin-console,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-usage-ffi:
-    name: "Rust · jackin-usage-ffi"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage-ffi,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-usage-ffi:
+    name: "Rust · jackin-usage-ffi · github-hosted — rust-jackin-usage-ffi"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-usage-ffi"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-usage-ffi
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "97ef82475024"
+      mbx_compat: cec2c0eccec2
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2642,25 +2780,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-usage-ffi"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-env,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-usage"
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test,doctest"
-  github-rust-jackin-xtask:
-    name: "Rust · jackin-xtask"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-xtask,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-jackin-xtask:
+    name: "Rust · jackin-xtask · github-hosted — rust-jackin-xtask"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-xtask"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-jackin-xtask
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest github:open-telemetry/weaver"
       mbx_enabled: true
-      mbx_compat: cd3a3a4d42ef
+      mbx_compat: "0cbfa984289f"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2688,24 +2830,28 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-xtask"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-jackin-process
-      unit_admission: github
+      unit_admission: github-hosted
       validation_phases: "fmt,clippy,test"
-  github-rust-policy:
-    name: "Rust · Rust dependency policy"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-policy,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-policy:
+    name: "Rust · Rust dependency policy · github-hosted — rust-policy"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-policy"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-policy
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mbx_enabled: true
-      mbx_compat: eac1fecaef97
+      mbx_compat: "5af321279483"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2725,65 +2871,100 @@ jobs:
         Cargo.lock
         rust-toolchain.toml
         rust-toolchain
-      unit_admission: github
-  github-swift-package-native:
-    name: "Swift · Apple · Swift package (native)"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
-    needs: [plan]
-    uses: ./.github/workflows/ci-unit-swift.yml
-    with:
-      unit: swift-package-native
-      lane: github
-      selected_units: ${{ needs.plan.outputs.units }}
-      scope: ${{ needs.plan.outputs.scope }}
-      full_units: ${{ needs.plan.outputs.full_units }}
-      base_sha: ${{ needs.plan.outputs.base_sha }}
-      head_sha: ${{ needs.plan.outputs.head_sha }}
-      mise_tools: "cargo-binstall rust cargo:sccache cargo:boltffi_cli"
-      cache_paths: "~/.swiftpm"
-      cache_key_files: |
-        native/Package.swift
-        native/Package.resolved
-        native/.swiftpm/Package.resolved
-      apple_executor: true
-      unit_dependencies: rust-jackin-usage-ffi
-      unit_admission: github
-  github-swift-package-native-design-prototypes-unifiedagentusage:
-    name: "Swift · Apple · Swift package (native/Design/Prototypes/UnifiedAgentUsage)"
-    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native-design-prototypes-unifiedagentusage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
+  github-hosted-swift-package-native-design-prototypes-unifiedagentusage:
+    name: "Swift · Apple · Swift package (native/Design/Prototypes/UnifiedAgentUsage) · github-hosted — swift-package-native-design-prototypes-unifiedagentusage"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"swift-package-native-design-prototypes-unifiedagentusage"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
       unit: swift-package-native-design-prototypes-unifiedagentusage
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       cache_paths: "~/.swiftpm"
       cache_key_files: |
-        native/Design/Prototypes/UnifiedAgentUsage/Package.swift
-        native/Design/Prototypes/UnifiedAgentUsage/Package.resolved
+        .swift-version
+        .xcode-version
+        mise.lock
         native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved
+        native/Design/Prototypes/UnifiedAgentUsage/Package.resolved
+        native/Design/Prototypes/UnifiedAgentUsage/Package.swift
       apple_executor: true
-      unit_admission: github
+      unit_platform: macos-arm64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
+  github-hosted-swift-xcodegen-native-project-yml-jackindesktop:
+    name: "Swift · Apple · Apple app (JackinDesktop, XcodeGen) · github-hosted — swift-xcodegen-native-project-yml-jackindesktop"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"swift-xcodegen-native-project-yml-jackindesktop"') && (true) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-swift.yml
+    with:
+      unit: swift-xcodegen-native-project-yml-jackindesktop
+      provider: github-hosted
+      selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "xcodegen cargo-binstall rust cargo:sccache cargo:boltffi_cli"
+      cache_paths: "~/Library/Developer/Xcode/DerivedData"
+      cache_key_files: |
+        .swift-version
+        .xcode-version
+        mise.lock
+        native/project.yml
+      apple_executor: true
+      unit_platform: macos-arm64
+      unit_trust: untrusted-ok
+      unit_dependencies: rust-jackin-usage-ffi
+      unit_admission: github-hosted
+  github-hosted-swift-package-native:
+    name: "Swift · Apple ·  · github-hosted — swift-package-native"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"swift-package-native"') && (true) }}
+    needs: [plan]
+    uses: ./.github/workflows/ci-unit-swift.yml
+    with:
+      unit: swift-package-native
+      provider: github-hosted
+      selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
+      scope: ${{ needs.plan.outputs.scope }}
+      full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "cargo-binstall rust cargo:sccache cargo:boltffi_cli"
+      apple_executor: true
+      unit_platform: macos-arm64
+      unit_trust: untrusted-ok
+      unit_dependencies: rust-jackin-usage-ffi
+      unit_admission: github-hosted
   ci-required:
     name: ci-required
     if: ${{ !cancelled() }}
-    needs: [plan, github-bun-jackin-docs, github-docker-docker-construct, github-rust-arrayref, github-rust-jackin, github-rust-jackin-agent-status, github-rust-jackin-brand, github-rust-jackin-build-meta, github-rust-jackin-capsule, github-rust-jackin-config, github-rust-jackin-config-fuzz, github-rust-jackin-console, github-rust-jackin-core, github-rust-jackin-dev, github-rust-jackin-diagnostics, github-rust-jackin-docker, github-rust-jackin-env, github-rust-jackin-env-fuzz, github-rust-jackin-host, github-rust-jackin-image, github-rust-jackin-instance, github-rust-jackin-isolation, github-rust-jackin-launch, github-rust-jackin-manifest, github-rust-jackin-manifest-fuzz, github-rust-jackin-oppicker, github-rust-jackin-otlp-testbed, github-rust-jackin-pr-trailers, github-rust-jackin-process, github-rust-jackin-protocol, github-rust-jackin-protocol-fuzz, github-rust-jackin-runtime, github-rust-jackin-telemetry, github-rust-jackin-test-support, github-rust-jackin-tui, github-rust-jackin-usage, github-rust-jackin-usage-ffi, github-rust-jackin-xtask, github-rust-policy, github-swift-package-native, github-swift-package-native-design-prototypes-unifiedagentusage]
+    needs: [plan, github-hosted-bun-jackin-docs, github-hosted-docker-docker-construct, github-hosted-rust-arrayref, github-hosted-rust-jackin, github-hosted-rust-jackin-agent-status, github-hosted-rust-jackin-brand, github-hosted-rust-jackin-build-meta, github-hosted-rust-jackin-capsule, github-hosted-rust-jackin-config, github-hosted-rust-jackin-config-fuzz, github-hosted-rust-jackin-console, github-hosted-rust-jackin-core, github-hosted-rust-jackin-dev, github-hosted-rust-jackin-diagnostics, github-hosted-rust-jackin-docker, github-hosted-rust-jackin-env, github-hosted-rust-jackin-env-fuzz, github-hosted-rust-jackin-host, github-hosted-rust-jackin-image, github-hosted-rust-jackin-instance, github-hosted-rust-jackin-isolation, github-hosted-rust-jackin-launch, github-hosted-rust-jackin-manifest, github-hosted-rust-jackin-manifest-fuzz, github-hosted-rust-jackin-oppicker, github-hosted-rust-jackin-otlp-testbed, github-hosted-rust-jackin-pr-trailers, github-hosted-rust-jackin-process, github-hosted-rust-jackin-protocol, github-hosted-rust-jackin-protocol-fuzz, github-hosted-rust-jackin-runtime, github-hosted-rust-jackin-telemetry, github-hosted-rust-jackin-test-support, github-hosted-rust-jackin-tui, github-hosted-rust-jackin-usage, github-hosted-rust-jackin-usage-ffi, github-hosted-rust-jackin-xtask, github-hosted-rust-policy, github-hosted-swift-package-native-design-prototypes-unifiedagentusage, github-hosted-swift-xcodegen-native-project-yml-jackindesktop, github-hosted-swift-package-native]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-7576f40fead6b1d55732c1d87b3b6bbe1b283301-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 7576f40fead6b1d55732c1d87b3b6bbe1b283301
+          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -2797,7 +2978,7 @@ jobs:
       - name: Add Velnor workflow runtime to PATH
         shell: bash
         env:
-          EXPECTED_REVISION: 7576f40fead6b1d55732c1d87b3b6bbe1b283301
+          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
         run: |
           set -euo pipefail
           home="$RUNNER_TEMP/velnor-workflow-runtime-artifact"
@@ -2854,817 +3035,982 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           SELECTED_UNITS: ${{ needs.plan.outputs.units }}
-          LANE_ADMITTED_GITHUB: ${{ github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')) }}
+          PLAN_DIGEST: ${{ needs.plan.outputs.plan_digest }}
+          EXCLUDED: ${{ needs.plan.outputs.excluded }}
+          EXPECTED_CALLERS: "[{\"job_id\":\"github-hosted-bun-jackin-docs\",\"provider\":\"github-hosted\",\"unit_id\":\"bun-jackin-docs\"},{\"job_id\":\"github-hosted-docker-docker-construct\",\"provider\":\"github-hosted\",\"unit_id\":\"docker-docker-construct\"},{\"job_id\":\"github-hosted-rust-arrayref\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-arrayref\"},{\"job_id\":\"github-hosted-rust-jackin\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin\"},{\"job_id\":\"github-hosted-rust-jackin-agent-status\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-agent-status\"},{\"job_id\":\"github-hosted-rust-jackin-brand\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-brand\"},{\"job_id\":\"github-hosted-rust-jackin-build-meta\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-build-meta\"},{\"job_id\":\"github-hosted-rust-jackin-capsule\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-capsule\"},{\"job_id\":\"github-hosted-rust-jackin-config\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-config\"},{\"job_id\":\"github-hosted-rust-jackin-config-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-config-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-console\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-console\"},{\"job_id\":\"github-hosted-rust-jackin-core\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-core\"},{\"job_id\":\"github-hosted-rust-jackin-dev\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-dev\"},{\"job_id\":\"github-hosted-rust-jackin-diagnostics\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-diagnostics\"},{\"job_id\":\"github-hosted-rust-jackin-docker\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-docker\"},{\"job_id\":\"github-hosted-rust-jackin-env\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-env\"},{\"job_id\":\"github-hosted-rust-jackin-env-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-env-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-host\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-host\"},{\"job_id\":\"github-hosted-rust-jackin-image\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-image\"},{\"job_id\":\"github-hosted-rust-jackin-instance\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-instance\"},{\"job_id\":\"github-hosted-rust-jackin-isolation\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-isolation\"},{\"job_id\":\"github-hosted-rust-jackin-launch\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-launch\"},{\"job_id\":\"github-hosted-rust-jackin-manifest\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-manifest\"},{\"job_id\":\"github-hosted-rust-jackin-manifest-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-manifest-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-oppicker\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-oppicker\"},{\"job_id\":\"github-hosted-rust-jackin-otlp-testbed\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-otlp-testbed\"},{\"job_id\":\"github-hosted-rust-jackin-pr-trailers\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-pr-trailers\"},{\"job_id\":\"github-hosted-rust-jackin-process\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-process\"},{\"job_id\":\"github-hosted-rust-jackin-protocol\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-protocol\"},{\"job_id\":\"github-hosted-rust-jackin-protocol-fuzz\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-protocol-fuzz\"},{\"job_id\":\"github-hosted-rust-jackin-runtime\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-runtime\"},{\"job_id\":\"github-hosted-rust-jackin-telemetry\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-telemetry\"},{\"job_id\":\"github-hosted-rust-jackin-test-support\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-test-support\"},{\"job_id\":\"github-hosted-rust-jackin-tui\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-tui\"},{\"job_id\":\"github-hosted-rust-jackin-usage\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-usage\"},{\"job_id\":\"github-hosted-rust-jackin-usage-ffi\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-usage-ffi\"},{\"job_id\":\"github-hosted-rust-jackin-xtask\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-jackin-xtask\"},{\"job_id\":\"github-hosted-rust-policy\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-policy\"},{\"job_id\":\"github-hosted-swift-package-native-design-prototypes-unifiedagentusage\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-package-native-design-prototypes-unifiedagentusage\"},{\"job_id\":\"github-hosted-swift-xcodegen-native-project-yml-jackindesktop\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-xcodegen-native-project-yml-jackindesktop\"},{\"job_id\":\"github-hosted-swift-package-native\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-package-native\"}]"
+          PROVIDER_ADMITTED_GITHUB_HOSTED: ${{ true }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -z "$PLAN_DIGEST" ]]; then
+            echo "plan did not freeze a plan digest: the expected set has no identity" >&2
+            exit 1
+          fi
+          echo "verdict binds plan digest $PLAN_DIGEST"
           result_for_job() {
             jq -r --arg job "$1" '.[$job].result // empty' <<<"$NEEDS_JSON"
           }
+          plan_expects() {
+            [[ "$(jq -r --arg unit "$1" --arg provider "$2" '[.[] | select(.unit_id == $unit) | .providers[] | select(. == $provider)] | length' <<<"$SELECTED_UNITS")" -gt 0 ]]
+          }
+          if ! jq -e --argjson expected "$EXPECTED_CALLERS" '($expected | type == "array") and all($expected[]; type == "object" and (.unit_id | type) == "string" and (.provider | type) == "string" and (.job_id | type) == "string")' -n; then
+            echo "generated required-caller contract is malformed" >&2
+            exit 1
+          fi
+          if ! jq -e --argjson expected "$EXPECTED_CALLERS" 'type == "array" and (map(.unit_id) | unique | length) == length and all(.[]; . as $entry | ($entry | type) == "object" and ($entry.unit_id | type) == "string" and ($entry.unit_id | length) > 0 and ($entry.providers | type) == "array" and ($entry.providers | length) > 0 and (($entry.providers | map(type == "string" and length > 0) | all)) and (($entry.providers | unique | length) == ($entry.providers | length)) and all($entry.providers[]; . as $provider | any($expected[]; .unit_id == $entry.unit_id and .provider == $provider)))' <<<"$SELECTED_UNITS" >/dev/null; then
+            echo "plan selected-unit output contains an unknown, duplicate, empty, or unmapped obligation" >&2
+            exit 1
+          fi
+          if ! jq -e 'type == "object"' <<<"$NEEDS_JSON" >/dev/null; then
+            echo "workflow needs output is malformed" >&2
+            exit 1
+          fi
           result="$(result_for_job plan)"
           if [[ "$result" != success ]]; then
             echo "required CI prerequisite plan did not pass: $result" >&2
             exit 1
           fi
-          selected=",$SELECTED_UNITS,"
-          if [[ "$selected" == *",bun-jackin-docs,"* ]]; then
-            result="$(result_for_job github-bun-jackin-docs)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "bun-jackin-docs" "github-hosted"; then
+            result="$(result_for_job github-hosted-bun-jackin-docs)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-bun-jackin-docs did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-bun-jackin-docs was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-bun-jackin-docs was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-bun-jackin-docs did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-bun-jackin-docs ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-bun-jackin-docs ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-bun-jackin-docs)"
+            result="$(result_for_job github-hosted-bun-jackin-docs)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-bun-jackin-docs failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-bun-jackin-docs succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-bun-jackin-docs ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",docker-docker-construct,"* ]]; then
-            result="$(result_for_job github-docker-docker-construct)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "docker-docker-construct" "github-hosted"; then
+            result="$(result_for_job github-hosted-docker-docker-construct)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-docker-docker-construct did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-docker-docker-construct was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-docker-docker-construct was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-docker-docker-construct did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-docker-docker-construct ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-docker-docker-construct ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-docker-docker-construct)"
+            result="$(result_for_job github-hosted-docker-docker-construct)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-docker-docker-construct failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-docker-docker-construct succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-docker-docker-construct ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-arrayref,"* ]]; then
-            result="$(result_for_job github-rust-arrayref)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-arrayref" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-arrayref)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-arrayref did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-arrayref was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-arrayref was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-arrayref did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-arrayref ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-arrayref ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-arrayref)"
+            result="$(result_for_job github-hosted-rust-arrayref)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-arrayref failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-arrayref succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-arrayref ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin,"* ]]; then
-            result="$(result_for_job github-rust-jackin)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin)"
+            result="$(result_for_job github-hosted-rust-jackin)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-agent-status,"* ]]; then
-            result="$(result_for_job github-rust-jackin-agent-status)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-agent-status" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-agent-status)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-agent-status did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-agent-status was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-agent-status was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-agent-status did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-agent-status ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-agent-status ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-agent-status)"
+            result="$(result_for_job github-hosted-rust-jackin-agent-status)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-agent-status failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-agent-status succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-agent-status ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-brand,"* ]]; then
-            result="$(result_for_job github-rust-jackin-brand)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-brand" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-brand)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-brand did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-brand was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-brand was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-brand did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-brand ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-brand ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-brand)"
+            result="$(result_for_job github-hosted-rust-jackin-brand)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-brand failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-brand succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-brand ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-build-meta,"* ]]; then
-            result="$(result_for_job github-rust-jackin-build-meta)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-build-meta" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-build-meta)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-build-meta did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-build-meta was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-build-meta was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-build-meta did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-build-meta ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-build-meta ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-build-meta)"
+            result="$(result_for_job github-hosted-rust-jackin-build-meta)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-build-meta failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-build-meta succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-build-meta ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-capsule,"* ]]; then
-            result="$(result_for_job github-rust-jackin-capsule)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-capsule" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-capsule)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-capsule did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-capsule was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-capsule was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-capsule did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-capsule ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-capsule ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-capsule)"
+            result="$(result_for_job github-hosted-rust-jackin-capsule)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-capsule failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-capsule succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-capsule ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-config,"* ]]; then
-            result="$(result_for_job github-rust-jackin-config)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-config" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-config)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-config did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-config was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-config was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-config did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-config ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-config ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-config)"
+            result="$(result_for_job github-hosted-rust-jackin-config)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-config failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-config succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-config ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-config-fuzz,"* ]]; then
-            result="$(result_for_job github-rust-jackin-config-fuzz)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-config-fuzz" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-config-fuzz)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-config-fuzz did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-config-fuzz was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-config-fuzz was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-config-fuzz did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-config-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-config-fuzz ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-config-fuzz)"
+            result="$(result_for_job github-hosted-rust-jackin-config-fuzz)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-config-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-config-fuzz succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-config-fuzz ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-console,"* ]]; then
-            result="$(result_for_job github-rust-jackin-console)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-console" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-console)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-console did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-console was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-console was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-console did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-console ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-console ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-console)"
+            result="$(result_for_job github-hosted-rust-jackin-console)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-console failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-console succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-console ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-core,"* ]]; then
-            result="$(result_for_job github-rust-jackin-core)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-core" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-core)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-core did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-core was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-core was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-core did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-core ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-core ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-core)"
+            result="$(result_for_job github-hosted-rust-jackin-core)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-core failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-core succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-core ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-dev,"* ]]; then
-            result="$(result_for_job github-rust-jackin-dev)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-dev" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-dev)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-dev did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-dev was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-dev was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-dev did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-dev ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-dev ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-dev)"
+            result="$(result_for_job github-hosted-rust-jackin-dev)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-dev failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-dev succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-dev ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-diagnostics,"* ]]; then
-            result="$(result_for_job github-rust-jackin-diagnostics)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-diagnostics" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-diagnostics)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-diagnostics did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-diagnostics was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-diagnostics was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-diagnostics did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-diagnostics ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-diagnostics ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-diagnostics)"
+            result="$(result_for_job github-hosted-rust-jackin-diagnostics)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-diagnostics failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-diagnostics succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-diagnostics ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-docker,"* ]]; then
-            result="$(result_for_job github-rust-jackin-docker)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-docker" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-docker)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-docker did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-docker was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-docker was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-docker did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-docker ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-docker ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-docker)"
+            result="$(result_for_job github-hosted-rust-jackin-docker)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-docker failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-docker succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-docker ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-env,"* ]]; then
-            result="$(result_for_job github-rust-jackin-env)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-env" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-env)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-env did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-env was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-env was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-env did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-env ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-env ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-env)"
+            result="$(result_for_job github-hosted-rust-jackin-env)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-env failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-env succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-env ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-env-fuzz,"* ]]; then
-            result="$(result_for_job github-rust-jackin-env-fuzz)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-env-fuzz" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-env-fuzz)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-env-fuzz did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-env-fuzz was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-env-fuzz was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-env-fuzz did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-env-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-env-fuzz ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-env-fuzz)"
+            result="$(result_for_job github-hosted-rust-jackin-env-fuzz)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-env-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-env-fuzz succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-env-fuzz ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-host,"* ]]; then
-            result="$(result_for_job github-rust-jackin-host)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-host" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-host)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-host did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-host was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-host was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-host did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-host ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-host ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-host)"
+            result="$(result_for_job github-hosted-rust-jackin-host)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-host failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-host succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-host ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-image,"* ]]; then
-            result="$(result_for_job github-rust-jackin-image)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-image" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-image)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-image did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-image was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-image was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-image did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-image ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-image ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-image)"
+            result="$(result_for_job github-hosted-rust-jackin-image)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-image failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-image succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-image ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-instance,"* ]]; then
-            result="$(result_for_job github-rust-jackin-instance)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-instance" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-instance)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-instance did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-instance was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-instance was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-instance did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-instance ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-instance ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-instance)"
+            result="$(result_for_job github-hosted-rust-jackin-instance)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-instance failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-instance succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-instance ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-isolation,"* ]]; then
-            result="$(result_for_job github-rust-jackin-isolation)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-isolation" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-isolation)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-isolation did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-isolation was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-isolation was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-isolation did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-isolation ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-isolation ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-isolation)"
+            result="$(result_for_job github-hosted-rust-jackin-isolation)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-isolation failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-isolation succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-isolation ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-launch,"* ]]; then
-            result="$(result_for_job github-rust-jackin-launch)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-launch" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-launch)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-launch did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-launch was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-launch was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-launch did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-launch ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-launch ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-launch)"
+            result="$(result_for_job github-hosted-rust-jackin-launch)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-launch failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-launch succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-launch ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-manifest,"* ]]; then
-            result="$(result_for_job github-rust-jackin-manifest)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-manifest" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-manifest)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-manifest did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-manifest was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-manifest was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-manifest did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-manifest ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-manifest ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-manifest)"
+            result="$(result_for_job github-hosted-rust-jackin-manifest)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-manifest failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-manifest succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-manifest ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-manifest-fuzz,"* ]]; then
-            result="$(result_for_job github-rust-jackin-manifest-fuzz)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-manifest-fuzz" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-manifest-fuzz)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-manifest-fuzz did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-manifest-fuzz was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-manifest-fuzz was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-manifest-fuzz did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-manifest-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-manifest-fuzz ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-manifest-fuzz)"
+            result="$(result_for_job github-hosted-rust-jackin-manifest-fuzz)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-manifest-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-manifest-fuzz succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-manifest-fuzz ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-oppicker,"* ]]; then
-            result="$(result_for_job github-rust-jackin-oppicker)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-oppicker" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-oppicker)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-oppicker did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-oppicker was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-oppicker was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-oppicker did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-oppicker ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-oppicker ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-oppicker)"
+            result="$(result_for_job github-hosted-rust-jackin-oppicker)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-oppicker failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-oppicker succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-oppicker ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-otlp-testbed,"* ]]; then
-            result="$(result_for_job github-rust-jackin-otlp-testbed)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-otlp-testbed" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-otlp-testbed)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-otlp-testbed did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-otlp-testbed was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-otlp-testbed was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-otlp-testbed did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-otlp-testbed ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-otlp-testbed ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-otlp-testbed)"
+            result="$(result_for_job github-hosted-rust-jackin-otlp-testbed)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-otlp-testbed failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-otlp-testbed succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-otlp-testbed ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-pr-trailers,"* ]]; then
-            result="$(result_for_job github-rust-jackin-pr-trailers)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-pr-trailers" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-pr-trailers)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-pr-trailers did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-pr-trailers was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-pr-trailers was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-pr-trailers did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-pr-trailers ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-pr-trailers ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-pr-trailers)"
+            result="$(result_for_job github-hosted-rust-jackin-pr-trailers)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-pr-trailers failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-pr-trailers succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-pr-trailers ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-process,"* ]]; then
-            result="$(result_for_job github-rust-jackin-process)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-process" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-process)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-process did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-process was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-process was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-process did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-process ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-process ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-process)"
+            result="$(result_for_job github-hosted-rust-jackin-process)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-process failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-process succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-process ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-protocol,"* ]]; then
-            result="$(result_for_job github-rust-jackin-protocol)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-protocol" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-protocol)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-protocol did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-protocol was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-protocol was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-protocol did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-protocol ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-protocol ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-protocol)"
+            result="$(result_for_job github-hosted-rust-jackin-protocol)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-protocol failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-protocol succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-protocol ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-protocol-fuzz,"* ]]; then
-            result="$(result_for_job github-rust-jackin-protocol-fuzz)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-protocol-fuzz" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-protocol-fuzz)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-protocol-fuzz did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-protocol-fuzz was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-protocol-fuzz was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-protocol-fuzz did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-protocol-fuzz ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-protocol-fuzz ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-protocol-fuzz)"
+            result="$(result_for_job github-hosted-rust-jackin-protocol-fuzz)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-protocol-fuzz failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-protocol-fuzz succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-protocol-fuzz ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-runtime,"* ]]; then
-            result="$(result_for_job github-rust-jackin-runtime)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-runtime" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-runtime)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-runtime did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-runtime was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-runtime was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-runtime did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-runtime ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-runtime ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-runtime)"
+            result="$(result_for_job github-hosted-rust-jackin-runtime)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-runtime failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-runtime succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-runtime ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-telemetry,"* ]]; then
-            result="$(result_for_job github-rust-jackin-telemetry)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-telemetry" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-telemetry)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-telemetry did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-telemetry was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-telemetry was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-telemetry did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-telemetry ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-telemetry ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-telemetry)"
+            result="$(result_for_job github-hosted-rust-jackin-telemetry)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-telemetry failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-telemetry succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-telemetry ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-test-support,"* ]]; then
-            result="$(result_for_job github-rust-jackin-test-support)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-test-support" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-test-support)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-test-support did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-test-support was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-test-support was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-test-support did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-test-support ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-test-support ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-test-support)"
+            result="$(result_for_job github-hosted-rust-jackin-test-support)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-test-support failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-test-support succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-test-support ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-tui,"* ]]; then
-            result="$(result_for_job github-rust-jackin-tui)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-tui" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-tui)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-tui did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-tui was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-tui was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-tui did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-tui ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-tui ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-tui)"
+            result="$(result_for_job github-hosted-rust-jackin-tui)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-tui failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-tui succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-tui ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-usage,"* ]]; then
-            result="$(result_for_job github-rust-jackin-usage)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-usage" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-usage)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-usage did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-usage was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-usage was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-usage did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-usage ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-usage ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-usage)"
+            result="$(result_for_job github-hosted-rust-jackin-usage)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-usage failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-usage succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-usage ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-usage-ffi,"* ]]; then
-            result="$(result_for_job github-rust-jackin-usage-ffi)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-usage-ffi" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-usage-ffi)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-usage-ffi did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-usage-ffi was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-usage-ffi was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-usage-ffi did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-usage-ffi ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-usage-ffi ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-usage-ffi)"
+            result="$(result_for_job github-hosted-rust-jackin-usage-ffi)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-usage-ffi failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-usage-ffi succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-usage-ffi ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-jackin-xtask,"* ]]; then
-            result="$(result_for_job github-rust-jackin-xtask)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-jackin-xtask" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-jackin-xtask)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-jackin-xtask did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-jackin-xtask was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-jackin-xtask was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-jackin-xtask did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-jackin-xtask ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-jackin-xtask ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-jackin-xtask)"
+            result="$(result_for_job github-hosted-rust-jackin-xtask)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-jackin-xtask failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-jackin-xtask succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-jackin-xtask ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-policy,"* ]]; then
-            result="$(result_for_job github-rust-policy)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-policy" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-policy)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-policy did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-policy was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-policy was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-policy did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-policy ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-policy ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-policy)"
+            result="$(result_for_job github-hosted-rust-policy)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-policy failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-policy succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-policy ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",swift-package-native,"* ]]; then
-            result="$(result_for_job github-swift-package-native)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "swift-package-native-design-prototypes-unifiedagentusage" "github-hosted"; then
+            result="$(result_for_job github-hosted-swift-package-native-design-prototypes-unifiedagentusage)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-swift-package-native did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-swift-package-native-design-prototypes-unifiedagentusage was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-swift-package-native-design-prototypes-unifiedagentusage was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-swift-package-native-design-prototypes-unifiedagentusage did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-swift-package-native ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-swift-package-native-design-prototypes-unifiedagentusage ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-swift-package-native)"
+            result="$(result_for_job github-hosted-swift-package-native-design-prototypes-unifiedagentusage)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-swift-package-native failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-swift-package-native-design-prototypes-unifiedagentusage succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-swift-package-native-design-prototypes-unifiedagentusage ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",swift-package-native-design-prototypes-unifiedagentusage,"* ]]; then
-            result="$(result_for_job github-swift-package-native-design-prototypes-unifiedagentusage)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "swift-xcodegen-native-project-yml-jackindesktop" "github-hosted"; then
+            result="$(result_for_job github-hosted-swift-xcodegen-native-project-yml-jackindesktop)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-swift-package-native-design-prototypes-unifiedagentusage did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-swift-xcodegen-native-project-yml-jackindesktop was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-swift-xcodegen-native-project-yml-jackindesktop was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-swift-xcodegen-native-project-yml-jackindesktop did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-swift-package-native-design-prototypes-unifiedagentusage ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-swift-xcodegen-native-project-yml-jackindesktop ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-swift-package-native-design-prototypes-unifiedagentusage)"
+            result="$(result_for_job github-hosted-swift-xcodegen-native-project-yml-jackindesktop)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-swift-package-native-design-prototypes-unifiedagentusage failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-swift-xcodegen-native-project-yml-jackindesktop succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-swift-xcodegen-native-project-yml-jackindesktop ran outside the expected set: $result" >&2; exit 1 ;;
+            esac
+          fi
+          if plan_expects "swift-package-native" "github-hosted"; then
+            result="$(result_for_job github-hosted-swift-package-native)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
+              case "$result" in
+                success) ;;
+                skipped) echo "expected CI job github-hosted-swift-package-native was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-swift-package-native was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-swift-package-native did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-hosted-swift-package-native ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
+              esac
+            fi
+          else
+            result="$(result_for_job github-hosted-swift-package-native)"
+            case "$result" in
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-swift-package-native succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-swift-package-native ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
   required:

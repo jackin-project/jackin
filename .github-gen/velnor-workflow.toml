@@ -1,68 +1,53 @@
-schema = 1
+schema = 2
 
 [generator]
 repository = "jackin-project/jackin"
-# D19 pin: immutable Velnor source for this generated tree. The matching
-# published runtime is velnor-workflow-runtime-v1-479d486fe3755076
-# (closure 479d486fe3755076c96485cf3bd5d6285736a7e08d3d8d1388a530982724a662,
-# built from 7576f40fead6b1d55732c1d87b3b6bbe1b283301; release
-# 2026-09-21T17:52:50Z with Sigstore attestations over binary + manifest,
-# verified manifest filter, digest, and binary --closure/--revision
-# self-report before pinning).
-revision = "7576f40fead6b1d55732c1d87b3b6bbe1b283301"
+revision = "4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0"
 
 [scan]
-# native/Package.swift scans: the xcframework-first ordering the exclusion
-# used to protect now comes from the FFI product + prerequisite edge below,
-# so the unit is scan-derived (plain swift commands + prepended prepare)
-# instead of hand-declared. .swiftpm/ stays excluded: the filesystem scan
-# would otherwise read untracked SwiftPM workspace state as evidence.
-exclude = ["native/.swiftpm/**"]
+exclude = ["native/Package.swift", "native/.swiftpm/**"]
 
-# Runner placement: keep both backends for manual dispatch; automatic events
-# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
-# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
+# Public repo: GitHub-hosted singleton (no velnor lanes). Automatic events
+# stay GitHub-only so ci-required is not blocked by queued self-hosted jobs
+# when the Velnor fleet is unavailable.
 [workflow]
-runners = "github"
-automatic = "github"
-default_dispatch_runner = "github"
-automatic_lanes = "github"
-github_runner = "ubuntu-26.04"
-macos_runner = "macos-26"
-velnor_labels = ["self-hosted", "velnor-target-mvp"]
+providers = ["github-hosted"]
+automatic_providers = ["github-hosted"]
+default_branch = "main"
+
+[workflow.selectors.github-hosted]
+runs_on = ["ubuntu-26.04"]
 
 [policy]
-ruleset_required_status_checks = ["ci-required"]
+ruleset_required_status_checks = ["ci-required", "Policy"]
 ruleset_external_status_checks = ["DCO"]
 
-# Self-hosted Renovate: schedule + writer identity from the #994 copy
-# (renovate.yml: cron "0 6 * * *", secrets.RENOVATE_TOKEN, RENOVATE_GIT_AUTHOR).
-# lanes = "github": the copy defaulted to velnor, but velnor/both lanes
-# require [workflow] velnor_trusted_label, and no trusted-label fact exists in
-# this repo. Revisit for velnor/both once the fleet label is known.
-# The copy sets RENOVATE_ALLOWED_UNSAFE_EXECUTIONS=mise (intended: let
-# `mise lock` refresh mise.lock in Renovate PRs), but renovate.json
-# configures no post-upgrade execution, so the knob has no live effect and
-# nothing is lost by omitting it. If post-upgrade execution is ever
-# configured, [renovate] allowed_commands renders RENOVATE_ALLOWED_COMMANDS.
-[renovate]
-enabled = true
-reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
-schedule = "0 6 * * *"
-token = "RENOVATE_TOKEN"
-config = "renovate.json"
-validate = true
-lanes = "github"
-author = "Renovate Bot <renovate@whitesourcesoftware.com>"
-signoff = true
-
-[[declare]]
-primitive = "renovate"
-file = "renovate.yml"
-
-[[declare]]
-primitive = "renovate-validate"
-file = "renovate-validate.yml"
+# [renovate] ON HOLD for wave pin 3 (W4 precedent): s2 `validate_renovate`
+# requires the velnor provider + [workflow.selectors.velnor], but
+# `enforce_visibility_policy` requires public repos to be exactly
+# [github-hosted] and rejects a velnor selector — so [renovate] is
+# unsatisfiable on public repos at this pin. The renderer itself is
+# provider-agnostic (`control_plane_runner`), so the fix is validation-only
+# (G12, generator side). Uncomment below + the two [[declare]] rows at pin 3
+# to restore renovate.yml/renovate-validate.yml; until then both files are
+# absent from the tree (root renovate.json stays for the writer's return).
+# [renovate]
+# enabled = true
+# reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
+# schedule = "0 6 * * *"
+# token = "RENOVATE_TOKEN"
+# config = "renovate.json"
+# validate = true
+# author = "Renovate Bot <renovate@whitesourcesoftware.com>"
+# signoff = true
+#
+# [[declare]]
+# primitive = "renovate"
+# file = "renovate.yml"
+#
+# [[declare]]
+# primitive = "renovate-validate"
+# file = "renovate-validate.yml"
 
 # Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
 # Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
@@ -158,8 +143,8 @@ name = "Renovate upstream sources"
 events = ["push", "pull_request"]
 branches = ["main"]
 
-# Unit contracts the scan cannot derive. Command arrays are rejected by
-# velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
+# Unit contracts the scan cannot derive. Command arrays are rejected;
+# typed capabilities only (`ci_tasks`, `mise_tools`).
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived
 # `docker build` is self-contained.
 [[units]]
@@ -167,19 +152,36 @@ id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
 # XCFramework must exist before `swift build` resolves the binary target.
-# The FFI unit declares the framework as a product with no transportable
-# outputs, so the consumer rebuilds it in-job on one macOS runner (separate
-# jobs do not share target/xcframework): the prerequisite edge compiles to
-# depends_on plus a prepended `mise run desktop-xcframework` prepare step,
-# ahead of the scanned plain `swift build` / `swift test --parallel`.
-# Scan-derived (not hand-declared) so the D3 `reads` contract validates:
-# `reads` names scan-produced units only. kind/root/watch restate the scan
-# (no-ops kept explicit); ci_tasks stays empty so nothing appends behind
-# the scanned commands.
-# capabilities = ["xcframework"]: Q4 obligation — without it this Apple-bound
-# unit renders ubuntu + Linux plan-artifact runtime (slice 9 split).
-# depends_on (F2): kept beside the edge (the compiled edge appends the same
-# producer if missing); selection coupling only, no forced serialization.
+# The ci task rebuilds it in-job on one macOS runner (separate jobs do not
+# share target/xcframework).
+# platform = "macos-arm64": s2 spelling of the s1 capabilities=["xcframework"]
+# Q4 obligation — without it this Apple-bound unit renders ubuntu + Linux
+# plan-artifact runtime.
+# depends_on (F2): FFI touches select this Swift consumer; selection coupling
+# only, no forced serialization (the unit rebuilds the XCFramework in-job).
+[[units]]
+id = "swift-package-native"
+kind = "swift"
+root = "native"
+watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
+ci_tasks = ["swift-package-native-ci"]
+mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
+platform = "macos-arm64"
+depends_on = ["rust-jackin-usage-ffi"]
+
+# jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
+# dylint-link must be on PATH (rust + cargo-binstall).
+[[units]]
+id = "rust-jackin-lints"
+mise_tools = ["rust", "cargo-binstall"]
+
+# The Xcode project links the FFI XCFramework (xcodebuild resolves it from
+# target/xcframework), so the bare scan-derived generate/build/test sequence
+# fails without it. The FFI unit declares the framework as a product with no
+# transportable outputs, so the consumer rebuilds it in-job: the prerequisite
+# edge prepends `mise run desktop-xcframework` to these commands (tablerock
+# pattern). mise_tools replaces the scanned set, so xcodegen rides along
+# with the rust chain the framework build needs.
 [[units]]
 id = "rust-jackin-usage-ffi"
 
@@ -188,67 +190,21 @@ name = "xcframework"
 task = "desktop-xcframework"
 
 [[units]]
-id = "swift-package-native"
-kind = "swift"
-root = "native"
-watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
-mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-capabilities = ["xcframework"]
+id = "swift-xcodegen-native-project-yml-jackindesktop"
+mise_tools = ["xcodegen", "cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 depends_on = ["rust-jackin-usage-ffi"]
 
 [[units.prerequisites]]
 producer = "rust-jackin-usage-ffi"
 product = "xcframework"
 
-# jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
-# dylint-link must be on PATH (rust + cargo-binstall).
-[[units]]
-id = "rust-jackin-lints"
-mise_tools = ["rust", "cargo-binstall"]
-
 # Q4 obligation, second Swift unit (scanned): AppKit prototype, genuinely
 # Apple-bound, but scan evidence cannot prove it. Row-over-scan merge keeps
-# the scanned base and overrides the platform requirement only.
+# the scanned base and overrides the platform requirement only (s2 spelling
+# of the s1 capabilities=["xcode"] row).
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
-capabilities = ["xcode"]
-
-# Closed-world read contracts (D3) for the two opaque units the D3 planner
-# names mechanically (`select` fallback_reason on the AGENTS.md-only diff:
-# bun-jackin-docs runs unprovable package commands, swift-package-native
-# executes `mise`). Every entry claims `complete`, uniformly per unit: the
-# declared paths plus the scan watch are the unit's entire read set, so
-# unmatched paths provably exclude it. Truth basis (verdict-totality: no
-# path outside these globs can flip the unit's CI exit code):
-# - bun: CI = bun install (postinstall fumadocs-mdx) + bun run build
-#   (gen-crate-pages embeds crates/*/README.md, gates meta.json
-#   completeness; vite+fumadocs consume docs/; prerender fetches localhost)
-#   + bun test (two docs/ test files; fixtures stat
-#   crates/jackin-core/src/*). Toolchain is setup-bun latest, no mise.
-#   README link-existence only alters generated page bytes that no CI gate
-#   observes (check:repo-links is local-only), never the verdict.
-# - swift: CI = mise run swift-package-native-ci (mise reads root task defs
-#   + tool versions) -> cargo xtask desktop xcframework (compiles xtask,
-#   resolves the whole workspace, builds the FFI closure; the one in-closure
-#   build script, jackin-diagnostics, is pure) -> swift build/test in native/
-#   (Package.swift has no external refs; tests self-scan native/ only).
-# Globs are rot-proof supersets on purpose: precise per-file contracts would
-# silently rot the first time a fixture or script reads a new file, and a
-# false `complete` silently skips verification. No glob matches AGENTS.md.
-[[declare]]
-primitive = "watch-graph"
-
-[declare.args.reads]
-"bun-jackin-docs" = [
-  { paths = ["docs/**"], reason = "bun install/build/test run in docs/: vite+fumadocs consume content, src, configs, scripts, public; postinstall runs fumadocs-mdx; bun test discovers docs tests; toolchain is setup-bun latest with no mise", complete = true },
-  { paths = ["crates/**"], reason = "gen-crate-pages embeds crates/*/README.md and gates meta.json completeness on the set; bun test fixtures stat crate sources; README link-existence only alters generated bytes no CI gate observes", complete = true },
-]
-"swift-package-native" = [
-  { paths = ["native/**"], reason = "swift build/test run in native/: Package.swift targets, Sources/Tests/Tools/Scripts, generated boltffi bindings, and test self-scans of sources and swiftlint configs all live under native/", complete = true },
-  { paths = ["crates/**"], reason = "cargo xtask compiles jackin-xtask and cargo build resolves the whole workspace then compiles the FFI closure (usage-ffi plus usage, config, core, env, protocol, telemetry, diagnostics, process); the in-closure diagnostics build script is pure", complete = true },
-  { paths = ["vendor/**", "Cargo.toml", "Cargo.lock", ".cargo/**", "rust-toolchain.toml"], reason = "cargo workspace inputs: root manifests (desktop-release profile), lockfile, cargo config, toolchain pin, vendored path sources", complete = true },
-  { paths = ["mise.toml", "mise.lock"], reason = "mise run reads root task defs and resolves tool versions (rust, cargo-binstall, sccache, boltffi_cli) for the task and mise-action", complete = true },
-]
+platform = "macos-arm64"
 
 # Desktop release (L10): tag-triggered tasks release over the canonical
 # desktop mise tasks. Each event runs exactly one self-contained job
