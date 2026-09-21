@@ -88,6 +88,7 @@ All listed worktrees require fresh `git -C <path> status --porcelain=v2`, `rev-p
 | BR-V1056 | Velnor #1056 branch | `9f795b2e` | native input closure |
 | BR-V1057 | Velnor `codex/schedule-actions-read` | `70268cd5` | actions-read |
 | BR-V1058 | Velnor `fix/composable-regen-phases` | `93cd45e9` | safe phase capability |
+| BR-V1044 | Velnor candidate-lifecycle PR branch | `60bb9326e6303c577bd15e952558f0dc02fd78f2` | lifecycle source repair; cannot merge until published runtime/activation regenerates pinned tree |
 | BR-VMOLD | Velnor mold-fix branch | UNKNOWN | must locate/preserve first |
 
 Remote tips were observed through GitHub before pause; no cached `refs/remotes/*` is proof of current server state. Branches without a known worktree/PR and all stashes/reflog-only commits remain a preservation gap recorded in K.
@@ -108,6 +109,7 @@ Remote tips were observed through GitHub before pause; no cached `refs/remotes/*
 | PR-V1056 | OPEN/UNSTABLE | `9f795b2e` | resolve risks/current checks |
 | PR-V1057 | OPEN/CLEAN | `70268cd5`, CI/policy green | review/merge/publish |
 | PR-V1058 | OPEN/BLOCKED | `93cd45e9`, safe split | review/current CI |
+| PR-V1044 | OPEN | `60bb9326`; qualification `35660441660` passed, Policy `35660437293` failed stale candidate polling, CI `35660442225` pinned-render drift/cleanup | preserve; resolve through runtime publication/activation/promotion, never hand-edit generated YAML |
 
 No human approvals were observed; automated Codex usage-limit comments are not reviews. A resumer must query all-state, paginated PR history/comments/reviews/threads and live heads before acting.
 
@@ -140,6 +142,7 @@ For every candidate above, first re-observe exact host/path/common-dir/HEAD/owne
 - PASS: #1055 `2a270947`: locked all-feature Velnor test 2673; generator check passed.
 - PASS: #1056 `9f795b2e`: focused and full 2675 passed; see R6 risks.
 - FAIL: #1044 `35657319778` / `106524303464`: `unsupported mold architecture: arm64` from Linux installer on macOS.
+- FAIL: Velnor #1044 `60bb9326`: source qualification passed, but old checked-in policy expects a candidate artifact new qualification intentionally no longer publishes; CI has stale pinned-render/generated-tree failures. Required route is publish → protected activation/pin/tree promotion, not a policy bypass or generated-YAML edit.
 - BLOCK: #1067 review factual errors described R2.
 - STALE/NOT TERMINAL: Jackin main/desktop jobs above; no status inferred.
 
