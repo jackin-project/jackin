@@ -154,4 +154,6 @@ cargo xtask ci --fast
 
 Local builds outside CI default to the package version for `JACKIN_VERSION` / `JACKIN_CAPSULE_VERSION` so each commit does not invalidate every build-meta consumer and capsule cache entry. GitHub Actions sets `CI`, so release, preview, construct, and CI builds still stamp the real `<version>+<sha>`. Set `JACKIN_VERSION_OVERRIDE=<value>` only when you need an explicit local version.
 
+The workspace version carries a `-dev` prerelease marker on every development commit, in lockstep across the root manifest, every `crates/*/Cargo.toml`, and the workspace dependency pins (plus the detached fuzz lockfiles), because the capsule channel classifier routes `-dev` builds at the rolling `preview` tag while a bare version targets the versioned `vX.Y.Z` tag. Releases are cut by pushing a `vX.Y.Z` tag; the `chore(release): finalize …` prep commit strips `-dev` to the bare version everywhere and flips `EXPECTED_PRERELEASE_MARKER` in `crates/jackin-build-meta/src/tests.rs` to `None`, and the commit opening the next dev cycle restores `-dev` in both places. (`mise run desktop-release-env` refuses a `-dev` tree as a release input, so the marker can never leak into a tagged release by accident.)
+
 Fmt fail → `cargo fmt`, re-check. See [TESTING.md](TESTING.md).

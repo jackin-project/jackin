@@ -3,7 +3,7 @@
 
 [package]
 name = "jackin-process"
-version = "0.6.4"
+version = "0.6.5-dev"
 edition.workspace = true
 rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]

@@ -27,7 +27,6 @@ pub enum ErrorCode {
     E011,
     E012,
     E013,
-    E014,
     E015,
     E016,
 }
@@ -48,7 +47,6 @@ impl ErrorCode {
             Self::E011 => "E011",
             Self::E012 => "E012",
             Self::E013 => "E013",
-            Self::E014 => "E014",
             Self::E015 => "E015",
             Self::E016 => "E016",
         }
@@ -71,7 +69,6 @@ impl ErrorCode {
             Self::E011 => ErrorType::DindPortConflict,
             Self::E012 => ErrorType::GhAuthFailed,
             Self::E013 => ErrorType::OpNotSignedIn,
-            Self::E014 => ErrorType::CapsuleDownloadFailed,
             Self::E015 => ErrorType::WorktreeConflict,
             Self::E016 => ErrorType::UnsupportedOtlpProtocol,
         }
@@ -176,12 +173,6 @@ pub enum JackinError {
     #[error("1Password CLI not signed in")]
     OpNotSignedIn,
 
-    #[error("Capsule binary download failed")]
-    CapsuleDownloadFailed {
-        #[source]
-        source: anyhow::Error,
-    },
-
     #[error("Worktree materialization conflict: {path}")]
     WorktreeConflict { path: String },
 
@@ -269,12 +260,6 @@ impl JackinError {
                 ErrorCode::E013,
                 "1Password CLI is not signed in",
                 "Run `op signin` and re-run, or remove `op://` references from your workspace env vars.",
-            ),
-
-            Self::CapsuleDownloadFailed { .. } => UserMessage::new(
-                ErrorCode::E014,
-                "Failed to download jackin-capsule binary",
-                "Check your internet connection and retry. Run with `--debug` for the download URL and error detail.",
             ),
 
             Self::WorktreeConflict { path } => UserMessage::new(

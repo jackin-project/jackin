@@ -53,7 +53,6 @@ fn result_classification_aligns_exit_outcome_and_error() {
         crate::error::ErrorCode::E011,
         crate::error::ErrorCode::E012,
         crate::error::ErrorCode::E013,
-        crate::error::ErrorCode::E014,
         crate::error::ErrorCode::E015,
         crate::error::ErrorCode::E016,
     ] {

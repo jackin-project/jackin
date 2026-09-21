@@ -243,17 +243,69 @@ fn packaged_binary_path_for_keg(keg_root: &Path, arch: &str) -> PathBuf {
         .join("jackin-capsule")
 }
 
+/// Classify a cleanup `remove_file` error: `NotFound` means there was nothing
+/// to clean (a no-op success — e.g. the download failed before creating the
+/// file — so no warning), while any real removal failure yields an actionable
+/// warning naming the stale path.
+fn cleanup_warning_for(path: &Path, err: &std::io::Error) -> Option<String> {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        return None;
+    }
+    Some(format!(
+        "[jackin❯] warning: temporary download file cleanup failed for {}; manual cleanup may be needed",
+        path.display()
+    ))
+}
+
 /// Remove a file, emitting a compact always-visible warning if the removal fails.
 /// Used at every cleanup site in `download_and_cache` — both error paths and the
 /// success-path archive removal after extraction — so a failed cleanup is always
 /// observable regardless of `--debug`, and the operator can manually remove the
 /// stale file to recover disk space.
 fn remove_with_debug_log(path: &Path) {
-    if std::fs::remove_file(path).is_err() {
-        jackin_diagnostics::emit_compact_line(
-            "warning",
-            "[jackin❯] warning: temporary download file cleanup failed; manual cleanup may be needed",
-        );
+    if let Err(e) = std::fs::remove_file(path)
+        && let Some(line) = cleanup_warning_for(path, &e)
+    {
+        jackin_diagnostics::emit_compact_line("warning", &line);
+    }
+}
+
+/// Channel-aware context for a capsule archive download failure.
+///
+/// The preview branch keeps the rolling-tag runbook; the stable branch names
+/// the missing versioned asset and links its tag. Both branches include the
+/// attempted URL (previously only visible in the `--debug` source chain) and
+/// the local-build recovery path.
+fn download_failure_message(version: &str, url: &str, is_preview: bool) -> String {
+    if is_preview {
+        format!(
+            "jackin-capsule {version} download failed.\n\
+             \n\
+             Attempted URL: {url}\n\
+             \n\
+             Developing locally? Build and cache it first:\n\
+               cargo run --bin build-jackin-capsule\n\
+             Then retry `jackin load`.\n\
+             \n\
+             Using an installed jackin? The CI preview build may not\n\
+             have completed yet. Wait a few minutes and retry, or check:\n\
+               https://github.com/jackin-project/jackin/releases/tag/preview"
+        )
+    } else {
+        format!(
+            "jackin-capsule {version} download failed.\n\
+             \n\
+             Attempted URL: {url}\n\
+             \n\
+             The versioned release asset for jackin-capsule {version} may not\n\
+             be published yet. Check the release tag:\n\
+               https://github.com/jackin-project/jackin/releases/tag/v{version}\n\
+             \n\
+             Developing locally? Build and cache it first:\n\
+               cargo run --bin build-jackin-capsule\n\
+             or point JACKIN_CAPSULE_BIN at a local binary.\n\
+             Then retry `jackin load`."
+        )
     }
 }
 
@@ -283,17 +335,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // with the archive already fully written.
     if let Err(e) = download_result {
         remove_with_debug_log(&tmp_archive);
-        return Err(e).context(format!(
-            "jackin-capsule {version} download failed.\n\
-             \n\
-             Developing locally? Build and cache it first:\n\
-               cargo run --bin build-jackin-capsule\n\
-             Then retry `jackin load`.\n\
-             \n\
-             Using an installed jackin? The CI preview build may not\n\
-             have completed yet. Wait a few minutes and retry, or check:\n\
-               https://github.com/jackin-project/jackin/releases/tag/preview"
-        ));
+        return Err(e).context(download_failure_message(version, &url, is_preview));
     }
     let expected_sha = match expected_sha_result {
         Ok(sha) => sha,

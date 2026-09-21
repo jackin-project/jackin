@@ -221,6 +221,71 @@ fn resolved_cache_path_uses_container_arch_not_host_arch() {
 }
 
 #[test]
+fn cleanup_warning_ignores_not_found() {
+    let err = std::io::Error::new(std::io::ErrorKind::NotFound, "no such file");
+    assert_eq!(
+        cleanup_warning_for(Path::new("/tmp/jackin-capsule-never-created.tmp"), &err),
+        None,
+        "nothing to clean is success, not a warning",
+    );
+}
+
+#[test]
+fn cleanup_warning_names_path_on_real_failure() {
+    let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+    let line = cleanup_warning_for(Path::new("/tmp/jackin-capsule-stuck.tmp"), &err)
+        .expect("a real removal failure must warn");
+    assert!(
+        line.starts_with("[jackin❯] warning: temporary download file cleanup failed"),
+        "{line}",
+    );
+    assert!(line.contains("/tmp/jackin-capsule-stuck.tmp"), "{line}");
+    assert!(line.contains("manual cleanup may be needed"), "{line}");
+}
+
+#[test]
+fn remove_with_debug_log_missing_file_is_silent_success() {
+    let missing = std::env::temp_dir().join(format!(
+        "jackin-capsule-test-missing-{}.tmp",
+        std::process::id()
+    ));
+    drop(std::fs::remove_file(&missing));
+    remove_with_debug_log(&missing);
+    assert!(!missing.exists());
+}
+
+#[test]
+fn download_failure_message_stable_names_versioned_asset_tag_and_url() {
+    let url = download_url("0.6.4", "arm64");
+    let msg = download_failure_message("0.6.4", &url, false);
+    assert!(msg.contains("jackin-capsule 0.6.4"), "{msg}");
+    assert!(
+        msg.contains("releases/tag/v0.6.4"),
+        "stable runbook must link the versioned tag: {msg}",
+    );
+    assert!(msg.contains("JACKIN_CAPSULE_BIN"), "{msg}");
+    assert!(msg.contains("build-jackin-capsule"), "{msg}");
+    assert!(msg.contains(&url), "attempted URL must always be shown: {msg}");
+    assert!(
+        !msg.contains("releases/tag/preview"),
+        "stable runbook must not blame the preview build: {msg}",
+    );
+}
+
+#[test]
+fn download_failure_message_preview_keeps_preview_runbook_and_url() {
+    let url = download_url("0.6.5-dev+abc1234", "amd64");
+    let msg = download_failure_message("0.6.5-dev+abc1234", &url, true);
+    assert!(msg.contains("releases/tag/preview"), "{msg}");
+    assert!(msg.contains("build-jackin-capsule"), "{msg}");
+    assert!(msg.contains(&url), "attempted URL must always be shown: {msg}");
+    assert!(
+        !msg.contains("releases/tag/v0.6.5"),
+        "preview runbook must not link a versioned tag: {msg}",
+    );
+}
+
+#[test]
 fn resolved_cache_path_matches_the_path_the_resolver_reads() {
     let expected = cached_binary_path(
         Path::new("/cache"),

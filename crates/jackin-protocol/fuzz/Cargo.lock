@@ -190,7 +190,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jackin-core"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "directories",
@@ -202,7 +202,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-protocol"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "jackin-core",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-telemetry"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "opentelemetry",
  "opentelemetry-semantic-conventions",

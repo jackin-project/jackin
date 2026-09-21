@@ -741,7 +741,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jackin-config"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "directories",
@@ -760,7 +760,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-core"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "directories",
@@ -772,7 +772,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-diagnostics"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -805,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-env"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "jackin-config",
@@ -832,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-process"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "tokio",
@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-protocol"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "jackin-core",
@@ -852,7 +852,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-telemetry"
-version = "0.6.4"
+version = "0.6.5-dev"
 dependencies = [
  "opentelemetry",
  "opentelemetry-semantic-conventions",
