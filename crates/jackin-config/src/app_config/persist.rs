@@ -18,8 +18,8 @@ use super::AppConfig;
 use crate::editor::ConfigEditor;
 use crate::migrations;
 use crate::persist::{
-    acquire_config_write_lock, commit_staged_config, ensure_replaceable_target, stage_atomic_write,
-    validate_workspace_file_stem,
+    acquire_config_write_lock, commit_staged_config, ensure_replaceable_target,
+    publication_journal_path, stage_atomic_write, validate_workspace_file_stem,
 };
 use crate::schema::WorkspaceConfig;
 use crate::validation::validate_workspace_config;
@@ -35,6 +35,7 @@ struct PendingConfigWrite {
 pub(crate) struct LoadedConfig {
     config: AppConfig,
     pending_writes: Vec<PendingConfigWrite>,
+    config_file: PathBuf,
 }
 
 impl LoadedConfig {
@@ -65,14 +66,16 @@ impl LoadedConfig {
         let Self {
             config,
             pending_writes,
+            config_file,
         } = self;
 
-        commit_pending_config_writes(pending_writes)?;
+        commit_pending_config_writes(&config_file, pending_writes)?;
         Ok(config)
     }
 }
 
 fn commit_pending_config_writes(
+    config_file: &Path,
     pending_writes: Vec<PendingConfigWrite>,
 ) -> crate::ConfigResult<()> {
     for write in &pending_writes {
@@ -84,7 +87,8 @@ fn commit_pending_config_writes(
         staged.push(stage_atomic_write(&write.path, &write.contents)?);
     }
     let mut deletes = Vec::new();
-    commit_staged_config(&mut staged, &mut deletes)
+    let journal = publication_journal_path(config_file);
+    commit_staged_config(&journal, &mut staged, &mut deletes)
 }
 
 /// Stable content generation for one admitted config tree.
@@ -634,6 +638,7 @@ pub(crate) fn load_split_config_locked(
     Ok(LoadedConfig {
         config,
         pending_writes,
+        config_file: paths.config_file.clone(),
     })
 }
 
@@ -695,7 +700,7 @@ pub fn load_workspace_files(
         .join("config.toml");
     let _lock = acquire_config_write_lock(&config_file)?;
     let (workspaces, pending_writes) = load_workspace_files_locked(workspaces_dir)?;
-    commit_pending_config_writes(pending_writes)?;
+    commit_pending_config_writes(&config_file, pending_writes)?;
     Ok(workspaces)
 }
 

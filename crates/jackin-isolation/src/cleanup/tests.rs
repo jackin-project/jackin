@@ -335,3 +335,68 @@ async fn force_cleanup_error_message_mentions_record_retention() {
     assert!(msg.contains("`jackin purge`"), "got: {msg}");
     assert!(msg.contains("record retained"), "got: {msg}");
 }
+
+#[tokio::test]
+async fn force_cleanup_refuses_record_path_outside_state_dir() {
+    // A stale or hostile `isolation.json` entry pointing outside the
+    // container state dir must be refused — never recursively deleted —
+    // and the record retained for operator inspection.
+    let container_dir = TempDir::new().unwrap();
+    let outside_dir = TempDir::new().unwrap();
+    let canary = outside_dir.path().join("canary.txt");
+    std::fs::write(&canary, "canary").unwrap();
+    let rec = IsolationRecord {
+        original_src: "/nonexistent/host-repo".into(),
+        worktree_path: outside_dir.path().to_string_lossy().into(),
+        ..rec_for(Path::new("/nonexistent/host-repo"), container_dir.path())
+    };
+    write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+    let mut runner = FakeRunner::default();
+    let error = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("escapes"), "got: {error}");
+    assert_eq!(std::fs::read_to_string(&canary).unwrap(), "canary");
+    assert_eq!(read_records(container_dir.path()).unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn force_cleanup_refuses_symlink_substituted_worktree() {
+    // A symlink planted where the worktree should be (substituted after
+    // git cleanup, or recorded by a hostile entry) must be refused —
+    // never followed — and the record retained.
+    let container_dir = TempDir::new().unwrap();
+    let outside_dir = TempDir::new().unwrap();
+    let canary = outside_dir.path().join("canary.txt");
+    std::fs::write(&canary, "canary").unwrap();
+    let rec = IsolationRecord {
+        original_src: "/nonexistent/host-repo".into(),
+        ..rec_for(Path::new("/nonexistent/host-repo"), container_dir.path())
+    };
+    let link = container_dir
+        .path()
+        .join("isolated")
+        .join("workspace")
+        .join("jackin");
+    std::fs::remove_dir_all(&link).unwrap();
+    std::os::unix::fs::symlink(outside_dir.path(), &link).unwrap();
+    assert_eq!(
+        Path::new(&rec.worktree_path),
+        link.as_path(),
+        "fixture must point at the substituted symlink"
+    );
+    write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+    let mut runner = FakeRunner::default();
+    let error = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("symlink"), "got: {error}");
+    assert_eq!(std::fs::read_to_string(&canary).unwrap(), "canary");
+    assert!(
+        std::fs::symlink_metadata(&link).is_ok_and(|meta| meta.file_type().is_symlink()),
+        "refused symlink must be left for the operator"
+    );
+    assert_eq!(read_records(container_dir.path()).unwrap().len(), 1);
+}

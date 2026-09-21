@@ -120,3 +120,218 @@ fn config_lock_process_death_releases_ownership() {
         .unwrap(),
     );
 }
+
+fn staged_config_tree() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("config.toml");
+    let workspace = temp.path().join("workspaces").join("ws.toml");
+    std::fs::create_dir_all(workspace.parent().unwrap()).unwrap();
+    std::fs::write(&config, "global-old").unwrap();
+    std::fs::write(&workspace, "ws-old").unwrap();
+    (temp, config, workspace)
+}
+
+fn staged_leftovers(dir: &Path) -> Vec<PathBuf> {
+    let mut leftovers = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.contains(".tmp."))
+        {
+            leftovers.push(path);
+        }
+    }
+    leftovers
+}
+
+#[test]
+fn crash_between_renames_recovered_on_next_write_lock() {
+    let (temp, config, workspace) = staged_config_tree();
+    let journal = publication_journal_path(&config);
+
+    // Simulate `kill -9` after the first of two renames: journal durable,
+    // one rename applied, `Drop` cleanup skipped via `forget` (a dead
+    // process runs no destructors).
+    let mut writes = vec![
+        stage_atomic_write(&config, "global-new").unwrap(),
+        stage_atomic_write(&workspace, "ws-new").unwrap(),
+    ];
+    let deletes = Vec::new();
+    write_publication_journal(&journal, &publication_ops(&writes, &deletes)).unwrap();
+    writes[0].commit().unwrap();
+    let _leaked = std::mem::ManuallyDrop::new(writes);
+    let _leaked = std::mem::ManuallyDrop::new(deletes);
+
+    // The skew the journal exists to repair: global-new, workspace-old.
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), "global-new");
+    assert_eq!(std::fs::read_to_string(&workspace).unwrap(), "ws-old");
+    assert!(journal.exists());
+
+    // The next writer rolls the journal forward before observing the tree.
+    drop(acquire_config_write_lock(&config).unwrap());
+
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), "global-new");
+    assert_eq!(std::fs::read_to_string(&workspace).unwrap(), "ws-new");
+    assert!(!journal.exists(), "journal must be removed after recovery");
+    assert!(staged_leftovers(temp.path()).is_empty());
+    assert!(staged_leftovers(&temp.path().join("workspaces")).is_empty());
+}
+
+#[test]
+fn recovery_consumes_staged_leftovers_without_litter() {
+    let (temp, config, workspace) = staged_config_tree();
+    let journal = publication_journal_path(&config);
+    let writes = vec![
+        stage_atomic_write(&config, "global-new").unwrap(),
+        stage_atomic_write(&workspace, "ws-new").unwrap(),
+    ];
+    let deletes = Vec::new();
+    write_publication_journal(&journal, &publication_ops(&writes, &deletes)).unwrap();
+    let _leaked = std::mem::ManuallyDrop::new(writes);
+    let _leaked = std::mem::ManuallyDrop::new(deletes);
+
+    recover_publication_journal(&journal).unwrap();
+
+    assert!(!journal.exists());
+    assert!(staged_leftovers(temp.path()).is_empty());
+    assert!(staged_leftovers(&temp.path().join("workspaces")).is_empty());
+}
+
+#[test]
+fn failed_commit_restores_originals_and_clears_journal() {
+    let (_temp, config, workspace) = staged_config_tree();
+    let journal = publication_journal_path(&config);
+    let mut writes = vec![
+        stage_atomic_write(&config, "global-new").unwrap(),
+        stage_atomic_write(&workspace, "ws-new").unwrap(),
+    ];
+    let mut deletes = Vec::new();
+    // Deterministic rename failure: the second staged file vanishes before
+    // commit, so the first rename must be rolled back in-process.
+    std::fs::remove_file(&writes[1].tmp).unwrap();
+
+    let _error = commit_staged_config(&journal, &mut writes, &mut deletes).unwrap_err();
+
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), "global-old");
+    assert_eq!(std::fs::read_to_string(&workspace).unwrap(), "ws-old");
+    assert!(!journal.exists(), "journal must be removed after abort");
+}
+
+#[test]
+fn crash_during_abort_completes_restores_on_recovery() {
+    let (_temp, config, workspace) = staged_config_tree();
+    std::fs::write(&config, "global-new").unwrap();
+    std::fs::write(&workspace, "ws-new").unwrap();
+    let journal = publication_journal_path(&config);
+
+    // Simulate `kill -9` halfway through applying an abort journal: the
+    // first restore landed, the second staged file is still pending.
+    let mut restores = vec![
+        stage_atomic_write(&config, "global-old").unwrap(),
+        stage_atomic_write(&workspace, "ws-old").unwrap(),
+    ];
+    let deletes = Vec::new();
+    write_publication_journal(&journal, &publication_ops(&restores, &deletes)).unwrap();
+    restores[0].commit().unwrap();
+    let _leaked = std::mem::ManuallyDrop::new(restores);
+
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), "global-old");
+    assert_eq!(std::fs::read_to_string(&workspace).unwrap(), "ws-new");
+
+    recover_publication_journal(&journal).unwrap();
+
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), "global-old");
+    assert_eq!(std::fs::read_to_string(&workspace).unwrap(), "ws-old");
+    assert!(!journal.exists());
+}
+
+#[test]
+fn recovery_skips_already_applied_ops() {
+    let (_temp, config, _workspace) = staged_config_tree();
+    let journal = publication_journal_path(&config);
+
+    // Crash after the last rename but before journal removal: every tmp is
+    // gone while every target holds new bytes. Recovery must converge
+    // without touching the targets.
+    let staged = stage_atomic_write(&config, "global-new").unwrap();
+    let target = staged.target.clone();
+    let mut staged = staged;
+    staged.commit().unwrap();
+    let missing_tmp = target.with_file_name("config.toml.tmp.1.1");
+    assert!(!missing_tmp.exists());
+    let ops = vec![PublicationOp::Write {
+        target: target.clone(),
+        tmp: missing_tmp,
+    }];
+    write_publication_journal(&journal, &ops).unwrap();
+
+    recover_publication_journal(&journal).unwrap();
+
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), "global-new");
+    assert!(!journal.exists());
+}
+
+#[test]
+fn corrupt_journal_fails_write_lock_closed() {
+    let (_temp, config, _workspace) = staged_config_tree();
+    let journal = publication_journal_path(&config);
+    std::fs::write(&journal, "{ not json").unwrap();
+
+    let error = acquire_config_write_lock(&config).unwrap_err();
+    assert!(error.to_string().contains("malformed"), "{error}");
+    assert!(
+        journal.exists(),
+        "corrupt journal must be kept for forensics"
+    );
+
+    std::fs::write(&journal, r#"{"version":999,"ops":[]}"#).unwrap();
+    let error = acquire_config_write_lock(&config).unwrap_err();
+    assert!(error.to_string().contains("unsupported version"), "{error}");
+}
+
+#[test]
+fn recovery_with_lost_write_fails_closed() {
+    let (temp, config, _workspace) = staged_config_tree();
+    let journal = publication_journal_path(&config);
+    let missing_target = temp.path().join("vanished.toml");
+    let missing_tmp = temp.path().join("vanished.toml.tmp.1.1");
+    assert!(!missing_target.exists());
+    assert!(!missing_tmp.exists());
+    write_publication_journal(
+        &journal,
+        &[PublicationOp::Write {
+            target: missing_target.clone(),
+            tmp: missing_tmp,
+        }],
+    )
+    .unwrap();
+
+    let error = recover_publication_journal(&journal).unwrap_err();
+    assert!(error.to_string().contains("is gone"), "{error}");
+    assert!(journal.exists(), "failed recovery must keep the journal");
+}
+
+#[test]
+fn empty_commit_writes_no_journal() {
+    let (_temp, config, _workspace) = staged_config_tree();
+    let journal = publication_journal_path(&config);
+    commit_staged_config(&journal, &mut [], &mut []).unwrap();
+    assert!(!journal.exists());
+}
+
+#[test]
+fn successful_commit_leaves_no_journal() {
+    let (_temp, config, workspace) = staged_config_tree();
+    let journal = publication_journal_path(&config);
+    let mut writes = vec![
+        stage_atomic_write(&config, "global-new").unwrap(),
+        stage_atomic_write(&workspace, "ws-new").unwrap(),
+    ];
+    let mut deletes = Vec::new();
+    commit_staged_config(&journal, &mut writes, &mut deletes).unwrap();
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), "global-new");
+    assert_eq!(std::fs::read_to_string(&workspace).unwrap(), "ws-new");
+    assert!(!journal.exists());
+}

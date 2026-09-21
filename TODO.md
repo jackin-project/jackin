@@ -75,13 +75,6 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
 - **Last verified:** 2026-06-21 — present on `chore/launch-speed-roadmap`; B4/S1 cleanup fixes landed without it.
 - **Done when:** a sidecar-startup failure on a worktree-isolated workspace leaves no staged `git worktree` behind (either `LoadCleanup` unstages it, or materialization is not run once the sidecar future has resolved to `Err`), covered by a regression test. Remove this entry and the `TODO(launch-worktree-leak-on-sidecar-fail)` marker.
 
-#### `config-crash-between-renames-journal` — durable publication journal + read-path recovery for crash-between-renames
-
-- **What:** `commit_staged_config` rolls back only in-process failures. Every `ConfigEditor::save` with workspace docs is multi-file, so a kill in the rename window can leave global-new/workspace-old skew with dangling account bindings. Add a durable publication journal plus recovery on the read path (not only the write path).
-- **Why:** single-file atomicity and idempotent per-file migrations cover the common cases, but the cross-file window has no crash recovery today; a skewed config strands workspace bindings until hand-edit.
-- **Last verified:** 2026-09-20 — filed as multi-account merge follow-up; the journal recovery was dropped from the merge and the skew window stands.
-- **Done when:** a crash between renames is detected and reconciled on the next read (next write at minimum), covered by a regression test. Remove this entry.
-
 ## Roadmap
 
 Roadmap items are unfinished implementation outcomes only. Evidence and design rationale live under [Research](docs/content/research/index.mdx). See:

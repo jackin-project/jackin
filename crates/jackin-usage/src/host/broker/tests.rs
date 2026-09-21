@@ -1141,3 +1141,126 @@ fn probe_budget_propagates_worker_panic_to_coordinator_classification() {
         "worker panic must propagate to the caller"
     );
 }
+
+struct NoEnvResolver;
+
+impl ProviderCredentialEnvResolver for NoEnvResolver {
+    fn resolve_provider_credentials(
+        &self,
+        _config: &jackin_config::AppConfig,
+        _workspace: Option<&jackin_core::WorkspaceName>,
+        _role: Option<&str>,
+        _keys: &[jackin_core::UsageCredentialEnvName],
+    ) -> Vec<crate::host::ProviderCredentialEnvResolution> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn ensure_usage_broker_publishes_post_activation_discovery_not_stale_caller_input() {
+    use crate::host::HostSurfaceId;
+
+    let data_dir = tempfile::tempdir().unwrap();
+    let config_root = tempfile::tempdir().unwrap();
+    let operator_home = tempfile::tempdir().unwrap();
+    let scope = UsageDiscoveryScope::HostDesktop {
+        config_root: config_root.path().to_owned(),
+        operator_home: operator_home.path().to_owned(),
+    };
+    let resolver: Arc<dyn ProviderCredentialEnvResolver> = Arc::new(NoEnvResolver);
+    // Broker already serving (as after any prior activation).
+    let _running = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(data_dir.path().to_owned()),
+        Arc::new(CountingExecutor {
+            calls: AtomicUsize::new(0),
+        }),
+    )
+    .unwrap();
+
+    // Stale caller generation: one admitted account at a caller-side
+    // revision, simulating staged desktop discovery that predates the
+    // current tree (the tree here is empty).
+    let stale = ValidatedUsageDiscovery {
+        config_generation: Some("stale-caller-rev".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![ValidatedCredentialBinding {
+            surface: HostSurfaceId::Amp,
+            identity: None,
+            source_id: "stale-source".to_owned(),
+            capability_id: "stale-capability".to_owned(),
+            provenance: BTreeSet::from(["account stale-test".to_owned()]),
+            source: ValidatedCredentialSource::Capability,
+        }],
+    };
+    let expected_capability =
+        capability_for_binding(&stale.bindings[0], stale.config_generation.as_deref());
+    let handle = ensure_usage_broker(
+        UsageBrokerConfig::for_data_dir(data_dir.path().to_owned()),
+        scope.clone(),
+        stale,
+        Arc::clone(&resolver),
+    )
+    .unwrap();
+
+    // The allowlist still derives from the caller's admitted set ...
+    assert_eq!(handle.capabilities, vec![expected_capability]);
+    // ... but the published catalog derives from post-activation discovery
+    // (the empty tree here), never the stale caller revision.
+    let fresh = validate_usage_sources(
+        discover_usage_sources(&scope, resolver.as_ref()).unwrap(),
+        resolver.as_ref(),
+    );
+    let expected_revision = fresh
+        .config_generation
+        .clone()
+        .unwrap_or_else(|| "empty".to_owned());
+    assert_ne!(expected_revision, "stale-caller-rev");
+    let projection = handle.client.current_projection().unwrap();
+    assert_eq!(projection.discovery_revision, expected_revision);
+    assert_eq!(handle.catalog_lease, projection.projection_id);
+}
+
+#[test]
+fn sequential_reconcile_after_fresh_read_still_accepts_last_writer() {
+    // Documents the broker-level contract the activation ordering above
+    // defends: the projection fence rejects CONCURRENT stale writers (see
+    // `catalog_cas_rejects_a_stale_rotation_after_a_newer_winner`), but a
+    // stale writer that reads AFTER the fresh publication still passes the
+    // fence. That is why `ensure_usage_broker` must publish post-activation
+    // discovery rather than trusting caller input of any age.
+    let temp = tempfile::tempdir().unwrap();
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().to_owned()),
+        Arc::new(CountingExecutor {
+            calls: AtomicUsize::new(0),
+        }),
+    )
+    .unwrap();
+    let fresh = UsageCatalogEntry {
+        capability: capability(),
+        revision: "entry-fresh".to_owned(),
+    };
+    let stale = UsageCatalogEntry {
+        capability: second_capability(),
+        revision: "entry-stale".to_owned(),
+    };
+
+    let first = client.current_projection().unwrap().projection_id;
+    let winner = client
+        .reconcile_catalog_if_projection(Some(first), "catalog-fresh".to_owned(), vec![fresh])
+        .unwrap();
+    // Stale writer reads the fresh publication, then overwrites with older
+    // data: the fence passes because the read was current.
+    let read_after_fresh = client.current_projection().unwrap().projection_id;
+    assert_eq!(read_after_fresh, winner.projection_id);
+    let overwritten = client
+        .reconcile_catalog_if_projection(
+            Some(read_after_fresh),
+            "catalog-stale".to_owned(),
+            vec![stale],
+        )
+        .unwrap();
+    assert_eq!(overwritten.discovery_revision, "catalog-stale");
+}

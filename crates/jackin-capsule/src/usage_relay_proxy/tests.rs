@@ -10,6 +10,43 @@ use jackin_protocol::{CapsuleConfig, SessionIdentity};
 use std::collections::BTreeMap;
 use tokio::io::BufReader;
 
+const SUPERVISOR_STARTTIME: u64 = 12_345;
+const IMPOSTOR_STARTTIME: u64 = 67_890;
+
+fn supervisor(pid: u32) -> SupervisorIdentity {
+    SupervisorIdentity {
+        pid,
+        starttime: SUPERVISOR_STARTTIME,
+    }
+}
+
+fn session_peer(uid: u32, gid: u32) -> PeerIdentity {
+    PeerIdentity {
+        pid: Some(9),
+        uid,
+        gid,
+        starttime: None,
+    }
+}
+
+fn supervisor_peer(pid: u32) -> PeerIdentity {
+    PeerIdentity {
+        pid: Some(pid),
+        uid: 0,
+        gid: 0,
+        starttime: Some(SUPERVISOR_STARTTIME),
+    }
+}
+
+fn impostor_peer(pid: u32) -> PeerIdentity {
+    PeerIdentity {
+        pid: Some(pid),
+        uid: 0,
+        gid: 0,
+        starttime: Some(IMPOSTOR_STARTTIME),
+    }
+}
+
 #[tokio::test]
 async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
     let temp = tempfile::tempdir().unwrap();
@@ -18,16 +55,12 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
     let (proxy_output, host_request_reader) = tokio::io::duplex(64 * 1024);
     let proxy_socket = socket.clone();
     let shared = capability("shared");
-    let forced_peer = PeerIdentity {
-        pid: Some(9),
-        uid: 2_001,
-        gid: 2_001,
-    };
+    let forced_peer = session_peer(2_001, 2_001);
     let authorization = UsageRelayAuthorization::for_peer(forced_peer, shared.clone());
     let proxy = tokio::spawn(async move {
         run_at_with_peer(
             &proxy_socket,
-            DEFAULT_CAPSULE_SUPERVISOR_PID,
+            supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
             authorization,
             Some(forced_peer),
             proxy_input,
@@ -117,36 +150,39 @@ fn usage_relay_binds_session_peer_to_its_capability() {
         pid: None,
         uid: 2_001,
         gid: 2_001,
+        starttime: None,
     };
     let peer_b = PeerIdentity {
         pid: None,
         uid: 2_002,
         gid: 2_002,
+        starttime: None,
     };
+    let supervisor = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
 
     assert!(authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        &supervisor,
         Some(peer_a),
         &UsageBrokerOperation::CurrentForCapability {
             capability: account_a,
         },
     ));
     assert!(!authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        &supervisor,
         Some(peer_a),
         &UsageBrokerOperation::CurrentForCapability {
             capability: account_b.clone(),
         },
     ));
     assert!(authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        &supervisor,
         Some(peer_b),
         &UsageBrokerOperation::CurrentForCapability {
             capability: account_b,
         },
     ));
     assert!(!authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        &supervisor,
         None,
         &UsageBrokerOperation::CurrentForCapability {
             capability: capability("account-a"),
@@ -173,43 +209,86 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
     let operation = UsageBrokerOperation::CurrentForCapability {
         capability: account,
     };
+    let supervisor = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
 
     assert!(!authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        &supervisor,
         Some(PeerIdentity {
             pid: Some(2),
             uid: 0,
             gid: 0,
+            starttime: Some(SUPERVISOR_STARTTIME),
         }),
         &operation,
     ));
     assert!(!authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        &supervisor,
         Some(PeerIdentity {
             pid: None,
             uid: 0,
             gid: 0,
+            starttime: Some(SUPERVISOR_STARTTIME),
         }),
         &operation,
     ));
     assert!(!authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        &supervisor,
         Some(PeerIdentity {
             pid: Some(1),
             uid: 0,
             gid: 1,
+            starttime: Some(SUPERVISOR_STARTTIME),
         }),
         &operation,
     ));
     assert!(authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
-        Some(PeerIdentity {
-            pid: Some(1),
-            uid: 0,
-            gid: 0,
-        }),
+        &supervisor,
+        Some(supervisor_peer(DEFAULT_CAPSULE_SUPERVISOR_PID)),
         &operation,
     ));
+}
+
+#[test]
+fn usage_relay_rejects_pid_reuse_impostor_with_supervisor_pid() {
+    let account = capability("account-a");
+    let config = CapsuleConfig {
+        instances: vec!["session-a".to_owned()],
+        usage_capabilities: BTreeMap::from([("session-a".to_owned(), account.clone())]),
+        instance_identities: BTreeMap::from([(
+            "session-a".to_owned(),
+            SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        )]),
+        ..CapsuleConfig::default()
+    };
+    let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
+    let operation = UsageBrokerOperation::CurrentForCapability {
+        capability: account,
+    };
+    let supervisor = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
+
+    // Another root process reusing the supervisor PID after a restart has a
+    // different starttime: both gates must deny it launch-wide capabilities.
+    let impostor = impostor_peer(DEFAULT_CAPSULE_SUPERVISOR_PID);
+    assert!(!authorization.authorizes(&supervisor, Some(impostor), &operation));
+    assert!(!supervisor_peer_allows(&supervisor, Some(impostor)));
+
+    // A root peer whose starttime could not be read is denied as well.
+    let unreadable = PeerIdentity {
+        pid: Some(DEFAULT_CAPSULE_SUPERVISOR_PID),
+        uid: 0,
+        gid: 0,
+        starttime: None,
+    };
+    assert!(!authorization.authorizes(&supervisor, Some(unreadable), &operation));
+    assert!(!supervisor_peer_allows(&supervisor, Some(unreadable)));
+
+    // The bound supervisor itself is still admitted by both gates.
+    let genuine = supervisor_peer(DEFAULT_CAPSULE_SUPERVISOR_PID);
+    assert!(authorization.authorizes(&supervisor, Some(genuine), &operation));
+    assert!(supervisor_peer_allows(&supervisor, Some(genuine)));
 }
 
 #[test]
@@ -238,12 +317,8 @@ fn usage_relay_rejects_host_only_catalog_reconciliation() {
     };
 
     assert!(!authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
-        Some(PeerIdentity {
-            pid: Some(1),
-            uid: 0,
-            gid: 0,
-        }),
+        &supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
+        Some(supervisor_peer(DEFAULT_CAPSULE_SUPERVISOR_PID)),
         &operation,
     ));
 }
@@ -293,62 +368,35 @@ async fn wait_for_socket(socket: &Path) {
 
 #[test]
 fn supervisor_peer_allows_only_exact_root_supervisor() {
-    assert!(!supervisor_peer_allows(2, None));
+    let bound = supervisor(2);
+    assert!(!supervisor_peer_allows(&bound, None));
+    assert!(!supervisor_peer_allows(&bound, Some(supervisor_peer(1)),));
+    assert!(!supervisor_peer_allows(&bound, Some(supervisor_peer(3)),));
     assert!(!supervisor_peer_allows(
-        2,
-        Some(PeerIdentity {
-            pid: Some(1),
-            uid: 0,
-            gid: 0,
-        }),
-    ));
-    assert!(!supervisor_peer_allows(
-        2,
-        Some(PeerIdentity {
-            pid: Some(3),
-            uid: 0,
-            gid: 0,
-        }),
-    ));
-    assert!(!supervisor_peer_allows(
-        2,
+        &bound,
         Some(PeerIdentity {
             pid: Some(2),
             uid: 2_001,
             gid: 0,
+            starttime: Some(SUPERVISOR_STARTTIME),
         }),
     ));
     assert!(!supervisor_peer_allows(
-        2,
+        &bound,
         Some(PeerIdentity {
             pid: Some(2),
             uid: 0,
             gid: 1,
+            starttime: Some(SUPERVISOR_STARTTIME),
         }),
     ));
+    assert!(!supervisor_peer_allows(&bound, Some(impostor_peer(2)),));
+    assert!(supervisor_peer_allows(&bound, Some(supervisor_peer(2)),));
+    let bound_one = supervisor(1);
+    assert!(supervisor_peer_allows(&bound_one, Some(supervisor_peer(1)),));
     assert!(supervisor_peer_allows(
-        2,
-        Some(PeerIdentity {
-            pid: Some(2),
-            uid: 0,
-            gid: 0,
-        }),
-    ));
-    assert!(supervisor_peer_allows(
-        1,
-        Some(PeerIdentity {
-            pid: Some(1),
-            uid: 0,
-            gid: 0,
-        }),
-    ));
-    assert!(supervisor_peer_allows(
-        2,
-        Some(PeerIdentity {
-            pid: Some(9),
-            uid: 2_001,
-            gid: 2_001,
-        }),
+        &bound,
+        Some(session_peer(2_001, 2_001)),
     ));
 }
 
@@ -364,32 +412,67 @@ fn parse_supervisor_pid_defaults_and_rejects_invalid_values() {
 }
 
 #[test]
+fn parse_linux_stat_starttime_reads_field_22() {
+    // Fields 3..22: state ppid pgrp session tty_nr tpgid flags minflt cminflt
+    // majflt cmajflt utime stime cutime cstime priority nice num_threads
+    // itrealvalue starttime.
+    let stat = "1 (supervisor) S 0 1 1 0 -1 4194304 100 0 0 0 10 5 0 0 20 0 1 0 4242 1000000 0";
+    assert_eq!(parse_linux_stat_starttime(stat), Some(4_242));
+    // `comm` may contain spaces and parentheses; the split must use the last `)`.
+    let tricky = "99 (my (tricky) sup) R 1 99 99 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 2 0 777 500 0";
+    assert_eq!(parse_linux_stat_starttime(tricky), Some(777));
+    assert_eq!(parse_linux_stat_starttime("garbage"), None);
+    assert_eq!(parse_linux_stat_starttime("1 (x) S"), None);
+}
+
+#[test]
+fn supervisor_bind_fails_closed_for_missing_pid() {
+    let _missing = SupervisorIdentity::bind(u32::MAX).unwrap_err();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn supervisor_bind_reads_live_starttime_on_linux() {
+    let identity = SupervisorIdentity::bind(std::process::id()).unwrap();
+    assert_eq!(identity.pid, std::process::id());
+    assert_eq!(
+        Some(identity.starttime),
+        process_starttime(std::process::id())
+    );
+}
+
+#[test]
 fn usage_relay_supervisor_pid_parameter_selects_the_root_bypass() {
     let (authorization, account) = single_session_authorization(2_001, 2_001, "account-a");
     let operation = UsageBrokerOperation::CurrentForCapability {
         capability: account,
     };
-    let apple_supervisor = Some(PeerIdentity {
-        pid: Some(jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID),
-        uid: 0,
-        gid: 0,
-    });
-    assert!(authorization.authorizes(
+    let apple_supervisor = Some(supervisor_peer(
         jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID,
+    ));
+    assert!(authorization.authorizes(
+        &supervisor(jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID),
         apple_supervisor,
         &operation,
     ));
     assert!(!authorization.authorizes(
-        DEFAULT_CAPSULE_SUPERVISOR_PID,
+        &supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
         apple_supervisor,
         &operation,
     ));
+    // Same PID but a different bound starttime is a different process.
+    let rebound = SupervisorIdentity {
+        pid: jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID,
+        starttime: IMPOSTOR_STARTTIME,
+    };
+    assert!(!authorization.authorizes(&rebound, apple_supervisor, &operation));
 }
 
 #[tokio::test]
 async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages() {
     let (authorization, account_a) = single_session_authorization(2_001, 2_001, "account-a");
-    let supervisor_pid = jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID;
+    let pid = jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID;
+    let supervisor = supervisor(pid);
 
     // Root peer at the Apple supervisor PID with an in-launch capability is
     // relayed to the host instead of denied.
@@ -402,13 +485,9 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
     let proxy = tokio::spawn(async move {
         run_at_with_peer(
             &proxy_socket,
-            supervisor_pid,
+            supervisor,
             proxy_authorization,
-            Some(PeerIdentity {
-                pid: Some(supervisor_pid),
-                uid: 0,
-                gid: 0,
-            }),
+            Some(supervisor_peer(pid)),
             proxy_input,
             proxy_output,
         )
@@ -443,12 +522,28 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
     // Root peer at the wrong PID fails the supervisor gate.
     let denied = denied_relay_response(
         authorization.clone(),
-        supervisor_pid,
+        supervisor,
         PeerIdentity {
             pid: Some(9),
             uid: 0,
             gid: 0,
+            starttime: Some(SUPERVISOR_STARTTIME),
         },
+        UsageBrokerOperation::CurrentForCapability {
+            capability: account_a.clone(),
+        },
+    )
+    .await;
+    assert_eq!(
+        error_message(denied),
+        "usage relay peer is not the Capsule supervisor"
+    );
+
+    // Root peer reusing the supervisor PID with a different starttime fails too.
+    let denied = denied_relay_response(
+        authorization.clone(),
+        supervisor,
+        impostor_peer(pid),
         UsageBrokerOperation::CurrentForCapability {
             capability: account_a.clone(),
         },
@@ -462,11 +557,12 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
     // Session peer presenting a foreign capability fails the capability gate.
     let denied = denied_relay_response(
         authorization,
-        supervisor_pid,
+        supervisor,
         PeerIdentity {
             pid: None,
             uid: 2_001,
             gid: 2_001,
+            starttime: None,
         },
         UsageBrokerOperation::CurrentForCapability {
             capability: capability("account-b"),
@@ -502,7 +598,7 @@ fn single_session_authorization(
 
 async fn denied_relay_response(
     authorization: UsageRelayAuthorization,
-    supervisor_pid: u32,
+    supervisor: SupervisorIdentity,
     peer: PeerIdentity,
     operation: UsageBrokerOperation,
 ) -> UsageBrokerResponse {
@@ -514,7 +610,7 @@ async fn denied_relay_response(
     let proxy = tokio::spawn(async move {
         run_at_with_peer(
             &proxy_socket,
-            supervisor_pid,
+            supervisor,
             authorization,
             Some(peer),
             proxy_input,

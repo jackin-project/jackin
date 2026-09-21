@@ -887,12 +887,21 @@ fn provider_probe_outcome(
     }
 }
 
-/// Ensure one host broker backed by the validated Rust discovery generation.
+/// Ensure one host broker backed by post-activation discovery.
+///
+/// The caller's `discovery` still determines the returned capabilities and
+/// scoped allowlist (the launch's admitted set), but the PUBLISHED catalog is
+/// always re-discovered after the broker process is activated. Discovery that
+/// predates the lease — notably staged desktop discovery, which can be
+/// minutes old — must never overwrite the leader's catalog with stale
+/// admissions or revocations. When fresh discovery fails, the caller's
+/// discovery is published as a degraded fallback so one transient read error
+/// cannot wedge activation.
 pub fn ensure_usage_broker(
     config: UsageBrokerConfig,
     scope: UsageDiscoveryScope,
     discovery: ValidatedUsageDiscovery,
-    _resolver: Arc<dyn ProviderCredentialEnvResolver>,
+    resolver: Arc<dyn ProviderCredentialEnvResolver>,
 ) -> Result<UsageBrokerHandle, UsageCoordinationError> {
     let mut scoped_capabilities = BTreeMap::<String, Vec<ScopedCapability>>::new();
     for binding in &discovery.bindings {
@@ -907,11 +916,17 @@ pub fn ensure_usage_broker(
         }
     }
     let capabilities = usage_broker_capabilities(&discovery);
-    let catalog_revision = discovery
-        .config_generation
-        .clone()
-        .unwrap_or_else(|| "empty".to_owned());
-    let catalog = usage_catalog_entries(&discovery);
+    let caller_empty = usage_catalog_entries(&discovery).is_empty();
+    // The lease must exist before the discovery that will be published: the
+    // broker binds its socket (which `ensure_usage_broker_process` waits
+    // for) only after claiming the leader lease, so anything discovered from
+    // here on postdates the lease. Skipped when the caller saw nothing, to
+    // preserve the no-spawn no-catalog fast path below.
+    if !caller_empty {
+        ensure_usage_broker_process(config.clone(), &scope)?;
+    }
+    let mut published = post_activation_discovery(&scope, resolver.as_ref()).unwrap_or(discovery);
+    let mut catalog = usage_catalog_entries(&published);
     if catalog.is_empty() {
         let probe_client = config.client();
         if !connect_probe(&probe_client) {
@@ -923,6 +938,10 @@ pub fn ensure_usage_broker(
             });
         }
         let expected_projection_id = probe_client.current_projection()?.projection_id;
+        let catalog_revision = published
+            .config_generation
+            .clone()
+            .unwrap_or_else(|| "empty".to_owned());
         let projection = probe_client.reconcile_catalog_if_projection(
             Some(expected_projection_id),
             catalog_revision,
@@ -936,7 +955,21 @@ pub fn ensure_usage_broker(
         });
     }
     let client = ensure_usage_broker_process(config, &scope)?;
+    if caller_empty {
+        // Activation just happened above (or raced us), so the discovery
+        // above may predate the lease; refresh once so the published catalog
+        // is post-activation. A refresh failure keeps the first generation
+        // rather than wedging activation.
+        if let Some(refreshed) = post_activation_discovery(&scope, resolver.as_ref()) {
+            catalog = usage_catalog_entries(&refreshed);
+            published = refreshed;
+        }
+    }
     let expected_projection_id = client.current_projection()?.projection_id;
+    let catalog_revision = published
+        .config_generation
+        .clone()
+        .unwrap_or_else(|| "empty".to_owned());
     let projection = client.reconcile_catalog_if_projection(
         Some(expected_projection_id),
         catalog_revision,
@@ -948,6 +981,18 @@ pub fn ensure_usage_broker(
         catalog_lease: projection.projection_id,
         scoped_capabilities,
     })
+}
+
+/// Re-run source discovery plus validation for publication. `None` when
+/// discovery itself fails; callers fall back to the pre-activation
+/// generation they already hold.
+fn post_activation_discovery(
+    scope: &UsageDiscoveryScope,
+    resolver: &dyn ProviderCredentialEnvResolver,
+) -> Option<ValidatedUsageDiscovery> {
+    discover_usage_sources(scope, resolver)
+        .ok()
+        .map(|catalog| validate_usage_sources(catalog, resolver))
 }
 
 /// Activate the independent broker executable and attach a client.

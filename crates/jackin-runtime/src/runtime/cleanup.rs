@@ -129,11 +129,11 @@ async fn purge_container_filesystem(
     )
     .await?;
     let state_dir = paths.data_dir.join(container_name);
-    match std::fs::remove_dir_all(state_dir) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
-    }
+    // Owned-validated-path removal: the container name is operator/index
+    // input, so deletion is containment-bound to the data dir and fd-pinned
+    // (`O_NOFOLLOW` at every level). Escapes and symlinks are refused
+    // loudly instead of followed; a missing dir is still a no-op.
+    crate::isolation::safe_remove::safe_remove_dir_contained(&paths.data_dir, &state_dir)?;
     // Remove the host-side bind-mount dir (~/.jackin/sockets/<container>/)
     // that holds the daemon socket and Capsule launch config. Skipping it
     // here leaks stale `agent.toml` across load/purge cycles; a future
@@ -249,13 +249,13 @@ async fn ensure_backend_absent_for_purge(
 /// pre-fix steady state.
 fn remove_socket_dir(paths: &JackinPaths, container_name: &str) {
     let dir = paths.jackin_home.join("sockets").join(container_name);
-    match std::fs::remove_dir_all(&dir) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => eprintln!(
+    if let Err(error) =
+        crate::isolation::safe_remove::safe_remove_dir_contained(&paths.jackin_home, &dir)
+    {
+        eprintln!(
             "jackin: warning: failed to remove socket dir {}: {error}",
             dir.display()
-        ),
+        );
     }
 }
 
@@ -547,9 +547,9 @@ fn prune_dir(
     let _timing = cleanup_timing("prune_dir");
     prune_output::section(section_label, section_detail);
     let row = prune_output::start("Deleting", target_label);
-    let result: anyhow::Result<()> = match std::fs::remove_dir_all(path) {
+    let result: anyhow::Result<()> = match crate::isolation::safe_remove::safe_remove_dir_all(path)
+    {
         Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(anyhow::Error::from(error).context(format!(
             "failed to remove {target_label} at {}",
             path.display()
@@ -583,12 +583,12 @@ pub fn prune_jackin_home(paths: &JackinPaths) {
     let _timing = cleanup_timing("runtime_home");
     prune_output::section("Runtime Home", "removing remaining runtime state");
     let row = prune_output::start("Deleting", "runtime home");
-    match std::fs::remove_dir_all(&paths.jackin_home) {
-        Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+    match crate::isolation::safe_remove::safe_remove_dir_all(&paths.jackin_home) {
+        Err(err) => {
             cleanup_failure(format!("could not remove runtime home: {err}"));
             row.failed(format!("could not remove runtime home: {err}"));
         }
-        _ => row.ok(),
+        Ok(()) => row.ok(),
     }
 }
 
@@ -897,9 +897,7 @@ pub async fn prune_all_instances(
         }
     }
 
-    if let Err(err) = std::fs::remove_dir_all(&paths.data_dir)
-        && err.kind() != std::io::ErrorKind::NotFound
-    {
+    if let Err(err) = crate::isolation::safe_remove::safe_remove_dir_all(&paths.data_dir) {
         prune_output::failed("could not remove instance data");
         return Err(anyhow::Error::from(err).context(format!(
             "failed to remove instance data at {}",
