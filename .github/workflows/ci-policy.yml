@@ -49,9 +49,9 @@ jobs:
           fi
           git checkout --quiet --detach "$HEAD_SHA"
       - name: Set up Velnor workflow runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@b634efd2701b3c86db7df5c0e1f92993964a269d
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@690b3935d979bd5400bc82b1f7e68d139125acd3
         with:
-          rev: b634efd2701b3c86db7df5c0e1f92993964a269d
+          rev: 690b3935d979bd5400bc82b1f7e68d139125acd3
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Read declared generator pin
         id: pin
@@ -64,13 +64,13 @@ jobs:
           echo "value=$pin" >> "$GITHUB_OUTPUT"
       - name: Set up declared generator product
         id: renderer
-        if: steps.pin.outputs.value != 'b634efd2701b3c86db7df5c0e1f92993964a269d'
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@b634efd2701b3c86db7df5c0e1f92993964a269d
+        if: steps.pin.outputs.value != '690b3935d979bd5400bc82b1f7e68d139125acd3'
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@690b3935d979bd5400bc82b1f7e68d139125acd3
         with:
           rev: ${{ steps.pin.outputs.value }}
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Resolve declared generator product
-        if: steps.pin.outputs.value != 'b634efd2701b3c86db7df5c0e1f92993964a269d'
+        if: steps.pin.outputs.value != '690b3935d979bd5400bc82b1f7e68d139125acd3'
         run: |
           set -euo pipefail
           binary="$HOME/.cache/velnor/workflow-runtime/${{ steps.renderer.outputs.closure }}/bin/velnor-workflow"
@@ -104,7 +104,7 @@ jobs:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-          VELNOR_WORKFLOW_POLICY_REVISION: b634efd2701b3c86db7df5c0e1f92993964a269d
+          VELNOR_WORKFLOW_POLICY_REVISION: 690b3935d979bd5400bc82b1f7e68d139125acd3
         run: |
           set -euo pipefail
           velnor-workflow policy \

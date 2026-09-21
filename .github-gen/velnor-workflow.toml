@@ -3,12 +3,13 @@ schema = 2
 [generator]
 repository = "jackin-project/jackin"
 # D19 pin: immutable Velnor source for this generated tree. The matching
-# published runtime is velnor-workflow-runtime-v1-7fe9e4d0d68cbf67
-# (closure 7fe9e4d0d68cbf67b2a70d2185be8f50dff07e032e9cefc3c993b226eb0a88e2).
-# Velnor b634efd2 (PR #1036, migfix): Apple CI generator fixes unblocking
-# downstream migration (Xcode probe glob loops, Apple-platform setup
-# acquisition, swift mise provisioning); schema-2 tree rendered by this pin.
-revision = "b634efd2701b3c86db7df5c0e1f92993964a269d"
+# published runtime is velnor-workflow-runtime-v1-42143f222ef045ee
+# (closure 42143f222ef045ee21c41d14a97602515628873ba40bebde3ef92b93ca8a79bb).
+# Velnor 690b3935 (PR #1043, migfix2): derived mise install_args subset
+# closure over cargo-binstall install dependency + XcodeGen consumer
+# product_transport edge symmetric with SPM join; schema-2 tree rendered
+# by this pin.
+revision = "690b3935d979bd5400bc82b1f7e68d139125acd3"
 
 # No [scan] exclude: native/Package.swift is scanned. The pre-migration
 # exclusion plus the synthetic swift-package-native unit are gone; generic
