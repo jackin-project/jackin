@@ -27,6 +27,17 @@ use super::transcript::{
     wait_for_transcript_text,
 };
 
+fn wait_for_file_exists(path: &str, done: &AtomicBool, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline && !done.load(Ordering::Relaxed) {
+        if Path::new(path).exists() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
 pub(super) fn pty_command(
     jackin: &str,
     args: &[&str],
@@ -104,6 +115,18 @@ pub(super) fn run_in_pty_until_file(
     let script = script.to_vec();
     let stdin_writer = std::thread::spawn(move || {
         for step in script {
+            // File gates observe container-side progress (agent boot
+            // markers) that never reaches the transcript; they budget
+            // for image build + boot, unlike the fast UI transcript waits.
+            if !step.wait_for_file.is_empty()
+                && !wait_for_file_exists(
+                    step.wait_for_file,
+                    &done_for_writer,
+                    Duration::from_mins(12),
+                )
+            {
+                return;
+            }
             if !step.wait_for.is_empty()
                 && !wait_for_transcript_text(
                     &stdout_for_writer,
@@ -296,6 +319,11 @@ pub(super) fn assert_restored_terminal(output: &std::process::Output) {
 pub(super) struct PtyScriptStep {
     pub(super) wait_for: &'static str,
     pub(super) input: &'static str,
+    /// Optional filesystem gate (empty = none): the step waits for this
+    /// path to exist before the transcript wait. Only the focused tab's
+    /// pane content reaches the transcript, so boot markers from
+    /// background tabs are unmatchable there; file gates observe them.
+    pub(super) wait_for_file: &'static str,
 }
 
 #[derive(Clone, Copy)]
@@ -312,34 +340,42 @@ pub(super) const fn scripted_sentinel_launch_input() -> [PtyScriptStep; 8] {
         PtyScriptStep {
             wait_for: "Choose launch agent",
             input: "\x1b[B\r",
+            wait_for_file: "",
         },
         PtyScriptStep {
             wait_for: "Sentinel free text:",
             input: "\r",
+            wait_for_file: "",
         },
         PtyScriptStep {
             wait_for: "",
             input: "required-value\r",
+            wait_for_file: "",
         },
         PtyScriptStep {
             wait_for: "",
             input: "\r",
+            wait_for_file: "",
         },
         PtyScriptStep {
             wait_for: "",
             input: "\r",
+            wait_for_file: "",
         },
         PtyScriptStep {
             wait_for: "",
             input: "\r",
+            wait_for_file: "",
         },
         PtyScriptStep {
             wait_for: "",
             input: "\r",
+            wait_for_file: "",
         },
         PtyScriptStep {
             wait_for: "",
             input: "\r",
+            wait_for_file: "",
         },
     ]
 }

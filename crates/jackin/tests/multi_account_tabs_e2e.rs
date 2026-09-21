@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Multi-account isolation in ONE real container: two `codex` instances on
-//! distinct OpenAI API-key accounts (different canary key/endpoint/model) plus
+//! distinct `OpenAI` API-key accounts (different canary key/endpoint/model) plus
 //! one `opencode` instance on a profile account, all booted by a single
 //! `default_launch` list.
 //!
@@ -20,6 +20,8 @@
     feature = "e2e",
     expect(
         clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
         clippy::disallowed_methods,
         reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
     )
@@ -76,7 +78,10 @@ struct E2eRoleCleanup;
 
 impl Drop for E2eRoleCleanup {
     fn drop(&mut self) {
-        cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
+        // TEMPORARY LIVE-REPRO: keep the container for post-mortem inspection.
+        if std::env::var_os("JACKIN_E2E_KEEP_CONTAINER").is_none() {
+            cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
+        }
     }
 }
 
@@ -107,67 +112,15 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
             .display()
             .to_string()
     });
+    require_broker_sibling(&jackin);
     let construct_image = e2e_construct_image();
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
 
     // Phase A+B: boot three tabs, then split (cx-b) and new tab (oc-c) via
     // the agent picker. Fake agents number themselves with an atomic
     // mkdir sequence so each picker step can wait for a unique marker.
-    let completed = Arc::new(AtomicBool::new(false));
-    let outcome: Arc<Mutex<Option<Result<PhaseAB, String>>>> = Arc::new(Mutex::new(None));
-    let worker = {
-        let completed = Arc::clone(&completed);
-        let outcome = Arc::clone(&outcome);
-        let home = home.clone();
-        let workspace_dir = workspace_dir.clone();
-        std::thread::spawn(move || {
-            let observed = observe_boot_split_newtab(&home, &workspace_dir);
-            *outcome.lock().unwrap() = Some(observed);
-            completed.store(true, Ordering::Release);
-        })
-    };
-    let script = [
-        // All three boot agents are up once sequence #2 prints.
-        PtyScriptStep {
-            wait_for: "s3 agent #2 ready",
-            input: "\x11\"",
-        },
-        PtyScriptStep {
-            wait_for: "cx-b-inst",
-            input: "cx-b-inst\r",
-        },
-        PtyScriptStep {
-            wait_for: "s3 agent #3 ready",
-            input: "\x11c",
-        },
-        PtyScriptStep {
-            wait_for: "oc-c-inst",
-            input: "oc-c-inst\r",
-        },
-    ];
-    let output = run_in_pty_until_file(
-        &jackin,
-        &["load", ROLE_KEY, WORKSPACE],
-        &home,
-        &workspace_dir,
-        &extra_env,
-        &script,
-        PtyFileSentinel {
-            path: &workspace_dir.join("never-written.txt"),
-            text: "unreachable",
-            timeout: Duration::from_mins(14),
-            accept_early_exit_after: None,
-            stop_after: Some(&completed),
-        },
-    );
-    worker.join().expect("observer thread must finish");
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let observed = outcome
-        .lock()
-        .unwrap()
-        .take()
-        .expect("observer thread must record an outcome");
+    let (observed, stdout, stderr) =
+        run_boot_split_newtab(&jackin, &home, &workspace_dir, &extra_env);
     let phase_ab = match observed {
         Ok(phase) => phase,
         Err(error) => {
@@ -247,6 +200,140 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         .expect("restore observer must record an outcome")
         .expect("restore must serve bound sessions");
     assert_restore_bindings(&bindings);
+}
+
+/// `jackin load` spawns its `jackin-usage-broker` sibling during scoped
+/// usage-relay prep; `cargo test -p jackin` never builds that
+/// `jackin-runtime` bin target, so assert it up front instead of timing
+/// out inside the TUI on "Launch failed ... starting scoped usage relay".
+fn require_broker_sibling(jackin: &str) {
+    let broker_sibling = Path::new(jackin)
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("jackin-usage-broker");
+    assert!(
+        broker_sibling.is_file(),
+        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin-runtime --bin jackin-usage-broker` first.",
+        broker_sibling.display()
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&broker_sibling)
+            .unwrap_or_else(|error| panic!("failed to stat {}: {error}", broker_sibling.display()))
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 != 0,
+            "jackin-usage-broker sibling must be executable, got {}",
+            broker_sibling.display()
+        );
+    }
+}
+
+/// Run the boot + split + new-tab PTY session; returns the observer outcome
+/// plus captured transcripts for failure context.
+fn run_boot_split_newtab(
+    jackin: &str,
+    home: &Path,
+    workspace_dir: &Path,
+    extra_env: &[(&str, &str)],
+) -> (Result<PhaseAB, String>, String, String) {
+    let completed = Arc::new(AtomicBool::new(false));
+    let outcome: Arc<Mutex<Option<Result<PhaseAB, String>>>> = Arc::new(Mutex::new(None));
+    let worker = {
+        let completed = Arc::clone(&completed);
+        let outcome = Arc::clone(&outcome);
+        let home = home.to_path_buf();
+        let workspace_dir = workspace_dir.to_path_buf();
+        std::thread::spawn(move || {
+            let observed = observe_boot_split_newtab(&home, &workspace_dir);
+            *outcome.lock().unwrap() = Some(observed);
+            completed.store(true, Ordering::Release);
+        })
+    };
+    // Boot progress gates on the agents' atomic mkdir sequence: only the
+    // focused tab's pane content reaches the transcript, so background
+    // tabs' readiness markers are unmatchable there. Split/new-tab run
+    // through the palette (`\x1c`): the tmux-style prefix is opt-in and
+    // disabled, so prefix chords would quit instead of splitting.
+    // (Leaked: the harness script holds `&'static str` gates for one run.)
+    let boot_gate: &'static str = Box::leak(
+        workspace_dir
+            .join("s3-seq-2")
+            .display()
+            .to_string()
+            .into_boxed_str(),
+    );
+    let split_gate: &'static str = Box::leak(
+        workspace_dir
+            .join("s3-seq-3")
+            .display()
+            .to_string()
+            .into_boxed_str(),
+    );
+    let script = [
+        // All three boot agents are up once sequence #2 is taken.
+        PtyScriptStep {
+            wait_for: "",
+            input: "\x1c",
+            wait_for_file: boot_gate,
+        },
+        PtyScriptStep {
+            wait_for: "Split",
+            input: "split\r",
+            wait_for_file: "",
+        },
+        // Below matches the old prefix `"` geometry: the new pane lands
+        // after the focused one.
+        PtyScriptStep {
+            wait_for: "Below",
+            input: "below\r",
+            wait_for_file: "",
+        },
+        PtyScriptStep {
+            wait_for: "cx-b-inst",
+            input: "cx-b-inst\r",
+            wait_for_file: "",
+        },
+        // The palette has no fresh second-opening needle (every item was
+        // already listed), so open + filter + select ride one ordered
+        // chunk; input bytes apply in order after the palette opens.
+        PtyScriptStep {
+            wait_for: "",
+            input: "\x1cnew\r",
+            wait_for_file: split_gate,
+        },
+        PtyScriptStep {
+            wait_for: "oc-c-inst",
+            input: "oc-c-inst\r",
+            wait_for_file: "",
+        },
+    ];
+    let output = run_in_pty_until_file(
+        jackin,
+        &["load", ROLE_KEY, WORKSPACE],
+        home,
+        workspace_dir,
+        extra_env,
+        &script,
+        PtyFileSentinel {
+            path: &workspace_dir.join("never-written.txt"),
+            text: "unreachable",
+            timeout: Duration::from_mins(14),
+            accept_early_exit_after: None,
+            stop_after: Some(&completed),
+        },
+    );
+    worker.join().expect("observer thread must finish");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let observed = outcome
+        .lock()
+        .unwrap()
+        .take()
+        .expect("observer thread must record an outcome");
+    (observed, stdout, stderr)
 }
 
 /// Shared restore-observer cell: `None` until the worker records its outcome.
@@ -388,7 +475,7 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
         }
         seen_canaries.insert(key);
         // No unselected canary may leak into this pane's environment.
-        for (name, value) in env.iter() {
+        for (name, value) in *env {
             assert!(
                 !value.contains(CANARY_C),
                 "codex pane leaks {CANARY_C} via {name}"
@@ -418,7 +505,7 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
             auth.is_some_and(|body| body.contains(CANARY_C)),
             "opencode state root must provision the oc-c credential"
         );
-        for (name, value) in env.iter() {
+        for (name, value) in *env {
             for forbidden in [CANARY_A, CANARY_B] {
                 assert!(
                     !value.contains(forbidden),
@@ -483,7 +570,9 @@ fn env_dumps(workspace: &Path) -> Vec<PathBuf> {
     if let Ok(entries) = std::fs::read_dir(workspace) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with("s3-env-") && name.ends_with(".txt") {
+            if name.starts_with("s3-env-")
+                && entry.path().extension().is_some_and(|ext| ext == "txt")
+            {
                 dumps.push(entry.path());
             }
         }
@@ -739,7 +828,7 @@ while ! mkdir "/workspace/s3-seq-$i" 2>/dev/null; do
 done
 ME="{agent}-$$"
 env | sort > "/workspace/s3-env-$ME.txt"
-echo "s3 agent #$i ready: $ME"
+echo "s3-agent-#$i-ready:$ME"
 while IFS= read -r line; do
   printf '%s\n' "$line" >> "/workspace/s3-got-$ME.txt"
 done
