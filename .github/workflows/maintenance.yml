@@ -112,7 +112,6 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
       - name: Set up Velnor workflow runtime
         id: runtime
-        if: ${{ steps.retention-gate.outputs.skip != 'true' && runner.environment == 'github-hosted' }}
         uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@44243ed4917d53ad74a96c64d1c58dbe52c944c1
         with:
           rev: 44243ed4917d53ad74a96c64d1c58dbe52c944c1

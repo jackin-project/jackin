@@ -40,33 +40,10 @@ runs_on = ["ubuntu-26.04"]
 ruleset_required_status_checks = ["ci-required"]
 ruleset_external_status_checks = ["DCO"]
 
-# Self-hosted Renovate: schedule + writer identity from the #994 copy
-# (renovate.yml: cron "0 6 * * *", secrets.RENOVATE_TOKEN, RENOVATE_GIT_AUTHOR).
-# Runner placement needs no declaration: the visibility singleton routes the
-# writer to GitHub-hosted. (Pre-migration schema-1 carried lanes = "github"
-# because velnor/both lanes required a trusted label no fact supplied.)
-# The copy sets RENOVATE_ALLOWED_UNSAFE_EXECUTIONS=mise (intended: let
-# `mise lock` refresh mise.lock in Renovate PRs), but renovate.json
-# configures no post-upgrade execution, so the knob has no live effect and
-# nothing is lost by omitting it. If post-upgrade execution is ever
-# configured, [renovate] allowed_commands renders RENOVATE_ALLOWED_COMMANDS.
-[renovate]
-enabled = true
-reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
-schedule = "0 6 * * *"
-token = "RENOVATE_TOKEN"
-config = "renovate.json"
-validate = true
-author = "Renovate Bot <renovate@whitesourcesoftware.com>"
-signoff = true
-
-[[declare]]
-primitive = "renovate"
-file = "renovate.yml"
-
-[[declare]]
-primitive = "renovate-validate"
-file = "renovate-validate.yml"
+# Self-hosted Renovate: see [[static_files]] below. The schema-2 [renovate]
+# contract requires the velnor provider (trusted fleet writer), which the
+# visibility singleton forbids for this public repository, so the writer +
+# validator ride as frozen static sources instead of rendered primitives.
 
 # Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
 # Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
@@ -256,3 +233,14 @@ EXPECTED_TEAM_ID = "${{ vars.JACKIN_DEVELOPER_ID_TEAM_ID }}"
 [[declare]]
 primitive = "release"
 file = "release.yml"
+
+# Frozen Renovate surface (see header notes in the sources): byte-identical
+# preservation of the schema-1 writer + validator until the generator can
+# render a GitHub-hosted Renovate writer for public repositories.
+[[static_files]]
+file = ".github/workflows/renovate.yml"
+source = ".github-gen/static/renovate.yml"
+
+[[static_files]]
+file = ".github/workflows/renovate-validate.yml"
+source = ".github-gen/static/renovate-validate.yml"
