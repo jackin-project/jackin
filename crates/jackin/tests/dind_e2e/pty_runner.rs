@@ -23,8 +23,8 @@ use jackin_image::derived_image::shell_quote;
 use super::common::apply_host_docker_config;
 use super::diagnostics::{diagnostics_snapshot, transcript_excerpt};
 use super::transcript::{
-    buffer_bytes, spawn_logged_pipe_collector, spawn_pipe_collector, transcript_contains,
-    wait_for_transcript_text,
+    MACOS_TYPESCRIPT_NAME, buffer_bytes, spawn_logged_pipe_collector, spawn_pipe_collector,
+    spawn_stdout_collector, transcript_contains, wait_for_transcript_text,
 };
 
 pub(super) fn pty_command(
@@ -47,9 +47,12 @@ pub(super) fn pty_command(
         .join(" ");
     let full = format!("stty cols 120 rows 40 >/dev/null 2>&1; exec {invocation}");
     if cfg!(target_os = "macos") {
+        // BSD `script` block-buffers pipe stdout (nothing arrives live), so
+        // the transcript is followed through this file instead; see
+        // `spawn_stdout_collector`.
         command
             .arg("-q")
-            .arg("/dev/null")
+            .arg(cwd.join(MACOS_TYPESCRIPT_NAME))
             .arg("sh")
             .arg("-lc")
             .arg(&full);
@@ -95,8 +98,7 @@ pub(super) fn run_in_pty_until_file(
     let stdout = child.stdout.take().expect("script stdout must be piped");
     let stderr = child.stderr.take().expect("script stderr must be piped");
     let done = Arc::new(AtomicBool::new(false));
-    let (stdout_buf, stdout_reader) =
-        spawn_logged_pipe_collector(stdout, &cwd.join("e2e-launch-stdout.log"));
+    let (stdout_buf, stdout_reader) = spawn_stdout_collector(stdout, cwd, &done);
     let (stderr_buf, stderr_reader) =
         spawn_logged_pipe_collector(stderr, &cwd.join("e2e-launch-stderr.log"));
     let stdout_for_writer = Arc::clone(&stdout_buf);
@@ -205,11 +207,13 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
     let mut stdin = child.stdin.take().expect("script stdin must be piped");
     let stdout = child.stdout.take().expect("script stdout must be piped");
     let stderr = child.stderr.take().expect("script stderr must be piped");
-    let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
+    let done = Arc::new(AtomicBool::new(false));
+    let (stdout_buf, stdout_reader) = spawn_stdout_collector(stdout, cwd, &done);
     let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
     let wait_deadline = Instant::now() + Duration::from_mins(3);
     while !transcript_contains(&stdout_buf, exit.wait_for) {
         if let Some(status) = child.try_wait().expect("script status must be readable") {
+            done.store(true, Ordering::Relaxed);
             stdout_reader.join().expect("stdout reader must finish");
             stderr_reader.join().expect("stderr reader must finish");
             panic!(
@@ -223,6 +227,7 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
         if Instant::now() >= wait_deadline {
             drop(child.kill());
             let _status = child.wait().expect("script must finish");
+            done.store(true, Ordering::Relaxed);
             stdout_reader.join().expect("stdout reader must finish");
             stderr_reader.join().expect("stderr reader must finish");
             panic!(
@@ -244,6 +249,7 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
     let deadline = Instant::now() + exit.max_exit_after_input;
     while Instant::now() < deadline {
         if let Some(status) = child.try_wait().expect("script status must be readable") {
+            done.store(true, Ordering::Relaxed);
             stdout_reader.join().expect("stdout reader must finish");
             stderr_reader.join().expect("stderr reader must finish");
             let output = std::process::Output {
@@ -259,6 +265,7 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
 
     drop(child.kill());
     let status = child.wait().expect("script must finish");
+    done.store(true, Ordering::Relaxed);
     stdout_reader.join().expect("stdout reader must finish");
     stderr_reader.join().expect("stderr reader must finish");
     let output = std::process::Output {
