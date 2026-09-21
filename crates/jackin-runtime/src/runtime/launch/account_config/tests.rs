@@ -628,3 +628,136 @@ fn codex_slots_keep_routed_models_catalogs_and_requested_effort_separate() {
         assert!(slots.contains_key(id));
     }
 }
+
+fn codex_moonshot_fixture() -> (AppConfig, [jackin_config::ResolvedInstance; 1]) {
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "work".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::Moonshot,
+            credential: AccountCredential::ApiKey {
+                value: "fixture-private-key".into(),
+                base_url: None,
+                model: Some("k3-256k".into()),
+            },
+        },
+    );
+    let instances = [instance(
+        "codex-work",
+        Agent::Codex,
+        "work",
+        Some("k3-256k"),
+        None,
+    )];
+    (config, instances)
+}
+
+fn quarantined_payload(directory: &Path, expected: &[u8]) {
+    let matches: Vec<_> = std::fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("config.toml.corrupt-"))
+        })
+        .collect();
+    assert_eq!(matches.len(), 1, "expected one quarantine file");
+    let name = matches[0].file_name().unwrap().to_str().unwrap().to_owned();
+    let suffix = name.strip_prefix("config.toml.corrupt-").unwrap();
+    let (secs, pid) = suffix.rsplit_once('-').unwrap();
+    assert!(secs.parse::<u64>().is_ok(), "unix-secs suffix: {name}");
+    assert_eq!(pid.parse::<u32>().unwrap(), std::process::id());
+    assert_eq!(std::fs::read(&matches[0]).unwrap(), expected);
+}
+
+#[test]
+fn corrupt_codex_config_is_quarantined_and_regenerated() {
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) = codex_moonshot_fixture();
+    let directory = temp.path().join("home/.codex");
+    std::fs::create_dir_all(&directory).unwrap();
+    let garbage = b"!!! not toml [[[\n";
+    std::fs::write(directory.join("config.toml"), garbage).unwrap();
+
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+
+    let contents = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    assert_eq!(parsed["model"].as_str(), Some("k3-256k"));
+    assert_eq!(
+        parsed["model_providers"]["jackin_account"]["env_key"].as_str(),
+        Some("KIMI_API_KEY")
+    );
+    quarantined_payload(&directory, garbage);
+}
+
+#[test]
+fn non_utf8_codex_config_is_quarantined_and_regenerated() {
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) = codex_moonshot_fixture();
+    let directory = temp.path().join("home/.codex");
+    std::fs::create_dir_all(&directory).unwrap();
+    let garbage = b"\xff\xfe\x00 not utf8 \x80";
+    std::fs::write(directory.join("config.toml"), garbage).unwrap();
+
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+
+    let contents = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    assert_eq!(parsed["model"].as_str(), Some("k3-256k"));
+    quarantined_payload(&directory, garbage);
+}
+
+#[test]
+fn non_table_model_providers_is_quarantined_and_regenerated() {
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) = codex_moonshot_fixture();
+    let directory = temp.path().join("home/.codex");
+    std::fs::create_dir_all(&directory).unwrap();
+    let garbage = b"model_providers = \"nope\"\n";
+    std::fs::write(directory.join("config.toml"), garbage).unwrap();
+
+    configure_for_test(temp.path(), &config, &instances).unwrap();
+
+    let contents = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    assert!(
+        parsed["model_providers"].is_table(),
+        "regenerated doc must carry a model_providers table"
+    );
+    assert_eq!(
+        parsed["model_providers"]["jackin_account"]["env_key"].as_str(),
+        Some("KIMI_API_KEY")
+    );
+    quarantined_payload(&directory, garbage);
+}
+
+#[test]
+#[cfg(unix)]
+fn codex_config_fifo_is_rejected_without_blocking() {
+    use nix::sys::stat::Mode;
+    use std::os::unix::fs::FileTypeExt as _;
+
+    let temp = tempfile::tempdir().unwrap();
+    let (config, instances) = codex_moonshot_fixture();
+    let directory = temp.path().join("home/.codex");
+    std::fs::create_dir_all(&directory).unwrap();
+    let fifo = directory.join("config.toml");
+    nix::unistd::mkfifo(&fifo, Mode::from_bits(0o644).unwrap()).unwrap();
+
+    let error = configure_for_test(temp.path(), &config, &instances).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("regular file"),
+        "unexpected error: {error:#}"
+    );
+    assert!(
+        std::fs::symlink_metadata(&fifo)
+            .unwrap()
+            .file_type()
+            .is_fifo(),
+        "planted FIFO must be left untouched"
+    );
+}
