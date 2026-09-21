@@ -108,12 +108,17 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
         return result;
     }
 
-    let mut config = match &command {
+    // The startup bootstrap report threads first-run discovery into
+    // `account scan` so a fresh-config scan prints the true imported count.
+    let (mut config, startup_bootstrap) = match &command {
         // Role authoring is repository-local and must not create or read the
         // operator's product configuration as a side effect.
-        Command::Role(_) => AppConfig::default(),
-        _ => match AppConfig::load_or_init(&paths) {
-            Ok(config) => config,
+        Command::Role(_) => (
+            AppConfig::default(),
+            jackin_config::BootstrapReport::default(),
+        ),
+        _ => match AppConfig::load_or_init_detailed(&paths) {
+            Ok(loaded) => loaded,
             Err(error) => {
                 let result: Result<()> = Err(error.into());
                 finish_invocation(&diagnostics, invocation, &result);
@@ -167,7 +172,9 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
                 load_cmd::handle_eject(args, &paths, debug, connect_docker).await
             }
             Command::Exile => load_cmd::handle_exile(&paths, debug, connect_docker).await,
-            Command::Account(command) => account_cmd::handle(command, &config, &paths),
+            Command::Account(command) => {
+                account_cmd::handle(command, &config, &paths, &startup_bootstrap)
+            }
             Command::Config(config_cmd) => {
                 config_cmd::handle(config_cmd, &mut config, &paths, debug)
             }

@@ -3,6 +3,48 @@
 
 use super::*;
 
+fn startup_bootstrap() -> jackin_config::BootstrapReport {
+    jackin_config::BootstrapReport::default()
+}
+
+/// Fresh config: the process load already imported default accounts, so the
+/// first scan reports them (not `Imported 0`); a rescan reports 0 new.
+#[test]
+fn fresh_config_scan_reports_startup_imports_and_rescan_reports_zero() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    // Discoverable evidence BEFORE the first load, so startup bootstrap
+    // imports it (the ambient process env may import more — the test only
+    // requires the fixture import to be reported).
+    let claude_dir = paths.home_dir.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(
+        claude_dir.join(".credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"fixture"}}"#,
+    )
+    .unwrap();
+
+    // First process lifetime: fresh load imports, scan reports them.
+    let (_config, startup) = AppConfig::load_or_init_detailed(&paths).unwrap();
+    assert!(startup.fresh_install);
+    assert!(
+        startup.added.iter().any(|(id, _)| id == "default-claude"),
+        "startup must import the fixture profile: {:?}",
+        startup.added_accounts
+    );
+    let first = scan(&paths, &startup).unwrap();
+    assert!(
+        first >= 1,
+        "fresh-config scan must report the startup import, got {first}"
+    );
+
+    // Second process lifetime: steady state, nothing new anywhere.
+    let (_config, startup) = AppConfig::load_or_init_detailed(&paths).unwrap();
+    assert!(startup.added.is_empty());
+    let second = scan(&paths, &startup).unwrap();
+    assert_eq!(second, 0, "rescan must report 0 new accounts");
+}
+
 #[test]
 fn secret_references_reject_literals_and_interpolation() {
     for value in ["$TOKEN", "${TOKEN_2}", "op://Vault/Item/key"] {
@@ -99,12 +141,12 @@ fn scan_imports_discovered_profiles_once_with_bootstrap_naming() {
     .unwrap();
 
     let config = AppConfig::load_or_init(&paths).unwrap();
-    handle(AccountCommand::Scan, &config, &paths).unwrap();
+    handle(AccountCommand::Scan, &config, &paths, &startup_bootstrap()).unwrap();
     let config = AppConfig::load_or_init(&paths).unwrap();
     assert_eq!(config.accounts["default-claude"].name, "Claude default");
 
     // Second scan dedupes: no suffixed clones.
-    handle(AccountCommand::Scan, &config, &paths).unwrap();
+    handle(AccountCommand::Scan, &config, &paths, &startup_bootstrap()).unwrap();
     let config = AppConfig::load_or_init(&paths).unwrap();
     assert!(
         !config
@@ -139,7 +181,7 @@ fn scan_seeds_zshrc_overrides_alongside_defaults() {
     .unwrap();
 
     let config = AppConfig::load_or_init(&paths).unwrap();
-    handle(AccountCommand::Scan, &config, &paths).unwrap();
+    handle(AccountCommand::Scan, &config, &paths, &startup_bootstrap()).unwrap();
     let config = AppConfig::load_or_init(&paths).unwrap();
     let seeded = &config.accounts["custom-codex"];
     assert_eq!(seeded.name, "Codex custom");
@@ -171,7 +213,7 @@ fn scan_persists_existing_account_model_and_endpoint_updates() {
     .unwrap();
 
     let config = AppConfig::load_or_init(&paths).unwrap();
-    handle(AccountCommand::Scan, &config, &paths).unwrap();
+    handle(AccountCommand::Scan, &config, &paths, &startup_bootstrap()).unwrap();
 
     let config = AppConfig::load_or_init(&paths).unwrap();
     let AccountCredential::ApiKey {
@@ -225,7 +267,7 @@ fn account_commands_persist_and_revoke_workspace_access() {
     let Command::Account(command) = command else {
         panic!("account command");
     };
-    handle(command, &config, &paths).unwrap();
+    handle(command, &config, &paths, &startup_bootstrap()).unwrap();
     config = AppConfig::load_or_init(&paths).unwrap();
     assert_eq!(config.accounts["work"].name, "Work account");
     let workspace = WorkspaceName::parse("app").unwrap();
@@ -290,6 +332,7 @@ fn account_commands_persist_and_revoke_workspace_access() {
         AccountCommand::Remove { id: "work".into() },
         &config,
         &paths,
+        &startup_bootstrap(),
     )
     .unwrap();
     config = AppConfig::load_or_init(&paths).unwrap();
@@ -393,6 +436,7 @@ fn disabling_account_prunes_bindings_at_all_scopes() {
         },
         &config,
         &paths,
+        &startup_bootstrap(),
     )
     .unwrap();
 
