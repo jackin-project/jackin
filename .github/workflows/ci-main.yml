@@ -38,7 +38,7 @@ permissions:
 jobs:
   plan:
     name: "Control / Planning"
-    runs-on: ubuntu-26.04
+    runs-on: velnor-scale-set
     outputs:
       scope: ${{ steps.plan.outputs.scope }}
       base_sha: ${{ steps.plan.outputs.base_sha }}
@@ -105,7 +105,7 @@ jobs:
           retention-days: 7
   policy:
     name: Policy
-    runs-on: ubuntu-26.04
+    runs-on: velnor-scale-set
     timeout-minutes: 20
     # Trust invariant: this job runs the base branch's Stage-0 validator
     # product against the audited tree under pull_request_target. It holds
@@ -328,7 +328,7 @@ jobs:
     name: ci-required
     if: ${{ always() }}
     needs: [plan, policy, github-hosted-docker, github-self-hosted-docker, velnor-docker, github-hosted-docs-prek, github-self-hosted-docs-prek, velnor-docs-prek]
-    runs-on: ubuntu-26.04
+    runs-on: velnor-scale-set
     timeout-minutes: 5
     steps:
       - name: Validate generated stack results
@@ -506,7 +506,7 @@ jobs:
     name: "Control / Required"
     if: ${{ always() }}
     needs: [ci-required]
-    runs-on: ubuntu-26.04
+    runs-on: velnor-scale-set
     timeout-minutes: 5
     steps:
       - name: Mirror CI / Required

@@ -127,7 +127,7 @@ jobs:
   verify-github-hosted:
     name: "GitHub · hosted"
     if: ${{ inputs.provider == 'github-hosted' && contains(inputs.selected_units, format('"unit_id":"{0}"', inputs.unit)) && ((github.event_name == 'workflow_dispatch' && contains(format(',{0},', github.event.inputs.providers), ',github-hosted,')) || (github.event_name != 'workflow_dispatch')) }}
-    runs-on: ubuntu-26.04
+    runs-on: velnor-scale-set
     timeout-minutes: 45
     steps:
       - name: Mark CI job start

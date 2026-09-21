@@ -5,6 +5,5 @@
 self-hosted-runner:
   labels:
     - self-hosted
-    - ubuntu-26.04
     - velnor-scale-set
     - velnor-target-mvp

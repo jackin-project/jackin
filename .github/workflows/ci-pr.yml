@@ -37,7 +37,7 @@ permissions:
 jobs:
   plan:
     name: "Control / Planning"
-    runs-on: ubuntu-26.04
+    runs-on: velnor-scale-set
     outputs:
       scope: ${{ steps.plan.outputs.scope }}
       base_sha: ${{ steps.plan.outputs.base_sha }}
@@ -217,7 +217,7 @@ jobs:
     name: ci-required
     if: ${{ always() }}
     needs: [plan, github-hosted-docker, github-self-hosted-docker, velnor-docker, github-hosted-docs-prek, github-self-hosted-docs-prek, velnor-docs-prek]
-    runs-on: ubuntu-26.04
+    runs-on: velnor-scale-set
     timeout-minutes: 5
     steps:
       - name: Validate generated stack results
@@ -390,7 +390,7 @@ jobs:
     name: "Control / Required"
     if: ${{ always() }}
     needs: [ci-required]
-    runs-on: ubuntu-26.04
+    runs-on: velnor-scale-set
     timeout-minutes: 5
     steps:
       - name: Mirror CI / Required

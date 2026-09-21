@@ -12,7 +12,7 @@ default_branch = "main"
 concurrency_group = "jackin-agent-brown-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}"
 
 [workflow.selectors.github-hosted]
-runs_on = ["ubuntu-26.04"]
+runs_on = ["velnor-scale-set"]
 
 [workflow.selectors.github-self-hosted]
 runs_on = ["velnor-scale-set"]

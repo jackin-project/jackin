@@ -16,7 +16,7 @@ permissions:
 jobs:
   policy:
     name: Policy
-    runs-on: ubuntu-26.04
+    runs-on: velnor-scale-set
     timeout-minutes: 20
     # Trust invariant: this job runs the base branch's Stage-0 validator
     # product against the audited tree under pull_request_target. It holds
