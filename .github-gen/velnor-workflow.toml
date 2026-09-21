@@ -1,0 +1,44 @@
+schema = 2
+
+[generator]
+repository = "ChainArgos/jackin-agent-brown"
+revision = "1048337062ea625fada1b4f7c07f2feed75f60c7"
+
+[workflow]
+providers = ["github-hosted", "github-self-hosted", "velnor"]
+automatic_providers = ["github-hosted", "github-self-hosted", "velnor"]
+default_dispatch_providers = ["github-hosted", "github-self-hosted", "velnor"]
+default_branch = "main"
+concurrency_group = "jackin-agent-brown-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}"
+
+[workflow.selectors.github-hosted]
+runs_on = ["ubuntu-26.04"]
+
+[workflow.selectors.github-self-hosted]
+runs_on = ["velnor-scale-set"]
+
+[workflow.selectors.velnor]
+runs_on = ["self-hosted", "velnor-target-mvp"]
+
+[policy]
+ruleset_required_status_checks = ["ci-required"]
+ruleset_external_status_checks = ["DCO"]
+
+[cache.github]
+budget_bytes = 8589934592
+producer_window_seconds = 7200
+mbx_generation_bound = 2
+
+[cache.velnor]
+budget_bytes = 53687091200
+producer_window_seconds = 86400
+mbx_generation_bound = 6
+
+[[units]]
+id = "docs-prek"
+label = "Pre-commit checks"
+kind = "docs"
+root = "."
+watch = [".pre-commit-config.yaml", "jackin.role.toml", "mise.lock", "mise.toml", "scripts/**"]
+ci_tasks = ["ci"]
+mise_tools = ["prek", "gitleaks", "actionlint", "shellcheck"]
