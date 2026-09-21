@@ -3,10 +3,10 @@ schema = 1
 [generator]
 repository = "jackin-project/jackin"
 # D19 pin: immutable Velnor source for this generated tree. The matching
-# published runtime is velnor-workflow-runtime-v1-479d486fe3755076
-# (closure 479d486fe3755076c96485cf3bd5d6285736a7e08d3d8d1388a530982724a662,
-# built from 7576f40fead6b1d55732c1d87b3b6bbe1b283301; release
-# 2026-09-21T17:52:50Z with Sigstore attestations over binary + manifest,
+# published runtime is velnor-workflow-runtime-v1-25199e2e4902f761
+# (closure 25199e2e4902f7615c358030883661e89208bc881aaaa68554ab7efec16ed8cf,
+# built from 9660c9ff8336760c7b7e54e1814e012e0b34951c; release
+# 2026-09-21T19:18:45Z with Sigstore attestations over binary + manifest,
 # verified manifest filter, digest, and binary --closure/--revision
 # self-report before pinning).
 revision = "9660c9ff8336760c7b7e54e1814e012e0b34951c"
