@@ -344,6 +344,21 @@ fn new_provider_slugs_round_trip() {
     }
 }
 
+#[test]
+fn profile_selector_uses_canonical_wire_fields_without_aliases() {
+    let selector = ProfileSelector {
+        entry: "openai".into(),
+        profile: Some("work".into()),
+    };
+    let serialized = toml::to_string(&selector).unwrap();
+    assert_eq!(serialized, "entry = \"openai\"\nprofile = \"work\"\n");
+    assert_eq!(
+        toml::from_str::<ProfileSelector>(&serialized).unwrap(),
+        selector
+    );
+    toml::from_str::<ProfileSelector>("provider = \"openai\"\nprofile = \"work\"\n").unwrap_err();
+}
+
 fn api_key(provider: AiProvider, model: Option<&str>) -> AccountConfig {
     AccountConfig {
         enabled: true,
