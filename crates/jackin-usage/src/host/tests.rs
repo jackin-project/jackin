@@ -1201,6 +1201,10 @@ fn canon_alias_table_never_uses_probe_routing_as_ownership() {
         HostSurfaceId::from_provider_alias("MiniMax"),
         Some(HostSurfaceId::Minimax)
     );
+    assert_eq!(
+        HostSurfaceId::from_provider_alias("Moonshot"),
+        Some(HostSurfaceId::Kimi)
+    );
     assert_eq!(HostSurfaceId::from_provider_alias("OpenAI Z.AI"), None);
     assert_eq!(HostSurfaceId::Zai.agent_slug(), "codex");
     assert_eq!(HostSurfaceId::Minimax.agent_slug(), "codex");
