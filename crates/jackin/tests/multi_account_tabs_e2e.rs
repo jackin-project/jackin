@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Multi-account isolation in ONE real container: two `codex` instances on
-//! distinct OpenAI API-key accounts (different canary key/endpoint/model) plus
+//! distinct `OpenAI` API-key accounts (different canary key/endpoint/model) plus
 //! one `opencode` instance on a profile account, all booted by a single
 //! `default_launch` list.
 //!
@@ -184,28 +184,14 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
     // Phase C: the killed client left the container running; `hardline`
     // reattaches to the same sessions with bindings intact.
     let container = phase_ab.container.clone();
-    let reconnect_done = completed_reconnect(&home, &container, &phase_ab);
-    let reconnected = run_in_pty_until_file(
+    phase_c_reconnect(
         &jackin,
-        &["hardline", container.as_str()],
         &home,
         &workspace_dir,
         &extra_env,
-        &[],
-        PtyFileSentinel {
-            path: &workspace_dir.join("never-written.txt"),
-            text: "unreachable",
-            timeout: Duration::from_mins(4),
-            accept_early_exit_after: None,
-            stop_after: Some(&reconnect_done),
-        },
+        &container,
+        &phase_ab,
     );
-    drop(reconnected);
-    assert!(
-        reconnect_done.load(Ordering::Acquire),
-        "reconnect must observe the preserved bindings before the timeout"
-    );
-    assert_reconnect_snapshot(&home, &container, &phase_ab, "reconnect").unwrap();
 
     // Phase D: removing the container makes `hardline` restore it; the
     // default launch set boots again with correct bindings.
@@ -358,7 +344,7 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
     // Same agent/provider, distinct runtime identity per account.
     let mut codex_homes = BTreeSet::new();
     let mut seen_canaries = BTreeSet::new();
-    for env in &codex {
+    for &env in &codex {
         let key = env.get("OPENAI_API_KEY").cloned().unwrap_or_default();
         let endpoint = env.get("OPENAI_BASE_URL").cloned().unwrap_or_default();
         let model = env
@@ -388,7 +374,7 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
         }
         seen_canaries.insert(key);
         // No unselected canary may leak into this pane's environment.
-        for (name, value) in env.iter() {
+        for (name, value) in env {
             assert!(
                 !value.contains(CANARY_C),
                 "codex pane leaks {CANARY_C} via {name}"
@@ -405,7 +391,7 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
     // its own boot twin too (three distinct roots total).
     assert_eq!(codex_homes.len(), 3, "independent codex state roots");
 
-    for env in &opencode {
+    for &env in &opencode {
         let root = env.get("XDG_DATA_HOME").cloned().unwrap_or_default();
         assert!(
             !root.is_empty(),
@@ -418,7 +404,7 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
             auth.is_some_and(|body| body.contains(CANARY_C)),
             "opencode state root must provision the oc-c credential"
         );
-        for (name, value) in env.iter() {
+        for (name, value) in env {
             for forbidden in [CANARY_A, CANARY_B] {
                 assert!(
                     !value.contains(forbidden),
@@ -428,6 +414,38 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn phase_c_reconnect(
+    jackin: &str,
+    home: &Path,
+    workspace_dir: &Path,
+    extra_env: &[(&str, &str)],
+    container: &str,
+    phase_ab: &PhaseAB,
+) {
+    let reconnect_done = completed_reconnect(home, container, phase_ab);
+    let reconnected = run_in_pty_until_file(
+        jackin,
+        &["hardline", container],
+        home,
+        workspace_dir,
+        extra_env,
+        &[],
+        PtyFileSentinel {
+            path: &workspace_dir.join("never-written.txt"),
+            text: "unreachable",
+            timeout: Duration::from_mins(4),
+            accept_early_exit_after: None,
+            stop_after: Some(&reconnect_done),
+        },
+    );
+    drop(reconnected);
+    assert!(
+        reconnect_done.load(Ordering::Acquire),
+        "reconnect must observe the preserved bindings before the timeout"
+    );
+    assert_reconnect_snapshot(home, container, phase_ab, "reconnect").unwrap();
 }
 
 fn assert_reconnect_snapshot(
@@ -483,7 +501,11 @@ fn env_dumps(workspace: &Path) -> Vec<PathBuf> {
     if let Ok(entries) = std::fs::read_dir(workspace) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with("s3-env-") && name.ends_with(".txt") {
+            if name.starts_with("s3-env-")
+                && Path::new(&name)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("txt"))
+            {
                 dumps.push(entry.path());
             }
         }
