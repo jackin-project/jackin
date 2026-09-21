@@ -250,7 +250,16 @@ pub(crate) fn codex_profile_snapshot(
     codex_home: &Path,
     now: i64,
 ) -> FocusedUsageView {
-    let (quota, error) = split_fetch(Some(fetch_codex_oauth_usage(credentials, codex_home)));
+    // Same reset-credits merge as the ambient lane: the read-only GET must not
+    // gate the quota — a failure degrades to no "Limit Reset Credits" row.
+    let (quota, error) = split_fetch(Some(fetch_codex_oauth_usage(credentials, codex_home).map(
+        |mut usage| {
+            usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, codex_home)
+                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::HttpError)
+                .ok();
+            usage
+        },
+    )));
     let status = if quota.is_some() {
         UsageSnapshotStatus::Fresh
     } else if error.as_deref().is_some_and(usage_error_is_unauthorized) {
