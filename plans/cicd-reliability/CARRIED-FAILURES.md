@@ -1,8 +1,8 @@
 # Carried failures — details and recommendations
 
-Jackin CI/CD goal, session 2026-09-21. Everything below is FAIL / not-claimed / owned-out
-at goal completion. Evidence record:
-[EXECUTION.md](/Users/donbeave/Projects/tailrocks/jackin-project/jackin/plans/cicd-reliability/EXECUTION.md).
+Jackin CI/CD goal, refreshed 2026-09-22. Everything below remains FAIL,
+unproven, or actively being repaired; no entry is closed merely because it has
+another owner or an earlier PR. Evidence record: [EXECUTION.md](EXECUTION.md).
 
 ---
 
@@ -19,7 +19,7 @@ at goal completion. Evidence record:
 | Desktop merge | was ~35 min, S1 cut ~22 min via bootstrap scoping | — |
 | Full matrix CI | 46 checks incl. macOS; queue + build dominate | runs 35598570563, 35611817500 |
 
-No measured class is within 2 orders of magnitude of 120 s. Nothing was exempted
+No measured class is within the 120 s objective. Nothing was exempted
 to get here: desktop, main, release-validate, cold-cache, and changed-dependency
 runs were all measured FAIL.
 
@@ -47,9 +47,11 @@ runs were all measured FAIL.
 
 1. **Split the Swift job** (biggest lever). Shard build vs test, and shard the
    test target set across parallel macOS jobs sharing one warmed DerivedData /
-   SPM cache. Expected: 25 m → ~8–12 m wall. Depends on: #1044 landing first
-   (external PR migrating Apple CI to the Velnor generic recipe — same files;
-   building on the pre-#1044 shape wastes the work).
+   SPM cache. Measure the resulting queue and wall time; do not claim an
+   estimate as a result. The two open schema-2 migrations (#1044 and #1052)
+   overlap and cannot both land. Continue one converged carrier from current
+   Velnor runtime products, retaining generic Apple discovery and removing the
+   synthetic Swift escape hatch.
 2. **Cache the Swift build inputs correctly.** Key SPM/DerivedData cache on
    Package.resolved + toolchain + target triple (narrow identity, not whole
    commit); verify hit rates from job logs before/after. Pairs with (1).
@@ -60,18 +62,17 @@ runs were all measured FAIL.
    main reuses PR-produced caches within GitHub's ref rules; (b) nextest
    archives with full provenance checks (producer repo/workflow/event/identity
    must match — b9 drill proved the rejection logic works, keep it).
-5. **Gate desktop-merge scope.** The 35-min suite cannot move pre-merge until
-   (1)–(4) land; until then keep it main-only (current state) and accept the
-   b6b-documented parity gap explicitly.
+5. **Establish Desktop candidate coverage now.** Main-only, supersedable
+   Desktop runs are not a substitute for a pre-merge or merge-group verdict.
+   Add a fork-safe candidate obligation first; optimize and shard it without
+   dropping coverage.
 6. **Re-measure per class after each slice** with the same run-link + queue +
    cache-byte discipline; keep the 120 s row FAIL until a full class sample
    passes.
 
-Realistic outlook: (1)+(2) get CI/PR to ~10 min, not 120 s. Sub-120 s needs
-either macOS capacity that doesn't exist on GitHub-hosted, or a fundamentally
-narrower per-PR contract (fewer units, not faster units) — a product decision,
-not an engineering tweak. Do not fake it with timeouts, coverage cuts, or
-warm-only reporting.
+No forecast is a completion claim. Keep each cohort FAIL until a representative
+trigger-to-terminal measurement, including queue and cache export, passes.
+Do not fake it with timeouts, coverage cuts, or warm-only reporting.
 
 ---
 
@@ -94,9 +95,12 @@ cannot prove 99.9999%. Claiming it would be fabrication.
 
 1. Keep the failure ledger + EXECUTION.md discipline: every main run gets a
    first-attempt verdict line; reruns are new rows, never edits.
-2. Add a lightweight weekly rollup (script over `gh run list`): denominator =
-   main-push CI/Main first attempts; count success/fail/cancel-by-cause.
-   Six-nines needs ~1M samples — the mechanism matters, not the current number.
+2. Implement an automated, tested first-attempt collector and scheduled rollup:
+   denominator = expected main commits and workflow obligations, not merely runs
+   returned by one API page. Preserve reruns as appended attempts and classify
+   missing jobs and cancellations explicitly. Under independent representative
+   trials, zero failures need roughly 2.996 million successes for a one-sided
+   95% upper bound of 10^-6; current evidence is far below that and correlated.
 3. Drive the two flake sources below to zero first (they are the current
    reliability floor): cache-service 504 handling and the product timing tests.
 
@@ -134,43 +138,46 @@ the pipeline.
 
 ---
 
-## 4. Owned-out items (not this goal's to fix)
+## 4. Active unresolved findings
 
-### 4a. Velnor-self: unphased Rust unit + D19 self-hosting pin-lag
+### 4a. Velnor-self: phase composition + D19 self-hosting pin-lag
 
-- Velnor's own `velnor-workflow` Rust unit still runs fmt+clippy+test in one
-  step (Jackin is phased; Velnor-self is not). GAP recorded, owner = Velnor
-  workflow owner (touches their release process).
-- Velnor main CI red since #985: Policy fails on 6-file generated drift
-  because the self-pin (1e454958) lags renderer changes — proven pre-existing
-  on f406baff (run 35600683746, job 106335785491) vs parent 447c0f83
-  (run 35600604077, job 106335526425), byte-identical cause. Does not block
-  runtime publication or consumer adoption.
-- Recommendation: Velnor owner runs the pin-advance chore (same class as
-  fff18da8→#999) and phases the self unit. Jackin-side needs nothing.
+- Velnor's regeneration precondition clears phase identity, leaving its own
+  `velnor-workflow` Rust unit unphased while ordinary Rust units are phased.
+  This is a phase-composition defect, not an ownership exception.
+- The D19 transition must keep producer source, published runtime, pin,
+  generated tree, and ownership sidecar atomic. Main-event candidate polling
+  cannot repair drift because no PR candidate exists for that event.
+- Recommendation: make regeneration a composable typed precondition, preserve
+  phase order and identity in both rendering paths, then promote a published
+  runtime and regenerate consumers atomically. Non-PR acquisition must fail
+  fast when no producer event can publish a candidate.
 
 ### 4b. Flaky product timing tests (product team)
 
 | Test | Occurrences today | Signature |
 |---|---|---|
-| `host_daemon::…bounded_parented_rpc` (tests.rs:263) | 3 (b4-B job 106329218385 10.02 s; 87521a95 job 106382618559 10.06 s; +1 flagged) | socket RPC timeout ~10 s |
+| `host_daemon::…bounded_parented_rpc` (tests.rs:263) | 3 (b4-B job 106329218385 10.02 s; 87521a95 job 106382618559 10.06 s; +1 flagged) | OTLP export completion / ownership race after socket response, not socket RPC timeout |
 | `parity_console_render_smoke_overview` (tests.rs:3039) | 1 (52c5236c job 106421702380) | "must contain expires in 30d" on byte-identical tree that was green at 68edddab |
 | `openrouter_snapshot_…` (tests.rs:329) | 1 (08713c9b run 35605917622) | NeedsLogin vs Error |
 
-- Recommendation: product/usage-lane owners quarantine-then-fix (these fail
-  green code at random; each occurrence reds a main). CI-side must NOT add
-  blind retries or inflate timeouts — that hides the signal. Suggested fixes:
-  deterministic fixtures for render tests, bounded-retry assertions or
-  longer-but-asserted windows for socket tests, hermetic openrouter stubs.
+- Recommendation: fix each structural cause. Pass a single reference instant
+  through a console render and freeze boundary fixtures; preserve typed
+  transport/HTTP/decode semantics for OpenRouter so only actual authentication
+  responses yield `NeedsLogin`; and add isolated daemon lifecycle/export
+  readiness and completion evidence with exact uniqueness assertions. Do not
+  quarantine, blindly retry, relax counts, or inflate timeouts.
 
 ---
 
 ## Continuation checklist (for whoever picks this up)
 
-- [ ] Land/wait for external #1044 (Apple CI → generic recipe), then start
-      Swift split (#1.1) + cache (#1.2).
+- [ ] Converge #1044 and #1052 into one current-runtime schema-2 migration;
+      preserve generic Apple discovery, Renovate behavior, and verified
+      BoltFFI/XcodeGen producer-consumer materialization.
 - [ ] Implement S2–S5 reuse slices; re-measure per class.
-- [ ] Set up the weekly first-attempt rollup (#2.2).
-- [ ] Decide Desktop concurrency scope (#3.2) with the Velnor owner.
-- [ ] Nudge Velnor owner on D19 pin-advance + self-unit phasing (#4a).
-- [ ] Nudge product team on the three flaky tests (#4b).
+- [ ] Implement the tested first-attempt collector and scheduled rollup (#2.2).
+- [ ] Establish Desktop candidate coverage and lossless per-main evidence.
+- [ ] Repair Velnor D19 promotion and composable self-unit phases (#4a).
+- [ ] Land structural fixes and independent verification for all three product
+      defects (#4b).

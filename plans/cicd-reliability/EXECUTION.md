@@ -2,6 +2,25 @@
 
 Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, separate fmt/clippy/test steps, 120s pipelines, no repeated setup.
 
+## Current continuation — 2026-09-22
+
+| Agent | Assignment | Result | Independent status |
+|---|---|---|---|
+| `/root/live_coordination` | Live PR/check/review inventory | #1053 Policy failure isolated to stale generator sidecar; #1044/#1052 overlap and have no reviews | parent rechecked GitHub run/logs |
+| `/root/policy_challenge` | Adversarial policy diagnosis | Exact pinned runtime changes only ownership-sidecar scan hash; `--check` passes after regeneration | parent reproduced with attested macOS runtime `01bc16b2` |
+| `/root/apple_migration` | Migration convergence | #1044 and #1052 are competing shapes; one current-runtime carrier must retain generic Apple discovery and Renovate | pending independent implementation/review |
+| `/root/product_openrouter` | OpenRouter incident | String-derived `401` classifier remains; typed transport/HTTP boundary required | implementation delegated separately |
+| `/root/product_clock_daemon` | Render/daemon incidents | Render samples wall clock repeatedly; daemon failure is export completion/ownership, not socket RPC deadline | implementation delegated separately for render; daemon lifecycle slice pending |
+| `/root/desktop_parity` | Candidate/Desktop evidence | Desktop remains main-only and supersedable; candidate coverage absent | pending generic Velnor capability |
+| `/root/rust_performance` | Rust/cache/Docker evidence | phased steps landed; repeated bootstrap, cache churn, Docker E2E absence and reuse gaps remain | pending measured implementation |
+| `/root/velnor_lifecycle` | Velnor phase/promotion lifecycle | regeneration clears phase identity; runtime publication and promotion contracts exist but self composition remains wrong | pending Velnor fix |
+| `/root/evidence_rollup` | First-attempt evidence | historical ledger is stale; no automated collector/rollup exists | pending implementation |
+
+Live repair: PR #1053 body was replaced (template removed). Its generated-tree
+failure was reproduced with the published pinned runtime, repaired only by a
+state-sidecar regeneration, and rechecked with `--plain --check`. This is not
+closure for the report findings.
+
 ## Baselines (2026-09-21, parent-observed)
 
 - Jackin root: `/Users/donbeave/Projects/tailrocks/jackin-project/jackin`, branch `main`, HEAD `fce94cea`, tree clean.
