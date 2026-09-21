@@ -24,3 +24,9 @@ fn explicit_override_wins_in_ci_and_local_builds() {
         Some("custom")
     );
 }
+
+#[test]
+fn probe_b7_fork_enforcement_defect_do_not_merge() {
+    // PROBE §14b7 commit B: intentional defect, never merged.
+    assert_eq!(1 + 1, 3);
+}
