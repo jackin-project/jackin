@@ -299,14 +299,25 @@ pub(crate) fn fetch_cursor_plan_info(base: &str, token: &str) -> Result<Option<S
 }
 
 pub(crate) fn parse_cursor_plan_info(value: &serde_json::Value) -> Option<String> {
+    // Live `GetPlanInfo` nests the label under `planInfo` (e.g.
+    // `{"planInfo": {"planName": "ultra"}}`); the flat top-level keys are the
+    // fallback for older/assumed shapes. Each shape is a full attempt so a
+    // blank nested label still falls back to the flat keys.
     value
-        .get("planName")
-        .or_else(|| value.get("plan_name"))
-        .or_else(|| value.get("plan"))
+        .get("planInfo")
+        .or_else(|| value.get("plan_info"))
+        .and_then(cursor_plan_label_from)
+        .or_else(|| cursor_plan_label_from(value))
+        .map(humanize_plan_label)
+}
+
+fn cursor_plan_label_from(node: &serde_json::Value) -> Option<&str> {
+    node.get("planName")
+        .or_else(|| node.get("plan_name"))
+        .or_else(|| node.get("plan"))
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|plan| !plan.is_empty())
-        .map(humanize_plan_label)
 }
 
 /// Credit-grant balance in cents (explicit minor units → safe [`Money`]).

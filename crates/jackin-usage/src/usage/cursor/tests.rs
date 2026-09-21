@@ -155,6 +155,23 @@ fn plan_and_grants_parse() {
         parse_cursor_plan_info(&serde_json::json!({"planName": "pro_plus"})),
         Some("Pro Plus".to_owned())
     );
+    // Live `GetPlanInfo` shape: the label nests under `planInfo` (Ultra
+    // $200/mo reported null before the nested read).
+    assert_eq!(
+        parse_cursor_plan_info(&serde_json::json!({"planInfo": {"planName": "ultra"}})),
+        Some("Ultra".to_owned())
+    );
+    // Blank nested label falls back to the flat keys, never to null.
+    assert_eq!(
+        parse_cursor_plan_info(
+            &serde_json::json!({"planInfo": {"planName": "  "}, "planName": "pro"})
+        ),
+        Some("Pro".to_owned())
+    );
+    assert_eq!(
+        parse_cursor_plan_info(&serde_json::json!({"planInfo": {}})),
+        None
+    );
     assert_eq!(
         parse_cursor_credit_grants(&serde_json::json!({"grantTotal": 1500})),
         1500
@@ -354,7 +371,8 @@ fn canned_dashboard_response(request: &[u8]) -> &'static str {
     if text.contains("GetCurrentPeriodUsage") {
         PERIOD_FIXTURE
     } else if text.contains("GetPlanInfo") {
-        r#"{"planName": "pro_plus"}"#
+        // Live shape nests the label under `planInfo`.
+        r#"{"planInfo": {"planName": "pro_plus"}}"#
     } else if text.contains("GetCreditGrantsBalance") {
         r#"{"grantTotal": 1500}"#
     } else {
