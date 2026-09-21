@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
 use jackin_protocol::usage_broker::{
-    USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerResponse, UsageCoordinationErrorKind,
+    USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerResponse, UsageCoordinationError,
+    UsageCoordinationErrorKind, UsageCredentialScope,
 };
 use jackin_usage::coordinator::{
     AccountStateEnvelope, AccountStateStore, FileAccountStateStore, ProviderProbeOutcome,
@@ -151,6 +152,14 @@ struct GateProvider {
 }
 
 impl UsageProviderExecutor for GateProvider {
+    fn authorize_credential_scope(
+        &self,
+        _capability: &UsageAccountCapability,
+        _scope: &UsageCredentialScope,
+    ) -> Result<(), UsageCoordinationError> {
+        Ok(())
+    }
+
     fn probe(&self, capability: &UsageAccountCapability, generation: u64) -> ProviderProbeOutcome {
         self.calls.fetch_add(1, Ordering::SeqCst);
         fs::write(
@@ -553,6 +562,7 @@ async fn start_capsule(
         &name,
         broker,
         vec![capability()],
+        UsageCredentialScope::default(),
         &proxy_command,
     )?;
     wait_for_async(Duration::from_secs(10), || {
