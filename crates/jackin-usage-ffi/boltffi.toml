@@ -13,6 +13,10 @@ name = "jackin-usage"
 crate = "jackin-usage-ffi"
 
 [targets.apple]
+# Deployment floor for generated Apple manifests; must equal the
+# MACOSX_DEPLOYMENT_TARGET the CI lanes export (26.0). The Velnor generic
+# Apple scan also reads this key for the producer product edge.
+deployment_target = "26.0"
 # macOS arm64 only: jackin❯ desktop ships no iOS or simulator slices.
 include_macos = true
 ios_architectures = []

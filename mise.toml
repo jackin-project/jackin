@@ -149,14 +149,6 @@ run = "cargo xtask desktop bindings-check"
 description = "Build the arm64 static JackinUsageFFI XCFramework"
 run = "cargo xtask desktop xcframework"
 
-[tasks.swift-package-native-ci]
-description = "CI gate for native SwiftPM package (xcframework then build/test)"
-run = '''
-set -euo pipefail
-mise run desktop-xcframework
-cd native && swift build && swift test --parallel
-'''
-
 [tasks.desktop-generate]
 description = "Regenerate the jackin❯ desktop Xcode project"
 run = "xcodegen generate --spec native/project.yml"

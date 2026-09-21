@@ -1,26 +1,40 @@
-schema = 1
+schema = 2
 
 [generator]
 repository = "jackin-project/jackin"
-# D19 pin: immutable Velnor source for this generated tree. The matching
-# published runtime is velnor-workflow-runtime-v1-d873f22487444039
+# D19 pin: M1 PENDING — DO NOT LAND BEFORE THE M1 REGEN. The generic-Apple
+# generator (velnor origin/main c832191f) is red (E0277 in
+# velnor-workflow/src/s2/scan/rust.rs, no published runtime products for
+# that rev), so the tree below is knowingly unregenerated and the pin stays
+# at the pre-migration renderer until the parent announces M1 (fixed main
+# SHA with published products), then pin M1 + regen + push.
+# Pre-migration published runtime: velnor-workflow-runtime-v1-d873f22487444039
 # (closure d873f22487444039f4038a51e1433b284621909c4c39f841cdda7935141b2ff4).
 revision = "44243ed4917d53ad74a96c64d1c58dbe52c944c1"
 
-[scan]
-exclude = ["native/Package.swift", "native/.swiftpm/**"]
+# No [scan] exclude: native/Package.swift is scanned. The pre-migration
+# exclusion plus the synthetic swift-package-native unit are gone; generic
+# discovery owns the SwiftPM consumer (binaryTarget join), the XcodeGen app,
+# and the BoltFFI producer with its product edge.
 
-# Runner placement: keep both backends for manual dispatch; automatic events
-# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
-# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
+# Runner placement: the visibility-based runner policy resolves exactly one
+# provider from .github-gen/visibility.toml. This repository is public, so
+# every executable job runs on GitHub-hosted runners only; a Velnor
+# selector or universe here would be a contradictory rejection. The
+# pre-migration schema-1 rationale (automatic events stay GitHub-only so
+# ci-required is not blocked by queued self-hosted jobs when the Velnor
+# fleet is unavailable) is now structural: the singleton admits no second
+# provider, and there is no dispatch-side provider default to declare.
+# Apple-platform units land on the hosted macOS image by platform, Linux
+# units on the selector below; check profiles and release jobs name the
+# macos/github lanes explicitly per row.
 [workflow]
-runners = "github"
-automatic = "github"
-default_dispatch_runner = "github"
-automatic_lanes = "github"
-github_runner = "ubuntu-26.04"
-macos_runner = "macos-26"
-velnor_labels = ["self-hosted", "velnor-target-mvp"]
+providers = ["github-hosted"]
+automatic_providers = ["github-hosted"]
+default_branch = "main"
+
+[workflow.selectors.github-hosted]
+runs_on = ["ubuntu-26.04"]
 
 [policy]
 ruleset_required_status_checks = ["ci-required"]
@@ -28,9 +42,9 @@ ruleset_external_status_checks = ["DCO"]
 
 # Self-hosted Renovate: schedule + writer identity from the #994 copy
 # (renovate.yml: cron "0 6 * * *", secrets.RENOVATE_TOKEN, RENOVATE_GIT_AUTHOR).
-# lanes = "github": the copy defaulted to velnor, but velnor/both lanes
-# require [workflow] velnor_trusted_label, and no trusted-label fact exists in
-# this repo. Revisit for velnor/both once the fleet label is known.
+# Runner placement needs no declaration: the visibility singleton routes the
+# writer to GitHub-hosted. (Pre-migration schema-1 carried lanes = "github"
+# because velnor/both lanes required a trusted label no fact supplied.)
 # The copy sets RENOVATE_ALLOWED_UNSAFE_EXECUTIONS=mise (intended: let
 # `mise lock` refresh mise.lock in Renovate PRs), but renovate.json
 # configures no post-upgrade execution, so the knob has no live effect and
@@ -43,7 +57,6 @@ schedule = "0 6 * * *"
 token = "RENOVATE_TOKEN"
 config = "renovate.json"
 validate = true
-lanes = "github"
 author = "Renovate Bot <renovate@whitesourcesoftware.com>"
 signoff = true
 
@@ -149,31 +162,32 @@ name = "Renovate upstream sources"
 events = ["push", "pull_request"]
 branches = ["main"]
 
-# Unit contracts the scan cannot derive. Command arrays are rejected by
-# velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
+# Apple lane placement (generic-Apple migration): PRs run the discovered
+# Apple units only (SwiftPM consumer + XcodeGen app + BoltFFI producer).
+# The desktop-ci graph (bindings-check, generate, format-check, lint, test,
+# build, test-swift, verify) stays the merge-lane entry via desktop-merge —
+# no new PR lane is added and nothing is silently dropped. The obligations
+# the generic recipe does not own (desktop-release cargo profile,
+# MACOSX_DEPLOYMENT_TARGET export, the 5 swift-run harnesses, counted
+# release test-swift, desktop-build Release stamping + native/dist copy,
+# desktop-verify + dSYM UUID match, the per-test UI gate with count proof,
+# swift-format/swiftlint/periphery) stay owned by these task-backed lanes.
+# Profile/env shaping (desktop-release, MACOSX_DEPLOYMENT_TARGET) is
+# reported as follow-up generic increments, not fixed here.
+
+# Unit contracts the scan cannot derive. Typed capabilities only
+# (`ci_tasks`, `mise_tools`); command arrays are rejected.
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived
 # `docker build` is self-contained.
 [[units]]
 id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
-# XCFramework must exist before `swift build` resolves the binary target.
-# Run desktop-xcframework in the same macOS job as swift-package-native so
-# the binary target path is populated on one runner (separate jobs do not
-# share target/xcframework).
-# capabilities = ["xcframework"]: Q4 obligation — without it this Apple-bound
-# unit renders ubuntu + Linux plan-artifact runtime (slice 9 split).
-# depends_on (F2): FFI touches select this Swift consumer; selection coupling
-# only, no forced serialization (the unit rebuilds the XCFramework in-job).
-[[units]]
-id = "swift-package-native"
-kind = "swift"
-root = "native"
-watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
-ci_tasks = ["swift-package-native-ci"]
-mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-capabilities = ["xcframework"]
-depends_on = ["rust-jackin-usage-ffi"]
+# (Pre-migration synthetic swift-package-native unit removed: generic
+# discovery derives the consumer, its watch set, the xcframework platform
+# need, and the FFI producer edge from native/Package.swift +
+# crates/jackin-usage-ffi/boltffi.toml. Its ci_tasks glue
+# (swift-package-native-ci) is deleted from mise.toml with it.)
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
@@ -186,7 +200,7 @@ mise_tools = ["rust", "cargo-binstall"]
 # the scanned base and overrides the platform requirement only.
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
-capabilities = ["xcode"]
+platform = "macos-arm64"
 
 # Desktop release (L10): tag-triggered tasks release over the canonical
 # desktop mise tasks. Each event runs exactly one self-contained job
