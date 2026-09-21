@@ -51,6 +51,12 @@ jobs:
       docker_matrix: ${{ steps.plan.outputs.docker_matrix }}
       rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
       swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
+      # Presence-only no-work marker: `planned_no_work` is `true` or absent,
+      # never `false`. Consumers MUST branch
+      # `needs.plan.outputs.planned_no_work == 'true'` for the no-work path;
+      # any other value (including absent) means the plan selected work.
+      planned_no_work: ${{ steps.plan.outputs.planned_no_work }}
+      no_work_reason: ${{ steps.plan.outputs.no_work_reason }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,11 +66,11 @@ jobs:
       - name: Set up Velnor workflow runtime
         id: runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@fff18da87096d8546f5c313f87c36be39ae07069
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@44243ed4917d53ad74a96c64d1c58dbe52c944c1
         with:
-          rev: fff18da87096d8546f5c313f87c36be39ae07069
+          rev: 44243ed4917d53ad74a96c64d1c58dbe52c944c1
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=fff18da87096d8546f5c313f87c36be39ae07069" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=44243ed4917d53ad74a96c64d1c58dbe52c944c1" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -72,15 +78,25 @@ jobs:
           CI_SCOPE_OVERRIDE: ${{ github.event.inputs.scope || '' }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
           HEAD_SHA: ${{ github.sha }}
+          VELNOR_EXPECTED_WORK_FILE: .velnor-ci-expected-work/expected-work.json
+          VELNOR_LANES: ${{ github.event.inputs.runner || 'github' }}
         run: |
           set -euo pipefail
           if [[ -z "${CI_SCOPE_OVERRIDE:-}" ]]; then unset CI_SCOPE_OVERRIDE; fi
+          mkdir -p .velnor-ci-expected-work
           velnor-workflow plan --config .github/ci/project.toml
 
+      - name: Publish expected work
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: velnor-expected-work
+          path: .velnor-ci-expected-work/expected-work.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: fff18da87096d8546f5c313f87c36be39ae07069
+          EXPECTED_REVISION: 44243ed4917d53ad74a96c64d1c58dbe52c944c1
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -99,7 +115,7 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-fff18da87096d8546f5c313f87c36be39ae07069-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-44243ed4917d53ad74a96c64d1c58dbe52c944c1-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
@@ -138,9 +154,9 @@ jobs:
           fi
           git checkout --quiet --detach "$HEAD_SHA"
       - name: Set up Velnor workflow runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@fff18da87096d8546f5c313f87c36be39ae07069
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@44243ed4917d53ad74a96c64d1c58dbe52c944c1
         with:
-          rev: fff18da87096d8546f5c313f87c36be39ae07069
+          rev: 44243ed4917d53ad74a96c64d1c58dbe52c944c1
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Read declared generator pin
         id: pin
@@ -153,13 +169,13 @@ jobs:
           echo "value=$pin" >> "$GITHUB_OUTPUT"
       - name: Set up declared generator product
         id: renderer
-        if: steps.pin.outputs.value != 'fff18da87096d8546f5c313f87c36be39ae07069'
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@fff18da87096d8546f5c313f87c36be39ae07069
+        if: steps.pin.outputs.value != '44243ed4917d53ad74a96c64d1c58dbe52c944c1'
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@44243ed4917d53ad74a96c64d1c58dbe52c944c1
         with:
           rev: ${{ steps.pin.outputs.value }}
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Resolve declared generator product
-        if: steps.pin.outputs.value != 'fff18da87096d8546f5c313f87c36be39ae07069'
+        if: steps.pin.outputs.value != '44243ed4917d53ad74a96c64d1c58dbe52c944c1'
         run: |
           set -euo pipefail
           binary="$HOME/.cache/velnor/workflow-runtime/${{ steps.renderer.outputs.closure }}/bin/velnor-workflow"
@@ -193,7 +209,7 @@ jobs:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-          VELNOR_WORKFLOW_POLICY_REVISION: fff18da87096d8546f5c313f87c36be39ae07069
+          VELNOR_WORKFLOW_POLICY_REVISION: 44243ed4917d53ad74a96c64d1c58dbe52c944c1
         run: |
           set -euo pipefail
           velnor-workflow policy \
@@ -642,6 +658,8 @@ jobs:
         crates/jackin-capsule/src/**
         crates/jackin-capsule/src/daemon.rs
         crates/jackin-capsule/tests/**
+        crates/jackin-capsule/tests/fixtures/pty/codex-version.bin
+        crates/jackin-capsule/tests/fixtures/pty/vim-tiny-open-edit-quit.bin
         crates/jackin-config/**/*.rs
         crates/jackin-config/benches/**
         crates/jackin-config/examples/**
@@ -2863,6 +2881,81 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
+      - name: Download Velnor workflow runtime
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: velnor-workflow-runtime-44243ed4917d53ad74a96c64d1c58dbe52c944c1-${{ runner.os }}-${{ runner.arch }}
+          path: .velnor-workflow-runtime
+      - name: Verify Velnor workflow runtime
+        shell: bash
+        env:
+          EXPECTED_REVISION: 44243ed4917d53ad74a96c64d1c58dbe52c944c1
+        run: |
+          set -euo pipefail
+          manifest=.velnor-workflow-runtime/manifest.json
+          jq -e --arg revision "$EXPECTED_REVISION" --arg repository "$GITHUB_REPOSITORY" --arg platform "${RUNNER_OS}-${RUNNER_ARCH}" --arg run_id "$GITHUB_RUN_ID" '.revision == $revision and .repository == $repository and .platform == $platform and .run_id == $run_id and (.run_id | test("^[0-9]+$")) and .job_id != "" and (.binary_sha256 | test("^[0-9a-f]{64}$")) and (.policy_binary_sha256 | test("^[0-9a-f]{64}$")) and (.closure | test("^[0-9a-f]{64}$")) and (.policy_closure | test("^[0-9a-f]{64}$"))' "$manifest" >/dev/null
+          expected="$(jq -er '.binary_sha256' "$manifest")"
+          actual="$(sha256sum .velnor-workflow-runtime/velnor-workflow | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] || { echo "::error::runtime digest mismatch" >&2; exit 1; }
+          expected="$(jq -er '.policy_binary_sha256' "$manifest")"
+          actual="$(sha256sum .velnor-workflow-runtime/velnor-workflow-policy | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] || { echo "::error::policy runtime digest mismatch" >&2; exit 1; }
+      - name: Add Velnor workflow runtime to PATH
+        shell: bash
+        env:
+          EXPECTED_REVISION: 44243ed4917d53ad74a96c64d1c58dbe52c944c1
+        run: |
+          set -euo pipefail
+          home="$RUNNER_TEMP/velnor-workflow-runtime-artifact"
+          install -Dm0755 .velnor-workflow-runtime/velnor-workflow "$home/bin/velnor-workflow"
+          install -Dm0755 .velnor-workflow-runtime/velnor-workflow-policy "$home/bin/velnor-workflow-policy"
+          expected_closure="$(jq -er '.policy_closure' .velnor-workflow-runtime/manifest.json)"
+          reported="$("$home/bin/velnor-workflow-policy" --closure)"
+          [[ "$reported" == "$expected_closure" ]] || { echo "::error::policy runtime reports closure $reported, expected $expected_closure" >&2; exit 1; }
+          echo "$home/bin" >> "$GITHUB_PATH"
+          echo "VELNOR_WORKFLOW_PINNED_BINARY=$home/bin/velnor-workflow-policy" >> "$GITHUB_ENV"
+      - name: Download expected work
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: velnor-expected-work
+          path: .velnor-ci-expected-work
+      - name: Download reported unit results
+        # A no-work plan runs no unit jobs, so zero result artifacts is the
+        # expected case there — and the aggregate fails a real-work plan with
+        # zero records anyway. Tolerate the empty download; never the verdict.
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: velnor-result-*
+          merge-multiple: true
+          path: .velnor-ci-results
+      - name: Collect reported unit results
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p .velnor-ci-results
+          files=(.velnor-ci-results/result-*.json)
+          for file in "${files[@]}"; do
+            if jq -e 'any(.results[]?; has("reused_from"))' "$file" >/dev/null; then
+              echo "::error::$file carries reused_from without a validate_reuse decision; render emits no reused results" >&2
+              exit 1
+            fi
+          done
+          if (( ${#files[@]} == 0 )); then
+            printf '{"results":[]}\n' > .velnor-ci-results.json
+          else
+            jq -s '{results: ([.[].results // empty] | add // [])}' "${files[@]}" > .velnor-ci-results.json
+          fi
+          echo "collected $(jq '.results | length' .velnor-ci-results.json) reported result(s) from ${#files[@]} record file(s)"
+      - name: Score expected work against reported results
+        env:
+          BASE_SHA: ${{ needs.plan.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.plan.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          velnor-workflow aggregate --expected .velnor-ci-expected-work/expected-work.json --results .velnor-ci-results.json
       - name: Validate generated stack results
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
