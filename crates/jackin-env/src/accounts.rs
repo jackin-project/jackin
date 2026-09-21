@@ -36,6 +36,24 @@ fn account_for_credential_resolution(
     account
 }
 
+/// Return the exact persisted credential declarations selected for one launch
+/// instance. The launcher uses this alongside the resolved values to build a
+/// source-identity fence; resolution itself remains in this module so the
+/// model-dependent routing rules cannot drift between staging and proofing.
+pub fn credential_env_declarations_for_instance(
+    config: &AppConfig,
+    instance: &jackin_config::ResolvedInstance,
+) -> anyhow::Result<BTreeMap<String, jackin_core::EnvValue>> {
+    let account = config
+        .accounts
+        .get(&instance.account_id)
+        .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+    Ok(
+        account_for_credential_resolution(account, instance.agent, instance.model.as_deref())
+            .credential_env_for_instance(instance.agent, instance.base_url.as_deref())?,
+    )
+}
+
 /// Environment names owned by account selection, including endpoint routing.
 #[must_use]
 pub fn is_account_env(name: &str) -> bool {
@@ -75,14 +93,7 @@ where
     }
 
     for instance in instances {
-        let account = config
-            .accounts
-            .get(&instance.account_id)
-            .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
-        let account =
-            account_for_credential_resolution(account, instance.agent, instance.model.as_deref());
-        let declarations =
-            account.credential_env_for_instance(instance.agent, instance.base_url.as_deref())?;
+        let declarations = credential_env_declarations_for_instance(config, instance)?;
         if declarations
             .values()
             .any(|value| matches!(value, jackin_core::EnvValue::OpRef(_)))

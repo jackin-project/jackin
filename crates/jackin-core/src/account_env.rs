@@ -6,12 +6,9 @@
 /// Account routing names and client state roots outside the provider credential catalog.
 pub const ACCOUNT_ROUTING_ENV_NAMES: &[&str] = &[
     // Credential aliases recognized by account discovery or provider clients.
-    "ANTHROPIC_AUTH_TOKEN",
-    "MOONSHOT_API_KEY",
     "MINIMAX_API_TOKEN",
     "MINIMAX_CODING_API_KEY",
     "Z_AI_API_KEY",
-    "ZHIPU_API_KEY",
     "KIMI_AUTH_TOKEN",
     "kimi_auth_token",
     // Endpoint aliases recognized by provider account import.

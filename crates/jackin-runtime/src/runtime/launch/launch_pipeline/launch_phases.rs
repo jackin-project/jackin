@@ -213,6 +213,8 @@ pub(crate) struct EnvironmentResolved {
     pub github_mode: jackin_config::GithubAuthMode,
     /// Declared `[github.env]` layers (for operator breadcrumb).
     pub github_env_decls: std::collections::BTreeMap<String, jackin_config::EnvValue>,
+    /// Exact source/material proofs for credential values staged at launch.
+    pub credential_scope: jackin_protocol::usage_broker::UsageCredentialScope,
 }
 
 /// Trust seeding and operator-facing auth breadcrumbs completed.

@@ -664,6 +664,11 @@ where
     let instances = provision.instances;
     let admitted = instances.clone();
     let credentials = provision.credentials;
+    let credential_scope = crate::usage_relay::usage_credential_scope_for_staged_launch(
+        config,
+        &instances,
+        &credentials,
+    )?;
     let role_state_future = async move {
         jackin_telemetry::spawn::joined_blocking(move || {
             // One binding per admitted instance, keyed by config ID in
@@ -760,6 +765,7 @@ where
             workspace_opt: configured.workspace_opt,
             github_mode: configured.github_mode,
             github_env_decls: configured.github_env_decls,
+            credential_scope,
         },
         instances: admitted,
     })
@@ -1622,6 +1628,7 @@ where
                     EnvironmentResolved {
                         state,
                         github_resolved_env,
+                        credential_scope,
                         workspace_name_str,
                         ..
                     },
@@ -1652,6 +1659,7 @@ where
                 capsule_config: &launch_config,
                 state: &state,
                 resolved_env,
+                credential_scope: &credential_scope,
                 debug: opts.debug,
             },
         )
@@ -1682,6 +1690,7 @@ where
         agent,
         capsule_config: &launch_config,
         resolved_env,
+        credential_scope: &credential_scope,
         github_env: &github_resolved_env,
         profile: resolved_profile.0,
         profile_source: resolved_profile.1,

@@ -235,6 +235,7 @@ pub struct AppleContainerLaunch<'a> {
     pub capsule_config: &'a jackin_protocol::CapsuleConfig,
     pub state: &'a crate::instance::RoleState,
     pub resolved_env: &'a jackin_env::ResolvedEnv,
+    pub credential_scope: &'a jackin_protocol::usage_broker::UsageCredentialScope,
     pub debug: bool,
 }
 
@@ -271,6 +272,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         capsule_config,
         state,
         resolved_env,
+        credential_scope,
         debug,
     } = args;
 
@@ -332,6 +334,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
                 state,
                 resolved_env,
                 &capsule_config,
+                credential_scope,
             ),
         })
         .await
