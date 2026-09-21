@@ -31,6 +31,12 @@ pub const HOST_DIR: &str = "/jackin/host";
 /// Seeded default home fragments copied out of the image.
 pub const DEFAULT_HOME_DIR: &str = "/jackin/default-home";
 
+/// Leaf name under an instance home holding per-pane derived homes
+/// (`{home}/panes/{seq}`). The daemon assigns the `seq`; the isolation
+/// wrapper pre-creates this parent before installing Landlock. One constant
+/// so the two sides cannot drift.
+pub const PANE_HOMES_DIR_NAME: &str = "panes";
+
 /// Agent handoff directories (auth/credential files for agents).
 pub const AMP_DIR: &str = "/jackin/amp";
 /// Claude Code handoff directory.
