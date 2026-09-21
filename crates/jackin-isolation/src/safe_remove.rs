@@ -201,18 +201,19 @@ pub fn safe_remove_dir_contained(root: &Path, path: &Path) -> std::io::Result<()
 }
 
 /// Device id of an `fstat` result as the `u64` that `Metadata::dev`
-/// reports. `st_dev` is `i32` on macOS but already `u64` on Linux, so the
-/// fallible conversion exists only where the types differ.
-#[cfg(target_os = "macos")]
+/// reports. `st_dev` is already `u64` on Linux, so no conversion exists
+/// there; every other platform converts fallibly (macOS `st_dev` is `i32`).
+#[cfg(target_os = "linux")]
 fn dev_id(stat: &nix::sys::stat::FileStat) -> u64 {
-    u64::try_from(stat.st_dev).unwrap_or(u64::MAX)
+    stat.st_dev
 }
 
 /// Device id of an `fstat` result as the `u64` that `Metadata::dev`
-/// reports. `st_dev` is already `u64` here; see the macOS variant.
-#[cfg(not(target_os = "macos"))]
+/// reports. Portable fallible conversion for non-Linux Unix (macOS
+/// `st_dev` is `i32`); see the Linux variant.
+#[cfg(not(target_os = "linux"))]
 fn dev_id(stat: &nix::sys::stat::FileStat) -> u64 {
-    stat.st_dev
+    u64::try_from(stat.st_dev).unwrap_or(u64::MAX)
 }
 
 /// Delete one child `name` of the pinned parent `dir_fd`, verifying it is

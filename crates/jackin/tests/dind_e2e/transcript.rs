@@ -54,10 +54,11 @@ where
     #[cfg(target_os = "macos")]
     {
         let path = cwd.join(MACOS_TYPESCRIPT_NAME);
-        drop(std::fs::remove_file(&path));
         // Drain the buffered pipe so `script` never blocks on it; the bytes
         // are discarded because the typescript is the transcript source.
-        let (_, pipe_handle) = collect_pipe(reader, None);
+        // (Stale-file cleanup happens pre-spawn in `pty_command`: removing
+        // here could unlink the live file `script` already opened.)
+        let pipe_handle = drain_pipe_to_sink(reader);
         let log = std::fs::File::create(cwd.join("e2e-launch-stdout.log"))
             .expect("create live launch transcript");
         let (buffer, follow_handle) = spawn_typescript_follower(path, log, Arc::clone(done));
@@ -74,6 +75,24 @@ where
         let _ = done;
         spawn_logged_pipe_collector(reader, &cwd.join("e2e-launch-stdout.log"))
     }
+}
+
+/// Drain a pipe to nowhere (constant memory): for streams whose bytes are
+/// duplicated by another live source and must only keep the writer flowing.
+#[cfg(target_os = "macos")]
+fn drain_pipe_to_sink<R>(mut reader: R) -> std::thread::JoinHandle<()>
+where
+    R: Read + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let mut chunk = [0_u8; 8192];
+        loop {
+            match reader.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+    })
 }
 
 #[cfg(target_os = "macos")]

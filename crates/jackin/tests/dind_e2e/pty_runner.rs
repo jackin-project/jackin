@@ -27,6 +27,18 @@ use super::transcript::{
     spawn_stdout_collector, transcript_contains, wait_for_transcript_text,
 };
 
+/// Sets `done` when dropped so the macOS typescript follower always
+/// terminates, including on panic-unwind past the explicit stores.
+struct DoneGuard {
+    done: Arc<AtomicBool>,
+}
+
+impl Drop for DoneGuard {
+    fn drop(&mut self) {
+        self.done.store(true, Ordering::Relaxed);
+    }
+}
+
 pub(super) fn pty_command(
     jackin: &str,
     args: &[&str],
@@ -49,7 +61,10 @@ pub(super) fn pty_command(
     if cfg!(target_os = "macos") {
         // BSD `script` block-buffers pipe stdout (nothing arrives live), so
         // the transcript is followed through this file instead; see
-        // `spawn_stdout_collector`.
+        // `spawn_stdout_collector`. Remove any stale typescript BEFORE
+        // spawn: after spawn the file may already be the live one, and a
+        // reused `cwd` would otherwise pollute matching with old bytes.
+        drop(std::fs::remove_file(cwd.join(MACOS_TYPESCRIPT_NAME)));
         command
             .arg("-q")
             .arg(cwd.join(MACOS_TYPESCRIPT_NAME))
@@ -98,6 +113,9 @@ pub(super) fn run_in_pty_until_file(
     let stdout = child.stdout.take().expect("script stdout must be piped");
     let stderr = child.stderr.take().expect("script stderr must be piped");
     let done = Arc::new(AtomicBool::new(false));
+    let _done_guard = DoneGuard {
+        done: Arc::clone(&done),
+    };
     let (stdout_buf, stdout_reader) = spawn_stdout_collector(stdout, cwd, &done);
     let (stderr_buf, stderr_reader) =
         spawn_logged_pipe_collector(stderr, &cwd.join("e2e-launch-stderr.log"));
@@ -208,7 +226,15 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
     let stdout = child.stdout.take().expect("script stdout must be piped");
     let stderr = child.stderr.take().expect("script stderr must be piped");
     let done = Arc::new(AtomicBool::new(false));
+    let _done_guard = DoneGuard {
+        done: Arc::clone(&done),
+    };
+    // macOS follows the live typescript; other platforms keep the exact
+    // previous pipe collector (no new files, no new failure modes).
+    #[cfg(target_os = "macos")]
     let (stdout_buf, stdout_reader) = spawn_stdout_collector(stdout, cwd, &done);
+    #[cfg(not(target_os = "macos"))]
+    let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
     let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
     let wait_deadline = Instant::now() + Duration::from_mins(3);
     while !transcript_contains(&stdout_buf, exit.wait_for) {
