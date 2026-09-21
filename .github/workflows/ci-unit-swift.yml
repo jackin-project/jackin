@@ -163,11 +163,11 @@ jobs:
       - name: Set up Velnor workflow runtime
         id: runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@bb4978827be294b97f465c67ea19ed8af344a728
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@44243ed4917d53ad74a96c64d1c58dbe52c944c1
         with:
-          rev: bb4978827be294b97f465c67ea19ed8af344a728
+          rev: 44243ed4917d53ad74a96c64d1c58dbe52c944c1
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=bb4978827be294b97f465c67ea19ed8af344a728" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=44243ed4917d53ad74a96c64d1c58dbe52c944c1" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -319,7 +319,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@bb4978827be294b97f465c67ea19ed8af344a728
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@44243ed4917d53ad74a96c64d1c58dbe52c944c1
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github
