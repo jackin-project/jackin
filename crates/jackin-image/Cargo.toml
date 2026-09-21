@@ -27,7 +27,7 @@ jackin-process = { workspace = true }
 nix = { workspace = true, features = ["user"] }
 hex = { workspace = true }
 sha2 = { workspace = true }
-tar = "0.4"
+tar = { workspace = true }
 flate2 = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
