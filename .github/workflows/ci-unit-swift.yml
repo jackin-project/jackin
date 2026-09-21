@@ -183,11 +183,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@f3b94af3eb0b30a6ea0a92120b58706ef9397360
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@b634efd2701b3c86db7df5c0e1f92993964a269d
         with:
-          rev: f3b94af3eb0b30a6ea0a92120b58706ef9397360
+          rev: b634efd2701b3c86db7df5c0e1f92993964a269d
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=f3b94af3eb0b30a6ea0a92120b58706ef9397360" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=b634efd2701b3c86db7df5c0e1f92993964a269d" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -241,7 +241,10 @@ jobs:
           if [ -d "/Applications/Xcode_${want}.app" ]; then
             dir="/Applications/Xcode_${want}.app"
           else
-            dir="$(ls -d /Applications/Xcode_${want}*.app 2>/dev/null | sort | tail -n 1 || true)"
+            for candidate in "/Applications/Xcode_${want}"*.app; do
+              [ -d "$candidate" ] || continue
+              dir="$candidate"
+            done
           fi
           if [ -z "$dir" ] && [ -d /Applications/Xcode.app ]; then
             found="$(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -version 2>/dev/null | head -n 1 | awk '{print $2}' || true)"
@@ -251,13 +254,24 @@ jobs:
           fi
           if [ -z "$dir" ]; then
             echo "::error::no installed Xcode matches pin $want" >&2
-            ls /Applications | grep -i xcode || true
+            for candidate in /Applications/*; do
+              case "$candidate" in
+                *[Xx][Cc][Oo][Dd][Ee]*) echo "${candidate##*/}" ;;
+              esac
+            done || true
             exit 1
           fi
           echo "DEVELOPER_DIR=$dir/Contents/Developer" >> "$GITHUB_ENV"
           export DEVELOPER_DIR="$dir/Contents/Developer"
           xcodebuild -version
           swift --version
+      - name: Set up Mise tools
+        if: ${{ inputs.mise_tools != '' }}
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: ${{ inputs.mise_tools }}
+          cache: true
+          cache_save: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
       - name: Mark tool bootstrap end
         if: always()
         run: |
@@ -374,7 +388,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@f3b94af3eb0b30a6ea0a92120b58706ef9397360
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@b634efd2701b3c86db7df5c0e1f92993964a269d
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github

@@ -7,7 +7,7 @@ repository = "jackin-project/jackin"
 # (closure 40beba20e876d68d2282dfad73eab6078416082d54c3cb8f6155dfde66fd2dee).
 # Velnor f3b94af3 (PR #1031, Inc2): generic Apple CI with [native.apple]
 # cargo_profile + deployment_floor; schema-2 tree rendered by this pin.
-revision = "f3b94af3eb0b30a6ea0a92120b58706ef9397360"
+revision = "b634efd2701b3c86db7df5c0e1f92993964a269d"
 
 # No [scan] exclude: native/Package.swift is scanned. The pre-migration
 # exclusion plus the synthetic swift-package-native unit are gone; generic
