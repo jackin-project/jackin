@@ -635,6 +635,93 @@ fn find_include_macros(source: &str) -> Vec<usize> {
     hits
 }
 
+#[test]
+fn manifest_union_comment_only_change_stays_empty() {
+    let head = b"[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"1\"\n";
+    let commented =
+        b"# staged note\n[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"1\"\n";
+    assert_eq!(
+        union_workspace_dependency_changes(head, commented, commented),
+        Some(BTreeSet::new())
+    );
+    assert_eq!(
+        union_workspace_dependency_changes(head, head, commented),
+        Some(BTreeSet::new())
+    );
+}
+
+#[test]
+fn lock_union_comment_only_change_stays_empty() {
+    let head = b"[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\n";
+    let commented = b"# staged note\n[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\n";
+    assert_eq!(
+        union_lock_changes(head, commented, commented),
+        Some(BTreeSet::new())
+    );
+    assert_eq!(
+        union_lock_changes(head, head, commented),
+        Some(BTreeSet::new())
+    );
+}
+
+#[test]
+fn manifest_union_staged_only_breaking_edit_widens() {
+    // Staged-only structural edit, worktree reverted to HEAD: HEAD↔worktree
+    // alone is empty, but the staged pair is unprovable so the union widens.
+    let head = b"[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"1\"\n";
+    let staged =
+        b"[workspace]\nmembers = [\"crates/a\"]\n[workspace.dependencies]\nserde = \"1\"\n";
+    assert_eq!(union_workspace_dependency_changes(head, staged, head), None);
+}
+
+#[test]
+fn lock_union_staged_only_version_bump_selects() {
+    let head = b"[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\n";
+    let staged = b"[[package]]\nname = \"serde\"\nversion = \"1.1.0\"\n";
+    assert_eq!(
+        union_lock_changes(head, staged, head),
+        Some(BTreeSet::from(["serde".to_owned()]))
+    );
+}
+
+#[test]
+fn unions_merge_head_index_and_index_worktree_pairs() {
+    let base =
+        b"[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"1\"\ntokio = \"1\"\n";
+    let bumped_serde =
+        b"[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"2\"\ntokio = \"1\"\n";
+    let bumped_both =
+        b"[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"2\"\ntokio = \"2\"\n";
+    assert_eq!(
+        union_workspace_dependency_changes(base, bumped_serde, bumped_both),
+        Some(BTreeSet::from(["serde".to_owned(), "tokio".to_owned()]))
+    );
+
+    let base_lock = b"[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\n[[package]]\nname = \"tokio\"\nversion = \"1.0.0\"\n";
+    let bumped_serde_lock = b"[[package]]\nname = \"serde\"\nversion = \"1.1.0\"\n[[package]]\nname = \"tokio\"\nversion = \"1.0.0\"\n";
+    let bumped_both_lock = b"[[package]]\nname = \"serde\"\nversion = \"1.1.0\"\n[[package]]\nname = \"tokio\"\nversion = \"1.2.0\"\n";
+    assert_eq!(
+        union_lock_changes(base_lock, bumped_serde_lock, bumped_both_lock),
+        Some(BTreeSet::from(["serde".to_owned(), "tokio".to_owned()]))
+    );
+}
+
+#[test]
+fn unions_widen_when_either_pair_is_unparseable() {
+    let head = b"[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"1\"\n";
+    assert_eq!(
+        union_workspace_dependency_changes(b"[[[broken", head, head),
+        None
+    );
+    assert_eq!(
+        union_workspace_dependency_changes(head, head, b"[[[broken"),
+        None
+    );
+    let lock = b"[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\n";
+    assert_eq!(union_lock_changes(b"[[[broken", lock, lock), None);
+    assert_eq!(union_lock_changes(lock, lock, b"[[[broken"), None);
+}
+
 fn skip_ascii_trivia(mut source: &str) -> &str {
     loop {
         let trimmed = source.trim_start_matches([' ', '\t', '\n', '\r']);
