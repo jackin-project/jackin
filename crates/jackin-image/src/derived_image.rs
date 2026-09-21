@@ -126,9 +126,11 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
     }
 
     let mut copy_section = String::new();
-    // Agent writes setup markers under /jackin/state/hooks. Set ownership at
-    // directory creation time rather than walking /jackin/state recursively;
-    // /jackin/runtime/hooks gets per-file ownership from the COPY lines below.
+    // Role hooks get session-scoped writable state via JACKIN_HOOK_STATE_DIR
+    // (under JACKIN_SESSION_STATE_DIR when isolated; /jackin/state/hook-state
+    // fallback otherwise). Set ownership at directory creation time rather
+    // than walking /jackin/state recursively; /jackin/runtime/hooks gets
+    // per-file ownership from the COPY lines below.
     let mut final_commands = String::from(
         "install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g 0 /jackin/state /jackin/state/hooks",
     );
@@ -429,7 +431,7 @@ pub fn render_derived_dockerfile(
     const SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS: &str = "\
 ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
       || cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\
-    && install -d -o agent -g 0 /jackin/run /jackin/state
+    && install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials
 ";
     let shell_title_and_runtime_dir_commands = SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS;
 

@@ -9,6 +9,7 @@ fn observation(session: u64, state: AgentState) -> SessionObservation {
     SessionObservation {
         session,
         agent: Some("claude".to_owned()),
+        account_id: Some("acc-1".to_owned()),
         state,
         last_output_at: Some(now),
         last_input_at: Some(now),

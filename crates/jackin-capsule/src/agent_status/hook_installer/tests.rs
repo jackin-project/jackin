@@ -12,13 +12,13 @@ fn installer() -> ClaudeHookInstaller {
 fn claude_hook_installer_writes_settings_json() {
     let dir = TempDir::new().unwrap();
     let home = dir.path().to_path_buf();
-    installer().install(&home).unwrap();
+    installer().install(&home, &home.join(".claude")).unwrap();
     let settings_path = home.join(".claude").join("settings.json");
     assert!(settings_path.exists());
     let content = fs::read_to_string(&settings_path).unwrap();
     let val: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert!(val.get("hooks").is_some());
-    assert!(installer().verify(&home));
+    assert!(installer().verify(&home, &home.join(".claude")));
 }
 
 #[test]
@@ -39,17 +39,17 @@ fn claude_hook_installer_repairs_stale_async_flag() {
     )
     .unwrap();
     // Verify fails (PermissionRequest has wrong async flag).
-    assert!(!installer().verify(&home));
+    assert!(!installer().verify(&home, &home.join(".claude")));
     // Install repairs it.
-    installer().install(&home).unwrap();
-    assert!(installer().verify(&home));
+    installer().install(&home, &home.join(".claude")).unwrap();
+    assert!(installer().verify(&home, &home.join(".claude")));
 }
 
 #[test]
 fn claude_stop_hook_is_async_and_permission_request_is_sync() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().to_path_buf();
-    installer().install(&home).unwrap();
+    installer().install(&home, &home.join(".claude")).unwrap();
     let settings_path = home.join(".claude").join("settings.json");
     let content = fs::read_to_string(&settings_path).unwrap();
     let val: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -91,7 +91,9 @@ fn claude_stop_hook_is_async_and_permission_request_is_sync() {
 fn codex_hooks_json_has_no_unknown_top_level_keys() {
     let dir = TempDir::new().unwrap();
     let home = dir.path().to_path_buf();
-    CodexHookInstaller::default().install(&home).unwrap();
+    CodexHookInstaller::default()
+        .install(&home, &home.join(".codex"))
+        .unwrap();
     let hooks_path = home.join(".codex").join("hooks.json");
     let content = fs::read_to_string(hooks_path).unwrap();
     let val: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -136,7 +138,7 @@ fn claude_hook_installer_preserves_unrelated_settings() {
         serde_json::to_string_pretty(&existing).unwrap(),
     )
     .unwrap();
-    installer().install(&home).unwrap();
+    installer().install(&home, &home.join(".claude")).unwrap();
     let content = fs::read_to_string(claude_dir.join("settings.json")).unwrap();
     let val: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert_eq!(
@@ -173,7 +175,7 @@ fn claude_hook_installer_preserves_unrelated_hook_entries() {
     )
     .unwrap();
 
-    installer().install(&home).unwrap();
+    installer().install(&home, &home.join(".claude")).unwrap();
 
     let content = fs::read_to_string(claude_dir.join("settings.json")).unwrap();
     let val: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -197,16 +199,22 @@ fn opencode_install_bails_on_corrupt_or_wrong_shape_and_never_clobbers() {
 
     // Unparseable JSON -> bail, file left byte-identical.
     fs::write(&path, "{ not json").unwrap();
-    PluginInstaller::opencode().install(&home).unwrap_err();
+    PluginInstaller::opencode()
+        .install(&home, &home)
+        .unwrap_err();
     assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
 
     // Valid JSON, but root is an array (not an object) -> bail.
     fs::write(&path, "[1,2,3]").unwrap();
-    PluginInstaller::opencode().install(&home).unwrap_err();
+    PluginInstaller::opencode()
+        .install(&home, &home)
+        .unwrap_err();
 
     // Valid object, but `plugins` is the wrong shape (string, not array) -> bail.
     fs::write(&path, r#"{"plugins":"not-an-array"}"#).unwrap();
-    PluginInstaller::opencode().install(&home).unwrap_err();
+    PluginInstaller::opencode()
+        .install(&home, &home)
+        .unwrap_err();
 }
 
 #[test]
@@ -217,7 +225,9 @@ fn codex_install_bails_when_hooks_is_not_an_object() {
     fs::create_dir_all(&cdir).unwrap();
     let path = cdir.join("hooks.json");
     fs::write(&path, r#"{"hooks":"not-an-object"}"#).unwrap();
-    CodexHookInstaller::default().install(&home).unwrap_err();
+    CodexHookInstaller::default()
+        .install(&home, &home.join(".codex"))
+        .unwrap_err();
     assert_eq!(
         fs::read_to_string(&path).unwrap(),
         r#"{"hooks":"not-an-object"}"#
@@ -240,7 +250,9 @@ fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
     let path = codex_dir.join("hooks.json");
     fs::write(&path, serde_json::to_string_pretty(&existing).unwrap()).unwrap();
 
-    CodexHookInstaller::default().install(&home).unwrap();
+    CodexHookInstaller::default()
+        .install(&home, &home.join(".codex"))
+        .unwrap();
     let val: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
 
     // The role's hook + custom event survive; our reporter command is added.
@@ -250,7 +262,9 @@ fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
         == "/jackin/runtime/agent-status/hooks/codex/report-hook.sh --event UserPromptSubmit"));
     assert_eq!(val["hooks"]["CustomEvent"][0]["command"], "/role/custom.sh");
     // Idempotent: a second install does not duplicate our entry.
-    CodexHookInstaller::default().install(&home).unwrap();
+    CodexHookInstaller::default()
+        .install(&home, &home.join(".codex"))
+        .unwrap();
     let val2: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(
@@ -260,7 +274,9 @@ fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
 
     // A corrupt file is never clobbered.
     fs::write(&path, "{ not json").unwrap();
-    CodexHookInstaller::default().install(&home).unwrap_err();
+    CodexHookInstaller::default()
+        .install(&home, &home.join(".codex"))
+        .unwrap_err();
     assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
 }
 
@@ -278,7 +294,7 @@ fn opencode_install_preserves_existing_plugins() {
     )
     .unwrap();
 
-    PluginInstaller::opencode().install(&home).unwrap();
+    PluginInstaller::opencode().install(&home, &home).unwrap();
     let val: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     let plugins = val["plugins"].as_array().unwrap();
     assert!(plugins.iter().any(|p| p == "/role/own-plugin.js"));
@@ -288,7 +304,7 @@ fn opencode_install_preserves_existing_plugins() {
             .any(|p| p.as_str().unwrap().contains("opencode"))
     );
     // Idempotent.
-    PluginInstaller::opencode().install(&home).unwrap();
+    PluginInstaller::opencode().install(&home, &home).unwrap();
     let val2: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(val2["plugins"].as_array().unwrap().len(), 2);
@@ -299,7 +315,7 @@ fn plugin_installer_writes_and_verifies() {
     let installer = PluginInstaller::opencode();
     let dir = TempDir::new().unwrap();
     let home = dir.path().to_path_buf();
-    installer.install(&home).unwrap();
+    installer.install(&home, &home).unwrap();
     let path = home.join(".config").join("opencode").join("plugins.json");
     assert!(path.exists(), "opencode plugins.json written");
     let val: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -309,7 +325,7 @@ fn plugin_installer_writes_and_verifies() {
             .unwrap()
             .contains("opencode")
     );
-    assert!(installer.verify(&home));
+    assert!(installer.verify(&home, &home));
 }
 
 #[test]
@@ -330,7 +346,7 @@ fn plugin_installer_verify_requires_valid_plugins_array_entry() {
     )
     .unwrap();
     assert!(
-        !installer.verify(&home),
+        !installer.verify(&home, &home),
         "substring-only verification must not pass corrupt JSON"
     );
 
@@ -341,7 +357,7 @@ fn plugin_installer_verify_requires_valid_plugins_array_entry() {
     )
     .unwrap();
     assert!(
-        !installer.verify(&home),
+        !installer.verify(&home, &home),
         "plugins must be a JSON array, not just a matching string"
     );
 
@@ -351,7 +367,7 @@ fn plugin_installer_verify_requires_valid_plugins_array_entry() {
             .to_string(),
     )
     .unwrap();
-    assert!(installer.verify(&home));
+    assert!(installer.verify(&home, &home));
 }
 
 #[test]
@@ -364,9 +380,11 @@ fn claude_install_bails_on_malformed_settings_and_preserves_it() {
     // A malformed settings.json (e.g. a half-flushed write) must not be clobbered.
     fs::write(&settings, "{ not valid json").unwrap();
 
-    installer().install(&home).unwrap_err();
+    installer()
+        .install(&home, &home.join(".claude"))
+        .unwrap_err();
     // The operator's (broken) file is left exactly as-is, not overwritten.
     assert_eq!(fs::read_to_string(&settings).unwrap(), "{ not valid json");
     // And verify keeps reporting drift, so the failure stays visible.
-    assert!(!installer().verify(&home));
+    assert!(!installer().verify(&home, &home.join(".claude")));
 }

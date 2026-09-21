@@ -6,8 +6,8 @@ use super::{
     MountPreviewRow, SettingsEnvPreview, SettingsGeneralPreview, SettingsGeneralToggles,
     SettingsSavePreview, TrustPreviewRow, WorkspaceAuthChange, WorkspaceMountDiff,
     WorkspaceMountPreviewRow, WorkspaceSaveMode, WorkspaceSavePreview, WorkspaceToggleSet,
-    build_workspace_save_lines, settings_save_lines, workspace_create_display_name,
-    workspace_save_lines,
+    build_workspace_save_lines, settings_env_preview, settings_save_lines,
+    workspace_create_display_name, workspace_save_lines,
 };
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::screens::editor::model::EditorState;
@@ -174,6 +174,33 @@ fn changed_account_credential_is_reported_without_disclosing_either_secret() {
     assert!(text.contains("updated; enabled; credential hidden"));
     assert!(!text.contains("old-secret"));
     assert!(!text.contains("new-secret"));
+}
+
+#[test]
+fn settings_env_preview_hides_account_owned_sentinel_in_global_and_role_maps() {
+    let config = crate::tui::screens::settings::model::SettingsEnvConfig {
+        env: [(
+            "ANTHROPIC_API_KEY".to_owned(),
+            EnvValue::Plain("settings-preview-sentinel".into()),
+        )]
+        .into(),
+        roles: [(
+            "smith".to_owned(),
+            [(
+                "OPENAI_API_KEY".to_owned(),
+                EnvValue::Plain("role-preview-sentinel".into()),
+            )]
+            .into(),
+        )]
+        .into(),
+    };
+
+    let preview = settings_env_preview(&config);
+    let rendered = format!("{preview:?}");
+    assert!(!rendered.contains("settings-preview-sentinel"));
+    assert!(!rendered.contains("role-preview-sentinel"));
+    assert!(preview.env.is_empty());
+    assert!(preview.roles["smith"].is_empty());
 }
 
 #[test]

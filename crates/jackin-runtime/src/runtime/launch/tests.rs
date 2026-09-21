@@ -15,6 +15,50 @@ use crate::runtime::launch::launch_runtime::{
 };
 use std::path::PathBuf;
 
+/// Admission fixture for launch tests that are not about accounts. Writes a
+/// one-account, one-instance config before `load_or_init` so `resolve_launch`
+/// is deterministic and keychain bootstrap cannot inject host accounts into
+/// the launch.
+fn write_singleton_claude_admission(paths: &JackinPaths) {
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(&paths.config_file, SINGLETON_CLAUDE_TOML).unwrap();
+}
+
+/// One Claude apikey account admitted as `claude-main`. Prepend to test
+/// configs that already carry their own sections (top-level keys must precede
+/// the first table).
+const SINGLETON_CLAUDE_TOML: &str = r#"default_launch = ["claude-main"]
+
+[accounts.test]
+name = "Test"
+provider = "anthropic"
+[accounts.test.credential]
+type = "api_key"
+value = "test-key"
+
+[agent_configurations.claude-main]
+agent = "claude"
+account = "test"
+
+"#;
+
+/// Codex twin of [`write_singleton_claude_admission`], for tests whose
+/// fixture already wrote a config file: prepend (top-level keys must precede
+/// the first table) and reload.
+const CODEX_ADMISSION_TOML: &str = r#"default_launch = ["codex-main"]
+
+[accounts.test]
+name = "Test"
+provider = "openai"
+[accounts.test.credential]
+type = "api_key"
+value = "test-key"
+
+[agent_configurations.codex-main]
+agent = "codex"
+account = "test"
+"#;
+
 #[test]
 fn capsule_otlp_fails_closed_for_network_endpoint_and_auth() {
     use jackin_diagnostics::CapsuleExportCoverage;
@@ -189,12 +233,18 @@ fn provision_restore_account_policy(
         .map(jackin_core::WorkspaceName::parse)
         .transpose()
         .unwrap();
+    let revision = super::account_identity::AccountConfigRevision::acquire(paths).unwrap();
     super::account_identity::record_account_configuration(
-        &paths.data_dir.join(&manifest.container_base),
-        paths,
-        config,
-        workspace.as_ref(),
-        &manifest.role_key,
+        super::account_identity::AccountConfigurationRecord {
+            root: &paths.data_dir.join(&manifest.container_base),
+            paths,
+            revision: &revision,
+            config,
+            admission_config: config,
+            workspace: workspace.as_ref(),
+            role: &manifest.role_key,
+            admitted: &manifest.admitted_instances,
+        },
     )
     .unwrap();
 }
@@ -312,29 +362,55 @@ model = "zai/glm"
 
     let manifest = jackin_manifest::load_role_manifest(temp.path()).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
-    let config = capsule_config(&selector, "/workspace", &manifest, "ask", Vec::new());
-    let auth_modes = super::capsule_setup::capsule_auth_modes(
-        &jackin_config::AppConfig::default(),
-        None,
-        &selector.key(),
+    let instance = |config_id: &str, agent: jackin_core::Agent| jackin_config::ResolvedInstance {
+        config_id: config_id.into(),
+        agent,
+        account_id: "test".into(),
+        model: None,
+        base_url: None,
+        xdg_roots: None,
+        label: config_id.into(),
+        synthesized: true,
+    };
+    let instances = [
+        instance("test@claude", jackin_core::Agent::Claude),
+        instance("test@codex", jackin_core::Agent::Codex),
+        instance("test@amp", jackin_core::Agent::Amp),
+        instance("test@kimi", jackin_core::Agent::Kimi),
+        instance("test@opencode", jackin_core::Agent::Opencode),
+    ];
+    let config = capsule_config(
+        &selector,
+        "/workspace",
         &manifest,
-        None,
-    )
-    .unwrap();
+        "ask",
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        &instances,
+    );
+    let auth_modes =
+        super::capsule_setup::capsule_auth_modes(&jackin_config::AppConfig::default(), &[])
+            .unwrap();
 
     assert_eq!(config.role, "chainargos/the-architect");
     assert_eq!(config.workdir, "/workspace");
     assert_eq!(
-        config.agents,
-        vec!["claude", "codex", "amp", "kimi", "opencode"]
+        config.instances,
+        vec![
+            "test@claude",
+            "test@codex",
+            "test@amp",
+            "test@kimi",
+            "test@opencode"
+        ]
     );
-    assert_eq!(config.models.get("claude").unwrap(), "sonnet");
-    assert_eq!(config.models.get("codex").unwrap(), "gpt-5");
-    assert_eq!(config.models.get("kimi").unwrap(), "kimi-k2");
-    assert_eq!(config.models.get("opencode").unwrap(), "zai/glm");
-    assert!(!config.models.contains_key("amp"));
-    assert_eq!(auth_modes.len(), config.agents.len());
-    assert!(auth_modes.values().all(|mode| mode == "ignore"));
+    assert_eq!(config.models.get("test@claude").unwrap(), "sonnet");
+    assert_eq!(config.models.get("test@codex").unwrap(), "gpt-5");
+    assert_eq!(config.models.get("test@kimi").unwrap(), "kimi-k2");
+    assert_eq!(config.models.get("test@opencode").unwrap(), "zai/glm");
+    assert!(!config.models.contains_key("test@amp"));
+    assert!(auth_modes.is_empty());
 }
 #[test]
 fn selected_account_model_overrides_native_role_model_only_when_admitted() {
@@ -364,19 +440,30 @@ fn selected_account_model_overrides_native_role_model_only_when_admitted() {
         ..Default::default()
     };
     let mut launch = baseline.clone();
-    super::capsule_setup::apply_account_models(&mut launch, &config, None, "role", &[Agent::Codex])
-        .unwrap();
-    assert_eq!(launch.models["codex"], "k3-256k");
+    let admitted = [jackin_config::ResolvedInstance {
+        config_id: "coding-codex".into(),
+        agent: Agent::Codex,
+        account_id: "coding".into(),
+        model: Some("k3-256k".into()),
+        base_url: None,
+        xdg_roots: None,
+        label: "coding-codex".into(),
+        synthesized: false,
+    }];
+    super::capsule_setup::apply_account_models(&mut launch, &config, &admitted).unwrap();
+    assert_eq!(launch.models["coding-codex"], "k3-256k");
     let mut isolated = baseline;
-    let workspace = jackin_core::WorkspaceName::parse("isolated").unwrap();
-    super::capsule_setup::apply_account_models(
-        &mut isolated,
-        &config,
-        Some(&workspace),
-        "role",
-        &[Agent::Codex],
-    )
-    .unwrap();
+    let unadmitted = [jackin_config::ResolvedInstance {
+        config_id: "coding-codex".into(),
+        agent: Agent::Codex,
+        account_id: "coding".into(),
+        model: None,
+        base_url: None,
+        xdg_roots: None,
+        label: "coding-codex".into(),
+        synthesized: false,
+    }];
+    super::capsule_setup::apply_account_models(&mut isolated, &config, &unadmitted).unwrap();
     assert_eq!(isolated.models["codex"], "native-model");
 }
 
@@ -776,9 +863,12 @@ plugins = []
     )
     .unwrap();
 
-    assert!(state.auth.claude.is_some(), "selected Claude slot missing");
     assert!(
-        state.auth.codex.is_none(),
+        state.auth.for_agent(Agent::Claude).is_some(),
+        "selected Claude slot missing"
+    );
+    assert!(
+        state.auth.for_agent(Agent::Codex).is_none(),
         "sibling Codex auth slot must not be provisioned"
     );
     assert_eq!(
@@ -854,13 +944,13 @@ plugins = []
     assert!(
         mounts
             .iter()
-            .any(|m| m.contains("/jackin/claude/account.json") && !m.ends_with(":ro")),
+            .any(|m| m.contains("/jackin/claude/account.json") && m.ends_with(":ro")),
         "account.json mount missing under /jackin/claude/: {mounts:?}",
     );
     assert!(
         mounts
             .iter()
-            .any(|m| m.contains("/jackin/claude/credentials.json") && !m.ends_with(":ro")),
+            .any(|m| m.contains("/jackin/claude/credentials.json") && m.ends_with(":ro")),
         "credentials.json mount missing under /jackin/claude/: {mounts:?}",
     );
 }
@@ -1038,9 +1128,127 @@ agents = ["codex"]
     assert!(
         mounts
             .iter()
-            .any(|m| m.contains("/jackin/codex/auth.json") && !m.ends_with(":ro")),
+            .any(|m| m.contains("/jackin/codex/auth.json") && m.ends_with(":ro")),
         "auth.json handoff missing: {mounts:?}"
     );
+}
+
+#[tokio::test]
+async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
+    use crate::instance::{InstanceAuthBinding, RoleState};
+    use jackin_core::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\nagents = [\"claude\"]\n\n[claude]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+
+    // Two distinct host Claude profiles plus a host onboarding file.
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(&host_home).unwrap();
+    std::fs::write(host_home.join(".claude.json"), "{}").unwrap();
+    let mut bindings = Vec::new();
+    for (config_id, account, marker) in [
+        ("claude-work", "work", "work-oauth"),
+        ("claude-personal", "personal", "personal-oauth"),
+    ] {
+        let source = temp.path().join(format!("src-{account}"));
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(
+            source.join(".claude.json"),
+            format!("{{\"oauthAccount\":{{\"accountId\":\"{marker}\"}}}}"),
+        )
+        .unwrap();
+        std::fs::write(
+            source.join(".credentials.json"),
+            format!("{{\"claudeAiOauth\":{{\"marker\":\"{marker}\"}}}}"),
+        )
+        .unwrap();
+        let mut binding = InstanceAuthBinding::new(
+            account,
+            Agent::Claude,
+            jackin_config::AuthForwardMode::Sync,
+            Some(source),
+        );
+        binding.key = config_id.to_owned();
+        bindings.push(binding);
+    }
+
+    let (state, _) = RoleState::prepare_for_bindings(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &bindings,
+        &crate::instance::GithubAuthContext::default(),
+        &host_home,
+        Agent::Claude,
+    )
+    .unwrap();
+
+    let mounts = agent_mounts(&state);
+    // Primary keeps legacy destinations; the secondary gets suffixed
+    // home + handoff dirs.
+    for expected in [
+        ":/home/agent/.claude",
+        ":/home/agent/.claude-claude-personal",
+        "/jackin/claude/credentials.json",
+        "/jackin/claude-claude-personal/credentials.json",
+        "/jackin/claude/account.json",
+        "/jackin/claude-claude-personal/account.json",
+    ] {
+        assert!(
+            mounts.iter().any(|m| m.contains(expected)),
+            "mount {expected} missing: {mounts:?}"
+        );
+    }
+    for mount in mounts
+        .iter()
+        .filter(|mount| mount.contains(":/jackin/claude"))
+    {
+        assert!(
+            mount.ends_with(":ro"),
+            "every Claude auth handoff must be read-only: {mount}"
+        );
+    }
+    std::fs::create_dir_all(state.root.join("credentials")).unwrap();
+    let apple_mounts = apple_agent_mounts(&state).unwrap();
+    assert!(apple_mounts.iter().any(|mount| {
+        mount.target == std::path::Path::new(jackin_protocol::ACCOUNT_CREDENTIALS_DIR)
+            && mount.readonly
+    }));
+    for mount in apple_mounts
+        .iter()
+        .filter(|mount| mount.target.to_string_lossy().starts_with("/jackin/claude"))
+    {
+        assert!(
+            mount.readonly,
+            "Apple auth store must be read-only: {mount:?}"
+        );
+    }
+    // The two slots stage their own source credentials, not copies
+    // of each other.
+    for (store, marker) in [
+        ("claude", "work-oauth"),
+        ("claude-claude-personal", "personal-oauth"),
+    ] {
+        let staged = std::fs::read_to_string(state.root.join(format!("{store}/credentials.json")))
+            .unwrap_or_else(|_| panic!("{store}/credentials.json missing: {mounts:?}"));
+        assert!(
+            staged.contains(marker),
+            "{store} staged the wrong account: {staged}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1152,7 +1360,7 @@ agents = ["amp"]
     assert!(
         mounts
             .iter()
-            .any(|m| m.contains("/jackin/amp/secrets.json") && !m.ends_with(":ro")),
+            .any(|m| m.contains("/jackin/amp/secrets.json") && m.ends_with(":ro")),
         "secrets.json handoff missing: {mounts:?}"
     );
 }
@@ -1240,6 +1448,7 @@ fn exec_binding_names_joins_names_in_order() {
 fn capsule_config_redacts_literal_exec_binding_source_only() {
     let secret = "literal-secret-must-not-reach-agent-toml";
     let config = jackin_protocol::CapsuleConfig {
+        workdir: "/workspace".to_owned(),
         exec_bindings: vec![
             jackin_protocol::ExecBinding {
                 name: "LITERAL_TOKEN".to_owned(),
@@ -1267,6 +1476,44 @@ fn capsule_config_redacts_literal_exec_binding_source_only() {
     assert_eq!(projected.exec_bindings[1].source, "op://vault/item/field");
     assert_eq!(projected.exec_bindings[2].source, "$HOST_TOKEN");
     assert_eq!(config.exec_bindings[0].source, secret);
+}
+
+#[test]
+fn capsule_config_handoff_rejects_root_ancestors_and_private_mount_ancestors() {
+    for workdir in ["/", "/home", "/jackin", "/workspace/../"] {
+        let config = jackin_protocol::CapsuleConfig {
+            workdir: workdir.to_owned(),
+            ..Default::default()
+        };
+        let error = capsule_config_contents(&config)
+            .expect_err("unsafe capsule workdir must not reach agent.toml");
+        assert!(
+            error.to_string().contains("protected"),
+            "unexpected rejection for {workdir}: {error:#}"
+        );
+    }
+
+    let config = jackin_protocol::CapsuleConfig {
+        workdir: "/workspace".to_owned(),
+        instance_mount_paths: std::collections::BTreeMap::from([(
+            "canary".to_owned(),
+            vec!["/workspace/private-slot".to_owned()],
+        )]),
+        ..Default::default()
+    };
+    let error = capsule_config_contents(&config)
+        .expect_err("workspace ancestor of private mount must be rejected");
+    assert!(error.to_string().contains("mount destination"));
+}
+
+#[test]
+fn capsule_config_handoff_preserves_an_ordinary_workspace() {
+    let config = jackin_protocol::CapsuleConfig {
+        workdir: "/workspace/project".to_owned(),
+        ..Default::default()
+    };
+    let serialized = capsule_config_contents(&config).expect("ordinary workdir is valid");
+    assert!(serialized.contains("workdir = \"/workspace/project\""));
 }
 
 #[cfg(unix)]
@@ -1834,6 +2081,26 @@ fn attach_failure_error_preserves_command_context() {
     assert!(error.contains("command failed: docker exec"), "{error}");
 }
 
+fn codex_trust_slot(
+    account_id: &str,
+    container_home_rel: &str,
+) -> crate::instance::ProvisionedInstanceAuth {
+    crate::instance::ProvisionedInstanceAuth {
+        agent: jackin_core::Agent::Codex,
+        account_id: account_id.to_owned(),
+        mode: jackin_config::AuthForwardMode::ApiKey,
+        home_dir: None,
+        credential_paths: Vec::new(),
+        forward_auth: false,
+        slot_suffix: None,
+        container_home_rel: container_home_rel.to_owned(),
+        container_store_rel: "codex".to_owned(),
+        folder_target: format!("/home/agent/{container_home_rel}"),
+        cache_source_dir: None,
+        container_cache_rel: None,
+    }
+}
+
 /// A Codex-authed role state rooted at `root` plus a workspace whose
 /// workdir (`/workspace`) and single mount (`/workspace/repo`) are the two
 /// paths `seed_codex_project_trust` should mark trusted.
@@ -1847,8 +2114,10 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
             model: None,
         },
         auth: crate::instance::ProvisionedAuth {
-            codex: Some(crate::instance::CodexAuth::default()),
-            ..Default::default()
+            slots: std::collections::BTreeMap::from([(
+                "work@codex".to_owned(),
+                codex_trust_slot("work", ".codex"),
+            )]),
         },
         auth_outcomes: std::collections::BTreeMap::new(),
     };
@@ -1868,6 +2137,40 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
         mount_heal: jackin_config::MountHealReport::default(),
     };
     (state, workspace)
+}
+
+#[test]
+fn seed_codex_project_trust_seeds_every_codex_slot() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("state");
+    let primary = root.join("home/.codex");
+    let secondary = root.join("home/.codex-personal");
+    std::fs::create_dir_all(&primary).unwrap();
+    std::fs::create_dir_all(&secondary).unwrap();
+    std::fs::write(primary.join("config.toml"), "model = \"work-model\"\n").unwrap();
+    std::fs::write(
+        secondary.join("config.toml"),
+        "model = \"personal-model\"\n",
+    )
+    .unwrap();
+    let (mut state, workspace) = codex_trust_fixture(&root);
+    state.auth.slots.insert(
+        "personal@codex".to_owned(),
+        codex_trust_slot("personal", ".codex-personal"),
+    );
+
+    seed_codex_project_trust(&state, &workspace).unwrap();
+
+    for (path, model) in [
+        (&primary.join("config.toml"), "work-model"),
+        (&secondary.join("config.toml"), "personal-model"),
+    ] {
+        let config = std::fs::read_to_string(path).unwrap();
+        assert!(config.contains(format!("model = \"{model}\"").as_str()));
+        assert!(config.contains("[projects.\"/workspace\"]"));
+        assert!(config.contains("[projects.\"/workspace/repo\"]"));
+        assert_eq!(config.matches("trust_level = \"trusted\"").count(), 2);
+    }
 }
 
 #[test]
@@ -2314,6 +2617,24 @@ async fn load_namespaced_agent_registers_source_and_trusts_on_accept() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"default_launch = ["claude-main"]
+
+[accounts.test]
+name = "Test"
+provider = "anthropic"
+[accounts.test.credential]
+type = "api_key"
+value = "test-key"
+
+[agent_configurations.claude-main]
+agent = "claude"
+account = "test"
+"#,
+    )
+    .unwrap();
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
     let mut runner =
@@ -2400,8 +2721,8 @@ plugins = ["code-review@claude-plugins-official"]
         toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
     assert_eq!(capsule_config.role, "chainargos/the-architect");
     assert_eq!(capsule_config.workdir, workspace.workdir);
-    assert_eq!(capsule_config.agents, vec!["claude"]);
-    assert_eq!(capsule_config.models.get("claude").unwrap(), "sonnet");
+    assert_eq!(capsule_config.instances, vec!["claude-main"]);
+    assert_eq!(capsule_config.models.get("claude-main").unwrap(), "sonnet");
     assert!(
         !runner
             .recorded
@@ -2430,6 +2751,24 @@ async fn role_container_never_mounts_host_docker_socket() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"default_launch = ["claude-main"]
+
+[accounts.test]
+name = "Test"
+provider = "anthropic"
+[accounts.test.credential]
+type = "api_key"
+value = "test-key"
+
+[agent_configurations.claude-main]
+agent = "claude"
+account = "test"
+"#,
+    )
+    .unwrap();
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
     let mut runner =
@@ -2577,10 +2916,9 @@ plugins = []
     std::fs::create_dir_all(&mount_src).unwrap();
     std::fs::create_dir_all(&paths.config_dir).unwrap();
 
-    let config_content = r#"[roles."chainargos/agent-brown"]
-git = "git@github.com:chainargos/jackin-agent-brown.git"
-trusted = true
-"#;
+    let config_content = format!(
+        "{SINGLETON_CLAUDE_TOML}[roles.\"chainargos/agent-brown\"]\ngit = \"git@github.com:chainargos/jackin-agent-brown.git\"\ntrusted = true\n"
+    );
     std::fs::write(&paths.config_file, config_content).unwrap();
     let mut config = AppConfig::load_or_init(&paths).unwrap();
 
@@ -2634,6 +2972,7 @@ async fn load_agent_runs_attached_without_runtime_plugins_mount() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -2746,6 +3085,19 @@ trusted = true
     config
         .account_bindings
         .insert(jackin_core::Agent::Codex, "coding".into());
+    config.agent_configurations.insert(
+        "codex-main".into(),
+        jackin_config::AgentConfiguration {
+            agent: jackin_core::Agent::Codex,
+            account: "coding".into(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+    config.default_launch = Some(vec!["codex-main".into()]);
+    std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
 
@@ -2816,8 +3168,8 @@ model = "gpt-5"
         "JACKIN_AGENT must not be a container env var"
     );
     assert!(
-        run_cmd.ends_with(" codex"),
-        "initial agent must be passed as container argv"
+        run_cmd.ends_with(" codex-main"),
+        "initial instance must be passed as container argv"
     );
     assert!(!run_cmd.contains("/jackin/codex/config.toml"));
     // Multi-agent role `agents = ["claude", "codex"]` provisions and mounts
@@ -2826,17 +3178,19 @@ model = "gpt-5"
     assert!(run_cmd.contains("/home/agent/.codex"));
     let container_name = launched_role_container_name(&runner);
     let credentials: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(
-            paths
-                .data_dir
-                .join(&container_name)
-                .join("credentials/account-credentials.json"),
-        )
+        &std::fs::read(paths.data_dir.join(&container_name).join(format!(
+            "credentials/{}",
+            jackin_protocol::account_credentials_filename("codex-main")
+        )))
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(credentials["codex"]["OPENAI_API_KEY"], "test-openai-key");
-    assert!(credentials.get("claude").is_none());
+    assert_eq!(credentials["schema_version"], 1);
+    assert_eq!(
+        credentials["credential"]["env"]["OPENAI_API_KEY"],
+        "test-openai-key"
+    );
+    assert_eq!(credentials["instance"], "codex-main");
     assert!(!run_cmd.contains("test-openai-key"));
     let codex_config = std::fs::read_to_string(
         paths
@@ -2859,7 +3213,9 @@ async fn load_agent_succeeds_when_sibling_agent_has_multiple_accounts() {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
-        r#"[roles.multi-agent-role]
+        r#"default_launch = ["claude-selected"]
+
+[roles.multi-agent-role]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
@@ -2883,6 +3239,10 @@ provider = "anthropic"
 [accounts.claude-main.credential]
 type = "api_key"
 value = "claude-key"
+
+[agent_configurations.claude-selected]
+agent = "claude"
+account = "claude-main"
 
 [workspaces.my-workspace]
 workdir = "/workspace"
@@ -2951,17 +3311,19 @@ model = "gpt-5"
 
     let container_name = launched_role_container_name(&runner);
     let credentials: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(
-            paths
-                .data_dir
-                .join(&container_name)
-                .join("credentials/account-credentials.json"),
-        )
+        &std::fs::read(paths.data_dir.join(&container_name).join(format!(
+            "credentials/{}",
+            jackin_protocol::account_credentials_filename("claude-selected")
+        )))
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(credentials["claude"]["ANTHROPIC_API_KEY"], "claude-key");
-    assert!(credentials.get("codex").is_none());
+    assert_eq!(credentials["schema_version"], 1);
+    assert_eq!(
+        credentials["credential"]["env"]["ANTHROPIC_API_KEY"],
+        "claude-key"
+    );
+    assert_eq!(credentials["instance"], "claude-selected");
 
     let capsule_config_path = paths
         .jackin_home
@@ -2970,9 +3332,11 @@ model = "gpt-5"
         .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
     let capsule_config: jackin_protocol::CapsuleConfig =
         toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
-    assert_eq!(capsule_config.agents, vec!["claude", "codex"]);
-    assert_eq!(capsule_config.auth_modes.get("claude").unwrap(), "api_key");
-    assert_eq!(capsule_config.auth_modes.get("codex").unwrap(), "ignore");
+    assert_eq!(capsule_config.instances, vec!["claude-selected"]);
+    assert_eq!(
+        capsule_config.auth_modes.get("claude-selected").unwrap(),
+        "api_key"
+    );
 }
 
 /// Codex CLI drives interactive `ChatGPT` login when no API key is
@@ -2983,12 +3347,34 @@ async fn load_agent_launches_codex_without_openai_key() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
+    // Profile admission preserves the test's intent: Codex launches with no
+    // API key anywhere (sync mode stages a home, never an env secret).
+    let profile_dir = temp.path().join("codex-profile");
+    std::fs::create_dir_all(&profile_dir).unwrap();
+    std::fs::write(profile_dir.join("auth.json"), "{}\n").unwrap();
     std::fs::write(
         &paths.config_file,
-        r#"[roles.agent-smith]
+        format!(
+            r#"default_launch = ["codex-main"]
+
+[accounts.coding]
+name = "Coding"
+provider = "openai"
+[accounts.coding.credential]
+type = "profile"
+agent = "codex"
+directory = "{}"
+
+[agent_configurations.codex-main]
+agent = "codex"
+account = "coding"
+
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
+            profile_dir.display()
+        ),
     )
     .unwrap();
     let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -3038,8 +3424,8 @@ agents = ["codex"]
         "JACKIN_AGENT must not be a container env var"
     );
     assert!(
-        run_cmd.ends_with(" codex"),
-        "initial agent must be passed as container argv"
+        run_cmd.ends_with(" codex-main"),
+        "initial instance must be passed as container argv"
     );
     assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
 }
@@ -3054,17 +3440,20 @@ struct LoadAgentFixture {
     docker: jackin_test_support::FakeDockerClient,
 }
 
-fn load_agent_fixture(manifest_body: &str) -> LoadAgentFixture {
+fn load_agent_fixture(manifest_body: &str, admission_toml: Option<&str>) -> LoadAgentFixture {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
-        r#"[roles.agent-smith]
+        format!(
+            r#"{}[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
+            admission_toml.unwrap_or_default()
+        ),
     )
     .unwrap();
     let config = AppConfig::load_or_init(&paths).unwrap();
@@ -3092,7 +3481,7 @@ trusted = true
 
 #[tokio::test]
 async fn load_agent_uses_single_supported_agent_without_workspace_default() {
-    let mut f = load_agent_fixture(CODEX_ONLY_MANIFEST);
+    let mut f = load_agent_fixture(CODEX_ONLY_MANIFEST, Some(CODEX_ADMISSION_TOML));
     load_role(
         &f.paths,
         &mut f.config,
@@ -3116,14 +3505,14 @@ async fn load_agent_uses_single_supported_agent_without_workspace_default() {
         .last()
         .expect("docker run command must have at least one argument");
     assert_eq!(
-        last_positional, "codex",
-        "single supported agent must become the initial runtime: {run_cmd}"
+        last_positional, "codex-main",
+        "single supported agent's instance must become the initial runtime: {run_cmd}"
     );
 }
 
 #[tokio::test]
 async fn load_agent_bails_when_multi_agent_choice_has_no_rich_dialog() {
-    let mut f = load_agent_fixture(MULTI_AGENT_MANIFEST);
+    let mut f = load_agent_fixture(MULTI_AGENT_MANIFEST, None);
     let error = load_role(
         &f.paths,
         &mut f.config,
@@ -3148,7 +3537,7 @@ async fn load_agent_bails_when_multi_agent_choice_has_no_rich_dialog() {
 
 #[tokio::test]
 async fn load_agent_bails_when_sensitive_mount_has_no_rich_dialog() {
-    let mut f = load_agent_fixture(CODEX_ONLY_MANIFEST);
+    let mut f = load_agent_fixture(CODEX_ONLY_MANIFEST, None);
     f.workspace.mounts.push(jackin_config::MountConfig {
         src: "/home/operator/.ssh".to_owned(),
         dst: "/host/ssh".to_owned(),
@@ -3181,6 +3570,7 @@ async fn load_agent_bails_when_manifest_declares_no_supported_agents() {
 dockerfile = "Dockerfile"
 agents = []
 "#,
+        None,
     );
     let error = load_role(
         &f.paths,
@@ -3430,6 +3820,7 @@ async fn load_agent_uses_resolved_workspace_mounts_and_workdir() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3507,6 +3898,7 @@ async fn load_agent_bakes_host_uid_not_gid_into_docker_build() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -3621,29 +4013,29 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
-    if let Some(run_as_user) = crate::runtime::identity::host_run_as_user() {
-        assert!(
-            run_call.contains(&format!("--user {run_as_user} --group-add 0")),
-            "role docker run must use host UID/GID plus supplementary group 0: {run_call}"
-        );
-        assert!(
-            run_call.contains("/var/lib/extrausers/passwd:ro"),
-            "role docker run must mount runtime passwd entry: {run_call}"
-        );
-        assert!(
-            run_call.contains("/var/lib/extrausers/group:ro"),
-            "role docker run must mount runtime group entry: {run_call}"
-        );
+    assert!(
+        run_call.contains("--user 0:0"),
+        "role docker run must start the root capsule supervisor: {run_call}"
+    );
+    assert!(
+        !run_call.contains("--group-add 0"),
+        "role docker run must not make every session a shared group-0 process: {run_call}"
+    );
+    assert!(
+        run_call.contains("/var/lib/extrausers/passwd:ro"),
+        "role docker run must mount runtime passwd entry: {run_call}"
+    );
+    assert!(
+        run_call.contains("/var/lib/extrausers/group:ro"),
+        "role docker run must mount runtime group entry: {run_call}"
+    );
 
-        let passwd = std::fs::read_to_string(paths.jackin_home.join("extrausers/passwd")).unwrap();
-        let group = std::fs::read_to_string(paths.jackin_home.join("extrausers/group")).unwrap();
-        let (uid, gid) = run_as_user.split_once(':').unwrap();
-        assert_eq!(
-            passwd,
-            format!("agent:x:{uid}:{gid}:agent:/home/agent:/bin/zsh\n")
-        );
-        assert_eq!(group, format!("agent-host:x:{gid}:agent\n"));
-    }
+    let passwd = std::fs::read_to_string(paths.jackin_home.join("extrausers/passwd")).unwrap();
+    let group = std::fs::read_to_string(paths.jackin_home.join("extrausers/group")).unwrap();
+    assert!(passwd.contains("jackin-slot-0:x:2000:2000:"), "{passwd}");
+    assert!(passwd.contains("jackin-shell:x:2001:2001:"), "{passwd}");
+    assert!(group.contains("jackin-slot-0:x:2000:"), "{group}");
+    assert!(group.contains("jackin-shell:x:2001:"), "{group}");
 }
 
 #[tokio::test]
@@ -3654,6 +4046,7 @@ async fn load_agent_tags_fresh_published_image_as_local_base() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let role_sha = "21a9002";
@@ -3740,6 +4133,7 @@ async fn load_agent_builds_local_role_base_then_derives_overlay_from_it() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -3829,6 +4223,7 @@ async fn load_agent_omits_pull_flag_in_normal_workspace_build() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -3962,6 +4357,7 @@ plugins = []
 async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -4050,6 +4446,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
 async fn load_agent_refresh_background_reuses_valid_local_image_and_skips_build_work() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -4238,6 +4635,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -4314,6 +4712,7 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -4410,6 +4809,7 @@ async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -4477,6 +4877,7 @@ async fn load_agent_skips_unselected_account_credential_refs() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.accounts.insert(
         "unused".into(),
@@ -4550,6 +4951,7 @@ async fn load_agent_skips_non_required_manifest_credential_prompts() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -4643,6 +5045,7 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let mut github_env = std::collections::BTreeMap::new();
     github_env.insert(
@@ -4720,6 +5123,7 @@ async fn load_agent_skips_unused_github_env_resolution() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let mut github_env = std::collections::BTreeMap::new();
     github_env.insert(
@@ -5074,6 +5478,7 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
@@ -5346,6 +5751,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
 async fn load_agent_recreates_missing_current_instance_from_valid_image_without_build() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let agent = jackin_core::Agent::Claude;
@@ -5357,6 +5763,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
         jackin_config::WorkspaceConfig {
             workdir: "/workspace".to_owned(),
             mounts: repo_workspace(&cached_repo.repo_dir).mounts,
+            accounts: vec!["test".to_owned()],
             ..jackin_config::WorkspaceConfig::default()
         },
     );
@@ -5431,6 +5838,7 @@ async fn load_agent_passes_pull_flag_when_rebuild() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -5493,6 +5901,7 @@ async fn load_agent_rebuild_does_not_attach_running_current_instance() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.workspaces.insert(
         "workspace".to_owned(),
@@ -5572,6 +5981,7 @@ async fn load_agent_passes_pull_flag_with_published_image() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let role_sha = "21a9002";
@@ -5647,6 +6057,7 @@ async fn load_agent_uses_prebuilt_when_construct_version_matches() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let role_sha = "21a9002";
@@ -5714,6 +6125,7 @@ async fn load_agent_falls_back_to_workspace_when_role_sha_label_missing() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     // The published image does not carry the current role SHA, triggering
@@ -5781,6 +6193,7 @@ async fn load_agent_uses_prebuilt_when_role_sha_matches_without_construct_versio
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let role_sha = "21a9002";
@@ -5849,6 +6262,7 @@ async fn load_agent_ignores_published_image_when_rebuild() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -5902,6 +6316,7 @@ async fn load_agent_rolls_back_runtime_on_attached_run_failure() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner {
@@ -5989,6 +6404,7 @@ async fn load_agent_checks_dind_readiness() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -6073,6 +6489,7 @@ async fn load_agent_configures_dind_with_tls() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -6202,6 +6619,7 @@ async fn load_agent_adds_dind_to_no_proxy_when_proxy_is_configured() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.env.insert(
         "HTTPS_PROXY".to_owned(),
@@ -6373,6 +6791,7 @@ async fn run_load_with_env(entries: &[(&str, &str)]) -> (String, String, tempfil
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     for (k, v) in entries {
         config.env.insert(
@@ -6450,6 +6869,7 @@ async fn load_agent_sets_display_name_label() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -6508,6 +6928,7 @@ async fn load_agent_emits_keep_awake_label_when_workspace_opted_in() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -6572,6 +6993,7 @@ async fn load_agent_omits_keep_awake_label_when_workspace_opted_out() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -6635,6 +7057,7 @@ async fn load_agent_sets_claude_env_to_jackin() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -6706,6 +7129,7 @@ async fn load_agent_writes_instance_manifest() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -6771,6 +7195,7 @@ async fn load_agent_forwards_telemetry_without_debug_alias() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
@@ -6831,6 +7256,7 @@ async fn load_agent_injects_coauthor_trailer_env_when_enabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.git.coauthor_trailer = true;
     let selector = RoleSelector::new(None, "agent-smith");
@@ -6884,6 +7310,7 @@ async fn load_agent_omits_coauthor_trailer_env_when_disabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -6936,6 +7363,7 @@ async fn load_agent_injects_dco_env_when_enabled() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.git.dco = true;
     let selector = RoleSelector::new(None, "agent-smith");
@@ -7062,14 +7490,17 @@ async fn load_agent_injects_global_operator_env_literal() {
     // Seed a config.toml with a global operator env map.
     std::fs::write(
         &paths.config_file,
-        r#"[env]
+        format!(
+            "{SINGLETON_CLAUDE_TOML}{}",
+            r#"[env]
 OPERATOR_SMOKE = "smoke-literal"
 ON_DEMAND_LITERAL = { value = "on-demand-literal-secret", on_demand = true }
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
-"#,
+"#
+        ),
     )
     .unwrap();
 
@@ -7183,6 +7614,19 @@ trusted = true
     config
         .account_bindings
         .insert(jackin_core::Agent::Claude, "coding".into());
+    config.agent_configurations.insert(
+        "claude-main".into(),
+        jackin_config::AgentConfiguration {
+            agent: jackin_core::Agent::Claude,
+            account: "coding".into(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+    config.default_launch = Some(vec!["claude-main".into()]);
+    std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([
         String::new(),
@@ -7254,17 +7698,18 @@ plugins = []
     assert!(!observed.contents.contains("super-secret-zai-key"));
     #[cfg(unix)]
     assert_eq!(observed.mode, 0o600);
-    let credentials_path = paths
-        .data_dir
-        .join(&container_name)
-        .join("credentials/account-credentials.json");
+    let credentials_path = paths.data_dir.join(&container_name).join(format!(
+        "credentials/{}",
+        jackin_protocol::account_credentials_filename("claude-main")
+    ));
     let credentials: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
+    assert_eq!(credentials["schema_version"], 1);
     assert_eq!(
-        credentials["claude"]["ANTHROPIC_AUTH_TOKEN"],
+        credentials["credential"]["env"]["ANTHROPIC_AUTH_TOKEN"],
         "super-secret-zai-key"
     );
-    assert_eq!(credentials.as_object().unwrap().len(), 1);
+    assert_eq!(credentials["instance"], "claude-main");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -7290,7 +7735,9 @@ async fn load_agent_injects_mise_trusted_paths_for_any_workspace() {
 
     std::fs::write(
         &paths.config_file,
-        r#"[roles.agent-smith]
+        format!(
+            "{SINGLETON_CLAUDE_TOML}{}",
+            r#"[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
@@ -7300,7 +7747,8 @@ workdir = "/workspace"
 [[workspaces.sample-workspace.mounts]]
 src = "/tmp"
 dst = "/workspace"
-"#,
+"#
+        ),
     )
     .unwrap();
 
@@ -7407,13 +7855,16 @@ async fn load_agent_operator_env_overrides_manifest_env() {
 
     std::fs::write(
         &paths.config_file,
-        r#"[env]
+        format!(
+            "{SINGLETON_CLAUDE_TOML}{}",
+            r#"[env]
 OPERATOR_SMOKE = "operator-wins"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
-"#,
+"#
+        ),
     )
     .unwrap();
 
@@ -7497,13 +7948,16 @@ async fn load_agent_injects_host_ref_operator_env() {
     // `unsafe_code = "forbid"` lint forbids.
     std::fs::write(
         &paths.config_file,
-        r#"[env]
+        format!(
+            "{SINGLETON_CLAUDE_TOML}{}",
+            r#"[env]
 FROM_HOST = "$JACKIN_PR2_SMOKE_HOST_VAR"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
-"#,
+"#
+        ),
     )
     .unwrap();
 
@@ -7607,13 +8061,16 @@ async fn load_agent_injects_op_cli_resolved_value() {
 
     std::fs::write(
         &paths.config_file,
-        r#"[env]
+        format!(
+            "{SINGLETON_CLAUDE_TOML}{}",
+            r#"[env]
 OPERATOR_TOKEN = {op = "op://abc-vault/abc-item/api-token", path = "Personal/api/token"}
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
-"#,
+"#
+        ),
     )
     .unwrap();
 
@@ -8327,17 +8784,8 @@ async fn format_attach_outcome_names_running_exit_and_oom() {
 #[test]
 fn unassigned_accounts_never_forward_host_auth() {
     let cfg = AppConfig::default();
-    let trace = super::capsule_setup::account_auth_selections(
-        &cfg,
-        None,
-        "smith",
-        &[jackin_core::Agent::Claude],
-    )
-    .unwrap();
-    assert_eq!(
-        trace[&jackin_core::Agent::Claude],
-        (jackin_config::AuthForwardMode::Ignore, None)
-    );
+    let trace = super::capsule_setup::account_auth_selections(&cfg, &[]).unwrap();
+    assert!(trace.is_empty());
 }
 
 #[test]
@@ -8354,6 +8802,8 @@ fn assigned_account_resolves_mode_and_profile_together() {
             credential: AccountCredential::Profile {
                 agent: Agent::Codex,
                 directory: "/accounts/work".into(),
+                xdg_roots: None,
+                source_selector: None,
             },
         },
     );
@@ -8365,23 +8815,17 @@ fn assigned_account_resolves_mode_and_profile_together() {
         },
     );
     let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
-    let selections = super::capsule_setup::account_auth_selections(
-        &cfg,
-        Some(&proj),
-        "builder",
-        &[Agent::Codex, Agent::Claude],
-    )
-    .unwrap();
+    let instances =
+        jackin_config::resolve_launch(&cfg, Some(&proj), "builder", None, None).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].config_id, "work@codex");
+    let selections = super::capsule_setup::account_auth_selections(&cfg, &instances).unwrap();
     assert_eq!(
-        selections[&Agent::Codex],
+        selections["work@codex"],
         (
             jackin_config::AuthForwardMode::Sync,
             Some("/accounts/work".into())
         )
-    );
-    assert_eq!(
-        selections[&Agent::Claude],
-        (jackin_config::AuthForwardMode::Ignore, None)
     );
 }
 
@@ -9071,6 +9515,24 @@ async fn programmatic_launch_without_a_trust_grant_fails_before_docker() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"default_launch = ["claude-main"]
+
+[accounts.test]
+name = "Test"
+provider = "anthropic"
+[accounts.test.credential]
+type = "api_key"
+value = "test-key"
+
+[agent_configurations.claude-main]
+agent = "claude"
+account = "test"
+"#,
+    )
+    .unwrap();
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
     let workspace = programmatic_role_fixture(&paths, &selector);
@@ -9106,6 +9568,24 @@ async fn programmatic_launch_without_an_agent_fails_before_docker() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"default_launch = ["claude-main"]
+
+[accounts.test]
+name = "Test"
+provider = "anthropic"
+[accounts.test.credential]
+type = "api_key"
+value = "test-key"
+
+[agent_configurations.claude-main]
+agent = "claude"
+account = "test"
+"#,
+    )
+    .unwrap();
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
     config.roles.insert(
@@ -9147,6 +9627,24 @@ async fn programmatic_launch_refuses_a_role_branch_before_docker() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"default_launch = ["claude-main"]
+
+[accounts.test]
+name = "Test"
+provider = "anthropic"
+[accounts.test.credential]
+type = "api_key"
+value = "test-key"
+
+[agent_configurations.claude-main]
+agent = "claude"
+account = "test"
+"#,
+    )
+    .unwrap();
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
     config.roles.insert(
@@ -9189,6 +9687,25 @@ fn metadata_file_mount_instances_require_recreation_after_layout_change() {
     use std::fmt::Write as _;
     let temp = tempdir().unwrap();
     let config = AppConfig::default();
+    let manifest = crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+        container_base: "fixture",
+        workspace_name: None,
+        workspace_label: "fixture",
+        workdir: "/workspace",
+        host_workdir_fingerprint: "fixture",
+        role_key: "role",
+        role_display_name: "Role",
+        agent_runtime: jackin_core::Agent::Claude,
+        role_source_git: "",
+        role_source_ref: None,
+        image_tag: "fixture",
+        docker: crate::instance::DockerResources::from_container_name("fixture"),
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    });
+    manifest.write(temp.path()).unwrap();
     let old_policy = serde_json::to_vec(&serde_json::json!([
         "account-config-v1",
         {},
@@ -9203,7 +9720,7 @@ fn metadata_file_mount_instances_require_recreation_after_layout_change() {
     }
     std::fs::write(temp.path().join("account-config.sha256"), old_digest).unwrap();
     assert!(!super::account_configuration_matches(temp.path(), &config, None, "role").unwrap());
-    let current = super::account_configuration_fingerprint(&config, None, "role").unwrap();
+    let current = super::account_configuration_fingerprint(&config, None, "role", &[]).unwrap();
     std::fs::write(temp.path().join("account-config.sha256"), current).unwrap();
     assert!(super::account_configuration_matches(temp.path(), &config, None, "role").unwrap());
 }

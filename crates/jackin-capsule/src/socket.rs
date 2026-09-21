@@ -60,6 +60,9 @@ const MAX_CONCURRENT_CLIENTS: usize = 16;
 /// clients paired with the concurrency-cap permit. The caller (daemon)
 /// must hold the permit alive for the lifetime of the spawned attach
 /// task so the per-process cap correctly tracks live connections.
+/// # Errors
+///
+/// Returns an error when the socket directory or listener cannot be created.
 pub fn start_listener() -> Result<ListenerReceiver> {
     start_listener_at(Path::new(SOCKET_PATH))
 }
@@ -118,19 +121,18 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
         // Parent dir 0o700 so only the owner can list/connect. The socket
         // file itself gets 0o600 after bind, but on a system where the
         // parent dir is world-x an attacker can still enumerate the path.
-        // Lock both. The dir is host-owned and the capsule runs as that
-        // same UID (`--user` on docker run), so the owner can set this.
+        // Lock both. The dir is host-owned and the root capsule supervisor
+        // (`--user 0:0`) owns the bind-mounted socket path, so it can set this.
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
             .with_context(|| format!("locking socket parent {} to 0o700", parent.display()))?;
     }
 
     let listener = UnixListener::bind(path)?;
-    // Lock the socket to owner-only. Without this, any in-container
-    // process that shares the agent uid (and any process running as a
-    // different uid if the umask is generous) can connect and inject
-    // `ClientFrame::Input` straight into the focused PTY. The attach
-    // channel has no authentication beyond file-mode. Hard error: the
-    // capsule always owns the socket file it just created.
+    // Lock the socket to owner-only as defense in depth. The daemon also
+    // authenticates each peer with Unix credentials because the session
+    // wrapper retains CAP_DAC_OVERRIDE, so file mode alone cannot identify an
+    // operator. Hard error: the capsule always owns the socket file it just
+    // created.
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("locking socket {} to 0o600", path.display()))?;
     let (tx, rx) = mpsc::unbounded_channel();
@@ -212,6 +214,10 @@ const CONTROL_READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// callers can clog the underlying cause; a silently-collapsed None
 /// would let the host's `jackin status` block on `read_exact` for a
 /// reply that never comes.
+/// # Errors
+///
+/// Returns an error when the length prefix or payload times out, the payload
+/// exceeds its limit, or JSON decoding fails.
 pub async fn read_control_msg(
     stream: &mut UnixStream,
     first_byte: u8,
@@ -266,6 +272,9 @@ async fn read_payload_lazy(
     Ok(buf)
 }
 
+/// # Errors
+///
+/// Returns an error when writing the framed response times out or fails.
 pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) -> Result<()> {
     write_control_frame(&mut stream, reply).await
 }
@@ -273,6 +282,9 @@ pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) -> R
 /// Write one framed `ServerMsg` without consuming the stream. Subscriptions
 /// (`events`) write many frames over one connection, so they borrow; the
 /// one-shot path calls this once and drops the stream afterwards.
+/// # Errors
+///
+/// Returns an error when the framed response write times out or fails.
 pub async fn write_control_frame(stream: &mut UnixStream, reply: &ServerMsg) -> Result<()> {
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
         Ok(result) => result.context("control reply write failed"),

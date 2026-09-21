@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io::Cursor;
+use std::{io::Cursor, time::Duration};
 
 use jackin_protocol::attach::{
     ClientFrame, ClientTerminal, ClipboardImageFormat, ServerFrame, SpawnRequest, encode_server,
@@ -513,7 +513,7 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
     let (client_reader, client_writer) = tokio::io::split(client);
     let mut output = Vec::new();
     let request = HostAttachRequest {
-        spawn_request: Some(SpawnRequest::Agent("codex".to_owned())),
+        spawn_request: Some(SpawnRequest::Instance("codex".to_owned())),
         focus_session: Some(42),
         env: vec![("JACKIN_GIT_DCO".to_owned(), "1".to_owned())],
         terminal: ClientTerminal {
@@ -576,7 +576,7 @@ async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
             context: Some(Box::new(jackin_protocol::TelemetryContext::v1())),
             rows: 30,
             cols: 100,
-            spawn: Some(SpawnRequest::Agent("codex".to_owned())),
+            spawn: Some(SpawnRequest::Instance("codex".to_owned())),
             env: vec![("JACKIN_GIT_DCO".to_owned(), "1".to_owned())],
             focus_session: Some(42),
             terminal: ClientTerminal {
@@ -1269,22 +1269,30 @@ async fn host_notice_writer_bounds_overlong_message() {
 async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
     let (mut client, mut server) = duplex(MAX_CLIPBOARD_IMAGE_ERROR_BYTES + 64);
     let message = format!("{}{}", "b".repeat(MAX_CLIPBOARD_IMAGE_ERROR_BYTES), "é");
-    let mut operations = HashMap::new();
+    // The bounded peer must drain while the writer is active: production peers
+    // read concurrently, and a sequential test peer deadlocks on the second
+    // frame when contextual attach telemetry fills the duplex buffer.
 
-    send_clipboard_image_error(&mut client, &mut operations, &message)
-        .await
-        .unwrap();
-    send_clipboard_image_error(&mut client, &mut operations, "   ")
-        .await
-        .unwrap();
-    drop(client);
+    let writer = async {
+        let mut operations = HashMap::new();
+        send_clipboard_image_error(&mut client, &mut operations, &message).await?;
+        send_clipboard_image_error(&mut client, &mut operations, "   ").await
+    };
+    let first_frame = async {
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await?;
+        read_client_frame(&mut server, tag[0])
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("expected first ClipboardImageError frame"))
+    };
+    let (write_result, first_result) = tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::join!(writer, first_frame)
+    })
+    .await
+    .expect("clipboard image error writer and reader must make progress together");
+    write_result.unwrap();
+    let frame = first_result.unwrap();
 
-    let mut tag = [0u8; 1];
-    server.read_exact(&mut tag).await.unwrap();
-    let frame = read_client_frame(&mut server, tag[0])
-        .await
-        .unwrap()
-        .unwrap();
     let ClientFrame::AttachControl(AttachControlRequest {
         operation: AttachControlOperation::ClipboardImageError(error),
         ..
@@ -1295,6 +1303,7 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
     assert_eq!(error.message().len(), MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
     assert!(error.message().ends_with("..."));
 
+    let mut tag = [0u8; 1];
     server.read_exact(&mut tag).await.unwrap();
     let frame = read_client_frame(&mut server, tag[0])
         .await

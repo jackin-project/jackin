@@ -172,7 +172,10 @@ impl Dialog {
         crate::tui::components::dialog_widgets::usage_tab_strip_index_at(&tabs, tab_area, col0)
     }
 
-    pub(super) fn usage_provider_tab_target(&mut self, step: isize) -> Option<String> {
+    pub(super) fn usage_provider_tab_target(
+        &mut self,
+        step: isize,
+    ) -> Option<jackin_protocol::control::UsageProviderTab> {
         let Self::Usage { view, selected, .. } = self else {
             return None;
         };
@@ -186,7 +189,7 @@ impl Dialog {
             } else {
                 view.tabs.last()
             };
-            return target.map(|tab| tab.label.clone());
+            return target.cloned();
         }
         let current = view.tabs.iter().position(|tab| tab.active).unwrap_or(0);
         if step < 0 && current == 0 {
@@ -201,7 +204,7 @@ impl Dialog {
         } else {
             current - 1
         };
-        Some(view.tabs[next].label.clone())
+        view.tabs.get(next).cloned()
     }
 
     #[cfg(test)]
@@ -227,6 +230,7 @@ impl Dialog {
         )
     }
 
+    #[must_use]
     pub fn new_usage(view: jackin_protocol::control::FocusedUsageView) -> Self {
         Self::new_usage_with_tab(view, UsageDialogTab::Provider)
     }

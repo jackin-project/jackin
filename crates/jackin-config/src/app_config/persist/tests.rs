@@ -3,7 +3,10 @@
 
 //! Tests for `persist`.
 use super::*;
-use crate::persist::{acquire_config_write_lock, atomic_write};
+use crate::persist::{
+    StagedDelete, acquire_config_write_lock, atomic_write, leak_staged_writes,
+    publication_journal_path, stage_atomic_write, write_publication_journal,
+};
 use crate::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
 use jackin_core::JackinPaths;
 use std::path::Path;
@@ -341,6 +344,50 @@ LOCAL = "only-prod"
 }
 
 #[test]
+fn load_migrates_legacy_global_agent_tables_before_embedded_split() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[claude]
+auth_forward = "sync"
+
+[roles.builder]
+git = "https://example.test/builder.git"
+
+[roles.builder.codex]
+auth_forward = "sync"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+
+[[workspaces.prod.mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+"#,
+    )
+    .unwrap();
+
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    assert_eq!(
+        config.roles["builder"].git,
+        "https://example.test/builder.git"
+    );
+    assert!(config.workspaces.contains_key("prod"));
+
+    let global = std::fs::read_to_string(&paths.config_file).unwrap();
+    assert!(
+        !global.contains("[claude]"),
+        "legacy agent table survived: {global}"
+    );
+    assert!(
+        !global.contains("roles.builder.codex") && !global.contains("[roles.builder.codex]"),
+        "legacy role agent table survived: {global}"
+    );
+}
+
+#[test]
 fn load_preserves_legacy_workspace_op_account_onto_refs() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -376,6 +423,66 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
         !workspace.contains("op_account"),
         "root op_account must be removed after the move:\n{workspace}"
     );
+}
+
+#[test]
+fn embedded_workspace_runs_supported_migrations_before_deserialization() {
+    let raw = include_str!("../../fixtures/config.embedded_workspace_legacy.toml");
+    let (config, embedded) = parse_global_config(raw.as_bytes()).unwrap();
+
+    assert_eq!(config.version, CURRENT_CONFIG_VERSION);
+    assert_eq!(
+        config.account_scan_exclusions,
+        std::collections::BTreeSet::from(["removed-account-fingerprint".to_owned()])
+    );
+    let workspace = embedded.get("legacy").unwrap();
+    assert_eq!(workspace.version, CURRENT_WORKSPACE_VERSION);
+    assert!(workspace.roles.is_empty());
+}
+
+#[test]
+fn split_embedded_workspace_migration_preserves_global_fields_and_is_idempotent() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let raw = include_str!("../../fixtures/config.embedded_workspace_legacy.toml");
+
+    let config = load_split_config(&paths, Some(raw.to_owned())).unwrap();
+    assert_eq!(config.version, CURRENT_CONFIG_VERSION);
+    assert!(
+        config
+            .account_scan_exclusions
+            .contains("removed-account-fingerprint")
+    );
+
+    let global = std::fs::read_to_string(&paths.config_file).unwrap();
+    let global_value: toml::Value = toml::from_str(&global).unwrap();
+    assert_eq!(
+        global_value["version"].as_str(),
+        Some(CURRENT_CONFIG_VERSION)
+    );
+    assert_eq!(
+        global_value["account_scan_exclusions"][0].as_str(),
+        Some("removed-account-fingerprint")
+    );
+
+    let workspace_path = paths.workspaces_dir.join("legacy.toml");
+    let workspace = std::fs::read_to_string(&workspace_path).unwrap();
+    let workspace_value: toml::Value = toml::from_str(&workspace).unwrap();
+    assert_eq!(
+        workspace_value["version"].as_str(),
+        Some(CURRENT_WORKSPACE_VERSION)
+    );
+    assert!(
+        !workspace.contains("codex"),
+        "legacy agent table survived: {workspace}"
+    );
+
+    let global_before = std::fs::read(&paths.config_file).unwrap();
+    let workspace_before = std::fs::read(&workspace_path).unwrap();
+    load_split_config(&paths, Some(raw.to_owned())).unwrap();
+    assert_eq!(global_before, std::fs::read(&paths.config_file).unwrap());
+    assert_eq!(workspace_before, std::fs::read(&workspace_path).unwrap());
 }
 
 #[test]
@@ -1231,4 +1338,46 @@ fn disc_read_only_repeated_torn_tree_returns_only_transient_diagnostic() {
             issue: ConfigSourceIssue::TransientConflict,
         }]
     );
+}
+
+#[test]
+fn disc_read_only_pending_publication_reports_transient_without_mutation() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    disc_write_tree(&paths);
+
+    // Simulate kill -9 mid-publication: journal plus staged tmps on disk.
+    let journal_path = publication_journal_path(&paths.config_file);
+    let staged = vec![stage_atomic_write(&paths.config_file, "version = \"v9alpha9\"\n").unwrap()];
+    let deletes: Vec<StagedDelete> = Vec::new();
+    write_publication_journal(&journal_path, &staged, &deletes).unwrap();
+    leak_staged_writes(staged);
+
+    let workspace_file = paths.workspaces_dir.join("alpha.toml");
+    let config_before = disc_file_stamp(&paths.config_file);
+    let workspace_before = disc_file_stamp(&workspace_file);
+    let journal_before = disc_file_stamp(&journal_path);
+    let config_entries_before = disc_dir_entries(&paths.config_dir);
+    let workspace_entries_before = disc_dir_entries(&paths.workspaces_dir);
+
+    let snapshot = load_read_only_config_snapshot(&paths).unwrap();
+
+    // Skewed bytes are never served as a stable generation.
+    assert!(snapshot.config.workspaces.is_empty());
+    assert_eq!(
+        snapshot.diagnostics,
+        vec![ConfigSourceDiagnostic {
+            scope: ConfigSourceScope::Workspaces,
+            issue: ConfigSourceIssue::TransientConflict,
+        }]
+    );
+    assert_eq!(disc_file_stamp(&paths.config_file), config_before);
+    assert_eq!(disc_file_stamp(&workspace_file), workspace_before);
+    assert_eq!(disc_file_stamp(&journal_path), journal_before);
+    assert_eq!(disc_dir_entries(&paths.config_dir), config_entries_before);
+    assert_eq!(
+        disc_dir_entries(&paths.workspaces_dir),
+        workspace_entries_before
+    );
+    assert!(!paths.config_file.with_file_name("config.lock").exists());
 }

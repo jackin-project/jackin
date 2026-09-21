@@ -599,6 +599,32 @@ fn env_lines_render_key_header_and_sentinels() {
 }
 
 #[test]
+fn env_lines_redact_account_owned_sentinel_even_when_unmasked() {
+    let rows = [SettingsEnvRow::Key {
+        scope: SettingsEnvScope::Global,
+        key: "ANTHROPIC_API_KEY".to_owned(),
+    }];
+
+    let lines = env_lines(
+        &rows,
+        0,
+        true,
+        100,
+        |_, _| Some(SecretValueDisplay::Plain("settings-view-sentinel")),
+        |_, _| true,
+        |_| 0,
+    );
+    let rendered = lines
+        .iter()
+        .flat_map(|line| line.spans.iter())
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+
+    assert!(!rendered.contains("settings-view-sentinel"));
+    assert!(rendered.contains("ANTHROPIC_API_KEY"));
+}
+
+#[test]
 fn global_mount_lines_render_header_rows_and_sentinel() {
     let rows = [MountDisplayRow {
         destination: "/workspace".to_owned(),
@@ -666,12 +692,110 @@ fn shared_auth_rows_render_settings_and_editor_rows_identically() {
 }
 
 #[test]
-fn accounts_height_includes_registry_add_actions_and_github() {
+fn accounts_height_includes_registry_add_actions_github_and_scan() {
     let config = jackin_config::AppConfig::default();
     let settings = crate::tui::state::SettingsAuthState::from_config(&config);
     assert_eq!(
         settings.row_count(),
-        super::super::model::ACCOUNT_KINDS.len() + 1
+        super::super::model::ACCOUNT_KINDS.len() + 2
+    );
+}
+
+fn scan_view_account() -> jackin_config::AccountConfig {
+    jackin_config::AccountConfig {
+        enabled: true,
+        name: "Claude default".into(),
+        provider: jackin_config::AiProvider::Anthropic,
+        credential: jackin_config::AccountCredential::Profile {
+            agent: jackin_core::Agent::Claude,
+            directory: "/home/op/.claude".into(),
+            xdg_roots: None,
+            source_selector: None,
+        },
+    }
+}
+
+fn scan_view_auth() -> crate::tui::state::SettingsAuthState {
+    crate::tui::state::SettingsAuthState::from_accounts(BTreeMap::from([(
+        "default-claude".to_owned(),
+        scan_view_account(),
+    )]))
+}
+
+fn scan_view_env() -> crate::tui::state::SettingsEnvState<'static> {
+    crate::tui::state::SettingsEnvState::from_config(&jackin_config::AppConfig::default())
+}
+
+fn line_texts(lines: &[Line<'_>]) -> Vec<String> {
+    lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn auth_state_lines_renders_scan_row_and_scanned_badges() {
+    let mut auth = scan_view_auth();
+    auth.scan.scanned_ids.insert("default-claude".to_owned());
+    let env = scan_view_env();
+    let texts = line_texts(&auth_state_lines(&auth, &env, true));
+    assert!(texts[0].contains("· scanned"), "{texts:?}");
+    assert!(
+        texts.iter().any(|line| line.contains("Scan for accounts…")),
+        "{texts:?}"
+    );
+    assert!(
+        !texts
+            .iter()
+            .any(|line| line.contains("Scanning for accounts")),
+        "{texts:?}"
+    );
+
+    auth.scan.in_flight = true;
+    let texts = line_texts(&auth_state_lines(&auth, &env, true));
+    assert!(
+        texts
+            .iter()
+            .any(|line| line.contains("Scanning for accounts…")),
+        "{texts:?}"
+    );
+}
+
+#[test]
+fn auth_state_lines_appends_scan_status_and_issues() {
+    use super::super::model::AccountScanSummary;
+    let mut auth = scan_view_auth();
+    auth.scan.last_summary = Some(AccountScanSummary {
+        joined: vec!["a".to_owned()],
+        skipped: vec!["b".to_owned(), "c".to_owned()],
+        fresh_install: true,
+    });
+    auth.scan.issues = vec![jackin_config::DiscoveryIssue {
+        agent: jackin_core::Agent::Codex,
+        directory: "/home/op/.codex".into(),
+        error: jackin_config::DiscoveryError::Unreadable,
+    }];
+    let env = scan_view_env();
+    let texts = line_texts(&auth_state_lines(&auth, &env, false));
+    assert_eq!(
+        texts.len(),
+        auth.row_count() + auth.scan.status_line_count()
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|line| line.contains("Scan: joined 1, already present 2 (first run)")),
+        "{texts:?}"
+    );
+    assert!(
+        texts.iter().any(|line| line
+            .contains("Scan issue: codex: credential source cannot be read (/home/op/.codex)")),
+        "{texts:?}"
     );
 }
 

@@ -91,73 +91,352 @@ fn provider_labels_resolve_all_account_refresh_surfaces() {
         resolve_surface("codex", Some("MiniMax")),
         UsageSurface::Minimax
     );
-}
-
-#[test]
-fn provider_tabs_follow_usage_overlay_display_order() {
-    let labels = provider_tabs(UsageSurface::Codex)
-        .into_iter()
-        .map(|tab| tab.label)
-        .collect::<Vec<_>>();
-
     assert_eq!(
-        labels,
-        vec![
-            "OpenAI".to_owned(),
-            "Anthropic".to_owned(),
-            "Amp".to_owned(),
-            "xAI".to_owned(),
-            "Z.AI".to_owned(),
-            "Kimi".to_owned(),
-            "MiniMax".to_owned(),
-        ]
+        resolve_surface("cursor", Some("Cursor")),
+        UsageSurface::Cursor
     );
+    assert_eq!(resolve_surface("cursor", None), UsageSurface::Cursor);
+    assert_eq!(
+        resolve_surface("gemini", Some("Google")),
+        UsageSurface::Google
+    );
+    assert_eq!(
+        resolve_surface("codex", Some("Gemini")),
+        UsageSurface::Google
+    );
+    assert_eq!(resolve_surface("gemini", None), UsageSurface::Google);
+    assert_eq!(
+        resolve_surface("opencode", Some("OpenRouter")),
+        UsageSurface::OpenRouter
+    );
+    // Explicitly blocked agents never resolve to a refreshable surface.
+    for agent in ["antigravity", "muse", "omp", "hermes"] {
+        assert_eq!(
+            resolve_surface(agent, None),
+            UsageSurface::Unsupported,
+            "{agent} must stay unsupported"
+        );
+    }
 }
 
 #[test]
-fn provider_tabs_include_cached_account_identity() {
-    let mut view = FocusedUsageView::unavailable("none", 123);
-    view.account = FocusedAccountHeader {
-        provider_label: "OpenAI / Codex".to_owned(),
-        account_label: "codex@example.com".to_owned(),
-        username: None,
-        plan_label: Some("Pro 20x".to_owned()),
-        credential_origin: None,
-    };
-    view.status = UsageSnapshotStatus::Fresh;
-    view.tabs = provider_tabs(UsageSurface::Codex);
+fn capability_matches_newly_wired_surfaces_only() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
 
-    let mut claude = FocusedUsageView::unavailable("none", 120);
-    claude.account = FocusedAccountHeader {
-        provider_label: "Anthropic / Claude".to_owned(),
-        account_label: "claude@example.com".to_owned(),
-        username: None,
-        plan_label: Some("Max".to_owned()),
-        credential_origin: None,
+    let capability = |surface_id: &str| UsageAccountCapability {
+        account_id: "account-test".to_owned(),
+        surface_id: surface_id.to_owned(),
     };
-    claude.status = UsageSnapshotStatus::Stale;
+    assert!(capability_matches_surface(
+        "cursor",
+        Some("Cursor"),
+        &capability("cursor")
+    ));
+    assert!(capability_matches_surface(
+        "gemini",
+        Some("Google"),
+        &capability("google")
+    ));
+    assert!(capability_matches_surface(
+        "opencode",
+        Some("OpenRouter"),
+        &capability("openrouter")
+    ));
+    // A presentation-tab override must not reuse a capability under another
+    // surface; blocked agents match nothing.
+    assert!(!capability_matches_surface(
+        "cursor",
+        Some("Cursor"),
+        &capability("google")
+    ));
+    // Blocked agents with no provider label match nothing (their
+    // unwired-ness lives in discovery, which mints no binding for them).
+    assert!(!capability_matches_surface(
+        "antigravity",
+        None,
+        &capability("google")
+    ));
+    assert!(!capability_matches_surface(
+        "muse",
+        Some("Muse"),
+        &capability("meta")
+    ));
+}
+
+#[test]
+fn credential_snapshot_arms_cover_newly_wired_surfaces() {
+    // Cursor API keys cannot drive the personal dashboard: explicit gap.
+    let view = provider_credential_snapshot("cursor", "CURSOR_API_KEY", "fixture-key");
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Cursor");
+    assert!(
+        view.last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("Cursor API-key"))
+    );
+    // Google keys route to the real Gemini collector with the key origin.
+    let view = provider_credential_snapshot("google", "GEMINI_API_KEY", "fixture-key");
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Google");
+    assert_eq!(
+        view.account.credential_origin.as_deref(),
+        Some("API key · env GEMINI_API_KEY")
+    );
+    // Blocked surfaces keep the explicit generic fallback.
+    let view = provider_credential_snapshot("meta", "META_API_KEY", "fixture-key");
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Usage");
+}
+
+#[test]
+fn credential_snapshot_openrouter_arm_reads_key_quota() {
+    // Live provider read with a fixture key: `/key` rejects it, so the arm
+    // must return the collector's honest NeedsLogin/Error view — never the
+    // generic "no usage adapter" fallback, which would mean the arm is dead.
+    let view = provider_credential_snapshot("openrouter", "OPENROUTER_API_KEY", "fixture-key");
+    assert_ne!(view.status, UsageSnapshotStatus::Fresh);
+    assert_ne!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "OpenRouter");
+    assert!(view.last_error.is_some());
+}
+
+fn account_snapshot_view(
+    provider_label: &str,
+    account_label: &str,
+    plan_label: Option<&str>,
+    fetched_at_epoch: i64,
+) -> FocusedUsageView {
+    let mut view = FocusedUsageView::unavailable("none", fetched_at_epoch);
+    view.account.provider_label = provider_label.to_owned();
+    view.account.account_label = account_label.to_owned();
+    view.account.plan_label = plan_label.map(str::to_owned);
+    view.status = UsageSnapshotStatus::Fresh;
+    view
+}
+
+#[test]
+fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
+    let claude_stale = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
+    let claude_latest = account_snapshot_view("Anthropic", "a@example.com", Some("Max 20x"), 200);
+    let codex = account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150);
+
+    let tabs = provider_tabs(&[&claude_stale, &claude_latest, &codex]);
+
+    // Duplicate snapshots for one account collapse to the newest fetch;
+    // same-provider accounts would each keep their own tab.
+    assert_eq!(tabs.len(), 2);
+    assert_eq!(
+        tabs.iter().map(|tab| &tab.label).collect::<Vec<_>>(),
+        vec!["Anthropic · a@example.com", "OpenAI · codex@example.com"]
+    );
+    let claude = tabs
+        .iter()
+        .find(|tab| tab.account_label == "a@example.com")
+        .expect("claude tab");
+    assert_eq!(claude.plan_label.as_deref(), Some("Max 20x"));
+    assert_eq!(
+        claude.id,
+        usage_account_tab_id("Anthropic", "a@example.com")
+    );
+    assert_eq!(
+        tabs[1].id,
+        usage_account_tab_id("OpenAI", "codex@example.com")
+    );
+    assert_ne!(tabs[0].id, tabs[1].id);
+    assert!(tabs.iter().all(|tab| !tab.active));
+
+    // An unlisted provider tabs without a hardcoded surface entry, and an
+    // empty scope stays empty.
+    let cursor = account_snapshot_view("Cursor", "cursor@example.com", None, 100);
+    let tabs = provider_tabs(&[&cursor]);
+    assert_eq!(tabs.len(), 1);
+    assert_eq!(tabs[0].label, "Cursor · cursor@example.com");
+    assert!(provider_tabs(&[]).is_empty());
+
+    // Same-provider accounts render individually visible labels; an account
+    // without identity keeps the bare provider label.
+    let claude_b = account_snapshot_view("Anthropic", "b@example.com", None, 100);
+    let tabs = provider_tabs(&[&claude_stale, &claude_b]);
+    assert_eq!(
+        tabs.iter().map(|tab| &tab.label).collect::<Vec<_>>(),
+        vec!["Anthropic · a@example.com", "Anthropic · b@example.com"]
+    );
+    let unknown = account_snapshot_view("Anthropic", "", None, 100);
+    let tabs = provider_tabs(&[&unknown]);
+    assert_eq!(tabs[0].label, "Anthropic");
+}
+
+#[test]
+fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
+    let mut view = account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 123);
+    view.tabs = vec![UsageProviderTab {
+        id: "stale".to_owned(),
+        label: "Stale".to_owned(),
+        status_label: String::new(),
+        account_label: String::new(),
+        plan_label: None,
+        source_label: None,
+        active: true,
+    }];
+    let claude = account_snapshot_view("Anthropic", "claude@example.com", Some("Max"), 120);
 
     let mut snapshots = HashMap::new();
-    snapshots.insert("claude:Claude".to_owned(), CachedUsage { view: claude });
+    snapshots.insert(
+        "Anthropic:account-1".to_owned(),
+        CachedUsage { view: claude },
+    );
+    snapshots.insert(
+        "OpenAI:account-2".to_owned(),
+        CachedUsage { view: view.clone() },
+    );
 
     enrich_provider_tabs(&mut view, &snapshots);
 
+    assert_eq!(view.tabs.len(), 2);
     let codex = view
         .tabs
         .iter()
-        .find(|tab| tab.label == "OpenAI")
+        .find(|tab| tab.label == "OpenAI · codex@example.com")
         .expect("codex tab");
     assert_eq!(codex.account_label, "codex@example.com");
     assert_eq!(codex.plan_label.as_deref(), Some("Pro 20x"));
-
     let claude = view
         .tabs
         .iter()
-        .find(|tab| tab.label == "Anthropic")
+        .find(|tab| tab.label == "Anthropic · claude@example.com")
         .expect("claude tab");
     assert_eq!(claude.account_label, "claude@example.com");
     assert_eq!(claude.plan_label.as_deref(), Some("Max"));
-    assert_eq!(claude.status_label, "stale");
+
+    // Empty broker state clears the strip instead of leaving stale tabs.
+    let mut view = account_snapshot_view("OpenAI", "codex@example.com", None, 123);
+    enrich_provider_tabs(&mut view, &HashMap::new());
+    assert!(view.tabs.is_empty());
+}
+
+#[test]
+fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
+    );
+    cache.insert_snapshot_for_test(
+        "codex",
+        Some("OpenAI"),
+        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+    );
+
+    let snapshot = cache.focused_snapshot(Some("claude"), Some("Anthropic"));
+
+    // One tab (and therefore one overview row) per admitted account.
+    assert_eq!(snapshot.tabs.len(), 3);
+    let mut ids: Vec<String> = snapshot.tabs.iter().map(|tab| tab.id.clone()).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 3);
+    let mut expected = vec![
+        usage_account_tab_id("Anthropic", "a@example.com"),
+        usage_account_tab_id("Anthropic", "b@example.com"),
+        usage_account_tab_id("OpenAI", "codex@example.com"),
+    ];
+    expected.sort();
+    assert_eq!(ids, expected);
+    // The focused account (newest Claude fetch) is the active tab.
+    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(
+        active[0].id,
+        usage_account_tab_id("Anthropic", "b@example.com")
+    );
+
+    // Selection by id focuses the correct account: a view focused on the
+    // other Claude account marks exactly its tab, matched by id rather than
+    // the shared "Anthropic" display label.
+    let id_a = usage_account_tab_id("Anthropic", "a@example.com");
+    let mut selected = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
+    enrich_provider_tabs(&mut selected, &cache.snapshots);
+    mark_active_tab(&mut selected);
+    let active: Vec<&UsageProviderTab> = selected.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, id_a);
+    assert_eq!(active[0].account_label, "a@example.com");
+    // Strip labels stay individually visible per account.
+    let mut labels: Vec<String> = selected.tabs.iter().map(|tab| tab.label.clone()).collect();
+    labels.sort();
+    labels.dedup();
+    assert_eq!(labels.len(), 3);
+}
+
+#[test]
+fn focused_snapshot_for_account_id_selects_exact_account() {
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "claude",
+        Some("Anthropic"),
+        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
+    );
+    let id_b = usage_account_tab_id("Anthropic", "b@example.com");
+
+    let snapshot = cache
+        .focused_snapshot_for_account_id(&id_b)
+        .expect("snapshot for claude-b");
+    assert_eq!(snapshot.account.account_label, "b@example.com");
+    assert_eq!(snapshot.tabs.len(), 2);
+    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, id_b);
+
+    assert!(
+        cache
+            .focused_snapshot_for_account_id("sha256:unknown")
+            .is_none()
+    );
+    assert!(cache.focused_snapshot_for_account_id("").is_none());
+}
+
+#[test]
+fn broker_account_id_for_tab_id_recovers_broker_key() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
+
+    let mut cache = UsageCache::default();
+    let capability_a = UsageAccountCapability {
+        account_id: "broker-claude-a".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    cache.insert_snapshot_for_capability_for_test(
+        "claude",
+        Some("Anthropic"),
+        &capability_a,
+        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+    );
+    cache.insert_snapshot_for_test(
+        "codex",
+        Some("OpenAI"),
+        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+    );
+
+    assert_eq!(
+        cache.broker_account_id_for_tab_id(&usage_account_tab_id("Anthropic", "a@example.com")),
+        Some("broker-claude-a".to_owned())
+    );
+    // Legacy keys carry no capability; unknown ids match nothing.
+    assert_eq!(
+        cache.broker_account_id_for_tab_id(&usage_account_tab_id("OpenAI", "codex@example.com")),
+        None
+    );
+    assert_eq!(cache.broker_account_id_for_tab_id("sha256:unknown"), None);
 }
 
 #[test]
@@ -318,7 +597,7 @@ fn usage_snapshot_reads_in_memory_cache() {
         snapshot
             .tabs
             .iter()
-            .any(|tab| tab.label == "OpenAI" && tab.active)
+            .any(|tab| tab.label == "OpenAI · codex@example.com" && tab.active)
     );
 }
 
@@ -777,6 +1056,290 @@ fn usage_cache_key_canonicalizes_provider_aliases() {
         canonical_usage_cache_key("claude", Some("Z.AI"))
     );
 }
+
+#[test]
+fn usage_cache_keeps_account_snapshots_isolated_across_one_provider_target() {
+    let personal = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-personal".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let work = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let mut first = codex_cached_usage_view();
+    first.account.account_label = "personal@example.test".to_owned();
+    let mut second = codex_cached_usage_view();
+    second.account.account_label = "work@example.test".to_owned();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &personal, first);
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &work, second);
+
+    assert_eq!(cache.snapshots.len(), 2);
+    let rows = cache.account_snapshot_views();
+    assert_eq!(rows.len(), 2);
+    assert!(
+        rows.iter()
+            .any(|row| row.account_label == "personal@example.test")
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.account_label == "work@example.test")
+    );
+
+    cache.adopt_broker_error(
+        &UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned()),
+            capability: personal.clone(),
+        },
+        &jackin_protocol::usage_broker::UsageCoordinationError {
+            kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "provider unavailable".to_owned(),
+        },
+    );
+    assert_eq!(cache.snapshots.len(), 2);
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "personal@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Stale)
+    );
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "work@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Fresh)
+    );
+}
+
+#[test]
+fn usage_cache_rejects_provider_surface_capability_mismatch() {
+    let capability = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-codex".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("Claude".to_owned()),
+        capability: capability.clone(),
+    };
+    let state = jackin_protocol::usage_broker::UsageGenerationView {
+        capability,
+        generation: 1,
+        phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+        snapshot: Some(codex_cached_usage_view()),
+        error: None,
+        retry_at_epoch: None,
+    };
+    let mut cache = UsageCache::default();
+
+    cache.adopt_broker_generation(&target, &state);
+    assert!(cache.snapshots.is_empty());
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(
+                Some("codex"),
+                Some("Claude"),
+                Some(&target.capability),
+            )
+            .status,
+        UsageSnapshotStatus::Unavailable
+    );
+}
+
+#[test]
+fn empty_broker_error_snapshot_is_error_not_fresh() {
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("OpenAI".to_owned()),
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-codex".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
+    };
+    let mut empty = codex_cached_usage_view();
+    empty.status = UsageSnapshotStatus::Fresh;
+    empty.buckets.clear();
+    let error = jackin_protocol::usage_broker::UsageCoordinationError {
+        kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+        message: "fixture provider unavailable".to_owned(),
+    };
+    let state = jackin_protocol::usage_broker::UsageGenerationView {
+        capability: target.capability.clone(),
+        generation: 1,
+        phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+        snapshot: Some(empty.clone()),
+        error: Some(error.clone()),
+        retry_at_epoch: None,
+    };
+    let mut cache = UsageCache::default();
+    cache.adopt_broker_generation(&target, &state);
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(
+                Some("codex"),
+                Some("OpenAI"),
+                Some(&target.capability),
+            )
+            .status,
+        UsageSnapshotStatus::Error
+    );
+
+    let mut second = UsageCache::default();
+    second.insert_snapshot_for_capability_for_test(
+        "codex",
+        Some("OpenAI"),
+        &target.capability,
+        empty,
+    );
+    second.adopt_broker_error(&target, &error);
+    assert_eq!(
+        second
+            .focused_snapshot_for_capability(
+                Some("codex"),
+                Some("OpenAI"),
+                Some(&target.capability),
+            )
+            .status,
+        UsageSnapshotStatus::Error
+    );
+}
+
+#[test]
+fn focused_usage_cache_selects_the_exact_account_capability() {
+    let personal = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-personal".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let work = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let mut personal_view = codex_cached_usage_view();
+    personal_view.status_bar_label = "personal account".to_owned();
+    personal_view.account.account_label = "same@example.test".to_owned();
+    let mut work_view = codex_cached_usage_view();
+    work_view.status_bar_label = "work account".to_owned();
+    work_view.account.account_label = "same@example.test".to_owned();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_capability_for_test(
+        "codex",
+        Some("OpenAI"),
+        &personal,
+        personal_view,
+    );
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &work, work_view);
+
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(Some("codex"), Some("OpenAI"), Some(&personal))
+            .status_bar_label,
+        "personal account"
+    );
+    assert_eq!(
+        cache
+            .focused_snapshot_for_capability(Some("codex"), Some("OpenAI"), Some(&work))
+            .status_bar_label,
+        "work account"
+    );
+}
+
+#[test]
+fn usage_cache_isolates_provider_targets_that_share_one_agent_slug() {
+    let mut zai = codex_cached_usage_view();
+    zai.status_bar_label = "zai".to_owned();
+    let mut minimax = codex_cached_usage_view();
+    minimax.status_bar_label = "minimax".to_owned();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_test("codex", Some("Z.AI"), zai);
+    cache.insert_snapshot_for_test("codex", Some("MiniMax"), minimax);
+
+    assert_eq!(
+        cache
+            .focused_snapshot(Some("codex"), Some("Z.AI"))
+            .status_bar_label,
+        "zai"
+    );
+    assert_eq!(
+        cache
+            .focused_snapshot(Some("codex"), Some("MiniMax"))
+            .status_bar_label,
+        "minimax"
+    );
+}
+
+#[test]
+fn usage_cache_adopts_broker_generations_by_account_capability() {
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("OpenAI".to_owned()),
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-a".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
+    };
+    let generation = |account_id: &str, account_label: &str| {
+        let mut view = codex_cached_usage_view();
+        view.account.account_label = account_label.to_owned();
+        jackin_protocol::usage_broker::UsageGenerationView {
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: account_id.to_owned(),
+                surface_id: "codex".to_owned(),
+            },
+            generation: 1,
+            phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+            snapshot: Some(view),
+            error: None,
+            retry_at_epoch: None,
+        }
+    };
+
+    let mut cache = UsageCache::default();
+    cache.adopt_broker_generation(&target, &generation("account-a", "personal@example.test"));
+    let other_target = UsageRefreshTarget {
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-b".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
+        ..target.clone()
+    };
+    cache.adopt_broker_generation(&other_target, &generation("account-b", "work@example.test"));
+
+    assert_eq!(cache.snapshots.len(), 2);
+    assert_eq!(cache.account_snapshot_views().len(), 2);
+    cache.adopt_broker_error(
+        &target,
+        &jackin_protocol::usage_broker::UsageCoordinationError {
+            kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind::ProviderUnavailable,
+            message: "provider unavailable".to_owned(),
+        },
+    );
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "personal@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Stale)
+    );
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "work@example.test")
+            .map(|cached| cached.view.status),
+        Some(UsageSnapshotStatus::Fresh)
+    );
+}
+
 #[test]
 fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
     let mut cached = FocusedUsageView::unavailable("seed", 123);
@@ -844,6 +1407,10 @@ fn broker_client_failure_preserves_last_good_quota() {
     let target = UsageRefreshTarget {
         agent: "claude".to_owned(),
         provider: Some("Claude".to_owned()),
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "account-claude".to_owned(),
+            surface_id: "claude".to_owned(),
+        },
     };
     let mut cached = FocusedUsageView::unavailable("seed", 123);
     cached.status = UsageSnapshotStatus::Fresh;
@@ -862,7 +1429,12 @@ fn broker_client_failure_preserves_last_good_quota() {
         status: UsageSnapshotStatus::Fresh,
     }];
     let mut cache = UsageCache::default();
-    cache.insert_snapshot_for_test("claude", Some("Claude"), cached);
+    cache.insert_snapshot_for_capability_for_test(
+        "claude",
+        Some("Claude"),
+        &target.capability,
+        cached,
+    );
 
     cache.adopt_broker_error(
         &target,
@@ -1465,11 +2037,12 @@ fn over_cap_window_surfaces_true_used_percent() {
     assert_eq!(weekly.used_label.as_deref(), Some("150% used"));
 }
 
-/// Bug 5: the overview headline bucket is the tightest *windowed* bucket that
-/// carries a reset — never the reset-less spend bucket, even when spend has the
-/// lowest remaining (so the overview row keeps its reset column).
+/// D30: the overview summary is the first available Rust-ranked limit
+/// (long-range, model-specific, session, then other) — never the tightest
+/// bucket, and never the reset-less spend bucket while a real limit carries a
+/// percent (Bug 5's spend exclusion survives as the last rank).
 #[test]
-fn most_constrained_skips_reset_less_spend_for_windowed_reset_bucket() {
+fn summary_bucket_selects_first_ranked_limit_over_tighter_spend() {
     let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
         "five_hour": { "utilization": 11.0, "resets_at": "2026-06-28T16:40:00Z" },
         "seven_day": { "utilization": 27.0, "resets_at": "2026-07-03T07:00:00Z" },
@@ -1481,26 +2054,24 @@ fn most_constrained_skips_reset_less_spend_for_windowed_reset_bucket() {
         }
     }))
     .expect("valid Claude OAuth usage");
-    // Spend = 70% left (lowest), but reset-less; Weekly = 73% left with a reset.
+    // Spend = 70% left (tightest), Session = 89%, Weekly = 73%: the Weekly
+    // long-range window wins by rank, not by tightness.
     let buckets = usage.into_buckets(1_781_185_560);
-    let chosen = most_constrained_fresh_bucket(&buckets).expect("a windowed bucket");
+    let chosen = summary_bucket(&buckets).expect("a ranked bucket");
     assert_eq!(chosen.status_slot, Some(StatusSlot::Weekly));
-    assert!(
-        chosen.resets_at.is_some(),
-        "chosen bucket must carry a reset"
-    );
+    assert_eq!(chosen.remaining_percent, Some(73));
 }
 
-/// The compact Overview/status row names the bottleneck model when a
-/// model-scoped window (Fable) is the most-constrained, but stays bare for a
-/// headline window (Session/Weekly) — the slot already implies those and the
-/// status bar carries them. So an operator watching the compact surface learns
-/// *which* model is the limit, not just the % left.
+/// D30: a tighter model-scoped window (Fable) does not steal the summary from
+/// the ranked long-range window; the scoped name is still prepended when an
+/// unslotted window wins (nothing slotted carries a percent), so the row
+/// tells the operator *which* limit the % traces to.
 #[test]
-fn usage_tab_status_label_names_scoped_model_when_it_is_most_constrained() {
+fn usage_tab_status_label_selects_ranked_limit_and_names_unslotted_winner() {
     let reset_at = "2026-07-03T06:59:59Z";
-    // Fable (10% left) is tighter than Session (50% left) and Weekly (60%).
-    let fable_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+    // Fable (10% left) is tighter than Session (50% left) and Weekly (60%),
+    // but Weekly wins by rank and stays bare.
+    let ranked_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
         "limits": [
             { "kind": "session", "group": "session", "percent": 50,
               "severity": "normal", "resets_at": "2026-07-03T03:20:00Z", "scope": null },
@@ -1514,28 +2085,28 @@ fn usage_tab_status_label_names_scoped_model_when_it_is_most_constrained() {
     .expect("limits response");
     let mut view = FocusedUsageView::unavailable("x", 1_781_300_000);
     view.status = UsageSnapshotStatus::Fresh;
+    view.buckets = ranked_wins.into_buckets(1_781_300_000);
+    let label = usage_tab_status_label(&view);
+    assert!(
+        label.starts_with("60% left"),
+        "ranked weekly must win over tighter fable: got {label:?}"
+    );
+
+    // Nothing slotted carries a percent: the unslotted Fable window wins and
+    // is named.
+    let fable_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 90,
+              "severity": "danger", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("limits response");
     view.buckets = fable_wins.into_buckets(1_781_300_000);
     let label = usage_tab_status_label(&view);
     assert!(
         label.starts_with("Fable 10% left"),
-        "scoped bottleneck must be named: got {label:?}"
-    );
-
-    // When a headline window (Session) is tightest, no model name is prepended.
-    let session_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
-        "limits": [
-            { "kind": "session", "group": "session", "percent": 95,
-              "severity": "warn", "resets_at": "2026-07-03T03:20:00Z", "scope": null },
-            { "kind": "weekly_all", "group": "weekly", "percent": 10,
-              "severity": "normal", "resets_at": reset_at, "scope": null }
-        ]
-    }))
-    .expect("limits response");
-    view.buckets = session_wins.into_buckets(1_781_300_000);
-    let label = usage_tab_status_label(&view);
-    assert!(
-        label.starts_with("5% left"),
-        "headline bottleneck must stay bare: got {label:?}"
+        "unslotted winner must be named: got {label:?}"
     );
 }
 
@@ -1763,7 +2334,7 @@ fn codex_minimal_limits_value() -> serde_json::Value {
 
 #[test]
 fn codex_rpc_account_api_key_tag_yields_origin_label_and_rate_limits() {
-    let usage = codex::decode_codex_rpc_usage(
+    let usage = decode_codex_rpc_usage(
         codex_minimal_limits_value(),
         Some(serde_json::json!({ "account": { "type": "apiKey" } })),
     )
@@ -1787,7 +2358,7 @@ fn codex_rpc_account_amazon_bedrock_tag_decodes_without_label() {
 
 #[test]
 fn codex_rpc_account_decode_failure_degrades_to_no_label() {
-    let usage = codex::decode_codex_rpc_usage(
+    let usage = decode_codex_rpc_usage(
         codex_minimal_limits_value(),
         Some(serde_json::json!({ "account": { "type": "someFutureTag" } })),
     )
@@ -1928,69 +2499,6 @@ fn claude_cli_usage_output_maps_scoped_weekly_fable() {
         ),
         "Session 91% · Weekly 72%"
     );
-}
-
-#[test]
-fn provider_matches_usage_label_resolves_canonical_synonyms() {
-    // A tab label matches an account provider label when both resolve to the
-    // same canonical surface, across synonym spellings and in both orders.
-    for (left, right) in [
-        ("OpenAI / Codex", "codex"),
-        ("Codex", "openai"),
-        ("Anthropic / Claude", "claude"),
-        ("Claude", "anthropic"),
-        ("xAI / Grok", "grok"),
-        ("Grok Build", "xai"),
-        ("GLM / Z.AI", "glm"),
-        ("Z.AI", "zai"),
-        ("MiniMax", "minimax"),
-        ("Kimi", "kimi"),
-        ("Amp", "amp"),
-    ] {
-        assert!(
-            provider_matches_usage_label(left, right),
-            "{left} should match {right}"
-        );
-        assert!(
-            provider_matches_usage_label(right, left),
-            "{right} should match {left}"
-        );
-    }
-
-    // Different surfaces never match.
-    for (left, right) in [
-        ("Codex", "claude"),
-        ("GLM / Z.AI", "grok"),
-        ("Kimi", "minimax"),
-    ] {
-        assert!(
-            !provider_matches_usage_label(left, right),
-            "{left} must not match {right}"
-        );
-    }
-
-    // Providers outside the known surface set (OpenCode) fall through to the
-    // case-insensitive substring path — equal labels match, distinct don't.
-    assert!(provider_matches_usage_label("OpenCode", "opencode"));
-    assert!(!provider_matches_usage_label("OpenCode", "codex"));
-
-    // Unknown text names no surface; the short "amp" token must not match
-    // inside an unrelated word (whole-token match, not bare substring), and
-    // a glued token ("ampcode") is not a word match either.
-    assert_eq!(surface_from_text("totally-unknown"), None);
-    assert_eq!(surface_from_text("example"), None);
-    assert_eq!(surface_from_text("ampcode"), None);
-    assert!(!provider_matches_usage_label("Example", "amp"));
-    assert_eq!(surface_from_text("Amp / Code"), Some(UsageSurface::Amp));
-
-    // A known surface never matches an unknown label — this is the
-    // production direction (tab label resolves, focus value may not).
-    assert!(!provider_matches_usage_label("Codex", "totally-unknown"));
-    assert!(!provider_matches_usage_label("Amp", "totally-unknown"));
-
-    // Both unknown → substring fallback: containment matches, distinct don't.
-    assert!(provider_matches_usage_label("opencode-zen", "opencode"));
-    assert!(!provider_matches_usage_label("opencode", "ollama"));
 }
 
 #[test]
@@ -2610,7 +3118,7 @@ fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
     assert_eq!(api.individual_credits, cli.individual_credits);
     assert_eq!(api.workspace_balances, cli.workspace_balances);
 
-    let buckets = api.buckets();
+    let buckets = api.buckets(1_781_185_560);
     assert_eq!(buckets[0].label, "Amp Free");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Daily));
     assert_eq!(buckets[0].remaining_percent, Some(61));
@@ -2647,7 +3155,7 @@ fn amp_daily_parser_preserves_workspace_balances_in_order() {
             },
         ]
     );
-    let buckets = usage.buckets();
+    let buckets = usage.buckets(1_781_185_560);
     let labels: Vec<_> = buckets.iter().map(|bucket| bucket.label.as_str()).collect();
     assert_eq!(
         labels,
@@ -2675,7 +3183,7 @@ fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
     )
     .expect("paid-only usage");
     assert_eq!(usage.plan_label(), None);
-    let buckets = usage.buckets();
+    let buckets = usage.buckets(1_781_185_560);
     assert!(
         buckets
             .iter()
@@ -2716,7 +3224,8 @@ fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
     let mut with_daily = usage.clone();
     with_daily.daily_remaining_percent = Some(61);
     assert_eq!(
-        status_bar_headline_for_surface(UsageSurface::Amp, &with_daily.buckets()).as_deref(),
+        status_bar_headline_for_surface(UsageSurface::Amp, &with_daily.buckets(1_781_185_560))
+            .as_deref(),
         Some("Free 61%")
     );
 }
@@ -2736,7 +3245,7 @@ fn amp_legacy_hourly_display_text_is_rejected() {
     assert_eq!(usage.daily_remaining_percent, None);
     assert!(
         usage
-            .buckets()
+            .buckets(1_781_185_560)
             .iter()
             .all(|bucket| bucket.status_slot != Some(StatusSlot::Daily))
     );
@@ -2994,9 +3503,13 @@ fn opencode_auth_and_usage_contract_is_typed_without_secret_identity() {
     let path = dir.path().join("auth.json");
     fs::write(
         &path,
-        serde_json::json!({"opencode-go": {"type": "api", "key": "secret-not-output"}}).to_string(),
+        serde_json::json!({
+            "opencode-go": {"type": "api", "key": "secret-not-output"}
+        })
+        .to_string(),
     )
     .expect("auth fixture");
+    fs::write(dir.path().join("opencode.db"), "database fixture").expect("database fixture");
     assert_eq!(
         load_opencode_api_key(&path).as_deref(),
         Ok("secret-not-output")
@@ -3018,11 +3531,31 @@ fn opencode_auth_and_usage_contract_is_typed_without_secret_identity() {
     assert!(quota.rate_limited);
     fs::write(
         &path,
+        serde_json::json!({
+            "anthropic": {"type": "api", "key": "unrelated-sentinel"},
+            "opencode-go": {"type": "api", "key": "secret-not-output"}
+        })
+        .to_string(),
+    )
+    .expect("ambiguous auth fixture");
+    let error = load_opencode_api_key(&path).unwrap_err();
+    assert!(error.contains("multiple credentials"), "{error}");
+    assert!(!error.contains("unrelated-sentinel"));
+    fs::write(
+        &path,
         serde_json::json!({"opencode-go": {"type": "oauth", "key": "secret-not-output"}})
             .to_string(),
     )
     .expect("malformed auth fixture");
     load_opencode_api_key(&path).unwrap_err();
+    fs::write(
+        &path,
+        serde_json::json!({"anthropic": {"type": "api", "key": "unrelated-sentinel"}}).to_string(),
+    )
+    .expect("foreign-only auth fixture");
+    let error = load_opencode_api_key(&path).unwrap_err();
+    assert!(error.contains("opencode-go credential is missing"));
+    assert!(!error.contains("unrelated-sentinel"));
 }
 
 #[test]
@@ -3333,65 +3866,6 @@ fn minimax_operation_path_matches_candidate_path() {
     assert_eq!(
         minimax_operation_path("https://quota.example/custom/remains?tenant=secret"),
         "/custom"
-    );
-}
-
-#[test]
-fn usage_surface_synonyms_are_lowercase() {
-    // surface_from_text lowercases the haystack before comparing, so any
-    // uppercase synonym entry would be permanently unmatchable.
-    for surface in UsageSurface::ALL {
-        for syn in surface.synonyms() {
-            assert_eq!(
-                *syn,
-                syn.to_ascii_lowercase(),
-                "synonym {syn:?} for {surface:?} must be lowercase"
-            );
-        }
-    }
-}
-
-#[test]
-fn usage_surface_all_lists_every_variant() {
-    // `guard` has no wildcard arm: adding a UsageSurface variant makes it fail to
-    // compile, forcing the author to this test. `variants` then drives the runtime
-    // check that each variant is present in ALL — a variant missing from ALL is
-    // silently unmatchable in surface_from_text. The len check catches the reverse.
-    fn guard(surface: UsageSurface) {
-        match surface {
-            UsageSurface::Claude
-            | UsageSurface::Codex
-            | UsageSurface::Amp
-            | UsageSurface::Grok
-            | UsageSurface::Zai
-            | UsageSurface::Kimi
-            | UsageSurface::Minimax
-            | UsageSurface::OpenCode
-            | UsageSurface::Unsupported => {}
-        }
-    }
-    let variants = [
-        UsageSurface::Claude,
-        UsageSurface::Codex,
-        UsageSurface::Amp,
-        UsageSurface::Grok,
-        UsageSurface::Zai,
-        UsageSurface::Kimi,
-        UsageSurface::Minimax,
-        UsageSurface::OpenCode,
-        UsageSurface::Unsupported,
-    ];
-    for surface in variants {
-        guard(surface);
-        assert!(
-            UsageSurface::ALL.contains(&surface),
-            "{surface:?} missing from UsageSurface::ALL"
-        );
-    }
-    assert_eq!(
-        UsageSurface::ALL.len(),
-        variants.len(),
-        "UsageSurface::ALL has an entry this test does not cover"
     );
 }
 
@@ -3980,7 +4454,45 @@ fn usage_bucket_presentation_orders_spend_cap() {
         presentation.display_segments,
         vec!["30% used", "Monthly cap: SGD 78.49 / SGD 260.00"]
     );
-    assert_eq!(presentation.meter_percent, Some(30));
+    // Spend text reads used, but meter geometry fills by remaining — the same
+    // rule as every other slot and the console windows.
+    assert_eq!(presentation.meter_percent, Some(70));
+}
+
+#[test]
+fn usage_bucket_presentation_recovers_spend_overage_from_money() {
+    // $150 against a $100 cap with a saturated 0% remaining: the money ratio
+    // recovers the raw "150% used" text (matching the console window value)
+    // and the meter reads empty (nothing left), matching the console meter.
+    let mut bucket = presentation_bucket(
+        "Extra usage",
+        Some(0),
+        Some(StatusSlot::Spend),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("$150.00".to_owned());
+    bucket.limit_label = Some("$100.00".to_owned());
+    bucket.used_money = Some(Money::new(15_000, "USD", 2));
+    bucket.limit_money = Some(Money::new(10_000, "USD", 2));
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.remaining_label.as_deref(), Some("150% used"));
+    assert_eq!(presentation.meter_percent, Some(0));
+
+    // A non-overage money ratio agrees with the remaining percent; the text
+    // still reads used and the meter still fills by remaining.
+    let mut bucket = presentation_bucket(
+        "Extra usage",
+        Some(55),
+        Some(StatusSlot::Spend),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("$45.20".to_owned());
+    bucket.limit_label = Some("$100.00".to_owned());
+    bucket.used_money = Some(Money::new(4_520, "USD", 2));
+    bucket.limit_money = Some(Money::new(10_000, "USD", 2));
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.remaining_label.as_deref(), Some("45% used"));
+    assert_eq!(presentation.meter_percent, Some(55));
 }
 
 #[test]
@@ -4402,4 +4914,311 @@ fn quota_pace_label_exact_clock_equality_ignores_float_drift() {
     // 7*1000 == 70*100 -> projection reaches reset exactly -> no run-out segment.
     let label = quota_pace_label(Some(7), Some(70), Some(1_000), 0).expect("pace");
     assert!(!label.contains("Runs out"), "unexpected run-out: {label}");
+}
+
+// ===================================================================
+// Lane A (multi-account T02): Claude/Codex/Amp contract upgrades.
+// Sanitized fixtures only — no tokens, no account IDs.
+// ===================================================================
+
+#[test]
+fn claude_limits_inactive_flag_does_not_gate_rendering() {
+    // Live responses send `is_active: false` on headline limits that still
+    // carry quota — the flag must never suppress a bucket.
+    let response: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": null,
+        "seven_day": null,
+        "limits": [
+            {"kind": "session", "percent": 10, "is_active": false,
+             "resets_at": "2026-09-17T10:00:00Z"},
+            {"kind": "weekly_all", "percent": 42, "is_active": false,
+             "resets_at": "2026-09-24T10:00:00Z"},
+        ]
+    }))
+    .expect("inactive limits decode");
+    let buckets = response.into_buckets(1_781_185_560);
+    let session = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket despite is_active false");
+    assert_eq!(session.label, "Session");
+    assert_eq!(session.remaining_percent, Some(90));
+    let weekly = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly bucket despite is_active false");
+    assert_eq!(weekly.label, "All models");
+    assert_eq!(weekly.remaining_percent, Some(58));
+}
+
+#[test]
+fn claude_scope_restriction_error_is_explicit() {
+    assert!(claude_error_is_scope_restriction(
+        "Claude OAuth usage HTTP 403 Forbidden"
+    ));
+    assert!(claude_error_is_scope_restriction(
+        "HTTP 403 insufficient_scope"
+    ));
+    assert!(!claude_error_is_scope_restriction(
+        "Claude OAuth usage HTTP 401 Unauthorized"
+    ));
+    assert!(!claude_error_is_scope_restriction(
+        "Claude OAuth usage request failed: connection reset"
+    ));
+    assert_eq!(
+        claude_provider_error_label(
+            Some("Claude OAuth usage HTTP 403 Forbidden"),
+            Some("cli boom")
+        )
+        .as_deref(),
+        Some("Claude token lacks usage scope (inference-only); quota unavailable")
+    );
+    // Non-scope errors pass through verbatim, OAuth first.
+    assert_eq!(
+        claude_provider_error_label(Some("oauth boom"), Some("cli boom")).as_deref(),
+        Some("oauth boom")
+    );
+    assert_eq!(
+        claude_provider_error_label(None, Some("cli boom")).as_deref(),
+        Some("cli boom")
+    );
+    assert_eq!(claude_provider_error_label(None, None), None);
+}
+
+#[test]
+fn codex_wham_relative_reset_resolves_against_now() {
+    let usage: CodexUsageResponse = serde_json::from_value(serde_json::json!({
+        "plan_type": "pro",
+        "rate_limit": {
+            "primary_window": {"used_percent": 25, "reset_after_seconds": 3_600},
+            "secondary_window": {"used_percent": 50, "reset_at": 1_782_000_000}
+        }
+    }))
+    .expect("wham relative reset decodes");
+    let buckets = usage.buckets(1_781_185_560);
+    let session = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.remaining_percent, Some(75));
+    assert_eq!(session.resets_at, Some(1_781_185_560 + 3_600));
+    // Absolute reset_at still wins when both are present.
+    let weekly = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly bucket");
+    assert_eq!(weekly.resets_at, Some(1_782_000_000));
+}
+
+#[test]
+fn codex_used_percent_tolerates_float_string_and_missing() {
+    for (raw, expected) in [
+        (serde_json::json!(63), Some(63)),
+        (serde_json::json!(63.7), Some(64)),
+        (serde_json::json!("41"), Some(41)),
+        (serde_json::json!(140), Some(100)),
+        (serde_json::json!(-3), Some(0)),
+        (serde_json::json!("bogus"), None),
+    ] {
+        let snapshot: CodexWindowSnapshot =
+            serde_json::from_value(serde_json::json!({"used_percent": raw}))
+                .expect("tolerant decode");
+        assert_eq!(snapshot.used_percent_clamped(), expected, "raw: {raw}");
+    }
+    let missing: CodexWindowSnapshot =
+        serde_json::from_value(serde_json::json!({"reset_at": 1_782_000_000}))
+            .expect("missing used decodes");
+    assert_eq!(missing.used_percent_clamped(), None);
+}
+
+#[test]
+fn codex_rpc_tolerates_missing_windows_credits_and_counts() {
+    // Missing `usedPercent`, `rateLimits`, `availableCount`, and credit flags
+    // all decode; unknown extra fields are ignored.
+    let usage = decode_codex_rpc_usage(
+        serde_json::json!({
+            "rateLimits": {
+                "primary": {"resetsAt": 1_782_000_000, "windowDurationMins": 300},
+                "credits": {"balance": "12", "future_field": true},
+                "planType": "pro",
+            },
+            "rateLimitsByLimitId": {},
+            "rateLimitResetCredits": {"future_field": 1},
+            "future_top_level": {"nested": [1, 2]},
+        }),
+        None,
+    )
+    .expect("sparse RPC decodes");
+    let buckets = usage.response.buckets(1_781_185_560);
+    let session = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.used_label, None);
+    assert_eq!(session.remaining_percent, None);
+    assert_eq!(session.resets_at, Some(1_782_000_000));
+    assert!(
+        buckets
+            .iter()
+            .all(|bucket| bucket.label != "Limit Reset Credits"),
+        "zero-count credits stay hidden"
+    );
+    assert!(
+        buckets.iter().all(|bucket| bucket.label != "Credits"),
+        "flag-less credits stay hidden"
+    );
+
+    // A wholly absent `rateLimits` object still decodes to an empty snapshot.
+    let empty = decode_codex_rpc_usage(serde_json::json!({}), None).expect("empty decodes");
+    assert!(empty.response.buckets(1_781_185_560).is_empty());
+}
+
+const AMP_TIER_FIXTURE: &str = "Signed in as user@example.com (example)\n\
+     Amp Free: 61% remaining today (resets daily)\n\
+     Amp Pro Tier: agent usage $80.00 of $100.00 remaining, orb usage 7.5h of 10h a1.small orb hours remaining, period 2026-09-01 to 2026-10-01, resets upon renewal in 12 days\n\
+     Individual credits: $9.86 remaining";
+
+#[test]
+fn amp_tier_line_maps_agent_dollars_orb_hours_and_renewal() {
+    let now = 1_781_185_560;
+    let usage = parse_amp_usage_output(AMP_TIER_FIXTURE).expect("tier usage");
+    assert_eq!(usage.account_label.as_deref(), Some("user@example.com"));
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Pro"));
+    assert_eq!(
+        usage.renewal,
+        Some(AmpRenewal {
+            value: 12,
+            months: false,
+        })
+    );
+    assert_eq!(
+        usage.billing_period.as_deref(),
+        Some("2026-09-01 to 2026-10-01")
+    );
+
+    let buckets = usage.buckets(now);
+    let agent = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Agent usage")
+        .expect("agent bucket");
+    assert_eq!(agent.used_label.as_deref(), Some("$20.00 used"));
+    assert_eq!(agent.limit_label.as_deref(), Some("$100.00"));
+    assert_eq!(agent.remaining_percent, Some(80));
+    assert_eq!(agent.resets_at, Some(now + 12 * 86_400));
+    assert_eq!(agent.status_slot, Some(StatusSlot::Spend));
+    assert_eq!(
+        agent.used_money.as_ref().map(|m| m.amount_minor),
+        Some(2_000)
+    );
+    assert_eq!(
+        agent.limit_money.as_ref().map(|m| m.amount_minor),
+        Some(10_000)
+    );
+
+    let orb = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Orb usage")
+        .expect("orb bucket");
+    assert_eq!(orb.used_label.as_deref(), Some("2h used"));
+    assert_eq!(orb.limit_label.as_deref(), Some("10h"));
+    assert_eq!(orb.remaining_percent, Some(75));
+    assert_eq!(orb.resets_at, Some(now + 12 * 86_400));
+
+    // Daily headline is untouched by subscription pools.
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Amp, &buckets).as_deref(),
+        Some("Free 61%")
+    );
+}
+
+#[test]
+fn amp_tier_without_orb_keeps_agent_and_skips_orb() {
+    let usage = parse_amp_usage_output(
+        "Amp Team Tier: agent usage $1,234.50 of $2,000.00 remaining, resets upon renewal in 2 months",
+    )
+    .expect("orb-less tier");
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Team"));
+    let buckets = usage.buckets(1_781_185_560);
+    let agent = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Agent usage")
+        .expect("agent bucket");
+    assert_eq!(agent.remaining_percent, Some(62));
+    assert_eq!(agent.resets_at, Some(1_781_185_560 + 60 * 86_400));
+    assert!(
+        buckets.iter().all(|bucket| bucket.label != "Orb usage"),
+        "no orb segment, no orb bucket"
+    );
+}
+
+#[test]
+fn amp_unrecognized_orb_data_does_not_hide_agent() {
+    let usage = parse_amp_usage_output(
+        "Amp Pro Tier: agent usage $80.00 of $100.00 remaining, orb usage someday maybe, resets upon renewal in 12 days",
+    )
+    .expect("agent survives bad orb");
+    let buckets = usage.buckets(1_781_185_560);
+    assert!(
+        buckets.iter().any(|bucket| bucket.label == "Agent usage"),
+        "agent bucket present"
+    );
+    assert!(
+        buckets.iter().all(|bucket| bucket.label != "Orb usage"),
+        "malformed orb skipped"
+    );
+}
+
+#[test]
+fn amp_legacy_subscription_line_maps_percent_pools() {
+    let usage = parse_amp_usage_output(
+        "Subscription Business: 30% other usage and 55% orb usage remaining - resets upon renewal in 1 month - https://ampcode.com/settings",
+    )
+    .expect("legacy subscription");
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Business"));
+    let buckets = usage.buckets(1_781_185_560);
+    let agent = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Agent usage")
+        .expect("agent bucket");
+    assert_eq!(agent.remaining_percent, Some(30));
+    assert_eq!(agent.resets_at, Some(1_781_185_560 + 30 * 86_400));
+    let orb = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Orb usage")
+        .expect("orb bucket");
+    assert_eq!(orb.remaining_percent, Some(55));
+
+    // The `Amp <plan> Subscription:` variant parses identically.
+    let variant = parse_amp_usage_output(
+        "Amp Business Subscription: 30% other usage and 55% orb usage remaining - resets upon renewal in 5 days",
+    )
+    .expect("amp-prefixed legacy");
+    assert_eq!(
+        variant.subscription, usage.subscription,
+        "same pools, only renewal differs"
+    );
+    assert_eq!(
+        variant.renewal,
+        Some(AmpRenewal {
+            value: 5,
+            months: false,
+        })
+    );
+}
+
+#[test]
+fn amp_tier_wins_over_legacy_and_bold_markers_strip() {
+    let usage = parse_amp_usage_output(
+        "Subscription Business: 30% other usage and 55% orb usage remaining - resets upon renewal in 5 days\n\
+         **Amp Pro Tier:** agent usage $80.00 of $100.00 remaining, resets upon renewal in 12 days",
+    )
+    .expect("tier over legacy");
+    assert_eq!(usage.plan_label().as_deref(), Some("Amp Pro"));
+    assert!(
+        matches!(
+            usage.subscription.as_ref().map(|s| &s.kind),
+            Some(AmpSubscriptionKind::Tier { .. })
+        ),
+        "tier kind kept"
+    );
 }

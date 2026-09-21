@@ -19,7 +19,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use jackin_core::{Agent, account_key_hash};
 use jackin_protocol::control::{FocusedUsageView, UsageIdentityPresentation, UsageSeverity};
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageProjectionV1, UsageRefreshPhase};
+use jackin_protocol::usage_broker::{
+    UsageAccountCapability, UsageCoordinationError, UsageGenerationView, UsageProjectionV1,
+    UsageRefreshPhase,
+};
 
 use crate::usage::{
     UsageCache, UsageFormatPrefs, compact_duration_label, estimate_caption,
@@ -36,7 +39,7 @@ pub use broker::{
     ForwardedUsageSources, UsageBrokerClient, UsageBrokerConfig, UsageBrokerHandle,
     ensure_usage_broker, ensure_usage_broker_process, ensure_usage_broker_with_executor,
     forwarded_usage_capabilities, run_usage_broker_service, run_usage_broker_service_with_executor,
-    usage_broker_capabilities,
+    usage_broker_capabilities, usage_capability_for_selected_account,
 };
 pub use credential_resolver::{
     CachedProviderCredentialResolver, ProviderCredentialSecretOutcome,
@@ -51,6 +54,19 @@ pub use discovery::{
     UsageSourceCandidateDescriptor, ValidatedUsageDiscovery, discover_usage_sources,
     host_credential_root_matrix, validate_usage_sources,
 };
+
+/// A successful discovery scan staged against one runtime catalog generation.
+/// The stage is committed only after broker activation succeeds and its base
+/// generation still matches.
+#[derive(Debug, Clone)]
+pub struct StagedUsageDiscovery {
+    /// Runtime discovery generation observed before the scan.
+    pub base_generation: u64,
+    /// Whether the successful scan changes catalog membership or revisions.
+    pub changed: bool,
+    /// Fresh, validated discovery result.
+    pub discovery: ValidatedUsageDiscovery,
+}
 pub use projection::{NormalizedUsageDestination, UsageDestination, normalize_destination};
 
 /// Relative data-dir subtree for menu-bar durable state.
@@ -88,6 +104,14 @@ pub enum HostSurfaceId {
     Minimax,
     /// `OpenCode`.
     OpenCode,
+    /// Google (Antigravity + Gemini CLI).
+    Google,
+    /// Cursor.
+    Cursor,
+    /// Meta (Muse).
+    Meta,
+    /// `OpenRouter` (multi-provider clients only).
+    OpenRouter,
 }
 
 impl HostSurfaceId {
@@ -101,6 +125,10 @@ impl HostSurfaceId {
         Self::Kimi,
         Self::Minimax,
         Self::OpenCode,
+        Self::Google,
+        Self::Cursor,
+        Self::Meta,
+        Self::OpenRouter,
     ];
 
     /// The canonical seven-provider Desktop glance order (Capsule tab order).
@@ -127,6 +155,10 @@ impl HostSurfaceId {
             Self::Kimi => "kimi",
             Self::Minimax => "minimax",
             Self::OpenCode => "opencode",
+            Self::Google => "google",
+            Self::Cursor => "cursor",
+            Self::Meta => "meta",
+            Self::OpenRouter => "openrouter",
         }
     }
 
@@ -142,6 +174,10 @@ impl HostSurfaceId {
             Self::Kimi => "kimi",
             Self::Minimax => "minimax",
             Self::OpenCode => "opencode",
+            Self::Google => "google",
+            Self::Cursor => "cursor",
+            Self::Meta => "meta",
+            Self::OpenRouter => "openrouter",
         }
     }
 
@@ -157,6 +193,10 @@ impl HostSurfaceId {
             Self::Kimi => "Kimi",
             Self::Minimax => "MiniMax",
             Self::OpenCode => "OpenCode",
+            Self::Google => "Google",
+            Self::Cursor => "Cursor",
+            Self::Meta => "Meta",
+            Self::OpenRouter => "OpenRouter",
         }
     }
 
@@ -172,6 +212,10 @@ impl HostSurfaceId {
             Self::Kimi => "Ki",
             Self::Minimax => "MM",
             Self::OpenCode => "OC",
+            Self::Google => "Go",
+            Self::Cursor => "Cu",
+            Self::Meta => "Me",
+            Self::OpenRouter => "OR",
         }
     }
 
@@ -199,6 +243,10 @@ impl HostSurfaceId {
             Self::Kimi => Some("https://www.kimi.com/membership/subscription?tab=quota"),
             Self::Minimax => Some("https://platform.minimax.io/console/usage"),
             Self::OpenCode => None,
+            Self::Google => Some("https://aistudio.google.com/usage"),
+            Self::Cursor => Some("https://cursor.com/settings"),
+            Self::Meta => None,
+            Self::OpenRouter => Some("https://openrouter.ai/activity"),
         }
     }
 
@@ -213,6 +261,10 @@ impl HostSurfaceId {
             Self::Zai | Self::Minimax => "codex",
             Self::Kimi => "kimi",
             Self::OpenCode => "opencode",
+            Self::Google => "gemini",
+            Self::Cursor => "cursor",
+            Self::Meta => "muse",
+            Self::OpenRouter => "opencode",
         }
     }
 
@@ -228,6 +280,10 @@ impl HostSurfaceId {
             Self::Kimi => Some("Kimi"),
             Self::Minimax => Some("MiniMax"),
             Self::OpenCode => Some("OpenCode"),
+            Self::Google => Some("Google"),
+            Self::Cursor => Some("Cursor"),
+            Self::Meta => Some("Meta"),
+            Self::OpenRouter => Some("OpenRouter"),
         }
     }
 
@@ -257,6 +313,10 @@ impl HostSurfaceId {
             "kimi" => Some(Self::Kimi),
             "minimax" => Some(Self::Minimax),
             "opencode" => Some(Self::OpenCode),
+            "google" | "gemini" | "antigravity" => Some(Self::Google),
+            "cursor" => Some(Self::Cursor),
+            "meta" | "muse" => Some(Self::Meta),
+            "openrouter" => Some(Self::OpenRouter),
             _ => None,
         }
     }
@@ -271,6 +331,13 @@ impl HostSurfaceId {
             Agent::Kimi => Self::Kimi,
             Agent::Opencode => Self::OpenCode,
             Agent::Grok => Self::Grok,
+            Agent::Antigravity | Agent::Gemini => Self::Google,
+            Agent::Cursor => Self::Cursor,
+            Agent::Muse => Self::Meta,
+            // Omp/Hermes are multi-provider clients with no native surface;
+            // they share the generic multi-provider surface until per-provider
+            // routing lands in the usage lane.
+            Agent::Omp | Agent::Hermes => Self::OpenCode,
         }
     }
 }
@@ -367,6 +434,43 @@ pub fn host_snapshot_store_path(data_dir: &Path) -> PathBuf {
 #[must_use]
 pub fn host_accounts_path(data_dir: &Path) -> PathBuf {
     data_dir.join(HOST_USAGE_STATE_REL).join("accounts.json")
+}
+
+/// Bounded batch broker read for console usage screens.
+///
+/// Issues one refresh request per unique capability and returns the broker's
+/// immediate answer for each: cached or last-good quota plus the live phase.
+/// This performs no blocking join — one slow provider's probe runs
+/// broker-side and never delays the other accounts' reads or the calling
+/// thread. Freshness arrives over subsequent heartbeat polls, which re-request
+/// (and join) through the same path.
+///
+/// Per-account failures are reported alongside successes, never as a batch
+/// abort. Pass `force: true` only for an explicit operator refresh: it
+/// bypasses the broker success cadence, while shared rate-limit/`Retry-After`
+/// deadlines are still honored broker-side and active generations are joined
+/// rather than duplicated.
+#[must_use]
+pub fn request_usage_batch(
+    client: &UsageBrokerClient,
+    capabilities: impl IntoIterator<Item = UsageAccountCapability>,
+    force: bool,
+) -> Vec<(
+    UsageAccountCapability,
+    Result<UsageGenerationView, UsageCoordinationError>,
+)> {
+    let mut results = Vec::new();
+    for capability in capabilities
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>()
+    {
+        let observed = client
+            .current(capability.clone())
+            .map_or(0, |view| view.generation);
+        let result = client.refresh(capability.clone(), observed, force);
+        results.push((capability, result));
+    }
+    results
 }
 
 const MAX_EVENT_LOG: usize = 4_096;
@@ -523,7 +627,7 @@ pub(crate) fn status_bar_rank_key(remaining: u8, resets_at: Option<i64>) -> (i64
 }
 
 /// Capsule-free host usage runtime.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HostUsageRuntime {
     cache: UsageCache,
     enabled: HashSet<String>,
@@ -546,6 +650,8 @@ pub struct HostUsageRuntime {
     desktop_detected_surfaces: HashSet<String>,
     /// Last completed current-membership discovery generation.
     discovery: Option<ValidatedUsageDiscovery>,
+    /// Monotonic local freshness fence for staged discovery commits.
+    discovery_generation: u64,
     /// Last quota snapshots fetched from explicit current discovery sources.
     discovered_views: BTreeMap<(HostSurfaceId, String), FocusedUsageView>,
     /// Explicit source state without authenticated account identity yet.
@@ -578,6 +684,7 @@ impl HostUsageRuntime {
             probe_policy: HostProbePolicy::Live,
             desktop_detected_surfaces: HashSet::new(),
             discovery: None,
+            discovery_generation: 0,
             discovered_views: BTreeMap::new(),
             discovered_provider_views: BTreeMap::new(),
             discovery_scope: None,
@@ -604,7 +711,18 @@ impl HostUsageRuntime {
             discover_usage_sources(&config.discovery_scope, resolver)?,
             resolver,
         );
-        self.open_prepared(config, Some(discovered))
+        self.open_with_validated_discovery(config, discovered)
+    }
+
+    /// Open after a caller has completed a fresh, validated discovery scan.
+    /// The typed discovery result is committed only after all config checks
+    /// pass, so broker activation can publish against the same generation.
+    pub fn open_with_validated_discovery(
+        &mut self,
+        config: HostRuntimeConfig,
+        discovery: ValidatedUsageDiscovery,
+    ) -> Result<(), String> {
+        self.open_prepared(config, Some(discovery))
     }
 
     fn open_prepared(
@@ -612,26 +730,7 @@ impl HostUsageRuntime {
         config: HostRuntimeConfig,
         discovery: Option<ValidatedUsageDiscovery>,
     ) -> Result<(), String> {
-        let enabled = if config.enabled_surface_ids.is_empty() {
-            HostSurfaceId::ALL
-                .iter()
-                .map(|surface| surface.id().to_owned())
-                .collect::<HashSet<_>>()
-        } else {
-            let unknown = config
-                .enabled_surface_ids
-                .iter()
-                .filter(|id| HostSurfaceId::from_id(id).is_none())
-                .cloned()
-                .collect::<Vec<_>>();
-            if !unknown.is_empty() {
-                return Err(format!(
-                    "unknown enabled surface ids: {}",
-                    unknown.join(", ")
-                ));
-            }
-            config.enabled_surface_ids.iter().cloned().collect()
-        };
+        let enabled = enabled_surface_ids(&config)?;
         let data_dir_changed = self
             .data_dir
             .as_ref()
@@ -666,6 +765,7 @@ impl HostUsageRuntime {
         self.probe_policy = config.probe_policy;
         self.discovery_scope = Some(config.discovery_scope);
         self.discovery = discovery;
+        self.discovery_generation = self.discovery_generation.saturating_add(1);
         self.discovered_views.clear();
         self.discovered_provider_views.clear();
         self.desktop_detected_surfaces.clear();
@@ -1564,6 +1664,28 @@ impl HostUsageRuntime {
             self.events.pop_front();
         }
     }
+}
+
+fn enabled_surface_ids(config: &HostRuntimeConfig) -> Result<HashSet<String>, String> {
+    if config.enabled_surface_ids.is_empty() {
+        return Ok(HostSurfaceId::ALL
+            .iter()
+            .map(|surface| surface.id().to_owned())
+            .collect());
+    }
+    let unknown = config
+        .enabled_surface_ids
+        .iter()
+        .filter(|id| HostSurfaceId::from_id(id).is_none())
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unknown.is_empty() {
+        return Err(format!(
+            "unknown enabled surface ids: {}",
+            unknown.join(", ")
+        ));
+    }
+    Ok(config.enabled_surface_ids.iter().cloned().collect())
 }
 
 fn discovered_account_keys(

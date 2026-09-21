@@ -86,6 +86,71 @@ fn enter_on_palette_emits_command() {
 }
 
 #[test]
+fn coalesced_typing_builds_palette_filter() {
+    // Scripted input arrives as one multi-byte `Data` chunk — every
+    // printable byte must land in the filter, not drop as a no-op.
+    let mut d = palette();
+    assert_eq!(d.handle_key(b"spl", None), DialogAction::Redraw);
+    let Dialog::CommandPalette {
+        filter, selected, ..
+    } = &d
+    else {
+        unreachable!()
+    };
+    assert_eq!(filter, "spl");
+    assert_eq!(*selected, 0);
+}
+
+#[test]
+fn coalesced_filter_then_confirm_emits_matching_command() {
+    let mut d = palette();
+    match d.handle_key(b"split\r", None) {
+        DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Split),
+        other => panic!("expected Command(Split), got {other:?}"),
+    }
+}
+
+#[test]
+fn coalesced_escape_chunk_stays_noop() {
+    // Chunks holding ESC keep whole-chunk dispatch so escape sequences
+    // stay atomic: filter untouched, no confirm, no dismiss.
+    let mut d = palette();
+    assert_eq!(d.handle_key(b"ab\x1b[Z", None), DialogAction::Redraw);
+    let Dialog::CommandPalette {
+        filter, selected, ..
+    } = &d
+    else {
+        unreachable!()
+    };
+    assert!(filter.is_empty());
+    assert_eq!(*selected, 0);
+}
+
+#[test]
+fn coalesced_direction_filter_confirms() {
+    let mut d = Dialog::SplitDirectionPicker {
+        selected: 0,
+        filter: String::new(),
+    };
+    assert_eq!(
+        d.handle_key(b"below\r", None),
+        DialogAction::SplitDirection(SplitDirection::Below)
+    );
+}
+
+#[test]
+fn coalesced_agent_filter_confirms_spawn() {
+    let mut d = picker(vec!["cx-b-inst"]);
+    match d.handle_key(b"cx-b-inst\r", None) {
+        DialogAction::SpawnAgent { agent, intent } => {
+            assert_eq!(agent.as_deref(), Some("cx-b-inst"));
+            assert_eq!(intent, PickerIntent::NewTab);
+        }
+        other => panic!("expected SpawnAgent, got {other:?}"),
+    }
+}
+
+#[test]
 fn enter_on_agent_picker_emits_spawn() {
     let mut d = picker(vec!["claude", "codex"]);
     match d.handle_key(b"\r", None) {
@@ -991,6 +1056,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
         tabs: vec![
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-codex".to_owned(),
                 label: "Codex".to_owned(),
                 status_label: "37% left · Resets in 1h 21m (Jun 17, 23:15)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -999,6 +1065,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: true,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-claude".to_owned(),
                 label: "Claude".to_owned(),
                 status_label: "16% left · Resets in 46m (Jun 17, 22:40)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1007,6 +1074,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-amp".to_owned(),
                 label: "Amp".to_owned(),
                 status_label: "unsupported".to_owned(),
                 account_label: "account unavailable".to_owned(),
@@ -1015,6 +1083,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-grok".to_owned(),
                 label: "Grok Build".to_owned(),
                 status_label: "needs login".to_owned(),
                 account_label: "account unavailable".to_owned(),
@@ -1023,6 +1092,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-zai".to_owned(),
                 label: "GLM / Z.AI".to_owned(),
                 status_label: "88% left · Resets in 4d (Jun 21, 00:00)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1031,6 +1101,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-kimi".to_owned(),
                 label: "Kimi".to_owned(),
                 status_label: "72% left · Resets in 13h (Jun 18, 11:00)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1039,6 +1110,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
+                id: "test-tab-minimax".to_owned(),
                 label: "MiniMax".to_owned(),
                 status_label: "100% left".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1071,6 +1143,74 @@ fn usage_projection_empty_inventory_has_no_retry_copy() {
             .iter()
             .any(|hint| matches!(hint, termrock::widgets::HintSpan::Key("r")))
     );
+}
+
+#[test]
+fn usage_overview_renders_one_row_per_account_tab() {
+    let mut view = usage_view_fixture();
+    view.tabs = vec![
+        jackin_protocol::control::UsageProviderTab {
+            id: "test-tab-claude-a".to_owned(),
+            label: "Claude".to_owned(),
+            status_label: "40% left".to_owned(),
+            account_label: "a@example.com".to_owned(),
+            plan_label: Some("Max".to_owned()),
+            source_label: Some("fresh · provider".to_owned()),
+            active: false,
+        },
+        jackin_protocol::control::UsageProviderTab {
+            id: "test-tab-claude-b".to_owned(),
+            label: "Claude".to_owned(),
+            status_label: "60% left".to_owned(),
+            account_label: "b@example.com".to_owned(),
+            plan_label: Some("Max 20x".to_owned()),
+            source_label: Some("fresh · provider".to_owned()),
+            active: true,
+        },
+        jackin_protocol::control::UsageProviderTab {
+            id: "test-tab-codex".to_owned(),
+            label: "Codex".to_owned(),
+            status_label: "37% left".to_owned(),
+            account_label: "codex@example.com".to_owned(),
+            plan_label: Some("Pro 20x".to_owned()),
+            source_label: Some("fresh · provider".to_owned()),
+            active: false,
+        },
+    ];
+    let strip = crate::tui::components::dialog_widgets::usage_tab_strip_labels(
+        &view,
+        UsageDialogTab::Overview,
+    );
+    assert_eq!(
+        strip
+            .iter()
+            .map(|(label, _)| label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Overview", "Anthropic", "Anthropic", "OpenAI"]
+    );
+    let dialog = Dialog::new_usage_with_tab(view, UsageDialogTab::Overview);
+    let state = dialog.usage_state().expect("usage state");
+    assert_eq!(state.rows().len(), 3);
+    assert_eq!(
+        state
+            .rows()
+            .iter()
+            .map(|row| row.value().to_owned())
+            .collect::<Vec<_>>(),
+        vec!["40% left", "60% left", "37% left"]
+    );
+}
+
+#[test]
+fn usage_overview_matches_provider_head_of_composite_tab_labels() {
+    use crate::tui::components::dialog_widgets::usage::is_overview_provider_label;
+
+    assert!(is_overview_provider_label("Anthropic"));
+    assert!(is_overview_provider_label("Anthropic · a@example.com"));
+    assert!(is_overview_provider_label("Cursor · c@example.com"));
+    assert!(is_overview_provider_label("OpenCode · o@example.com"));
+    assert!(!is_overview_provider_label("Nous Portal · n@example.com"));
+    assert!(!is_overview_provider_label("Username"));
 }
 
 fn usage_status_bucket(
@@ -1339,6 +1479,53 @@ fn minimax_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     )
 }
 
+fn antigravity_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    provider_usage_view_fixture(
+        "Antigravity",
+        "Antigravity",
+        "pilot@example.test",
+        Some("Antigravity Pro"),
+        "Updated 5m ago",
+        vec![
+            quota_bucket("Gemini · 5h", 73, Some("Resets in 1h 30m"), Some("On pace")),
+            // Legacy weekly fallback: no percent, no meter. The label head
+            // collides with the Gemini provider name, which used to route
+            // this row through the overview arm (S4/S5 parity).
+            text_bucket("Gemini · Weekly", "No data"),
+            quota_bucket(
+                "Other models · 5h",
+                12,
+                Some("Resets in 1h 30m"),
+                Some("5% in deficit"),
+            ),
+        ],
+    )
+}
+
+#[test]
+fn usage_provider_tab_renders_meterless_family_bucket_as_plain_row() {
+    let text = render_usage_dialog_snapshot_for_view(
+        100,
+        32,
+        UsageDialogTab::Provider,
+        antigravity_usage_view_fixture(),
+    );
+    assert!(
+        text.contains("73% left"),
+        "metered family bucket must render its percent:\n{text}"
+    );
+    // Plain label/value row — never the overview join, which glues label and
+    // value without a separator ("Gemini · WeeklyNo data").
+    assert!(
+        text.contains("Gemini · Weekly No data"),
+        "meter-less family bucket must render as a plain row:\n{text}"
+    );
+    assert!(
+        !text.contains("WeeklyNo data"),
+        "overview-arm misroute must not garble the row:\n{text}"
+    );
+}
+
 fn render_usage_dialog_snapshot(width: u16, height: u16, tab: UsageDialogTab) -> String {
     render_usage_dialog_snapshot_for_view(width, height, tab, usage_view_fixture())
 }
@@ -1566,8 +1753,12 @@ fn usage_dialog_provider_tabs_are_clickable() {
 
     assert!(d.clickable_at(tab_row, tab_col, 32, 120, None));
     match d.handle_click(tab_row, tab_col, 32, 120, None) {
-        DialogAction::SwitchUsageProvider { provider_label } => {
+        DialogAction::SwitchUsageProvider {
+            provider_label,
+            account_id,
+        } => {
             assert_eq!(provider_label, "Claude");
+            assert_eq!(account_id, "test-tab-claude");
         }
         other => panic!("expected provider switch, got {other:?}"),
     }
@@ -1951,7 +2142,8 @@ fn usage_dialog_right_arrow_switches_to_next_provider() {
     assert_eq!(
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
-            provider_label: "Claude".to_owned()
+            provider_label: "Claude".to_owned(),
+            account_id: "test-tab-claude".to_owned(),
         }
     );
 }
@@ -2507,4 +2699,233 @@ fn trparity_capsule_exit_inspect_arrows_scroll_without_dismissing() {
     // Second Down clamps at the last row.
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
     assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
+}
+
+// ---- S8 interaction evidence: keyboard, focus, scroll, refresh, resize ----
+
+fn s8_usage_scroll(d: &Dialog) -> (u16, u16) {
+    let Dialog::Usage { scroll, .. } = d else {
+        panic!("usage dialog");
+    };
+    (scroll.scroll_x, scroll.scroll_y)
+}
+
+fn s8_usage_tab_bar_focused(d: &Dialog) -> bool {
+    let Dialog::Usage {
+        tab_bar_focused, ..
+    } = d
+    else {
+        panic!("usage dialog");
+    };
+    *tab_bar_focused
+}
+
+#[test]
+fn s8_usage_r_and_shift_r_request_refresh() {
+    for key in [b"r".as_slice(), b"R".as_slice()] {
+        let mut d = Dialog::new_usage(usage_view_fixture());
+        assert_eq!(
+            d.handle_key(key, None),
+            DialogAction::RefreshUsage,
+            "key {key:?} must request a joined refresh"
+        );
+    }
+}
+
+#[test]
+fn s8_usage_shift_tab_restores_tab_focus() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    assert!(s8_usage_tab_bar_focused(&d));
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    assert!(!s8_usage_tab_bar_focused(&d));
+    assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
+    assert!(s8_usage_tab_bar_focused(&d));
+}
+
+#[test]
+fn s8_usage_esc_reverses_focus_then_dismisses() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    assert!(!s8_usage_tab_bar_focused(&d));
+
+    // First Esc walks focus back to the tab bar (focus reversal).
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Redraw);
+    assert!(s8_usage_tab_bar_focused(&d));
+
+    // Second Esc dismisses the dialog.
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
+}
+
+#[test]
+fn s8_usage_content_arrows_scroll_two_axes() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    // Tab-bar focus owns Left/Right for tab switches: no scroll movement.
+    assert_eq!(
+        d.handle_key(b"\x1b[C", None),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Claude".to_owned(),
+            account_id: "test-tab-claude".to_owned(),
+        }
+    );
+    assert_eq!(s8_usage_scroll(&d), (0, 0));
+
+    // Content focus owns every arrow plus hjkl for two-axis scrolling.
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 1));
+    assert_eq!(d.handle_key(b"j", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 2));
+    assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"k", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 0));
+    assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (1, 0));
+    assert_eq!(d.handle_key(b"l", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (2, 0));
+    assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"h", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 0));
+}
+
+#[test]
+fn s8_usage_right_from_last_tab_wraps_to_overview() {
+    let mut view = usage_view_fixture();
+    for tab in &mut view.tabs {
+        tab.active = tab.id == "test-tab-minimax";
+    }
+    let mut d = Dialog::new_usage(view);
+    assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    assert_eq!(d.usage_selected_tab(), Some(UsageDialogTab::Overview));
+    let state = d.usage_state().expect("usage state");
+    assert_eq!(state.rows()[0].label(), "OpenAI");
+}
+
+#[test]
+fn s8_usage_left_from_overview_goes_to_last_tab() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    assert_eq!(
+        d.handle_key(b"\x1b[D", None),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "MiniMax".to_owned(),
+            account_id: "test-tab-minimax".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn s8_usage_removed_account_renders_honest_unavailable() {
+    // Daemon fallback for a tab whose account left the cache (removal while
+    // the dialog is open): an honest unavailable view, never a sibling.
+    let view = jackin_protocol::control::FocusedUsageView::unavailable(
+        "usage unavailable: account not cached",
+        1_781_185_560,
+    );
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    assert!(
+        state
+            .rows()
+            .iter()
+            .any(|row| row.value() == "usage unavailable: account not cached"),
+        "removed account must render its reason: {state:?}"
+    );
+    let text = render_usage_dialog_snapshot_for_view(
+        100,
+        32,
+        UsageDialogTab::Provider,
+        jackin_protocol::control::FocusedUsageView::unavailable(
+            "usage unavailable: account not cached",
+            1_781_185_560,
+        ),
+    );
+    assert!(
+        text.contains("usage unavailable: account not cached"),
+        "{text}"
+    );
+}
+
+#[test]
+fn s8_usage_shrunk_tabs_overview_renders_remaining_rows() {
+    let mut view = usage_view_fixture();
+    view.tabs.truncate(2);
+    let d = Dialog::new_usage_with_tab(view, UsageDialogTab::Overview);
+    let state = d.usage_state().expect("usage state");
+    assert_eq!(state.rows().len(), 2);
+    assert_eq!(state.rows()[0].label(), "OpenAI");
+    assert_eq!(state.rows()[1].label(), "Anthropic");
+    let text = render_usage_dialog_snapshot(100, 32, UsageDialogTab::Overview);
+    assert!(text.contains("Overview"), "{text}");
+}
+
+#[test]
+fn s8_usage_refreshing_placeholder_renders_loading() {
+    let view =
+        jackin_protocol::control::FocusedUsageView::refreshing(Some("OpenAI"), 1_781_185_560);
+    assert!(view.is_refreshing_placeholder());
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    assert!(
+        state
+            .rows()
+            .iter()
+            .any(|row| row.value().contains("Refreshing") || row.value().contains("refreshing")),
+        "refreshing placeholder must render loading copy: {state:?}"
+    );
+}
+
+#[test]
+fn s8_usage_long_unicode_labels_render() {
+    let mut view = usage_view_fixture();
+    view.account.account_label = format!("work-巴黎-🚀-memo{}", "·很长的账户备注".repeat(6));
+    let text = render_usage_dialog_snapshot_for_view(100, 32, UsageDialogTab::Provider, view);
+    assert!(text.contains("Usage"), "{text}");
+    assert!(text.contains("🚀"), "{text}");
+    let squeezed: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(squeezed.contains("巴黎"), "{text}");
+    assert!(squeezed.contains("很长的账户备注"), "{text}");
+}
+
+#[test]
+fn s8_usage_resize_pair_keeps_identity() {
+    for (width, height) in [(80, 24), (60, 18), (120, 40)] {
+        let text = render_usage_dialog_snapshot(width, height, UsageDialogTab::Provider);
+        assert!(
+            text.contains("alexey@example.com"),
+            "account lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("Pro 20x"),
+            "plan lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("Updated now"),
+            "activity lost at {width}x{height}:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn s8_usage_extreme_scroll_still_renders_chrome() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    for _ in 0..500 {
+        assert_eq!(d.handle_key(b"j", None), DialogAction::Redraw);
+    }
+    assert!(s8_usage_scroll(&d).1 >= 500);
+    // Render clamps the runaway offset: chrome survives, no panic.
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(18, 60);
+    let backend = TestBackend::new(60, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer();
+    let rendered = (0..18)
+        .map(|y| (0..60).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Usage"), "{rendered}");
 }

@@ -60,7 +60,7 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         .stderr(predicate::str::contains("synthetic-default-token").not());
     assert!(matches!(
         &registry(home)?.accounts["default-codex"].credential,
-        AccountCredential::Profile { agent: Agent::Codex, directory }
+        AccountCredential::Profile { agent: Agent::Codex, directory, .. }
             if directory == &home.join(".codex")
     ));
 
@@ -77,7 +77,7 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         .success();
     assert!(matches!(
         &registry(home)?.accounts["work"].credential,
-        AccountCredential::Profile { agent: Agent::Codex, directory }
+        AccountCredential::Profile { agent: Agent::Codex, directory, .. }
             if directory == &profile.canonicalize()?
     ));
     command(home)?
@@ -149,7 +149,45 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         .success()
         .stdout(predicate::str::contains("default-codex").not());
     command(home)?.args(["account", "scan"]).assert().success();
-    assert!(registry(home)?.accounts.contains_key("default-codex"));
+    // Explicit scans honor the tombstone created by `account remove`; a
+    // deliberately removed discovered profile must not be resurrected.
+    assert!(!registry(home)?.accounts.contains_key("default-codex"));
+    Ok(())
+}
+
+#[test]
+fn account_scan_persists_zshrc_model_and_endpoint_without_new_account() -> anyhow::Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let home = temporary.path();
+    command(home)?
+        .args([
+            "account",
+            "add",
+            "openai-api-key",
+            "--provider",
+            "openai",
+            "--api-key",
+            "--secret-ref",
+            "$OPENAI_API_KEY",
+        ])
+        .assert()
+        .success();
+    fs::write(
+        home.join(".zshrc"),
+        "OPENAI_MODEL=gpt-5-boundary\nOPENAI_BASE_URL=https://proxy.example/v1\n",
+    )?;
+
+    command(home)?.args(["account", "scan"]).assert().success();
+
+    let config = registry(home)?;
+    let AccountCredential::ApiKey {
+        model, base_url, ..
+    } = &config.accounts["openai-api-key"].credential
+    else {
+        anyhow::bail!("expected API-key account");
+    };
+    assert_eq!(model.as_deref(), Some("gpt-5-boundary"));
+    assert_eq!(base_url.as_deref(), Some("https://proxy.example/v1"));
     Ok(())
 }
 

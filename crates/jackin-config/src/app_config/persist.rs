@@ -18,8 +18,8 @@ use super::AppConfig;
 use crate::editor::ConfigEditor;
 use crate::migrations;
 use crate::persist::{
-    acquire_config_write_lock, commit_staged_config, ensure_replaceable_target, stage_atomic_write,
-    validate_workspace_file_stem,
+    acquire_config_write_lock, commit_staged_config, ensure_replaceable_target,
+    publication_journal_path, stage_atomic_write, validate_workspace_file_stem,
 };
 use crate::schema::WorkspaceConfig;
 use crate::validation::validate_workspace_config;
@@ -55,19 +55,26 @@ impl LoadedConfig {
         validate_editor_config_semantics(&self.config)
     }
 
-    pub(crate) fn commit(self) -> crate::ConfigResult<AppConfig> {
+    /// Mutable access for first-run bootstrap scans, which register
+    /// discovered accounts before the editor validates and commits.
+    pub(crate) fn config_mut(&mut self) -> &mut AppConfig {
+        &mut self.config
+    }
+
+    pub(crate) fn commit(self, journal_path: &Path) -> crate::ConfigResult<AppConfig> {
         let Self {
             config,
             pending_writes,
         } = self;
 
-        commit_pending_config_writes(pending_writes)?;
+        commit_pending_config_writes(pending_writes, journal_path)?;
         Ok(config)
     }
 }
 
 fn commit_pending_config_writes(
     pending_writes: Vec<PendingConfigWrite>,
+    journal_path: &Path,
 ) -> crate::ConfigResult<()> {
     for write in &pending_writes {
         ensure_replaceable_target(&write.path)?;
@@ -78,7 +85,7 @@ fn commit_pending_config_writes(
         staged.push(stage_atomic_write(&write.path, &write.contents)?);
     }
     let mut deletes = Vec::new();
-    commit_staged_config(&mut staged, &mut deletes)
+    commit_staged_config(journal_path, &mut staged, &mut deletes)
 }
 
 /// Stable content generation for one admitted config tree.
@@ -119,7 +126,9 @@ pub enum ConfigSourceIssue {
     InvalidWorkspaceName,
     /// Embedded and split definitions for one workspace disagreed.
     ConflictingWorkspaceDefinitions,
-    /// The config tree changed repeatedly while it was being read.
+    /// The config tree changed repeatedly while it was being read, or a
+    /// crashed multi-file publication is still pending (a write-locked open
+    /// forward-rolls it; the read path never serves the skewed bytes).
     TransientConflict,
 }
 
@@ -176,6 +185,15 @@ where
 {
     let _guard = crate::persist::acquire_config_read_lock(&paths.config_file)?;
     for attempt in 0..READ_ONLY_SNAPSHOT_ATTEMPTS {
+        // A pending publication journal means a writer died mid-rename: the
+        // tree may hold global-new/workspace-old skew. Report it as transient
+        // instead of serving skew as stable, without touching disk.
+        if publication_journal_path(&paths.config_file)
+            .symlink_metadata()
+            .is_ok()
+        {
+            return Ok(transient_config_snapshot());
+        }
         let before = read_raw_config_tree(paths);
         let snapshot = parse_raw_config_tree(&before);
         between_reads(attempt);
@@ -185,14 +203,20 @@ where
         }
     }
 
-    Ok(ReadOnlyConfigSnapshot {
+    Ok(transient_config_snapshot())
+}
+
+/// Stable fallback snapshot when the on-disk tree cannot be trusted: either it
+/// tore repeatedly mid-read or a crashed publication is still pending.
+fn transient_config_snapshot() -> ReadOnlyConfigSnapshot {
+    ReadOnlyConfigSnapshot {
         config: AppConfig::default(),
         diagnostics: vec![ConfigSourceDiagnostic {
             scope: ConfigSourceScope::Workspaces,
             issue: ConfigSourceIssue::TransientConflict,
         }],
         generation: config_generation(&[]),
-    })
+    }
 }
 
 fn read_raw_config_tree(paths: &JackinPaths) -> RawConfigTree {
@@ -379,6 +403,7 @@ fn parse_global_config(
         migrations::CONFIG_MIGRATIONS,
     )?;
     migrate_embedded_op_accounts(&mut doc).map_err(|_| ConfigSourceIssue::Malformed)?;
+    migrate_embedded_workspaces(&mut doc)?;
     let mut config: AppConfig =
         toml::from_str(&doc.to_string()).map_err(|_| ConfigSourceIssue::Malformed)?;
     let raw_embedded = std::mem::take(&mut config.workspaces);
@@ -526,9 +551,10 @@ pub fn load_split_config(
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
     let _lock = acquire_config_write_lock(&paths.config_file)?;
+    // Lock acquisition already forward-rolled any pending publication.
     let loaded = load_split_config_locked(paths, contents_opt)?;
     loaded.validate()?;
-    loaded.commit()
+    loaded.commit(&publication_journal_path(&paths.config_file))
 }
 
 pub(crate) fn load_split_config_locked(
@@ -565,6 +591,15 @@ pub(crate) fn load_split_config_locked(
             );
             let migrated = migrated_from?.is_some();
             migrate_embedded_op_accounts(&mut doc)?;
+            // Legacy embedded workspaces predate per-workspace schema
+            // versions; migrate each through WORKSPACE_MIGRATIONS before
+            // strict parse, otherwise unknown agent tables brick the load
+            // (`WorkspaceConfig` denies unknown fields).
+            migrate_embedded_workspaces(&mut doc).map_err(|issue| {
+                ConfigError::msg(format!(
+                    "migrating embedded workspace configuration: {issue:?}"
+                ))
+            })?;
             let serialized = doc.to_string();
             if migrated {
                 migrated_global_contents = Some(serialized.clone());
@@ -621,7 +656,32 @@ pub(crate) fn load_split_config_locked(
     })
 }
 
-/// Upgrade embedded legacy fields before strict `WorkspaceConfig` deserialization.
+/// Run the complete workspace migration chain before strict deserialization.
+fn migrate_embedded_workspaces(doc: &mut DocumentMut) -> Result<(), ConfigSourceIssue> {
+    let Some(workspaces) = doc
+        .get_mut("workspaces")
+        .and_then(toml_edit::Item::as_table_mut)
+    else {
+        return Ok(());
+    };
+    for (_, item) in workspaces.iter_mut() {
+        let Some(table) = item.as_table_mut() else {
+            continue;
+        };
+        let mut workspace = DocumentMut::new();
+        *workspace.as_table_mut() = table.clone();
+        let workspace = migrate_document_in_memory(
+            &workspace.to_string(),
+            "workspace config",
+            CURRENT_WORKSPACE_VERSION,
+            migrations::WORKSPACE_MIGRATIONS,
+        )?;
+        *table = workspace.as_table().clone();
+    }
+    Ok(())
+}
+
+/// Upgrade embedded legacy `op_account` fields before strict deserialization.
 fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     let Some(workspaces) = doc
         .get_mut("workspaces")
@@ -654,7 +714,7 @@ pub fn load_workspace_files(
         .join("config.toml");
     let _lock = acquire_config_write_lock(&config_file)?;
     let (workspaces, pending_writes) = load_workspace_files_locked(workspaces_dir)?;
-    commit_pending_config_writes(pending_writes)?;
+    commit_pending_config_writes(pending_writes, &publication_journal_path(&config_file))?;
     Ok(workspaces)
 }
 
@@ -889,7 +949,12 @@ fn validate_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
 
 fn validate_editor_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
     validate_reserved_env_names(config)?;
-    config.validate_accounts()
+    // Multi-account × #1006 reconciliation: the open-path gate keeps the
+    // pre-multi-account scope (registry + bindings). Launch-instance
+    // references stay enforced at save/load boundaries, so the editor can
+    // open a config whose instance account is not registered yet and
+    // repair it via `upsert_account` + `save`.
+    config.validate_registry_and_bindings()
 }
 
 /// `true` when `raw` still embeds non-empty `[workspaces]` tables.
@@ -923,8 +988,20 @@ pub(crate) fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<O
 impl AppConfig {
     /// Load `config.toml` (migrate as needed), split workspaces, sync builtins, validate.
     pub fn load_or_init(paths: &JackinPaths) -> crate::ConfigResult<Self> {
+        Self::load_or_init_detailed(paths).map(|(config, _)| config)
+    }
+
+    /// [`load_or_init`](Self::load_or_init) plus the bootstrap report for
+    /// callers that surface first-run discovery results (the CLI `account
+    /// scan` report). The report carries accounts the builtin-sync open
+    /// imported; without it a first scan would print `Imported 0` for
+    /// accounts this load already registered.
+    pub fn load_or_init_detailed(
+        paths: &JackinPaths,
+    ) -> crate::ConfigResult<(Self, crate::BootstrapReport)> {
         paths.ensure_base_dirs()?;
         let lock = acquire_config_write_lock(&paths.config_file)?;
+        // Lock acquisition already forward-rolled any pending publication.
         let loaded = (|| {
             let contents_opt = load_config_contents(paths)?;
             let loaded = load_split_config_locked(paths, contents_opt)?;
@@ -943,7 +1020,7 @@ impl AppConfig {
                 loaded.config.validate_workspaces(),
             )?;
 
-            loaded.commit()
+            loaded.commit(&publication_journal_path(&paths.config_file))
         })();
         let mut config = crate::telemetry::finish_operation(
             jackin_telemetry::schema::enums::ConfigScope::Global,
@@ -955,18 +1032,20 @@ impl AppConfig {
         // validation. Passing it into the editor avoids recursive acquisition
         // while preserving one writer scope for the tree.
         let builtins_changed = config.sync_builtin_agents();
-        if builtins_changed {
-            let mut editor = ConfigEditor::open_with_lock(paths, lock)?;
+        let bootstrap = if builtins_changed {
+            let (mut editor, report) = ConfigEditor::open_with_lock(paths, lock)?;
             for &(name, git) in super::roles::BUILTIN_ROLES {
                 editor.upsert_builtin_agent(name, git);
             }
             // Take save()'s post-write parse: it preserves [roles.X.env] that
             // sync_builtin_agents cleared in-memory.
             config = editor.save()?;
+            report
         } else {
             drop(lock);
-        }
-        Ok(config)
+            crate::BootstrapReport::default()
+        };
+        Ok((config, bootstrap))
     }
 }
 

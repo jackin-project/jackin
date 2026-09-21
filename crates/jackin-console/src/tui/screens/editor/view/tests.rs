@@ -967,6 +967,7 @@ fn editor_with_agent_override() -> EditorState<'static> {
             account_bindings: BTreeMap::new(),
             env: role_env,
             github: None,
+            default_launch: None,
         },
     );
     let ws = WorkspaceConfig {
@@ -1111,6 +1112,7 @@ fn secrets_flat_rows_sequence_is_canonical() {
             account_bindings: BTreeMap::new(),
             env: role_env,
             github: None,
+            default_launch: None,
         },
     );
     roles.insert(
@@ -1119,6 +1121,7 @@ fn secrets_flat_rows_sequence_is_canonical() {
             account_bindings: BTreeMap::new(),
             env: BTreeMap::new(),
             github: None,
+            default_launch: None,
         },
     );
 
@@ -1440,6 +1443,7 @@ fn section_spacer_appears_between_workspace_and_first_agent_section() {
             account_bindings: BTreeMap::new(),
             env: role_env,
             github: None,
+            default_launch: None,
         },
     );
     let ws = WorkspaceConfig {
@@ -1476,6 +1480,7 @@ fn section_spacer_appears_between_consecutive_agent_sections() {
             account_bindings: BTreeMap::new(),
             env: a_env,
             github: None,
+            default_launch: None,
         },
     );
     roles.insert(
@@ -1484,6 +1489,7 @@ fn section_spacer_appears_between_consecutive_agent_sections() {
             account_bindings: BTreeMap::new(),
             env: b_env,
             github: None,
+            default_launch: None,
         },
     );
     let ws = WorkspaceConfig {
@@ -1696,11 +1702,10 @@ fn renderer_plain_with_bare_op_uri_renders_as_literal_no_breadcrumb() {
     );
 }
 
-/// Single env var → `label_width` equals key length. Without the explicit
-/// two-space span, the screenshot bug (`CLAUDE_CODE_OAUTH_TOKENPrivate` / ...)
-/// recurs.
+/// Account-owned credential rows stay masked even when their value is an
+/// `OpRef`; the generic workspace editor must not expose the breadcrumb.
 #[test]
-fn renderer_key_value_separator_always_at_least_two_spaces() {
+fn renderer_account_credential_op_ref_never_exposes_breadcrumb() {
     let mut env = BTreeMap::new();
     env.insert(
         "CLAUDE_CODE_OAUTH_TOKEN".into(),
@@ -1722,12 +1727,12 @@ fn renderer_key_value_separator_always_at_least_two_spaces() {
     // Use the wide terminal so the breadcrumb is not truncated.
     let dump = render_to_dump_wide(&editor);
     assert!(
-        dump.contains("CLAUDE_CODE_OAUTH_TOKEN  Private"),
-        "expected at least 2 spaces between key and breadcrumb; dump:\n{dump}"
+        dump.contains("CLAUDE_CODE_OAUTH_TOKEN  ●●●"),
+        "account-owned credential must stay masked; dump:\n{dump}"
     );
     assert!(
-        !dump.contains("CLAUDE_CODE_OAUTH_TOKENPrivate"),
-        "no space is the bug; dump:\n{dump}"
+        !dump.contains("Private/Claude/security/auth token"),
+        "account-owned credential breadcrumb leaked; dump:\n{dump}"
     );
 }
 

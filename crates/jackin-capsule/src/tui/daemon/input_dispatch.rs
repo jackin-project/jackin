@@ -179,19 +179,22 @@ impl Multiplexer {
             DialogAction::RefreshUsage => {
                 self.request_usage_refresh_for_provider(None);
             }
-            DialogAction::SwitchUsageProvider { provider_label } => {
-                let view = self.focused_usage_snapshot_for_provider(Some(&provider_label));
+            DialogAction::SwitchUsageProvider {
+                provider_label,
+                account_id,
+            } => {
+                let view = self.focused_usage_snapshot_for_account_id(&account_id, &provider_label);
                 if let Some(dialog) = self.dialog_top_mut() {
                     *dialog = Dialog::new_usage(view);
                 }
-                self.request_usage_refresh_for_provider(Some(&provider_label));
+                self.request_usage_refresh_for_account_id(&account_id, &provider_label);
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
                 // push it on top of the SplitDirectionPicker so Esc
                 // walks the operator one step back instead of
                 // closing the whole flow.
-                let agents = self.launch_env.available_agents.clone();
+                let agents = self.launch_env.available_instances.clone();
                 self.dialog_push(Dialog::new_agent_picker(
                     agents,
                     PickerIntent::Split(direction),
@@ -216,6 +219,77 @@ impl Multiplexer {
             }
         }
         self.invalidate(frame_plan.reason());
+    }
+
+    /// Focused usage snapshot for a tab switch: exact account id when the
+    /// action carries one, label resolution only for empty ids (old
+    /// payloads). A non-empty but unknown id is an honest unavailable, never
+    /// a label-guessed sibling account.
+    fn focused_usage_snapshot_for_account_id(
+        &mut self,
+        account_id: &str,
+        provider_label: &str,
+    ) -> jackin_protocol::control::FocusedUsageView {
+        if account_id.is_empty() {
+            return self.focused_usage_snapshot_for_provider(Some(provider_label));
+        }
+        if let Some(view) = self
+            .usage
+            .usage_cache
+            .focused_snapshot_for_account_id(account_id)
+        {
+            return view;
+        }
+        jackin_protocol::control::FocusedUsageView::unavailable(
+            "usage unavailable: account not cached",
+            chrono::Utc::now().timestamp(),
+        )
+    }
+
+    /// Queue a refresh for a tab switch: exact account id when the action
+    /// carries one, label resolution only for empty ids (old payloads). A
+    /// non-empty but unrefreshable id queues nothing rather than refreshing
+    /// a label-guessed sibling account.
+    fn request_usage_refresh_for_account_id(&mut self, account_id: &str, provider_label: &str) {
+        if account_id.is_empty() {
+            self.request_usage_refresh_for_provider(Some(provider_label));
+            return;
+        }
+        let Some(target) = self.usage_refresh_target_for_account_id(account_id) else {
+            return;
+        };
+        // Queue through the shared path so the open dialog gets the same
+        // refreshing treatment, then pin the exact id-resolved target: the
+        // display label must never route a refresh.
+        self.request_usage_refresh_for_provider(None);
+        self.usage.pending_usage_refresh = Some(target);
+    }
+
+    /// Refresh target for the session holding the broker account behind a tab
+    /// id. The session's own provider label and capability keep the target
+    /// authoritative; the action's display label never routes a refresh.
+    fn usage_refresh_target_for_account_id(
+        &self,
+        account_id: &str,
+    ) -> Option<crate::usage::UsageRefreshTarget> {
+        let broker_account_id = self
+            .usage
+            .usage_cache
+            .broker_account_id_for_tab_id(account_id)?;
+        let session = self.session_supervisor.sessions.values().find(|session| {
+            session
+                .usage_capability
+                .as_ref()
+                .is_some_and(|capability| capability.account_id == broker_account_id)
+        })?;
+        Some(crate::usage::UsageRefreshTarget {
+            agent: session.agent.clone()?,
+            provider: session
+                .provider
+                .as_ref()
+                .map(|provider| provider.label.clone()),
+            capability: session.usage_capability.clone()?,
+        })
     }
 
     pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) -> bool {
@@ -360,7 +434,7 @@ impl Multiplexer {
                 self.invalidate_for(&Action::OpenRenameTab(idx));
             }
             Action::OpenAgentPicker(intent) => {
-                let agents = self.launch_env.available_agents.clone();
+                let agents = self.launch_env.available_instances.clone();
                 self.dialog_push(Dialog::new_agent_picker(agents, intent));
                 self.invalidate_for(&Action::OpenAgentPicker(intent));
             }
@@ -447,7 +521,7 @@ impl Multiplexer {
                     && let Some(session) = self.session_supervisor.sessions.get(focused)
                     && session.focus_events_enabled()
                 {
-                    session.send_input(bytes);
+                    let _sent = session.send_input(bytes);
                 }
             }
             Action::MouseChromeUpdate { row, col, button } => {
@@ -507,7 +581,7 @@ impl Multiplexer {
                         button,
                     )
                 {
-                    session.send_input(&buf);
+                    let _sent = session.send_input(&buf);
                     return;
                 }
                 if filled == 0 {
@@ -845,7 +919,7 @@ impl Multiplexer {
                 // explicitly choose between that agent and a Shell;
                 // jumping straight into the agent would surprise an
                 // operator who picked "New tab" to open a shell.
-                let agents = self.launch_env.available_agents.clone();
+                let agents = self.launch_env.available_instances.clone();
                 self.dialog_push(Dialog::new_agent_picker(agents, intent));
             }
             PaletteCommandRoute::NextTab => {

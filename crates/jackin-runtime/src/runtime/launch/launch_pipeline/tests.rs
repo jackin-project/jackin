@@ -126,7 +126,33 @@ agents = ["codex"]
         let validated_repo =
             jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
 
-        let config = AppConfig::load_or_init(&paths).unwrap();
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        config.accounts.insert(
+            "test-codex".into(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: "Test".into(),
+                provider: jackin_config::AiProvider::OpenAi,
+                credential: jackin_config::AccountCredential::ApiKey {
+                    value: "test-key".into(),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+        config.agent_configurations.insert(
+            "codex-main".into(),
+            jackin_config::AgentConfiguration {
+                agent: Agent::Codex,
+                account: "test-codex".into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+        config.default_launch = Some(vec!["codex-main".into()]);
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
         let workspace = jackin_config::ResolvedWorkspace {
             name: String::new(),
             label: cached_repo.repo_dir.display().to_string(),
@@ -210,6 +236,9 @@ agents = ["codex"]
     }
 
     fn as_core(&mut self) -> LaunchCore<'_, FakeDockerClient, FakeRunner> {
+        let account_revision =
+            super::super::account_identity::AccountConfigRevision::acquire(&self.paths).unwrap();
+        let admission_config = self.config.clone();
         LaunchCore {
             paths: &self.paths,
             config: &mut self.config,
@@ -244,6 +273,8 @@ agents = ["codex"]
             rebuild: false,
             restore_pinned_sha: None,
             git_pull_join: None,
+            account_revision,
+            admission_config,
         }
     }
 }
@@ -584,4 +615,97 @@ fn launch_core_builder_populates_required_fields() {
     assert!(matches!(core.image_decision, ImageDecision::Reuse { .. }));
     assert_eq!(core.role_key, "agent-smith");
     drop(core);
+}
+
+fn breadcrumb_config() -> (AppConfig, WorkspaceName) {
+    use jackin_config::{AccountConfig, AccountCredential, AgentConfiguration, AiProvider};
+    let mut config = AppConfig::default();
+    for (id, display, provider) in [
+        ("a-claude", "A", AiProvider::Anthropic),
+        ("z-claude", "Z", AiProvider::Anthropic),
+        ("c-codex", "C", AiProvider::OpenAi),
+    ] {
+        config.accounts.insert(
+            id.to_owned(),
+            AccountConfig {
+                enabled: true,
+                name: display.into(),
+                provider,
+                credential: AccountCredential::ApiKey {
+                    value: jackin_core::EnvValue::Plain("test-key".into()),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    for (id, agent, account) in [
+        ("claude-a", Agent::Claude, "a-claude"),
+        ("claude-z", Agent::Claude, "z-claude"),
+        ("codex-c", Agent::Codex, "c-codex"),
+    ] {
+        config.agent_configurations.insert(
+            id.to_owned(),
+            AgentConfiguration {
+                agent,
+                account: account.into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+    }
+    let ws = WorkspaceName::parse("demo").unwrap();
+    config.workspaces.insert(
+        ws.as_str().to_owned(),
+        jackin_config::WorkspaceConfig {
+            workdir: "/demo".into(),
+            accounts: vec!["a-claude".into(), "z-claude".into(), "c-codex".into()],
+            default_launch: Some(vec!["claude-a".into(), "claude-z".into(), "codex-c".into()]),
+            ..Default::default()
+        },
+    );
+    (config, ws)
+}
+
+#[test]
+fn breadcrumb_auth_mode_uses_single_account_directly() {
+    use jackin_config::AuthForwardMode;
+    let (mut config, ws) = breadcrumb_config();
+    config.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["c-codex".into()];
+    config
+        .workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .default_launch = None;
+    let mode = breadcrumb_auth_mode(&config, Agent::Codex, Some(&ws), "smith").unwrap();
+    assert_eq!(mode, AuthForwardMode::ApiKey);
+}
+
+#[test]
+fn breadcrumb_auth_mode_falls_back_to_first_admitted_instance() {
+    use jackin_config::AuthForwardMode;
+    let (config, ws) = breadcrumb_config();
+    // Two Claude accounts: no single account resolves, but the breadcrumb
+    // must not fail the launch — it reports the first admitted instance.
+    jackin_config::resolve_account(&config, Agent::Claude, Some(&ws), "smith")
+        .expect_err("two claude accounts must not resolve to one");
+    let mode = breadcrumb_auth_mode(&config, Agent::Claude, Some(&ws), "smith").unwrap();
+    assert_eq!(mode, AuthForwardMode::ApiKey);
+}
+
+#[test]
+fn breadcrumb_auth_mode_ignores_agents_with_no_admitted_instance() {
+    use jackin_config::AuthForwardMode;
+    let (mut config, ws) = breadcrumb_config();
+    config
+        .workspaces
+        .get_mut(ws.as_str())
+        .unwrap()
+        .default_launch = Some(vec!["codex-c".into()]);
+    // Claude is still ambiguous (two authorized accounts) while the launch
+    // admits only Codex, so the Claude breadcrumb reports `Ignore`.
+    let mode = breadcrumb_auth_mode(&config, Agent::Claude, Some(&ws), "smith").unwrap();
+    assert_eq!(mode, AuthForwardMode::Ignore);
 }

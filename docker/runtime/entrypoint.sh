@@ -34,9 +34,19 @@ run_hook() {
 # values.
 /jackin/runtime/jackin-capsule runtime-setup
 
+# ── session-scoped hook state ──────────────────────────────────────────
+# Landlock-confined agent sessions cannot write capsule-wide /jackin/state,
+# so hooks must write under JACKIN_HOOK_STATE_DIR instead. Export before ALL
+# hook execution (setup-once, source, preflight) so hooks inherit it.
+export JACKIN_HOOK_STATE_DIR="${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hook-state"
+if ! mkdir -p "$JACKIN_HOOK_STATE_DIR"; then
+    echo "[entrypoint] failed to create hook state directory $JACKIN_HOOK_STATE_DIR" >&2
+    exit 1
+fi
+
 # ── agent runtime status env ───────────────────────────────────────────
-# JACKIN_SESSION_ID is set by the daemon before spawning. Export remaining
-# status vars so hook scripts and subprocesses inherit them.
+# JACKIN_SESSION_ID is set only for agent runtimes by the daemon. Export
+# remaining status vars so agent hook scripts and subprocesses inherit them.
 export JACKIN_STATUS_SOCKET="${JACKIN_STATUS_SOCKET:-/jackin/run/jackin.sock}"
 export JACKIN_STATUS_SOURCE="${JACKIN_STATUS_SOURCE:-wrapper-${JACKIN_SESSION_ID:-0}}"
 export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"
@@ -127,7 +137,7 @@ esac
 
 # ── role runtime hooks ─────────────────────────────────────────────
 if [ -x /jackin/runtime/hooks/setup-once.sh ]; then
-    setup_once_marker="/jackin/state/hooks/setup-once.done"
+    setup_once_marker="${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hooks/setup-once.done"
     if [ ! -e "$setup_once_marker" ]; then
         if ! mkdir -p "$(dirname "$setup_once_marker")"; then
             echo "[entrypoint] failed to create marker directory $(dirname "$setup_once_marker")" >&2

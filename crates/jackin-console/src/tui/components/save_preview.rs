@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use crate::tui::auth_config::{env_display_map, env_display_map_without_auth_credentials};
+use crate::tui::auth_config::env_display_map_without_auth_credentials;
 use crate::tui::screens::editor::model::{EditorMode, EditorState};
 use crate::tui::screens::settings::model::{
     GlobalMountsState, SettingsAuthState, SettingsEnvState, SettingsState, SettingsTrustState,
@@ -531,11 +531,11 @@ pub fn settings_env_preview(
     config: &crate::tui::screens::settings::model::SettingsEnvConfig<jackin_config::EnvValue>,
 ) -> SettingsEnvPreview {
     SettingsEnvPreview {
-        env: env_display_map(&config.env),
+        env: env_display_map_without_auth_credentials(&config.env),
         roles: config
             .roles
             .iter()
-            .map(|(role, env)| (role.clone(), env_display_map(env)))
+            .map(|(role, env)| (role.clone(), env_display_map_without_auth_credentials(env)))
             .collect(),
     }
 }
@@ -1225,7 +1225,11 @@ pub fn append_env_map_diff_lines(
     dim: Style,
 ) {
     let prefix = indent.unwrap_or("");
+    let credential_keys = crate::tui::auth_config::auth_credential_env_keys();
     for (k, v) in pending {
+        if credential_keys.contains(k.as_str()) {
+            continue;
+        }
         match original.get(k) {
             Some(ov) if ov == v => {}
             _ => out.push(Line::from(Span::styled(
@@ -1235,6 +1239,9 @@ pub fn append_env_map_diff_lines(
         }
     }
     for k in original.keys() {
+        if credential_keys.contains(k.as_str()) {
+            continue;
+        }
         if !pending.contains_key(k) {
             out.push(Line::from(Span::styled(format!("{prefix}  - {k}"), dim)));
         }

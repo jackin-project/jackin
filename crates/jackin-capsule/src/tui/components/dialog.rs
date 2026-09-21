@@ -98,6 +98,7 @@ impl SplitDirection {
     /// Operator-facing label for the `SplitDirectionPicker` rows and
     /// the menu hint footer. Glyphs match the cardinal arrows the
     /// operator presses to reach equivalent panes after the split.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Left => "← Left",
@@ -304,6 +305,7 @@ pub enum ConfirmKind {
 }
 
 impl ConfirmKind {
+    #[must_use]
     pub fn title(self) -> &'static str {
         match self {
             Self::ClosePane => "Close pane?",
@@ -312,6 +314,7 @@ impl ConfirmKind {
         }
     }
 
+    #[must_use]
     pub fn message(self) -> &'static str {
         match self {
             Self::ClosePane => "Reap the focused pane's agent. Unsaved state in that pane is lost.",
@@ -379,7 +382,13 @@ pub enum DialogAction {
     /// Request a daemon-side focused usage refresh.
     RefreshUsage,
     /// Request a daemon-side usage snapshot for a specific provider tab.
-    SwitchUsageProvider { provider_label: String },
+    /// `account_id` is the stable canonical account id and the resolution
+    /// key; `provider_label` stays for display and old-payload back-compat
+    /// (empty id falls back to label resolution).
+    SwitchUsageProvider {
+        provider_label: String,
+        account_id: String,
+    },
     /// Dialog is still open; redraw.
     Redraw,
     /// Operator confirmed a `jackin-exec` credential picker (Enter). Carries
@@ -492,12 +501,15 @@ impl Dialog {
                 {
                     return DialogAction::Dismiss;
                 }
-                if let Some(provider_label) = match key {
+                if let Some(tab) = match key {
                     b"\x1b[C" => self.usage_provider_tab_target(1),
                     b"\x1b[D" => self.usage_provider_tab_target(-1),
                     _ => None,
                 } {
-                    return DialogAction::SwitchUsageProvider { provider_label };
+                    return DialogAction::SwitchUsageProvider {
+                        provider_label: tab.label,
+                        account_id: tab.id,
+                    };
                 }
                 return DialogAction::Redraw;
             }
@@ -625,6 +637,37 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
+        // Coalesced typing (scripted input, paste, batched PTY reads)
+        // arrives as one multi-byte `Data` chunk — the input parser
+        // coalesces contiguous plain bytes. Dispatch an ESC-free chunk
+        // byte-by-byte in order so filter-then-confirm (`b"split\r"`)
+        // works as one write; the first substantive action wins and
+        // stops the scan. Chunks holding ESC keep the legacy
+        // whole-chunk dispatch so escape sequences stay atomic.
+        if key.len() > 1 && !key.contains(&0x1B) {
+            let mut result = DialogAction::Redraw;
+            for byte in key {
+                let action = self.handle_filter_list_key(&[*byte]);
+                if !matches!(action, DialogAction::Redraw) {
+                    result = action;
+                    break;
+                }
+            }
+            return result;
+        }
+        self.handle_filter_list_key(key)
+    }
+
+    /// Single-unit dispatch for the type-to-filter list dialogs.
+    /// `key` is one byte (or one escape sequence) — see `handle_key`
+    /// for the coalesced-chunk split.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Filter-list key dispatcher with one arm per key binding. \
+                  Each arm carries its focused state transition; extracting \
+                  arms into sub-dispatchers would obscure per-binding readability."
+    )]
+    fn handle_filter_list_key(&mut self, key: &[u8]) -> DialogAction {
         // From here on, only the type-to-filter list dialogs reach this
         // code path. Dispatch through `FILTER_LIST_KEYMAP`: navigation,
         // confirm, filter-backspace, and dismiss are advertised keys;
@@ -817,11 +860,12 @@ impl Dialog {
                 },
                 _ => DialogAction::Redraw,
             },
-            // Printable ASCII single-byte chunks become filter input. Multi-
-            // byte sequences (CSI fragments that did not match a known key,
-            // etc.) are no-op redraws — the parser already classified them,
-            // and feeding them into the filter would garble the visible
-            // typing state.
+            // Printable ASCII single-byte chunks become filter input.
+            // Multi-byte chunks that reach here hold ESC (CSI fragments
+            // that did not match a known key, etc.) — `handle_key` splits
+            // ESC-free chunks before dispatch. They stay no-op redraws:
+            // the parser already classified them, and feeding escape
+            // bytes into the filter would garble the visible typing state.
             None => {
                 if let Some(c) = printable_filter_char(key) {
                     match self {
@@ -957,6 +1001,7 @@ impl Dialog {
                     || DialogAction::Consume,
                     |tab| DialogAction::SwitchUsageProvider {
                         provider_label: tab.label.clone(),
+                        account_id: tab.id.clone(),
                     },
                 ),
                 None => DialogAction::Consume,
@@ -1030,15 +1075,16 @@ impl Dialog {
                 filter,
                 close_label,
                 ..
-            } => palette_filtered_indices(filter, *close_label).len() as u16,
+            } => u16::try_from(palette_filtered_indices(filter, *close_label).len())
+                .unwrap_or(u16::MAX),
             Self::SplitDirectionPicker { filter, .. } => {
-                split_direction_filtered_indices(filter).len() as u16
+                u16::try_from(split_direction_filtered_indices(filter).len()).unwrap_or(u16::MAX)
             }
             Self::CloseTargetPicker { filter, .. } => {
-                close_target_filtered_indices(filter).len() as u16
+                u16::try_from(close_target_filtered_indices(filter).len()).unwrap_or(u16::MAX)
             }
             Self::AgentPicker { agents, filter, .. } => {
-                picker_filtered_rows(agents, filter).len() as u16
+                u16::try_from(picker_filtered_rows(agents, filter).len()).unwrap_or(u16::MAX)
             }
             Self::RenameTab { .. }
             | Self::ExportFile { .. }
@@ -1130,6 +1176,7 @@ impl Dialog {
     /// Return true when `(row, col)` is a dialog hit target that will
     /// perform an action on click. The daemon uses this to drive OSC 22
     /// pointer-shape feedback without duplicating dialog layout maths.
+    #[must_use]
     pub fn clickable_at(
         &self,
         row: u16,
@@ -1213,7 +1260,11 @@ impl Dialog {
             Self::AgentPicker { agents, filter, .. } => {
                 let first_item_row = box_row + 3;
                 let visible = picker_filtered_rows(agents, filter);
-                if row < first_item_row || row >= first_item_row + visible.len() as u16 {
+                if row < first_item_row
+                    || row
+                        >= first_item_row
+                            .saturating_add(u16::try_from(visible.len()).unwrap_or(u16::MAX))
+                {
                     return false;
                 }
                 matches!(
@@ -1249,20 +1300,24 @@ impl Dialog {
                 close_label,
                 ..
             } => {
-                let items = palette_filtered_indices(filter, *close_label).len() as u16;
-                items + 4 // top + filter + pad + items + bottom
+                let items = u16::try_from(palette_filtered_indices(filter, *close_label).len())
+                    .unwrap_or(u16::MAX);
+                items.saturating_add(4) // top + filter + pad + items + bottom
             }
             Self::SplitDirectionPicker { filter, .. } => {
-                let items = split_direction_filtered_indices(filter).len() as u16;
-                items + 4
+                let items = u16::try_from(split_direction_filtered_indices(filter).len())
+                    .unwrap_or(u16::MAX);
+                items.saturating_add(4)
             }
             Self::CloseTargetPicker { filter, .. } => {
-                let items = close_target_filtered_indices(filter).len() as u16;
-                items + 4
+                let items =
+                    u16::try_from(close_target_filtered_indices(filter).len()).unwrap_or(u16::MAX);
+                items.saturating_add(4)
             }
             Self::AgentPicker { agents, filter, .. } => {
-                let items = picker_filtered_rows(agents, filter).len() as u16;
-                items + 4
+                let items =
+                    u16::try_from(picker_filtered_rows(agents, filter).len()).unwrap_or(u16::MAX);
+                items.saturating_add(4)
             }
             Self::RenameTab { .. } | Self::ExportFile { .. } => 5,
             Self::ContainerInfo { .. } => self.container_info_state().map_or(10, |state| {
@@ -1298,9 +1353,15 @@ impl Dialog {
             // No filter row: top border + items + bottom border.
             // Top border + command line + separator + one row per credential +
             // hint + bottom border.
-            Self::ExecPicker(state) => state.items.len() as u16 + 5,
-            Self::ExitDirty { summary, .. } => (summary.len() + EXIT_DIRTY_ROWS.len()) as u16 + 4,
-            Self::ExitInspect { lines, .. } => lines.len() as u16 + 4,
+            Self::ExecPicker(state) => u16::try_from(state.items.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(5),
+            Self::ExitDirty { summary, .. } => u16::try_from(summary.len() + EXIT_DIRTY_ROWS.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(4),
+            Self::ExitInspect { lines, .. } => u16::try_from(lines.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(4),
         };
         let content_height = crate::tui::layout::available_content_rows(term_rows).max(3);
         let max_height = if matches!(self, Self::Usage { .. }) {
@@ -1409,6 +1470,7 @@ impl Dialog {
         }
     }
 
+    #[must_use]
     pub fn has_copy_feedback(&self) -> bool {
         matches!(
             self,

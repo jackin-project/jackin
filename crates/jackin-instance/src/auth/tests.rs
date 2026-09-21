@@ -2,10 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for `instance/auth` — tests.
-use super::{Agent, AuthProvisionOutcome, RoleState, validate_sync_source_dir};
+#[cfg(unix)]
+use super::auth_directory::{
+    FailurePoint, TreeEntryKind, classify_tree_entry_for_removal, inject_failure,
+    set_hermes_snapshot_hook, set_source_open_hook, target_lock_key_for_test,
+};
+use super::{
+    Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState,
+    inject_permission_repair_failure, repair_permissions, validate_sync_source_dir,
+    validate_sync_source_dir_for_provider,
+};
 use crate::PrepareResolvers;
-use jackin_config::AuthForwardMode;
+use jackin_config::{AiProvider, AuthForwardMode, ProfileSelector};
 use jackin_core::JackinPaths;
+use std::path::Path;
 use tempfile::tempdir;
 
 /// Provisioning derives its per-config-dir Keychain service through the shared
@@ -37,6 +47,29 @@ fn claude_keychain_service_name_matches_claude_scheme() {
 }
 
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
+
+#[cfg(unix)]
+#[test]
+fn credential_permission_repair_fails_closed_on_injected_failures() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("credential.json");
+    std::fs::write(&path, TEST_CREDENTIALS).unwrap();
+
+    for failure in [
+        PermissionRepairFailure::Stat,
+        PermissionRepairFailure::Chmod,
+        PermissionRepairFailure::Verify,
+    ] {
+        let _guard = inject_permission_repair_failure(failure);
+        let error = repair_permissions(&path).expect_err("injected failure must abort repair");
+        assert!(
+            error
+                .to_string()
+                .contains("injected credential permission repair failure"),
+            "unexpected error for {failure:?}: {error:#}"
+        );
+    }
+}
 
 // ── Source-folder validation ────────────────────────────────────────
 
@@ -82,7 +115,12 @@ fn validate_single_file_agents() {
         validate_sync_source_dir(agent, &dir, temp.path())
             .expect_err("empty credential file must be rejected");
         // Non-empty credential file is accepted.
-        std::fs::write(dir.join(name), "{\"token\":\"x\"}").unwrap();
+        let valid = if agent == Agent::Opencode {
+            r#"{"opencode-go":{"type":"api","key":"x"}}"#
+        } else {
+            "{\"token\":\"x\"}"
+        };
+        std::fs::write(dir.join(name), valid).unwrap();
         validate_sync_source_dir(agent, &dir, temp.path()).unwrap_or_else(|_| {
             panic!("valid {name} must be accepted");
         });
@@ -91,6 +129,739 @@ fn validate_single_file_agents() {
         std::fs::create_dir_all(&bad).unwrap();
         validate_sync_source_dir(agent, &bad, temp.path()).unwrap_err();
     }
+}
+
+#[test]
+fn opencode_source_validation_is_provider_bound_and_rejects_ambiguous_or_db_only_layouts() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("opencode");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("auth.json"),
+        r#"{
+            "anthropic":{"type":"api","key":"anthropic-sentinel"},
+            "opencode-go":{"type":"api","key":"opencode-sentinel"}
+        }"#,
+    )
+    .unwrap();
+
+    for provider in [
+        Some(AiProvider::Anthropic),
+        Some(AiProvider::Opencode),
+        None,
+    ] {
+        let error =
+            validate_sync_source_dir_for_provider(Agent::Opencode, provider, &source, temp.path())
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("multiple provider entries"),
+            "{error}"
+        );
+    }
+
+    std::fs::write(
+        source.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"opencode-sentinel"}}"#,
+    )
+    .unwrap();
+    validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Opencode),
+        &source,
+        temp.path(),
+    )
+    .unwrap();
+    let error = validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Anthropic),
+        &source,
+        temp.path(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("only the opencode-go"),
+        "{error}"
+    );
+    validate_sync_source_dir(Agent::Opencode, &source, temp.path()).unwrap();
+
+    std::fs::write(
+        source.join("auth.json"),
+        r#"{"zai":{"type":"api","key":"zai-sentinel"}}"#,
+    )
+    .unwrap();
+    let error = validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Zai),
+        &source,
+        temp.path(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("only the opencode-go"),
+        "{error}"
+    );
+
+    std::fs::write(
+        source.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"opencode-sentinel"}}"#,
+    )
+    .unwrap();
+    std::fs::write(source.join("opencode.db"), b"database fixture").unwrap();
+    validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Opencode),
+        &source,
+        temp.path(),
+    )
+    .unwrap();
+
+    std::fs::remove_file(source.join("auth.json")).unwrap();
+    let error = validate_sync_source_dir_for_provider(
+        Agent::Opencode,
+        Some(AiProvider::Opencode),
+        &source,
+        temp.path(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("expected auth.json"), "{error}");
+}
+
+#[test]
+fn hermes_sync_stages_only_the_selected_account_store() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.hermes");
+    let target_dir = temp.path().join("role/.hermes");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(
+        source_dir.join("config.yaml"),
+        "profiles:\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"selected-sentinel"}}"#,
+    )
+    .unwrap();
+
+    let (outcome, forward_auth) = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&ProfileSelector {
+            entry: "openai".to_owned(),
+            profile: Some("work".to_owned()),
+        }),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    let staged = std::fs::read_to_string(target_dir.join("auth.json")).unwrap();
+    assert!(staged.contains("selected-sentinel"));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&staged)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn hermes_sync_rejects_ambiguous_store_before_touching_role_state() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.hermes");
+    let target_dir = temp.path().join("role/.hermes");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::create_dir_all(&target_dir).unwrap();
+    std::fs::write(
+        source_dir.join("config.yaml"),
+        "profiles:\n  personal:\n    provider: anthropic\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"anthropic":{"type":"api","key":"personal-sentinel"},"openai":{"type":"api","key":"work-sentinel"}}"#,
+    )
+    .unwrap();
+    let stale = r#"{"stale":{"type":"api","key":"stale-sentinel"}}"#;
+    std::fs::write(target_dir.join("auth.json"), stale).unwrap();
+
+    let error = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&ProfileSelector {
+            entry: "openai".to_owned(),
+            profile: Some("work".to_owned()),
+        }),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("multiple profiles"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(target_dir.join("auth.json")).unwrap(),
+        stale
+    );
+    assert!(!target_dir.join("config.yaml").exists());
+}
+
+#[test]
+fn hermes_sync_replaces_removed_entries_and_revokes_missing_source() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.hermes");
+    let target_dir = temp.path().join("role/.hermes");
+    std::fs::create_dir_all(source_dir.join("profiles")).unwrap();
+    std::fs::write(
+        source_dir.join("config.yaml"),
+        "profiles:\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"selected-sentinel"}}"#,
+    )
+    .unwrap();
+    std::fs::write(source_dir.join(".env"), "STALE_ENV=1\n").unwrap();
+    std::fs::write(source_dir.join("profiles/work.yaml"), "provider: openai\n").unwrap();
+
+    let selector = ProfileSelector {
+        entry: "openai".to_owned(),
+        profile: Some("work".to_owned()),
+    };
+    let (outcome, forward_auth) = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    assert!(target_dir.join(".env").exists());
+    assert!(target_dir.join("profiles/work.yaml").exists());
+
+    std::fs::remove_file(source_dir.join(".env")).unwrap();
+    std::fs::remove_file(source_dir.join("profiles/work.yaml")).unwrap();
+    let (outcome, forward_auth) = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    assert!(!target_dir.join(".env").exists());
+    assert!(!target_dir.join("profiles/work.yaml").exists());
+    assert!(target_dir.join("auth.json").exists());
+
+    std::fs::remove_dir_all(&source_dir).unwrap();
+    let (outcome, forward_auth) = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    assert!(forward_auth);
+    assert!(target_dir.is_dir());
+    assert!(std::fs::read_dir(&target_dir).unwrap().next().is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_swap_recovers_journal_and_cleans_target_scoped_orphans_on_retry() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "version = \"old\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "old-token").unwrap();
+    RoleState::provision_kimi_auth_from_source_dir(&target_dir, AuthForwardMode::Sync, &source_dir)
+        .unwrap();
+
+    std::fs::write(source_dir.join("config.toml"), "version = \"new\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "new-token").unwrap();
+    let crash = inject_failure(FailurePoint::Backup);
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("injected auth directory crash"));
+    drop(crash);
+
+    let parent = target_dir.parent().unwrap();
+    let current_key = std::fs::read_dir(parent)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .find_map(|name| {
+            name.to_str()
+                .and_then(|name| name.strip_prefix(".jackin-auth-stage-"))
+                .and_then(|suffix| suffix.split('-').next())
+                .filter(|key| key.len() == 64)
+                .map(str::to_owned)
+        })
+        .expect("failed swap must leave a target-scoped stage");
+    let unrelated_key = "0".repeat(64);
+    assert_ne!(current_key, unrelated_key);
+    let unrelated_stage = parent.join(format!(
+        ".jackin-auth-stage-{unrelated_key}-unrelated/nested"
+    ));
+    std::fs::create_dir_all(&unrelated_stage).unwrap();
+    // Pre-846f984 legacy names have no target identity. They are retained
+    // rather than risking deletion of another target's credential tree.
+    let unscoped_legacy = parent.join(".jackin-auth-stage-legacy-orphan/nested");
+    std::fs::create_dir_all(&unscoped_legacy).unwrap();
+
+    let (outcome, forward_auth) = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    assert_eq!(
+        std::fs::read_to_string(target_dir.join("config.toml")).unwrap(),
+        "version = \"new\"\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(target_dir.join("credentials/token")).unwrap(),
+        "new-token"
+    );
+    let leftovers = std::fs::read_dir(parent)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .filter(|name| {
+            let name = name.to_string_lossy();
+            name.starts_with(&format!(".jackin-auth-stage-{current_key}-"))
+                || name.starts_with(&format!(".jackin-auth-previous-{current_key}-"))
+                || name.starts_with(&format!(".jackin-auth-journal-{current_key}-"))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        leftovers.is_empty(),
+        "orphan auth transaction entries: {leftovers:?}"
+    );
+    assert!(unrelated_stage.parent().unwrap().exists());
+    assert!(unscoped_legacy.parent().unwrap().exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn journal_rewrite_failure_preserves_valid_record_for_recovery() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "version = \"old\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "old-token").unwrap();
+    RoleState::provision_kimi_auth_from_source_dir(&target_dir, AuthForwardMode::Sync, &source_dir)
+        .unwrap();
+
+    std::fs::write(source_dir.join("config.toml"), "version = \"new\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "new-token").unwrap();
+    let crash = inject_failure(FailurePoint::JournalRewrite);
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("injected auth directory crash"));
+    drop(crash);
+
+    assert!(
+        !target_dir.exists(),
+        "backup boundary must leave target absent"
+    );
+    let parent = target_dir.parent().unwrap();
+    let journal = std::fs::read_dir(parent)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with(".jackin-auth-journal-"))
+        })
+        .expect("journal must survive failed atomic rewrite");
+    let journal_bytes = std::fs::read(&journal).unwrap();
+    serde_json::from_slice::<serde_json::Value>(&journal_bytes)
+        .expect("journal remains valid JSON after failed rewrite");
+    assert!(
+        !std::fs::read_dir(parent).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("-tmp-")),
+        "failed journal rewrite must remove its temporary file"
+    );
+
+    RoleState::provision_kimi_auth_from_source_dir(&target_dir, AuthForwardMode::Sync, &source_dir)
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(target_dir.join("config.toml")).unwrap(),
+        "version = \"new\"\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(target_dir.join("credentials/token")).unwrap(),
+        "new-token"
+    );
+    assert!(
+        !std::fs::read_dir(parent).unwrap().any(|entry| {
+            let name = entry.unwrap().file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(".jackin-auth-stage-")
+                || name.starts_with(".jackin-auth-previous-")
+                || name.starts_with(".jackin-auth-journal-")
+        }),
+        "retry must remove all transaction sidecars"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn ignore_recovers_interrupted_swap_when_destination_is_absent() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "version = \"old\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "old-token").unwrap();
+    RoleState::provision_kimi_auth_from_source_dir(&target_dir, AuthForwardMode::Sync, &source_dir)
+        .unwrap();
+
+    std::fs::write(source_dir.join("config.toml"), "version = \"new\"\n").unwrap();
+    let crash = inject_failure(FailurePoint::Backup);
+    RoleState::provision_kimi_auth_from_source_dir(&target_dir, AuthForwardMode::Sync, &source_dir)
+        .unwrap_err();
+    drop(crash);
+    assert!(!target_dir.exists());
+
+    let (outcome, forward_auth) = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Ignore,
+        &source_dir,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+    assert!(!forward_auth);
+    assert!(
+        !target_dir.exists(),
+        "Ignore must revoke the recovered tree"
+    );
+    let parent = target_dir.parent().unwrap();
+    assert!(
+        !std::fs::read_dir(parent).unwrap().any(|entry| {
+            let name = entry.unwrap().file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(".jackin-auth-stage-")
+                || name.starts_with(".jackin-auth-previous-")
+                || name.starts_with(".jackin-auth-journal-")
+        }),
+        "Ignore must clean recovered transaction trees even without a target"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn auth_lock_identity_normalizes_relative_absolute_and_dot_aliases() {
+    let temp = tempdir().unwrap();
+    let absolute = temp.path().join("role/.kimi-code");
+    let dot_alias = temp.path().join("role/./.kimi-code");
+    assert_eq!(
+        target_lock_key_for_test(&absolute).unwrap(),
+        target_lock_key_for_test(&dot_alias).unwrap()
+    );
+
+    let current = std::env::current_dir().unwrap();
+    let relative = Path::new("target/./auth");
+    let absolute_from_relative = current.join("target/auth");
+    assert_eq!(
+        target_lock_key_for_test(relative).unwrap(),
+        target_lock_key_for_test(&absolute_from_relative).unwrap()
+    );
+
+    let mut escaping = Path::new("").to_path_buf();
+    for _ in 0..=current.components().count() {
+        escaping.push("..");
+    }
+    escaping.push("auth");
+    let error = target_lock_key_for_test(&escaping).unwrap_err();
+    assert!(
+        error.to_string().contains("parent traversal"),
+        "root escape must be rejected: {error:#}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_swap_serializes_concurrent_replacements_per_target() {
+    use std::sync::{Arc, Barrier};
+
+    let temp = tempdir().unwrap();
+    let source_a = temp.path().join("host-a/.kimi-code");
+    let source_b = temp.path().join("host-b/.kimi-code");
+    let target = temp.path().join("role/.kimi-code");
+    for (source, value) in [(&source_a, "a"), (&source_b, "b")] {
+        std::fs::create_dir_all(source.join("credentials")).unwrap();
+        std::fs::write(source.join("config.toml"), format!("value = \"{value}\"\n")).unwrap();
+        std::fs::write(source.join("credentials/token"), format!("{value}-token")).unwrap();
+    }
+
+    let barrier = Arc::new(Barrier::new(3));
+    let target_alias = target.parent().unwrap().join(".").join(".kimi-code");
+    std::thread::scope(|scope| {
+        for (source, target_path) in [
+            (&source_a, target.as_path()),
+            (&source_b, target_alias.as_path()),
+        ] {
+            let barrier = Arc::clone(&barrier);
+            scope.spawn(move || {
+                barrier.wait();
+                RoleState::provision_kimi_auth_from_source_dir(
+                    target_path,
+                    AuthForwardMode::Sync,
+                    source,
+                )
+                .unwrap();
+            });
+        }
+        barrier.wait();
+    });
+
+    let config = std::fs::read_to_string(target.join("config.toml")).unwrap();
+    let token = std::fs::read_to_string(target.join("credentials/token")).unwrap();
+    assert!(config == "value = \"a\"\n" || config == "value = \"b\"\n");
+    assert!(token == "a-token" || token == "b-token");
+    assert_eq!(config.as_bytes().last(), Some(&b'\n'));
+    assert!(
+        (config.contains('a') && token == "a-token")
+            || (config.contains('b') && token == "b-token")
+    );
+    let lock_files = std::fs::read_dir(target.parent().unwrap())
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".jackin-auth-lock-")
+        })
+        .count();
+    assert_eq!(lock_files, 1, "dot aliases must share one target lock");
+}
+
+#[cfg(unix)]
+#[test]
+fn kimi_and_hermes_reject_source_symlink_roots_and_fifo_files() {
+    use nix::sys::stat::Mode;
+    use nix::unistd::mkfifo;
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let real_kimi = temp.path().join("real-kimi");
+    let kimi_link = temp.path().join("kimi-link");
+    std::fs::create_dir_all(real_kimi.join("credentials")).unwrap();
+    std::fs::write(real_kimi.join("config.toml"), "x = 1\n").unwrap();
+    symlink(&real_kimi, &kimi_link).unwrap();
+    let kimi_target = temp.path().join("role/kimi");
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &kimi_target,
+        AuthForwardMode::Sync,
+        &kimi_link,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("source auth directory"));
+    assert!(!kimi_target.exists());
+
+    let real_hermes = temp.path().join("real-hermes");
+    let hermes_link = temp.path().join("hermes-link");
+    std::fs::create_dir_all(&real_hermes).unwrap();
+    symlink(&real_hermes, &hermes_link).unwrap();
+    let hermes_target = temp.path().join("role/hermes");
+    let error = RoleState::provision_hermes_auth_from_source_dir(
+        &hermes_target,
+        AuthForwardMode::Sync,
+        &hermes_link,
+        Some(AiProvider::OpenAi),
+        None,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("source auth directory"));
+    assert!(!hermes_target.exists());
+
+    let kimi_fifo_source = temp.path().join("kimi-fifo");
+    std::fs::create_dir_all(kimi_fifo_source.join("credentials")).unwrap();
+    let kimi_fifo = kimi_fifo_source.join("config.toml");
+    mkfifo(&kimi_fifo, Mode::from_bits_truncate(0o600)).unwrap();
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &temp.path().join("role/kimi-fifo"),
+        AuthForwardMode::Sync,
+        &kimi_fifo_source,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("special file"));
+
+    let hermes_fifo_source = temp.path().join("hermes-fifo");
+    std::fs::create_dir_all(&hermes_fifo_source).unwrap();
+    let hermes_fifo = hermes_fifo_source.join("config.yaml");
+    mkfifo(&hermes_fifo, Mode::from_bits_truncate(0o600)).unwrap();
+    let error = RoleState::provision_hermes_auth_from_source_dir(
+        &temp.path().join("role/hermes-fifo"),
+        AuthForwardMode::Sync,
+        &hermes_fifo_source,
+        Some(AiProvider::OpenAi),
+        None,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("special file"));
+}
+
+#[cfg(unix)]
+#[test]
+fn source_entry_replacement_between_lstat_and_open_is_rejected() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    let config = source_dir.join("config.toml");
+    let replacement = source_dir.join("config.toml.replacement");
+    std::fs::write(&config, "version = \"old\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "token").unwrap();
+    std::fs::write(&replacement, "version = \"replacement\"\n").unwrap();
+    let config_for_hook = config.clone();
+    set_source_open_hook(Box::new(move || {
+        std::fs::rename(&replacement, &config_for_hook).unwrap();
+    }));
+
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("replaced during secure open"),
+        "{error:#}"
+    );
+    assert!(
+        !target_dir.exists(),
+        "replaced source must not publish a tree"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn hermes_nested_source_symlink_is_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.hermes");
+    let target_dir = temp.path().join("role/.hermes");
+    let decoy = temp.path().join("decoy.yaml");
+    std::fs::create_dir_all(source_dir.join("profiles")).unwrap();
+    std::fs::write(
+        source_dir.join("config.yaml"),
+        "profiles:\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"sentinel"}}"#,
+    )
+    .unwrap();
+    std::fs::write(&decoy, "provider: anthropic\n").unwrap();
+    symlink(&decoy, source_dir.join("profiles/evil.yaml")).unwrap();
+
+    let error = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&ProfileSelector {
+            entry: "openai".to_owned(),
+            profile: Some("work".to_owned()),
+        }),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("symlink"), "{error:#}");
+    assert!(!target_dir.exists());
+    assert_eq!(
+        std::fs::read_to_string(&decoy).unwrap(),
+        "provider: anthropic\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn hermes_sync_copies_the_validated_snapshot_after_source_changes() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.hermes");
+    let target_dir = temp.path().join("role/.hermes");
+    std::fs::create_dir_all(source_dir.join("profiles")).unwrap();
+    std::fs::write(
+        source_dir.join("config.yaml"),
+        "profiles:\n  work:\n    provider: openai\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"snapshot-sentinel"}}"#,
+    )
+    .unwrap();
+    std::fs::write(source_dir.join("profiles/work.yaml"), "provider: openai\n").unwrap();
+    let source_for_hook = source_dir.clone();
+    set_hermes_snapshot_hook(Box::new(move || {
+        std::fs::write(
+            source_for_hook.join("config.yaml"),
+            "profiles:\n  other:\n    provider: anthropic\n",
+        )
+        .unwrap();
+        std::fs::write(
+            source_for_hook.join("auth.json"),
+            r#"{"anthropic":{"type":"api","key":"mutated-sentinel"}}"#,
+        )
+        .unwrap();
+    }));
+
+    let selector = ProfileSelector {
+        entry: "openai".to_owned(),
+        profile: Some("work".to_owned()),
+    };
+    let (outcome, forward_auth) = RoleState::provision_hermes_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    assert!(
+        std::fs::read_to_string(target_dir.join("auth.json"))
+            .unwrap()
+            .contains("snapshot-sentinel")
+    );
+    assert!(
+        std::fs::read_to_string(target_dir.join("config.yaml"))
+            .unwrap()
+            .contains("work")
+    );
+    assert!(
+        !std::fs::read_to_string(target_dir.join("auth.json"))
+            .unwrap()
+            .contains("mutated-sentinel")
+    );
 }
 
 #[test]
@@ -490,19 +1261,56 @@ fn sync_source_dir_copies_direct_opencode_auth_json() {
     let auth_json = temp.path().join("auth.json");
     let source_dir = temp.path().join("opencode-work");
     std::fs::create_dir_all(&source_dir).unwrap();
-    let expected = r#"{"provider":{"credential":"workspace"}}"#;
-    std::fs::write(source_dir.join("auth.json"), expected).unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"workspace"}}"#,
+    )
+    .unwrap();
+    std::fs::write(source_dir.join("opencode.db"), b"database fixture").unwrap();
 
     let (outcome, mounted) = RoleState::provision_opencode_auth_from_source_dir(
         &auth_json,
         AuthForwardMode::Sync,
         &source_dir,
+        Some(AiProvider::Opencode),
     )
     .unwrap();
 
     assert_eq!(outcome, AuthProvisionOutcome::Synced);
     assert_eq!(mounted.as_deref(), Some(auth_json.as_path()));
-    assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
+    let staged: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&auth_json).unwrap()).unwrap();
+    assert_eq!(
+        staged.pointer("/opencode-go/key").and_then(|v| v.as_str()),
+        Some("workspace")
+    );
+}
+
+#[test]
+fn sync_source_dir_rejects_multi_entry_without_writing() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let source_dir = temp.path().join("opencode-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(&auth_json, b"existing-staged-auth").unwrap();
+    std::fs::write(
+        source_dir.join("auth.json"),
+        r#"{"openai":{"type":"api","key":"openai-sentinel"},"zai":{"type":"api","key":"zai-sentinel"}}"#,
+    )
+    .unwrap();
+
+    let error = RoleState::provision_opencode_auth_from_source_dir(
+        &auth_json,
+        AuthForwardMode::Sync,
+        &source_dir,
+        Some(AiProvider::Zai),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("multiple provider entries"),
+        "{error}"
+    );
+    assert_eq!(std::fs::read(&auth_json).unwrap(), b"existing-staged-auth");
 }
 
 #[test]
@@ -1276,7 +2084,6 @@ fn rejects_symlink_at_credentials_json() {
 }
 
 // Tests for `instance/auth` — amp auth tests.
-use std::path::Path;
 
 fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
     let host_home = temp.path().join("host_home");
@@ -2486,6 +3293,199 @@ fn sync_source_dir_copies_direct_kimi_dir() {
 }
 
 #[test]
+fn kimi_sync_replaces_removed_entries_and_revokes_missing_source() {
+    let temp = tempdir().unwrap();
+    let kimi_dir = temp.path().join("role/.kimi-code");
+    let source_dir = temp.path().join("host/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "profile = \"work\"\n").unwrap();
+    std::fs::write(source_dir.join("device_id"), "device-old\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token_old"), "old-secret").unwrap();
+
+    let (outcome, forward_auth) = RoleState::provision_kimi_auth_from_source_dir(
+        &kimi_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    assert!(kimi_dir.join("credentials/token_old").exists());
+
+    std::fs::remove_file(source_dir.join("device_id")).unwrap();
+    std::fs::remove_file(source_dir.join("credentials/token_old")).unwrap();
+    std::fs::write(source_dir.join("credentials/token_new"), "new-secret").unwrap();
+    let (outcome, forward_auth) = RoleState::provision_kimi_auth_from_source_dir(
+        &kimi_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    assert!(!kimi_dir.join("device_id").exists());
+    assert!(!kimi_dir.join("credentials/token_old").exists());
+    assert_eq!(
+        std::fs::read_to_string(kimi_dir.join("credentials/token_new")).unwrap(),
+        "new-secret"
+    );
+
+    std::fs::remove_dir_all(&source_dir).unwrap();
+    let (outcome, forward_auth) = RoleState::provision_kimi_auth_from_source_dir(
+        &kimi_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    assert!(forward_auth);
+    assert!(kimi_dir.is_dir());
+    assert!(std::fs::read_dir(&kimi_dir).unwrap().next().is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_sync_replaces_nested_destination_symlinks_without_following_them() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    let decoy_dir = temp.path().join("decoy");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::create_dir_all(&decoy_dir).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "profile = \"fresh\"\n").unwrap();
+    std::fs::write(source_dir.join("credentials/token"), "fresh-secret").unwrap();
+    std::fs::create_dir_all(&target_dir).unwrap();
+    symlink(&decoy_dir, target_dir.join("credentials")).unwrap();
+
+    let (outcome, forward_auth) = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    assert!(
+        !std::fs::symlink_metadata(target_dir.join("credentials"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(
+        std::fs::read_to_string(target_dir.join("credentials/token")).unwrap(),
+        "fresh-secret"
+    );
+    assert!(!decoy_dir.join("token").exists());
+}
+
+/// Pins the regular-file half of the removal trust check: a group-writable
+/// nested file in a pre-existing destination must still be rejected with the
+/// writability error (threat model preserved), while symlinks take the
+/// ownership-only path. Also reproduces the CI error path deterministically
+/// on any platform via explicit loose perms.
+#[cfg(unix)]
+#[test]
+fn directory_sync_rejects_group_writable_nested_destination_files() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("host/.kimi-code");
+    let target_dir = temp.path().join("role/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "profile = \"fresh\"\n").unwrap();
+    std::fs::create_dir_all(target_dir.join("credentials")).unwrap();
+    let loose = target_dir.join("credentials/token");
+    std::fs::write(&loose, "stale-secret").unwrap();
+    std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o664)).unwrap();
+
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &target_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("previous auth directory is writable"),
+        "unexpected error: {error:#}"
+    );
+}
+
+/// Symlink `lstat` modes are platform-defined noise (Linux reports 0777,
+/// macOS 0755), so removal must route symlinks by exact file type — never
+/// through the regular-file writability check. Regression test for the
+/// Linux-only `directory_sync_replaces_nested_destination_symlinks...`
+/// failure, using synthetic modes since no platform lets a test fabricate a
+/// foreign platform's symlink `lstat` bits.
+#[cfg(unix)]
+#[test]
+fn tree_entry_classification_routes_symlinks_away_from_mode_checks() {
+    use nix::sys::stat::{SFlag, mode_t};
+
+    let mode = |kind: SFlag, perm: mode_t| kind.bits() | perm;
+    // Linux reports every symlink as 0777; macOS reports 0755. Both are
+    // unlinkable links, not writable files.
+    assert_eq!(
+        classify_tree_entry_for_removal(mode(SFlag::S_IFLNK, 0o777)),
+        TreeEntryKind::Symlink
+    );
+    assert_eq!(
+        classify_tree_entry_for_removal(mode(SFlag::S_IFLNK, 0o755)),
+        TreeEntryKind::Symlink
+    );
+    assert_eq!(
+        classify_tree_entry_for_removal(mode(SFlag::S_IFREG, 0o600)),
+        TreeEntryKind::Regular
+    );
+    assert_eq!(
+        classify_tree_entry_for_removal(mode(SFlag::S_IFDIR, 0o700)),
+        TreeEntryKind::Directory
+    );
+    for special in [
+        SFlag::S_IFIFO,
+        SFlag::S_IFCHR,
+        SFlag::S_IFBLK,
+        SFlag::S_IFSOCK,
+    ] {
+        assert_eq!(
+            classify_tree_entry_for_removal(mode(special, 0o600)),
+            TreeEntryKind::Special,
+            "file type {special:?} must stay fail-closed"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_sync_rejects_destination_ancestor_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let real_parent = temp.path().join("real-role");
+    let linked_parent = temp.path().join("linked-role");
+    let source_dir = temp.path().join("host/.kimi-code");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::create_dir_all(&real_parent).unwrap();
+    std::fs::write(source_dir.join("config.toml"), "profile = \"fresh\"\n").unwrap();
+    symlink(&real_parent, &linked_parent).unwrap();
+
+    let error = RoleState::provision_kimi_auth_from_source_dir(
+        &linked_parent.join(".kimi-code"),
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("symlink"),
+        "unexpected error: {error}"
+    );
+    assert!(!real_parent.join(".kimi-code").exists());
+}
+
+#[test]
 fn sync_copies_credentials_files_when_present() {
     let temp = tempdir().unwrap();
     let kimi_dir = temp.path().join("kimi_state");
@@ -2845,10 +3845,10 @@ fn surfaces_unreadable_config_toml_as_error() {
 
 #[cfg(unix)]
 #[test]
-fn credentials_nested_symlink_is_skipped_not_followed() {
+fn credentials_nested_symlink_is_rejected_not_skipped() {
     // A symlink planted under `credentials/mcp/` (e.g. by a hostile or
-    // misconfigured host) must NOT be copied or dereferenced into the
-    // sealed container. Real files in the same subtree must still copy.
+    // misconfigured host) must fail the complete source snapshot. Silently
+    // dropping it would publish an incomplete credential tree.
     use std::os::unix::fs::symlink;
     let temp = tempdir().unwrap();
     let kimi_dir = temp.path().join("kimi_state");
@@ -2860,21 +3860,13 @@ fn credentials_nested_symlink_is_skipped_not_followed() {
     std::fs::write(&decoy, "must_not_leak").unwrap();
     symlink(&decoy, host_creds.join("mcp").join("evil")).unwrap();
 
-    let (outcome, forward_auth) =
-        RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+    let error =
+        RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap_err();
 
-    assert_eq!(outcome, AuthProvisionOutcome::Synced);
-    assert!(forward_auth);
-    assert!(
-        kimi_dir.join("credentials/mcp/real_token").exists(),
-        "real nested file must still be copied"
-    );
-    assert!(
-        !kimi_dir.join("credentials/mcp/evil").exists(),
-        "nested symlink must not appear in role state"
-    );
+    assert!(error.to_string().contains("symlink"), "{error:#}");
+    assert!(!kimi_dir.exists(), "failed source must not publish a tree");
     // The decoy on the host must remain untouched: no write through the
-    // skipped symlink, no read into the role state.
+    // rejected symlink and no read into the role state.
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "must_not_leak");
 }
 

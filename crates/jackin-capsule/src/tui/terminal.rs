@@ -19,6 +19,7 @@ pub const DEFAULT_COLS: u16 = 80;
 const MIN_ROWS: u16 = STATUS_BAR_ROWS + 3;
 const MIN_COLS: u16 = 3;
 
+#[must_use]
 pub fn normalize_size(rows: u16, cols: u16) -> (u16, u16) {
     let rows = if rows == 0 { DEFAULT_ROWS } else { rows }.max(MIN_ROWS);
     let cols = if cols == 0 { DEFAULT_COLS } else { cols }.max(MIN_COLS);

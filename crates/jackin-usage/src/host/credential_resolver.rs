@@ -151,6 +151,11 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
         let declaration = self
             .source
             .lookup_declaration(config, workspace, role, entry)?;
+        // Discovery requests account credentials under an isolated alias, but
+        // refresh routing addresses them by governed name. Normalize the cache
+        // identity so both spellings share one entry; governed names pass
+        // through unchanged.
+        let cache_key = super::discovery::governed_name_for_account_alias(entry.name);
         let mut state = self
             .state
             .lock()
@@ -158,7 +163,7 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
         if let Some(cached) = state
             .cache
             .iter()
-            .find(|cached| cached.key == entry.name && cached.declaration == declaration)
+            .find(|cached| cached.key == cache_key && cached.declaration == declaration)
         {
             return Some(ProviderCredentialEnvResolution {
                 key: entry.name.to_owned(),
@@ -203,7 +208,7 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
             ),
         };
         state.cache.push(CachedResolution {
-            key: entry.name.to_owned(),
+            key: cache_key.to_owned(),
             owner: entry.owner,
             declaration: resolved.declaration,
             handle,

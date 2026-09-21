@@ -19,6 +19,15 @@ impl UsageCache {
         target: &UsageRefreshTarget,
         state: &jackin_protocol::usage_broker::UsageGenerationView,
     ) {
+        if target.capability != state.capability
+            || !capability_matches_surface(
+                &target.agent,
+                target.provider.as_deref(),
+                &state.capability,
+            )
+        {
+            return;
+        }
         let mut view = state.snapshot.clone().unwrap_or_else(|| {
             if state.phase.is_active() {
                 FocusedUsageView::refreshing(target.provider.as_deref(), now_epoch())
@@ -36,9 +45,11 @@ impl UsageCache {
         });
         if let Some(error) = &state.error {
             view.last_error = Some(error.message.clone());
-            if !view.buckets.is_empty() {
-                view.status = UsageSnapshotStatus::Stale;
-            }
+            view.status = if view.buckets.is_empty() {
+                UsageSnapshotStatus::Error
+            } else {
+                UsageSnapshotStatus::Stale
+            };
         }
         if view.focused_agent.is_none() {
             view.focused_agent = Some(target.agent.clone());
@@ -46,8 +57,14 @@ impl UsageCache {
         if view.focused_provider.is_none() {
             view.focused_provider = target.provider.clone();
         }
-        self.snapshots
-            .insert(target.cache_key(), CachedUsage { view });
+        self.snapshots.insert(
+            usage_cache_key_for_broker_account(
+                &target.agent,
+                target.provider.as_deref(),
+                &state.capability,
+            ),
+            CachedUsage { view },
+        );
     }
 
     /// Preserve last-good quota while surfacing a typed relay/broker failure.
@@ -56,18 +73,26 @@ impl UsageCache {
         target: &UsageRefreshTarget,
         error: &jackin_protocol::usage_broker::UsageCoordinationError,
     ) {
-        let cache_key = target.cache_key();
-        if let Some(cached) = self.snapshots.get_mut(&cache_key) {
-            cached.view.last_error = Some(error.message.clone());
-            if !cached.view.buckets.is_empty() {
-                cached.view.status = UsageSnapshotStatus::Stale;
-            }
+        if !capability_matches_surface(
+            &target.agent,
+            target.provider.as_deref(),
+            &target.capability,
+        ) {
             return;
         }
-        let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
-        view.focused_agent = Some(target.agent.clone());
-        view.focused_provider = target.provider.clone();
-        self.snapshots.insert(cache_key, CachedUsage { view });
+        let cache_key = target.cache_key();
+        let cached = self.snapshots.entry(cache_key).or_insert_with(|| {
+            let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
+            view.focused_agent = Some(target.agent.clone());
+            view.focused_provider = target.provider.clone();
+            CachedUsage { view }
+        });
+        cached.view.last_error = Some(error.message.clone());
+        cached.view.status = if cached.view.buckets.is_empty() {
+            UsageSnapshotStatus::Error
+        } else {
+            UsageSnapshotStatus::Stale
+        };
     }
 }
 
@@ -85,7 +110,9 @@ pub(crate) fn decorate_surface_view(
         .map(str::to_owned)
         .or_else(|| Some(surface.label().to_owned()));
     view.account.provider_label = surface.account_label().to_owned();
-    view.tabs = provider_tabs(surface);
+    // Tabs are per-account, built from admitted snapshots; a placeholder names
+    // no account yet, so it carries none (empty scope stays empty).
+    view.tabs = provider_tabs(&[]);
 }
 
 pub(crate) fn cached_unavailable_view(
@@ -112,10 +139,11 @@ pub(crate) fn cached_refreshing_view(
 }
 
 pub(crate) fn mark_active_tab(view: &mut FocusedUsageView) {
-    let provider = view.focused_provider.as_deref().unwrap_or_default();
+    // Navigation keys on the stable canonical account id, never on the
+    // display label: same-provider accounts share a label but never an id.
+    let focused = usage_account_tab_id(&view.account.provider_label, &view.account.account_label);
     for tab in &mut view.tabs {
-        tab.active = provider_matches_usage_label(&tab.label, provider)
-            || provider_matches_usage_label(&tab.label, &view.account.provider_label);
+        tab.active = tab.id == focused;
     }
 }
 
@@ -193,7 +221,7 @@ pub(crate) fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         input.status,
         &input.buckets,
     );
-    FocusedUsageView {
+    let mut view = FocusedUsageView {
         focused_agent: Some(input.agent.to_owned()),
         focused_provider: input
             .provider
@@ -222,9 +250,13 @@ pub(crate) fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         }
         .to_owned(),
         status_bar_label: headline,
-        tabs: provider_tabs(input.surface),
+        tabs: Vec::new(),
         last_error: input.last_error,
-    }
+    };
+    // A freshly built view tabs its own account; the cache enriches the strip
+    // to every admitted account before display.
+    view.tabs = provider_tabs(&[&view]);
+    view
 }
 
 /// Monetary spend for the status-bar headline, read from the `Spend`-slot
@@ -344,79 +376,35 @@ pub(crate) fn compact_account_identity(account_label: &str) -> &str {
     }
 }
 
-/// True when `word` appears in `text` as a whole alphanumeric token, so a short
-/// provider token (`amp`) is not matched inside an unrelated word (`example`).
-pub(crate) fn contains_word(text: &str, word: &str) -> bool {
-    text.split(|c: char| !c.is_ascii_alphanumeric())
-        .any(|token| token == word)
-}
-
-/// Best-effort canonical surface for any provider-ish text — a tab label
-/// (`OpenAI / Codex`) or an account provider label (`codex`), case-insensitive
-/// and synonym-aware. `None` for text that names no known provider.
-pub(crate) fn surface_from_text(text: &str) -> Option<UsageSurface> {
-    let text = text.to_ascii_lowercase();
-    UsageSurface::ALL.iter().copied().find(|&surface| {
-        surface.synonyms().iter().any(|syn| {
-            // Amp matches only on a word boundary so labels like `example` or
-            // `ramp` don't false-link; every other token keeps the historical
-            // case-insensitive substring policy.
-            if matches!(surface, UsageSurface::Amp) {
-                contains_word(&text, syn)
-            } else {
-                text.contains(syn)
-            }
-        })
-    })
-}
-
-pub(crate) fn provider_matches_usage_label(provider: &str, account_provider: &str) -> bool {
-    // Compare the canonical surface each label resolves to instead of a long
-    // synonym OR-chain. When both name a known surface, equality decides; when
-    // both are outside the known set (e.g. OpenCode), fall back to a case-
-    // insensitive substring match; a known surface never matches an unknown
-    // label (else a stray substring like `amp` in `example` would link them).
-    match (
-        surface_from_text(provider),
-        surface_from_text(account_provider),
-    ) {
-        (Some(left), Some(right)) => left == right,
-        (None, None) => {
-            let provider = provider.to_ascii_lowercase();
-            let account_provider = account_provider.to_ascii_lowercase();
-            provider == account_provider
-                || provider.contains(&account_provider)
-                || account_provider.contains(&provider)
-        }
-        _ => false,
+/// Rank of one bucket in the settled Overview-summary order (D30:
+/// long-range weekly/daily, model-specific, session, then other). The slot
+/// mapping mirrors the projection's `window_category` exactly
+/// (`Spend`/`None` read as `Other`), so the capsule and the console select
+/// the same window; no producer emits the `Model` category yet, so
+/// model-specific windows rank as `Other` on both surfaces until one does.
+fn summary_slot_rank(slot: Option<StatusSlot>) -> u8 {
+    match slot {
+        Some(StatusSlot::Daily | StatusSlot::Weekly) => 0,
+        // No `StatusSlot` marks a model-specific window; unslotted buckets
+        // rank as `Other`, exactly like the projection maps them.
+        Some(StatusSlot::Session) => 2,
+        Some(StatusSlot::Spend) | None => 3,
     }
 }
 
-pub(crate) fn most_constrained_fresh_bucket(
-    buckets: &[QuotaBucketView],
-) -> Option<&QuotaBucketView> {
-    // Prefer a rolling-window bucket that actually carries a reset, excluding the
-    // monetary Spend slot (already shown as money in the status bar, and it has
-    // no rolling reset). Tightest remaining wins; ties break to the soonest reset
-    // so the overview row always carries a reset column (Bug 5: a reset-less spend
-    // bucket must not win the headline and blank the reset). Fall back to the old
-    // "any fresh bucket with a remaining" only when no windowed+reset bucket
-    // exists, so a provider that genuinely has only reset-less windows still shows.
+pub(crate) fn summary_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
+    // First available Rust-ranked limit (D30): lowest category rank wins,
+    // ties break to provider order, and only fresh buckets carrying a
+    // remaining percent qualify. Spend ranks last as `Other` (Bug 5: a
+    // reset-less spend bucket must not win the headline over a real limit),
+    // but still wins over nothing, so a spend-only account shows its quota.
     buckets
         .iter()
-        .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
-        .filter(|bucket| bucket.status_slot != Some(StatusSlot::Spend))
-        .filter(|bucket| bucket.remaining_percent.is_some() && bucket.resets_at.is_some())
-        // Both keys are `Some` (filtered), so a plain tuple key orders by tightest
-        // remaining, then soonest reset.
-        .min_by_key(|bucket| (bucket.remaining_percent, bucket.resets_at))
-        .or_else(|| {
-            buckets
-                .iter()
-                .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
-                .filter(|bucket| bucket.remaining_percent.is_some())
-                .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
-        })
+        .enumerate()
+        .filter(|(_, bucket)| bucket.status == UsageSnapshotStatus::Fresh)
+        .filter(|(_, bucket)| bucket.remaining_percent.is_some())
+        .min_by_key(|(index, bucket)| (summary_slot_rank(bucket.status_slot), *index))
+        .map(|(_, bucket)| bucket)
 }
 
 pub(crate) fn preserve_cached_quota_on_failed_refresh(
@@ -467,63 +455,165 @@ pub(crate) fn preserve_cached_quota_on_failed_refresh(
     );
 }
 
-pub(crate) fn provider_tabs(active: UsageSurface) -> Vec<UsageProviderTab> {
-    [
-        UsageSurface::Codex,
-        UsageSurface::Claude,
-        UsageSurface::Amp,
-        UsageSurface::Grok,
-        UsageSurface::Zai,
-        UsageSurface::Kimi,
-        UsageSurface::Minimax,
-    ]
-    .into_iter()
-    .map(|surface| UsageProviderTab {
-        label: surface.label().to_owned(),
-        status_label: if surface == active { "focused" } else { "" }.to_owned(),
-        account_label: "account unavailable".to_owned(),
-        plan_label: None,
-        source_label: None,
-        active: surface == active,
-    })
-    .collect()
+/// Stable canonical account id keying usage tabs: the same
+/// [`account_key_hash`] the durable snapshot store uses as its stable
+/// multi-account id, so tabs, overview rows, and stored snapshots correlate.
+/// Same-provider accounts share a display label but never an id.
+pub(crate) fn usage_account_tab_id(provider_label: &str, account_label: &str) -> String {
+    account_key_hash(provider_label, account_label)
 }
 
+/// One tab per distinct admitted account, keyed by
+/// [`usage_account_tab_id`]. Duplicate snapshots for one account collapse to
+/// the newest fetch; the strip sorts by display label, then account, then id,
+/// so any provider (Cursor, `OpenRouter`, Copilot, Antigravity, Gemini,
+/// `OpenCode`, omp, Hermes, …) tabs without a hardcoded surface list. Empty
+/// input stays empty.
+pub(crate) fn provider_tabs(views: &[&FocusedUsageView]) -> Vec<UsageProviderTab> {
+    let mut keyed: Vec<(String, &FocusedUsageView)> = views
+        .iter()
+        .map(|view| {
+            (
+                usage_account_tab_id(&view.account.provider_label, &view.account.account_label),
+                *view,
+            )
+        })
+        .collect();
+    // Newest fetch first per account, so `dedup_by` (which keeps the first of
+    // each run) keeps the latest snapshot; full ties are interchangeable.
+    keyed.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then(right.1.fetched_at_epoch.cmp(&left.1.fetched_at_epoch))
+    });
+    keyed.dedup_by(|left, right| left.0 == right.0);
+    let mut tabs: Vec<UsageProviderTab> = keyed
+        .into_iter()
+        .map(|(id, view)| account_tab(id, view))
+        .collect();
+    tabs.sort_by(|left, right| {
+        left.label
+            .cmp(&right.label)
+            .then(left.account_label.cmp(&right.account_label))
+            .then(left.id.cmp(&right.id))
+    });
+    tabs
+}
+
+/// Tab enrichment is pure reconstruction: one tab per admitted account
+/// snapshot, no hardcoded surface list, no fuzzy-label latest-wins. Active
+/// marking is [`mark_active_tab`]'s exact-id job, applied after.
 pub(crate) fn enrich_provider_tabs(
     view: &mut FocusedUsageView,
     snapshots: &HashMap<String, CachedUsage>,
 ) {
-    let active_label = view.account.provider_label.clone();
-    let active_account = compact_account_identity(&view.account.account_label).to_owned();
-    let active_plan = view.account.plan_label.clone();
-    let active_status = usage_tab_status_label(view);
-    let active_source = usage_tab_source_label(view);
-    for tab in &mut view.tabs {
-        if tab.active || provider_matches_usage_label(&tab.label, &active_label) {
-            tab.account_label = active_account.clone();
-            tab.plan_label = active_plan.clone();
-            tab.status_label = active_status.clone();
-            tab.source_label = Some(active_source.clone());
-            continue;
-        }
-        let Some(cached) = snapshots
+    let views: Vec<&FocusedUsageView> = snapshots.values().map(|cached| &cached.view).collect();
+    view.tabs = provider_tabs(&views);
+}
+
+fn account_tab(id: String, view: &FocusedUsageView) -> UsageProviderTab {
+    UsageProviderTab {
+        id,
+        label: account_tab_label(view),
+        status_label: usage_tab_status_label(view),
+        account_label: compact_account_identity(&view.account.account_label).to_owned(),
+        plan_label: view.account.plan_label.clone(),
+        source_label: Some(usage_tab_source_label(view)),
+        active: false,
+    }
+}
+
+/// Display label for an account tab: the snapshot's provider label (falling
+/// back to the focused provider when the snapshot carries only the generic
+/// `Usage` placeholder), suffixed with the compact account identity so
+/// same-provider accounts render individually visible tabs. Matching still
+/// keys on the id, never this label.
+fn account_tab_label(view: &FocusedUsageView) -> String {
+    account_tab_label_for_parts(
+        &view.account.provider_label,
+        &view.account.account_label,
+        view.focused_provider.as_deref(),
+    )
+}
+
+/// Shared tab-label rule (live cache and snapshot store): provider head with
+/// a ` · {account}` suffix so same-provider accounts stay individually
+/// visible.
+pub(crate) fn account_tab_label_for_parts(
+    provider_label: &str,
+    account_label: &str,
+    focused_provider: Option<&str>,
+) -> String {
+    let provider = provider_label.trim();
+    let provider = if !provider.is_empty()
+        && !provider.eq_ignore_ascii_case(UsageSurface::Unsupported.label())
+    {
+        provider.to_owned()
+    } else {
+        focused_provider
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+            .unwrap_or(UsageSurface::Unsupported.label())
+            .to_owned()
+    };
+    let account = compact_account_identity(account_label);
+    if account == "account unavailable" {
+        provider
+    } else {
+        format!("{provider} · {account}")
+    }
+}
+
+impl UsageCache {
+    /// Focused snapshot for an exact canonical account id (tab selection).
+    /// `None` when no admitted snapshot carries the id; the caller falls back
+    /// to label resolution only for empty ids (old payloads).
+    pub fn focused_snapshot_for_account_id(&self, account_id: &str) -> Option<FocusedUsageView> {
+        let mut view = self
+            .snapshots
             .values()
             .filter(|cached| {
-                provider_matches_usage_label(&tab.label, &cached.view.account.provider_label)
+                usage_account_tab_id(
+                    &cached.view.account.provider_label,
+                    &cached.view.account.account_label,
+                ) == account_id
             })
             .max_by_key(|cached| cached.view.fetched_at_epoch)
-        else {
-            tab.account_label = "account unavailable".to_owned();
-            tab.plan_label = None;
-            tab.status_label = "not cached".to_owned();
-            tab.source_label = None;
-            continue;
-        };
-        tab.account_label = compact_account_identity(&cached.view.account.account_label).to_owned();
-        tab.plan_label = cached.view.account.plan_label.clone();
-        tab.status_label = usage_tab_status_label(&cached.view);
-        tab.source_label = Some(usage_tab_source_label(&cached.view));
+            .map(|cached| cached.view.clone())?;
+        refresh_cached_updated_label(&mut view, now_epoch());
+        enrich_provider_tabs(&mut view, &self.snapshots);
+        mark_active_tab(&mut view);
+        Some(view)
     }
+
+    /// Broker-namespace account id behind an exact tab id, recovered from the
+    /// owning cache entry's broker key. `None` for unknown ids and for
+    /// non-broker entries (legacy keys carry no capability).
+    pub fn broker_account_id_for_tab_id(&self, tab_id: &str) -> Option<String> {
+        self.snapshots
+            .iter()
+            .filter(|(_, cached)| {
+                usage_account_tab_id(
+                    &cached.view.account.provider_label,
+                    &cached.view.account.account_label,
+                ) == tab_id
+            })
+            .filter_map(|(key, cached)| {
+                broker_account_id_from_cache_key(key).map(|id| (cached.view.fetched_at_epoch, id))
+            })
+            .max_by_key(|(fetched_at_epoch, _)| *fetched_at_epoch)
+            .map(|(_, id)| id)
+    }
+}
+
+/// Parse the broker account id out of a broker cache key
+/// (`{base}:account-id-v1:{surface_id}:{account_id}`, built by
+/// `usage_cache_key_for_broker_account`). Surface ids are closed colon-free
+/// tokens, so the first colon after the marker splits the pair.
+fn broker_account_id_from_cache_key(key: &str) -> Option<String> {
+    let (_, rest) = key.split_once(":account-id-v1:")?;
+    let (surface_id, account_id) = rest.split_once(':')?;
+    (!surface_id.is_empty() && !account_id.is_empty()).then(|| account_id.to_owned())
 }
 
 /// Freshness + source tag for the Overview row, e.g. "fresh · provider" or
@@ -550,12 +640,14 @@ pub(crate) fn usage_tab_source_label(view: &FocusedUsageView) -> String {
 
 pub(crate) fn usage_tab_status_label(view: &FocusedUsageView) -> String {
     if view.status == UsageSnapshotStatus::Fresh
-        && let Some(bucket) = most_constrained_fresh_bucket(&view.buckets)
+        && let Some(bucket) = summary_bucket(&view.buckets)
         && let Some(remaining) = bucket.remaining_percent
     {
-        // A model-scoped window (Fable, Sonnet, …) winning the compact headline
-        // is the actionable signal — name it so the Overview/status row tells
-        // the operator *which* model is the bottleneck, not just the % left.
+        // The summary window is the first available Rust-ranked limit (D30),
+        // shared with the console list summary. An unslotted window (a
+        // model-scoped Fable/Sonnet limit, or any other provider bucket)
+        // winning the headline is named, so the Overview/status row tells the
+        // operator *which* limit the % traces to, not just the % left.
         // Headline windows (Session/Weekly) stay bare: their slot already
         // implies them and the status bar carries those separately.
         let mut label = String::new();

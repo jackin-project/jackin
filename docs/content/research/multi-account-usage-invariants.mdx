@@ -1,0 +1,92 @@
+---
+title: "Multi-account usage invariants"
+description: "Durable identity, quota-sharing, OAuth-ownership, and client-routing rules for multi-account usage work."
+---
+
+**Research state:** Current
+
+## Summary
+
+Rules that multi-account usage and launch work must not break: one quota
+observation per billing identity no matter how many clients reach it, exactly
+one OAuth refresh writer per grant lineage, per-account Usage rows that stay
+visible even when unsupported, and client routing constraints for Codex and
+Claude. Violating any of these reintroduces double-counted quotas,
+dual-refresh races, or silently dropped accounts.
+
+## Identity and quota sharing
+
+- Shared-quota dedup key: (service + billing subject + scope/model/key). One
+  key used through several clients is ONE account with several launch routes
+  and ONE quota source. Catalog rows are launch routes, not accounts.
+  Independent key caps are never merged.
+- Never sum unrelated subscription percentages. Usage surfaces show
+  per-account rows; aggregation is allowed only for compatible monetary values
+  with explicit same currency, same scope, and no overlapping or shared credit
+  pools.
+- Unresolved, not discarded: until billing identity is verified, a registered
+  account stays visible as unresolved — never dropped, never merged by label,
+  never assigned a manufactured provider ID. Two providers sharing an email
+  are different accounts; two API keys in one organization may carry separate
+  key caps. A source that changes to another logged-in identity is an account
+  change, not a silent update of the prior account's quota.
+
+## OAuth refresh ownership
+
+- Exactly one refresh writer per OAuth grant lineage. jackin❯ stages copies of
+  credentials; it never dual-refreshes alongside the native owner (client auth
+  service, broker, or CLI). Coordinate by verified grant and credential
+  lineage, not by registration ID or directory: two copied paths can hold the
+  same grant, and independent grants are never merged just because they share
+  a billing identity. Auth expiry is never a reason to silently switch billing
+  identity.
+- Ownership is declared per credential source. External and native sources
+  stay owned by the native CLI or auth service. jackin❯-managed sources rotate
+  under a per-source lock with revision compare-and-swap, atomic writes, and
+  identity validation. Where a client insists on rotating refresh tokens
+  itself, use a supported external-token interface, a separately authenticated
+  managed profile, or a proven serialized ownership mechanism — never blind
+  copy-and-write-back.
+
+## Usage visibility
+
+- Unsupported but visible: every provider route without a quota source stays
+  on the Usage screen with its exact reason (no published quota API,
+  gateway-side metering only, billing access required, local server with
+  nothing to meter). An unknown limit is never rendered as 0% remaining.
+- Inference credentials without usage permission read as `Balance requires
+  billing access`, not as invalid accounts. Last-good values carry staleness;
+  a passed reset shows `Refresh due` until the provider reports the new
+  allowance — never a synthesized refill.
+
+## Client routing constraints
+
+- Codex: `wire_api: "responses"` is the only supported value (the default when
+  omitted); the chat-completions wire is deprecated. Every Codex
+  custom-provider launch stages a Responses-speaking base URL for the selected
+  account only; chat-native or Anthropic-native backends need a protocol
+  relay, never a `wire_api` flag.
+- Claude: plugins extend skills, agents, hooks, and MCP only — there is no
+  plugin-based provider or model-routing surface. Gateway routing goes through
+  `ANTHROPIC_BASE_URL` plus credential and model pins with an isolated
+  `CLAUDE_CONFIG_DIR`; a non-first-party base URL disables MCP tool search by
+  default plus Remote Control. Gateways must expose an Anthropic-format
+  endpoint; routing to non-Claude models is unsupported.
+
+## Limitations and open questions
+
+- Private and reference-grade usage endpoints need live verification (URL,
+  method, auth, response shape) before jackin❯ claims support; unverified rows
+  stay unsupported with evidence.
+- Region and host splits (global vs regional hosts) and OAuth-grant vs
+  API-key acceptance need per-endpoint proof. Failure on one host never
+  authorizes retrying a credential on another provider host.
+- Wire compatibility with a third-party client does not prove the subscription
+  permits that client; eligibility needs vendor plus client evidence and an
+  account test.
+
+## Related work
+
+- [Reliable Claude authentication strategy](/research/agents/authentication/claude-auth-strategy/)
+- [Live bidirectional auth sync](/research/agents/authentication/live-auth-sync-design/)
+- [Agent usage provider APIs](/research/product/desktop/usage-provider-apis/)

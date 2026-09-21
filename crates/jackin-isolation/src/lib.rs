@@ -9,6 +9,7 @@ mod error;
 pub mod finalize;
 pub mod git_inspect;
 pub mod materialize;
+pub mod safe_remove;
 pub mod state;
 
 pub use error::IsolationError;

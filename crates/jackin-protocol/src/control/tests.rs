@@ -92,6 +92,30 @@ fn usage_focused_roundtrips() {
 }
 
 #[test]
+fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
+    let tab = UsageProviderTab {
+        id: "sha256:abc".to_owned(),
+        label: "Anthropic".to_owned(),
+        status_label: "fresh".to_owned(),
+        account_label: "a@example.com".to_owned(),
+        plan_label: None,
+        source_label: None,
+        active: true,
+    };
+    let decoded: UsageProviderTab =
+        serde_json::from_str(&serde_json::to_string(&tab).unwrap()).unwrap();
+    assert_eq!(decoded, tab);
+    // Tabs persisted before the id field decode with an empty id rather than
+    // failing; the producer always stamps real ids.
+    let legacy: UsageProviderTab = serde_json::from_str(
+        r#"{"label":"Anthropic","status_label":"fresh","account_label":"a@example.com","plan_label":null,"source_label":null,"active":true}"#,
+    )
+    .unwrap();
+    assert_eq!(legacy.id, "");
+    assert_eq!(legacy.label, "Anthropic");
+}
+
+#[test]
 fn token_usage_roundtrips_present_and_absent() {
     // Request side.
     let json = serde_json::to_string(&ClientMsg::TokenUsage { session_id: 9 }).unwrap();
@@ -178,6 +202,38 @@ fn money_formats_currency_and_credit_labels() {
     assert_eq!(
         Money::new(30000, "credits", 2).format_compact(),
         "300 credits"
+    );
+}
+
+#[test]
+fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
+    // Overage survives unclamped; the projection and the capsule presentation
+    // share this rule, so both recover the same magnitude.
+    assert_eq!(
+        Money::new(15_000, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
+        Some(150)
+    );
+    assert_eq!(
+        Money::new(27_00, "USD", 2).raw_percent_of(&Money::new(30_000, "USD", 2)),
+        Some(9)
+    );
+    assert_eq!(
+        Money::new(0, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
+        Some(0)
+    );
+    // Incompatible denominations, a non-positive cap, and overflow saturate
+    // to no representation instead of a wrapped or fabricated value.
+    assert_eq!(
+        Money::new(50_00, "USD", 2).raw_percent_of(&Money::new(10_000, "SGD", 2)),
+        None
+    );
+    assert_eq!(
+        Money::new(1, "USD", 2).raw_percent_of(&Money::new(0, "USD", 2)),
+        None
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 2).raw_percent_of(&Money::new(1, "USD", 2)),
+        Some(i32::MAX)
     );
 }
 
@@ -342,6 +398,7 @@ fn session_event_records_roundtrip_every_kind() {
             seq: seq as u64,
             session: 1,
             agent: Some("claude".to_owned()),
+            account_id: Some("acc-1".to_owned()),
             state: AgentState::Working,
             last_output_ms: Some(120),
             last_input_ms: None,
@@ -371,6 +428,7 @@ fn state_changed_carries_the_working_transition_the_host_waits_on() {
         seq: 0,
         session: 1,
         agent: None,
+        account_id: None,
         state: AgentState::Working,
         last_output_ms: Some(3),
         last_input_ms: Some(5),

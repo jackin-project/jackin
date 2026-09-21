@@ -6,6 +6,8 @@
 //! constants or [`join`]; the policy suite and the `cargo xtask lint
 //! container-paths` gate keep stragglers from regrowing.
 
+use std::path::{Component, Path, PathBuf};
+
 /// Absolute root of every container-side jackin❯ path.
 pub const JACKIN_ROOT: &str = "/jackin";
 
@@ -18,8 +20,10 @@ pub const STATE_DIR: &str = "/jackin/state";
 /// Ephemeral runtime sockets, clipboard staging, usage handoff JSON.
 pub const RUN_DIR: &str = "/jackin/run";
 
-/// Protected host-resolved account credentials, mounted read-only.
-pub const ACCOUNT_CREDENTIALS: &str = "/run/jackin/account-credentials.json";
+/// Private roots allocated by the capsule supervisor for each PTY session.
+/// Agent children receive only their own numeric child below this directory;
+/// the parent remains traverse-only in the Landlock policy.
+pub const SESSION_ROOTS_DIR: &str = "/jackin/run/sessions";
 
 /// Host-repo mount points inside the container (`/jackin/host/...`).
 pub const HOST_DIR: &str = "/jackin/host";
@@ -39,6 +43,18 @@ pub const GROK_DIR: &str = "/jackin/grok";
 pub const OPENCODE_DIR: &str = "/jackin/opencode";
 /// Kimi Code handoff home.
 pub const KIMI_CODE_DIR: &str = "/jackin/kimi-code";
+/// Antigravity handoff directory (settings sync; OAuth stays in host Keychain).
+pub const ANTIGRAVITY_DIR: &str = "/jackin/antigravity";
+/// Gemini CLI handoff directory.
+pub const GEMINI_DIR: &str = "/jackin/gemini";
+/// Cursor handoff directory.
+pub const CURSOR_DIR: &str = "/jackin/cursor";
+/// Muse handoff directory.
+pub const MUSE_DIR: &str = "/jackin/muse";
+/// omp handoff directory.
+pub const OMP_DIR: &str = "/jackin/omp";
+/// Hermes handoff directory.
+pub const HERMES_DIR: &str = "/jackin/hermes";
 
 /// Capsule binary path inside the container image.
 pub const CAPSULE_BIN: &str = "/jackin/runtime/jackin-capsule";
@@ -55,6 +71,8 @@ pub const CAPSULE_SOCKET: &str = "/jackin/run/jackin.sock";
 pub const HOST_SOCK: &str = "/jackin/run/host.sock";
 /// Scoped per-container usage broker relay.
 pub const USAGE_SOCK: &str = "/jackin/run/usage.sock";
+/// Read-only client certificates for the role's Docker-in-Docker sidecar.
+pub const DIND_CERTS_CLIENT_DIR: &str = "/jackin/run/dind-certs/client";
 /// Per-session agent config materialised for the capsule.
 pub const CAPSULE_CONFIG: &str = "/jackin/run/agent.toml";
 /// Clipboard staging directory under the run tree.
@@ -88,6 +106,18 @@ pub const AMP_SECRETS: &str = "/jackin/amp/secrets.json";
 pub const OPENCODE_AUTH: &str = "/jackin/opencode/auth.json";
 /// Grok auth handoff file.
 pub const GROK_AUTH: &str = "/jackin/grok/auth.json";
+/// Antigravity settings handoff file (prefs only — never credentials).
+pub const ANTIGRAVITY_SETTINGS: &str = "/jackin/antigravity/settings.json";
+/// Gemini CLI OAuth credentials handoff file.
+pub const GEMINI_AUTH: &str = "/jackin/gemini/oauth_creds.json";
+/// Cursor auth handoff file.
+pub const CURSOR_AUTH: &str = "/jackin/cursor/auth.json";
+/// Muse auth handoff file.
+pub const MUSE_AUTH: &str = "/jackin/muse/auth.json";
+/// omp agent-store handoff file (`SQLite`, not JSON).
+pub const OMP_AGENT_DB: &str = "/jackin/omp/agent.db";
+/// Hermes auth handoff file (best-effort layout; unverified upstream).
+pub const HERMES_AUTH: &str = "/jackin/hermes/auth.json";
 /// Git prepare-commit-msg hook path.
 pub const GIT_HOOK_PREPARE_COMMIT_MSG: &str = "/jackin/state/git-hooks/prepare-commit-msg";
 /// Git prepare-commit-msg install marker.
@@ -102,6 +132,46 @@ pub const AGENT_STATUS_CODEX_HOOK: &str = "/jackin/runtime/agent-status/hooks/co
 pub const AGENT_STATUS_OPENCODE_PLUGIN: &str =
     "/jackin/runtime/agent-status/hooks/opencode/plugin.js";
 
+/// Normalize a path lexically, resolving `.` and `..` without filesystem I/O.
+///
+/// Callers that handle an existing path should canonicalize it first so
+/// symlink aliases are removed; this helper is the safe fallback for paths
+/// that do not exist yet.
+#[must_use]
+pub fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if matches!(components.last(), Some(Component::Normal(_))) {
+                    components.pop();
+                } else if !matches!(
+                    components.last(),
+                    Some(Component::RootDir | Component::Prefix(_))
+                ) {
+                    components.push(component);
+                }
+            }
+            component => components.push(component),
+        }
+    }
+    components.iter().collect()
+}
+
+/// Whether `ancestor` is the same path as, or a component-wise ancestor of,
+/// `path` after lexical normalization.
+#[must_use]
+pub fn path_is_ancestor_or_equal(ancestor: &Path, path: &Path) -> bool {
+    normalize_path(path).starts_with(normalize_path(ancestor))
+}
+
+/// Whether two paths overlap after lexical normalization.
+#[must_use]
+pub fn paths_overlap(left: &Path, right: &Path) -> bool {
+    path_is_ancestor_or_equal(left, right) || path_is_ancestor_or_equal(right, left)
+}
+
 /// Compose a container path under a jackin-owned base.
 ///
 /// Debug-asserts that `base` starts with [`JACKIN_ROOT`] and that `rel` is a
@@ -110,7 +180,7 @@ pub const AGENT_STATUS_OPENCODE_PLUGIN: &str =
 #[must_use]
 pub fn join(base: &str, rel: &str) -> String {
     debug_assert!(
-        base == JACKIN_ROOT || base.starts_with(&format!("{JACKIN_ROOT}/")),
+        path_is_ancestor_or_equal(Path::new(JACKIN_ROOT), Path::new(base)),
         "container_paths::join base must start with {JACKIN_ROOT}"
     );
     debug_assert!(
@@ -125,15 +195,13 @@ pub fn join(base: &str, rel: &str) -> String {
 /// Mirrors the classifier used by capsule file-export.
 #[must_use]
 pub fn is_jackin_owned(path: &str) -> bool {
-    let trimmed = path.trim();
-    trimmed == JACKIN_ROOT || trimmed.starts_with(&format!("{JACKIN_ROOT}/"))
+    path_is_ancestor_or_equal(Path::new(JACKIN_ROOT), Path::new(path.trim()))
 }
 
 /// Whether `path` is under the run subtree (prefix or exact).
 #[must_use]
 pub fn is_run_owned(path: &str) -> bool {
-    let trimmed = path.trim();
-    trimmed == RUN_DIR || trimmed.starts_with(&format!("{RUN_DIR}/"))
+    path_is_ancestor_or_equal(Path::new(RUN_DIR), Path::new(path.trim()))
 }
 
 #[cfg(test)]

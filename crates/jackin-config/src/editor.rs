@@ -16,6 +16,7 @@ use anyhow::Context as _;
 use jackin_core::{EnvValue, JackinPaths, WorkspaceName};
 use toml_edit::{DocumentMut, Item, Table};
 
+use crate::accounts::account_source_fingerprint;
 use crate::app_config::AppConfig;
 use crate::app_config::persist::{
     load_config_contents, load_split_config_locked, validate_reserved_env_names,
@@ -23,7 +24,7 @@ use crate::app_config::persist::{
 use crate::auth::GithubAuthMode;
 use crate::persist::{
     ConfigWriteGuard, StagedWrite, acquire_config_write_lock, commit_staged_config,
-    stage_atomic_write, stage_delete, validate_workspace_file_stem,
+    publication_journal_path, stage_atomic_write, stage_delete, validate_workspace_file_stem,
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
@@ -61,15 +62,296 @@ pub enum EnvScope {
     },
 }
 
+/// Outcome of a first-run bootstrap scan: registered account IDs plus
+/// every discovery issue (surfaced to CLI/Settings callers, never dropped).
+#[derive(Debug, Default)]
+pub struct BootstrapReport {
+    /// True when a fresh-install scan ran during this open.
+    pub fresh_install: bool,
+    /// True when the editor contains a scan mutation that must be saved.
+    pub changed: bool,
+    /// Account IDs registered by the bootstrap scan.
+    pub added_accounts: Vec<String>,
+    /// Full `(id, account)` pairs for `added_accounts`, in the same order.
+    /// Draft-merge callers (Settings scan) join these into the pending
+    /// draft instead of saving immediately. Credentials are references
+    /// (`$VAR`), 1Password refs, or profile directories — discovery
+    /// never reads secret values.
+    pub added: Vec<(String, crate::AccountConfig)>,
+    /// Discovery issues observed during the scan.
+    pub issues: Vec<crate::DiscoveryIssue>,
+    /// `.zshrc` model profiles that could not be attached to a persisted
+    /// API-key account. These are model/endpoint literals only; no secret
+    /// values are carried here.
+    pub unapplied_zshrc_models: Vec<crate::ModelProfile>,
+    /// `.zshrc` wrapper call sites that have no launch executor yet. The
+    /// parser's wrapper identity/arguments are retained so callers can report
+    /// the exact unimplemented input instead of dropping it.
+    pub unapplied_zshrc_wrappers: Vec<crate::WrapperCallSite>,
+    /// Complete Amp XDG triples for which no credential evidence was found.
+    /// A discovered triple is persisted on the profile account instead.
+    pub unapplied_zshrc_xdg_roots: Vec<crate::XdgRoots>,
+}
+
+/// Build a profile candidate with an explicit identity and optional Amp XDG
+/// roots. Callers must resolve a provider before creating the account; this
+/// keeps a multi-provider store entry source-bound instead of inferring from
+/// the agent alone.
+fn profile_account_candidate(
+    id: String,
+    agent: jackin_core::Agent,
+    provider: crate::AiProvider,
+    directory: PathBuf,
+    name: String,
+    xdg_roots: Option<crate::XdgRoots>,
+    source_selector: Option<crate::ProfileSelector>,
+) -> (String, crate::AccountConfig) {
+    (
+        id,
+        crate::AccountConfig {
+            enabled: true,
+            name,
+            provider,
+            credential: crate::AccountCredential::Profile {
+                agent,
+                directory,
+                xdg_roots,
+                source_selector,
+            },
+        },
+    )
+}
+
+/// Synthesize the registry entry for a discovered default profile.
+fn profile_scan_candidate(
+    discovered: &crate::DiscoveredAccount,
+) -> Option<(String, crate::AccountConfig)> {
+    let provider = discovered.provider.or_else(|| {
+        (discovered.agent != jackin_core::Agent::Opencode)
+            .then(|| crate::AiProvider::for_agent(discovered.agent))
+            .flatten()
+    })?;
+    let id = if discovered.agent == jackin_core::Agent::Opencode {
+        format!("default-opencode-{}", provider.slug())
+    } else {
+        format!("default-{}", discovered.agent.slug())
+    };
+    Some(profile_account_candidate(
+        id,
+        discovered.agent,
+        provider,
+        discovered.directory.clone(),
+        if discovered.agent == jackin_core::Agent::Opencode {
+            format!("OpenCode {provider} default")
+        } else {
+            format!("{} default", discovered.agent.label())
+        },
+        None,
+        discovered.source_selector.clone(),
+    ))
+}
+
+/// Map the shell variable stem used by [`crate::ModelProfile`] to a provider.
+/// Only canonical provider slugs from the provider catalog are accepted.
+fn zshrc_provider(stem: &str) -> Option<crate::AiProvider> {
+    crate::AiProvider::ALL
+        .iter()
+        .copied()
+        .find(|provider| provider.slug() == stem)
+}
+
+/// Synthesize the registry entry for an environment-provided API key.
+/// The credential is a `$VAR` reference — the value is never read.
+fn env_scan_candidate(
+    provider: crate::AiProvider,
+    variable: &str,
+    base_url: Option<String>,
+) -> (String, crate::AccountConfig) {
+    api_key_scan_candidate(provider, EnvValue::from(format!("${variable}")), base_url)
+}
+
+/// Synthesize the registry entry for a provider API key with an explicit
+/// credential value (environment reference or 1Password ref).
+fn api_key_scan_candidate(
+    provider: crate::AiProvider,
+    value: EnvValue,
+    base_url: Option<String>,
+) -> (String, crate::AccountConfig) {
+    let id = format!("{}-api-key", provider.slug());
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: format!("{provider} API key"),
+        provider,
+        credential: crate::AccountCredential::ApiKey {
+            value,
+            base_url,
+            model: None,
+        },
+    };
+    (id, account)
+}
+
+/// Synthesize the registry entry for an environment-provided subscription
+/// token. `None` if the agent ever loses its native provider (today only
+/// Claude is discovered, which always has one).
+fn oauth_scan_candidate(
+    agent: jackin_core::Agent,
+    variable: &str,
+) -> Option<(String, crate::AccountConfig)> {
+    oauth_scan_candidate_with_value(agent, EnvValue::from(format!("${variable}")))
+}
+
+/// Synthesize the registry entry for a subscription token with an explicit
+/// credential value (environment reference or 1Password ref).
+fn oauth_scan_candidate_with_value(
+    agent: jackin_core::Agent,
+    value: EnvValue,
+) -> Option<(String, crate::AccountConfig)> {
+    let provider = crate::AiProvider::for_agent(agent)?;
+    let id = format!("{agent}-oauth-token");
+    let account = crate::AccountConfig {
+        enabled: true,
+        name: format!("{agent} subscription token"),
+        provider,
+        credential: crate::AccountCredential::OAuthToken { agent, value },
+    };
+    Some((id, account))
+}
+
+/// Scan default evidence + environment into `config`, registering only
+/// IDs that do not collide with existing accounts. Never overwrites an
+/// operator-registered account.
+fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapReport {
+    let mut report = BootstrapReport::default();
+    let scan = crate::discover_default_accounts(home);
+    report.issues = scan.issues;
+    let mut register = |id: String, account: crate::AccountConfig| {
+        if scan_candidate_is_blocked(
+            &config.accounts,
+            &config.account_scan_exclusions,
+            &id,
+            &account,
+        ) {
+            return;
+        }
+        config.accounts.insert(id.clone(), account.clone());
+        report.added_accounts.push(id.clone());
+        report.added.push((id, account));
+        report.changed = true;
+    };
+    for discovered in scan.accounts {
+        if let Some((id, account)) = profile_scan_candidate(&discovered) {
+            register(id, account);
+        }
+    }
+    let environment = std::env::vars_os()
+        .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
+        .collect();
+    for candidate in
+        crate::accounts::discovery::discover_environment_account_candidates(&environment)
+    {
+        let (id, account) =
+            env_scan_candidate(candidate.provider, &candidate.variable, candidate.base_url);
+        register(id, account);
+    }
+    for (agent, variable) in crate::discover_environment_oauth_accounts(&environment) {
+        if let Some((id, account)) = oauth_scan_candidate(agent, &variable) {
+            register(id, account);
+        }
+    }
+    report
+}
+
+/// Whether `candidate`'s credential source is already registered under any
+/// ID. Uses the same source fingerprint as `upsert_account` so scans skip
+/// instead of erroring when the operator renamed an account ID or used a path
+/// alias.
+fn scan_source_registered(
+    accounts: &BTreeMap<String, crate::AccountConfig>,
+    candidate: &crate::AccountConfig,
+) -> bool {
+    let candidate_fingerprint = account_source_fingerprint(candidate);
+    accounts
+        .values()
+        .any(|registered| account_source_fingerprint(registered) == candidate_fingerprint)
+}
+
+/// Apply the same ID, tombstone, and credential-source collision policy to
+/// every discovery helper.
+fn scan_candidate_is_blocked(
+    known: &BTreeMap<String, crate::AccountConfig>,
+    excluded: &BTreeSet<String>,
+    id: &str,
+    account: &crate::AccountConfig,
+) -> bool {
+    known.contains_key(id)
+        || excluded.contains(&account_source_fingerprint(account))
+        || scan_source_registered(known, account)
+}
+
+/// Read an installer `fresh_install` marker without changing it.
+///
+/// The marker is cleared only in the same successful write that commits the
+/// bootstrap result, so a failed bootstrap remains retryable.
+fn has_fresh_install_marker(path: &Path) -> crate::ConfigResult<bool> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(anyhow::Error::new(error)
+                .context(format!("reading {}", path.display()))
+                .into());
+        }
+    };
+    let doc: DocumentMut = raw
+        .parse()
+        .with_context(|| format!("parsing {}", path.display()))?;
+    Ok(doc
+        .get("bootstrap")
+        .and_then(Item::as_table_like)
+        .and_then(|table| table.get("fresh_install"))
+        .and_then(Item::as_bool)
+        .unwrap_or(false))
+}
+
 /// Comment-preserving mutator for `config.toml` and split workspace files.
 #[derive(Debug)]
 pub struct ConfigEditor {
     _lock: ConfigWriteGuard,
+    home_dir: PathBuf,
     doc: DocumentMut,
     path: PathBuf,
     workspaces_dir: PathBuf,
     workspace_docs: BTreeMap<String, DocumentMut>,
     removed_workspaces: BTreeSet<String>,
+}
+
+fn apply_xdg_profile_candidate(
+    editor: &mut ConfigEditor,
+    known: &mut BTreeMap<String, crate::AccountConfig>,
+    excluded: &BTreeSet<String>,
+    report: &mut BootstrapReport,
+    roots: &crate::XdgRoots,
+    candidate: Option<(String, crate::AccountConfig)>,
+) -> crate::ConfigResult<()> {
+    let Some((id, account)) = candidate else {
+        report.unapplied_zshrc_xdg_roots.push(roots.clone());
+        return Ok(());
+    };
+    let is_excluded = excluded.contains(&account_source_fingerprint(&account));
+    let source_registered = scan_source_registered(known, &account);
+    if scan_candidate_is_blocked(known, excluded, &id, &account) {
+        if known.contains_key(&id) && !is_excluded && !source_registered {
+            report.unapplied_zshrc_xdg_roots.push(roots.clone());
+        }
+        return Ok(());
+    }
+    editor.upsert_account(&id, &account)?;
+    known.insert(id.clone(), account.clone());
+    report.added_accounts.push(id.clone());
+    report.added.push((id, account));
+    report.changed = true;
+    Ok(())
 }
 
 impl ConfigEditor {
@@ -79,6 +361,12 @@ impl ConfigEditor {
     /// Fresh installs are bootstrapped directly while this editor already owns
     /// the write lock, avoiding recursive editor acquisition.
     pub fn open(paths: &JackinPaths) -> crate::ConfigResult<Self> {
+        Self::open_detailed(paths).map(|(editor, _)| editor)
+    }
+
+    /// [`open`](Self::open) plus the bootstrap report for callers that
+    /// surface first-run discovery results (CLI report, Settings scan).
+    pub fn open_detailed(paths: &JackinPaths) -> crate::ConfigResult<(Self, BootstrapReport)> {
         let lock = acquire_config_write_lock(&paths.config_file)?;
         Self::open_with_lock(paths, lock)
     }
@@ -86,62 +374,19 @@ impl ConfigEditor {
     pub(crate) fn open_with_lock(
         paths: &JackinPaths,
         lock: ConfigWriteGuard,
-    ) -> crate::ConfigResult<Self> {
+    ) -> crate::ConfigResult<(Self, BootstrapReport)> {
         paths.ensure_base_dirs()?;
+        // The passed-in lock's acquisition already forward-rolled any
+        // pending publication.
+        let mut report = BootstrapReport::default();
         let initial_contents = if paths.config_file.exists() {
             None
         } else {
             let mut initial = AppConfig::default();
             initial.sync_builtin_agents();
-            for discovered in crate::discover_default_accounts(&paths.home_dir).accounts {
-                let id = format!("default-{}", discovered.agent.slug());
-                initial.accounts.insert(
-                    id,
-                    crate::AccountConfig {
-                        enabled: true,
-                        name: format!("{} default", discovered.agent.label()),
-                        provider: crate::AiProvider::for_agent(discovered.agent),
-                        credential: crate::AccountCredential::Profile {
-                            agent: discovered.agent,
-                            directory: discovered.directory,
-                        },
-                    },
-                );
-            }
-            let environment = std::env::vars_os()
-                .filter_map(|(name, value)| {
-                    Some((name.into_string().ok()?, value.into_string().ok()?))
-                })
-                .collect();
-            for (provider, variable) in crate::discover_environment_accounts(&environment) {
-                initial.accounts.insert(
-                    format!("{}-api-key", provider.slug()),
-                    crate::AccountConfig {
-                        enabled: true,
-                        name: format!("{provider} API key"),
-                        provider,
-                        credential: crate::AccountCredential::ApiKey {
-                            value: EnvValue::from(format!("${variable}")),
-                            base_url: None,
-                            model: None,
-                        },
-                    },
-                );
-            }
-            for (agent, variable) in crate::discover_environment_oauth_accounts(&environment) {
-                initial.accounts.insert(
-                    format!("{agent}-oauth-token"),
-                    crate::AccountConfig {
-                        enabled: true,
-                        name: format!("{agent} subscription token"),
-                        provider: crate::AiProvider::for_agent(agent),
-                        credential: crate::AccountCredential::OAuthToken {
-                            agent,
-                            value: EnvValue::from(format!("${variable}")),
-                        },
-                    },
-                );
-            }
+            report = bootstrap_scan_accounts(&mut initial, &paths.home_dir);
+            report.fresh_install = true;
+            initial.bootstrap = Some(crate::BootstrapState::initialized());
             initial.validate_accounts()?;
             Some(toml::to_string_pretty(&initial)?)
         };
@@ -153,27 +398,370 @@ impl ConfigEditor {
         if let Some(contents) = initial_contents {
             loaded.add_pending_write(paths.config_file.clone(), contents);
         }
+        if !report.fresh_install && has_fresh_install_marker(&paths.config_file)? {
+            // Installer-created config: run the first account scan exactly
+            // once, then clear the marker. The file is installer-shaped
+            // (no operator comments to preserve), so a typed round-trip
+            // write is safe. Workspaces live in split files, never embedded,
+            // so they are excluded from the global rewrite; the write
+            // commits through pending_writes together with any migration
+            // rewrites.
+            let serialized = {
+                let config = loaded.config_mut();
+                report = bootstrap_scan_accounts(&mut *config, &paths.home_dir);
+                report.fresh_install = true;
+                config.bootstrap = Some(crate::BootstrapState::initialized());
+                config.validate_accounts()?;
+                let mut snapshot = config.clone();
+                snapshot.workspaces.clear();
+                toml::to_string_pretty(&snapshot)?
+            };
+            loaded.add_pending_write(paths.config_file.clone(), serialized);
+        }
         if loaded.has_pending_writes() {
-            // Match `validate_candidate`'s editor contract. Workspace geometry
-            // remains editable through create/edit; account and reserved-env
-            // semantics must pass before migration bytes are committed.
+            // Registry, binding, and reserved-env semantics must pass before
+            // migration bytes are committed. Workspace geometry remains
+            // editable through create/edit, and launch-instance references
+            // are enforced at save/load instead, so the editor can open a
+            // config whose instance account is not registered yet for repair.
             loaded.validate_for_editor()?;
         }
-        drop(loaded.commit()?);
+        drop(loaded.commit(&publication_journal_path(&paths.config_file))?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw
             .parse()
             .with_context(|| format!("parsing {}", paths.config_file.display()))?;
         let workspace_docs = load_workspace_docs(paths)?;
-        Ok(Self {
+        let editor = Self {
             _lock: lock,
+            home_dir: paths.home_dir.clone(),
             doc,
             path: paths.config_file.clone(),
             workspaces_dir: paths.workspaces_dir.clone(),
             workspace_docs,
             removed_workspaces: BTreeSet::new(),
-        })
+        };
+        Ok((editor, report))
+    }
+
+    /// Scan default evidence + the process environment for importable
+    /// accounts, registering only IDs and credential sources not already
+    /// present. Same id-synthesis/dedup rules as the first-run bootstrap
+    /// (skip on ID collision; Omp/Hermes have no native billing and are
+    /// skipped), plus a credential-source check so a re-scan skips instead
+    /// of erroring when the operator renamed an account ID. Never
+    /// overwrites an operator-registered account.
+    ///
+    /// Runs under this editor's config lock, so concurrent scans serialize
+    /// and the loser dedupes to a no-op. Performs blocking filesystem /
+    /// Keychain I/O — console callers must run it on a worker thread.
+    ///
+    /// # Errors
+    /// Returns an error if a synthesized account fails validation.
+    pub fn scan_for_accounts(&mut self) -> crate::ConfigResult<BootstrapReport> {
+        let home = self.home_dir.clone();
+        let environment = std::env::vars_os()
+            .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
+            .collect();
+        self.scan_for_accounts_with(&home, &environment)
+    }
+
+    /// [`scan_for_accounts`](Self::scan_for_accounts) with explicit
+    /// discovery inputs (deterministic seam for tests; production passes
+    /// the live home directory and process environment).
+    fn scan_for_accounts_with(
+        &mut self,
+        home: &Path,
+        environment: &BTreeMap<String, String>,
+    ) -> crate::ConfigResult<BootstrapReport> {
+        let mut report = BootstrapReport::default();
+        let scan = crate::discover_default_accounts(home);
+        report.issues = scan.issues;
+        let mut candidates = Vec::new();
+        for discovered in scan.accounts {
+            if let Some(candidate) = profile_scan_candidate(&discovered) {
+                candidates.push(candidate);
+            }
+        }
+        for candidate in
+            crate::accounts::discovery::discover_environment_account_candidates(environment)
+        {
+            candidates.push(env_scan_candidate(
+                candidate.provider,
+                &candidate.variable,
+                candidate.base_url,
+            ));
+        }
+        for (agent, variable) in crate::discover_environment_oauth_accounts(environment) {
+            if let Some(candidate) = oauth_scan_candidate(agent, &variable) {
+                candidates.push(candidate);
+            }
+        }
+        let existing: AppConfig = toml::from_str(&self.doc.to_string())?;
+        let excluded = existing.account_scan_exclusions;
+        let mut known = existing.accounts;
+        for (id, account) in candidates {
+            // Skip-on-collision in both dimensions: an operator
+            // registration (same ID, or same credential source under
+            // another ID) always wins over scan synthesis.
+            if scan_candidate_is_blocked(&known, &excluded, &id, &account) {
+                continue;
+            }
+            self.upsert_account(&id, &account)?;
+            known.insert(id.clone(), account.clone());
+            report.added_accounts.push(id.clone());
+            report.added.push((id, account));
+            report.changed = true;
+        }
+        Ok(report)
+    }
+
+    /// Apply a `.zshrc` import plan, seeding verified profile accounts for
+    /// config-dir/XDG overrides plus `op read` references as key/token values.
+    /// Same skip-on-collision rules as
+    /// [`scan_for_accounts`](Self::scan_for_accounts): never overwrites an
+    /// operator registration, and override directories without credential
+    /// evidence seed nothing. Model/endpoint groups update matching API-key
+    /// accounts when present; wrapper call sites and otherwise-unapplied
+    /// model/XDG entries are returned in the report so no parsed field
+    /// disappears silently.
+    ///
+    /// # Errors
+    /// Returns an error if a seeded account fails validation.
+    pub fn apply_zshrc_plan(
+        &mut self,
+        plan: &crate::ZshrcImportPlan,
+    ) -> crate::ConfigResult<BootstrapReport> {
+        let mut report = BootstrapReport::default();
+        let existing: AppConfig = toml::from_str(&self.doc.to_string())?;
+        let excluded = existing.account_scan_exclusions;
+        let mut known = existing.accounts;
+        let home = self.home_dir.clone();
+        self.apply_zshrc_directories(&plan.directories, &home, &mut known, &excluded, &mut report)?;
+        self.apply_zshrc_xdg_roots(
+            plan.xdg_roots.as_ref(),
+            &home,
+            &mut known,
+            &excluded,
+            &mut report,
+        )?;
+        self.apply_zshrc_op_refs(
+            &plan.op_refs,
+            &plan.models,
+            &mut known,
+            &excluded,
+            &mut report,
+        )?;
+        self.apply_zshrc_models(&plan.models, &mut known, &mut report)?;
+        // Arbitrary shell wrappers cannot safely be executed or serialized
+        // into the current launch protocol. Retain the parsed call sites in
+        // the report so callers surface them instead of dropping them.
+        report.unapplied_zshrc_wrappers = plan.wrappers.clone();
+        Ok(report)
+    }
+
+    fn register_zshrc_account(
+        &mut self,
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+        id: String,
+        account: crate::AccountConfig,
+    ) -> crate::ConfigResult<()> {
+        if scan_candidate_is_blocked(known, excluded, &id, &account) {
+            return Ok(());
+        }
+        self.upsert_account(&id, &account)?;
+        known.insert(id.clone(), account.clone());
+        report.added_accounts.push(id.clone());
+        report.added.push((id, account));
+        report.changed = true;
+        Ok(())
+    }
+
+    fn apply_zshrc_directories(
+        &mut self,
+        directories: &[crate::DirectoryCandidate],
+        home: &Path,
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        for directory in directories {
+            let Some(provider) = crate::AiProvider::for_agent(directory.agent) else {
+                continue;
+            };
+            match crate::discover_account_directory(directory.agent, &directory.directory, home) {
+                Ok(Some(found)) => {
+                    // Shell overrides are distinct profiles from the
+                    // default-home discovery entry. Reusing
+                    // `default-{agent}` made a valid custom profile vanish
+                    // after the default profile had already been scanned.
+                    let id = format!("custom-{}", directory.agent.slug());
+                    let account = crate::AccountConfig {
+                        enabled: true,
+                        name: format!("{} custom", directory.agent.label()),
+                        provider,
+                        credential: crate::AccountCredential::Profile {
+                            agent: directory.agent,
+                            directory: found.directory,
+                            xdg_roots: None,
+                            source_selector: found.source_selector,
+                        },
+                    };
+                    self.register_zshrc_account(known, excluded, report, id, account)?;
+                }
+                Ok(None) => {}
+                Err(error) => report.issues.push(crate::DiscoveryIssue {
+                    agent: directory.agent,
+                    directory: directory.directory.clone(),
+                    error,
+                }),
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_zshrc_xdg_roots(
+        &mut self,
+        roots: Option<&crate::XdgRoots>,
+        home: &Path,
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        let Some(roots) = roots else {
+            return Ok(());
+        };
+        let opencode_data = roots.data.join("opencode");
+        let opencode_config = roots.config.join("opencode");
+        if opencode_data.exists() || opencode_config.exists() {
+            // The generic XDG triple is currently an Amp profile contract.
+            // OpenCode's data root has provider-keyed auth and may also
+            // contain a database; without an explicit source directory,
+            // importing it as Amp would persist an unrelated identity.
+            report.unapplied_zshrc_xdg_roots.push(roots.clone());
+            report.issues.push(crate::DiscoveryIssue {
+                agent: jackin_core::Agent::Opencode,
+                directory: opencode_data,
+                error: crate::DiscoveryError::Unsupported(
+                    "OpenCode XDG roots from shell imports require an explicit profile directory",
+                ),
+            });
+        } else {
+            let directory = roots.data.join("amp");
+            let provider = crate::AiProvider::Amp;
+            match crate::discover_account_directory(jackin_core::Agent::Amp, &directory, home) {
+                Ok(Some(found)) => {
+                    let candidate = profile_account_candidate(
+                        "custom-amp".to_owned(),
+                        jackin_core::Agent::Amp,
+                        provider,
+                        found.directory,
+                        "Amp custom".to_owned(),
+                        Some(roots.clone()),
+                        found.source_selector,
+                    );
+                    apply_xdg_profile_candidate(
+                        self,
+                        known,
+                        excluded,
+                        report,
+                        roots,
+                        Some(candidate),
+                    )?;
+                }
+                Ok(None) => report.unapplied_zshrc_xdg_roots.push(roots.clone()),
+                Err(error) => report.issues.push(crate::DiscoveryIssue {
+                    agent: jackin_core::Agent::Amp,
+                    directory,
+                    error,
+                }),
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_zshrc_op_refs(
+        &mut self,
+        op_refs: &[crate::OpReadCandidate],
+        models: &[crate::ModelProfile],
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        excluded: &BTreeSet<String>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        for op_ref in op_refs {
+            if op_ref.reference.on_demand {
+                continue;
+            }
+            let value = EnvValue::OpRef(op_ref.reference.clone());
+            // Presence-only probe: the synthetic value is never read, only
+            // its non-emptiness gates provider attribution.
+            let probe = BTreeMap::from([(op_ref.var.clone(), String::from("1"))]);
+            let seeded = if crate::discover_environment_oauth_accounts(&probe).is_empty() {
+                crate::discover_environment_accounts(&probe)
+                    .into_iter()
+                    .next()
+                    .map(|(provider, _)| {
+                        let base_url = models
+                            .iter()
+                            .find(|model| zshrc_provider(&model.name) == Some(provider))
+                            .and_then(|model| model.base_url.clone());
+                        api_key_scan_candidate(provider, value, base_url)
+                    })
+            } else {
+                oauth_scan_candidate_with_value(jackin_core::Agent::Claude, value)
+            };
+            // Variables with no provider home stay in the plan for an
+            // explicit `account add`.
+            let Some((id, account)) = seeded else {
+                continue;
+            };
+            self.register_zshrc_account(known, excluded, report, id, account)?;
+        }
+        Ok(())
+    }
+
+    fn apply_zshrc_models(
+        &mut self,
+        models: &[crate::ModelProfile],
+        known: &mut BTreeMap<String, crate::AccountConfig>,
+        report: &mut BootstrapReport,
+    ) -> crate::ConfigResult<()> {
+        for model in models {
+            let Some(provider) = zshrc_provider(&model.name) else {
+                report.unapplied_zshrc_models.push(model.clone());
+                continue;
+            };
+            let id = format!("{}-api-key", provider.slug());
+            let Some(existing) = known.get(&id).cloned() else {
+                report.unapplied_zshrc_models.push(model.clone());
+                continue;
+            };
+            let mut account = existing.clone();
+            let crate::AccountCredential::ApiKey {
+                model: account_model,
+                base_url: account_url,
+                ..
+            } = &mut account.credential
+            else {
+                report.unapplied_zshrc_models.push(model.clone());
+                continue;
+            };
+            if model.model.is_some() {
+                *account_model = model.model.clone();
+            }
+            if model.base_url.is_some() {
+                *account_url = model.base_url.clone();
+            }
+            if account != existing {
+                self.upsert_account(&id, &account)?;
+                known.insert(id, account);
+                report.changed = true;
+            }
+        }
+        Ok(())
     }
 
     /// Atomic write + return a fresh `AppConfig` parsed from the
@@ -232,7 +820,8 @@ impl ConfigEditor {
                         deletes.push(delete);
                     }
                 }
-                commit_staged_config(&mut staged, &mut deletes)?;
+                let journal = publication_journal_path(&self.path);
+                commit_staged_config(&journal, &mut staged, &mut deletes)?;
                 Ok(config)
             })(),
         )
@@ -247,6 +836,12 @@ impl ConfigEditor {
     ) -> crate::ConfigResult<()> {
         use jackin_core::EnvValue;
         use toml_edit::{InlineTable, Item, Value, value as toml_value};
+
+        if jackin_core::is_account_env(key) {
+            return Err(ConfigError::msg(format!(
+                "env name {key:?} belongs to account credentials and cannot be set here"
+            )));
+        }
 
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
         let table = table_path_mut(doc, &path);

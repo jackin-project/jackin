@@ -361,12 +361,10 @@ impl SessionEvents {
     }
 
     fn subscribe_via_docker_exec(container_name: &str, session: Option<u64>) -> Result<Self> {
-        let run_as_user = crate::runtime::identity::host_run_as_user();
+        let run_as_user = crate::runtime::identity::CAPSULE_SUPERVISOR_USER;
         let mut args: Vec<String> = vec!["exec".to_owned()];
-        if let Some(user) = run_as_user {
-            args.push("--user".to_owned());
-            args.push(user);
-        }
+        args.push("--user".to_owned());
+        args.push(run_as_user.to_owned());
         args.push(container_name.to_owned());
         args.push("sh".to_owned());
         args.push("-lc".to_owned());
@@ -405,6 +403,7 @@ fn write_control_request(
         .write_all(&jackin_protocol::control::frame(
             &jackin_protocol::control::ControlRequest {
                 ctx,
+                session_capability: None,
                 msg: request.clone(),
             },
         ))

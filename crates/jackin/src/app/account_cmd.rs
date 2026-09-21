@@ -14,6 +14,7 @@ pub(super) fn handle(
     command: AccountCommand,
     config: &AppConfig,
     paths: &JackinPaths,
+    startup: &jackin_config::BootstrapReport,
 ) -> Result<()> {
     match command {
         AccountCommand::List => {
@@ -24,7 +25,9 @@ pub(super) fn handle(
                 println!("No accounts. Run `jackin account scan` or `jackin account add --help`.");
             }
         }
-        AccountCommand::Scan => scan(config, paths)?,
+        AccountCommand::Scan => {
+            scan(paths, startup)?;
+        }
         AccountCommand::Enable { id } => set_enabled(config, paths, &id, true)?,
         AccountCommand::Disable { id } => set_enabled(config, paths, &id, false)?,
         AccountCommand::Default { id, agent } => {
@@ -77,101 +80,162 @@ fn set_enabled(config: &AppConfig, paths: &JackinPaths, id: &str, enabled: bool)
     Ok(())
 }
 
-fn scan(config: &AppConfig, paths: &JackinPaths) -> Result<()> {
-    let report = jackin_config::discover_default_accounts(&paths.home_dir);
-    let mut candidate = config.clone();
-    let mut editor = ConfigEditor::open(paths)?;
-    let mut added = 0;
-    for found in report.accounts {
-        if candidate.accounts.values().any(|account| matches!(&account.credential, AccountCredential::Profile { agent, directory } if *agent == found.agent && *directory == found.directory)) { continue; }
-        let base = format!("default-{}", found.agent);
-        let mut id = base.clone();
-        let mut suffix = 2;
-        while candidate.accounts.contains_key(&id) {
-            id = format!("{base}-{suffix}");
-            suffix += 1;
-        }
-        let account = AccountConfig {
-            enabled: true,
-            name: format!("{} default", found.agent),
-            provider: AiProvider::for_agent(found.agent),
-            credential: AccountCredential::Profile {
-                agent: found.agent,
-                directory: found.directory,
-            },
-        };
-        editor.upsert_account(&id, &account)?;
-        candidate.accounts.insert(id.clone(), account);
-        println!("Imported {id}.");
-        added += 1;
-    }
-    let environment = std::env::vars_os()
-        .filter_map(|(key, value)| Some((key.into_string().ok()?, value.into_string().ok()?)))
-        .collect();
-    for (provider, variable) in jackin_config::discover_environment_accounts(&environment) {
-        let reference = EnvValue::Plain(format!("${variable}"));
-        if candidate.accounts.values().any(|account| account.provider == provider && matches!(&account.credential, AccountCredential::ApiKey { value, .. } if *value == reference)) { continue; }
-        let base = format!("{}-api-key", provider.slug());
-        let mut id = base.clone();
-        let mut suffix = 2;
-        while candidate.accounts.contains_key(&id) {
-            id = format!("{base}-{suffix}");
-            suffix += 1;
-        }
-        let account = AccountConfig {
-            enabled: true,
-            name: format!("{provider} API key"),
-            provider,
-            credential: AccountCredential::ApiKey {
-                value: reference,
-                base_url: None,
-                model: None,
-            },
-        };
-        editor.upsert_account(&id, &account)?;
-        candidate.accounts.insert(id.clone(), account);
-        println!("Imported {id} from {variable}.");
-        added += 1;
-    }
-    for (agent, variable) in jackin_config::discover_environment_oauth_accounts(&environment) {
-        let reference = EnvValue::Plain(format!("${variable}"));
-        if candidate.accounts.values().any(|account| matches!(&account.credential, AccountCredential::OAuthToken { agent: owner, value } if *owner == agent && *value == reference)) { continue; }
-        let base = format!("{agent}-oauth-token");
-        let mut id = base.clone();
-        let mut suffix = 2;
-        while candidate.accounts.contains_key(&id) {
-            id = format!("{base}-{suffix}");
-            suffix += 1;
-        }
-        let account = AccountConfig {
-            enabled: true,
-            name: format!("{agent} OAuth token"),
-            provider: AiProvider::for_agent(agent),
-            credential: AccountCredential::OAuthToken {
-                agent,
-                value: reference,
-            },
-        };
-        editor.upsert_account(&id, &account)?;
-        candidate.accounts.insert(id.clone(), account);
-        println!("Imported {id} from {variable}.");
-        added += 1;
-    }
-    if added > 0 {
+/// Run `account scan`, returning the printed imported count.
+///
+/// `startup` is the bootstrap report from the process's config load: on a
+/// fresh config the load already imported default accounts, and the scan
+/// reports them as its own so the first scan prints the true imported
+/// count instead of `Imported 0`. Startup issues are deliberately not
+/// merged — `scan_for_accounts` re-discovers the same evidence issues, so
+/// merging would print each twice.
+fn scan(paths: &JackinPaths, startup: &jackin_config::BootstrapReport) -> Result<usize> {
+    // One shared scan helper for every surface (CLI, Settings worker):
+    // the open consumes any first-run marker, the scan imports default
+    // evidence + environment, and the zshrc path seeds shell overrides.
+    // Precedence on ID collision is open order — an operator
+    // registration always wins and is never overwritten.
+    let (mut editor, open_report) = ConfigEditor::open_detailed(paths)?;
+    let scan_report = editor.scan_for_accounts()?;
+    let zshrc_report = import_zshrc_accounts(&mut editor, paths)?;
+    if scan_report.changed || zshrc_report.changed {
         editor.save()?;
     }
-    for issue in report.issues {
+    let mut added = startup.added.clone();
+    added.extend(open_report.added);
+    added.extend(scan_report.added);
+    added.extend(zshrc_report.added);
+    for (id, account) in &added {
+        match scan_reference_variable(account) {
+            Some(variable) => println!("Imported {id} from {variable}."),
+            None => println!("Imported {id}."),
+        }
+    }
+    for issue in open_report
+        .issues
+        .into_iter()
+        .chain(scan_report.issues)
+        .chain(zshrc_report.issues)
+    {
+        let agent = issue.agent;
+        let error = issue.error;
+        eprintln!("{agent}: {error} ({})", issue.directory.display());
+    }
+    let added_count = added.len();
+    println!(
+        "Imported {added_count} account(s). Assign access with `jackin workspace account assign WORKSPACE ACCOUNT`."
+    );
+    Ok(added_count)
+}
+
+/// `.zshrc`-import path of [`scan`]: parse the operator's shell env (if
+/// present), build the typed import plan, and seed accounts into the open
+/// editor. Unresolved entries the plan could not consume are reported for
+/// operator resolution; a missing `.zshrc` is a silent no-op, an
+/// unreadable one a warning (never a scan failure).
+fn import_zshrc_accounts(
+    editor: &mut ConfigEditor,
+    paths: &JackinPaths,
+) -> Result<jackin_config::BootstrapReport> {
+    let zshrc = paths.home_dir.join(".zshrc");
+    let source = match std::fs::read_to_string(&zshrc) {
+        Ok(source) => source,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(jackin_config::BootstrapReport::default());
+        }
+        Err(error) => {
+            eprintln!("warning: cannot read {}: {error}", zshrc.display());
+            return Ok(jackin_config::BootstrapReport::default());
+        }
+    };
+    let import = jackin_config::parse_zshrc_source(&source);
+    let plan = jackin_config::import_plan(&import);
+    let report = editor.apply_zshrc_plan(&plan)?;
+    let consumed_op_reads: std::collections::BTreeSet<(usize, &str)> = plan
+        .op_refs
+        .iter()
+        .map(|candidate| (candidate.line, candidate.var.as_str()))
+        .collect();
+    let consumed_wrappers: std::collections::BTreeSet<(usize, &str)> = report
+        .unapplied_zshrc_wrappers
+        .iter()
+        .map(|candidate| (candidate.line, candidate.var.as_str()))
+        .collect();
+    for entry in &import.unresolved {
+        // Machine-consumed `op read` lines need no operator action (seeded,
+        // or skipped because the account already exists). Everything else
+        // stays visible. Line/name/kind only: the detail snippet can quote
+        // shell text, so it never reaches operator output.
+        if entry.kind == jackin_config::UnresolvedKind::OpRead
+            && consumed_op_reads.contains(&(entry.line, entry.name.as_str()))
+        {
+            continue;
+        }
+        if entry.kind == jackin_config::UnresolvedKind::FunctionCall
+            && consumed_wrappers.contains(&(entry.line, entry.name.as_str()))
+        {
+            continue;
+        }
+        let kind = entry.kind;
         eprintln!(
-            "{}: {} ({})",
-            issue.agent,
-            issue.error,
-            issue.directory.display()
+            "zshrc line {}: {} needs operator resolution ({kind:?})",
+            entry.line, entry.name
         );
     }
-    println!(
-        "Imported {added} account(s). Assign access with `jackin workspace account assign WORKSPACE ACCOUNT`."
-    );
-    Ok(())
+    for candidate in &plan.op_refs {
+        // Parsed but unseedable: no provider home for this variable.
+        // Mirrors the apply-side attribution (presence-only probe).
+        let probe = std::collections::BTreeMap::from([(candidate.var.clone(), String::from("1"))]);
+        let known = !jackin_config::discover_environment_accounts(&probe).is_empty()
+            || !jackin_config::discover_environment_oauth_accounts(&probe).is_empty();
+        if !known {
+            eprintln!(
+                "zshrc line {}: {} has no provider mapping; add the account explicitly",
+                candidate.line, candidate.var
+            );
+        }
+    }
+    for model in &report.unapplied_zshrc_models {
+        eprintln!(
+            "zshrc: model profile {} was parsed but has no matching persisted API-key account",
+            model.name
+        );
+    }
+    for wrapper in &report.unapplied_zshrc_wrappers {
+        eprintln!(
+            "zshrc line {}: wrapper for {} was parsed but is not supported by the launch path",
+            wrapper.line, wrapper.var
+        );
+    }
+    for _ in &report.unapplied_zshrc_xdg_roots {
+        eprintln!(
+            "zshrc: Amp XDG roots were parsed but no credentials were found under XDG_DATA_HOME/amp"
+        );
+    }
+    Ok(report)
+}
+
+/// Extract the environment variable name from a scan-synthesized `$VAR` /
+/// `${VAR}` credential reference. Anything else (profiles, 1Password refs,
+/// unexpected shapes) yields `None` so the caller prints no suffix — and
+/// no secret material or 1Password item ID can ever reach operator output
+/// through this path.
+fn scan_reference_variable(account: &AccountConfig) -> Option<&str> {
+    let persisted = match &account.credential {
+        AccountCredential::ApiKey { value, .. } | AccountCredential::OAuthToken { value, .. } => {
+            value.as_persisted_str()
+        }
+        AccountCredential::Profile { .. } => return None,
+    };
+    let variable = persisted.strip_prefix('$')?;
+    let variable = variable
+        .strip_prefix('{')
+        .and_then(|inner| inner.strip_suffix('}'))
+        .unwrap_or(variable);
+    (!variable.is_empty()
+        && variable.bytes().enumerate().all(|(index, byte)| {
+            byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
+        }))
+    .then_some(variable)
 }
 
 fn build_account(args: &AddAccountArgs, paths: &JackinPaths) -> Result<AccountConfig> {
@@ -180,7 +244,7 @@ fn build_account(args: &AddAccountArgs, paths: &JackinPaths) -> Result<AccountCo
         .as_deref()
         .map(str::parse)
         .transpose()?
-        .or_else(|| args.agent.map(AiProvider::for_agent))
+        .or_else(|| args.agent.and_then(AiProvider::for_agent))
         .context("--provider is required")?;
     let credential = if let Some(directory) = &args.directory {
         let agent = args.agent.context("--agent is required for a profile")?;
@@ -195,11 +259,16 @@ fn build_account(args: &AddAccountArgs, paths: &JackinPaths) -> Result<AccountCo
         if !directory.is_dir() {
             bail!("account path must be a directory");
         }
-        let found = jackin_config::discover_account_directory(agent, &directory, &paths.home_dir)?;
-        if found.is_none() {
-            bail!("no {agent} authentication found in {}", directory.display());
+        let found = jackin_config::discover_account_directory(agent, &directory, &paths.home_dir)?
+            .with_context(|| {
+                format!("no {agent} authentication found in {}", directory.display())
+            })?;
+        AccountCredential::Profile {
+            agent,
+            directory,
+            xdg_roots: None,
+            source_selector: found.source_selector,
         }
-        AccountCredential::Profile { agent, directory }
     } else if args.oauth_token {
         let agent = args
             .agent
@@ -285,7 +354,9 @@ fn valid_secret_reference(value: &str) -> bool {
 
 fn account_row(id: &str, account: &AccountConfig) -> String {
     let source = match &account.credential {
-        AccountCredential::Profile { agent, directory } => {
+        AccountCredential::Profile {
+            agent, directory, ..
+        } => {
             format!("profile:{agent} {}", directory.display())
         }
         AccountCredential::ApiKey { .. } => "api-key".to_owned(),

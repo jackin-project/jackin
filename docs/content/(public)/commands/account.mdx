@@ -39,7 +39,7 @@ Choose exactly one credential source:
 | `--base-url <URL>` | API-key provider endpoint override. |
 | `--model <ID>` | API-key model selection; required when redirecting Claude/Codex to a different provider. |
 
-Without `--stdin` or `--secret-ref`, key/token input uses a masked prompt. Supported providers are `anthropic`, `openai`, `amp`, `xai`, `opencode`, `moonshot`, `zai`, and `minimax`. Profile agents are `claude`, `codex`, `amp`, `kimi`, `opencode`, and `grok`.
+Without `--stdin` or `--secret-ref`, key/token input uses a masked prompt. Supported providers are `anthropic`, `openai`, `amp`, `xai`, `opencode`, `moonshot`, `zai`, `minimax`, `google`, `cursor`, `meta`, and `openrouter`. Profile agents are `claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`, `antigravity`, `gemini`, `cursor`, `muse`, `omp`, and `hermes`. `omp` and `hermes` have no native provider: their accounts always need an explicit `--provider`.
 
 The account ID uses lowercase letters, digits, and hyphens. Keep aliases pointing at different logins as distinct account IDs. Amp accepts either its credential directory or an alias root containing `data/amp/secrets.json` and `config/amp/settings.json`.
 

@@ -481,6 +481,7 @@ fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> WorkspaceCon
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
         docker: None,
+        default_launch: None,
     }
 }
 
@@ -948,6 +949,10 @@ fn preview_includes_environments_block_with_workspace_env_keys() {
     let mut ws = ws_config_with_allowed(&[], None);
     ws.env.insert("DB_URL".into(), "postgres://...".into());
     ws.env.insert("API_KEY".into(), "literal-secret".into());
+    ws.env.insert(
+        "ANTHROPIC_API_KEY".into(),
+        "workspace-preview-sentinel".into(),
+    );
 
     let joined = render_env_to_string(&ws, 60, 6);
     assert!(
@@ -976,6 +981,14 @@ fn preview_includes_environments_block_with_workspace_env_keys() {
     assert!(
         !joined.contains("literal-secret"),
         "plain env values must not render; got {joined}"
+    );
+    assert!(
+        !joined.contains("ANTHROPIC_API_KEY"),
+        "account-owned key leaked: {joined}"
+    );
+    assert!(
+        !joined.contains("workspace-preview-sentinel"),
+        "account-owned value leaked: {joined}"
     );
 }
 

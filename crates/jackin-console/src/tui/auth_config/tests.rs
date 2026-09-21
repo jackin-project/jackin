@@ -14,6 +14,15 @@ fn auth_kind_agent_returns_none_for_github() {
     assert_eq!(auth_kind_agent(AuthKind::Kimi), Some(Agent::Kimi));
     assert_eq!(auth_kind_agent(AuthKind::Opencode), Some(Agent::Opencode));
     assert_eq!(auth_kind_agent(AuthKind::Grok), Some(Agent::Grok));
+    assert_eq!(
+        auth_kind_agent(AuthKind::Antigravity),
+        Some(Agent::Antigravity)
+    );
+    assert_eq!(auth_kind_agent(AuthKind::Gemini), Some(Agent::Gemini));
+    assert_eq!(auth_kind_agent(AuthKind::Cursor), Some(Agent::Cursor));
+    assert_eq!(auth_kind_agent(AuthKind::Muse), Some(Agent::Muse));
+    assert_eq!(auth_kind_agent(AuthKind::Omp), Some(Agent::Omp));
+    assert_eq!(auth_kind_agent(AuthKind::Hermes), Some(Agent::Hermes));
 }
 
 #[test]
@@ -61,6 +70,23 @@ fn every_account_owned_environment_name_is_hidden_from_general_display() {
         display,
         BTreeMap::from([("PROJECT_ENV".into(), "visible".into())])
     );
+}
+
+#[test]
+fn general_environment_display_never_contains_account_owned_sentinel() {
+    let values = BTreeMap::from([
+        (
+            "ANTHROPIC_API_KEY".to_owned(),
+            EnvValue::Plain("account-display-sentinel".into()),
+        ),
+        ("PROJECT_ENV".to_owned(), EnvValue::Plain("visible".into())),
+    ]);
+
+    let display = env_display_map(&values);
+    let rendered = format!("{display:?}");
+    assert!(!rendered.contains("account-display-sentinel"));
+    assert!(!display.contains_key("ANTHROPIC_API_KEY"));
+    assert_eq!(display.get("PROJECT_ENV"), Some(&"visible".to_owned()));
 }
 
 #[test]

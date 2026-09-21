@@ -21,7 +21,7 @@ pub use jackin_core::{
     InstanceIndexEntry, InstanceQuery, InstanceStatus, SessionRecord, SessionStatus,
 };
 
-pub const INSTANCE_MANIFEST_VERSION: u32 = 2;
+pub const INSTANCE_MANIFEST_VERSION: u32 = 3;
 pub const INSTANCE_INDEX_VERSION: u32 = 1;
 const INSTANCE_INDEX_FILE: &str = "instances.json";
 const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
@@ -133,6 +133,76 @@ pub struct InstanceManifest {
     /// so this field is not yet read back. Serializes as the lowercase slugs.
     #[serde(default)]
     pub supported_agents: Vec<Agent>,
+    /// Instances admitted at launch, in launch order. Host-side tab
+    /// validation checks spawned tabs against this set so a tab can never
+    /// reference an instance (or account) the launch did not authorize.
+    /// The field is required by the v3 manifest contract. An empty vector is
+    /// an explicit v3 admission set, never a legacy-manifest fallback.
+    pub admitted_instances: Vec<AdmittedInstance>,
+}
+
+/// One launch-admitted instance: its exact config ID, agent runtime, and
+/// owning account ID.
+/// Identifiers only — never credential material.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdmittedInstance {
+    /// Instance config ID (`"claude-work"`).
+    pub config_id: String,
+    /// Agent runtime bound to the instance config.
+    pub agent: Agent,
+    /// Owning account ID (`"work"`).
+    pub account_id: String,
+    /// Current host-registration state observed after launch. This never
+    /// changes the recorded identity or materialized session credentials.
+    #[serde(default)]
+    pub registration_state: RegistrationState,
+}
+
+/// Host registration state for an already admitted running instance.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistrationState {
+    /// Registration is currently enabled and resolvable.
+    #[default]
+    Current,
+    /// Registration remains known but is disabled for new grants.
+    Disabled,
+    /// Registration was removed or no longer resolves to the recorded entry.
+    Removed,
+}
+
+impl RegistrationState {
+    /// Stable operator-facing state label.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Current => "current",
+            Self::Disabled => "disabled",
+            Self::Removed => "removed",
+        }
+    }
+}
+
+impl AdmittedInstance {
+    /// Record one admitted instance.
+    pub fn new(config_id: impl Into<String>, agent: Agent, account_id: impl Into<String>) -> Self {
+        Self {
+            config_id: config_id.into(),
+            agent,
+            account_id: account_id.into(),
+            registration_state: RegistrationState::Current,
+        }
+    }
+}
+
+impl From<&jackin_config::ResolvedInstance> for AdmittedInstance {
+    fn from(instance: &jackin_config::ResolvedInstance) -> Self {
+        Self::new(
+            instance.config_id.clone(),
+            instance.agent,
+            instance.account_id.clone(),
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,7 +278,64 @@ impl InstanceManifest {
             base_image_ref: input.base_image_ref,
             base_image_digest: input.base_image_digest,
             supported_agents: input.supported_agents,
+            admitted_instances: Vec::new(),
         }
+    }
+
+    /// Record the launch-admitted instances, in launch order. Called by the
+    /// host launch path once instances resolve; kept out of
+    /// [`NewInstanceManifest`] so admission can be staged before persistence.
+    pub fn set_admitted_instances(&mut self, admitted: impl IntoIterator<Item = AdmittedInstance>) {
+        self.admitted_instances = admitted.into_iter().collect();
+    }
+
+    /// Whether `config_id` was admitted at launch.
+    pub fn admits_instance(&self, config_id: &str) -> bool {
+        self.admitted_instances
+            .iter()
+            .any(|admitted| admitted.config_id == config_id)
+    }
+
+    /// Owning account ID for an admitted instance config ID.
+    pub fn account_for_instance(&self, config_id: &str) -> Option<&str> {
+        self.admitted_instances
+            .iter()
+            .find(|admitted| admitted.config_id == config_id)
+            .map(|admitted| admitted.account_id.as_str())
+    }
+
+    /// Agent runtime for an admitted instance config ID.
+    pub fn agent_for_instance(&self, config_id: &str) -> Option<Agent> {
+        self.admitted_instances
+            .iter()
+            .find(|admitted| admitted.config_id == config_id)
+            .map(|admitted| admitted.agent)
+    }
+
+    /// Mark one admitted instance's host registration without changing its
+    /// recorded config, agent, account, labels, or tab admission.
+    pub fn mark_registration_state(&mut self, config_id: &str, state: RegistrationState) -> bool {
+        let Some(admitted) = self
+            .admitted_instances
+            .iter_mut()
+            .find(|admitted| admitted.config_id == config_id)
+        else {
+            return false;
+        };
+        if admitted.registration_state == state {
+            return false;
+        }
+        admitted.registration_state = state;
+        true
+    }
+
+    /// Registration state for one admitted instance.
+    #[must_use]
+    pub fn registration_state_for_instance(&self, config_id: &str) -> Option<RegistrationState> {
+        self.admitted_instances
+            .iter()
+            .find(|admitted| admitted.config_id == config_id)
+            .map(|admitted| admitted.registration_state)
     }
 
     /// Project this manifest to the lightweight index entry stored in
@@ -296,8 +423,7 @@ impl InstanceManifest {
         let path = state_dir.join(".jackin/instance.json");
         let bytes = std::fs::read(&path)
             .with_context(|| format!("reading instance manifest at {}", path.display()))?;
-        serde_json::from_slice(&bytes)
-            .with_context(|| format!("parsing instance manifest at {}", path.display()))
+        Self::parse_and_validate(&bytes, &path)
     }
 
     /// `Ok(None)` when the manifest file does not exist; `Err(_)` for
@@ -307,13 +433,23 @@ impl InstanceManifest {
     pub fn read_optional(state_dir: &Path) -> anyhow::Result<Option<Self>> {
         let path = state_dir.join(".jackin/instance.json");
         match std::fs::read(&path) {
-            Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes).with_context(|| {
-                format!("parsing instance manifest at {}", path.display())
-            })?)),
+            Ok(bytes) => Ok(Some(Self::parse_and_validate(&bytes, &path)?)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(anyhow::Error::new(error)
                 .context(format!("reading instance manifest at {}", path.display()))),
         }
+    }
+
+    fn parse_and_validate(bytes: &[u8], path: &Path) -> anyhow::Result<Self> {
+        let manifest: Self = serde_json::from_slice(bytes)
+            .with_context(|| format!("parsing instance manifest at {}", path.display()))?;
+        anyhow::ensure!(
+            manifest.version == INSTANCE_MANIFEST_VERSION,
+            "unsupported instance manifest version {} at {}",
+            manifest.version,
+            path.display()
+        );
+        Ok(manifest)
     }
 
     /// Collapses [`Self::read_optional`]'s three outcomes into the two

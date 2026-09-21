@@ -12,6 +12,14 @@ use crate::tui::state::{
 };
 use ratatui::layout::Rect;
 
+fn settings_github_row(state: &ManagerState<'_>) -> usize {
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("expected settings stage");
+    };
+    // GitHub sits second-to-last; the scan row stays last.
+    settings.auth.row_count() - 2
+}
+
 fn state_with_saved_count(count: usize) -> ManagerState<'static> {
     let tmp = tempfile::tempdir().unwrap();
     let cwd = tmp.path();
@@ -383,16 +391,21 @@ fn settings_auth_selection_and_kind_entry_update_state() {
         &jackin_config::AppConfig::default(),
     ));
 
+    // Select the GitHub row explicitly: the scan row sits last, so a
+    // clamp-to-end move no longer lands on GitHub.
+    let github_row = settings_github_row(&state);
     update_manager(
         &mut state,
-        ManagerMessage::MoveSettingsAuthSelection { delta: 99 },
+        ManagerMessage::MoveSettingsAuthSelection {
+            delta: github_row as isize,
+        },
     );
     update_manager(&mut state, ManagerMessage::EnterSettingsAuthKind);
 
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings stage");
     };
-    assert_eq!(settings.auth.selected, settings.auth.row_count() - 1);
+    assert_eq!(settings.auth.selected, github_row);
     assert_eq!(settings.auth.selected_kind, Some(AuthKind::Github));
 
     update_manager(&mut state, ManagerMessage::ClearSettingsAuthKind);

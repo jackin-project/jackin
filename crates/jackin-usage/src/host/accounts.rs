@@ -23,14 +23,21 @@ pub enum CanonicalAccountSubject {
     ProviderId(String),
     /// Provider-authenticated stable non-secret handle when no stronger ID exists.
     ProviderStableHandle(String),
+    /// Stable opaque source identity used when a provider exposes only a label.
+    ///
+    /// A display label is not unique enough to route two same-provider sources.
+    /// The capability id keeps those sources separate without treating a path,
+    /// ordinal, or secret as account identity.
+    SourceCapability(String),
 }
 
-/// Exact account identity. Probe-routing slugs and source paths are excluded.
+/// Exact provider/source identity. Probe-routing slugs and raw source paths are
+/// excluded; source-scoped fallbacks use only an opaque capability handle.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CanonicalAccountIdentity {
     /// Exact provider ownership.
     pub surface: HostSurfaceId,
-    /// Provider-owned subject.
+    /// Provider-owned or source-scoped subject.
     pub subject: CanonicalAccountSubject,
 }
 
@@ -74,6 +81,13 @@ impl CanonicalIdentityGraph {
 }
 
 impl CanonicalAccountIdentity {
+    pub(super) fn source_capability(surface: HostSurfaceId, capability_id: &str) -> Self {
+        Self {
+            surface,
+            subject: CanonicalAccountSubject::SourceCapability(capability_id.to_owned()),
+        }
+    }
+
     pub(super) fn from_view(surface: HostSurfaceId, view: &FocusedUsageView) -> Option<Self> {
         if surface_for_view(view) != Some(surface)
             || matches!(view.confidence, UsageConfidence::PresenceOnly)
@@ -88,11 +102,21 @@ impl CanonicalAccountIdentity {
     }
 
     pub(super) fn account_key(&self) -> String {
-        let subject = match &self.subject {
-            CanonicalAccountSubject::ProviderId(id)
-            | CanonicalAccountSubject::ProviderStableHandle(id) => id,
+        let evidence = match &self.subject {
+            CanonicalAccountSubject::ProviderId(id) => {
+                format!("account-key-v1:provider-id:{}", id.trim())
+            }
+            CanonicalAccountSubject::ProviderStableHandle(handle) => format!(
+                "account-key-v1:stable-handle:{}",
+                normalize_stable_handle(handle)
+            ),
+            CanonicalAccountSubject::SourceCapability(capability_id) => format!(
+                "account-key-v1:source-capability:{}:{}",
+                capability_id.len(),
+                capability_id
+            ),
         };
-        account_key_hash(self.surface.account_provider_label(), subject)
+        account_key_hash(self.surface.provider_id(), &evidence)
     }
 
     pub(super) fn canonical_id_v1(&self) -> String {
@@ -103,6 +127,11 @@ impl CanonicalAccountIdentity {
             CanonicalAccountSubject::ProviderStableHandle(handle) => format!(
                 "canonical-account-v1:stable-handle:{}",
                 normalize_stable_handle(handle)
+            ),
+            CanonicalAccountSubject::SourceCapability(capability_id) => format!(
+                "canonical-account-v1:source-capability:{}:{}",
+                capability_id.len(),
+                capability_id
             ),
         };
         account_key_hash(self.surface.provider_id(), &evidence)

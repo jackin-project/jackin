@@ -212,6 +212,8 @@ fn commit_new_session_picker(
                 name: provider.slug().to_owned(),
                 provider,
                 agents: vec![agent],
+                configuration_id: None,
+                instance_id: Some(provider.slug().to_owned()),
             }
         })
         .collect();
@@ -235,11 +237,11 @@ fn new_session_account_picker_skips_when_no_choice() {
         InputOutcome::NewSessionWithAccount {
             container,
             agent,
-            account,
+            instance_id,
         } => {
             assert_eq!(container, "jackin-demo-architect");
             assert_eq!(agent, jackin_core::Agent::Codex);
-            assert_eq!(account.as_deref(), Some("openai"));
+            assert_eq!(instance_id, "openai");
         }
         other => panic!("expected direct new-session dispatch; got {other:?}"),
     }
@@ -286,13 +288,15 @@ fn new_session_account_picker_opens_for_codex_with_multiple_providers() {
     assert_eq!(picker.context, "jackin-demo-architect");
     assert_eq!(picker.agent, jackin_core::Agent::Codex);
     assert_eq!(picker.providers().len(), 2);
+    // Seeded [openai, minimax]; the picker renders stable id-ascending
+    // order, so minimax sorts first.
     assert_eq!(
         picker.providers()[0].provider,
-        jackin_config::AiProvider::OpenAi
+        jackin_config::AiProvider::Minimax
     );
     assert_eq!(
         picker.providers()[1].provider,
-        jackin_config::AiProvider::Minimax
+        jackin_config::AiProvider::OpenAi
     );
 }
 
@@ -338,15 +342,361 @@ fn new_session_picker_does_not_offer_host_config_providers_for_running_container
     );
 }
 
+fn api_key_account(
+    name: &str,
+    provider: jackin_config::AiProvider,
+) -> jackin_config::AccountConfig {
+    jackin_config::AccountConfig {
+        enabled: true,
+        name: name.into(),
+        provider,
+        credential: jackin_config::AccountCredential::ApiKey {
+            value: jackin_core::EnvValue::Plain("test-key".into()),
+            base_url: None,
+            model: None,
+        },
+    }
+}
+
+/// Seed `demo` with two Claude accounts + one Codex account plus an
+/// unauthorized outsider, and select the running instance row, ready for `n`.
+/// `configure` adds bindings per case after the accounts exist.
+fn running_session_state(
+    configure: impl FnOnce(&mut AppConfig),
+) -> (ManagerState<'static>, AppConfig, JackinPaths, TempDir) {
+    let workdir = "/workspace/demo";
+    let ws = WorkspaceConfig {
+        workdir: workdir.into(),
+        mounts: vec![],
+        accounts: vec!["a-claude".into(), "z-claude".into(), "o-codex".into()],
+        ..Default::default()
+    };
+    let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+    config.accounts.insert(
+        "a-claude".into(),
+        api_key_account("A", jackin_config::AiProvider::Anthropic),
+    );
+    config.accounts.insert(
+        "z-claude".into(),
+        api_key_account("Z", jackin_config::AiProvider::Anthropic),
+    );
+    config.accounts.insert(
+        "o-codex".into(),
+        api_key_account("O", jackin_config::AiProvider::OpenAi),
+    );
+    config.accounts.insert(
+        "outside".into(),
+        api_key_account("Outside", jackin_config::AiProvider::Anthropic),
+    );
+    configure(&mut config);
+    state.instances = vec![instance_entry(
+        "jackin-demo-architect-running",
+        InstanceStatus::Running,
+        workdir,
+    )];
+    state.live_instance_admissions.insert(
+        "jackin-demo-architect-running".into(),
+        vec![
+            crate::services::launch::LiveInstanceAdmission {
+                instance_id: "claude-a".into(),
+                agent: jackin_core::Agent::Claude,
+                account_id: "a-claude".into(),
+            },
+            crate::services::launch::LiveInstanceAdmission {
+                instance_id: "claude-z".into(),
+                agent: jackin_core::Agent::Claude,
+                account_id: "z-claude".into(),
+            },
+            crate::services::launch::LiveInstanceAdmission {
+                instance_id: "codex-o".into(),
+                agent: jackin_core::Agent::Codex,
+                account_id: "o-codex".into(),
+            },
+        ],
+    );
+    state.expand_workspace(0);
+    state.selected = state
+        .index_of_row(crate::tui::state::ManagerListRow::WorkspaceInstance(0, 0))
+        .expect("expanded workspace instance row exists");
+    (state, config, paths, tmp)
+}
+
+/// Press `n` to open the picker, focus `agent`, commit with Enter.
+fn open_and_commit_new_session(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    agent: jackin_core::Agent,
+) -> InputOutcome {
+    let outcome = handle_key(state, config, paths, cwd, key(KeyCode::Char('n'))).unwrap();
+    assert!(
+        matches!(outcome, InputOutcome::Continue),
+        "n must open the agent picker; got {outcome:?}"
+    );
+    let Some((_, picker, _)) = state.inline_new_session_picker.as_mut() else {
+        panic!("n on a running instance must open the agent picker");
+    };
+    picker.focused = agent;
+    handle_new_session_picker(state, key(KeyCode::Enter))
+}
+
+fn assert_no_eligible_account_popup(state: &ManagerState<'_>, scope_needle: &str) {
+    let Some(Modal::ErrorPopup { state: popup }) = &state.list_modal else {
+        panic!(
+            "expected no-eligible-account ErrorPopup; got {:?}",
+            state.list_modal
+        );
+    };
+    assert_eq!(popup.title, "No eligible account");
+    assert!(
+        popup.message.contains("claude"),
+        "popup must name the agent; got {:?}",
+        popup.message
+    );
+    assert!(
+        popup.message.contains(scope_needle),
+        "popup must name the scope; got {:?}",
+        popup.message
+    );
+    assert!(
+        popup.message.contains("binding"),
+        "popup must point at the binding remedy; got {:?}",
+        popup.message
+    );
+}
+
+#[test]
+fn new_session_commit_with_empty_providers_errors_instead_of_none() {
+    // Zero eligible must never dispatch `NewSessionWithAccount` with
+    // `account: None` — it opens an actionable error popup.
+    let config = AppConfig::default();
+    let tmp = tempfile::tempdir().unwrap();
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    let mut picker = AgentChoiceState::with_choices(vec![jackin_core::Agent::Claude]);
+    picker.focused = jackin_core::Agent::Claude;
+    state.inline_new_session_picker = Some(("jackin-demo-architect".into(), picker, Vec::new()));
+
+    let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+
+    assert!(
+        matches!(outcome, InputOutcome::Continue),
+        "empty providers must not dispatch a session; got {outcome:?}"
+    );
+    assert!(
+        state.inline_new_session_picker.is_some(),
+        "the agent picker must remain open when commit fails"
+    );
+    assert_no_eligible_account_popup(&state, "jackin-demo-architect");
+}
+
+#[test]
+fn new_session_commit_ignores_accounts_offered_to_other_agents() {
+    // A non-empty provider list where nothing serves Claude is still zero
+    // eligible: error, never an account-less dispatch.
+    let config = AppConfig::default();
+    let tmp = tempfile::tempdir().unwrap();
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    let mut picker = AgentChoiceState::with_choices(vec![jackin_core::Agent::Claude]);
+    picker.focused = jackin_core::Agent::Claude;
+    let accounts = vec![crate::services::launch::AccountChoice {
+        id: "o-codex".into(),
+        name: "O".into(),
+        provider: jackin_config::AiProvider::OpenAi,
+        agents: vec![jackin_core::Agent::Codex],
+        configuration_id: None,
+        instance_id: Some("codex-o".into()),
+    }];
+    state.inline_new_session_picker = Some(("jackin-demo-architect".into(), picker, accounts));
+
+    let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+
+    assert!(
+        matches!(outcome, InputOutcome::Continue),
+        "no candidate for Claude must not dispatch; got {outcome:?}"
+    );
+    assert!(
+        state.inline_new_session_picker.is_some(),
+        "the agent picker must remain open when no candidate matches"
+    );
+    assert_no_eligible_account_popup(&state, "jackin-demo-architect");
+}
+
+#[test]
+fn new_session_picker_lists_candidates_in_id_order() {
+    let config = AppConfig::default();
+    let tmp = tempfile::tempdir().unwrap();
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    let outcome = commit_new_session_picker(
+        &mut state,
+        jackin_core::Agent::Claude,
+        vec![
+            jackin_protocol::Provider::Zai,
+            jackin_protocol::Provider::Anthropic,
+        ],
+    );
+
+    assert!(matches!(outcome, InputOutcome::Continue));
+    let Some(picker) = &state.inline_account_picker else {
+        panic!("two candidates must open the account picker");
+    };
+    let ids: Vec<&str> = picker
+        .providers()
+        .iter()
+        .map(|account| account.id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["anthropic", "zai"]);
+}
+
+#[test]
+fn new_session_open_uses_live_admissions_not_workspace_default() {
+    let (mut state, mut config, paths, tmp) = running_session_state(|config| {
+        config
+            .workspaces
+            .get_mut("demo")
+            .unwrap()
+            .account_bindings
+            .insert(jackin_core::Agent::Claude, "z-claude".into());
+    });
+    let outcome = handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        tmp.path(),
+        key(KeyCode::Char('n')),
+    )
+    .unwrap();
+    assert!(matches!(outcome, InputOutcome::Continue));
+    let Some((_, _, providers)) = state.inline_new_session_picker.as_ref() else {
+        panic!("n on a running instance must open the agent picker");
+    };
+    let ids: Vec<&str> = providers
+        .iter()
+        .map(|account| account.id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["a-claude", "o-codex", "z-claude"]);
+    let claude_offered: Vec<&str> = providers
+        .iter()
+        .filter(|account| account.agents.contains(&jackin_core::Agent::Claude))
+        .map(|account| account.id.as_str())
+        .collect();
+    assert_eq!(
+        claude_offered,
+        vec!["a-claude", "z-claude"],
+        "host defaults must not prune a live manifest admission"
+    );
+
+    let Some((_, picker, _)) = state.inline_new_session_picker.as_mut() else {
+        unreachable!("picker open checked above");
+    };
+    picker.focused = jackin_core::Agent::Claude;
+    let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+    match outcome {
+        InputOutcome::Continue => {}
+        other => panic!("live duplicate admissions must open the picker; got {other:?}"),
+    }
+    assert!(
+        state.inline_account_picker.is_some(),
+        "host defaults must not collapse live admitted instances"
+    );
+    let ids: Vec<&str> = state
+        .inline_account_picker
+        .as_ref()
+        .expect("live account picker")
+        .providers()
+        .iter()
+        .map(|account| account.instance_id.as_deref().expect("live instance ID"))
+        .collect();
+    assert_eq!(ids, vec!["claude-a", "claude-z"]);
+}
+
+#[test]
+fn new_session_open_without_default_opens_sorted_picker() {
+    let (mut state, mut config, paths, tmp) = running_session_state(|_| {});
+    let outcome = open_and_commit_new_session(
+        &mut state,
+        &mut config,
+        &paths,
+        tmp.path(),
+        jackin_core::Agent::Claude,
+    );
+
+    assert!(matches!(outcome, InputOutcome::Continue));
+    let Some(picker) = &state.inline_account_picker else {
+        panic!("two candidates without a default must open the account picker");
+    };
+    let ids: Vec<&str> = picker
+        .providers()
+        .iter()
+        .map(|account| account.id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["a-claude", "z-claude"]);
+
+    // Selecting the second same-agent row must retain its exact config ID,
+    // not collapse back to the shared account/provider identity.
+    assert!(matches!(
+        handle_inline_account_picker(&mut state, key(KeyCode::Down)),
+        InputOutcome::Continue
+    ));
+    match handle_inline_account_picker(&mut state, key(KeyCode::Enter)) {
+        InputOutcome::NewSessionWithAccount {
+            container,
+            agent,
+            instance_id,
+        } => {
+            assert_eq!(container, "jackin-demo-architect-running");
+            assert_eq!(agent, jackin_core::Agent::Claude);
+            assert_eq!(instance_id, "claude-z");
+        }
+        other => panic!("expected exact second live instance ID; got {other:?}"),
+    }
+}
+
+#[test]
+fn new_session_open_ignores_mutable_host_bindings() {
+    // The role binding names an unknown id while the live manifest admits two
+    // Claude instances: the host binding must not rewrite the live rows.
+    let (mut state, mut config, paths, tmp) = running_session_state(|config| {
+        config.workspaces.get_mut("demo").unwrap().roles.insert(
+            "the-architect".into(),
+            jackin_config::WorkspaceRoleOverride {
+                account_bindings: std::collections::BTreeMap::from([(
+                    jackin_core::Agent::Claude,
+                    "ghost".into(),
+                )]),
+                ..Default::default()
+            },
+        );
+    });
+    let outcome = open_and_commit_new_session(
+        &mut state,
+        &mut config,
+        &paths,
+        tmp.path(),
+        jackin_core::Agent::Claude,
+    );
+
+    assert!(
+        matches!(outcome, InputOutcome::Continue),
+        "invalid binding must not dispatch; got {outcome:?}"
+    );
+    assert!(matches!(outcome, InputOutcome::Continue));
+    assert!(state.inline_account_picker.is_some());
+    assert!(state.inline_new_session_picker.is_none());
+}
+
 fn live_snapshot() -> jackin_protocol::InstanceSnapshot {
     jackin_protocol::InstanceSnapshot {
         tabs: vec![jackin_protocol::control::TabSnapshot {
             label: "Codex".into(),
+            instance: Some("codex-main".into()),
+            account_id: Some("acc-1".into()),
             focused_pane: 1,
             panes: vec![jackin_protocol::control::PaneSnapshot {
                 session_id: 1,
                 label: "Codex".into(),
                 agent: Some("codex".into()),
+                account_id: Some("acc-1".into()),
                 state: jackin_protocol::control::AgentState::Idle,
                 agent_status_report: None,
             }],

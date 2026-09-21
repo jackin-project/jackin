@@ -18,6 +18,7 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
     let original = WorkspaceConfig {
         accounts: Vec::new(),
         account_bindings: std::collections::BTreeMap::new(),
+        default_launch: None,
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
@@ -197,6 +198,7 @@ fn create_workspace_rejects_duplicate_name_and_preserves_existing_value() {
     let original = WorkspaceConfig {
         accounts: Vec::new(),
         account_bindings: std::collections::BTreeMap::new(),
+        default_launch: None,
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
@@ -251,6 +253,7 @@ fn edit_workspace_rejects_duplicate_upsert_destinations() {
     let original = WorkspaceConfig {
         accounts: Vec::new(),
         account_bindings: std::collections::BTreeMap::new(),
+        default_launch: None,
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {
@@ -308,6 +311,7 @@ fn edit_workspace_rejects_missing_remove_destination() {
     let original = WorkspaceConfig {
         accounts: Vec::new(),
         account_bindings: std::collections::BTreeMap::new(),
+        default_launch: None,
         version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".to_owned(),
         mounts: vec![MountConfig {

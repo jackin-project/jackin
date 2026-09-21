@@ -81,12 +81,12 @@ GEN_AI_TOKEN_TYPE = "gen_ai.token.type"
 [[standard_enum]]
 rust_type = "AgentName"
 attribute = "gen_ai.agent.name"
-values = ["claude", "codex", "amp", "kimi", "opencode", "grok"]
+values = ["claude", "codex", "amp", "kimi", "opencode", "grok", "antigravity", "gemini", "cursor", "muse", "omp", "hermes"]
 
 [[standard_enum]]
 rust_type = "ProviderName"
 attribute = "gen_ai.provider.name"
-values = ["anthropic", "openai", "amp", "xai", "zai", "minimax", "kimi"]
+values = ["anthropic", "openai", "amp", "xai", "zai", "minimax", "kimi", "google", "cursor", "meta", "openrouter"]
 
 [[standard_enum]]
 rust_type = "DbOperationName"

@@ -105,11 +105,12 @@ pub const fn forced_instance_refresh_generation(generation: u64) -> u64 {
 }
 
 #[derive(Debug)]
-pub struct InstanceRefreshSnapshot<Instance, Session, Snapshot> {
+pub struct InstanceRefreshSnapshot<Instance, Session, Snapshot, Admission> {
     pub instances: Vec<Instance>,
     pub sessions: std::collections::HashMap<String, Vec<Session>>,
     pub session_errors: std::collections::HashSet<String>,
     pub snapshots: std::collections::HashMap<String, Snapshot>,
+    pub admissions: std::collections::HashMap<String, Vec<Admission>>,
     pub next_interval: std::time::Duration,
 }
 

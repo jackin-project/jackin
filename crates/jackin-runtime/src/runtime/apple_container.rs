@@ -95,6 +95,8 @@ pub async fn check_dns(container_name: &str) {
         "container",
         [
             "exec",
+            "--user",
+            crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
             container_name,
             "sh",
             "-c",
@@ -134,7 +136,15 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 
         let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
             "container",
-            ["exec", container_name, "sh", "-c", check_cmd],
+            [
+                "exec",
+                "--user",
+                crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
+                container_name,
+                "sh",
+                "-c",
+                check_cmd,
+            ],
         ))
         .await;
 
@@ -155,7 +165,14 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 /// can record an attach outcome — a non-zero exit distinguishes a crash from a
 /// clean detach.
 pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<Option<i32>> {
-    let mut args: Vec<&str> = vec!["exec", "-it", container_name, container_paths::CAPSULE_BIN];
+    let mut args: Vec<&str> = vec![
+        "exec",
+        "--user",
+        crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
+        "-it",
+        container_name,
+        container_paths::CAPSULE_BIN,
+    ];
 
     let focus_str;
     if let Some(id) = focus_session {
@@ -221,6 +238,15 @@ pub struct AppleContainerLaunch<'a> {
     pub debug: bool,
 }
 
+fn validate_exec_bindings(bindings: &[jackin_protocol::ExecBinding]) -> Result<()> {
+    if bindings.is_empty() {
+        return Ok(());
+    }
+
+    crate::exec_host::ensure_caller_auth_supported()
+        .context("apple-container does not support on-demand credential bindings")
+}
+
 /// Full launch path for the `apple-container` backend.
 ///
 /// Called from `load_role_with` after the image build step when the resolved
@@ -247,6 +273,8 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         resolved_env,
         debug,
     } = args;
+
+    validate_exec_bindings(&capsule_config.exec_bindings)?;
 
     // Probe container CLI availability.
     let version = probe_version().await;
@@ -281,6 +309,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         })
         .cloned()
         .collect::<Vec<_>>();
+    let mut capsule_config = capsule_config.clone();
     // Mirror the Docker path: list on-demand credential var names so the
     // in-container MCP tool advertises which commands need jackin-exec.
     let names = super::launch::exec_binding_names(&capsule_config.exec_bindings);
@@ -298,14 +327,17 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
             paths,
             workspace_name,
             role_key,
-            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch(
+            launch_config: &capsule_config,
+            forwarded_sources: crate::usage_relay::forwarded_sources_from_launch_config(
                 state,
                 resolved_env,
+                &capsule_config,
             ),
         })
         .await
         .context("starting scoped usage relay")?;
-    let capsule_config_contents = super::launch::capsule_config_contents(capsule_config)
+    prepared_usage_relay.apply_to_launch_config(&mut capsule_config)?;
+    let capsule_config_contents = super::launch::capsule_config_contents(&capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
     super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
     let mut container_mounts = mounts.to_vec();
@@ -329,6 +361,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
 
     let spec = crate::apple_container_client::AppleContainerSpec {
         image: image.to_owned(),
+        user: crate::runtime::identity::CAPSULE_SUPERVISOR_USER.to_owned(),
         env,
         env_file: host_env_file.as_ref().map(|file| file.path().to_path_buf()),
         mounts: container_mounts,
@@ -373,6 +406,10 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         }),
     );
     manifest.write(&container_state)?;
+
+    // No second host.sock resolver start here: the pre-bound
+    // `start_bound_for_container` above already owns the session resolver, and
+    // starting again would double-bind the same socket path.
 
     // Wait for capsule daemon readiness.
     wait_for_capsule(container_name).await?;
@@ -514,5 +551,39 @@ pub async fn probe_version() -> Option<String> {
         Some(v)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_binding() -> jackin_protocol::ExecBinding {
+        jackin_protocol::ExecBinding {
+            name: "TOKEN".to_owned(),
+            kind: jackin_protocol::ExecKind::Op,
+            source: "op://vault/item/field".to_owned(),
+        }
+    }
+
+    #[test]
+    fn empty_exec_bindings_are_supported() {
+        validate_exec_bindings(&[]).expect("no credential relay is required");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_exec_bindings_are_supported() {
+        validate_exec_bindings(&[test_binding()]).expect("Linux peer auth is available");
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn non_linux_exec_bindings_are_rejected_explicitly() {
+        let error = validate_exec_bindings(&[test_binding()])
+            .expect_err("non-Linux peer auth is unavailable");
+        let message = format!("{error:#}");
+        assert!(message.contains("apple-container does not support on-demand credential bindings"));
+        assert!(message.contains("peer authentication is unavailable"));
     }
 }

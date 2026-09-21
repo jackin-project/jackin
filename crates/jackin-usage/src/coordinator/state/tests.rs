@@ -180,13 +180,14 @@ fn projection_state_is_one_atomic_envelope_and_quarantines_corruption() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileProjectionStateStore::under_data_dir(temp.path());
     let envelope = ProjectionStateEnvelope {
-        schema_version: 1,
+        schema_version: 2,
         projection: empty_projection(),
         aliases: vec![ProjectionAlias {
             capability_id: "capability-1".into(),
             canonical_account_id: "account-1".into(),
         }],
         catalog_revision: "catalog-1".into(),
+        catalog: Vec::new(),
         retry_deadline_epoch: Some(1_030),
         success_deadline_epoch: Some(1_300),
         broker_instance_id: "instance-1".into(),
@@ -195,6 +196,33 @@ fn projection_state_is_one_atomic_envelope_and_quarantines_corruption() {
     assert_eq!(store.load().unwrap(), Some(envelope));
     let path = temp.path().join("usage-broker/projection.json");
     fs::write(&path, b"not-json").unwrap();
+    assert_eq!(store.load(), Err(StateStoreError::Corrupt));
+    assert!(!path.exists());
+    assert!(
+        fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().contains("corrupt"))
+    );
+}
+
+#[test]
+fn projection_state_v1_is_quarantined_without_catalog_migration() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileProjectionStateStore::under_data_dir(temp.path());
+    let path = temp.path().join("usage-broker/projection.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let legacy = serde_json::json!({
+        "schema_version": 1,
+        "projection": empty_projection(),
+        "aliases": [],
+        "catalog_revision": "catalog-1",
+        "retry_deadline_epoch": null,
+        "success_deadline_epoch": null,
+        "broker_instance_id": "instance-1"
+    });
+    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
     assert_eq!(store.load(), Err(StateStoreError::Corrupt));
     assert!(!path.exists());
     assert!(

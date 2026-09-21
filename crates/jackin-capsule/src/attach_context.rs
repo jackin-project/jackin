@@ -9,6 +9,7 @@
 
 use crate::session::SESSION_ENV_PASSTHROUGH;
 
+#[must_use]
 pub fn collect_session_env(include: bool) -> Vec<(String, String)> {
     if !include {
         return Vec::new();

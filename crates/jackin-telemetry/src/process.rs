@@ -39,6 +39,14 @@ pub fn classify_executable(program: &Path) -> ProcessExecutableName {
         "kimi" => ProcessExecutableName::Kimi,
         "opencode" => ProcessExecutableName::Opencode,
         "grok" => ProcessExecutableName::Grok,
+        "agy" => ProcessExecutableName::Agy,
+        "gemini" => ProcessExecutableName::Gemini,
+        "cursor-agent" => ProcessExecutableName::CursorAgent,
+        "muse" => ProcessExecutableName::Muse,
+        "omp" => ProcessExecutableName::Omp,
+        "hermes" => ProcessExecutableName::Hermes,
+        // Bare `agent` stays Other: it is both the Grok Build alias and
+        // the Cursor installer default, so the basename is ambiguous.
         _ => ProcessExecutableName::Other,
     }
 }

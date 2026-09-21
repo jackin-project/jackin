@@ -15,7 +15,7 @@ use std::path::Path;
 use anyhow::Context;
 use toml_edit::DocumentMut;
 
-use crate::persist::atomic_write;
+use crate::persist::{acquire_config_write_lock, atomic_write, config_file_for_workspace_path};
 use crate::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, LEGACY_VERSION};
 
 /// Transform applied to a TOML document for one version step.
@@ -96,12 +96,21 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
         to: "v1alpha10",
         migrate: strip_legacy_agent_tables,
     },
-    // v1alpha10 → v1alpha11: stamp an initialized bootstrap sentinel so an
-    // upgrade never rescans or resurrects removed accounts.
+    // v1alpha10 → v1alpha11: add `agent_configurations`, `default_launch`,
+    // and the `[bootstrap]` sentinel. Additive with serde defaults except
+    // the sentinel, which is stamped explicitly as already-initialized so
+    // an upgrade never rescans or resurrects removed accounts.
     MigrationStep {
         from: "v1alpha10",
-        to: CURRENT_CONFIG_VERSION,
+        to: "v1alpha11",
         migrate: stamp_bootstrap_initialized,
+    },
+    // v1alpha11 → v1alpha12: persist secret-free scan exclusions so a
+    // deliberate account removal is not undone by an explicit rescan.
+    MigrationStep {
+        from: "v1alpha11",
+        to: CURRENT_CONFIG_VERSION,
+        migrate: noop_migration,
     },
 ];
 /// Ordered per-workspace file migration chain from [`LEGACY_VERSION`] to current.
@@ -154,16 +163,23 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     },
     MigrationStep {
         from: "v1alpha8",
-        to: CURRENT_WORKSPACE_VERSION,
+        to: "v1alpha9",
         migrate: strip_legacy_agent_tables,
+    },
+    // v1alpha9 → v1alpha10: add optional `default_launch` to workspaces
+    // and role overrides. Additive with serde defaults; no transform.
+    MigrationStep {
+        from: "v1alpha9",
+        to: CURRENT_WORKSPACE_VERSION,
+        migrate: noop_migration,
     },
 ];
 
-/// Stamp an already-initialized `[bootstrap]` sentinel, preserving an
-/// installer-written `fresh_install = true` marker so its scan still runs.
+/// Stamp an already-initialized `[bootstrap]` sentinel, preserving any
+/// operator-written sentinel (an installer `fresh_install = true` marker
+/// must survive the upgrade so its scan still runs exactly once).
 pub(crate) fn stamp_bootstrap_initialized(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     use toml_edit::Item;
-
     let has_marker = doc
         .get("bootstrap")
         .and_then(Item::as_table_like)
@@ -340,6 +356,11 @@ impl std::fmt::Display for KubernetesVersion {
 
 /// Migrate a global `config.toml` to the current schema if needed.
 pub fn migrate_config_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
+    let _lock = acquire_config_write_lock(path)?;
+    migrate_config_file_if_needed_locked(path)
+}
+
+pub(crate) fn migrate_config_file_if_needed_locked(path: &Path) -> crate::ConfigResult<bool> {
     let result = migrate_file_if_needed(path, "config", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS);
     emit_migration_result("global", CURRENT_CONFIG_VERSION, CONFIG_MIGRATIONS, &result);
     result
@@ -349,6 +370,12 @@ pub fn migrate_config_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
 
 /// Migrate a split workspace file to the current schema if needed.
 pub fn migrate_workspace_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
+    let config_file = config_file_for_workspace_path(path);
+    let _lock = acquire_config_write_lock(&config_file)?;
+    migrate_workspace_file_if_needed_locked(path)
+}
+
+pub(crate) fn migrate_workspace_file_if_needed_locked(path: &Path) -> crate::ConfigResult<bool> {
     let result = migrate_file_if_needed(
         path,
         "workspace config",

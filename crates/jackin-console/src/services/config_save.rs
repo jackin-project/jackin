@@ -14,7 +14,7 @@ use jackin_config::{
     WorkspaceEdit, plan_create, plan_edit,
 };
 use jackin_core::shorten_home;
-use jackin_core::{Agent, WorkspaceName, is_reserved};
+use jackin_core::{Agent, WorkspaceName, is_account_env, is_reserved};
 
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
 
@@ -115,6 +115,9 @@ pub fn build_workspace_edit(
     }
     if pending.git_pull_on_entry != original.git_pull_on_entry {
         edit.git_pull_on_entry_enabled = Some(pending.git_pull_on_entry);
+    }
+    if pending.default_launch != original.default_launch {
+        edit.default_launch = Some(pending.default_launch.clone());
     }
     edit
 }
@@ -244,6 +247,11 @@ fn validate_settings_env_keys<'a>(
         if is_reserved(key) {
             anyhow::bail!(
                 "env name {key:?} in {scope} is reserved by the jackin runtime and cannot be set"
+            );
+        }
+        if is_account_env(key) {
+            anyhow::bail!(
+                "env name {key:?} in {scope} belongs to account credentials and cannot be set here"
             );
         }
     }

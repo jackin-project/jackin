@@ -25,6 +25,11 @@ use crate::agent_status::AgentStatusReport;
 pub struct ControlRequest {
     /// Cross-process trace and product correlation.
     pub ctx: TelemetryContext,
+    /// Optional daemon-issued capability inherited by a session child. Host
+    /// operator requests leave this unset; the daemon never trusts a target
+    /// session id without matching this value for a session peer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_capability: Option<String>,
     /// Requested control operation.
     pub msg: ClientMsg,
 }
@@ -304,9 +309,15 @@ pub struct SessionEventRecord {
     pub seq: u64,
     /// Session this observation is about.
     pub session: u64,
-    /// Agent slug (`"claude"`, `"codex"`, …), or `None` for a shell session.
+    /// Instance config ID (`"claude-work"`), or `None` for a shell session.
+    /// This is the admitted instance, not a runtime slug: several instances
+    /// may share one agent runtime.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    /// Owning account ID for this session's instance, or `None` for shells
+    /// and for sessions spawned before account stamping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
     /// Effective agent state at emit time — the same arbitrated value
     /// [`SessionInfo::state`] and [`PaneSnapshot::state`] carry, from the one
     /// terminal-observation authority. Never recomputed for the stream.
@@ -767,6 +778,22 @@ impl Money {
         self.major().round() as i64
     }
 
+    /// Raw used percentage of `self` against `cap`, unclamped so over-100%
+    /// overage survives. Checked math: incompatible denominations, a
+    /// non-positive cap, or a failed division yield `None` instead of a
+    /// wrapped or fabricated value. The single money-ratio rule shared by the
+    /// canonical projection and the capsule bucket presentation, so both
+    /// surfaces recover the same overage magnitude.
+    #[must_use]
+    pub fn raw_percent_of(&self, cap: &Money) -> Option<i32> {
+        if self.currency != cap.currency || self.exponent != cap.exponent || cap.amount_minor <= 0 {
+            return None;
+        }
+        let scaled = self.amount_minor.saturating_mul(100);
+        let raw = scaled.checked_div(cap.amount_minor)?;
+        Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
+    }
+
     fn format_with_precision(&self, prec: usize) -> String {
         let value = self.major();
         match self.currency.as_str() {
@@ -908,6 +935,11 @@ pub struct UsageDetailPresentation {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// `UsageProviderTab` protocol type.
 pub struct UsageProviderTab {
+    /// Stable canonical account id (`account_key_hash` over the provider and
+    /// account labels). Tab navigation and active-tab matching key on this;
+    /// `label` is display-only and repeats across same-provider accounts.
+    #[serde(default)]
+    pub id: String,
     /// `label` field.
     pub label: String,
     /// `status_label` field.
@@ -981,8 +1013,14 @@ pub enum UsageConfidence {
 pub struct AgentRegistryEntry {
     /// Human-readable codename assigned to the tab (e.g. `"badger"`).
     pub codename: String,
-    /// Agent slug (`"claude"`, `"codex"`, …), or `None` for shell sessions.
+    /// Instance config ID (`"claude-work"`), or `None` for shell sessions.
+    /// This is the admitted instance, not a runtime slug: several instances
+    /// may share one agent runtime.
     pub agent: Option<String>,
+    /// Owning account ID for this record's instance, or `None` for shells
+    /// and for records written before account stamping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
     /// Provider label (e.g. `"anthropic"`, `"openai"`), or `None` when no
     /// provider was selected. Default for `claude` is `"anthropic"`;
     /// for `codex` is `"openai"`. Other runtimes have no inferred default.
@@ -1006,8 +1044,14 @@ pub struct SessionInfo {
     pub id: u64,
     /// `label` field.
     pub label: String,
-    /// `agent` field.
+    /// Instance config ID (`"claude-work"`), or `None` for shell sessions.
+    /// This is the admitted instance, not a runtime slug: several instances
+    /// may share one agent runtime.
     pub agent: Option<String>,
+    /// Owning account ID for this session's instance, or `None` for shells
+    /// and for sessions spawned before account stamping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
     /// `state` field.
     pub state: AgentState,
     /// `active` field.
@@ -1022,6 +1066,15 @@ pub struct TabSnapshot {
     /// `session_id` of the focused leaf in this tab. Always matches
     /// one of the `panes[*].session_id` entries.
     pub focused_pane: u64,
+    /// Instance config ID of the session that created this tab, or `None`
+    /// for shell-created tabs. Splits may add panes from other instances;
+    /// per-pane identity lives on each [`PaneSnapshot`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
+    /// Owning account ID of the tab-creating session, or `None` for
+    /// shell-created tabs and snapshots taken before account stamping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
     /// `panes` field.
     pub panes: Vec<PaneSnapshot>,
 }
@@ -1031,10 +1084,16 @@ pub struct TabSnapshot {
 pub struct PaneSnapshot {
     /// `session_id` field.
     pub session_id: u64,
-    /// Session label (agent slug or "Shell").
+    /// Session label (instance label or "Shell").
     pub label: String,
-    /// `None` for shell sessions; the agent slug otherwise.
+    /// `None` for shell sessions; the instance config ID otherwise. This is
+    /// the admitted instance, not a runtime slug: several instances may
+    /// share one agent runtime.
     pub agent: Option<String>,
+    /// Owning account ID for this pane's instance, or `None` for shells
+    /// and for sessions spawned before account stamping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
     /// `state` field.
     pub state: AgentState,
     /// Full evidence-arbitration status report. `None` until the capsule

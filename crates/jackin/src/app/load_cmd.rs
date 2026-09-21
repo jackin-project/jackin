@@ -120,19 +120,15 @@ pub(super) async fn handle_load(
         } else {
             &*config
         };
-        let selected_account = jackin_config::resolve_account(
+        // Canonical identity resolution: the same admission call launch
+        // provisions from, so dry-run and launch cannot disagree (F4).
+        let identity = runtime::resolve_dry_run_identity(
             plan_config,
             selected_agent,
             workspace_name.as_ref(),
             &class.to_string(),
+            account.is_some(),
         )?;
-        let selected_id = selected_account.and_then(|selected| {
-            plan_config
-                .accounts
-                .iter()
-                .find(|(_, account)| std::ptr::eq(*account, selected))
-                .map(|(id, _)| id.clone())
-        });
         // The image half of the plan is only knowable after the role manifest
         // is read: `published_image` is a manifest field and the
         // reuse-vs-build decision derives from it. Resolving it here is what
@@ -147,13 +143,14 @@ pub(super) async fn handle_load(
             role_branch.as_deref(),
         )
         .await?;
+        let plan_identity = DryRunPlan {
+            agent: selected_agent,
+            identity: &identity,
+        };
         return print_dry_run_plan(
             &class,
             &resolved_workspace,
-            DryRunIdentity {
-                agent: selected_agent,
-                account_id: selected_id.as_deref(),
-            },
+            &plan_identity,
             role_branch.as_deref(),
             rebuild,
             &format,
@@ -329,18 +326,24 @@ async fn dispatch_console_outcome(
         console::ConsoleOutcome::NewSessionWithAccount {
             container,
             agent,
-            account,
+            instance_id,
         } => {
-            return console_outcome_new_session(container, agent, account, &mut ctx).await;
+            return console_outcome_new_session(container, agent, instance_id, &mut ctx).await;
         }
         console::ConsoleOutcome::LaunchWithAccount {
             selector,
             workspace,
             agent,
             account,
+            configuration,
         } => {
             return console_outcome_launch_with_account(
-                selector, workspace, agent, account, &mut ctx,
+                selector,
+                workspace,
+                agent,
+                account,
+                configuration,
+                &mut ctx,
             )
             .await;
         }
@@ -395,15 +398,9 @@ async fn console_outcome_instance_action(
 async fn console_outcome_new_session(
     container: String,
     agent: jackin_core::Agent,
-    account: Option<String>,
+    instance_id: String,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
-    let manifest = instance::InstanceManifest::read(&ctx.paths.data_dir.join(&container))
-        .with_context(|| {
-            format!(
-                "cannot start a new agent session in `{container}` because its instance manifest is missing"
-            )
-        })?;
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -411,68 +408,22 @@ async fn console_outcome_new_session(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-    let workspace_name = manifest
-        .workspace_name
-        .as_deref()
-        .map(jackin_core::WorkspaceName::parse)
-        .transpose()?;
-    let scoped;
-    let selected_config = if let Some(id) = &account {
-        scoped = runtime::with_account_selection(
-            ctx.config,
-            agent,
-            workspace_name.as_ref(),
-            &manifest.role_key,
-            id,
-        )?;
-        &scoped
-    } else {
-        &*ctx.config
-    };
-    jackin_config::resolve_account(
-        selected_config,
+    // The picker selected an exact live admission. Runtime re-reads both the
+    // manifest and the persisted host config; it must reject drift instead of
+    // rebuilding the container or resolving the account again from mutable
+    // defaults.
+    let result = runtime::spawn_agent_session(
+        ctx.paths,
+        &container,
+        Some(&instance_id),
         agent,
-        workspace_name.as_ref(),
-        &manifest.role_key,
-    )?;
-    let result = if runtime::account_configuration_matches(
-        &ctx.paths.data_dir.join(&container),
-        selected_config,
-        workspace_name.as_ref(),
-        &manifest.role_key,
-    )? {
-        runtime::spawn_agent_session(
-            ctx.paths,
-            &container,
-            Some(&manifest),
-            agent,
-            &[],
-            ctx.config.git.coauthor_trailer,
-            ctx.config.git.dco,
-            ctx.docker,
-            ctx.runner,
-        )
-        .await
-    } else {
-        let selector = RoleSelector::parse(&manifest.role_key)?;
-        let cwd = std::env::current_dir()?;
-        let input = if let Some(name) = &manifest.workspace_name {
-            LoadWorkspaceInput::Saved(name.clone())
-        } else {
-            super::restore::resolve_ad_hoc_restore_input(&manifest, &cwd)?
-        };
-        let workspace = resolve_load_workspace(ctx.config, &selector, &cwd, input, &[])?;
-        super::emit_mount_heal_notices(&workspace);
-        let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
-        opts.agent = Some(agent);
-        opts.account = account;
-        opts.role_branch = manifest.role_source_ref.clone();
-        opts.restore_role_source_git = Some(manifest.role_source_git.clone());
-        runtime::load_role(
-            ctx.paths, ctx.config, &selector, &workspace, ctx.docker, ctx.runner, &opts,
-        )
-        .await
-    };
+        &[],
+        ctx.config.git.coauthor_trailer,
+        ctx.config.git.dco,
+        ctx.docker,
+        ctx.runner,
+    )
+    .await;
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -491,12 +442,14 @@ async fn console_outcome_launch_with_account(
     workspace: jackin_config::ResolvedWorkspace,
     agent: jackin_core::Agent,
     account: Option<String>,
+    configuration: Option<String>,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
     super::emit_mount_heal_notices(&workspace);
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = Some(agent);
     opts.account = account;
+    opts.configuration = configuration;
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -678,7 +631,7 @@ pub(super) async fn handle_hardline(
         let result = runtime::spawn_agent_session(
             &paths,
             &container,
-            Some(&manifest),
+            None,
             selected_agent,
             &[],
             config.git.coauthor_trailer,
@@ -805,23 +758,52 @@ pub(crate) fn dry_run_plan_json(
     })
 }
 
-struct DryRunIdentity<'a> {
+/// Apply the identity half of the `--dry-run` plan onto the JSON wire
+/// shape: the single account (plus its effective model pin, F7) or every
+/// admitted instance, each carrying its effective model. Split out from
+/// printing so the shape is asserted directly, like [`dry_run_plan_json`].
+pub(crate) fn apply_dry_run_identity_json(
+    plan: &mut serde_json::Value,
+    identity: &runtime::DryRunIdentity,
+) {
+    plan["data"]["account"] = serde_json::json!(identity.account_id);
+    plan["data"]["model"] = serde_json::json!(identity.model);
+    plan["data"]["instances"] = serde_json::json!(
+        identity
+            .instances
+            .iter()
+            .map(|instance| serde_json::json!({
+                "config_id": instance.config_id,
+                "agent": instance.agent.slug(),
+                "account": instance.account_id,
+                "label": instance.label,
+                "model": instance.model,
+            }))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Identity half of the `--dry-run` plan as the printer consumes it: the
+/// committed launch agent plus the canonical runtime identity.
+struct DryRunPlan<'a> {
     agent: jackin_core::Agent,
-    account_id: Option<&'a str>,
+    identity: &'a runtime::DryRunIdentity,
 }
 
 /// Print the resolved load plan for `--dry-run` and exit without launching.
 fn print_dry_run_plan(
     class: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
-    identity: DryRunIdentity<'_>,
+    plan_identity: &DryRunPlan<'_>,
     role_branch: Option<&str>,
     rebuild: bool,
     format: &str,
     image_plan: &runtime::LaunchImagePlan,
 ) -> Result<()> {
-    let agent_slug = identity.agent.slug();
-    let account_id = identity.account_id;
+    let agent_slug = plan_identity.agent.slug();
+    let identity = plan_identity.identity;
+    let account_id = identity.account_id.as_deref();
+    let instances = &identity.instances;
 
     let mount_lines: Vec<String> = workspace
         .mounts
@@ -838,7 +820,7 @@ fn print_dry_run_plan(
             rebuild,
             image_plan,
         );
-        plan["data"]["account"] = serde_json::json!(account_id);
+        apply_dry_run_identity_json(&mut plan, identity);
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
         println!("Workspace:  {} ({})", workspace.label, workspace.workdir);
@@ -849,6 +831,18 @@ fn print_dry_run_plan(
         println!("Role:       {role_display}");
         println!("Agent:      {agent_slug}");
         println!("Account:    {}", account_id.unwrap_or("none"));
+        if !instances.is_empty() {
+            println!("Instances ({}):", instances.len());
+            for instance in instances {
+                println!(
+                    "  {} [{}] account={} label={}",
+                    instance.config_id,
+                    instance.agent.slug(),
+                    instance.account_id,
+                    instance.label
+                );
+            }
+        }
         println!("Image:      {} ({})", image_plan.image, image_plan.decision);
         if let Some(reason) = image_plan.reason {
             println!("Reason:     {reason}");

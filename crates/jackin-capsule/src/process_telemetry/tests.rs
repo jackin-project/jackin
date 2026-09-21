@@ -61,6 +61,15 @@ async fn exports_capsule_process_matrix_without_operator_material() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conformance_wire_exec_spawn_failure_is_owned_once_without_command_material() {
+    if run_wire_test_in_child(
+        "process_telemetry::tests::conformance_wire_exec_spawn_failure_is_owned_once_without_command_material",
+        "JACKIN_PROCESS_TELEMETRY_WIRE_CHILD",
+    )
+    .expect("dispatch isolated process telemetry wire test")
+    {
+        return;
+    }
+    let _telemetry_guard = crate::test_support::telemetry_test_guard_async().await;
     let testbed = jackin_otlp_testbed::Testbed::start().expect("start OTLP testbed");
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),

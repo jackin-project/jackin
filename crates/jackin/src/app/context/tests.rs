@@ -147,6 +147,7 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
             runtime: jackin_config::WorkspaceRuntimeConfig::default(),
             dirty_exit_policy: None,
             docker: None,
+            default_launch: None,
         },
     );
 
@@ -198,6 +199,7 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
             runtime: jackin_config::WorkspaceRuntimeConfig::default(),
             dirty_exit_policy: None,
             docker: None,
+            default_launch: None,
         },
     );
 
@@ -248,6 +250,7 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
             runtime: jackin_config::WorkspaceRuntimeConfig::default(),
             dirty_exit_policy: None,
             docker: None,
+            default_launch: None,
         },
     );
 
@@ -306,6 +309,7 @@ fn config_with_workspace(
             runtime: jackin_config::WorkspaceRuntimeConfig::default(),
             dirty_exit_policy: None,
             docker: None,
+            default_launch: None,
         },
     );
     config

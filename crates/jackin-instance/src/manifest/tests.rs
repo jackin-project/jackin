@@ -6,7 +6,7 @@ use super::*;
 use tempfile::tempdir;
 
 #[test]
-fn manifest_v2_backend_roundtrips_and_legacy_v1_deserializes() {
+fn manifest_v3_backend_roundtrips_and_omitted_backend_deserializes() {
     let manifest = InstanceManifest::new_with_backend(
         NewInstanceManifest {
             container_base: "jackin-x",
@@ -32,7 +32,7 @@ fn manifest_v2_backend_roundtrips_and_legacy_v1_deserializes() {
             inner_docker_enabled: false,
         }),
     );
-    // A v2 apple-container manifest survives a serialize -> deserialize round trip.
+    // A v3 apple-container manifest survives a serialize -> deserialize round trip.
     let json = serde_json::to_string(&manifest).unwrap();
     assert_eq!(
         serde_json::from_str::<InstanceManifest>(&json).unwrap(),
@@ -43,8 +43,7 @@ fn manifest_v2_backend_roundtrips_and_legacy_v1_deserializes() {
         Some(BackendResources::AppleContainer(_))
     ));
 
-    // A legacy v1 manifest (no `backend` key) still deserializes — `backend`
-    // defaults to None so every pre-existing on-disk instance keeps loading.
+    // `backend` is optional for v3 Docker manifests.
     let mut obj = serde_json::to_value(&manifest)
         .unwrap()
         .as_object()
@@ -53,6 +52,135 @@ fn manifest_v2_backend_roundtrips_and_legacy_v1_deserializes() {
     obj.remove("backend");
     let legacy: InstanceManifest = serde_json::from_value(serde_json::Value::Object(obj)).unwrap();
     assert_eq!(legacy.backend, None);
+}
+
+#[test]
+fn admitted_instances_empty_is_explicit_and_validate_tabs() {
+    let mut manifest = sample_manifest();
+    assert!(manifest.admitted_instances.is_empty());
+    assert!(!manifest.admits_instance("claude-work"));
+
+    manifest.set_admitted_instances([
+        AdmittedInstance::new("claude-work", Agent::Claude, "work"),
+        AdmittedInstance::from(&jackin_config::ResolvedInstance {
+            config_id: "claude-personal".to_owned(),
+            agent: Agent::Claude,
+            account_id: "personal".to_owned(),
+            model: None,
+            base_url: None,
+            xdg_roots: None,
+            label: "Claude · Personal".to_owned(),
+            synthesized: true,
+        }),
+    ]);
+    assert!(manifest.admits_instance("claude-work"));
+    assert!(manifest.admits_instance("claude-personal"));
+    assert!(!manifest.admits_instance("codex-work"));
+    assert_eq!(manifest.account_for_instance("claude-work"), Some("work"));
+    assert_eq!(
+        manifest.account_for_instance("claude-personal"),
+        Some("personal")
+    );
+    assert_eq!(manifest.account_for_instance("codex-work"), None);
+    assert_eq!(
+        manifest.agent_for_instance("claude-work"),
+        Some(Agent::Claude)
+    );
+    assert_eq!(manifest.agent_for_instance("codex-work"), None);
+
+    // Admission survives a serialize -> deserialize round trip.
+    let json = serde_json::to_string(&manifest).unwrap();
+    assert_eq!(
+        serde_json::from_str::<InstanceManifest>(&json).unwrap(),
+        manifest
+    );
+
+    // Admission is required by the v3 manifest schema; omission is malformed.
+    let mut obj = serde_json::to_value(&manifest)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
+    obj.remove("admitted_instances");
+    let error =
+        serde_json::from_value::<InstanceManifest>(serde_json::Value::Object(obj)).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("missing field `admitted_instances`")
+    );
+}
+
+#[test]
+fn admitted_manifest_membership_does_not_expand_from_unrelated_registration() {
+    let mut manifest = sample_manifest();
+    manifest.set_admitted_instances([AdmittedInstance::new("claude-work", Agent::Claude, "work")]);
+    let admitted_before = manifest.admitted_instances.clone();
+
+    // A newly registered account/configuration exists outside this immutable
+    // launch admission set until an explicit recreate/update path writes a new
+    // manifest.
+    assert!(!manifest.admits_instance("claude-personal"));
+    assert_eq!(manifest.admitted_instances, admitted_before);
+}
+
+#[test]
+fn registration_state_is_visible_without_relabeling_admitted_identity() {
+    let mut manifest = sample_manifest();
+    manifest.set_admitted_instances([AdmittedInstance::new("claude-work", Agent::Claude, "work")]);
+    assert!(manifest.mark_registration_state("claude-work", RegistrationState::Disabled));
+    assert_eq!(
+        manifest.registration_state_for_instance("claude-work"),
+        Some(RegistrationState::Disabled)
+    );
+    assert_eq!(manifest.account_for_instance("claude-work"), Some("work"));
+    assert!(manifest.admits_instance("claude-work"));
+    assert_eq!(RegistrationState::Removed.label(), "removed");
+
+    let restored: InstanceManifest =
+        serde_json::from_str(&serde_json::to_string(&manifest).unwrap()).unwrap();
+    assert_eq!(restored.admitted_instances, manifest.admitted_instances);
+}
+
+#[test]
+fn manifest_read_rejects_pre_v3_versions() {
+    let temp = tempdir().unwrap();
+    let state_dir = temp.path();
+    std::fs::create_dir_all(state_dir.join(".jackin")).unwrap();
+    let mut value = serde_json::to_value(sample_manifest()).unwrap();
+    value["version"] = serde_json::json!(2);
+    std::fs::write(
+        state_dir.join(".jackin/instance.json"),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+
+    let error = InstanceManifest::read(state_dir).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported instance manifest version 2")
+    );
+}
+
+#[test]
+fn manifest_read_rejects_malformed_admission_records() {
+    let temp = tempdir().unwrap();
+    let state_dir = temp.path();
+    std::fs::create_dir_all(state_dir.join(".jackin")).unwrap();
+    let mut value = serde_json::to_value(sample_manifest()).unwrap();
+    value["admitted_instances"] = serde_json::json!([{
+        "config_id": "claude-work",
+        "account_id": "work"
+    }]);
+    std::fs::write(
+        state_dir.join(".jackin/instance.json"),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+
+    let error = InstanceManifest::read_optional(state_dir).unwrap_err();
+    assert!(format!("{error:#}").contains("missing field `agent`"));
 }
 
 fn sample_manifest() -> InstanceManifest {
@@ -112,7 +240,7 @@ fn writes_manifest_under_jackin_state_dir() {
     manifest.write(temp.path()).unwrap();
 
     let body = std::fs::read_to_string(temp.path().join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 2"#));
+    assert!(body.contains(r#""version": 3"#));
     assert!(body.contains(r#""status": "running""#));
     assert!(body.contains(r#""role_key": "org/agent""#));
 }
@@ -332,7 +460,7 @@ fn instance_manifest_write_replaces_partial_file() {
     std::fs::write(state_dir.join(".jackin/instance.json"), b"{ partial").unwrap();
     sample_manifest().write(state_dir).unwrap();
     let body = std::fs::read_to_string(state_dir.join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 2"#));
+    assert!(body.contains(r#""version": 3"#));
     assert!(!body.contains("partial"));
 }
 

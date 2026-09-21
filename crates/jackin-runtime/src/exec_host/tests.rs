@@ -4,6 +4,17 @@
 //! Tests for `exec_host`.
 use super::*;
 
+fn test_caller_auth() -> CallerAuth {
+    #[cfg(target_os = "linux")]
+    {
+        CallerAuth::PeerPid(std::process::id())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        CallerAuth::TestPeer
+    }
+}
+
 #[test]
 fn validate_op_source_accepts_well_formed_ref() {
     validate_op_source("op://vault/item/field").unwrap();
@@ -49,10 +60,7 @@ async fn roundtrip(
     allowed: Vec<ExecBinding>,
     request_refs: serde_json::Value,
 ) -> serde_json::Value {
-    #[cfg(target_os = "linux")]
-    let caller_auth = CallerAuth::PeerPid(std::process::id());
-    #[cfg(not(target_os = "linux"))]
-    let caller_auth = CallerAuth::CapsuleDaemon;
+    let caller_auth = test_caller_auth();
 
     roundtrip_with_auth(allowed, request_refs, caller_auth)
         .await
@@ -103,10 +111,7 @@ async fn exported_exec_roundtrip(
     Vec<jackin_diagnostics::TestSpanSnapshot>,
     usize,
 ) {
-    #[cfg(target_os = "linux")]
-    let caller_auth = CallerAuth::PeerPid(std::process::id());
-    #[cfg(not(target_os = "linux"))]
-    let caller_auth = CallerAuth::CapsuleDaemon;
+    let caller_auth = test_caller_auth();
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let guard = tracing::subscriber::set_default(subscriber);
     let (mut client, server) = UnixStream::pair().expect("host socket pair");
@@ -156,10 +161,7 @@ async fn exec_socket_exports_client_parent_server_after_reply_write() {
     client_operation
         .span()
         .in_scope(|| jackin_telemetry::propagation::inject(&mut context));
-    #[cfg(target_os = "linux")]
-    let caller_auth = CallerAuth::PeerPid(std::process::id());
-    #[cfg(not(target_os = "linux"))]
-    let caller_auth = CallerAuth::CapsuleDaemon;
+    let caller_auth = test_caller_auth();
     let (mut client, server) = UnixStream::pair().expect("host socket pair");
     client
         .write_all(&frame(&CredRequest {
@@ -250,10 +252,7 @@ async fn exec_socket_propagation_matrix_handles_remote_context_and_bad_ids() {
 async fn exec_socket_marks_server_failure_when_peer_closes_before_reply() {
     use std::net::Shutdown;
 
-    #[cfg(target_os = "linux")]
-    let caller_auth = CallerAuth::PeerPid(std::process::id());
-    #[cfg(not(target_os = "linux"))]
-    let caller_auth = CallerAuth::CapsuleDaemon;
+    let caller_auth = test_caller_auth();
     let mut context = jackin_protocol::TelemetryContext::v1();
     context.traceparent =
         Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_owned());
@@ -292,10 +291,7 @@ async fn exec_socket_predecode_failures_have_one_typed_rpc_owner() {
     ];
 
     for wire in cases {
-        #[cfg(target_os = "linux")]
-        let caller_auth = CallerAuth::PeerPid(std::process::id());
-        #[cfg(not(target_os = "linux"))]
-        let caller_auth = CallerAuth::CapsuleDaemon;
+        let caller_auth = test_caller_auth();
         let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
         let guard = tracing::subscriber::set_default(subscriber);
         let (mut client, server) = UnixStream::pair().expect("host socket pair");
@@ -384,14 +380,29 @@ async fn unauthenticated_peer_is_rejected_before_resolution() {
     assert!(reply.is_none(), "unauthenticated peer must be closed");
 }
 
+#[cfg(not(target_os = "linux"))]
+#[tokio::test]
+async fn non_linux_capsule_daemon_peer_authentication_fails_closed() {
+    let (stream, _peer) = UnixStream::pair().expect("host socket pair");
+    let error = authenticate_caller(&stream, CallerAuth::CapsuleDaemon)
+        .expect_err("non-Linux host.sock relay must fail closed");
+    assert!(error.to_string().contains("disabled on non-Linux"));
+}
+
 #[cfg(target_os = "linux")]
 #[test]
-fn container_init_peer_status_requires_innermost_nspid_one() {
+fn container_init_peer_status_requires_exact_direct_container_nspid() {
     assert!(peer_is_container_init_process_status(
         "Name:\tjackin-capsule\nNSpid:\t424242\t1\n"
     ));
     assert!(!peer_is_container_init_process_status(
         "Name:\tagent\nNSpid:\t424243\t37\n"
+    ));
+    assert!(!peer_is_container_init_process_status(
+        "Name:\tnested-init\nNSpid:\t424244\t9\t1\n"
+    ));
+    assert!(!peer_is_container_init_process_status(
+        "Name:\tmalformed\nNSpid:\t1\n"
     ));
     assert!(!peer_is_container_init_process_status("Name:\tno-nspid\n"));
 }

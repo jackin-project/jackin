@@ -73,7 +73,7 @@ fn chrome_frame(
 /// separators on the bar cannot skew a byte-based search.
 fn chip_start_col(row: &str) -> u16 {
     let byte = row.find("jk-run-test").expect("chip start");
-    row[..byte].chars().count() as u16
+    u16::try_from(row[..byte].chars().count()).unwrap_or(u16::MAX)
 }
 
 fn row_text(buf: &ratatui::buffer::Buffer, y: u16) -> String {

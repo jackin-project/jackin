@@ -4,7 +4,8 @@
 //! Post-download artifact helpers shared by `agent_binary` and `capsule_binary`.
 //!
 //! Both modules fetch a binary (or a `.tar.gz` carrying one), verify its
-//! SHA-256, extract it, and set the executable bit. These steps are identical
+//! checksum (SHA-256, or SHA-512 where the upstream publishes it),
+//! extract it, and set the executable bit. These steps are identical
 //! across the two callers, so they live here once rather than as drifting
 //! copies. The network transfer itself lives in [`jackin_docker::net`]; this
 //! module owns everything that happens to the bytes once they land on disk,
@@ -14,7 +15,7 @@
 use crate::ImageError;
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha512};
 use std::io::Read as _;
 use std::path::Path;
 
@@ -116,6 +117,31 @@ pub fn hash_file_sha256(path: &Path) -> Result<String> {
     Ok(sha256_hex(hasher.finalize()))
 }
 
+/// SHA-512 of a file, returned as lowercase hex.
+///
+/// Same contract as [`hash_file_sha256`]: synchronous, caller offloads.
+/// Used for upstreams whose manifests publish SHA-512 (Antigravity).
+pub fn hash_file_sha512(path: &Path) -> Result<String> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "binary artifact hashing is called from image prep/offloaded launch work"
+    )]
+    let mut file = std::fs::File::open(path)
+        .with_context(|| format!("opening {} for hashing", path.display()))?;
+    let mut hasher = Sha512::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .with_context(|| format!("reading {} for hashing", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(sha256_hex(hasher.finalize()))
+}
+
 /// Parse the first whitespace-delimited token of a `.sha256` manifest as a
 /// lowercase 64-char hex digest, erroring if it isn't one.
 ///
@@ -127,6 +153,18 @@ pub fn parse_sha256_hex(text: &str) -> Result<String> {
     if !(hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit())) {
         return Err(ImageError::InvalidSha256Hex {
             got: hex.chars().take(80).collect(),
+        }
+        .into());
+    }
+    Ok(hex)
+}
+
+/// Validate a lowercase SHA-512 hex digest from an upstream manifest.
+pub fn parse_sha512_hex(text: &str) -> Result<String> {
+    let hex = text.split_whitespace().next().unwrap_or("").to_lowercase();
+    if !(hex.len() == 128 && hex.chars().all(|c| c.is_ascii_hexdigit())) {
+        return Err(ImageError::InvalidSha512Hex {
+            got: hex.chars().take(132).collect(),
         }
         .into());
     }

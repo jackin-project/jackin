@@ -98,14 +98,18 @@ async fn codex_launch_invokes_docker_run_with_codex_agent() {
     install_agent_binary_stubs(&paths);
     std::fs::write(
         &paths.config_file,
-        r#"[accounts.openai-test]
+        r#"default_launch = ["codex-main"]
+
+[accounts.openai-test]
 name = "OpenAI test"
 provider = "openai"
 [accounts.openai-test.credential]
 type = "api_key"
 value = "test-openai-key"
-[account_bindings]
-codex = "openai-test"
+
+[agent_configurations.codex-main]
+agent = "codex"
+account = "openai-test"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
@@ -174,8 +178,8 @@ model = "gpt-5"
         "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
     );
     assert!(
-        run_cmd.ends_with(" codex"),
-        "initial agent must be passed as container argv; got: {run_cmd}"
+        run_cmd.ends_with(" codex-main"),
+        "initial instance must be passed as container argv; got: {run_cmd}"
     );
     assert!(
         !run_cmd.contains("JACKIN_AGENT_MODEL_OVERRIDES"),
@@ -194,11 +198,18 @@ model = "gpt-5"
     let credentials_path = paths
         .data_dir
         .join(recorded_role_container_name(run_cmd))
-        .join("credentials/account-credentials.json");
+        .join(format!(
+            "credentials/{}",
+            jackin_protocol::account_credentials_filename("codex-main")
+        ));
     let credentials: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
-    assert_eq!(credentials["codex"]["OPENAI_API_KEY"], "test-openai-key");
-    assert_eq!(credentials.as_object().unwrap().len(), 1);
+    assert_eq!(credentials["schema_version"], 1);
+    assert_eq!(
+        credentials["credential"]["env"]["OPENAI_API_KEY"],
+        "test-openai-key"
+    );
+    assert_eq!(credentials["instance"], "codex-main");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -228,11 +239,13 @@ model = "gpt-5"
     let capsule_config = capsule_config_for_run(&paths, run_cmd);
     assert_eq!(capsule_config.role, "agent-smith");
     assert_eq!(capsule_config.workdir, "/workspace");
-    assert_eq!(capsule_config.agents, vec!["claude", "codex"]);
-    assert_eq!(capsule_config.models.get("codex").unwrap(), "gpt-5");
-    assert!(!capsule_config.models.contains_key("claude"));
-    // Multi-agent role (`agents = ["claude", "codex"]`) provisions
-    // credentials only for the actively selected agent (Codex).
+    assert_eq!(capsule_config.instances, vec!["codex-main"]);
+    assert_eq!(capsule_config.agents.get("codex-main").unwrap(), "codex");
+    assert_eq!(capsule_config.models.get("codex-main").unwrap(), "gpt-5");
+    assert_eq!(capsule_config.models.len(), 1);
+    // Multi-agent role (`agents = ["claude", "codex"]`) admits only the
+    // configured launch instance (Codex); unadmitted manifest agents get
+    // neither credentials nor capsule config entries.
     assert!(!run_cmd.contains("/home/agent/.claude"), "{run_cmd}");
     assert!(run_cmd.contains("/home/agent/.codex"), "{run_cmd}");
     assert!(!run_cmd.contains("/home/agent/.jackin"), "{run_cmd}");
@@ -256,14 +269,18 @@ async fn codex_launch_cli_agent_override_wins_over_workspace() {
     install_agent_binary_stubs(&paths);
     std::fs::write(
         &paths.config_file,
-        r#"[accounts.openai-test]
+        r#"default_launch = ["codex-main"]
+
+[accounts.openai-test]
 name = "OpenAI test"
 provider = "openai"
 [accounts.openai-test.credential]
 type = "api_key"
 value = "test-openai-key"
-[account_bindings]
-codex = "openai-test"
+
+[agent_configurations.codex-main]
+agent = "codex"
+account = "openai-test"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
@@ -341,7 +358,7 @@ plugins = []
         "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
     );
     assert!(
-        run_cmd.ends_with(" codex"),
-        "initial agent must be passed as container argv; got: {run_cmd}"
+        run_cmd.ends_with(" codex-main"),
+        "initial instance must be passed as container argv; got: {run_cmd}"
     );
 }
