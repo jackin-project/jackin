@@ -3,7 +3,7 @@
 ## A. Identity and pause status
 
 - Handoff ID: `jackin-velnor-ci-reliability--20260921T220036Z--root--51368cd2`
-- Created/updated: `2026-09-21T22:00:36Z`; status: `BLOCKED` until the pending read-only branch/worktree/verification auditors and independent handoff reviewer return. The checkpoint itself is still being committed and published now; the blocker is completeness of the inventory, not loss of the preserved known state.
+- Created: `2026-09-21T22:00:36Z`; checkpoint published `2026-09-21T22:03Z`; status: `BLOCKED` until the pending read-only branch/worktree/verification auditors and independent handoff reviewer return. The checkpoint itself is committed and published; the blocker is completeness of the inventory, not loss of the preserved known state.
 - Original goal status: `PAUSED_BY_USER`. Handoff status is administrative only; it is not an engineering completion claim.
 - Runtime status: goal controller for thread `01a0c53a-bb9c-74f1-b9bc-4c90b9e22327` was explicitly set to `paused` at `2026-09-21T21:59:18Z`. Active original workers were messaged to stop/preserve, then implementation workers were interrupted at safe boundaries. Remote GitHub jobs were not cancelled and must be re-observed.
 - Coordinator: `/root` / Codex. Primary repo/remote: `jackin-project/jackin` / `git@github.com:jackin-project/jackin.git` (sanitized).
@@ -160,4 +160,4 @@ Read this document and the source attachment completely; read current instructio
 
 ## Receipt
 
-Goal runtime pause verified; original work stopped/preserved to the degree documented; no merge or cleanup occurred. This unique handoff is on `goal/handoff-jackin-velnor-20260921t220036z-51368cd2`; draft PR/published SHA are to be inserted after the required final audit/review. Future integration and cleanup are documented only and require explicit resumption.
+Goal runtime pause verified; original work stopped/preserved to the degree documented; no merge or cleanup occurred. This unique handoff is on `goal/handoff-jackin-velnor-20260921t220036z-51368cd2`, draft [PR #1068](https://github.com/jackin-project/jackin/pull/1068), initial published commit `8a73c7039a8756e456a61e874472ef90f60ae7a1`. Future integration and cleanup are documented only and require explicit resumption.
