@@ -14,7 +14,7 @@ limitations = ["Manifests nested under tests/ or benches/ directories are treate
 [workflow]
 github_runner = "ubuntu-26.04"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
-files = ["ci-main.yml", "ci-policy.yml", "ci-pr.yml", "ci-unit-bun.yml", "ci-unit-docker.yml", "ci-unit-rust.yml", "ci-unit-swift.yml", "desktop-merge.yml", "desktop-scheduled.yml", "maintenance.yml", "nightly.yml", "release.yml", "renovate-upstream-sources.yml", "renovate-validate.yml", "renovate.yml"]
+files = ["ci-evidence.yml", "ci-main.yml", "ci-policy.yml", "ci-pr.yml", "ci-unit-bun.yml", "ci-unit-docker.yml", "ci-unit-rust.yml", "ci-unit-swift.yml", "desktop-merge.yml", "desktop-scheduled.yml", "maintenance.yml", "nightly.yml", "release.yml", "renovate-upstream-sources.yml", "renovate-validate.yml", "renovate.yml"]
 notes = ["Rust verification uses Mr. Boxington 1.12.0 with its GitHub cache backend and bounded snapshot keys (a key names the toolchain/image/linker compatibility class and the hashed source state, so a new source state saves a new snapshot and retention keeps generations bounded)."]
 
 [release]

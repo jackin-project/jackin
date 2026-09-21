@@ -3573,6 +3573,7 @@ name = "jackin-xtask"
 version = "0.6.4"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "fs4",
  "hex",

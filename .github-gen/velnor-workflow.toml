@@ -129,6 +129,28 @@ file = "desktop-scheduled.yml"
 profiles = ["desktop-scheduled"]
 name = "Desktop scheduled cadence"
 
+# Durable post-merge evidence: one scheduled job records all first attempts
+# and reruns for the CI/Main and Desktop obligations, then uploads the
+# fail-closed JSON/Markdown rollup. This is advisory until representative
+# evidence proves the collector itself reliable; observed failures remain red
+# in the report and are never recoded as success.
+[[check_profile]]
+id = "ci-evidence"
+name = "CI first-attempt evidence"
+schedule = "47 4 * * *"
+runner = "github"
+tasks = ["ci-evidence"]
+timeout_minutes = 20
+status = "advisory"
+artifacts = ["target/ci-evidence/"]
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "ci-evidence.yml"
+[declare.args]
+profiles = ["ci-evidence"]
+name = "CI first-attempt evidence"
+
 # Renovate upstream liveness (D2): the #994 renovate-validate.yml job that
 # verifies the pinned mise release still ships both construct architectures.
 # Product-owned (versions.env path + mise URLs) as task

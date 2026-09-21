@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true, features = ["derive"] }
 fs4 = { workspace = true }
 jackin-process = { workspace = true }

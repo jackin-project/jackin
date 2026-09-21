@@ -1,13 +1,14 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	00838aad9824cac8
+config	8bcd10e592bf4b8f
 scan	349a9bf738bfd45f
 generator	64
 [outputs]
 .github/AGENTS.md	02ebb7198c435e9b
 .github/actionlint.yaml	2c1dbf178fa8baa1
-.github/ci/project.toml	5d82d375aff36775
+.github/ci/project.toml	359dd5e5e65d4589
+.github/workflows/ci-evidence.yml	bbff8ac7386c7907
 .github/workflows/ci-main.yml	1788f8a2d4f0b781
 .github/workflows/ci-policy.yml	5c6dc274e3732bbc
 .github/workflows/ci-pr.yml	d6a6ada30f1e1abc
