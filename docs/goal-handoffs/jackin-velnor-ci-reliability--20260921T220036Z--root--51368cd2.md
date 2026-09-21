@@ -55,6 +55,15 @@ Audited known project roots `/Users/donbeave/Projects/tailrocks/jackin-project/j
 |---|---|---|---|---|
 | WT-J1 | `/Users/donbeave/Projects/tailrocks/jackin-project/jackin` primary | `docs/carried-failures-report` / `5a83caf` | GOAL_SHARED, initially clean | KEEP |
 | WT-JH | `/private/tmp/jackin-goal-handoff-20260921t220036z-51368cd2` linked | handoff branch / checkpoint | GOAL_EXCLUSIVE, created for pause | KEEP until handoff PR durable |
+| WT-J1044 | `/private/tmp/jackin-1044` linked | `migrate/apple-ci-generic` / `6f025e5a` | GOAL_EXCLUSIVE migration workspace | INTEGRATE_THEN_REMOVE |
+| WT-J1044C | `/private/tmp/jackin-1044-current` detached | `c52e912b` | GOAL_EXCLUSIVE audit workspace | INTEGRATE_THEN_REMOVE |
+| WT-J1044R | `/private/tmp/jackin-1044-review` detached | `6f025e5a` | GOAL_EXCLUSIVE review workspace | INTEGRATE_THEN_REMOVE |
+| WT-J1064A | `/private/tmp/jackin-1064-actions` detached | `f1402583` | GOAL_EXCLUSIVE collector audit | INTEGRATE_THEN_REMOVE |
+| WT-JD3 | `/private/tmp/jackin-d3-review.lzzUTz` detached | `4ba4a4cb` | GOAL_EXCLUSIVE D3 audit | INTEGRATE_THEN_REMOVE |
+| WT-JOTLP | `/private/tmp/jackin-daemon-otlp` linked | `test/daemon-otlp-lifecycle` / `da1936f1` | GOAL_EXCLUSIVE historical fix workspace | REVIEW_SHARED; merged fix must be mapped before deletion |
+| WT-JFIRST | `/private/tmp/jackin-first-attempt` linked | `ci/first-attempt-evidence` / `f1402583` | GOAL_EXCLUSIVE PR workspace | INTEGRATE_THEN_REMOVE |
+| WT-JRENDER | `/private/tmp/jackin-render-epoch` linked | `fix/usage-render-epoch` / `bf8411f3` | GOAL_EXCLUSIVE historical fix workspace | REVIEW_SHARED; merged fix mapping required |
+| WT-JREPORT | `/private/tmp/jackin-report-postmerge-correction` linked | `docs/report-live-results` / `0515ad33` | GOAL_EXCLUSIVE report PR workspace; worker interrupted | KEEP pending review correction |
 | WT-VR50 | `/tmp/velnor-review-1050-current` detached | `96b835d9` | GOAL_EXCLUSIVE, no edits/process | INTEGRATE_THEN_REMOVE |
 | WT-VR54 | `/private/tmp/velnor-1054-final` detached | `256c24bb` | GOAL_EXCLUSIVE, no edits/process | INTEGRATE_THEN_REMOVE |
 | WT-VR56 | `/tmp/velnor-review-1056.bQ9KwB` detached | `9f795b2e` | GOAL_EXCLUSIVE, no edits/process | INTEGRATE_THEN_REMOVE |
