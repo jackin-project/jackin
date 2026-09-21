@@ -1414,6 +1414,53 @@ fn minimax_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     )
 }
 
+fn antigravity_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    provider_usage_view_fixture(
+        "Antigravity",
+        "Antigravity",
+        "pilot@example.test",
+        Some("Antigravity Pro"),
+        "Updated 5m ago",
+        vec![
+            quota_bucket("Gemini · 5h", 73, Some("Resets in 1h 30m"), Some("On pace")),
+            // Legacy weekly fallback: no percent, no meter. The label head
+            // collides with the Gemini provider name, which used to route
+            // this row through the overview arm (S4/S5 parity).
+            text_bucket("Gemini · Weekly", "No data"),
+            quota_bucket(
+                "Other models · 5h",
+                12,
+                Some("Resets in 1h 30m"),
+                Some("5% in deficit"),
+            ),
+        ],
+    )
+}
+
+#[test]
+fn usage_provider_tab_renders_meterless_family_bucket_as_plain_row() {
+    let text = render_usage_dialog_snapshot_for_view(
+        100,
+        32,
+        UsageDialogTab::Provider,
+        antigravity_usage_view_fixture(),
+    );
+    assert!(
+        text.contains("73% left"),
+        "metered family bucket must render its percent:\n{text}"
+    );
+    // Plain label/value row — never the overview join, which glues label and
+    // value without a separator ("Gemini · WeeklyNo data").
+    assert!(
+        text.contains("Gemini · Weekly No data"),
+        "meter-less family bucket must render as a plain row:\n{text}"
+    );
+    assert!(
+        !text.contains("WeeklyNo data"),
+        "overview-arm misroute must not garble the row:\n{text}"
+    );
+}
+
 fn render_usage_dialog_snapshot(width: u16, height: u16, tab: UsageDialogTab) -> String {
     render_usage_dialog_snapshot_for_view(width, height, tab, usage_view_fixture())
 }

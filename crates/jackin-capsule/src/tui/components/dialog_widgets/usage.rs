@@ -313,10 +313,15 @@ pub(crate) fn usage_lines_for_row(
                 usage_quota_bucket_lines(bucket, value, accent, context.width, lines);
             }
         }
-        _ if is_overview_provider_label(label) => {
+        // Overview-tab rows only: the provider tab always carries the
+        // identity header (`context.provider`), so a meter-less bucket whose
+        // label head collides with a provider name (e.g. the Antigravity
+        // "Gemini · Weekly" fallback row) must not take the overview arm and
+        // render garbled (S4/S5 parity).
+        _ if context.provider.is_none() && is_overview_provider_label(label) => {
             usage_overview_provider_lines(label, value, context.width, lines);
         }
-        _ if is_overview_provider_row(value) => {
+        _ if context.provider.is_none() && is_overview_provider_row(value) => {
             usage_legacy_overview_provider_lines(label, value, lines);
         }
         _ => lines.push(Line::from(vec![

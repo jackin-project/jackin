@@ -1276,6 +1276,80 @@ fn metric_group_meter_only_for_window_kind() {
     assert_eq!(unknown.meter_percent(), None);
 }
 
+#[test]
+fn meter_color_grades_by_canonical_quota_state_not_percent() {
+    use super::meter_style;
+    use ratatui::style::Color;
+
+    // Exhaustion and failure read red, warnings amber, everything else the
+    // neutral default — regardless of the bar's fill percent. The Capsule
+    // accent reads the same API severity the projection maps into these
+    // states, so both surfaces agree (S4/S5 parity).
+    assert_eq!(
+        meter_style(UsageQuotaStateV1::Exhausted).fg,
+        Some(Color::Red)
+    );
+    assert_eq!(meter_style(UsageQuotaStateV1::Error).fg, Some(Color::Red));
+    assert_eq!(
+        meter_style(UsageQuotaStateV1::Warning).fg,
+        Some(Color::Yellow)
+    );
+    for state in [
+        UsageQuotaStateV1::Available,
+        UsageQuotaStateV1::NotStarted,
+        UsageQuotaStateV1::Unsupported,
+        UsageQuotaStateV1::Unavailable,
+        UsageQuotaStateV1::NoPermission,
+        UsageQuotaStateV1::Unknown,
+        UsageQuotaStateV1::NotApplicable,
+    ] {
+        assert_eq!(
+            meter_style(state).fg,
+            Some(Color::Green),
+            "{state:?} must keep the neutral meter color"
+        );
+    }
+}
+
+#[test]
+fn window_group_summary_uses_left_like_windows_and_capsule() {
+    // "73% left" matches the principal-window value labels and the Capsule
+    // bucket presentation; a third word ("remaining") for the same meaning
+    // would break cross-surface label parity (S4/S5).
+    let group = super::UsageMetricGroup {
+        group_id: "g".to_owned(),
+        rank: 0,
+        kind: jackin_protocol::usage_broker::UsageMetricGroupKindV1::Window,
+        label: "Weekly".to_owned(),
+        scope: jackin_protocol::usage_broker::UsageMetricScopeV1::default(),
+        observed_at_epoch: None,
+        fetched_at_epoch: 1_800_000_000,
+        last_success_at_epoch: Some(1_800_000_000),
+        phase: UsageFreshnessPhaseV1::Current,
+        is_stale: false,
+        quota_state: UsageQuotaStateV1::Available,
+        value: jackin_protocol::usage_broker::UsageMetricValueV1::Window {
+            remaining_percent: Some(
+                jackin_protocol::usage_broker::UsagePercent::new(73).expect("valid percent"),
+            ),
+            remaining_raw_percent: Some(73),
+            used_percent: None,
+            used_raw_percent: None,
+            period: jackin_protocol::usage_broker::UsageMetricPeriodV1::Calendar {
+                granularity: jackin_protocol::usage_broker::UsageCalendarPeriodV1::Weekly,
+            },
+            unit: None,
+        },
+        reset_at_epoch: None,
+        renews_at_epoch: None,
+        issues: Vec::new(),
+    };
+    assert_eq!(
+        super::metric_group_value_summary(&group).as_deref(),
+        Some("73% left · weekly")
+    );
+}
+
 fn backend_text(terminal: &ratatui::Terminal<ratatui::backend::TestBackend>) -> String {
     let buffer = terminal.backend().buffer().clone();
     (0..buffer.area.height)
