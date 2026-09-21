@@ -77,3 +77,4 @@ pub const CYAN_DIM: Rgb = Rgb::new(0, 120, 120);
 pub const ACTION_ACCENT: Rgb = Rgb::new(180, 255, 180);
 /// Disclosure-control accent.
 pub const DISCLOSURE_ACCENT: Rgb = Rgb::new(255, 208, 102);
+// PROBE §14b7 commit A: green comment-only change (fork validation, DO NOT MERGE).
