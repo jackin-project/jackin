@@ -20,6 +20,7 @@ mod ci_route;
 mod ci_stage;
 mod ci_target;
 mod ci_toolchain;
+mod clippy_affected;
 mod cmd;
 mod construct;
 mod container_paths_gate;
@@ -94,6 +95,14 @@ enum Command {
     /// Resolve affected crates and reusable test inputs in one CI step.
     #[command(name = "ci-route")]
     CiRoute(ci_route::CiRouteArgs),
+    /// Run Clippy over the crates affected by worktree changes.
+    ///
+    /// Pre-commit hook entry point (`mise run clippy-affected`): selects
+    /// workspace members via the shared affected-crates closure plus
+    /// detached packages (`crates/*/fuzz`, `vendor/arrayref`) and runs
+    /// Clippy with the exact CI flags.
+    #[command(name = "clippy-affected")]
+    ClippyAffected(clippy_affected::ClippyAffectedArgs),
     /// Stage the prepared CI binary set as one atomic artifact operation.
     #[command(name = "ci-stage")]
     CiStage(ci_stage::CiStageArgs),
@@ -300,6 +309,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::AffectedCrates(args) => affected_crates::run(args),
+        Command::ClippyAffected(args) => clippy_affected::run(args),
         Command::Construct(cmd) => construct::run(cmd),
         Command::Desktop(cmd) => desktop::run(cmd),
         Command::Ci(args) => ci::run(args),

@@ -1,0 +1,133 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+// Pre-commit hooks for jackin (hk 2.0.1; pinned in mise.toml [tools] and
+// mise.lock, and in the Pkl URL below).
+//
+// Install once per checkout (idempotent):
+//   mise run hooks-install        # hk install --mise (repo-scoped)
+// The local launcher runs steps through `mise x`, so no shell activation
+// is needed — but Git must find `mise` on its runtime PATH, which holds
+// for terminals with mise shims and fails closed ("mise: command not
+// found") for GUI clients without them. The global launcher
+// (`hk install --global --mise`) is GUI-robust but forces `--staged`,
+// which disables stashing entirely (verified against hk 2.0.1) —
+// incompatible with the staged-snapshot isolation below. See
+// CONTRIBUTING.md ("Git hooks") for the full contract.
+//
+// Hook mode is REVIEW, not auto-stage: fixers run against the staged
+// snapshot (stash = "git" isolates staged content, including untracked
+// files, and restores afterwards with backup patches under
+// $HK_STATE_DIR/patches/), fixes are left unstaged, and the hook fails so
+// the author reviews the diff, stages, and retries. `hk fix` applies the
+// same fixes outside a commit.
+//
+// Single source of truth: every step command below is textually identical
+// to the command CI runs; steps invoke tools directly (never `mise run`)
+// because `mise` itself is not on PATH inside hook steps launched for GUI
+// git. Keep each command in sync with its cited definition:
+//   - fmt/check: `mise run fmt` → `cargo fmt --check` (CI format gate)
+//   - fmt/fix: `mise run fmt-fix` → `cargo fmt`
+//   - clippy: `mise run clippy-affected` → `cargo xtask clippy-affected`
+//   - xtask-lint: `cargo xtask lint --strict` (CI `ci --only lint` partition)
+//   - actionlint: `cargo xtask ci --only lint` actionlint step (*.yml only)
+//   - swiftlint: `mise run desktop-lint`
+//   - swift-format: `mise run desktop-format-check` / `desktop-format`
+// Documented divergences:
+//   - clippy runs per-package over the affected closure with the exact CI
+//     flags (--locked --profile test --all-targets --all-features
+//     -p <pkg> -- -D warnings, cf. .github/ci/project.toml per-unit
+//     commands) instead of CI's workspace-wide `cargo clippy` (cf. the
+//     lint partition in crates/jackin-xtask/src/ci.rs). The closure
+//     (changed members + reverse dependents + detached fuzz/arrayref
+//     packages + cross-crate file inputs, widened to workspace when
+//     unprovable) is implemented in
+//     crates/jackin-xtask/src/clippy_affected.rs and proven by its tests.
+//     Full workspace Clippy stays in CI / `mise run lint`.
+//   - `hk check --all` runs the clippy step scoped by `git status`, not
+//     literally over every file; on a clean tree it skips green.
+amends "package://github.com/jdx/hk/releases/download/v2.0.1/hk@2.0.1#/Config.pkl"
+
+steps {
+  ["fmt"] {
+    // Everything `cargo fmt --check` can observe: sources, manifests
+    // (cargo fmt normalizes them), formatting rules, and the toolchain
+    // that provides rustfmt. Mirrors `mise run fmt` / `mise run fmt-fix`.
+    glob = List("**/*.rs", "**/Cargo.toml", "rustfmt.toml", ".rustfmt.toml", "rust-toolchain.toml")
+    check = "cargo fmt --check"
+    fix = "cargo fmt"
+  }
+  ["clippy"] {
+    // Trigger on anything except the statically Clippy-irrelevant set;
+    // `cargo xtask clippy-affected` re-derives the exact closure (member
+    // reverse-dependents, detached fuzz/arrayref packages, cross-crate
+    // file inputs) and skips when nothing relevant changed. Runs after
+    // fmt so diagnostics describe formatted sources. Mirrors
+    // `mise run clippy-affected`.
+    glob = "**/*"
+    exclude = List(
+      "native/**",
+      ".github/**",
+      "docs/**",
+      "research/**",
+      "roadmap/**",
+      "plans/**",
+      "prompts/**",
+      ".firecrawl/**",
+      "scripts/**",
+      "**/*.md",
+      "**/*.mdx",
+      "mise.toml",
+      "mise.lock",
+      "hk.pkl",
+      "flaky-tests.toml",
+      ".config/nextest.toml",
+      "rustfmt.toml",
+      ".rustfmt.toml"
+    )
+    check = "cargo xtask clippy-affected"
+    depends = "fmt"
+  }
+  // NOTE: no `cargo xtask lint` step by design (parent review 2026-09-21).
+  // The umbrella is red on main (container-paths + telemetry-registry +
+  // ratchet, both strict and non-strict) and is enforced by zero CI jobs
+  // (no generated unit, desktop graph, or mise aggregate invokes it), so
+  // a hook step would block every commit on debt no pipeline requires.
+  // Re-add only after the debt is green AND a CI job enforces it; see
+  // plans/cicd-reliability/FAILURE_LEDGER.md (xtask-gate coverage gap).
+  ["actionlint"] {
+    // Tightened to *.yml: CI (crates/jackin-xtask/src/ci.rs) lints *.yml
+    // only, while the hk builtin also matches *.yaml.
+    glob = ".github/workflows/*.yml"
+    check = "actionlint {{files}}"
+  }
+  ["swiftlint"] {
+    // Mirrors `mise run desktop-lint` (do not pass files: an explicit
+    // path list would disable SwiftLint's nested-config discovery).
+    // Skipped where swiftlint is unavailable (non-macOS). The `|| true`
+    // matters: hk's exec() throws on nonzero exit, so a bare
+    // `command -v` would fail the step instead of skipping it.
+    glob = "native/**/*.swift"
+    condition = "exec('command -v swiftlint || true') != ''"
+    check = "cd native && swiftlint lint --strict"
+  }
+  ["swift-format"] {
+    // Mirrors `mise run desktop-format-check` / `mise run desktop-format`
+    // (excludes generated JackinUsageBindings, like the tasks). Skipped
+    // where xcrun is unavailable (non-macOS); nothing here assumes macOS
+    // unconditionally.
+    glob = "native/**/*.swift"
+    condition = "exec('command -v xcrun || true') != ''"
+    check = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
+    fix = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format format --configuration .swift-format --in-place --parallel"
+  }
+}
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    stage = false
+    fail_on_fix = true
+  }
+}

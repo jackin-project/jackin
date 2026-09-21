@@ -14,9 +14,72 @@ Employer contributions: confirm authorization before submitting. Use personal em
 
 1. Fork. Branch feature off `main`.
 2. Run `mise install` from the repo root to install the pinned toolchain and dev tools.
-3. Change. Sign every commit: `git commit -s`.
+3. Run `mise run hooks-install` once per checkout to install the pre-commit hooks (see "Git hooks" below).
+4. Change. Sign every commit: `git commit -s`.
 4. Open PR describing problem solved. CI must pass.
 5. Optional blame hygiene: `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` skips mass layout/fmt sweeps listed in that file.
+
+## Git hooks
+
+Pre-commit checks run via [hk](https://hk.jdx.dev) (`hk.pkl` at the repo
+root; hk 2.0.1 pinned in `mise.toml`/`mise.lock`). Install per checkout —
+idempotent, safe to re-run:
+
+```sh
+mise run hooks-install   # hk install --mise (repo-scoped, via `mise x`)
+```
+
+No shell activation needed. Requirements: Git 2.54+ (config-based hooks;
+Apple Git 2.54 meets the floor exactly) and `mise` on Git's runtime PATH —
+true in terminals with mise shims, otherwise the hook fails closed with
+`mise: command not found` (use a terminal or add the shims directory to
+the GUI client's PATH). The first hook run builds `jackin-xtask`
+(one-time ~1-2 min); later runs reuse the cache.
+
+What runs on every commit (see `hk.pkl` for the exact commands — each
+mirrors the CI definition it cites):
+
+- `fmt`: `cargo fmt --check` (workspace; fix: `mise run fmt-fix`)
+- `clippy`: `cargo xtask clippy-affected` — Clippy with the exact CI flags
+  over the affected closure (changed crates + reverse dependents +
+  detached fuzz/arrayref packages + cross-crate file inputs; widens to
+  the workspace when unprovable)
+- `actionlint`: workflows (`*.yml` only, matching CI)
+- `swiftlint`, `swift-format`: `native/**` on macOS; skipped elsewhere
+
+Review mode, not auto-stage: when a fixer (rustfmt, swift-format) changes
+a file, the hook applies the fix, leaves it **unstaged**, and fails so
+you review the diff, stage, and retry:
+
+```sh
+git commit -m "..."   # hook applies rustfmt fix, fails for review
+git diff              # review the fix
+git add -p && git commit -m "..."
+```
+
+`hk fix` applies the same fixes outside a commit; `hk check` runs checks
+on modified files. Partial commits are safe: the hook stashes unstaged
+and untracked work, validates the staged snapshot only, then restores —
+byte-identical when green. Backup patches are kept under
+`~/.local/state/hk/patches/`; if a restore ever fails, read hk's error
+first, inspect `git status` / `git stash list`, and keep the backup until
+recovered. Bypass with `HK=0 git commit` (emergencies only).
+
+Two intentional divergences from CI: hook Clippy is closure-scoped while
+CI lints the workspace (same flags; full coverage stays in CI /
+`mise run lint`), and `hk check --all` scopes Clippy by `git status`
+(skips green on a clean tree). The global install
+(`hk install --global --mise`) is GUI-robust but forces `--staged`,
+which disables stashing — hence the repo-scoped bootstrap above.
+
+Linux developers: same setup (`mise install`, `mise run hooks-install`;
+hook commands are POSIX `sh` and the Swift steps skip themselves where
+`swiftlint`/`xcrun` are absent). CI-on-Linux (the velnor Rust lane on
+`ubuntu-26.04`) proves the shared pieces there: per-package `fmt`,
+`clippy -- -D warnings`, and the `jackin-xtask` nextest suite including
+the affected-closure tests. Hook firing/stash behavior is verified on
+macOS; it rides identical hk + mise artifacts on Linux (both pinned in
+`mise.lock`).
 
 ## Branching
 
