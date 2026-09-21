@@ -12,6 +12,10 @@ use super::{
     HostSurfaceId, OpaqueCredentialHandle, ProviderCredentialEnvOutcome,
     ProviderCredentialEnvResolution, ProviderCredentialEnvResolver,
     ProviderCredentialIdentityOutcome, ProviderCredentialRefreshOutcome,
+    ProviderCredentialSourceMaterial,
+};
+use jackin_protocol::usage_broker::{
+    UsageCredentialSourceIdentity, usage_credential_material_fingerprint,
 };
 
 /// Secret-source result retained only long enough to enter the opaque cache.
@@ -175,9 +179,11 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
         let (outcome, secret, handle) = match resolved.outcome {
             ProviderCredentialSecretOutcome::Resolved(secret) if !secret.is_empty() => {
                 let reused = state.cache.iter().find_map(|cached| {
-                    (cached.owner == entry.owner && cached.secret.as_deref() == Some(&secret))
-                        .then(|| cached.handle.clone())
-                        .flatten()
+                    (cached.owner == entry.owner
+                        && cached.declaration == declaration
+                        && cached.secret.as_deref() == Some(&secret))
+                    .then(|| cached.handle.clone())
+                    .flatten()
                 });
                 let handle = reused.unwrap_or_else(|| {
                     state.next_handle = state.next_handle.saturating_add(1);
@@ -278,6 +284,32 @@ impl<S: ProviderCredentialSecretSource> ProviderCredentialEnvResolver
         ProviderCredentialRefreshOutcome::Snapshot(Box::new(
             crate::usage::provider_credential_snapshot(surface.id(), key, &secret),
         ))
+    }
+
+    fn source_material(
+        &self,
+        _surface: HostSurfaceId,
+        key: &str,
+        handle: &OpaqueCredentialHandle,
+    ) -> Option<ProviderCredentialSourceMaterial> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.cache.iter().find_map(|cached| {
+            (cached.key == key && cached.handle.as_ref() == Some(handle))
+                .then(|| {
+                    Some(ProviderCredentialSourceMaterial {
+                        source: UsageCredentialSourceIdentity::from_declaration(
+                            &cached.declaration,
+                        ),
+                        material_fingerprint: usage_credential_material_fingerprint(
+                            cached.secret.as_deref()?,
+                        ),
+                    })
+                })
+                .flatten()
+        })
     }
 }
 
