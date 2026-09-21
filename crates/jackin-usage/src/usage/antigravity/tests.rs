@@ -83,6 +83,27 @@ fn summary_wrapped_and_empty_wins_over_legacy() {
 }
 
 #[test]
+fn summary_live_command_shape_parses() {
+    // The live CLI nests groups under `command.data` — same pools as the
+    // bare shape, not a legacy fallback.
+    let live = r#"{"command": {"data": {"groups": [{"buckets": [
+        {"bucketId": "gemini-5h", "remainingFraction": 0.5, "resetTime": "2026-09-17T14:00:00Z"},
+        {"bucketId": "3p-weekly", "remainingFraction": 0.9, "resetTime": "2026-09-21T00:00:00Z"}
+    ]}]}}, "models": {
+        "gemini-x": {"displayName": "Gemini X", "quotaInfo": {"remainingFraction": 0.1}}
+    }}"#;
+    let usage = parse_antigravity_usage_output(live).expect("live shape parses");
+    assert!(!usage.legacy_fallback);
+    assert_eq!(usage.pools.len(), 2);
+    let buckets = antigravity_buckets(&usage, 1_781_728_000);
+    assert_eq!(buckets.len(), 2);
+    assert_eq!(buckets[0].label, "Gemini · 5h");
+    assert_eq!(buckets[0].remaining_percent, Some(50));
+    assert_eq!(buckets[1].label, "Other models · Weekly");
+    assert_eq!(buckets[1].remaining_percent, Some(90));
+}
+
+#[test]
 fn summary_absent_fraction_is_unknown_not_depleted() {
     let usage = parse_antigravity_usage_output(
         r#"{"buckets": [{"bucketId": "gemini-5h", "resetTime": "2026-09-17T14:00:00Z"}]}"#,

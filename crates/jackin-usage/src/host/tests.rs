@@ -332,6 +332,48 @@ fn unavailable_and_refreshing_never_invent_percent() {
 }
 
 #[test]
+fn snapshot_surfaces_discovery_diagnostic_instead_of_refreshing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = HostUsageRuntime::new();
+    // Logged-out claude (malformed) + missing kimi: both must read as an
+    // honest needs-login view, never the bare `refreshing` placeholder.
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: Vec::new(),
+        diagnostics: vec![
+            UsageDiscoveryDiagnostic {
+                surface_id: Some("claude".to_owned()),
+                scope_label: "account claude".to_owned(),
+                issue: UsageDiscoveryIssue::CredentialMalformed,
+            },
+            UsageDiscoveryDiagnostic {
+                surface_id: Some("kimi".to_owned()),
+                scope_label: "account kimi".to_owned(),
+                issue: UsageDiscoveryIssue::CredentialMissing,
+            },
+        ],
+        candidates: Vec::new(),
+        bindings: Vec::new(),
+    };
+    runtime
+        .open_with_validated_discovery(HostRuntimeConfig::under_data_dir(dir.path()), discovery)
+        .expect("open");
+    for surface in ["claude", "kimi"] {
+        let view = runtime.snapshot(surface).expect("snapshot");
+        assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
+        assert!(!view.is_refreshing_placeholder());
+        let error = view.last_error.as_deref().expect("diagnostic error");
+        assert!(
+            error.contains("log in"),
+            "diagnostic must name the login action: {error}"
+        );
+    }
+    // A surface with no diagnostic keeps the genuine cold placeholder.
+    let cold = runtime.snapshot("codex").expect("snapshot");
+    assert!(cold.is_refreshing_placeholder());
+}
+
+#[test]
 fn disable_surface_removes_from_list_and_blocks_snapshot() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut runtime = open_runtime(dir.path());

@@ -625,6 +625,9 @@ fn forwarding_requirement(binding: &ValidatedCredentialBinding) -> ForwardingReq
             material: material.clone(),
         },
         ValidatedCredentialSource::Capability => ForwardingRequirement::Capability,
+        // Unpollable bindings carry no host source to forward; like
+        // capability-only bindings, they stay host-local.
+        ValidatedCredentialSource::Unpollable => ForwardingRequirement::Capability,
     }
 }
 
@@ -1124,9 +1127,12 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
             // Profile credentials are already materialized into the launch
             // auth tree and do not use the mutable env/op resolver lane.
             ValidatedCredentialSource::Profile(_) => return Ok(()),
-            // An env binding without a source proof and a capability-only
-            // binding have no host source to authorize.
-            ValidatedCredentialSource::Env { .. } | ValidatedCredentialSource::Capability => {
+            // An env binding without a source proof, a capability-only
+            // binding, and an unpollable binding have no host source to
+            // authorize.
+            ValidatedCredentialSource::Env { .. }
+            | ValidatedCredentialSource::Capability
+            | ValidatedCredentialSource::Unpollable => {
                 return Err(credential_scope_mismatch());
             }
         };
