@@ -48,14 +48,14 @@ All UNVERIFIED on final candidate. Evidence owners in parentheses.
 |---|---|---|
 | P01 | First-run discovery imports logins; one damaged source blocks nothing | S1 PASS @62c2eebf (/tmp/jackin-s1-acc1/artifacts/); wart F5: fresh scan under-reports count, fix dispatched |
 | P02 | Settings Scan draft/apply/cancel, preserves edits, explicit no-add/partial | S2 PASS @62c2eebf, genuine pty (29/29 checks, /tmp/jackin-st-s2s6/evidence/) |
-| P03 | Add subscription/profile/key/env/1Password; inference vs usage permission split; redacted | S3 FAIL @62c2eebf: F1 op:// hard-errors without `op`, F2 key accounts never refresh, F3 gap messages swallowed; fixes dispatched |
-| P04 | Usage async refresh + detail incl metric groups, balances, resets, honest unavailable | S4 host PASS @62c2eebf (/tmp/jackin-su-acc1002/s4/); container halves BLOCKED-no-runtime |
-| P05 | Precedence: launch > workspace-role > workspace > global > sole-eligible; atomic reject | S5 PASS @62c2eebf, 17-case matrix (/tmp/jackin-s5-acc1/artifacts/); finding F4 dry-run/launch drift, fix dispatched |
-| P06 | Container admits exactly A/B/C; D absent incl direct relay requests | S6-unit PASS @62c2eebf (dry-run + relay 15/15); container E2E BLOCKED (no docker/OrbStack; apple-container no kernel) |
-| P07 | Same identity across clients, no duplicate quota; exact OpenRouter model persists | S7 identity FAIL @62c2eebf (same F2: 2 caps not 1); model config leg PASS byte-exact, plan leg re-probe dispatched (F7) |
-| P08 | Tabs/splits/reconnect/restore preserve account/provider/model/instance binding | BLOCKED (needs running container) + unit partial PASS (relay 12/12, binding 3/3) |
-| P09 | Full catalog represented; every route proven or explicitly blocked with evidence | S9 host PASS @62c2eebf (12/12 surfaces honest); OrbStack lane BLOCKED (no OrbStack, macOS 27 vs 26) |
-| P10 | Native/protocol parity, independent review, accurate handoff | S10 wire/process PASS @62c2eebf (122+1088+631 green); F6 e2e flake fix dispatched; docker-e2e + desktop-release BLOCKED |
+| P03 | Add subscription/profile/key/env/1Password; inference vs usage permission split; redacted | S3 PASS @c5aa9eac re-run (5/5: op-absent persists, op-unsigned honest error, key refresh, specific gaps, DENY zero-network; /tmp/jackin-re3/artifacts/) |
+| P04 | Usage async refresh + detail incl metric groups, balances, resets, honest unavailable | S4 host PASS + instance PASS @c5aa9eac (live container status/accounts/verify/cache/sync; /tmp/jackin-rec/evidence/) |
+| P05 | Precedence: launch > workspace-role > workspace > global > sole-eligible; atomic reject | S5 PASS @c5aa9eac re-run, 17/17 incl fixed case V (lists win; /tmp/jackin-re57/s5/) |
+| P06 | Container admits exactly A/B/C; D absent incl direct relay requests | S6-E2E PASS @c5aa9eac (real containers: D 0× in agent.toml/creds/picker/snapshot/registry; relay probe A/B/C ok, D unauthorized; /tmp/jackin-rec/evidence/) |
+| P07 | Same identity across clients, no duplicate quota; exact OpenRouter model persists | S7 PASS @c5aa9eac re-run (1 cap/1 row/prov 2; model byte-exact top + per-instance; /tmp/jackin-re57/s7-ident, s7-model/) |
+| P08 | Tabs/splits/reconnect/restore preserve account/provider/model/instance binding | S8 PARTIAL @c5aa9eac (tabs/splits/reconnect PASS via capsule TUI; restore LIMIT: daemon restart loses tabs — F9 probe dispatched) |
+| P09 | Full catalog represented; every route proven or explicitly blocked with evidence | S9 host PASS + OrbStack relay harness PASS @c5aa9eac; repo docker:: 0/4 FAIL test-bug F8 (v1 vs v2, fix dispatched) |
+| P10 | Native/protocol parity, independent review, accurate handoff | S10 18/23 @c5aa9eac (F6 fixed 8/8 host; dind sentinel 1 FAIL — F10 probe dispatched; F8 covers usage_broker docker 0/4) |
 
 ## Scenario matrix (goal §1-10)
 
