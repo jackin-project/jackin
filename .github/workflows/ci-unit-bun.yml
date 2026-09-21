@@ -163,12 +163,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-fff18da87096d8546f5c313f87c36be39ae07069-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-7480b78ca793c66db198c69ae417aa9e7f4c095f-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: fff18da87096d8546f5c313f87c36be39ae07069
+          EXPECTED_REVISION: 7480b78ca793c66db198c69ae417aa9e7f4c095f
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -182,7 +182,7 @@ jobs:
       - name: Add Velnor workflow runtime to PATH
         shell: bash
         env:
-          EXPECTED_REVISION: fff18da87096d8546f5c313f87c36be39ae07069
+          EXPECTED_REVISION: 7480b78ca793c66db198c69ae417aa9e7f4c095f
         run: |
           set -euo pipefail
           home="$RUNNER_TEMP/velnor-workflow-runtime-artifact"
@@ -338,10 +338,35 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@fff18da87096d8546f5c313f87c36be39ae07069
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@7480b78ca793c66db198c69ae417aa9e7f4c095f
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github
           cache_cargo_primary: ${{ steps.cache.outputs.cache-primary-key }}
           cache_cargo_matched: ${{ steps.cache.outputs.cache-matched-key }}
+      - name: Record unit result
+        if: ${{ always() && inputs.unit_admission == 'github' }}
+        env:
+          VELNOR_RESULT_UNIT: ${{ inputs.unit }}
+          VELNOR_RESULT_LANE: github
+          VELNOR_RESULT_OUTCOME: ${{ job.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$VELNOR_RESULT_OUTCOME" in
+            success) outcome=success ;;
+            cancelled) outcome=cancelled ;;
+            *) outcome=failure ;;
+          esac
+          mkdir -p .velnor-ci-results
+          jq -n --arg unit "$VELNOR_RESULT_UNIT" --arg lane "$VELNOR_RESULT_LANE" --arg outcome "$outcome" '{results: [{unit: $unit, lane: $lane, outcome: $outcome}]}' > ".velnor-ci-results/result-$VELNOR_RESULT_UNIT-$VELNOR_RESULT_LANE.json"
+      - name: Upload unit result
+        if: ${{ always() && inputs.unit_admission == 'github' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: velnor-result-${{ inputs.unit }}-github
+          path: .velnor-ci-results/result-${{ inputs.unit }}-github.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
