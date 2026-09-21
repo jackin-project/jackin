@@ -18,6 +18,7 @@ fn request_round_trip_preserves_generation_and_force_semantics() {
             observed_generation: 7,
             force: true,
         },
+        launch_credential_scope: None,
     };
 
     let bytes = serde_json::to_vec(&request).unwrap();
@@ -71,6 +72,7 @@ fn projection_operations_and_publication_response_round_trip() {
             protocol_version: USAGE_BROKER_PROTOCOL_VERSION.into(),
             build_id: "test-build".into(),
             operation,
+            launch_credential_scope: None,
         };
         let bytes = serde_json::to_vec(&request).unwrap();
         assert_eq!(
@@ -105,12 +107,45 @@ fn scoped_capability_request_round_trip_preserves_exact_capability() {
             observed_generation: 3,
             force: false,
         },
+        launch_credential_scope: None,
     };
 
     let bytes = serde_json::to_vec(&request).unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains("account_id"));
     assert_eq!(
         serde_json::from_slice::<UsageBrokerRequest>(&bytes).unwrap(),
+        request
+    );
+}
+
+#[test]
+fn launch_scope_round_trip_contains_identity_and_fingerprint_without_material() {
+    let scope = UsageCredentialScope {
+        sources: BTreeSet::from([UsageCredentialSourceProof {
+            account_id: "account-a".to_owned(),
+            surface_id: "zai".to_owned(),
+            key: "ZHIPU_API_KEY".to_owned(),
+            source: UsageCredentialSourceIdentity::OnePassword {
+                reference: "op://vault/item/field".to_owned(),
+                account: Some("work".to_owned()),
+            },
+            material_fingerprint: usage_credential_material_fingerprint("S1"),
+        }]),
+    };
+    let request = UsageBrokerRequest {
+        protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+        build_id: "build".to_owned(),
+        operation: UsageBrokerOperation::Current {
+            capability: capability(),
+        },
+        launch_credential_scope: Some(scope.clone()),
+    };
+    let encoded = serde_json::to_vec(&request).unwrap();
+    let text = String::from_utf8_lossy(&encoded);
+    assert!(!text.contains("S1"));
+    assert!(text.contains("op://vault/item/field"));
+    assert_eq!(
+        serde_json::from_slice::<UsageBrokerRequest>(&encoded).unwrap(),
         request
     );
 }
@@ -128,6 +163,7 @@ fn stdio_tunnel_envelope_round_trips_without_account_metadata() {
                     surface_id: "claude".to_owned(),
                 },
             },
+            launch_credential_scope: None,
         },
     };
     let bytes = serde_json::to_vec(&request).unwrap();
