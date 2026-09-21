@@ -1,59 +1,46 @@
-schema = 1
+schema = 2
 
 [generator]
 repository = "jackin-project/jackin"
 # D19 pin: immutable Velnor source for this generated tree. The matching
-# published runtime is velnor-workflow-runtime-v1-64813ff2fdf17dad
-# (closure 64813ff2fdf17dada63424131bcf0078010f8ed25edd59b46c497432b870b46c).
-revision = "f406baff8dc594493032245b8528870a74506f65"
+# published runtime is velnor-workflow-runtime-v1-40beba20e876d68d
+# (closure 40beba20e876d68d2282dfad73eab6078416082d54c3cb8f6155dfde66fd2dee).
+# Velnor f3b94af3 (PR #1031, Inc2): generic Apple CI with [native.apple]
+# cargo_profile + deployment_floor; schema-2 tree rendered by this pin.
+revision = "f3b94af3eb0b30a6ea0a92120b58706ef9397360"
 
-[scan]
-exclude = ["native/Package.swift", "native/.swiftpm/**"]
+# No [scan] exclude: native/Package.swift is scanned. The pre-migration
+# exclusion plus the synthetic swift-package-native unit are gone; generic
+# discovery owns the SwiftPM consumer (binaryTarget join), the XcodeGen app,
+# and the BoltFFI producer with its product edge.
 
-# Runner placement: keep both backends for manual dispatch; automatic events
-# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
-# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
+# Runner placement: the visibility-based runner policy resolves exactly one
+# provider from .github-gen/visibility.toml. This repository is public, so
+# every executable job runs on GitHub-hosted runners only; a Velnor
+# selector or universe here would be a contradictory rejection. The
+# pre-migration schema-1 rationale (automatic events stay GitHub-only so
+# ci-required is not blocked by queued self-hosted jobs when the Velnor
+# fleet is unavailable) is now structural: the singleton admits no second
+# provider, and there is no dispatch-side provider default to declare.
+# Apple-platform units land on the hosted macOS image by platform, Linux
+# units on the selector below; check profiles and release jobs name the
+# macos/github lanes explicitly per row.
 [workflow]
-runners = "github"
-automatic = "github"
-default_dispatch_runner = "github"
-automatic_lanes = "github"
-github_runner = "ubuntu-26.04"
-macos_runner = "macos-26"
-velnor_labels = ["self-hosted", "velnor-target-mvp"]
+providers = ["github-hosted"]
+automatic_providers = ["github-hosted"]
+default_branch = "main"
+
+[workflow.selectors.github-hosted]
+runs_on = ["ubuntu-26.04"]
 
 [policy]
 ruleset_required_status_checks = ["ci-required"]
 ruleset_external_status_checks = ["DCO"]
 
-# Self-hosted Renovate: schedule + writer identity from the #994 copy
-# (renovate.yml: cron "0 6 * * *", secrets.RENOVATE_TOKEN, RENOVATE_GIT_AUTHOR).
-# lanes = "github": the copy defaulted to velnor, but velnor/both lanes
-# require [workflow] velnor_trusted_label, and no trusted-label fact exists in
-# this repo. Revisit for velnor/both once the fleet label is known.
-# The copy sets RENOVATE_ALLOWED_UNSAFE_EXECUTIONS=mise (intended: let
-# `mise lock` refresh mise.lock in Renovate PRs), but renovate.json
-# configures no post-upgrade execution, so the knob has no live effect and
-# nothing is lost by omitting it. If post-upgrade execution is ever
-# configured, [renovate] allowed_commands renders RENOVATE_ALLOWED_COMMANDS.
-[renovate]
-enabled = true
-reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
-schedule = "0 6 * * *"
-token = "RENOVATE_TOKEN"
-config = "renovate.json"
-validate = true
-lanes = "github"
-author = "Renovate Bot <renovate@whitesourcesoftware.com>"
-signoff = true
-
-[[declare]]
-primitive = "renovate"
-file = "renovate.yml"
-
-[[declare]]
-primitive = "renovate-validate"
-file = "renovate-validate.yml"
+# Self-hosted Renovate: see [[static_files]] below. The schema-2 [renovate]
+# contract requires the velnor provider (trusted fleet writer), which the
+# visibility singleton forbids for this public repository, so the writer +
+# validator ride as frozen static sources instead of rendered primitives.
 
 # Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
 # Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
@@ -149,31 +136,43 @@ name = "Renovate upstream sources"
 events = ["push", "pull_request"]
 branches = ["main"]
 
-# Unit contracts the scan cannot derive. Command arrays are rejected by
-# velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
+# Apple lane placement (generic-Apple migration): PRs run the discovered
+# Apple units only (SwiftPM consumer + XcodeGen app + BoltFFI producer).
+# The desktop-ci graph (bindings-check, generate, format-check, lint, test,
+# build, test-swift, verify) stays the merge-lane entry via desktop-merge —
+# no new PR lane is added and nothing is silently dropped. The obligations
+# the generic recipe does not own (the 5 swift-run harnesses, counted
+# release test-swift, desktop-build Release stamping + native/dist copy,
+# desktop-verify + dSYM UUID match, the per-test UI gate with count proof,
+# swift-format/swiftlint/periphery) stay owned by these task-backed lanes.
+# Profile/env shaping (desktop-release cargo profile,
+# MACOSX_DEPLOYMENT_TARGET export) is owned generically by [native.apple]
+# below (Velnor #1030/#1031).
+
+# Apple native-pack policy (generic, Velnor #1030/#1031): the Cargo profile the
+# BoltFFI pack builds with plus the deployment floor the pack and its Swift
+# consumers build against. desktop-release: DESKTOP_PROFILE in
+# crates/jackin-xtask/src/desktop.rs + [profile.desktop-release] in
+# Cargo.toml. 26.0: MIN_OS in desktop.rs (exported as
+# MACOSX_DEPLOYMENT_TARGET), native/project.yml deploymentTarget, and
+# native/Package.swift .macOS(.v26).
+[native.apple]
+cargo_profile = "desktop-release"
+deployment_floor = "26.0"
+
+# Unit contracts the scan cannot derive. Typed capabilities only
+# (`ci_tasks`, `mise_tools`); command arrays are rejected.
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived
 # `docker build` is self-contained.
 [[units]]
 id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
-# XCFramework must exist before `swift build` resolves the binary target.
-# Run desktop-xcframework in the same macOS job as swift-package-native so
-# the binary target path is populated on one runner (separate jobs do not
-# share target/xcframework).
-# capabilities = ["xcframework"]: Q4 obligation — without it this Apple-bound
-# unit renders ubuntu + Linux plan-artifact runtime (slice 9 split).
-# depends_on (F2): FFI touches select this Swift consumer; selection coupling
-# only, no forced serialization (the unit rebuilds the XCFramework in-job).
-[[units]]
-id = "swift-package-native"
-kind = "swift"
-root = "native"
-watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
-ci_tasks = ["swift-package-native-ci"]
-mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-capabilities = ["xcframework"]
-depends_on = ["rust-jackin-usage-ffi"]
+# (Pre-migration synthetic swift-package-native unit removed: generic
+# discovery derives the consumer, its watch set, the xcframework platform
+# need, and the FFI producer edge from native/Package.swift +
+# crates/jackin-usage-ffi/boltffi.toml. Its ci_tasks glue
+# (swift-package-native-ci) is deleted from mise.toml with it.)
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
@@ -186,7 +185,7 @@ mise_tools = ["rust", "cargo-binstall"]
 # the scanned base and overrides the platform requirement only.
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
-capabilities = ["xcode"]
+platform = "macos-arm64"
 
 # Desktop release (L10): tag-triggered tasks release over the canonical
 # desktop mise tasks. Each event runs exactly one self-contained job
@@ -242,3 +241,14 @@ EXPECTED_TEAM_ID = "${{ vars.JACKIN_DEVELOPER_ID_TEAM_ID }}"
 [[declare]]
 primitive = "release"
 file = "release.yml"
+
+# Frozen Renovate surface (see header notes in the sources): byte-identical
+# preservation of the schema-1 writer + validator until the generator can
+# render a GitHub-hosted Renovate writer for public repositories.
+[[static_files]]
+file = ".github/workflows/renovate.yml"
+source = ".github-gen/static/renovate.yml"
+
+[[static_files]]
+file = ".github/workflows/renovate-validate.yml"
+source = ".github-gen/static/renovate-validate.yml"
