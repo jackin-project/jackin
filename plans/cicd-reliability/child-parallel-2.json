@@ -1,0 +1,22 @@
+{
+ "complete": true,
+ "evidence": [
+  "primary checkout fce94cea8a15de0c2db3bb4ff880d741baf5c00a (main) == run 35521080097 headSha; upstream /tmp/velnor at 5939604 with pin 4fa7a3a present (fix(workflow): make generated sccache env shellcheck-clean)",
+  "generator rev 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d uniform: .github-gen/velnor-workflow.toml revision + all setup-velnor-workflow@4fa7a3a + VELNOR_WORKFLOW_POLICY_REVISION; upstream HEAD newer than pin",
+  "ci-pr.yml triggers pull_request+dispatch (scope default affected); ci-main.yml push main+dispatch (scope default full); desktop-merge.yml push main+dispatch; release.yml tags v[0-9]*+dispatch drill; desktop-scheduled cron 41 4 * * 1; nightly cron dispatches ci-main",
+  "scope_for_event (runtime.rs@4fa7a3a:1622-1648): push/schedule/merge_group forced full, pull_request default affected, dispatch default full",
+  "PR ci-required needs=[plan + 41 unit jobs], no policy; main ci-required needs=[plan, policy + same 41 units]; required job mirrors ci-required (exit 1 unless success)",
+  "run 35521080097 (CI/Main, main fce94cea, push): 41 success / 3 failure; failures = Rust jackin-diagnostics/GitHub + ci-required + Control/Required; job 106105226160 log: FAIL conformance_partial_success_is_not_retried, 107 passed/1 failed/1 skipped of 108 run",
+  "run 35515575859 (Desktop merge cadence, main 0163d1b7, push): cancelled; job 106090835001 35m28s, annotation 'Canceling since a higher priority waiting request for desktop-merge-... exists' (concurrency cancel-in-progress)",
+  "ruleset protect-main #14746904: required contexts DCO + Policy + ci-required, strict policy, merge methods merge/squash/rebase, no merge-queue rule; branches/main/protection 404 (rulesets only)",
+  "merge queue unsupported: zero merge_group hits in .github/; generator tests at pin forbid emitting it (lib.rs:15989 generated_pr_workflow_omits_merge_group); cache-save gates exclude merge_group (ir.rs:2112)",
+  "gate semantics (ci-pr 2638+, ci-main 2749+): selected+admitted must be success (fail/cancel/skip all fail gate); selected+unadmitted must be skipped; unselected must be success|skipped; empty selection passes vacuously (no min-units guard)",
+  "desktop-ci mise task (bindings-check, xcodegen, format-check, lint, xtask test/build/test-swift, verify) invoked by desktop-merge + desktop-scheduled only; no workflow references desktop-ci/desktop-test-ui",
+  "toolchain/platforms: rust 1.97.1 clippy+rustfmt, targets aarch64/x86_64-linux, mbx 1.12.0, mold 2.42.0, nextest via mise; ubuntu-26.04 rust/bun/docker/plan/policy/gates, macos-26 swift units + desktop + release (Xcode 26.6, MACOSX_DEPLOYMENT_TARGET 26.0)",
+  "secrets/env: unit+policy jobs secretless (contents:read); release sign job only: secrets + environment release-macos + attestations/id-token write; caches restore-always, save only main push/schedule/main-dispatch (PRs never save); lockfiles Cargo.lock, mise.lock, rust-toolchain.toml, docs/bun.lock, vendor+3 fuzz Cargo.locks"
+ ],
+ "unresolved": [
+  "DCO check producer not inspected (external app, no workflow in repo defines it)",
+  "Whether conformance_partial_success_is_not_retried ran or was skipped on the PR that introduced fce94cea (would need that PR's affected plan output)"
+ ]
+}

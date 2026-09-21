@@ -47,9 +47,7 @@ pub(crate) fn assert_scripted_response(
         before.export_failures + if flush_succeeds { 0 } else { 3 }
     );
     drop(runtime_guard);
-    assert_eq!(testbed.traces().len(), expected_requests);
-    assert_eq!(testbed.logs().len(), expected_requests);
-    assert_eq!(testbed.metrics().len(), expected_requests);
+    assert_wire_requests(&testbed, expected_requests);
     jackin_diagnostics::shutdown_capsule_tracing();
     let shutdown = jackin_diagnostics::telemetry_health_snapshot();
     assert_eq!(shutdown.active_signals, 0);
@@ -57,6 +55,91 @@ pub(crate) fn assert_scripted_response(
     assert_eq!(shutdown.shutdown_succeeded, flush_succeeds);
     assert!(!shutdown.shutdown_timed_out);
     Ok(())
+}
+
+fn assert_wire_requests(testbed: &jackin_otlp_testbed::Testbed, expected_requests: usize) {
+    let traces = testbed.traces();
+    let logs = testbed.logs();
+    let metrics = testbed.metrics();
+    let log_records = testbed.log_records();
+    let validate_event = jackin_telemetry::schema::events::TELEMETRY_VALIDATE;
+    let counts_match = traces.len() == expected_requests
+        && logs.len() == expected_requests
+        && metrics.len() == expected_requests;
+    // Per-request distribution, not just the flattened total: retries re-send
+    // the identical batch, so every captured log request must carry exactly
+    // one matching record. A 0/1/2 split across three requests with total 3
+    // is retry-payload corruption and must fail (PR #1014 Codex P2).
+    let records_match = log_records.len() == expected_requests
+        && logs.len() == expected_requests
+        && logs.iter().all(|request| {
+            let records: Vec<_> = request
+                .resource_logs
+                .iter()
+                .flat_map(|resource| resource.scope_logs.iter())
+                .flat_map(|scope| scope.log_records.iter())
+                .collect();
+            records.len() == 1 && records[0].event_name == validate_event
+        });
+    if counts_match && records_match {
+        return;
+    }
+    let spans_per_request: Vec<usize> = traces
+        .iter()
+        .map(|request| {
+            request
+                .resource_spans
+                .iter()
+                .flat_map(|resource| resource.scope_spans.iter())
+                .map(|scope| scope.spans.len())
+                .sum()
+        })
+        .collect();
+    let records_per_request: Vec<usize> = logs
+        .iter()
+        .map(|request| {
+            request
+                .resource_logs
+                .iter()
+                .flat_map(|resource| resource.scope_logs.iter())
+                .map(|scope| scope.log_records.len())
+                .sum()
+        })
+        .collect();
+    let metrics_per_request: Vec<usize> = metrics
+        .iter()
+        .map(|request| {
+            request
+                .resource_metrics
+                .iter()
+                .flat_map(|resource| resource.scope_metrics.iter())
+                .map(|scope| scope.metrics.len())
+                .sum()
+        })
+        .collect();
+    let span_names: Vec<String> = testbed
+        .spans()
+        .iter()
+        .map(|span| span.name.clone())
+        .collect();
+    let event_names: Vec<String> = log_records
+        .iter()
+        .map(|record| record.event_name.clone())
+        .collect();
+    let health = jackin_diagnostics::telemetry_health_snapshot();
+    // NOTE: assert!, not panic! — clippy::panic is denied (-D warnings).
+    assert!(
+        counts_match && records_match,
+        "wire request mismatch: expected {expected_requests} requests per signal \
+         with one `{validate_event}` log record each; got traces={} (spans per request: {spans_per_request:?}, span names: {span_names:?}), \
+         logs={} (records per request: {records_per_request:?}, event names: {event_names:?}), \
+         metrics={} (metrics per request: {metrics_per_request:?}, metric names: {:?}); \
+         telemetry health at failure: {health:#?}",
+        traces.len(),
+        logs.len(),
+        metrics.len(),
+        testbed.metric_names(),
+    );
 }
 
 fn assert_signal_delta(

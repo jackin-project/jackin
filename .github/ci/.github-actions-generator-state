@@ -1,8 +1,8 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	b376b11ddcb7cf5b
-scan	ce696cb099f667b9
+config	698b9095402699d3
+scan	5c52a1cd9e7cddcb
 generator	54
 [outputs]
 .github/actionlint.yaml	2c1dbf178fa8baa1
@@ -14,8 +14,8 @@ generator	54
 .github/workflows/ci-unit-docker.yml	53ba26f2a83bfb94
 .github/workflows/ci-unit-rust.yml	9a7fc6279d159712
 .github/workflows/ci-unit-swift.yml	7cb31cb8c822dd7a
-.github/workflows/desktop-merge.yml	f9cb2a63c3d833ff
-.github/workflows/desktop-scheduled.yml	ede17b880d391a6d
+.github/workflows/desktop-merge.yml	612ce653b3e20e3a
+.github/workflows/desktop-scheduled.yml	39c51001180e1f3c
 .github/workflows/maintenance.yml	ea77e9b6fa6c14bd
 .github/workflows/nightly.yml	0bbe34967df0f3ed
 .github/workflows/release.yml	1aace61e7093c352
