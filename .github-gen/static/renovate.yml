@@ -1,0 +1,74 @@
+# Repo-owned frozen bytes (vendored from the velnor-workflow schema-1 render).
+# The schema-2 generator cannot emit the GitHub-hosted Renovate writer
+# ([renovate] requires the velnor provider); this static source preserves
+# the writer byte-for-byte until generic hosted-renovate support exists.
+# TO REGENERATE: delete this file + its [[static_files]] row, restore
+# [renovate] + [[declare]] rows, and regen with a generator that supports it.
+name: Renovate
+run-name: Renovate · ${{ github.event_name }}
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: renovate-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  renovate:
+    name: Renovate dependencies
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    env:
+      RENOVATE_HAS_TOKEN: ${{ secrets.RENOVATE_TOKEN != '' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare Renovate workspace
+        run: |
+          set -euo pipefail
+          install -d -m 0755 /tmp/renovate /tmp/renovate/cache /tmp/renovate/repos
+          install -d -m 0755 "/tmp/renovate/cache/${{ github.repository }}/renovate/repository"
+      - name: Restore Renovate repository cache
+        id: renovate-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/renovate/cache/${{ github.repository }}/renovate/repository
+          key: velnor-renovate-${{ github.repository }}-${{ hashFiles('renovate.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            velnor-renovate-${{ github.repository }}-${{ hashFiles('renovate.json') }}-
+            velnor-renovate-${{ github.repository }}-
+      - name: Fix Renovate cache ownership
+        if: steps.renovate-cache.outputs.cache-matched-key != ''
+        run: sudo chown -R 12021:0 /tmp/renovate/
+      - name: Run Renovate
+        if: env.RENOVATE_HAS_TOKEN == 'true'
+        uses: renovatebot/github-action@dcfba84a42d1b5d5e49bf131b1bf53511851a123 # v46.3.1
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}
+          renovate-version: "44.93.6"
+        env:
+          RENOVATE_REPOSITORY_CACHE: enabled
+          RENOVATE_BASE_DIR: /tmp/renovate
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_GIT_AUTHOR: "Renovate Bot <renovate@whitesourcesoftware.com>"
+          RENOVATE_COMMIT_BODY: "Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>"
+      - name: Skip Renovate without token
+        if: env.RENOVATE_HAS_TOKEN != 'true'
+        run: |
+          echo "::notice::Renovate skipped because 'RENOVATE_TOKEN' is not configured for this repository" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save Renovate repository cache
+        if: always() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.renovate-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/renovate/cache/${{ github.repository }}/renovate/repository
+          key: velnor-renovate-${{ github.repository }}-${{ hashFiles('renovate.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
