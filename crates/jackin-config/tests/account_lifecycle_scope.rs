@@ -17,8 +17,8 @@ use jackin_config::{
 use jackin_core::{Agent, EnvValue, JackinPaths, WorkspaceName};
 use std::path::Path;
 
-fn wn(name: &str) -> WorkspaceName {
-    WorkspaceName::parse(name).unwrap()
+fn wn(name: &str) -> anyhow::Result<WorkspaceName> {
+    Ok(WorkspaceName::parse(name)?)
 }
 
 fn api_key(provider: AiProvider, name: &str, value: &str) -> AccountConfig {
@@ -34,26 +34,26 @@ fn api_key(provider: AiProvider, name: &str, value: &str) -> AccountConfig {
     }
 }
 
-fn seed_claude_credentials(home: &Path) {
-    std::fs::create_dir_all(home.join(".claude")).unwrap();
+fn seed_claude_credentials(home: &Path) -> anyhow::Result<()> {
+    std::fs::create_dir_all(home.join(".claude"))?;
     std::fs::write(
         home.join(".claude/.credentials.json"),
         r#"{"claudeAiOauth":{"accessToken":"fixture"}}"#,
-    )
-    .unwrap();
+    )?;
+    Ok(())
 }
 
-fn fresh_paths() -> (tempfile::TempDir, JackinPaths) {
-    let temp = tempfile::tempdir().unwrap();
+fn fresh_paths() -> anyhow::Result<(tempfile::TempDir, JackinPaths)> {
+    let temp = tempfile::tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
-    (temp, paths)
+    Ok((temp, paths))
 }
 
 /// A valid workspace shell: creation requires a workdir covered by a mount.
-fn test_workspace(root: &Path, accounts: Vec<String>) -> WorkspaceConfig {
+fn test_workspace(root: &Path, accounts: Vec<String>) -> anyhow::Result<WorkspaceConfig> {
     let src = root.join("mnt-src");
-    std::fs::create_dir_all(&src).unwrap();
-    WorkspaceConfig {
+    std::fs::create_dir_all(&src)?;
+    Ok(WorkspaceConfig {
         workdir: "/workspace/w1".into(),
         mounts: vec![jackin_config::MountConfig {
             src: src.display().to_string(),
@@ -63,13 +63,13 @@ fn test_workspace(root: &Path, accounts: Vec<String>) -> WorkspaceConfig {
         }],
         accounts,
         ..Default::default()
-    }
+    })
 }
 
 /// S1: four registered accounts, two on the same provider, survive a save/reload round trip.
 #[test]
-fn s1_register_four_accounts_two_sharing_one_provider() {
-    let (_temp, paths) = fresh_paths();
+fn s1_register_four_accounts_two_sharing_one_provider() -> anyhow::Result<()> {
+    let (_temp, paths) = fresh_paths()?;
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .upsert_account(
@@ -123,13 +123,14 @@ fn s1_register_four_accounts_two_sharing_one_provider() {
         );
     }
     assert_eq!(reopened.accounts["claude-personal"].name, "Personal");
+    Ok(())
 }
 
 /// S1: importing a discovered profile, then rescanning twice, never duplicates or overwrites.
 #[test]
-fn s1_import_then_rescan_is_duplicate_free() {
-    let (_temp, paths) = fresh_paths();
-    seed_claude_credentials(&paths.home_dir);
+fn s1_import_then_rescan_is_duplicate_free() -> anyhow::Result<()> {
+    let (_temp, paths) = fresh_paths()?;
+    seed_claude_credentials(&paths.home_dir)?;
     // The seeded fixture is discoverable through the public discovery API.
     let discovered = jackin_config::discover_default_accounts(&paths.home_dir);
     assert!(
@@ -172,12 +173,13 @@ fn s1_import_then_rescan_is_duplicate_free() {
     let final_cfg = editor.save().unwrap();
     assert!(final_cfg.accounts.contains_key("renamed-import"));
     assert!(!final_cfg.accounts.contains_key("default-claude"));
+    Ok(())
 }
 
 /// S1: renaming an account's display name keeps IDs, bindings, and launches stable.
 #[test]
-fn s1_rename_display_name_keeps_everything_stable() {
-    let (temp, paths) = fresh_paths();
+fn s1_rename_display_name_keeps_everything_stable() -> anyhow::Result<()> {
+    let (temp, paths) = fresh_paths()?;
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .upsert_account("a", &api_key(AiProvider::Anthropic, "A", "secret-a"))
@@ -185,11 +187,11 @@ fn s1_rename_display_name_keeps_everything_stable() {
     editor
         .upsert_account("b", &api_key(AiProvider::OpenAi, "B", "secret-b"))
         .unwrap();
-    let w1 = wn("w1");
+    let w1 = wn("w1")?;
     editor
         .create_workspace(
             &w1,
-            test_workspace(temp.path(), vec!["a".into(), "b".into()]),
+            test_workspace(temp.path(), vec!["a".into(), "b".into()])?,
         )
         .unwrap();
     editor
@@ -218,12 +220,13 @@ fn s1_rename_display_name_keeps_everything_stable() {
     assert_eq!(resolved_before.len(), 1);
     assert_eq!(resolved_after.len(), 1);
     assert_eq!(resolved_before[0].account_id, resolved_after[0].account_id);
+    Ok(())
 }
 
 /// S1: reordering a workspace allowlist preserves the set, bindings, and resolution.
 #[test]
-fn s1_reorder_workspace_accounts_preserves_set_and_bindings() {
-    let (temp, paths) = fresh_paths();
+fn s1_reorder_workspace_accounts_preserves_set_and_bindings() -> anyhow::Result<()> {
+    let (temp, paths) = fresh_paths()?;
     let mut editor = ConfigEditor::open(&paths).unwrap();
     for (id, provider, secret) in [
         ("a", AiProvider::Anthropic, "secret-a"),
@@ -234,11 +237,11 @@ fn s1_reorder_workspace_accounts_preserves_set_and_bindings() {
             .upsert_account(id, &api_key(provider, id, secret))
             .unwrap();
     }
-    let w1 = wn("w1");
+    let w1 = wn("w1")?;
     editor
         .create_workspace(
             &w1,
-            test_workspace(temp.path(), vec!["a".into(), "b".into(), "c".into()]),
+            test_workspace(temp.path(), vec!["a".into(), "b".into(), "c".into()])?,
         )
         .unwrap();
     editor
@@ -264,12 +267,13 @@ fn s1_reorder_workspace_accounts_preserves_set_and_bindings() {
     let resolved = resolve_launch(&reordered, Some(&w1), "", None, Some(Agent::Claude)).unwrap();
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].account_id, "a");
+    Ok(())
 }
 
 /// S1: dropping the editor without save cancels the draft; save applies it.
 #[test]
-fn s1_draft_cancel_leaves_disk_untouched_apply_persists() {
-    let (_temp, paths) = fresh_paths();
+fn s1_draft_cancel_leaves_disk_untouched_apply_persists() -> anyhow::Result<()> {
+    let (_temp, paths) = fresh_paths()?;
     let before = ConfigEditor::open(&paths).unwrap().save().unwrap();
     assert!(!before.accounts.contains_key("drafted"));
     let bytes_before = std::fs::read(&paths.config_file).unwrap();
@@ -300,12 +304,13 @@ fn s1_draft_cancel_leaves_disk_untouched_apply_persists() {
     editor.save().unwrap();
     let applied = ConfigEditor::open(&paths).unwrap().save().unwrap();
     assert!(applied.accounts.contains_key("drafted"));
+    Ok(())
 }
 
 /// S1: disabling an account prunes its bindings; re-enabling does not resurrect them silently.
 #[test]
-fn s1_disable_prunes_bindings_without_deleting_the_account() {
-    let (temp, paths) = fresh_paths();
+fn s1_disable_prunes_bindings_without_deleting_the_account() -> anyhow::Result<()> {
+    let (temp, paths) = fresh_paths()?;
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .upsert_account("a", &api_key(AiProvider::Anthropic, "A", "secret-a"))
@@ -313,11 +318,11 @@ fn s1_disable_prunes_bindings_without_deleting_the_account() {
     editor
         .upsert_account("b", &api_key(AiProvider::OpenAi, "B", "secret-b"))
         .unwrap();
-    let w1 = wn("w1");
+    let w1 = wn("w1")?;
     editor
         .create_workspace(
             &w1,
-            test_workspace(temp.path(), vec!["a".into(), "b".into()]),
+            test_workspace(temp.path(), vec!["a".into(), "b".into()])?,
         )
         .unwrap();
     editor
@@ -341,9 +346,10 @@ fn s1_disable_prunes_bindings_without_deleting_the_account() {
             .any(|id| id == "a"),
         "disable left a live binding behind"
     );
+    Ok(())
 }
 
-fn scoped_fixture() -> (AppConfig, WorkspaceName, WorkspaceName) {
+fn scoped_fixture() -> anyhow::Result<(AppConfig, WorkspaceName, WorkspaceName)> {
     let mut cfg = AppConfig::default();
     cfg.accounts.insert(
         "acc-a".into(),
@@ -357,15 +363,19 @@ fn scoped_fixture() -> (AppConfig, WorkspaceName, WorkspaceName) {
         "acc-d".into(),
         api_key(AiProvider::Anthropic, "D", "secret-d"),
     );
-    let w1 = wn("w1");
-    let w2 = wn("w2");
-    let mut ws1 = WorkspaceConfig::default();
-    ws1.accounts = vec!["acc-a".into(), "acc-b".into(), "acc-c".into()];
-    let mut ws2 = WorkspaceConfig::default();
-    ws2.accounts = vec!["acc-c".into(), "acc-d".into()];
+    let w1 = wn("w1")?;
+    let w2 = wn("w2")?;
+    let ws1 = WorkspaceConfig {
+        accounts: vec!["acc-a".into(), "acc-b".into(), "acc-c".into()],
+        ..Default::default()
+    };
+    let ws2 = WorkspaceConfig {
+        accounts: vec!["acc-c".into(), "acc-d".into()],
+        ..Default::default()
+    };
     cfg.workspaces.insert("w1".into(), ws1);
     cfg.workspaces.insert("w2".into(), ws2);
-    (cfg, w1, w2)
+    Ok((cfg, w1, w2))
 }
 
 fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
@@ -381,8 +391,8 @@ fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
 
 /// S2: W1 admits exactly A/B/C; D is absent and every explicit use of D in W1 fails closed.
 #[test]
-fn s2_w1_admits_exactly_abc_d_is_inaccessible() {
-    let (mut cfg, w1, w2) = scoped_fixture();
+fn s2_w1_admits_exactly_abc_d_is_inaccessible() -> anyhow::Result<()> {
+    let (mut cfg, w1, w2) = scoped_fixture()?;
     cfg.agent_configurations
         .insert("launch-a".into(), configuration(Agent::Claude, "acc-a"));
     cfg.agent_configurations
@@ -419,7 +429,7 @@ fn s2_w1_admits_exactly_abc_d_is_inaccessible() {
     let err = resolve_account(&cfg, Agent::Claude, Some(&w1), "").unwrap_err();
     assert!(err.to_string().contains("not assigned"), "{err}");
     // No fallback to an ambient login: the error is terminal.
-    assert!(resolve_launch(&cfg, Some(&w1), "", None, Some(Agent::Claude)).is_err());
+    let _err = resolve_launch(&cfg, Some(&w1), "", None, Some(Agent::Claude)).unwrap_err();
     cfg.workspaces
         .get_mut("w1")
         .unwrap()
@@ -433,15 +443,16 @@ fn s2_w1_admits_exactly_abc_d_is_inaccessible() {
     // But A is foreign to W2.
     let err = resolve_launch(&cfg, Some(&w2), "", Some(&["launch-a".into()]), None).unwrap_err();
     assert!(err.to_string().contains("not assigned"), "{err}");
+    Ok(())
 }
 
 /// S2: unknown workspaces and stale account IDs fail closed, never ambient.
 #[test]
-fn s2_unknown_workspace_and_stale_ids_fail_closed() {
-    let (mut cfg, w1, _w2) = scoped_fixture();
-    let ghost_ws = wn("ghost");
-    assert!(resolve_account(&cfg, Agent::Claude, Some(&ghost_ws), "").is_err());
-    assert!(resolve_launch(&cfg, Some(&ghost_ws), "", None, Some(Agent::Claude)).is_err());
+fn s2_unknown_workspace_and_stale_ids_fail_closed() -> anyhow::Result<()> {
+    let (mut cfg, w1, _w2) = scoped_fixture()?;
+    let ghost_ws = wn("ghost")?;
+    let _err = resolve_account(&cfg, Agent::Claude, Some(&ghost_ws), "").unwrap_err();
+    let _err = resolve_launch(&cfg, Some(&ghost_ws), "", None, Some(Agent::Claude)).unwrap_err();
 
     // Stale ID lingering in a workspace allowlist: hard error, not a skip.
     cfg.workspaces
@@ -451,11 +462,12 @@ fn s2_unknown_workspace_and_stale_ids_fail_closed() {
         .push("deleted-account".into());
     let err = resolve_account(&cfg, Agent::Codex, Some(&w1), "").unwrap_err();
     assert!(err.to_string().contains("unknown account"), "{err}");
-    assert!(resolve_launch(&cfg, Some(&w1), "", None, None).is_err());
+    let _err = resolve_launch(&cfg, Some(&w1), "", None, None).unwrap_err();
+    Ok(())
 }
 
-fn precedence_fixture() -> (AppConfig, WorkspaceName) {
-    let (mut cfg, w1, _w2) = scoped_fixture();
+fn precedence_fixture() -> anyhow::Result<(AppConfig, WorkspaceName)> {
+    let (mut cfg, w1, _w2) = scoped_fixture()?;
     // One configuration per launch-list layer, each pinned to a distinct account.
     cfg.agent_configurations
         .insert("cfg-one".into(), configuration(Agent::Claude, "acc-a"));
@@ -466,9 +478,14 @@ fn precedence_fixture() -> (AppConfig, WorkspaceName) {
     // Global layer must also be W1-authorized to be a fair precedence probe.
     cfg.agent_configurations
         .insert("cfg-global".into(), configuration(Agent::Codex, "acc-b"));
-    let ws = cfg.workspaces.get_mut("w1").unwrap();
-    let mut role = WorkspaceRoleOverride::default();
-    role.default_launch = Some(vec!["cfg-role".into()]);
+    let ws = cfg
+        .workspaces
+        .get_mut("w1")
+        .ok_or_else(|| anyhow::anyhow!("w1 missing from scoped fixture"))?;
+    let mut role = WorkspaceRoleOverride {
+        default_launch: Some(vec!["cfg-role".into()]),
+        ..Default::default()
+    };
     role.account_bindings.insert(Agent::Claude, "acc-a".into());
     ws.roles.insert("dev".into(), role);
     ws.default_launch = Some(vec!["cfg-ws".into()]);
@@ -477,14 +494,14 @@ fn precedence_fixture() -> (AppConfig, WorkspaceName) {
     // atomicity probes; precedence probes below overwrite or clear it first.
     cfg.default_launch = Some(vec!["cfg-global".into()]);
     cfg.account_bindings.insert(Agent::Claude, "acc-a".into());
-    (cfg, w1)
+    Ok((cfg, w1))
 }
 
 /// S7: launch > role > workspace > global, then bindings role > workspace > global,
 /// then sole-eligible. Each layer wins only when every layer above it is absent.
 #[test]
-fn s7_full_precedence_chain_launch_to_sole_eligible() {
-    let (mut cfg, w1) = precedence_fixture();
+fn s7_full_precedence_chain_launch_to_sole_eligible() -> anyhow::Result<()> {
+    let (mut cfg, w1) = precedence_fixture()?;
     // Repair the intentionally invalid workspace binding for the precedence walk.
     cfg.workspaces
         .get_mut("w1")
@@ -568,12 +585,13 @@ fn s7_full_precedence_chain_launch_to_sole_eligible() {
     // ambiguity without defaults is a picker error, never a guess.
     let err = resolve_launch(&cfg, Some(&w1), "dev", None, None).unwrap_err();
     assert!(err.to_string().contains("multiple accounts"), "{err}");
+    Ok(())
 }
 
 /// S7: any invalid explicit selection rejects the whole launch atomically.
 #[test]
-fn s7_invalid_explicit_selection_rejects_atomically() {
-    let (mut cfg, w1) = precedence_fixture();
+fn s7_invalid_explicit_selection_rejects_atomically() -> anyhow::Result<()> {
+    let (mut cfg, w1) = precedence_fixture()?;
     cfg.workspaces
         .get_mut("w1")
         .unwrap()
@@ -639,12 +657,13 @@ fn s7_invalid_explicit_selection_rejects_atomically() {
     let empty: Vec<String> = vec![];
     let won = resolve_launch(&cfg, Some(&w1), "dev", Some(&empty), Some(Agent::Claude)).unwrap();
     assert!(won.is_empty());
+    Ok(())
 }
 
 /// S7: global launch candidates filter by workspace authorization instead of leaking in.
 #[test]
-fn s7_global_candidates_cannot_smuggle_foreign_accounts() {
-    let (mut cfg, w1, _w2) = scoped_fixture();
+fn s7_global_candidates_cannot_smuggle_foreign_accounts() -> anyhow::Result<()> {
+    let (mut cfg, w1, _w2) = scoped_fixture()?;
     cfg.agent_configurations
         .insert("cfg-foreign".into(), configuration(Agent::Claude, "acc-d"));
     cfg.agent_configurations
@@ -661,4 +680,5 @@ fn s7_global_candidates_cannot_smuggle_foreign_accounts() {
     cfg.default_launch = Some(vec!["cfg-foreign".into()]);
     let won = resolve_launch(&cfg, Some(&w1), "", None, Some(Agent::Claude)).unwrap();
     assert!(won.is_empty(), "foreign-only global list leaked: {won:?}");
+    Ok(())
 }

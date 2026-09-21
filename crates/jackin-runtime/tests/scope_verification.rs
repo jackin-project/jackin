@@ -52,7 +52,11 @@ impl AccountStateStore for MemoryStore {
         capability: &UsageAccountCapability,
         _now_epoch: i64,
     ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
-        Ok(self.states.lock().unwrap().get(capability).cloned())
+        let states = self
+            .states
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Ok(states.get(capability).cloned())
     }
 
     fn store(
@@ -62,13 +66,16 @@ impl AccountStateStore for MemoryStore {
     ) -> Result<(), StateStoreError> {
         self.states
             .lock()
-            .unwrap()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(envelope.capability.clone(), envelope.clone());
         Ok(())
     }
 
     fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
-        self.states.lock().unwrap().remove(capability);
+        self.states
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(capability);
         Ok(())
     }
 }
@@ -108,11 +115,13 @@ impl GateExecutor {
     fn wait_started(&self, expected: usize) {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let (lock, changed) = &self.started;
-        let mut started = lock.lock().unwrap();
+        let mut started = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         while *started < expected {
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             assert!(!remaining.is_zero(), "provider probe did not start");
-            let (next, wait) = changed.wait_timeout(started, remaining).unwrap();
+            let (next, wait) = changed
+                .wait_timeout(started, remaining)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             started = next;
             assert!(!wait.timed_out(), "provider probe did not start");
         }
@@ -120,7 +129,7 @@ impl GateExecutor {
 
     fn release(&self, count: usize) {
         let (lock, changed) = &self.permits;
-        *lock.lock().unwrap() += count;
+        *lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) += count;
         changed.notify_all();
     }
 }
@@ -134,20 +143,27 @@ impl UsageProviderExecutor for GateExecutor {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.active.fetch_add(1, Ordering::SeqCst);
         let (started_lock, started_changed) = &self.started;
-        *started_lock.lock().unwrap() += 1;
+        *started_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) += 1;
         started_changed.notify_all();
         let (permit_lock, permit_changed) = &self.permits;
-        let mut permits = permit_lock.lock().unwrap();
+        let mut permits = permit_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         while *permits == 0 {
             let (next, wait) = permit_changed
                 .wait_timeout(permits, Duration::from_secs(5))
-                .unwrap();
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             permits = next;
             assert!(!wait.timed_out(), "provider probe permit was not released");
         }
         *permits -= 1;
         self.active.fetch_sub(1, Ordering::SeqCst);
-        self.outcome.lock().unwrap().clone()
+        self.outcome
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 }
 

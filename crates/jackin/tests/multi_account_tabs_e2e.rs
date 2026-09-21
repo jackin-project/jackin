@@ -171,8 +171,7 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
     let phase_ab = match observed {
         Ok(phase) => phase,
         Err(error) => {
-            let kept = temp.path().to_path_buf();
-            std::mem::forget(temp);
+            let kept = temp.keep();
             panic!(
                 "{error}\nfixture kept at {}\n{}",
                 kept.display(),
@@ -180,7 +179,7 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
             )
         }
     };
-    assert_phase_ab(&phase_ab, &workspace_dir);
+    assert_phase_ab(&phase_ab, &workspace_dir).unwrap();
 
     // Phase C: the killed client left the container running; `hardline`
     // reattaches to the same sessions with bindings intact.
@@ -206,13 +205,12 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         reconnect_done.load(Ordering::Acquire),
         "reconnect must observe the preserved bindings before the timeout"
     );
-    assert_reconnect_snapshot(&home, &container, &phase_ab, "reconnect");
+    assert_reconnect_snapshot(&home, &container, &phase_ab, "reconnect").unwrap();
 
     // Phase D: removing the container makes `hardline` restore it; the
     // default launch set boots again with correct bindings.
     run("docker", &["rm", "-f", container.as_str()], None);
-    let restore_outcome: Arc<Mutex<Option<Result<Vec<(String, String)>, String>>>> =
-        Arc::new(Mutex::new(None));
+    let restore_outcome: RestoreOutcome = Arc::new(Mutex::new(None));
     let restore_worker = {
         let restore_outcome = Arc::clone(&restore_outcome);
         let home = home.clone();
@@ -250,6 +248,9 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         .expect("restore must serve bound sessions");
     assert_restore_bindings(&bindings);
 }
+
+/// Shared restore-observer cell: `None` until the worker records its outcome.
+type RestoreOutcome = Arc<Mutex<Option<Result<Vec<(String, String)>, String>>>>;
 
 /// Bindings observed after boot + split + new tab.
 struct PhaseAB {
@@ -318,7 +319,7 @@ fn observe_boot_split_newtab(home: &Path, workspace: &Path) -> Result<PhaseAB, S
     })
 }
 
-fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) {
+fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
     // Boot order is launch-list order; split + new tab append.
     let got: Vec<(&str, &str)> = phase
         .bindings
@@ -379,17 +380,19 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) {
                 assert_eq!(endpoint, ENDPOINT_B, "account cx-b endpoint");
                 assert_eq!(model, MODEL_B, "account cx-b model");
             }
-            other => panic!("codex pane carries unexpected OPENAI_API_KEY: {other:?}"),
+            other => {
+                return Err(format!(
+                    "codex pane carries unexpected OPENAI_API_KEY: {other:?}"
+                ));
+            }
         }
         seen_canaries.insert(key);
         // No unselected canary may leak into this pane's environment.
         for (name, value) in env.iter() {
-            for forbidden in [CANARY_C] {
-                assert!(
-                    !value.contains(forbidden),
-                    "codex pane leaks {forbidden} via {name}"
-                );
-            }
+            assert!(
+                !value.contains(CANARY_C),
+                "codex pane leaks {CANARY_C} via {name}"
+            );
         }
     }
     assert_eq!(
@@ -424,16 +427,24 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) {
             }
         }
     }
+    Ok(())
 }
 
-fn assert_reconnect_snapshot(home: &Path, container: &str, phase: &PhaseAB, what: &str) {
+fn assert_reconnect_snapshot(
+    home: &Path,
+    container: &str,
+    phase: &PhaseAB,
+    what: &str,
+) -> Result<(), String> {
     let paths = JackinPaths::resolve_with_env(home, None, None);
-    let bindings = snapshot_bindings(&paths, container)
-        .unwrap_or_else(|| panic!("{what}: no snapshot from container {container}"));
+    let Some(bindings) = snapshot_bindings(&paths, container) else {
+        return Err(format!("{what}: no snapshot from container {container}"));
+    };
     assert_eq!(
         bindings, phase.bindings,
         "{what} must preserve every pane binding"
     );
+    Ok(())
 }
 
 fn observe_restore(home: &Path) -> Result<Vec<(String, String)>, String> {
