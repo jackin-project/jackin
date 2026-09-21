@@ -1,3 +1,4 @@
+// PROBE b8 cache marker A — comment-only, no behavior change.
 //! jackin-brand: renderer-neutral jackin❯ identity and product-domain color tokens.
 //!
 //! **Architecture Invariant:** T0. This crate has no workspace dependencies
