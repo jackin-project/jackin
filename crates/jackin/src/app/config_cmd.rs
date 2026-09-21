@@ -45,6 +45,40 @@ pub(super) fn resolve_env_value_for_cli(
     value: &str,
     on_demand: bool,
 ) -> Result<jackin_core::EnvValue> {
+    // Probe op CLI availability before attempting structural queries. A
+    // failed probe keeps `account add --secret-ref op://...` (and `env set`)
+    // working: the ref is persisted unresolved and resolution stays lazy.
+    let op_cli = jackin_env::OpCli::new();
+    let runner = match jackin_env::OpRunner::probe(&op_cli) {
+        Ok(()) => Some(op_cli),
+        Err(error) => {
+            if value.starts_with("op://") && jackin_core::parse_op_reference(value).is_some() {
+                eprintln!(
+                    "warning: `op` CLI not available ({error:#}); storing the \
+                     `op://...` reference unresolved — it resolves when `op` \
+                     is installed and signed in."
+                );
+            }
+            None
+        }
+    };
+    let runner = runner
+        .as_ref()
+        .map(|runner| -> &dyn jackin_env::OpStructRunner { runner });
+    resolve_env_value_for_cli_with_runner(value, on_demand, runner)
+}
+
+/// [`resolve_env_value_for_cli`] with an injected 1Password runner.
+///
+/// `Some` canonicalizes the `op://` URI through live `op` structural
+/// queries; `None` (probe failed, `op` absent) persists the ref unresolved
+/// after a syntactic check. Tests inject runners instead of mutating the
+/// process environment, mirroring the `jackin-env` convention.
+pub(super) fn resolve_env_value_for_cli_with_runner(
+    value: &str,
+    on_demand: bool,
+    op: Option<&dyn jackin_env::OpStructRunner>,
+) -> Result<jackin_core::EnvValue> {
     if !value.starts_with("op://") {
         if on_demand {
             return Ok(jackin_core::EnvValue::Extended(jackin_core::Extended {
@@ -55,19 +89,43 @@ pub(super) fn resolve_env_value_for_cli(
         return Ok(jackin_core::EnvValue::Plain(value.to_owned()));
     }
 
-    // Probe op CLI availability before attempting structural queries.
-    let op_cli = jackin_env::OpCli::new();
-    jackin_env::OpRunner::probe(&op_cli).map_err(|e| {
-        anyhow::anyhow!(
-            "`op` CLI not available; cannot resolve `op://...` reference. \
-             Install 1Password CLI, or use a non-op:// value.\n\
-             Probe error: {e}"
-        )
-    })?;
+    match op {
+        Some(runner) => {
+            let mut op_ref = jackin_env::resolve_op_uri_to_ref(value, runner, None)?;
+            op_ref.on_demand = on_demand;
+            Ok(jackin_core::EnvValue::OpRef(op_ref))
+        }
+        None => Ok(jackin_core::EnvValue::OpRef(unresolved_op_ref(
+            value, on_demand,
+        )?)),
+    }
+}
 
-    let mut op_ref = jackin_env::resolve_op_uri_to_ref(value, &op_cli, None)?;
-    op_ref.on_demand = on_demand;
-    Ok(jackin_core::EnvValue::OpRef(op_ref))
+/// Build an unresolved [`jackin_core::OpRef`] from a syntactic `op://` URI
+/// without calling `op`. Same shape the `.zshrc` importer seeds: the URI
+/// verbatim as the resolution source, a vault/item/field breadcrumb for
+/// display. Lazy resolution (`op read` at value-use time) fails honestly
+/// when `op` is still missing.
+pub(super) fn unresolved_op_ref(value: &str, on_demand: bool) -> Result<jackin_core::OpRef> {
+    let Some(parts) = jackin_core::parse_op_reference(value) else {
+        anyhow::bail!(
+            "malformed `op://` reference {value:?}: expected \
+             `op://<vault>/<item>/[<section>/]<field>`"
+        );
+    };
+    let mut path = format!("{}/{}", parts.vault, parts.item);
+    if let Some(section) = &parts.section {
+        path.push('/');
+        path.push_str(section);
+    }
+    path.push('/');
+    path.push_str(&parts.field);
+    Ok(jackin_core::OpRef {
+        op: value.to_owned(),
+        path,
+        account: None,
+        on_demand,
+    })
 }
 
 pub(super) fn print_env_table(vars: &[EnvListRow]) {
@@ -465,5 +523,204 @@ mod tests {
         let rows = env_rows(&env);
         assert_eq!(rows, vec![("PROJECT_ENV".into(), "visible".into(), false)]);
         assert!(!format!("{rows:?}").contains("cli-list-sentinel"));
+    }
+
+    #[test]
+    fn unresolved_op_ref_keeps_uri_verbatim_with_a_display_breadcrumb() {
+        let reference = super::unresolved_op_ref("op://Vault/Item/key", false).unwrap();
+        assert_eq!(reference.op, "op://Vault/Item/key");
+        assert_eq!(reference.path, "Vault/Item/key");
+        assert_eq!(reference.account, None);
+        assert!(!reference.on_demand);
+
+        let reference = super::unresolved_op_ref("op://Vault/Item/key", true).unwrap();
+        assert!(reference.on_demand);
+
+        let sectioned =
+            super::unresolved_op_ref("op://Vault/Item/Section/key?attribute=otp", false).unwrap();
+        assert_eq!(sectioned.op, "op://Vault/Item/Section/key?attribute=otp");
+        assert_eq!(sectioned.path, "Vault/Item/Section/key");
+    }
+
+    #[test]
+    fn unresolved_op_ref_rejects_malformed_uris() {
+        for value in [
+            "op://",
+            "op://vault",
+            "op://vault/item",
+            "op://vault//field",
+        ] {
+            assert!(
+                super::unresolved_op_ref(value, false).is_err(),
+                "{value} must not persist"
+            );
+        }
+    }
+
+    /// `op` absent (probe failed): the `op://` ref persists unresolved so
+    /// `account add --secret-ref` and `env set` keep working; resolution
+    /// stays lazy.
+    #[test]
+    fn unavailable_op_persists_the_op_ref_unresolved() {
+        let value =
+            super::resolve_env_value_for_cli_with_runner("op://Vault/Item/key", false, None)
+                .unwrap();
+        let EnvValue::OpRef(reference) = value else {
+            panic!("an op:// value must persist as an OpRef, got {value:?}");
+        };
+        assert_eq!(reference.op, "op://Vault/Item/key");
+        assert_eq!(reference.path, "Vault/Item/key");
+    }
+
+    struct StubOp {
+        vaults: Vec<jackin_core::OpVault>,
+        items: Vec<jackin_core::OpItem>,
+        fields: Vec<jackin_core::OpField>,
+    }
+
+    impl jackin_env::OpStructRunner for StubOp {
+        fn account_list(&self) -> anyhow::Result<Vec<jackin_core::OpAccount>> {
+            Ok(Vec::new())
+        }
+
+        fn vault_list(&self, _account: Option<&str>) -> anyhow::Result<Vec<jackin_core::OpVault>> {
+            Ok(self.vaults.clone())
+        }
+
+        fn item_list(
+            &self,
+            _vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<Vec<jackin_core::OpItem>> {
+            Ok(self.items.clone())
+        }
+
+        fn item_get(
+            &self,
+            _item_id: &str,
+            _vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<Vec<jackin_core::OpField>> {
+            Ok(self.fields.clone())
+        }
+    }
+
+    fn stub_op() -> StubOp {
+        StubOp {
+            vaults: vec![jackin_core::OpVault {
+                id: "vault-uuid".to_owned(),
+                name: "Vault".to_owned(),
+            }],
+            items: vec![jackin_core::OpItem {
+                id: "item-uuid".to_owned(),
+                name: "Item".to_owned(),
+                subtitle: String::new(),
+            }],
+            fields: vec![jackin_core::OpField {
+                id: "field-id".to_owned(),
+                label: "key".to_owned(),
+                field_type: "CONCEALED".to_owned(),
+                concealed: true,
+                reference: "op://vault-uuid/item-uuid/key".to_owned(),
+            }],
+        }
+    }
+
+    /// `op` present: the URI still canonicalizes through live structural
+    /// queries (UUID form), exactly as before the lazy fallback.
+    #[test]
+    fn available_op_canonicalizes_the_op_ref() {
+        let stub = stub_op();
+        let value =
+            super::resolve_env_value_for_cli_with_runner("op://Vault/Item/key", false, Some(&stub))
+                .unwrap();
+        let EnvValue::OpRef(reference) = value else {
+            panic!("an op:// value must persist as an OpRef, got {value:?}");
+        };
+        assert_eq!(reference.op, "op://vault-uuid/item-uuid/field-id");
+        assert_eq!(reference.path, "Vault/Item/key");
+    }
+
+    /// `op` present but the ref is unknown: the resolution error propagates
+    /// honestly instead of silently persisting an unresolvable ref.
+    #[test]
+    fn available_op_reports_an_unknown_vault_honestly() {
+        let stub = stub_op();
+        let error = super::resolve_env_value_for_cli_with_runner(
+            "op://NoSuchVault/Item/key",
+            false,
+            Some(&stub),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("NoSuchVault"), "{error}");
+    }
+
+    /// `op` present but failing (unsigned/blocked): the runner's underlying
+    /// error propagates verbatim through the real subprocess path. The shim
+    /// mirrors `op`'s unsigned `vault list` failure without depending on
+    /// ambient sign-in state.
+    #[test]
+    fn op_runner_failure_propagates_the_underlying_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let shim = temp.path().join("op");
+        std::fs::write(
+            &shim,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--version\" ]; then echo 2.39.0; exit 0; fi\n\
+             echo '[ERROR] 2026/01/01 you are not signed in; run `op signin`' >&2\n\
+             exit 1\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let runner = jackin_env::OpCli::with_binary(shim.to_string_lossy().into_owned());
+        let error = super::resolve_env_value_for_cli_with_runner(
+            "op://Vault/Item/key",
+            false,
+            Some(&runner),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("not signed in"), "{error}");
+    }
+
+    /// Lazy resolution of a persisted unresolved ref fails honestly when
+    /// `op` is still missing at value-use time.
+    #[test]
+    fn unresolved_ref_resolution_fails_honestly_without_op() {
+        let value =
+            EnvValue::OpRef(super::unresolved_op_ref("op://Vault/Item/key", false).unwrap());
+        let runner =
+            jackin_env::OpCli::with_binary("/nonexistent-op-binary-jackin-test".to_owned());
+        let error = jackin_env::resolve_env_value("test-layer", "SECRET", &value, &runner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("SECRET"), "{error}");
+        assert!(error.contains("1Password"), "{error}");
+    }
+
+    /// The ambient entry point follows live `op` availability: a working
+    /// `op` attempts real resolution (a bogus vault errors, never silently
+    /// persists); a missing `op` persists the ref unresolved.
+    #[test]
+    fn cli_resolution_follows_live_op_availability() {
+        let probe = jackin_env::OpCli::new();
+        let available = jackin_env::OpRunner::probe(&probe).is_ok();
+        let result =
+            super::resolve_env_value_for_cli("op://NoSuchVaultForJackinTest/NoSuchItem/key", false);
+        if available {
+            assert!(
+                result.is_err(),
+                "live `op` must attempt resolution, not silently persist"
+            );
+        } else {
+            assert!(matches!(result.unwrap(), EnvValue::OpRef(_)));
+        }
     }
 }
