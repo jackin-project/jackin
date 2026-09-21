@@ -8,7 +8,7 @@ runners = "github"
 
 [analysis]
 method = "static-filesystem-and-manifest-inspection"
-detected = ["cargo-audit-policy", "cargo-deny-policy", "cargo-lockfile", "cargo-nextest-policy", "mise-present", "package-manager:bun:docs", "package-script:docs:build", "package-script:docs:test", "renovate-configuration", "rust-binaries:jackin-capsule:1", "rust-binaries:jackin-config-fuzz:2", "rust-binaries:jackin-dev:1", "rust-binaries:jackin-env-fuzz:1", "rust-binaries:jackin-manifest-fuzz:2", "rust-binaries:jackin-protocol-fuzz:1", "rust-binaries:jackin-runtime:1", "rust-binaries:jackin-xtask:1", "rust-binaries:jackin:3", "rust-build-script:jackin", "rust-build-script:jackin-capsule", "rust-build-script:jackin-diagnostics", "rust-build-script:jackin-docker", "rust-build-script:jackin-image", "rust-build-script:jackin-launch", "rust-build-script:jackin-runtime", "rust-features:jackin-agent-status:2", "rust-features:jackin-capsule:3", "rust-features:jackin-config:1", "rust-features:jackin-console:1", "rust-features:jackin-diagnostics:2", "rust-features:jackin-instance:1", "rust-features:jackin-isolation:1", "rust-features:jackin-runtime:1", "rust-features:jackin-usage:1", "rust-features:jackin:2", "rust-ffi:jackin-usage-ffi", "rust-test-targets:jackin-capsule:1", "rust-test-targets:jackin-config:1", "rust-test-targets:jackin-diagnostics:17", "rust-test-targets:jackin-manifest:1", "rust-test-targets:jackin-protocol:1", "rust-test-targets:jackin-runtime:1", "rust-test-targets:jackin-telemetry:1", "rust-test-targets:jackin-usage:1", "rust-test-targets:jackin:1", "rust-workspace-members:35", "swift-package:native/Design/Prototypes/UnifiedAgentUsage"]
+detected = ["cargo-audit-policy", "cargo-deny-policy", "cargo-lockfile", "cargo-nextest-policy", "mise-present", "package-manager:bun:docs", "package-script:docs:build", "package-script:docs:test", "renovate-configuration", "rust-binaries:jackin-capsule:1", "rust-binaries:jackin-config-fuzz:2", "rust-binaries:jackin-dev:1", "rust-binaries:jackin-env-fuzz:1", "rust-binaries:jackin-manifest-fuzz:2", "rust-binaries:jackin-protocol-fuzz:1", "rust-binaries:jackin-runtime:1", "rust-binaries:jackin-xtask:1", "rust-binaries:jackin:3", "rust-build-script:jackin", "rust-build-script:jackin-capsule", "rust-build-script:jackin-diagnostics", "rust-build-script:jackin-docker", "rust-build-script:jackin-image", "rust-build-script:jackin-launch", "rust-build-script:jackin-runtime", "rust-features:jackin-agent-status:2", "rust-features:jackin-capsule:3", "rust-features:jackin-config:1", "rust-features:jackin-console:1", "rust-features:jackin-diagnostics:2", "rust-features:jackin-instance:1", "rust-features:jackin-isolation:1", "rust-features:jackin-runtime:1", "rust-features:jackin-usage:1", "rust-features:jackin:2", "rust-ffi:jackin-usage-ffi", "rust-test-targets:jackin-capsule:1", "rust-test-targets:jackin-config:1", "rust-test-targets:jackin-diagnostics:17", "rust-test-targets:jackin-manifest:1", "rust-test-targets:jackin-protocol:1", "rust-test-targets:jackin-runtime:1", "rust-test-targets:jackin-telemetry:1", "rust-test-targets:jackin-usage:1", "rust-test-targets:jackin:1", "rust-workspace-members:35", "swift-package:native", "swift-package:native/Design/Prototypes/UnifiedAgentUsage"]
 limitations = ["Manifests nested under tests/ or benches/ directories are treated as test fixtures and ignored.", "Project code, build scripts, task runners, and commands are never executed during analysis.", "Release, signing, registry, deployment, branch-protection, and runner-capability contracts remain explicit manual inputs.", "Rust build scripts are watched but their system dependencies and generated outputs are not inferred."]
 
 [workflow]
@@ -29,11 +29,12 @@ id = "bun-jackin-docs"
 label = "Bun package (jackin-docs)"
 kind = "bun"
 root = "docs"
-watch = ["docs/**/*.js", "docs/**/*.json", "docs/**/*.jsx", "docs/**/*.ts", "docs/**/*.tsx", "docs/bun.lock", "docs/bun.lockb", "docs/package-lock.json", "docs/package.json"]
+watch = ["bun.lock", "bun.lockb", "crates/**", "docs/**", "package-lock.json", "package.json", "scripts/**", "src/**"]
 github_pr_commands = ["cd -- 'docs' && bun install --frozen-lockfile", "cd -- 'docs' && bun run build", "cd -- 'docs' && bun run test"]
 github_full_commands = ["cd -- 'docs' && bun install --frozen-lockfile", "cd -- 'docs' && bun run build", "cd -- 'docs' && bun run test"]
 velnor_pr_commands = ["cd -- 'docs' && bun install --frozen-lockfile", "cd -- 'docs' && bun run build", "cd -- 'docs' && bun run test"]
 velnor_full_commands = ["cd -- 'docs' && bun install --frozen-lockfile", "cd -- 'docs' && bun run build", "cd -- 'docs' && bun run test"]
+reads_closed = true
 [unit.cache]
 key_files = ["docs/package.json", "docs/bun.lock"]
 paths = ["~/.bun/install/cache"]
@@ -43,7 +44,7 @@ id = "docker-docker-construct"
 label = "Docker (docker/construct)"
 kind = "docker"
 root = "docker/construct"
-watch = ["docker/construct/**"]
+watch = [".cargo/**", "Cargo.lock", "Cargo.toml", "docker/construct/**", "mise.lock", "mise.toml", "rust-toolchain", "rust-toolchain.toml"]
 github_pr_commands = ["docker build --file 'docker/construct/Dockerfile' --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
 github_full_commands = ["docker build --file 'docker/construct/Dockerfile' --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
 velnor_pr_commands = ["docker build --file 'docker/construct/Dockerfile' --tag local-ci:docker-construct-dockerfile 'docker/construct'"]
@@ -643,7 +644,7 @@ id = "rust-policy"
 label = "Rust dependency policy"
 kind = "rust"
 root = "."
-watch = [".cargo/audit.toml", ".cargo/deny.toml", "Cargo.lock", "Cargo.toml", "audit.toml", "deny.toml"]
+watch = [".cargo/**", ".cargo/audit.toml", ".cargo/deny.toml", "Cargo.lock", "Cargo.toml", "audit.toml", "deny.toml", "mise.lock", "mise.toml", "rust-toolchain", "rust-toolchain.toml"]
 github_pr_commands = ["mbx deny check", "mbx audit"]
 github_full_commands = ["mbx deny check", "mbx audit"]
 velnor_pr_commands = ["mbx deny check", "mbx audit"]
@@ -651,6 +652,22 @@ velnor_full_commands = ["mbx deny check", "mbx audit"]
 [unit.cache]
 key_files = [".cargo/**", "Cargo.lock", "deny.toml"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
+
+[[unit]]
+id = "swift-package-native"
+label = "Swift package (native)"
+kind = "swift"
+root = "native"
+watch = [".cargo/**", "Cargo.lock", "Cargo.toml", "crates/**", "crates/jackin-xtask/**", "mise.lock", "mise.toml", "native/**", "native/**/*.swift", "native/.swiftpm/Package.resolved", "native/Package.resolved", "native/Package.swift", "rust-toolchain.toml", "vendor/**"]
+github_pr_commands = ["mise run desktop-xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+github_full_commands = ["mise run desktop-xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+velnor_pr_commands = ["mise run desktop-xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+velnor_full_commands = ["mise run desktop-xcframework", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+depends_on = ["rust-jackin-usage-ffi"]
+reads_closed = true
+[unit.cache]
+key_files = ["native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved"]
+paths = ["~/.swiftpm"]
 
 [[unit]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
@@ -665,15 +682,3 @@ velnor_full_commands = ["cd -- 'native/Design/Prototypes/UnifiedAgentUsage' && s
 [unit.cache]
 key_files = ["native/Design/Prototypes/UnifiedAgentUsage/Package.swift", "native/Design/Prototypes/UnifiedAgentUsage/Package.resolved", "native/Design/Prototypes/UnifiedAgentUsage/.swiftpm/Package.resolved"]
 paths = ["~/.swiftpm"]
-
-[[unit]]
-id = "swift-package-native"
-label = ""
-kind = "swift"
-root = "native"
-watch = ["crates/jackin-xtask/**", "native/**/*.swift", "native/.swiftpm/Package.resolved", "native/Package.resolved", "native/Package.swift"]
-github_pr_commands = ["mise run swift-package-native-ci"]
-github_full_commands = ["mise run swift-package-native-ci"]
-velnor_pr_commands = ["mise run swift-package-native-ci"]
-velnor_full_commands = ["mise run swift-package-native-ci"]
-depends_on = ["rust-jackin-usage-ffi"]
