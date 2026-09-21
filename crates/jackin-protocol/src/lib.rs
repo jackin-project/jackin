@@ -241,6 +241,13 @@ pub struct CapsuleConfig {
     /// surface names are not sufficient to select a same-provider account.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub usage_capabilities: BTreeMap<String, usage_broker::UsageAccountCapability>,
+    /// Provider surface selected for each admitted instance's credential
+    /// envelope. This is routing metadata, not usage authority: it is
+    /// derived from the host-authorized account selection and survives when
+    /// usage discovery cannot prove a relay capability. Identifiers only —
+    /// never credential material.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub credential_provider_surfaces: BTreeMap<String, String>,
     /// Display label per admitted instance, keyed by instance config ID.
     /// `{Agent} · {account name}` unless the operator overrode it. Tab/pane
     /// chrome renders these so two same-agent instances stay distinguishable.
@@ -436,6 +443,14 @@ impl CapsuleConfig {
         instance: &str,
     ) -> Option<&usage_broker::UsageAccountCapability> {
         self.usage_capabilities.get(instance)
+    }
+
+    /// Provider surface selected for an instance's credential envelope.
+    #[must_use]
+    pub fn credential_provider_surface_for_instance(&self, instance: &str) -> Option<&str> {
+        self.credential_provider_surfaces
+            .get(instance)
+            .map(String::as_str)
     }
 
     /// Display label for an instance config ID.
