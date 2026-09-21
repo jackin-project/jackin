@@ -5,7 +5,7 @@
 
 set -eu
 
-state_dir="/jackin/state/jackin-sentinel"
+state_dir="${JACKIN_HOOK_STATE_DIR:-/jackin/state/hook-state}/jackin-sentinel"
 bin_dir="$state_dir/bin"
 mkdir -p "$state_dir" "$bin_dir"
 
@@ -20,7 +20,7 @@ cat > "$bin_dir/jackin-sentinel-report" <<'REPORT'
 #!/usr/bin/env sh
 set -eu
 
-state_dir="${JACKIN_SENTINEL_STATE_DIR:-/jackin/state/jackin-sentinel}"
+state_dir="${JACKIN_SENTINEL_STATE_DIR:-/jackin/state/hook-state/jackin-sentinel}"
 preflight_count=0
 if [ -f "$state_dir/preflight.log" ]; then
   preflight_count="$(grep -c '^preflight=1$' "$state_dir/preflight.log" || true)"

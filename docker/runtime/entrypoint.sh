@@ -34,6 +34,16 @@ run_hook() {
 # values.
 /jackin/runtime/jackin-capsule runtime-setup
 
+# ── session-scoped hook state ──────────────────────────────────────────
+# Landlock-confined agent sessions cannot write capsule-wide /jackin/state,
+# so hooks must write under JACKIN_HOOK_STATE_DIR instead. Export before ALL
+# hook execution (setup-once, source, preflight) so hooks inherit it.
+export JACKIN_HOOK_STATE_DIR="${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hook-state"
+if ! mkdir -p "$JACKIN_HOOK_STATE_DIR"; then
+    echo "[entrypoint] failed to create hook state directory $JACKIN_HOOK_STATE_DIR" >&2
+    exit 1
+fi
+
 # ── agent runtime status env ───────────────────────────────────────────
 # JACKIN_SESSION_ID is set only for agent runtimes by the daemon. Export
 # remaining status vars so agent hook scripts and subprocesses inherit them.
