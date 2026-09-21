@@ -12,6 +12,8 @@ use jackin_protocol::control::{
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
+use super::broker::{UNIX_SOCKET_PATH_LIMIT, short_socket_alias};
+
 fn open_runtime(dir: &Path) -> HostUsageRuntime {
     let mut runtime = HostUsageRuntime::new();
     runtime
@@ -2106,5 +2108,79 @@ fn request_usage_batch_forced_refresh_still_honors_retry_after() {
     // generation instead of dispatching a duplicate probe.
     let forced = request_usage_batch(&client, [capability], true);
     assert_eq!(forced[0].1.as_ref().expect("forced ok").generation, 1);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+/// Data directory whose broker socket path exceeds the platform `sun_path`
+/// limit, mirroring deep test tempdirs and long `$HOME` layouts.
+fn overlong_broker_data_dir(temp: &tempfile::TempDir) -> PathBuf {
+    let suffix_len = Path::new("usage-broker/run/usage-broker.sock")
+        .as_os_str()
+        .len()
+        + 1;
+    let base_len = temp.path().as_os_str().len() + 1;
+    let padding = "p".repeat(UNIX_SOCKET_PATH_LIMIT.saturating_sub(base_len + suffix_len) + 8);
+    temp.path().join(padding)
+}
+
+fn full_broker_socket_path(data_dir: &Path) -> PathBuf {
+    data_dir
+        .join("usage-broker")
+        .join("run")
+        .join("usage-broker.sock")
+}
+
+#[test]
+fn broker_socket_alias_only_triggers_past_sun_path_limit() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let short = full_broker_socket_path(temp.path());
+    assert!(
+        short.as_os_str().len() < UNIX_SOCKET_PATH_LIMIT,
+        "fixture must fit the limit, got {}",
+        short.display()
+    );
+    assert_eq!(short_socket_alias(&short), None);
+
+    let data_dir = overlong_broker_data_dir(&temp);
+    let full = full_broker_socket_path(&data_dir);
+    assert!(
+        full.as_os_str().len() >= UNIX_SOCKET_PATH_LIMIT,
+        "fixture must exceed the limit, got {}",
+        full.display()
+    );
+    let alias = short_socket_alias(&full).expect("over-long path needs an alias");
+    assert!(
+        alias.as_os_str().len() < UNIX_SOCKET_PATH_LIMIT,
+        "alias must fit the limit, got {}",
+        alias.display()
+    );
+    // Client and server rendezvous without shared state: same input, same
+    // alias, and distinct data directories never share one.
+    assert_eq!(short_socket_alias(&full), Some(alias.clone()));
+    let sibling = full_broker_socket_path(&data_dir.join("sibling"));
+    let sibling_alias = short_socket_alias(&sibling).expect("sibling needs an alias");
+    assert_ne!(alias, sibling_alias);
+}
+
+#[test]
+fn broker_serves_through_socket_alias_for_overlong_data_dir() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let data_dir = overlong_broker_data_dir(&temp);
+    let executor = Arc::new(BatchCountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let concrete_executor = Arc::clone(&executor);
+    let broker_executor: Arc<dyn crate::coordinator::UsageProviderExecutor> = concrete_executor;
+    let client = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(data_dir.clone()),
+        broker_executor,
+    )
+    .expect("broker must bind through the alias");
+    let alias = short_socket_alias(&full_broker_socket_path(&data_dir)).expect("alias");
+    assert!(alias.exists(), "broker must listen on {}", alias.display());
+
+    let batch = request_usage_batch(&client, [batch_capability("alias-account", "codex")], false);
+    assert!(batch.iter().all(|(_, result)| result.is_ok()));
+    join_batch(&client, &batch);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }

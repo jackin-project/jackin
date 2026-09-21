@@ -33,6 +33,7 @@ nix = { workspace = true, features = ["fs", "signal", "term", "user"] }
 reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "macros", "time", "net"] }
 tower = { workspace = true }
 tracing = { workspace = true }

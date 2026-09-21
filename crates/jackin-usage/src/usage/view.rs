@@ -376,31 +376,35 @@ pub(crate) fn compact_account_identity(account_label: &str) -> &str {
     }
 }
 
-pub(crate) fn most_constrained_fresh_bucket(
-    buckets: &[QuotaBucketView],
-) -> Option<&QuotaBucketView> {
-    // Prefer a rolling-window bucket that actually carries a reset, excluding the
-    // monetary Spend slot (already shown as money in the status bar, and it has
-    // no rolling reset). Tightest remaining wins; ties break to the soonest reset
-    // so the overview row always carries a reset column (Bug 5: a reset-less spend
-    // bucket must not win the headline and blank the reset). Fall back to the old
-    // "any fresh bucket with a remaining" only when no windowed+reset bucket
-    // exists, so a provider that genuinely has only reset-less windows still shows.
+/// Rank of one bucket in the settled Overview-summary order (D30:
+/// long-range weekly/daily, model-specific, session, then other). The slot
+/// mapping mirrors the projection's `window_category` exactly
+/// (`Spend`/`None` read as `Other`), so the capsule and the console select
+/// the same window; no producer emits the `Model` category yet, so
+/// model-specific windows rank as `Other` on both surfaces until one does.
+fn summary_slot_rank(slot: Option<StatusSlot>) -> u8 {
+    match slot {
+        Some(StatusSlot::Daily | StatusSlot::Weekly) => 0,
+        // No `StatusSlot` marks a model-specific window; unslotted buckets
+        // rank as `Other`, exactly like the projection maps them.
+        Some(StatusSlot::Session) => 2,
+        Some(StatusSlot::Spend) | None => 3,
+    }
+}
+
+pub(crate) fn summary_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
+    // First available Rust-ranked limit (D30): lowest category rank wins,
+    // ties break to provider order, and only fresh buckets carrying a
+    // remaining percent qualify. Spend ranks last as `Other` (Bug 5: a
+    // reset-less spend bucket must not win the headline over a real limit),
+    // but still wins over nothing, so a spend-only account shows its quota.
     buckets
         .iter()
-        .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
-        .filter(|bucket| bucket.status_slot != Some(StatusSlot::Spend))
-        .filter(|bucket| bucket.remaining_percent.is_some() && bucket.resets_at.is_some())
-        // Both keys are `Some` (filtered), so a plain tuple key orders by tightest
-        // remaining, then soonest reset.
-        .min_by_key(|bucket| (bucket.remaining_percent, bucket.resets_at))
-        .or_else(|| {
-            buckets
-                .iter()
-                .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
-                .filter(|bucket| bucket.remaining_percent.is_some())
-                .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
-        })
+        .enumerate()
+        .filter(|(_, bucket)| bucket.status == UsageSnapshotStatus::Fresh)
+        .filter(|(_, bucket)| bucket.remaining_percent.is_some())
+        .min_by_key(|(index, bucket)| (summary_slot_rank(bucket.status_slot), *index))
+        .map(|(_, bucket)| bucket)
 }
 
 pub(crate) fn preserve_cached_quota_on_failed_refresh(
@@ -636,12 +640,14 @@ pub(crate) fn usage_tab_source_label(view: &FocusedUsageView) -> String {
 
 pub(crate) fn usage_tab_status_label(view: &FocusedUsageView) -> String {
     if view.status == UsageSnapshotStatus::Fresh
-        && let Some(bucket) = most_constrained_fresh_bucket(&view.buckets)
+        && let Some(bucket) = summary_bucket(&view.buckets)
         && let Some(remaining) = bucket.remaining_percent
     {
-        // A model-scoped window (Fable, Sonnet, …) winning the compact headline
-        // is the actionable signal — name it so the Overview/status row tells
-        // the operator *which* model is the bottleneck, not just the % left.
+        // The summary window is the first available Rust-ranked limit (D30),
+        // shared with the console list summary. An unslotted window (a
+        // model-scoped Fable/Sonnet limit, or any other provider bucket)
+        // winning the headline is named, so the Overview/status row tells the
+        // operator *which* limit the % traces to, not just the % left.
         // Headline windows (Session/Weekly) stay bare: their slot already
         // implies them and the status bar carries those separately.
         let mut label = String::new();

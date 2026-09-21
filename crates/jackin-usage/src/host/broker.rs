@@ -26,6 +26,7 @@ use nix::fcntl::{Flock, FlockArg, OFlag, open, openat, renameat};
 use nix::sys::signal::kill;
 use nix::sys::stat::{Mode, fchmod, mkdirat};
 use nix::unistd::{Pid, UnlinkatFlags, fsync, geteuid, unlinkat};
+use sha2::{Digest as _, Sha256};
 
 use crate::coordinator::{
     FileAccountStateStore, FileProjectionStateStore, ProjectionStateEnvelope, ProviderProbeOutcome,
@@ -223,6 +224,19 @@ const CONNECT_RETRY_STEP: Duration = Duration::from_millis(20);
 const BROKER_CONNECTION_WORKERS: usize = 4;
 const BROKER_CONNECTION_QUEUE: usize = 128;
 const PUBLISH_TICK: Duration = Duration::from_millis(200);
+/// Maximum `sun_path` bytes including the trailing NUL. `bind`/`connect`
+/// fail beyond this, so over-long broker socket paths fall back to a
+/// deterministic short alias (macOS allows 104, Linux 108).
+#[cfg(target_os = "macos")]
+pub(crate) const UNIX_SOCKET_PATH_LIMIT: usize = 104;
+/// Maximum `sun_path` bytes including the trailing NUL. `bind`/`connect`
+/// fail beyond this, so over-long broker socket paths fall back to a
+/// deterministic short alias (macOS allows 104, Linux 108).
+#[cfg(not(target_os = "macos"))]
+pub(crate) const UNIX_SOCKET_PATH_LIMIT: usize = 108;
+/// Alias directory prefix under the system temp dir, suffixed with the
+/// effective uid so alias sockets stay per-user.
+const BROKER_SOCKET_ALIAS_DIR_PREFIX: &str = "jk-ub-";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct BrokerLease {
@@ -294,10 +308,12 @@ impl UsageBrokerConfig {
     }
 
     fn socket_path(&self) -> PathBuf {
-        self.data_dir
+        let full = self
+            .data_dir
             .join(BROKER_DIR)
             .join(BROKER_RUN_DIR)
-            .join(BROKER_SOCKET)
+            .join(BROKER_SOCKET);
+        short_socket_alias(&full).unwrap_or(full)
     }
 
     /// Construct a fail-closed client even when broker startup is unavailable.
@@ -305,6 +321,49 @@ impl UsageBrokerConfig {
     pub fn client(&self) -> UsageBrokerClient {
         UsageBrokerClient::at(self.socket_path(), self.build_id.clone())
     }
+}
+
+/// Deterministic short alias for a broker socket path that exceeds the
+/// platform `sun_path` limit (deep test tempdirs, long `$HOME`).
+///
+/// Returns `None` when the full path fits or the alias directory cannot be
+/// provisioned; callers then use the full path and fail closed exactly as
+/// before. Client and server derive the same alias from the same
+/// `data_dir`, so no rendezvous state is needed. The alias directory is
+/// per-uid, `0700`, and ownership-validated like the run directory; the
+/// socket file itself keeps the existing `0600` + ownership checks at bind
+/// time. Distinct data directories map to distinct alias names via the
+/// 64-bit SHA-256 prefix of the full path.
+pub(crate) fn short_socket_alias(full: &Path) -> Option<PathBuf> {
+    if full.as_os_str().len() < UNIX_SOCKET_PATH_LIMIT {
+        return None;
+    }
+    let digest = Sha256::digest(full.as_os_str().as_encoded_bytes());
+    let mut name = String::with_capacity(21);
+    name.push_str("jk-");
+    for byte in digest.iter().take(8) {
+        use std::fmt::Write as _;
+        let _written = write!(name, "{byte:02x}");
+    }
+    name.push_str(".sock");
+    let dir = std::env::temp_dir().join(format!(
+        "{BROKER_SOCKET_ALIAS_DIR_PREFIX}{}",
+        geteuid().as_raw()
+    ));
+    fs::create_dir_all(&dir).ok()?;
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).ok()?;
+    let metadata = fs::symlink_metadata(&dir).ok()?;
+    if metadata.file_type().is_symlink()
+        || metadata.uid() != geteuid().as_raw()
+        || metadata.mode() & 0o777 != 0o700
+    {
+        return None;
+    }
+    let alias = dir.join(name);
+    if alias.as_os_str().len() >= UNIX_SOCKET_PATH_LIMIT {
+        return None;
+    }
+    Some(alias)
 }
 
 fn default_service_executable() -> Option<PathBuf> {
@@ -1270,6 +1329,7 @@ fn run_usage_broker_service_with_executor_and_metadata(
         build_id: config.build_id.clone(),
         lease_path: leader_path,
         lease,
+        socket_path,
         policy: ServePolicy {
             idle_exit: config.idle_exit,
             lease_duration: config.lease_duration,
@@ -1338,6 +1398,7 @@ pub fn ensure_usage_broker_with_executor(
             build_id,
             lease_path,
             lease,
+            socket_path,
             policy: ServePolicy {
                 idle_exit,
                 lease_duration,
@@ -1362,6 +1423,7 @@ struct ServeConfig {
     build_id: String,
     lease_path: PathBuf,
     lease: BrokerLease,
+    socket_path: PathBuf,
     policy: ServePolicy,
     publisher: publish::ProjectionPublisher,
 }
@@ -1373,6 +1435,7 @@ fn serve(config: ServeConfig) {
         build_id,
         lease_path,
         mut lease,
+        socket_path,
         policy,
         publisher,
     } = config;
@@ -1493,7 +1556,7 @@ fn serve(config: ServeConfig) {
         drop(ticker.join());
     }
     let _ignored = remove_lease(&lease_path, &lease);
-    let _ignored = fs::remove_file(lease_path.with_file_name(BROKER_SOCKET));
+    let _ignored = fs::remove_file(&socket_path);
 }
 
 fn handle_stream(

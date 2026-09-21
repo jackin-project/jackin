@@ -570,7 +570,8 @@ pub struct UsageBucketPresentation {
     /// `display_segments` joined with the canonical `" · "` separator.
     pub display_label: String,
     /// Percentage usable only as presentation geometry (meter fill): remaining
-    /// for normal/credits buckets, used for the Spend slot.
+    /// on every slot, including Spend, so all capsule meters agree with the
+    /// console windows. The Spend *text* still reads used (`{n}% used`).
     pub meter_percent: Option<u8>,
 }
 
@@ -674,11 +675,22 @@ pub fn usage_bucket_presentation(
 
     if bucket.status_slot == Some(StatusSlot::Spend) {
         if let Some(remaining) = bucket.remaining_percent {
-            let used = 100u8.saturating_sub(remaining);
-            let segment = format!("{used}% used");
+            // A remaining percent saturates at zero, so money over-100%
+            // overage is invisible to it; the structured money ratio recovers
+            // the raw magnitude through the same checked rule the projection
+            // uses, keeping both surfaces on one "{raw}% used" text.
+            let money_raw = bucket
+                .used_money
+                .as_ref()
+                .and_then(|used| used.raw_percent_of(bucket.limit_money.as_ref()?));
+            let used_raw: i32 = match money_raw {
+                Some(raw) if raw > 100 => raw,
+                _ => i32::from(100u8.saturating_sub(remaining)),
+            };
+            let segment = format!("{used_raw}% used");
             remaining_label = Some(segment.clone());
             segments.push(segment);
-            meter_percent = Some(used);
+            meter_percent = Some(u8::try_from((100 - used_raw).clamp(0, 100)).unwrap_or(0));
         }
         if let Some(cap) = usage_money_cap_segment(
             bucket.used_label.as_deref(),

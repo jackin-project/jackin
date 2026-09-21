@@ -144,7 +144,6 @@ pub struct UsageWindow {
     pub reset_at_epoch: Option<i64>,
     pub quota_state: UsageQuotaStateV1,
     pub pace_label: Option<String>,
-    pub runs_out_label: Option<String>,
 }
 
 impl UsageWindow {
@@ -268,6 +267,18 @@ impl UsageAccount {
                     .filter_map(UsageMetricGroup::meter_percent),
             )
             .min()
+    }
+
+    /// First available Rust-ranked limit (D30: long-range, model-specific,
+    /// session, then other; ties break to provider order). Only metered
+    /// windows qualify. The list summary and its meter bar both read this one
+    /// window, matching the capsule tab status selection.
+    #[must_use]
+    pub fn summary_window(&self) -> Option<&UsageWindow> {
+        self.windows
+            .iter()
+            .filter(|window| window.meter_percent().is_some())
+            .min_by_key(|window| (summary_category_rank(window.category), window.rank))
     }
 
     /// Soonest known reset/renewal epoch across windows and metric groups.
@@ -404,7 +415,6 @@ impl UsageScreenState {
                         reset_at_epoch: window.reset_at_epoch,
                         quota_state: window.quota_state,
                         pace_label: window.pace_label.clone(),
-                        runs_out_label: window.runs_out_label.clone(),
                     })
                     .collect();
                 let metric_groups = account
@@ -535,6 +545,10 @@ impl UsageScreenState {
         self.notice = notice;
         self.last_refresh_at = Some(now);
         self.refresh_due = false;
+        // A refresh replaces the list: old offsets are meaningless and a
+        // stale deep offset would blank the panes until the operator
+        // scrolled back (same rule as `reanchor_after_view_change`).
+        self.scroll = 0;
         match &self.selected_id {
             None => self.selected = 0,
             Some(id) => {
@@ -578,6 +592,15 @@ impl UsageScreenState {
     #[must_use]
     pub fn refresh_in_flight(&self) -> bool {
         self.refresh_rx.is_some()
+    }
+
+    /// True while an empty route is still waiting on broker work: a refresh
+    /// is either in flight or due (the open path marks one due before the
+    /// worker starts). Empty branches render the loading line in this case
+    /// instead of claiming no providers are configured.
+    #[must_use]
+    pub fn loading(&self) -> bool {
+        self.refresh_in_flight() || self.refresh_due
     }
 
     /// Claim the next due refresh, if any, following the instance-refresh
@@ -797,6 +820,17 @@ fn quota_state_label(state: UsageQuotaStateV1) -> &'static str {
         UsageQuotaStateV1::Unknown => "unknown",
         UsageQuotaStateV1::NotApplicable => "n/a",
         UsageQuotaStateV1::Error => "error",
+    }
+}
+
+/// Rank of one window category in the settled Overview-summary order (D30:
+/// long-range weekly/daily/monthly, model-specific, session, then other).
+const fn summary_category_rank(category: UsageWindowCategoryV1) -> u8 {
+    match category {
+        UsageWindowCategoryV1::LongRange => 0,
+        UsageWindowCategoryV1::Model => 1,
+        UsageWindowCategoryV1::Session => 2,
+        UsageWindowCategoryV1::Other => 3,
     }
 }
 
@@ -1202,7 +1236,7 @@ pub fn handle_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         KeyCode::Char('c') => {
             screen.jump_to_most_constrained();
         }
-        KeyCode::Char('r') => {
+        KeyCode::Char('r' | 'R') => {
             screen.refresh_due = true;
             screen.force_refresh_pending = true;
         }
@@ -1239,8 +1273,13 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if screen.accounts.is_empty() {
+        let text = if screen.loading() {
+            "Refreshing usage…"
+        } else {
+            "No providers configured.\n\nPress R to refresh."
+        };
         frame.render_widget(
-            Paragraph::new("No providers configured.\n\nPress R to refresh.")
+            Paragraph::new(text)
                 .style(Style::default().fg(Color::DarkGray))
                 .wrap(Wrap { trim: false }),
             inner,
@@ -1302,8 +1341,7 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
         let selected = pos.saturating_add(1) == screen.selected;
         let cursor = if selected { "▸ " } else { "  " };
         let summary = account
-            .windows
-            .first()
+            .summary_window()
             .and_then(UsageWindow::meter_percent)
             .map_or_else(
                 || account.status.clone(),
@@ -1334,7 +1372,7 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
             sub,
             Style::default().fg(Color::DarkGray),
         )));
-        if let Some(window) = account.windows.first()
+        if let Some(window) = account.summary_window()
             && let Some(bar) = meter_line(meter_width, window.meter_percent())
         {
             lines.push(Line::from(Span::styled(
@@ -1358,8 +1396,13 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
     let now = now_epoch();
     let Some(account) = screen.selected_account() else {
         if screen.accounts.is_empty() {
+            let text = if screen.loading() {
+                "Refreshing usage…"
+            } else {
+                "No providers configured.\n\nPress R to refresh."
+            };
             frame.render_widget(
-                Paragraph::new("No providers configured.\n\nPress R to refresh.")
+                Paragraph::new(text)
                     .block(panel("Overview"))
                     .wrap(Wrap { trim: false }),
                 area,
@@ -1573,9 +1616,6 @@ fn append_window_extra(lines: &mut Vec<Line<'static>>, window: &UsageWindow) {
     }
     if let Some(pace) = non_empty_label(window.pace_label.as_ref()) {
         lines.push(Line::from(format!("  pace: {pace}")));
-    }
-    if let Some(runs_out) = non_empty_label(window.runs_out_label.as_ref()) {
-        lines.push(Line::from(format!("  runs out: {runs_out}")));
     }
 }
 

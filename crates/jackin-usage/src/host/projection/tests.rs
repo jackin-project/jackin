@@ -418,7 +418,8 @@ fn canonical_projection_icu_collation_goldens_are_pinned() {
 //
 // Tests named `parity_*` assert cross-surface agreement. Tests named
 // `documented_delta_*` lock a KNOWN divergence with its disposition; see the
-// S4/S5 parity report for the full delta list with file:line evidence.
+// S4/S5 parity report (`plans/pr1013-parity-report.md`) for the full delta
+// list with file:line evidence.
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -1582,17 +1583,17 @@ fn parity_antigravity_capsule_tabs_and_detail() {
         view.tabs[0].source_label.as_deref(),
         Some("fresh · managed CLI")
     );
-    // Most-constrained fresh bucket wins the tab status with model-bottleneck
-    // naming (documented delta vs the console first-window summary).
+    // First available Rust-ranked limit (D30) wins the tab status: the
+    // Weekly long-range window (41%), not the tighter unslotted 12% window
+    // and not the provider-first Session window — the same window as the
+    // console list summary.
     assert!(
-        view.tabs[0]
-            .status_label
-            .starts_with("Other models · 5h 12% left"),
-        "tab status names the bottleneck: {}",
+        view.tabs[0].status_label.starts_with("41% left"),
+        "tab status traces the ranked weekly window: {}",
         view.tabs[0].status_label
     );
     assert!(
-        view.tabs[0].status_label.contains("Resets in 1h 30m"),
+        view.tabs[0].status_label.contains("Resets in 25h"),
         "tab status carries the reset: {}",
         view.tabs[0].status_label
     );
@@ -2361,13 +2362,13 @@ fn parity_render_text(screen_state: UsageScreenState, width: u16, height: u16) -
 }
 
 #[test]
-fn documented_delta_overview_summary_selection() {
-    // Console list summaries read the FIRST window (73%); capsule tab
-    // statuses read the MOST-CONSTRAINED fresh bucket ("Other models · 5h
-    // 12% left"). D30 wants the first ranked real limit; the capsule keeps
-    // Bug-5 most-constrained. Disposition: RECORDED — needs a cross-surface
-    // owner decision; the capsule selection lives in jackin-usage view.rs,
-    // outside renderer scope, so neither owned renderer can converge alone.
+fn parity_overview_summary_first_ranked_limit() {
+    // D30: both surfaces summarize with the first available Rust-ranked
+    // limit. Antigravity provider order leads with Session (73%), but the
+    // Weekly long-range window (41%) outranks it — and outranks the tighter
+    // unslotted 12% window. Console summary/meter and the capsule tab status
+    // all trace to that same window; only the formats differ (bare percent
+    // vs percent plus reset), which stays renderer-owned.
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "antigravity",
         display_name: "Antigravity",
@@ -2375,29 +2376,25 @@ fn documented_delta_overview_summary_selection() {
         provider_issues: Vec::new(),
     });
     let screen = UsageScreenState::from_projection(&projection);
-    assert_eq!(
-        screen.accounts[0].windows[0].meter_percent(),
-        Some(73),
-        "console summary input is the first window"
-    );
+    let summary = screen.accounts[0]
+        .summary_window()
+        .expect("a ranked summary window");
+    assert_eq!(summary.label, "Gemini · Weekly");
+    assert_eq!(summary.meter_percent(), Some(41));
     let enriched = parity_tabs(&views);
     assert!(
-        enriched[0].tabs[0]
-            .status_label
-            .starts_with("Other models · 5h 12% left"),
-        "capsule summary is the most-constrained bucket: {}",
+        enriched[0].tabs[0].status_label.starts_with("41% left"),
+        "capsule summary traces the same ranked window: {}",
         enriched[0].tabs[0].status_label
     );
 }
 
 #[test]
-fn documented_delta_spend_meter_direction() {
-    // Console spend bars fill by REMAINING; capsule spend bars fill by USED
-    // ($45.20/$100: console 55 vs capsule 45; $0/$100: console 100 vs
-    // capsule 0). Disposition: RECORDED — console windows carry no spend
-    // marker (category `Other`), so the console renderer cannot distinguish
-    // spend; converging needs a protocol marker or a shared-presentation
-    // change, both outside renderer scope.
+fn parity_spend_meter_fills_by_remaining() {
+    // Spend meters fill by REMAINING on both surfaces ($45.20/$100: 55 and
+    // 55; $0/$100: 100 and 100). The Spend *text* still reads used on the
+    // capsule side ("45% used" vs console "55% left"): accepted
+    // renderer-owned direction wording over the same percent.
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "cursor",
         display_name: "Cursor",
@@ -2405,17 +2402,9 @@ fn documented_delta_spend_meter_direction() {
         provider_issues: Vec::new(),
     });
     let screen = UsageScreenState::from_projection(&projection);
-    assert_eq!(
-        screen.accounts[0].windows[1].meter_percent(),
-        Some(55),
-        "console spend meter fills by remaining"
-    );
+    assert_eq!(screen.accounts[0].windows[1].meter_percent(), Some(55));
     let spend = usage_bucket_presentation(&views[0].buckets[1]);
-    assert_eq!(
-        spend.meter_percent,
-        Some(45),
-        "capsule spend meter fills by used"
-    );
+    assert_eq!(spend.meter_percent, Some(55));
     assert_eq!(spend.remaining_label.as_deref(), Some("45% used"));
 
     let (projection, views) = parity_single_provider(ParityProvider {
@@ -2428,7 +2417,7 @@ fn documented_delta_spend_meter_direction() {
     assert_eq!(screen.accounts[0].windows[0].meter_percent(), Some(100));
     assert_eq!(
         usage_bucket_presentation(&views[0].buckets[0]).meter_percent,
-        Some(0)
+        Some(100)
     );
 }
 
@@ -2607,10 +2596,16 @@ fn documented_delta_status_wording() {
 
 #[test]
 fn documented_delta_credential_expiry_capsule_gap() {
-    // Console surfaces the credential-expiry epoch ("Credential expired 1h
+    // Console surfaces the credential-expiry overlay ("Credential expired 1h
     // ago" — pinned in the render smoke test); the capsule identity
     // presentation has no expiry field because `FocusedUsageView` carries
-    // none. Disposition: RECORDED — structural view-protocol gap.
+    // none (control.rs: only `last_error` travels beside buckets). ACCEPTED:
+    // in production the console lacks it too — the projection leaves
+    // `credential_expires_at_epoch` unset ("no credential-expiry signal
+    // exists in current provider views", projection.rs) and only a future
+    // broker overlay populates it. Closing the capsule side needs a
+    // view-protocol field plus a collector/broker producer, both outside the
+    // owned layers.
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "zai",
         display_name: "Z.AI",
@@ -2639,8 +2634,13 @@ fn documented_delta_credential_expiry_capsule_gap() {
 fn documented_delta_issue_retry_capsule_gap() {
     // Console issues keep stable codes plus the broker retry ("retry in 5m" /
     // "retry in 2m" — pinned in the render smoke test); capsule surfaces
-    // only the bare `last_error` string. Disposition: RECORDED — the view
-    // carries no retry epoch.
+    // only the bare `last_error` string. ACCEPTED: the projection emits no
+    // issues itself (`issues: Vec::new()`, projection.rs) — codes and retry
+    // epochs arrive only via the broker overlay — and the view carries no
+    // typed-issue or retry channel for the capsule to read. Converging needs
+    // a view-protocol channel plus a broker producer, both outside the owned
+    // layers; the capsule must not parse retry times out of `last_error`
+    // prose.
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "xai",
         display_name: "xAI",
@@ -2785,11 +2785,11 @@ fn documented_delta_model_scope_capsule_gap() {
 }
 
 #[test]
-fn documented_delta_overage_magnitude() {
-    // $150 against a $100 cap: the console preserves raw 150 ("150% used" +
-    // the raw note — pinned in the render smoke test) while the capsule
-    // spend presentation caps at "100% used". Disposition: RECORDED — the
-    // capsule spend presentation has no raw-percent channel.
+fn parity_overage_magnitude_matches_raw_money() {
+    // $150 against a $100 cap: both surfaces read raw 150 through the same
+    // shared money-ratio rule — console "150% used" (plus the raw note,
+    // pinned in the render smoke test) and capsule "150% used" — and both
+    // meters read empty (nothing left).
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "anthropic",
         display_name: "Anthropic",
@@ -2802,20 +2802,20 @@ fn documented_delta_overage_magnitude() {
     assert_eq!(window.used_raw_percent, Some(150));
     assert_eq!(window.remaining_percent, None);
     assert_eq!(window.value, "150% used");
+    assert_eq!(window.meter_percent(), Some(0));
     assert_eq!(window.quota_state, UsageQuotaStateV1::Exhausted);
     let spend = usage_bucket_presentation(&views[0].buckets[2]);
-    assert_eq!(spend.remaining_label.as_deref(), Some("100% used"));
-    assert_eq!(spend.meter_percent, Some(100));
+    assert_eq!(spend.remaining_label.as_deref(), Some("150% used"));
+    assert_eq!(spend.meter_percent, Some(0));
 }
 
 #[test]
-fn documented_delta_meter_percent_inputs() {
-    // Meter PERCENT inputs agree modulo the documented spend direction:
-    // every non-spend capsule meter equals the console window meter, and
-    // every spend meter is its mirror (100 − p). Rendered glyphs match
-    // statically: the console `meter_line` and the capsule full-width meter
-    // both draw `█`/`░` (the capsule's intermediate `·` empty cell never
-    // reaches the screen).
+fn parity_meter_percent_inputs_agree() {
+    // Every console window meter equals the capsule bucket meter — spend
+    // included, overage included (both read empty at 150% used). Rendered
+    // glyphs match statically: the console `meter_line` and the capsule
+    // full-width meter both draw `█`/`░` (the capsule's intermediate `·`
+    // empty cell never reaches the screen).
     let providers = parity_mega_providers();
     let defs = providers
         .iter()
@@ -2838,22 +2838,12 @@ fn documented_delta_meter_percent_inputs() {
             .zip(view.buckets.iter())
             .zip(console.windows.iter())
         {
-            let capsule_meter = usage_bucket_presentation(bucket).meter_percent;
-            let console_meter = window.meter_percent();
-            if bucket_def.slot == Some(StatusSlot::Spend) {
-                assert_eq!(
-                    console_meter,
-                    capsule_meter.map(|meter| 100 - meter),
-                    "spend mirror for {}",
-                    bucket_def.label
-                );
-            } else {
-                assert_eq!(
-                    console_meter, capsule_meter,
-                    "meter agreement for {}",
-                    bucket_def.label
-                );
-            }
+            assert_eq!(
+                window.meter_percent(),
+                usage_bucket_presentation(bucket).meter_percent,
+                "meter agreement for {}",
+                bucket_def.label
+            );
         }
     }
 }
