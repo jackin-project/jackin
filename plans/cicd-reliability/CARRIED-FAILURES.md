@@ -46,8 +46,9 @@ runs were all measured FAIL.
 ### Recommendations (ordered, with dependencies)
 
 1. **Split the Swift job** (biggest lever). Shard build vs test, and shard the
-   test target set across parallel macOS jobs sharing one warmed DerivedData /
-   SPM cache. Measure the resulting queue and wall time; do not claim an
+   test target set across parallel macOS jobs. Jobs do not share a filesystem;
+   each must restore a validated DerivedData / SPM cache from the same narrow
+   key. Measure the resulting queue and wall time; do not claim an
    estimate as a result. The two open schema-2 migrations (#1044 and #1052)
    overlap and cannot both land. Continue one converged carrier from current
    Velnor runtime products, retaining generic Apple discovery and removing the
