@@ -4,7 +4,6 @@
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
@@ -15,17 +14,11 @@ use serde::Deserialize;
 
 use crate::{cmd, docs};
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Subcommand, Debug)]
 pub(crate) enum GithubCommand {
     /// Reuse a successful Pages deployment with identical site inputs.
     #[command(name = "docs-deployment-reuse")]
     DocsDeploymentReuse(DocsDeploymentReuseArgs),
-    /// Create or update the rolling preview release without a race window.
-    #[command(name = "publish-preview")]
-    PublishPreview(PublishPreviewArgs),
 }
 
 #[derive(Args, Debug)]
@@ -36,20 +29,6 @@ pub(crate) struct DocsDeploymentReuseArgs {
     environment: String,
     #[arg(long)]
     github_output: bool,
-}
-
-#[derive(Args, Debug)]
-pub(crate) struct PublishPreviewArgs {
-    #[arg(long)]
-    repository: String,
-    #[arg(long, default_value = "preview")]
-    tag: String,
-    #[arg(long)]
-    version: String,
-    #[arg(long)]
-    sha: String,
-    #[arg(long, default_value = "artifacts")]
-    assets: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -66,7 +45,6 @@ struct DeploymentStatus {
 pub(crate) fn run(command: GithubCommand) -> Result<()> {
     match command {
         GithubCommand::DocsDeploymentReuse(args) => docs_deployment_reuse(args),
-        GithubCommand::PublishPreview(args) => publish_preview(args),
     }
 }
 
@@ -151,134 +129,6 @@ fn has_commit(sha: &str) -> bool {
 fn fetch_commit(sha: &str) -> bool {
     cmd::output_raw(Command::new("git").args(["fetch", "--no-tags", "--depth=1", "origin", sha]))
         .is_ok_and(|result| result.success)
-}
-
-fn publish_preview(args: PublishPreviewArgs) -> Result<()> {
-    let assets = release_assets(&args.assets)?;
-    if assets.is_empty() {
-        bail!(
-            "no preview release assets found in {}",
-            args.assets.display()
-        );
-    }
-    let notes = format!(
-        "Preview build from [{}](https://github.com/{}/commit/{}).",
-        args.sha.chars().take(7).collect::<String>(),
-        args.repository,
-        args.sha
-    );
-    replace_preview_release(&args, &notes, &assets)
-}
-
-fn release_view(repository: &str, tag: &str) -> Result<bool> {
-    let result = cmd::output_raw(Command::new("gh").args([
-        "release", "view", tag, "--repo", repository, "--json", "tagName",
-    ]))?;
-    if result.success {
-        return Ok(true);
-    }
-    let failure = String::from_utf8_lossy(&result.stderr);
-    if release_missing(&failure) {
-        return Ok(false);
-    }
-    bail!("querying preview release failed: {}", failure.trim())
-}
-
-fn replace_preview_release(
-    args: &PublishPreviewArgs,
-    notes: &str,
-    assets: &[PathBuf],
-) -> Result<()> {
-    if release_view(&args.repository, &args.tag)? {
-        cmd::run(Command::new("gh").args([
-            "release",
-            "delete",
-            &args.tag,
-            "--repo",
-            &args.repository,
-            "--cleanup-tag",
-            "--yes",
-        ]))?;
-    }
-    let mut create = Command::new("gh");
-    create.args([
-        "release",
-        "create",
-        &args.tag,
-        "--repo",
-        &args.repository,
-        "--prerelease",
-        "--target",
-        &args.sha,
-        "--title",
-        &format!("Preview {}", args.version),
-        "--notes",
-        notes,
-    ]);
-    create.args(assets.iter().map(|path| path.as_os_str()));
-    let result = cmd::output_raw(&mut create)?;
-    if result.success {
-        return Ok(());
-    }
-    let failure = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr)
-    );
-    if release_already_exists(&failure) {
-        writeln!(
-            io::stderr().lock(),
-            "::notice::preview release appeared concurrently; retrying replace"
-        )?;
-        return replace_preview_release(args, notes, assets);
-    }
-    bail!("creating preview release failed: {}", failure.trim())
-}
-
-fn release_assets(directory: &Path) -> Result<Vec<PathBuf>> {
-    let mut assets = crate::fs_util::read_dir_sorted(directory)
-        .with_context(|| format!("reading preview assets from {}", directory.display()))?
-        .into_iter()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file() && is_release_asset(path))
-        .collect::<Vec<_>>();
-    assets.sort_unstable();
-    Ok(assets)
-}
-
-fn is_release_asset(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    (name.starts_with("jackin-")
-        && [
-            ".tar.gz",
-            ".tar.gz.sha256",
-            ".tar.gz.bundle",
-            ".tar.gz.sbom.json",
-        ]
-        .iter()
-        .any(|suffix| name.ends_with(suffix)))
-        || matches!(
-            name,
-            "capsule-manifest.json"
-                | "capsule-manifest.json.bundle"
-                | "release-manifest.json"
-                | "identity.json"
-                | "SHA256SUMS"
-        )
-}
-
-fn release_missing(message: &str) -> bool {
-    let message = message.to_ascii_lowercase();
-    message.contains("release not found")
-        || message.contains("release does not exist")
-        || message.contains("http 404")
-}
-
-fn release_already_exists(message: &str) -> bool {
-    let message = message.to_ascii_lowercase();
-    message.contains("same tag name already exists") || message.contains("already_exists")
 }
 
 fn write_output(name: &str, value: &str) -> Result<()> {
