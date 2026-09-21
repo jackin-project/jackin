@@ -105,6 +105,33 @@ pub fn acquire_config_read_lock(config_file: &Path) -> crate::ConfigResult<Confi
     Ok(ConfigReadGuard { _file: file })
 }
 
+/// Acquire a shared advisory lock for a security-sensitive config snapshot.
+///
+/// Unlike [`acquire_config_read_lock`], this rejects a missing lock file. The
+/// ordinary read path permits lock-free first-run reads; admission and launch
+/// paths must fail closed because a lock-free snapshot cannot be held stable
+/// against a writer that follows the config writer protocol.
+pub fn acquire_config_read_lock_required(
+    config_file: &Path,
+) -> crate::ConfigResult<ConfigReadGuard> {
+    let lock_path = config_file.with_file_name("config.lock");
+    let file = File::open(&lock_path).map_err(|error| {
+        anyhow::Error::new(error).context(format!(
+            "opening required config lock {}",
+            lock_path.display()
+        ))
+    })?;
+    Ok(ConfigReadGuard {
+        _file: Some(acquire_open_lock(
+            file,
+            &lock_path,
+            LockMode::Shared,
+            LOCK_TIMEOUT,
+            LOCK_POLL,
+        )?),
+    })
+}
+
 pub(crate) fn acquire_config_write_lock(
     config_file: &Path,
 ) -> crate::ConfigResult<ConfigWriteGuard> {

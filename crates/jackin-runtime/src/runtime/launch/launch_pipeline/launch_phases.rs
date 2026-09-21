@@ -251,6 +251,8 @@ pub(crate) struct RuntimeLaunched {
     pub container_state: std::path::PathBuf,
     /// Armed teardown guard carried into finalization.
     pub cleanup: LoadCleanup,
+    /// Caller-bound account/config generation lease carried into reconnects.
+    pub account_revision: crate::runtime::launch::account_identity::AccountConfigRevision,
 }
 
 /// Foreground attach finalization decision.

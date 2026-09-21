@@ -26,6 +26,9 @@
 
 mod account_config;
 mod account_identity;
+pub(crate) use account_identity::{
+    AccountConfigRevision, GenerationLeaseViolation, ensure_current_or_remove_stale_container,
+};
 mod launch_dind;
 pub use launch_dind::DIND_IMAGE;
 pub(super) use launch_dind::create_role_network;
@@ -254,9 +257,10 @@ pub(crate) use capsule_setup::{
 };
 
 #[cfg(test)]
-pub(crate) use exit_diagnosis::{ExitPhase, diagnose_premature_exit};
+pub(crate) use exit_diagnosis::diagnose_premature_exit;
 pub(crate) use exit_diagnosis::{
-    attach_failure_error, diagnose_with_state, inspect_attach_outcome,
+    ExitPhase, attach_failure_error, diagnose_with_state, inspect_attach_outcome,
+    is_known_socket_close,
 };
 
 #[cfg(test)]

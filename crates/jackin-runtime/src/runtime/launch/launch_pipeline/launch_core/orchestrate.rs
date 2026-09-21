@@ -33,7 +33,7 @@ use crate::instance::{
 };
 use crate::runtime::attach::{
     AgentSessionInventory, ContainerState, inspect_agent_sessions,
-    start_or_reconnect_capsule_client,
+    start_or_reconnect_capsule_client_with_lease,
 };
 use crate::runtime::docker_profile::{DockerSecurityProfile, EffectiveGrants, ProfileSource};
 
@@ -69,6 +69,7 @@ struct FinalizeSession<'a, D, R> {
     paths: &'a jackin_core::JackinPaths,
     config: &'a jackin_config::AppConfig,
     workspace_name: &'a Option<String>,
+    admission_lease: &'a super::super::super::account_identity::AccountConfigRevision,
     docker: &'a D,
     runner: &'a mut R,
     container_name: &'a str,
@@ -88,6 +89,7 @@ where
         paths,
         config,
         workspace_name,
+        admission_lease,
         docker,
         runner,
         container_name,
@@ -111,7 +113,9 @@ where
                 .as_deref()
                 .and_then(|name| config.workspaces.get(name)),
         );
+        admission_lease.ensure_current(paths)?;
         let outcome = super::super::super::inspect_attach_outcome(docker, container_name).await?;
+        admission_lease.ensure_current(paths)?;
         super::super::super::write_instance_attach_outcome(
             paths,
             container_state,
@@ -129,6 +133,7 @@ where
             runner,
         )
         .await?;
+        admission_lease.ensure_current(paths)?;
         super::super::super::write_preserved_status_if_applicable(
             decision,
             paths,
@@ -139,9 +144,19 @@ where
             decision,
             crate::isolation::finalize::FinalizeDecision::ReturnToAgent
         ) {
-            start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
+            admission_lease.ensure_current(paths)?;
+            start_or_reconnect_capsule_client_with_lease(
+                paths,
+                container_name,
+                admission_lease,
+                docker,
+                runner,
+            )
+            .await?;
+            admission_lease.ensure_current(paths)?;
             let outcome =
                 super::super::super::inspect_attach_outcome(docker, container_name).await?;
+            admission_lease.ensure_current(paths)?;
             super::super::super::write_instance_attach_outcome(
                 paths,
                 container_state,
@@ -159,6 +174,7 @@ where
                 runner,
             )
             .await?;
+            admission_lease.ensure_current(paths)?;
             super::super::super::write_preserved_status_if_applicable(
                 decision,
                 paths,
@@ -446,6 +462,7 @@ struct LaunchRuntime<'a, D, R> {
     network: &'a str,
     dind: &'a str,
     resolved_profile: (DockerSecurityProfile, ProfileSource),
+    account_revision: super::super::super::account_identity::AccountConfigRevision,
     effective_grants: &'a EffectiveGrants,
     adopted_sidecar_was_used: bool,
     prepared: InstancePrepared,
@@ -1121,6 +1138,7 @@ where
         mut instance_manifest,
         container_state,
         mut cleanup,
+        account_revision,
     } = match launched {
         RuntimeDispatch::AppleContainer(container_name)
         | RuntimeDispatch::Detached(container_name) => {
@@ -1132,6 +1150,7 @@ where
         paths,
         config,
         workspace_name,
+        admission_lease: &account_revision,
         docker,
         runner,
         container_name,
@@ -1384,6 +1403,7 @@ where
         network: &launch.initialized.network,
         dind: &launch.initialized.dind,
         resolved_profile: launch.initialized.resolved_profile,
+        account_revision: launch.account_revision,
         effective_grants: &launch.initialized.effective_grants,
         adopted_sidecar_was_used: launch.initialized.adopted_sidecar_was_used,
         prepared,
@@ -1582,6 +1602,12 @@ where
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Docker dispatch arms each carry their own mount/cleanup/reconnect sequence; \
+              the caller-bound lease checks are one line per arm and splitting the \
+              dispatcher would scatter the linear launch/reconnect/cleanup flow."
+)]
 async fn launch_runtime<D, R>(input: LaunchRuntime<'_, D, R>) -> anyhow::Result<RuntimeDispatch>
 where
     D: DockerApi,
@@ -1610,6 +1636,7 @@ where
         network,
         dind,
         resolved_profile,
+        account_revision,
         effective_grants,
         adopted_sidecar_was_used,
         prepared:
@@ -1639,6 +1666,7 @@ where
         let mut mounts = super::super::super::build_workspace_mounts(&materialized)?;
         mounts.extend(super::super::super::apple_agent_mounts(&state)?);
         cleanup.run(docker).await;
+        account_revision.ensure_current(paths)?;
         crate::runtime::apple_container::launch(
             crate::runtime::apple_container::AppleContainerLaunch {
                 paths,
@@ -1718,6 +1746,7 @@ where
             role_key,
         },
         non_interactive: opts.non_interactive,
+        account_revision: &account_revision,
     };
     let launch_result = super::super::super::launch_role_runtime(&ctx, steps, docker, runner).await;
     complete_docker_launch(
@@ -1726,6 +1755,7 @@ where
             instance_manifest,
             container_state,
             cleanup,
+            account_revision,
         },
         paths,
         container_name,
