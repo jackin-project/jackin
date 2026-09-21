@@ -52,6 +52,83 @@ pub struct UsageRefreshRequest {
     pub force: bool,
 }
 
+/// Console list sort order, cycled with `s`. `Provider` is the default: the
+/// projection order is already provider-grouped (see `from_projection`), so
+/// it renders as-is and refreshes never reorder under the operator.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum UsageSort {
+    #[default]
+    Provider,
+    Remaining,
+    Name,
+}
+
+impl UsageSort {
+    #[must_use]
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Provider => Self::Remaining,
+            Self::Remaining => Self::Name,
+            Self::Name => Self::Provider,
+        }
+    }
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Provider => "provider",
+            Self::Remaining => "remaining",
+            Self::Name => "name",
+        }
+    }
+}
+
+/// Console list filter predicate, cycled with `f`. Pure membership over one
+/// account; the account list, the overview panel, and the capacity-finder all
+/// observe the same visible set.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum UsageFilter {
+    #[default]
+    All,
+    Issues,
+    Stale,
+}
+
+impl UsageFilter {
+    #[must_use]
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::All => Self::Issues,
+            Self::Issues => Self::Stale,
+            Self::Stale => Self::All,
+        }
+    }
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Issues => "issues",
+            Self::Stale => "stale",
+        }
+    }
+
+    #[must_use]
+    pub fn matches(self, account: &UsageAccount) -> bool {
+        match self {
+            Self::All => true,
+            Self::Issues => account.issue_count() > 0,
+            Self::Stale => {
+                account.is_stale
+                    || matches!(
+                        account.freshness_phase,
+                        UsageFreshnessPhaseV1::Stale | UsageFreshnessPhaseV1::Failed
+                    )
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageWindow {
     pub window_id: String,
@@ -175,6 +252,43 @@ impl UsageAccount {
                 .map(|group| group.issues.len())
                 .sum::<usize>()
     }
+
+    /// Minimum known remaining percent across principal windows and metered
+    /// (window-kind) metric groups. `None` when nothing reports a percent —
+    /// unknown quota never fabricates a value, so capacity sort and the
+    /// capacity-finder always rank it last, never as zero.
+    #[must_use]
+    pub fn min_remaining(&self) -> Option<u8> {
+        self.windows
+            .iter()
+            .filter_map(UsageWindow::meter_percent)
+            .chain(
+                self.metric_groups
+                    .iter()
+                    .filter_map(UsageMetricGroup::meter_percent),
+            )
+            .min()
+    }
+
+    /// Soonest known reset/renewal epoch across windows and metric groups.
+    /// Tie-break input for the capacity-finder only; `None` sorts last.
+    #[must_use]
+    fn soonest_reset_epoch(&self) -> Option<i64> {
+        self.windows
+            .iter()
+            .filter_map(|window| window.reset_at_epoch)
+            .chain(
+                self.metric_groups
+                    .iter()
+                    .filter_map(|group| group.reset_at_epoch),
+            )
+            .chain(
+                self.metric_groups
+                    .iter()
+                    .filter_map(|group| group.renews_at_epoch),
+            )
+            .min()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -183,6 +297,8 @@ pub struct UsageScreenState {
     pub selected: usize,
     pub selected_id: Option<String>,
     pub detail: bool,
+    pub sort: UsageSort,
+    pub filter: UsageFilter,
     pub scroll: u16,
     pub notice: Option<String>,
     pub generated_at_epoch: Option<i64>,
@@ -206,6 +322,8 @@ impl Clone for UsageScreenState {
             selected: self.selected,
             selected_id: self.selected_id.clone(),
             detail: self.detail,
+            sort: self.sort,
+            filter: self.filter,
             scroll: self.scroll,
             notice: self.notice.clone(),
             generated_at_epoch: self.generated_at_epoch,
@@ -225,6 +343,8 @@ impl PartialEq for UsageScreenState {
             && self.selected == other.selected
             && self.selected_id == other.selected_id
             && self.detail == other.detail
+            && self.sort == other.sort
+            && self.filter == other.filter
             && self.scroll == other.scroll
             && self.notice == other.notice
             && self.generated_at_epoch == other.generated_at_epoch
@@ -418,8 +538,17 @@ impl UsageScreenState {
         match &self.selected_id {
             None => self.selected = 0,
             Some(id) => {
-                if let Some(pos) = self.accounts.iter().position(|a| &a.stable_id() == id) {
+                if let Some(pos) = self
+                    .visible_order()
+                    .iter()
+                    .position(|&index| self.accounts[index].stable_id() == *id)
+                {
                     self.selected = pos.saturating_add(1);
+                } else if self.accounts.iter().any(|a| &a.stable_id() == id) {
+                    // Still configured but hidden by the current filter: park
+                    // on Overview and keep the id so clearing the filter (or
+                    // the next refresh) restores the row without a notice.
+                    self.selected = 0;
                 } else {
                     self.selected = 0;
                     self.selected_id = None;
@@ -434,7 +563,7 @@ impl UsageScreenState {
                 }
             }
         }
-        self.selected = self.selected.min(self.accounts.len());
+        self.selected = self.selected.min(self.visible_order().len());
     }
 
     /// Record a failed background refresh. The timer still advances so a
@@ -508,11 +637,101 @@ impl UsageScreenState {
             .is_some_and(|at| now.duration_since(at) >= USAGE_HEARTBEAT_INTERVAL)
     }
 
+    /// Canonical-account indices in display order after the current filter
+    /// and sort. Selection positions address this list: position 0 is
+    /// Overview, position `p > 0` is `visible[p - 1]`. The default
+    /// provider/all view is the identity order baked in by `from_projection`.
+    #[must_use]
+    pub fn visible_order(&self) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..self.accounts.len())
+            .filter(|&index| self.filter.matches(&self.accounts[index]))
+            .collect();
+        match self.sort {
+            UsageSort::Provider => {}
+            UsageSort::Remaining => {
+                order.sort_by_key(|&index| self.accounts[index].min_remaining().unwrap_or(u8::MAX));
+            }
+            UsageSort::Name => order.sort_by_key(|&index| {
+                let account = &self.accounts[index];
+                (
+                    account.account.to_lowercase(),
+                    account.provider.to_lowercase(),
+                )
+            }),
+        }
+        order
+    }
+
+    /// Re-anchor `selected` by stable id after a sort/filter change, so the
+    /// operator's row follows the account instead of the position. A row
+    /// hidden by the filter parks on Overview with its id kept, so clearing
+    /// the filter restores it. Always resets scroll: old offsets are
+    /// meaningless once the list reorders.
+    fn reanchor_after_view_change(&mut self) {
+        let order = self.visible_order();
+        match &self.selected_id {
+            Some(id) => {
+                self.selected = order
+                    .iter()
+                    .position(|&index| self.accounts[index].stable_id() == *id)
+                    .map_or(0, |pos| pos.saturating_add(1));
+            }
+            None => self.selected = 0,
+        }
+        self.scroll = 0;
+    }
+
+    /// `selected` position of the most-constrained visible account: lowest
+    /// known remaining percent, ties to the soonest reset. Accounts that
+    /// report no percent never win — unknown quota is not zero quota.
+    #[must_use]
+    pub fn most_constrained_selected(&self) -> Option<usize> {
+        let order = self.visible_order();
+        order
+            .iter()
+            .enumerate()
+            .filter(|&(_, &index)| self.accounts[index].min_remaining().is_some())
+            .min_by_key(|&(_, &index)| {
+                let account = &self.accounts[index];
+                (
+                    account.min_remaining().unwrap_or(u8::MAX),
+                    account.soonest_reset_epoch().unwrap_or(i64::MAX),
+                )
+            })
+            .map(|(pos, _)| pos.saturating_add(1))
+    }
+
+    /// Jump selection to the most-constrained visible account. Returns false
+    /// — posting an inline notice instead of moving — when there is nothing
+    /// to compare: no accounts, an empty filter result, or no known percents.
+    pub fn jump_to_most_constrained(&mut self) -> bool {
+        if let Some(selected) = self.most_constrained_selected() {
+            self.selected = selected;
+            self.selected_id = self.selected_account().map(UsageAccount::stable_id);
+            self.scroll = 0;
+            true
+        } else {
+            self.notice = Some(if self.accounts.is_empty() {
+                "No usage accounts configured; nothing to compare".to_owned()
+            } else if self.visible_order().is_empty() {
+                format!(
+                    "No accounts match filter '{}'; press f to clear",
+                    self.filter.label()
+                )
+            } else {
+                "No visible account reports remaining quota".to_owned()
+            });
+            false
+        }
+    }
+
     pub fn move_selection(&mut self, delta: isize) {
-        if self.accounts.is_empty() {
+        let order = self.visible_order();
+        if order.is_empty() {
+            self.selected = 0;
             return;
         }
-        let len = self.accounts.len().saturating_add(1);
+        let len = order.len().saturating_add(1);
         let current = self.selected.min(len - 1);
         self.selected = if delta.is_negative() {
             current.saturating_sub(delta.unsigned_abs())
@@ -521,15 +740,23 @@ impl UsageScreenState {
                 .saturating_add(delta.cast_unsigned())
                 .min(len.saturating_sub(1))
         };
-        self.selected_id = self
-            .accounts
-            .get(self.selected.saturating_sub(1))
-            .filter(|_| self.selected > 0)
-            .map(UsageAccount::stable_id);
+        self.selected_id = if self.selected == 0 {
+            None
+        } else {
+            order
+                .get(self.selected.saturating_sub(1))
+                .and_then(|&index| self.accounts.get(index))
+                .map(UsageAccount::stable_id)
+        };
     }
 
     pub fn selected_account(&self) -> Option<&UsageAccount> {
-        (self.selected > 0).then(|| self.accounts.get(self.selected - 1))?
+        if self.selected == 0 {
+            return None;
+        }
+        let order = self.visible_order();
+        let index = *order.get(self.selected.saturating_sub(1))?;
+        self.accounts.get(index)
     }
 
     fn overview_selected(&self) -> bool {
@@ -537,6 +764,11 @@ impl UsageScreenState {
     }
 }
 
+/// Lifecycle word for one account. The shared vocabulary (`needs login`,
+/// `needs secret`, `unsupported`, `unavailable`, `error`) matches Capsule
+/// `usage_tab_status_label`; `available`/`not started` have no Capsule
+/// snapshot-status counterpart (Capsule says `fresh` for the freshness axis,
+/// a different concept) and stay console-owned. See the alignment table test.
 fn lifecycle_label(lifecycle: UsageLifecycleV1) -> &'static str {
     match lifecycle {
         UsageLifecycleV1::Available => "available",
@@ -549,6 +781,10 @@ fn lifecycle_label(lifecycle: UsageLifecycleV1) -> &'static str {
     }
 }
 
+/// Quota-state word for one window/group. The Capsule tab vocabulary has no
+/// quota axis (`usage_tab_status_label` reports snapshot status plus the
+/// `{n}% left` headline, which the console mirrors in its list summary), so
+/// these words stay console-owned and are pinned by the alignment table test.
 fn quota_state_label(state: UsageQuotaStateV1) -> &'static str {
     match state {
         UsageQuotaStateV1::Available => "available",
@@ -592,6 +828,17 @@ fn past_age_label(age_secs: i64) -> String {
         format!("{}h ago", age_secs / 3_600)
     } else {
         format!("{}d ago", age_secs / 86_400)
+    }
+}
+
+/// `updated …` age fragment for freshness labels. The sub-minute bucket reads
+/// `updated now`, matching Capsule `relative_updated_label` ("Updated now")
+/// modulo the console's lowercase row style.
+fn updated_age_label(age_secs: i64) -> String {
+    if age_secs < 60 {
+        "updated now".to_owned()
+    } else {
+        format!("updated {}", past_age_label(age_secs))
     }
 }
 
@@ -642,16 +889,16 @@ pub fn group_freshness_label(now_epoch: i64, group: &UsageMetricGroup) -> String
     let Some(last_success) = group.last_success_at_epoch else {
         return "never updated".to_owned();
     };
-    let age = past_age_label(now_epoch.saturating_sub(last_success).max(0));
+    let updated = updated_age_label(now_epoch.saturating_sub(last_success).max(0));
     if group.is_stale
         || matches!(
             group.phase,
             UsageFreshnessPhaseV1::Stale | UsageFreshnessPhaseV1::Failed
         )
     {
-        format!("stale · updated {age}")
+        format!("stale · {updated}")
     } else {
-        format!("updated {age}")
+        updated
     }
 }
 
@@ -898,16 +1145,16 @@ pub fn freshness_age_label(now_epoch: i64, account: &UsageAccount) -> String {
         return "never updated".to_owned();
     };
     let age_secs = now_epoch.saturating_sub(last_good).max(0);
-    let age = past_age_label(age_secs);
+    let updated = updated_age_label(age_secs);
     if account.is_stale
         || matches!(
             account.freshness_phase,
             UsageFreshnessPhaseV1::Stale | UsageFreshnessPhaseV1::Failed
         )
     {
-        format!("stale · updated {age}")
+        format!("stale · {updated}")
     } else {
-        format!("updated {age}")
+        updated
     }
 }
 
@@ -917,13 +1164,17 @@ fn now_epoch() -> i64 {
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
+/// Fallback display name for an unresolved provider id. Mirrors Capsule
+/// `provider_display_label`: `Anthropic` (not `Anthropic / Claude`) and `xAI`
+/// (not `Grok`); every other well-known id already matches the Capsule
+/// spelling, and unknown ids pass through untouched.
 fn well_known_provider_name(provider_id: &str) -> String {
     match provider_id.to_ascii_lowercase().as_str() {
-        "anthropic" | "claude" => "Anthropic / Claude".to_owned(),
+        "anthropic" | "claude" => "Anthropic".to_owned(),
         "openai" | "codex" => "OpenAI".to_owned(),
         "opencode" => "OpenCode".to_owned(),
         "kimi" | "moonshot" => "Kimi".to_owned(),
-        "grok" | "xai" => "Grok".to_owned(),
+        "grok" | "xai" => "xAI".to_owned(),
         "amp" => "Amp".to_owned(),
         "zai" => "Z.AI".to_owned(),
         "minimax" => "MiniMax".to_owned(),
@@ -940,6 +1191,17 @@ pub fn handle_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         KeyCode::Up | KeyCode::Char('k') => screen.move_selection(-1),
         KeyCode::Down | KeyCode::Char('j') => screen.move_selection(1),
         KeyCode::Enter => screen.detail = !screen.detail,
+        KeyCode::Char('s') => {
+            screen.sort = screen.sort.cycle();
+            screen.reanchor_after_view_change();
+        }
+        KeyCode::Char('f') => {
+            screen.filter = screen.filter.cycle();
+            screen.reanchor_after_view_change();
+        }
+        KeyCode::Char('c') => {
+            screen.jump_to_most_constrained();
+        }
         KeyCode::Char('r') => {
             screen.refresh_due = true;
             screen.force_refresh_pending = true;
@@ -990,6 +1252,33 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
     let now = now_epoch();
     lines.push(Line::from(Span::styled(
         format!(
+            "  s:sort({}) f:filter({}) c:constrained",
+            screen.sort.label(),
+            screen.filter.label()
+        ),
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+    let order = screen.visible_order();
+    if order.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("  No accounts match filter '{}'.", screen.filter.label()),
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  Press f to cycle the filter.",
+            Style::default().fg(Color::DarkGray),
+        )));
+        frame.render_widget(
+            Paragraph::new(lines)
+                .scroll((screen.scroll, 0))
+                .wrap(Wrap { trim: false }),
+            inner,
+        );
+        return;
+    }
+    lines.push(Line::from(Span::styled(
+        format!(
             "{}Overview",
             if screen.overview_selected() {
                 "▸  "
@@ -1000,8 +1289,9 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
         row_style(screen.overview_selected()),
     )));
     lines.push(Line::from(""));
-    for (index, account) in screen.accounts.iter().enumerate() {
-        if index == 0 || screen.accounts[index - 1].provider != account.provider {
+    for (pos, &index) in order.iter().enumerate() {
+        let account = &screen.accounts[index];
+        if pos == 0 || screen.accounts[order[pos - 1]].provider != account.provider {
             lines.push(Line::from(Span::styled(
                 format!("  {}", account.provider),
                 Style::default()
@@ -1009,7 +1299,7 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
                     .add_modifier(Modifier::BOLD),
             )));
         }
-        let selected = index.saturating_add(1) == screen.selected;
+        let selected = pos.saturating_add(1) == screen.selected;
         let cursor = if selected { "▸ " } else { "  " };
         let summary = account
             .windows
@@ -1076,14 +1366,39 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
             );
             return;
         }
+        let order = screen.visible_order();
+        if order.is_empty() {
+            let mut lines = vec![
+                Line::from(format!(
+                    "No accounts match filter '{}'.",
+                    screen.filter.label()
+                )),
+                Line::from(""),
+                Line::from("Press f to cycle the filter."),
+            ];
+            if let Some(notice) = &screen.notice {
+                lines.push(Line::from(Span::styled(
+                    notice.clone(),
+                    Style::default().fg(Color::Yellow),
+                )));
+            }
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .block(panel("Overview"))
+                    .scroll((screen.scroll, 0))
+                    .wrap(Wrap { trim: false }),
+                area,
+            );
+            return;
+        }
         let mut lines = vec![Line::from("Status    available"), Line::from("")];
         if screen.refresh_in_flight() {
             lines.push(refreshing_line());
             lines.push(Line::from(""));
         }
         let width = area.width.saturating_sub(8).max(8) as usize;
-        for account in &screen.accounts {
-            append_overview_account(&mut lines, account, width, now);
+        for &index in &order {
+            append_overview_account(&mut lines, &screen.accounts[index], width, now);
         }
         for issue in &screen.projection_issues {
             lines.push(Line::from(Span::styled(
@@ -1139,6 +1454,34 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
         lines.push(Line::from(""));
     }
     let width = area.width.saturating_sub(8).max(8) as usize;
+    if screen.detail {
+        append_account_full_body(&mut lines, account, width, now);
+    } else {
+        append_account_summary_body(&mut lines, account, width, now);
+    }
+    if let Some(notice) = &screen.notice {
+        lines.push(Line::from(Span::styled(
+            notice.clone(),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(panel(title))
+            .scroll((screen.scroll, 0))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+/// Full account body (`detail`): every window with quota/raw/pace extras,
+/// every metric group as a full block, and every issue line.
+fn append_account_full_body(
+    lines: &mut Vec<Line<'static>>,
+    account: &UsageAccount,
+    width: usize,
+    now_epoch: i64,
+) {
     for window in &account.windows {
         lines.push(Line::from(Span::styled(
             format!("  {}", window.label),
@@ -1158,33 +1501,54 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
             format!("  {} · {}", window.value, window.reset)
         };
         lines.push(Line::from(detail));
-        append_window_extra(&mut lines, window);
+        append_window_extra(lines, window);
         lines.push(Line::from(""));
     }
     if !account.metric_groups.is_empty() {
         lines.push(Line::from("Metric groups"));
         for group in &account.metric_groups {
-            append_metric_group(&mut lines, group, width, now);
+            append_metric_group(lines, group, width, now_epoch);
         }
     }
     if !account.issues.is_empty() || !account.provider_issues.is_empty() {
         lines.push(Line::from("Issues"));
-        append_account_issue_lines(&mut lines, account, now);
+        append_account_issue_lines(lines, account, now_epoch);
         lines.push(Line::from(""));
     }
-    if let Some(notice) = &screen.notice {
-        lines.push(Line::from(Span::styled(
-            notice.clone(),
-            Style::default().fg(Color::Yellow),
+    lines.push(Line::from(Span::styled(
+        "Enter for summary",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+}
+
+/// Summary account body: one row per window, compact group rows, and an
+/// issue count. Full extras stay behind `Enter`.
+fn append_account_summary_body(
+    lines: &mut Vec<Line<'static>>,
+    account: &UsageAccount,
+    width: usize,
+    now_epoch: i64,
+) {
+    for window in &account.windows {
+        append_summary_window(lines, window, width);
+    }
+    for group in &account.metric_groups {
+        append_overview_group(lines, group, now_epoch);
+    }
+    let issue_count = account.issue_count();
+    if issue_count > 0 {
+        lines.push(Line::from(format!(
+            "  {issue_count} issue{} · Enter for detail",
+            if issue_count == 1 { "" } else { "s" }
         )));
     }
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(panel(title))
-            .scroll((screen.scroll, 0))
-            .wrap(Wrap { trim: false }),
-        area,
-    );
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Enter for full detail",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
 }
 
 fn refreshing_line() -> Line<'static> {
@@ -1234,6 +1598,29 @@ fn append_account_issue_lines(
             Style::default().fg(Color::Yellow),
         )));
     }
+}
+
+/// One window as an account-summary row: label, meter, and value/reset.
+/// Quota/raw/pace extras stay in the full view (`detail`).
+fn append_summary_window(lines: &mut Vec<Line<'static>>, window: &UsageWindow, width: usize) {
+    if !window.label.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", window.label),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    if let Some(bar) = meter_line(width, window.meter_percent()) {
+        lines.push(Line::from(Span::styled(
+            bar,
+            meter_style(window.quota_state),
+        )));
+    }
+    let detail = if window.reset.is_empty() {
+        format!("  {}", window.value)
+    } else {
+        format!("  {} · {}", window.value, window.reset)
+    };
+    lines.push(Line::from(detail));
 }
 
 fn append_overview_window(lines: &mut Vec<Line<'static>>, window: &UsageWindow, width: usize) {

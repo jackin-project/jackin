@@ -75,6 +75,13 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
 - **Last verified:** 2026-06-21 — present on `chore/launch-speed-roadmap`; B4/S1 cleanup fixes landed without it.
 - **Done when:** a sidecar-startup failure on a worktree-isolated workspace leaves no staged `git worktree` behind (either `LoadCleanup` unstages it, or materialization is not run once the sidecar future has resolved to `Err`), covered by a regression test. Remove this entry and the `TODO(launch-worktree-leak-on-sidecar-fail)` marker.
 
+#### `config-crash-between-renames-journal` — durable publication journal + read-path recovery for crash-between-renames
+
+- **What:** implemented. `commit_staged_config` ([`crates/jackin-config/src/persist.rs`](crates/jackin-config/src/persist.rs)) fsyncs a JSON journal (`<config-dir>/config.publish.journal`, version 1, `deny_unknown_fields`, `0600`, ordered write/delete ops) before the first rename and removes it after the last; `acquire_config_write_lock` forward-rolls it via `recover_pending_publication` before any read or write observes the tree, so every writer (`AppConfig::load_or_init`, `ConfigEditor::open`, workspace migration) converges without per-site recovery calls. An in-process abort swaps the journal to the staged restores first, so a crash mid-abort converges to all-old; a corrupt journal or a write whose staged tmp and target are both gone fails closed with the journal kept for forensics. Orphaned `*.tmp.<pid>.<ctr>` staged files are garbage-collected on the same path. The read-only snapshot reports a pending journal as `TransientConflict` without mutating disk.
+- **Why:** single-file atomicity and idempotent per-file migrations cover the common cases, but the cross-file window had no crash recovery; a skewed config stranded workspace bindings until hand-edit.
+- **Last verified:** 2026-09-21 — implemented as multi-account merge follow-up (D-SEC2); covered by regression tests (`publication_journal_*`, `recover_pending_publication_*`, `crash_*`, `recovery_*`, `failed_commit_*`, `corrupt_journal_*` in `persist/tests.rs`, read-only pending-publication test in `app_config/persist/tests.rs`, journal assertions in `editor/tests.rs`).
+- **Done when:** satisfied — a crash between renames is reconciled on the next write-locked open and surfaced (not served as stable) on the next read. Remove this entry on merge.
+
 ## Roadmap
 
 Roadmap items are unfinished implementation outcomes only. Evidence and design rationale live under [Research](docs/content/research/index.mdx). See:

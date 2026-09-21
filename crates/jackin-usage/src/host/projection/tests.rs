@@ -2315,7 +2315,7 @@ fn parity_unresolved_stays_console_only() {
     assert_eq!(screen.accounts[1].status, "needs login");
     assert!(screen.accounts[1].unresolved);
     assert_eq!(screen.accounts[1].stable_id(), "openai:openai:second");
-    assert_eq!(screen.accounts[2].provider, "Anthropic / Claude");
+    assert_eq!(screen.accounts[2].provider, "Anthropic");
     assert_eq!(screen.accounts[2].account, "Unresolved (anthropic:key)");
     assert_eq!(
         screen.accounts[2].status,
@@ -3058,6 +3058,7 @@ fn parity_console_render_smoke_detail_scopes() {
     // Group scope lines only render in the account detail pane.
     let mut screen = parity_mega_screen();
     screen.selected = 1;
+    screen.detail = true;
     let text = parity_render_text(screen, 120, 70);
     for expected in [
         "Provider  Antigravity",
@@ -3081,6 +3082,7 @@ fn parity_console_render_smoke_detail_scopes() {
 
     let mut screen = parity_mega_screen();
     screen.selected = 2;
+    screen.detail = true;
     let text = parity_render_text(screen, 120, 70);
     for expected in [
         "Tokens (token totals · n/a · updated 2m ago)",

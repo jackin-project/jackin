@@ -98,3 +98,39 @@ fn project_quotas_never_invent_denominators() {
     assert_eq!(buckets[2].remaining_percent, None);
     assert!(buckets[2].used_label.is_none());
 }
+
+#[test]
+fn snapshot_with_presence_routes_broker_evidence() {
+    let now = 1_781_728_000;
+    // Discovery-proven OAuth: the typed reporting gap, never a zero balance.
+    let view = gemini_snapshot_with_presence(
+        "gemini",
+        Some("Google"),
+        true,
+        false,
+        "OAuth · configured profile",
+        now,
+    );
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Google");
+    assert_eq!(view.focused_agent.as_deref(), Some("gemini"));
+    assert_eq!(
+        view.account.credential_origin.as_deref(),
+        Some("OAuth · configured profile")
+    );
+    assert!(view.last_error.is_some());
+    // Configured API key: same gap with the key origin.
+    let view = gemini_snapshot_with_presence(
+        "gemini",
+        Some("Google"),
+        false,
+        true,
+        "API key · env GEMINI_API_KEY",
+        now,
+    );
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Google");
+    // No evidence at all: needs secret.
+    let view = gemini_snapshot_with_presence("gemini", Some("Google"), false, false, "none", now);
+    assert_eq!(view.status, UsageSnapshotStatus::NeedsSecret);
+}

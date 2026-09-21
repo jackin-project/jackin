@@ -35,7 +35,6 @@ struct PendingConfigWrite {
 pub(crate) struct LoadedConfig {
     config: AppConfig,
     pending_writes: Vec<PendingConfigWrite>,
-    config_file: PathBuf,
 }
 
 impl LoadedConfig {
@@ -62,21 +61,20 @@ impl LoadedConfig {
         &mut self.config
     }
 
-    pub(crate) fn commit(self) -> crate::ConfigResult<AppConfig> {
+    pub(crate) fn commit(self, journal_path: &Path) -> crate::ConfigResult<AppConfig> {
         let Self {
             config,
             pending_writes,
-            config_file,
         } = self;
 
-        commit_pending_config_writes(&config_file, pending_writes)?;
+        commit_pending_config_writes(pending_writes, journal_path)?;
         Ok(config)
     }
 }
 
 fn commit_pending_config_writes(
-    config_file: &Path,
     pending_writes: Vec<PendingConfigWrite>,
+    journal_path: &Path,
 ) -> crate::ConfigResult<()> {
     for write in &pending_writes {
         ensure_replaceable_target(&write.path)?;
@@ -87,8 +85,7 @@ fn commit_pending_config_writes(
         staged.push(stage_atomic_write(&write.path, &write.contents)?);
     }
     let mut deletes = Vec::new();
-    let journal = publication_journal_path(config_file);
-    commit_staged_config(&journal, &mut staged, &mut deletes)
+    commit_staged_config(journal_path, &mut staged, &mut deletes)
 }
 
 /// Stable content generation for one admitted config tree.
@@ -129,7 +126,9 @@ pub enum ConfigSourceIssue {
     InvalidWorkspaceName,
     /// Embedded and split definitions for one workspace disagreed.
     ConflictingWorkspaceDefinitions,
-    /// The config tree changed repeatedly while it was being read.
+    /// The config tree changed repeatedly while it was being read, or a
+    /// crashed multi-file publication is still pending (a write-locked open
+    /// forward-rolls it; the read path never serves the skewed bytes).
     TransientConflict,
 }
 
@@ -186,6 +185,15 @@ where
 {
     let _guard = crate::persist::acquire_config_read_lock(&paths.config_file)?;
     for attempt in 0..READ_ONLY_SNAPSHOT_ATTEMPTS {
+        // A pending publication journal means a writer died mid-rename: the
+        // tree may hold global-new/workspace-old skew. Report it as transient
+        // instead of serving skew as stable, without touching disk.
+        if publication_journal_path(&paths.config_file)
+            .symlink_metadata()
+            .is_ok()
+        {
+            return Ok(transient_config_snapshot());
+        }
         let before = read_raw_config_tree(paths);
         let snapshot = parse_raw_config_tree(&before);
         between_reads(attempt);
@@ -195,14 +203,20 @@ where
         }
     }
 
-    Ok(ReadOnlyConfigSnapshot {
+    Ok(transient_config_snapshot())
+}
+
+/// Stable fallback snapshot when the on-disk tree cannot be trusted: either it
+/// tore repeatedly mid-read or a crashed publication is still pending.
+fn transient_config_snapshot() -> ReadOnlyConfigSnapshot {
+    ReadOnlyConfigSnapshot {
         config: AppConfig::default(),
         diagnostics: vec![ConfigSourceDiagnostic {
             scope: ConfigSourceScope::Workspaces,
             issue: ConfigSourceIssue::TransientConflict,
         }],
         generation: config_generation(&[]),
-    })
+    }
 }
 
 fn read_raw_config_tree(paths: &JackinPaths) -> RawConfigTree {
@@ -537,9 +551,10 @@ pub fn load_split_config(
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
     let _lock = acquire_config_write_lock(&paths.config_file)?;
+    // Lock acquisition already forward-rolled any pending publication.
     let loaded = load_split_config_locked(paths, contents_opt)?;
     loaded.validate()?;
-    loaded.commit()
+    loaded.commit(&publication_journal_path(&paths.config_file))
 }
 
 pub(crate) fn load_split_config_locked(
@@ -638,7 +653,6 @@ pub(crate) fn load_split_config_locked(
     Ok(LoadedConfig {
         config,
         pending_writes,
-        config_file: paths.config_file.clone(),
     })
 }
 
@@ -700,7 +714,7 @@ pub fn load_workspace_files(
         .join("config.toml");
     let _lock = acquire_config_write_lock(&config_file)?;
     let (workspaces, pending_writes) = load_workspace_files_locked(workspaces_dir)?;
-    commit_pending_config_writes(&config_file, pending_writes)?;
+    commit_pending_config_writes(pending_writes, &publication_journal_path(&config_file))?;
     Ok(workspaces)
 }
 
@@ -976,6 +990,7 @@ impl AppConfig {
     pub fn load_or_init(paths: &JackinPaths) -> crate::ConfigResult<Self> {
         paths.ensure_base_dirs()?;
         let lock = acquire_config_write_lock(&paths.config_file)?;
+        // Lock acquisition already forward-rolled any pending publication.
         let loaded = (|| {
             let contents_opt = load_config_contents(paths)?;
             let loaded = load_split_config_locked(paths, contents_opt)?;
@@ -994,7 +1009,7 @@ impl AppConfig {
                 loaded.config.validate_workspaces(),
             )?;
 
-            loaded.commit()
+            loaded.commit(&publication_journal_path(&paths.config_file))
         })();
         let mut config = crate::telemetry::finish_operation(
             jackin_telemetry::schema::enums::ConfigScope::Global,

@@ -479,6 +479,9 @@ pub(super) enum ProfileCredentialMaterial {
     Cursor {
         auth_path: PathBuf,
     },
+    Gemini {
+        creds_path: PathBuf,
+    },
 }
 
 impl std::fmt::Debug for UsageDiscoveryCatalog {
@@ -596,7 +599,9 @@ fn discover_forwarded_sources(accounts: &[ForwardedUsageAccount]) -> UsageDiscov
         let Some(surface) = HostSurfaceId::from_id(&account.surface_id) else {
             continue;
         };
-        if !HostSurfaceId::DESKTOP_PROVIDER_ORDER.contains(&surface) {
+        // Every known surface reaches Capsules: `DESKTOP_PROVIDER_ORDER` is
+        // the Swift glance contract only, not forwarded admission.
+        if !HostSurfaceId::ALL.contains(&surface) {
             continue;
         }
         candidates
@@ -1271,15 +1276,22 @@ fn profile_identity(
         }
         Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
         Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),
-        // Antigravity's grant lives in the host Keychain singleton, which the
-        // file-based reader cannot probe: usage sees no usable credential.
-        // A Keychain-backed probe belongs to the usage lane.
+        // Antigravity stays explicitly unwired: its grant lives in the host
+        // Keychain singleton, which the file-based reader cannot probe, so no
+        // discovery material exists and refresh can never dispatch. A
+        // Keychain-backed probe belongs to the usage lane.
         Agent::Antigravity => ProfileValidation::Missing,
-        Agent::Gemini => anonymous_when_present(reader, &root.join("oauth_creds.json")),
+        Agent::Gemini => gemini_profile_identity(reader, &root.join("oauth_creds.json")),
         Agent::Cursor => cursor_profile_identity(reader, root),
+        // Muse stays explicitly unwired: identity is verified locally but no
+        // material is minted — the secret lives in the platform credential
+        // store and no pollable usage fetch exists by design
+        // (`MuseKeyExchangePolicy::polling_enabled` is false), so refresh
+        // cannot dispatch.
         Agent::Muse => muse_profile_identity(reader, &root.join("auth.json")),
-        // SQLite store: presence (not content) is verified; table parsing
-        // belongs to a later lane.
+        // omp stays explicitly unwired: it is an attribution-only aggregator
+        // with no native identity or usage endpoint. SQLite store presence
+        // (not content) is verified; table parsing belongs to a later lane.
         Agent::Omp => {
             if reader.exists(&root.join("agent/agent.db")) {
                 ProfileValidation::Anonymous(None)
@@ -1287,6 +1299,9 @@ fn profile_identity(
                 ProfileValidation::Missing
             }
         }
+        // Hermes stays explicitly unwired: attribution-only adapter with no
+        // Hermes-native quota API; usage needs caller-supplied underlying
+        // buckets the refresh lane cannot produce.
         Agent::Hermes => anonymous_when_present(reader, &root.join("auth.json")),
     }
 }
@@ -1303,25 +1318,26 @@ fn anonymous_when_present(reader: &dyn ProfileCredentialReader, path: &Path) -> 
 }
 
 /// Cursor identity comes from the sibling `cli-config.json` (`authInfo`
-/// email), verified locally; the tokens themselves live in `auth.json`.
+/// email), verified locally; token presence in `auth.json` is proven at
+/// discovery and the path is kept as refresh material, so refresh re-reads
+/// the registered root instead of a stale discovery-time copy. A
+/// present-but-tokenless `auth.json` is malformed, never an anonymous
+/// binding refresh cannot serve.
 fn cursor_profile_identity(reader: &dyn ProfileCredentialReader, root: &Path) -> ProfileValidation {
     let auth_path = root.join("auth.json");
     let value = match read_json(reader, &auth_path) {
+        Ok(Some(value)) => value,
         Ok(None) => return ProfileValidation::Missing,
         Err(outcome) => return outcome,
-        Ok(Some(value)) => value,
     };
-    // Token-bearing profiles refresh through the broker; a token-less
-    // `auth.json` keeps the old label-only binding (no refreshable material).
-    let material = crate::usage::cursor_auth_from_value(&value).ok().map(|_| {
-        Box::new(ProfileCredentialMaterial::Cursor {
-            auth_path: auth_path.clone(),
-        })
-    });
+    if crate::usage::cursor_auth_from_value(&value).is_none() {
+        return ProfileValidation::Malformed;
+    }
+    let material = Some(Box::new(ProfileCredentialMaterial::Cursor { auth_path }));
     let label = read_json(reader, &root.join("cli-config.json"))
         .ok()
         .flatten()
-        .and_then(|config| crate::usage::cursor_identity_from_cli_config(&config));
+        .and_then(|config| crate::usage::cursor_cli_identity_from_value(&config));
     match label {
         Some(label) => ProfileValidation::Authenticated {
             provider_id: None,
@@ -1330,6 +1346,29 @@ fn cursor_profile_identity(reader: &dyn ProfileCredentialReader, root: &Path) ->
         },
         None => ProfileValidation::Anonymous(material),
     }
+}
+
+/// Gemini identity comes from `oauth_creds.json` when it names the login;
+/// any valid credential file mints material (the Grok shape), since refresh
+/// only needs discovery-proven OAuth presence until an entitlement endpoint
+/// lands.
+fn gemini_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
+    let value = match read_json(reader, path) {
+        Ok(Some(value)) => value,
+        Ok(None) => return ProfileValidation::Missing,
+        Err(outcome) => return outcome,
+    };
+    let material = Some(Box::new(ProfileCredentialMaterial::Gemini {
+        creds_path: path.to_path_buf(),
+    }));
+    first_recursive_string(&value, &["email", "user_email", "user_id", "account"]).map_or(
+        ProfileValidation::Anonymous(material.clone()),
+        |label| ProfileValidation::Authenticated {
+            provider_id: None,
+            account_label: Some(label),
+            material,
+        },
+    )
 }
 
 /// Muse identity comes from `auth.json` (`providers.meta.user_email`),
@@ -1676,6 +1715,19 @@ pub(super) fn refresh_credential_binding(
             crate::usage::cursor_profile_snapshot(
                 binding.surface.agent_slug(),
                 auth_path,
+                chrono::Utc::now().timestamp(),
+            )
+        }
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Gemini { creds_path }) => {
+            // Re-prove OAuth presence at refresh: a file deleted after
+            // discovery is NeedsSecret, never a stale Unsupported.
+            let has_oauth = creds_path.is_file();
+            crate::usage::gemini_snapshot_with_presence(
+                binding.surface.agent_slug(),
+                binding.surface.provider_label(),
+                has_oauth,
+                false,
+                "OAuth · configured profile",
                 chrono::Utc::now().timestamp(),
             )
         }

@@ -376,6 +376,8 @@ impl ConfigEditor {
         lock: ConfigWriteGuard,
     ) -> crate::ConfigResult<(Self, BootstrapReport)> {
         paths.ensure_base_dirs()?;
+        // The passed-in lock's acquisition already forward-rolled any
+        // pending publication.
         let mut report = BootstrapReport::default();
         let initial_contents = if paths.config_file.exists() {
             None
@@ -424,7 +426,7 @@ impl ConfigEditor {
             // config whose instance account is not registered yet for repair.
             loaded.validate_for_editor()?;
         }
-        drop(loaded.commit()?);
+        drop(loaded.commit(&publication_journal_path(&paths.config_file))?);
         let raw = std::fs::read_to_string(&paths.config_file)
             .with_context(|| format!("reading {}", paths.config_file.display()))?;
         let doc: DocumentMut = raw

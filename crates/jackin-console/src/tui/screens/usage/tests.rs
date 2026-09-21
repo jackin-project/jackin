@@ -340,7 +340,7 @@ fn freshness_age_label_covers_phases_and_ages() {
     assert_eq!(freshness_age_label(now, &account), "never updated");
 
     account.last_good_at_epoch = Some(now - 10);
-    assert_eq!(freshness_age_label(now, &account), "updated just now");
+    assert_eq!(freshness_age_label(now, &account), "updated now");
     account.last_good_at_epoch = Some(now - 300);
     assert_eq!(freshness_age_label(now, &account), "updated 5m ago");
     account.last_good_at_epoch = Some(now - 7_200);
@@ -613,7 +613,7 @@ fn projection_includes_unresolved_accounts_and_groups_by_provider() {
     assert_eq!(state.accounts[1].provider_id, "openai");
     assert_eq!(state.accounts[1].canonical_account_id, "openai:second");
     assert_eq!(state.accounts[1].stable_id(), "openai:openai:second");
-    assert_eq!(state.accounts[2].provider, "Anthropic / Claude");
+    assert_eq!(state.accounts[2].provider, "Anthropic");
     assert_eq!(state.accounts[2].account, "Unresolved (anthropic:key)");
     assert_eq!(
         state.accounts[2].status,
@@ -1106,6 +1106,7 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
         accounts: state.accounts.clone(),
         selected: 1,
         selected_id: Some("openai:canon-1".to_owned()),
+        detail: true,
         ..UsageScreenState::default()
     });
     let backend = TestBackend::new(120, 60);
@@ -1348,6 +1349,428 @@ fn window_group_summary_uses_left_like_windows_and_capsule() {
         super::metric_group_value_summary(&group).as_deref(),
         Some("73% left · weekly")
     );
+}
+
+fn manager_with_usage(state: UsageScreenState) -> crate::tui::state::ManagerState<'static> {
+    let config = jackin_config::AppConfig::default();
+    let mut manager =
+        crate::tui::state::ManagerState::from_config(&config, std::path::Path::new("/test"));
+    manager.usage.screen = Some(state);
+    manager
+}
+
+fn render_detail_text(state: UsageScreenState) -> String {
+    use ratatui::{Terminal, backend::TestBackend};
+    let manager = manager_with_usage(state);
+    let backend = TestBackend::new(120, 60);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| super::render_detail(f, f.area(), &manager))
+        .unwrap();
+    backend_text(&terminal)
+}
+
+fn render_list_text(state: UsageScreenState) -> String {
+    use ratatui::{Terminal, backend::TestBackend};
+    let manager = manager_with_usage(state);
+    let backend = TestBackend::new(120, 60);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| super::render_account_list(f, f.area(), &manager))
+        .unwrap();
+    backend_text(&terminal)
+}
+
+fn press_key(manager: &mut crate::tui::state::ManagerState<'_>, code: crossterm::event::KeyCode) {
+    use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    super::handle_key(
+        manager,
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        },
+    );
+}
+
+fn usage_issue(code: &str, message: &str) -> jackin_protocol::usage_broker::UsageIssueV1 {
+    use jackin_protocol::usage_broker::{
+        UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1,
+    };
+    UsageIssueV1 {
+        code: code.to_owned(),
+        scope: UsageIssueScopeV1::Account,
+        recoverability: UsageIssueRecoverabilityV1::Retryable,
+        message: message.to_owned(),
+        retry_at_epoch: None,
+    }
+}
+
+fn window_metric_group(label: &str, remaining: Option<u8>, now: i64) -> super::UsageMetricGroup {
+    use jackin_protocol::usage_broker::{
+        UsageMetricGroupKindV1, UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1,
+        UsagePercent, UsageQuotaStateV1,
+    };
+    super::UsageMetricGroup {
+        group_id: format!("{label}-id"),
+        rank: 0,
+        kind: UsageMetricGroupKindV1::Window,
+        label: label.to_owned(),
+        scope: UsageMetricScopeV1::default(),
+        observed_at_epoch: None,
+        fetched_at_epoch: now - 10,
+        last_success_at_epoch: Some(now - 60),
+        phase: UsageFreshnessPhaseV1::Current,
+        is_stale: false,
+        quota_state: UsageQuotaStateV1::Available,
+        value: UsageMetricValueV1::Window {
+            remaining_percent: remaining.map(|p| UsagePercent::new(p).expect("valid percent")),
+            remaining_raw_percent: remaining.map(i32::from),
+            used_percent: None,
+            used_raw_percent: None,
+            period: UsageMetricPeriodV1::Unknown,
+            unit: None,
+        },
+        reset_at_epoch: None,
+        renews_at_epoch: None,
+        issues: Vec::new(),
+    }
+}
+
+#[test]
+fn detail_toggle_renders_summary_vs_full_bodies() {
+    let mut account = test_account("openai", "a", "work");
+    account.windows = vec![UsageWindow {
+        quota_state: UsageQuotaStateV1::Warning,
+        pace_label: Some("on pace".to_owned()),
+        runs_out_label: Some("runs out Friday".to_owned()),
+        ..test_window("weekly", Some(73))
+    }];
+    account.metric_groups = vec![window_metric_group("Session", Some(5), 1_800_000_000)];
+    account.issues = vec![usage_issue("quota_degraded", "quota degraded")];
+
+    let summary_state = UsageScreenState {
+        accounts: vec![account.clone()],
+        selected: 1,
+        selected_id: Some("openai:a".to_owned()),
+        detail: false,
+        ..UsageScreenState::default()
+    };
+    let summary = render_detail_text(summary_state);
+    assert!(
+        summary.contains("weekly"),
+        "summary keeps labels:\n{summary}"
+    );
+    assert!(
+        summary.contains("weekly value"),
+        "summary keeps values:\n{summary}"
+    );
+    assert!(
+        summary.contains("Session: 5% left"),
+        "summary keeps compact group rows:\n{summary}"
+    );
+    assert!(
+        summary.contains("1 issue · Enter for detail"),
+        "summary collapses issues to a count:\n{summary}"
+    );
+    assert!(summary.contains("Enter for full detail"));
+    for full_only in [
+        "quota: warning",
+        "pace: on pace",
+        "runs out: runs out Friday",
+        "quota degraded",
+        "(window ·",
+        "Enter for summary",
+    ] {
+        assert!(
+            !summary.contains(full_only),
+            "summary must not render full-only {full_only:?}:\n{summary}"
+        );
+    }
+
+    let full_state = UsageScreenState {
+        accounts: vec![account],
+        selected: 1,
+        selected_id: Some("openai:a".to_owned()),
+        detail: true,
+        ..UsageScreenState::default()
+    };
+    let full = render_detail_text(full_state);
+    for row in [
+        "quota: warning",
+        "pace: on pace",
+        "runs out: runs out Friday",
+        "quota degraded (quota_degraded)",
+        "Session (window · available · ",
+        "Enter for summary",
+    ] {
+        assert!(full.contains(row), "full view missing {row:?}:\n{full}");
+    }
+    assert!(
+        !full.contains("Enter for full detail"),
+        "full view must not carry the summary hint:\n{full}"
+    );
+}
+
+#[test]
+fn sort_orders_by_remaining_then_unknown_and_by_name() {
+    use super::{UsageFilter, UsageSort};
+
+    let mut low = test_account("openai", "a", "zebra");
+    low.windows = vec![test_window("w", Some(12))];
+    let mut high = test_account("anthropic", "b", "mike");
+    high.windows = vec![test_window("w", Some(90))];
+    let mut unknown = test_account("zai", "c", "alpha");
+    unknown.windows = vec![test_window("w", None)];
+    let mut state = UsageScreenState {
+        accounts: vec![high, unknown, low],
+        ..UsageScreenState::default()
+    };
+
+    assert_eq!(state.sort, UsageSort::Provider);
+    assert_eq!(state.filter, UsageFilter::All);
+    assert_eq!(state.visible_order(), vec![0, 1, 2]);
+
+    state.sort = UsageSort::Remaining;
+    assert_eq!(state.visible_order(), vec![2, 0, 1]);
+
+    state.sort = UsageSort::Name;
+    assert_eq!(state.visible_order(), vec![1, 0, 2]);
+
+    assert_eq!(UsageSort::Provider.cycle(), UsageSort::Remaining);
+    assert_eq!(UsageSort::Remaining.cycle(), UsageSort::Name);
+    assert_eq!(UsageSort::Name.cycle(), UsageSort::Provider);
+}
+
+#[test]
+fn filter_predicate_matches_issues_and_stale_membership() {
+    use super::UsageFilter;
+
+    let mut bad = test_account("openai", "a", "bad");
+    bad.issues = vec![usage_issue("boom", "boom")];
+    let mut stale = test_account("anthropic", "b", "stale");
+    stale.is_stale = true;
+    let ok = test_account("zai", "c", "ok");
+    let mut state = UsageScreenState {
+        accounts: vec![bad, stale, ok],
+        ..UsageScreenState::default()
+    };
+
+    state.filter = UsageFilter::Issues;
+    assert_eq!(state.visible_order(), vec![0]);
+    state.filter = UsageFilter::Stale;
+    assert_eq!(state.visible_order(), vec![1]);
+    state.filter = UsageFilter::All;
+    assert_eq!(state.visible_order(), vec![0, 1, 2]);
+
+    assert_eq!(UsageFilter::All.cycle(), UsageFilter::Issues);
+    assert_eq!(UsageFilter::Issues.cycle(), UsageFilter::Stale);
+    assert_eq!(UsageFilter::Stale.cycle(), UsageFilter::All);
+}
+
+#[test]
+fn sort_filter_keys_cycle_reanchor_and_render_state() {
+    use super::{UsageFilter, UsageSort};
+    use crossterm::event::KeyCode;
+
+    let mut low = test_account("openai", "a", "zebra");
+    low.windows = vec![test_window("w", Some(12))];
+    let high = test_account("anthropic", "b", "mike");
+    let mut manager = manager_with_usage(UsageScreenState {
+        accounts: vec![high, low],
+        selected: 2,
+        selected_id: Some("openai:a".to_owned()),
+        ..UsageScreenState::default()
+    });
+
+    press_key(&mut manager, KeyCode::Char('s'));
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.sort, UsageSort::Remaining);
+    // Selection follows the account by stable id: lowest remaining first.
+    assert_eq!(screen.selected, 1);
+    assert_eq!(screen.selected_id, Some("openai:a".to_owned()));
+
+    press_key(&mut manager, KeyCode::Char('f'));
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.filter, UsageFilter::Issues);
+    // Neither account has issues: selection parks on Overview, id kept.
+    assert_eq!(screen.selected, 0);
+    assert_eq!(screen.selected_id, Some("openai:a".to_owned()));
+
+    let list = render_list_text(manager.usage.screen.clone().unwrap());
+    assert!(list.contains("s:sort(remaining) f:filter(issues) c:constrained"));
+    assert!(list.contains("No accounts match filter 'issues'."));
+    assert!(list.contains("Press f to cycle the filter."));
+}
+
+#[test]
+fn min_remaining_spans_windows_and_groups_with_unknown_last() {
+    let mut mixed = test_account("openai", "a", "mixed");
+    mixed.windows = vec![test_window("w", None)];
+    mixed.metric_groups = vec![window_metric_group("Session", Some(5), 1_800_000_000)];
+    assert_eq!(mixed.min_remaining(), Some(5));
+
+    let mut unknown = test_account("zai", "b", "unknown");
+    unknown.windows = vec![test_window("w", None)];
+    assert_eq!(unknown.min_remaining(), None);
+}
+
+#[test]
+fn capacity_finder_selects_most_constrained_with_reset_tiebreak() {
+    let mut far = test_account("openai", "a", "far");
+    far.windows = vec![UsageWindow {
+        reset_at_epoch: Some(1_900_000_000),
+        ..test_window("w", Some(20))
+    }];
+    let mut soon = test_account("anthropic", "b", "soon");
+    soon.windows = vec![UsageWindow {
+        reset_at_epoch: Some(1_800_000_100),
+        ..test_window("w", Some(20))
+    }];
+    let mut roomy = test_account("zai", "c", "roomy");
+    roomy.windows = vec![test_window("w", Some(80))];
+    let mut state = UsageScreenState {
+        accounts: vec![far, soon, roomy],
+        ..UsageScreenState::default()
+    };
+
+    assert_eq!(state.most_constrained_selected(), Some(2));
+    assert!(state.jump_to_most_constrained());
+    assert_eq!(state.selected, 2);
+    assert_eq!(state.selected_id, Some("anthropic:b".to_owned()));
+
+    // An exhausted account beats every partial one.
+    state.accounts[2].windows = vec![test_window("w", Some(0))];
+    assert_eq!(state.most_constrained_selected(), Some(3));
+}
+
+#[test]
+fn capacity_finder_empty_states_post_notice_without_moving() {
+    use super::UsageFilter;
+
+    let mut empty = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    assert_eq!(empty.most_constrained_selected(), None);
+    assert!(!empty.jump_to_most_constrained());
+    assert_eq!(empty.selected, 0);
+    assert_eq!(
+        empty.notice,
+        Some("No usage accounts configured; nothing to compare".to_owned())
+    );
+
+    let mut filtered = UsageScreenState {
+        accounts: vec![test_account("openai", "a", "work")],
+        filter: UsageFilter::Issues,
+        ..UsageScreenState::default()
+    };
+    assert!(!filtered.jump_to_most_constrained());
+    assert_eq!(filtered.selected, 0);
+    assert_eq!(
+        filtered.notice,
+        Some("No accounts match filter 'issues'; press f to clear".to_owned())
+    );
+
+    let mut unknown = test_account("openai", "a", "work");
+    unknown.windows = vec![test_window("w", None)];
+    let mut no_percent = UsageScreenState {
+        accounts: vec![unknown],
+        ..UsageScreenState::default()
+    };
+    assert!(!no_percent.jump_to_most_constrained());
+    assert_eq!(
+        no_percent.notice,
+        Some("No visible account reports remaining quota".to_owned())
+    );
+}
+
+#[test]
+fn capacity_finder_key_jumps_selection() {
+    use crossterm::event::KeyCode;
+
+    let mut low = test_account("openai", "a", "zebra");
+    low.windows = vec![test_window("w", Some(12))];
+    let high = test_account("anthropic", "b", "mike");
+    let mut manager = manager_with_usage(UsageScreenState {
+        accounts: vec![high, low],
+        ..UsageScreenState::default()
+    });
+    press_key(&mut manager, KeyCode::Char('c'));
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.selected, 2);
+    assert_eq!(screen.selected_id, Some("openai:a".to_owned()));
+}
+
+#[test]
+fn labels_align_with_capsule_tab_vocabulary() {
+    use super::{lifecycle_label, quota_state_label, well_known_provider_name};
+
+    // Lifecycle words shared with Capsule `usage_tab_status_label` match
+    // exactly; `available`/`not started` are console-owned (Capsule's healthy
+    // word `fresh` belongs to the freshness axis, a different concept).
+    for (lifecycle, expected) in [
+        (UsageLifecycleV1::Available, "available"),
+        (UsageLifecycleV1::AgentUninitialized, "not started"),
+        (UsageLifecycleV1::NeedsLogin, "needs login"),
+        (UsageLifecycleV1::NeedsSecret, "needs secret"),
+        (UsageLifecycleV1::Unsupported, "unsupported"),
+        (UsageLifecycleV1::Unavailable, "unavailable"),
+        (UsageLifecycleV1::Error, "error"),
+    ] {
+        assert_eq!(lifecycle_label(lifecycle), expected);
+    }
+
+    // Capsule tabs carry no quota axis, so the full quota table is pinned
+    // here to catch drift against the console's own render contract.
+    for (state, expected) in [
+        (UsageQuotaStateV1::Available, "available"),
+        (UsageQuotaStateV1::NotStarted, "not started"),
+        (UsageQuotaStateV1::Warning, "warning"),
+        (UsageQuotaStateV1::Exhausted, "exhausted"),
+        (UsageQuotaStateV1::Unsupported, "unsupported"),
+        (UsageQuotaStateV1::Unavailable, "unavailable"),
+        (UsageQuotaStateV1::NoPermission, "no permission"),
+        (UsageQuotaStateV1::Unknown, "unknown"),
+        (UsageQuotaStateV1::NotApplicable, "n/a"),
+        (UsageQuotaStateV1::Error, "error"),
+    ] {
+        assert_eq!(quota_state_label(state), expected);
+    }
+
+    // Provider display names mirror Capsule `provider_display_label`.
+    for (provider_id, expected) in [
+        ("anthropic", "Anthropic"),
+        ("claude", "Anthropic"),
+        ("openai", "OpenAI"),
+        ("codex", "OpenAI"),
+        ("opencode", "OpenCode"),
+        ("kimi", "Kimi"),
+        ("moonshot", "Kimi"),
+        ("grok", "xAI"),
+        ("xai", "xAI"),
+        ("amp", "Amp"),
+        ("zai", "Z.AI"),
+        ("minimax", "MiniMax"),
+        ("acme", "acme"),
+    ] {
+        assert_eq!(well_known_provider_name(provider_id), expected);
+    }
+
+    // Freshness ages: sub-minute matches Capsule `relative_updated_label`
+    // modulo the console's lowercase row style; stale keeps the tab `stale`
+    // prefix with the same ` · ` separator.
+    let now = 1_800_000_000;
+    let mut account = test_account("openai", "a", "work");
+    account.freshness_phase = UsageFreshnessPhaseV1::Refreshing;
+    assert_eq!(freshness_age_label(now, &account), "refreshing…");
+    account.freshness_phase = UsageFreshnessPhaseV1::Current;
+    account.last_good_at_epoch = None;
+    assert_eq!(freshness_age_label(now, &account), "never updated");
+    account.last_good_at_epoch = Some(now - 10);
+    assert_eq!(freshness_age_label(now, &account), "updated now");
+    account.last_good_at_epoch = Some(now - 300);
+    assert_eq!(freshness_age_label(now, &account), "updated 5m ago");
+    account.is_stale = true;
+    assert_eq!(freshness_age_label(now, &account), "stale · updated 5m ago");
 }
 
 fn backend_text(terminal: &ratatui::Terminal<ratatui::backend::TestBackend>) -> String {

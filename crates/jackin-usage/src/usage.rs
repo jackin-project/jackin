@@ -125,19 +125,20 @@ pub(crate) use self::codex::{
 pub(crate) use self::cursor::{
     CursorAuth, CursorEnterpriseScope, CursorMemberSpend, CursorPeriodUsage, CursorRequestUsage,
     CursorSandUsage, CursorTeamSpend, CursorUsageEvents, CursorUsageSummary,
-    cursor_auth_from_value, cursor_auth_path, cursor_credits_bucket, cursor_dashboard_base,
-    cursor_dashboard_post, cursor_dashboard_url, cursor_default_base, cursor_enterprise_snapshot,
-    cursor_events_buckets, cursor_identity_from_cli_config, cursor_needs_request_fallback,
-    cursor_period_buckets, cursor_profile_snapshot, cursor_request_bucket, cursor_rest_get,
-    cursor_sand_bucket, cursor_session_cookie, cursor_snapshot, cursor_summary_buckets,
-    cursor_team_spend_buckets, cursor_teams_events_url, cursor_teams_spend_url,
-    cursor_user_id_from_token, fetch_cursor_credit_grants, fetch_cursor_period_usage,
-    fetch_cursor_plan_info, fetch_cursor_request_usage, fetch_cursor_sand_usage,
-    fetch_cursor_stripe_balance, fetch_cursor_team_spend, fetch_cursor_usage_events,
-    fetch_cursor_usage_summary, load_cursor_auth, load_cursor_cli_identity,
-    parse_cursor_credit_grants, parse_cursor_period_usage, parse_cursor_plan_info,
-    parse_cursor_request_usage, parse_cursor_sand_usage, parse_cursor_stripe_balance,
-    parse_cursor_team_spend, parse_cursor_usage_events, parse_cursor_usage_summary,
+    cursor_auth_from_value, cursor_auth_path, cursor_cli_identity_from_value,
+    cursor_credits_bucket, cursor_dashboard_base, cursor_dashboard_post, cursor_default_base,
+    cursor_enterprise_snapshot, cursor_events_buckets, cursor_identity_from_cli_config,
+    cursor_needs_request_fallback, cursor_period_buckets, cursor_profile_snapshot,
+    cursor_request_bucket, cursor_rest_get, cursor_sand_bucket, cursor_session_cookie,
+    cursor_snapshot, cursor_snapshot_with_auth, cursor_summary_buckets, cursor_team_spend_buckets,
+    cursor_teams_events_url, cursor_teams_spend_url, cursor_user_id_from_token,
+    fetch_cursor_credit_grants, fetch_cursor_period_usage, fetch_cursor_plan_info,
+    fetch_cursor_request_usage, fetch_cursor_sand_usage, fetch_cursor_stripe_balance,
+    fetch_cursor_team_spend, fetch_cursor_usage_events, fetch_cursor_usage_summary,
+    load_cursor_auth, load_cursor_cli_identity, parse_cursor_credit_grants,
+    parse_cursor_period_usage, parse_cursor_plan_info, parse_cursor_request_usage,
+    parse_cursor_sand_usage, parse_cursor_stripe_balance, parse_cursor_team_spend,
+    parse_cursor_usage_events, parse_cursor_usage_summary,
 };
 #[expect(
     unused_imports,
@@ -147,7 +148,8 @@ pub(crate) use self::gemini::{
     GEMINI_CONSUMER_OAUTH_END, GeminiEntitlement, GeminiProjectQuota,
     gemini_consumer_oauth_retired, gemini_credential_origin, gemini_credential_presence,
     gemini_error_needs_migration, gemini_migration_action, gemini_oauth_creds_path,
-    gemini_quota_buckets, gemini_snapshot, parse_gemini_entitlement, parse_gemini_project_quotas,
+    gemini_quota_buckets, gemini_snapshot, gemini_snapshot_with_presence, parse_gemini_entitlement,
+    parse_gemini_project_quotas,
 };
 #[expect(
     unused_imports,
@@ -185,6 +187,17 @@ pub(crate) use self::minimax::{
 pub(crate) use self::opencode::opencode_profile_snapshot;
 #[cfg(test)]
 pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
+#[expect(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
+pub(crate) use self::openrouter::{
+    OPENROUTER_DEFAULT_BASE_URL, OpenRouterCreditsOutcome, OpenRouterKeyQuota,
+    OpenRouterModelCheck, check_openrouter_model_in_catalog, fetch_openrouter_credits,
+    fetch_openrouter_key_usage, fetch_openrouter_model_check, openrouter_base_url,
+    openrouter_base_url_from, openrouter_credits_bucket, openrouter_snapshot,
+    openrouter_snapshot_with_base, parse_openrouter_credits, parse_openrouter_key_usage,
+};
 #[cfg(test)]
 pub(crate) use self::refresh::MaterializedUsageAccounts;
 #[expect(
@@ -288,6 +301,9 @@ pub(crate) enum UsageSurface {
     Kimi,
     Minimax,
     OpenCode,
+    Cursor,
+    Google,
+    OpenRouter,
     Unsupported,
 }
 
@@ -302,6 +318,9 @@ impl UsageSurface {
             Self::Kimi => Some("kimi"),
             Self::Minimax => Some("minimax"),
             Self::OpenCode => Some("opencode"),
+            Self::Cursor => Some("cursor"),
+            Self::Google => Some("google"),
+            Self::OpenRouter => Some("openrouter"),
             Self::Unsupported => None,
         }
     }
@@ -316,6 +335,9 @@ impl UsageSurface {
             Self::Kimi => "Kimi",
             Self::Minimax => "MiniMax",
             Self::OpenCode => "OpenCode",
+            Self::Cursor => "Cursor",
+            Self::Google => "Google",
+            Self::OpenRouter => "OpenRouter",
             Self::Unsupported => "Usage",
         }
     }
@@ -330,6 +352,9 @@ impl UsageSurface {
             Self::Kimi => "Kimi",
             Self::Minimax => "MiniMax",
             Self::OpenCode => "OpenCode",
+            Self::Cursor => "Cursor",
+            Self::Google => "Google",
+            Self::OpenRouter => "OpenRouter",
             Self::Unsupported => "Usage",
         }
     }
@@ -807,6 +832,38 @@ pub fn provider_credential_snapshot(
             now,
             last_error: Some("OpenAI API-key subscription quota is unavailable".to_owned()),
         }),
+        // A Cursor API key cannot drive the personal dashboard RPC (that
+        // needs the OAuth JWT from `auth.json`); the key route stays an
+        // explicit gap like the OpenAI arm above, never a speculative fetch.
+        "cursor" => usage_view(UsageViewInput {
+            agent: "cursor",
+            provider: Some("Cursor"),
+            surface: UsageSurface::Cursor,
+            account_label: String::new(),
+            username: None,
+            plan_label: None,
+            credential_origin: Some("API key · configured source".to_owned()),
+            buckets: Vec::new(),
+            status: UsageSnapshotStatus::Unsupported,
+            source: UsageSource::None,
+            confidence: UsageConfidence::None,
+            now,
+            last_error: Some("Cursor API-key subscription quota is unavailable".to_owned()),
+        }),
+        "google" => gemini_snapshot_with_presence(
+            "gemini",
+            Some("Google"),
+            false,
+            true,
+            &format!("API key · env {key_name}"),
+            now,
+        ),
+        "openrouter" => openrouter_snapshot("opencode", Some(secret), now),
+        // Explicitly blocked (no production dispatch): `meta` (Muse has no
+        // pollable usage fetch by design), `antigravity` (grant lives in the
+        // host Keychain, which the file reader cannot probe), `omp`/`hermes`
+        // (attribution-only adapters with no native endpoint), `copilot` (no
+        // collector, registry, or discovery entry exists at all).
         _ => unsupported_snapshot(surface_id, None, now),
     }
 }
@@ -836,6 +893,15 @@ pub(crate) fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurfa
     if matches!(provider, Some("MiniMax")) {
         return UsageSurface::Minimax;
     }
+    if matches!(provider, Some("Cursor")) {
+        return UsageSurface::Cursor;
+    }
+    if matches!(provider, Some("Google" | "Gemini")) {
+        return UsageSurface::Google;
+    }
+    if matches!(provider, Some("OpenRouter")) {
+        return UsageSurface::OpenRouter;
+    }
     match agent {
         "claude" => UsageSurface::Claude,
         "codex" => UsageSurface::Codex,
@@ -843,6 +909,11 @@ pub(crate) fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurfa
         "grok" => UsageSurface::Grok,
         "kimi" => UsageSurface::Kimi,
         "opencode" => UsageSurface::OpenCode,
+        "cursor" => UsageSurface::Cursor,
+        // Only `gemini` maps here: `antigravity` shares the Google surface in
+        // `HostSurfaceId::from_agent` but stays explicitly unwired (Keychain
+        // grant, no file probe), as do `muse`, `omp`, and `hermes`.
+        "gemini" => UsageSurface::Google,
         _ => UsageSurface::Unsupported,
     }
 }

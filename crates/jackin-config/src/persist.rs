@@ -14,6 +14,8 @@
 
 use anyhow::Context;
 use fs4::TryLockError;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read as _, Seek as _, Write as _};
@@ -111,7 +113,8 @@ pub(crate) fn acquire_config_write_lock(
     // (previous owner died mid-commit) is rolled forward here, before any
     // read or write observes the tree. The lock is exclusive, so no
     // concurrent committer can own the journal we are completing.
-    recover_publication_journal(&publication_journal_path(config_file))?;
+    // Orphaned staged files are collected on the same path.
+    recover_pending_publication(config_file)?;
     file.set_len(0)?;
     file.rewind()?;
     writeln!(file, "{}", std::process::id())?;
@@ -339,64 +342,41 @@ pub(crate) fn stage_delete(path: &Path) -> crate::ConfigResult<Option<StagedDele
 
 /// Sibling of `config.toml` recording a multi-file publication in progress.
 ///
-/// Every [`commit_staged_config`] writes this journal (durably) before its
-/// first rename and removes it after its last mutation. A crash in the rename
-/// window leaves the journal behind; the next [`acquire_config_write_lock`]
-/// rolls it forward before any read or write observes the tree, converging to
-/// either all-new (crash during commit) or all-old (crash during abort).
+/// Every [`commit_staged_config`] writes this journal (durably, `0600`) before
+/// its first rename and removes it after its last mutation. A crash in the
+/// rename window leaves the journal behind; the next
+/// [`acquire_config_write_lock`] rolls it forward before any read or write
+/// observes the tree, converging to either all-new (crash during commit) or
+/// all-old (crash during abort).
+///
+/// The name stays visible (like the `config.lock` sibling) so a stale journal
+/// is obvious in directory listings instead of hiding as a dotfile.
 pub(crate) fn publication_journal_path(config_file: &Path) -> PathBuf {
     config_file.with_file_name("config.publish.journal")
 }
 
+/// Only publication-journal schema this binary forward-rolls.
 const PUBLICATION_JOURNAL_VERSION: u32 = 1;
 
-/// Ordered rename/remove list a crashed publication left behind.
+/// Durable record of one multi-file publication, fsync'd before the first rename.
 ///
-/// The same shape journals both directions: a commit lists the staged writes
-/// then deletes, an abort lists the staged restores. Recovery always rolls
-/// the listed ops forward, so it converges regardless of which phase died.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// The same ordered op list journals both directions: a commit lists the
+/// staged writes then deletes, an abort lists the staged restores. Recovery
+/// always rolls the listed ops forward, so it converges regardless of which
+/// phase died. Unknown fields are rejected so a newer writer's journal fails
+/// loud instead of half-rolling under an older reader.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PublicationJournal {
     version: u32,
     ops: Vec<PublicationOp>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "op", rename_all = "lowercase")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "lowercase", deny_unknown_fields)]
 enum PublicationOp {
     Write { target: PathBuf, tmp: PathBuf },
     Delete { target: PathBuf },
-}
-
-/// Commit every staged config mutation, restoring committed targets if a
-/// later rename, delete, or directory sync fails.
-///
-/// The commit point is the journal write, not the last rename: once the
-/// journal is durable, any crash converges (via
-/// [`recover_publication_journal`]) instead of stranding global-new /
-/// workspace-old skew. An in-process abort swaps the journal to the staged
-/// restores before applying them, so a crash mid-abort converges to all-old
-/// rather than to a mix the commit journal could no longer describe.
-pub(crate) fn commit_staged_config(
-    journal_path: &Path,
-    writes: &mut [StagedWrite],
-    deletes: &mut [StagedDelete],
-) -> crate::ConfigResult<()> {
-    if writes.is_empty() && deletes.is_empty() {
-        return Ok(());
-    }
-    write_publication_journal(journal_path, &publication_ops(writes, deletes))?;
-    for write in writes.iter_mut() {
-        if let Err(error) = write.commit() {
-            return abort_staged_config(journal_path, writes, deletes, error);
-        }
-    }
-    for delete in deletes.iter_mut() {
-        if let Err(error) = delete.commit() {
-            return abort_staged_config(journal_path, writes, deletes, error);
-        }
-    }
-    remove_publication_journal(journal_path)
 }
 
 fn publication_ops(writes: &[StagedWrite], deletes: &[StagedDelete]) -> Vec<PublicationOp> {
@@ -412,10 +392,20 @@ fn publication_ops(writes: &[StagedWrite], deletes: &[StagedDelete]) -> Vec<Publ
         .collect()
 }
 
-fn write_publication_journal(
+/// Durably record a pending multi-file publication before the first rename.
+///
+/// Written via staged tmp + fsync + rename + parent fsync at `0600`, so the
+/// journal itself is all-or-nothing: recovery either sees the full rename set
+/// or no journal at all.
+pub(crate) fn write_publication_journal(
     journal_path: &Path,
-    ops: &[PublicationOp],
+    writes: &[StagedWrite],
+    deletes: &[StagedDelete],
 ) -> crate::ConfigResult<()> {
+    write_publication_ops(journal_path, &publication_ops(writes, deletes))
+}
+
+fn write_publication_ops(journal_path: &Path, ops: &[PublicationOp]) -> crate::ConfigResult<()> {
     let journal = PublicationJournal {
         version: PUBLICATION_JOURNAL_VERSION,
         ops: ops.to_vec(),
@@ -439,6 +429,139 @@ fn remove_publication_journal(journal_path: &Path) -> crate::ConfigResult<()> {
         }
     }
     sync_parent(journal_path)
+}
+
+/// Forward-roll a publication journal left by a crash between renames.
+///
+/// Runs under the config tree's already-held exclusive lock (see
+/// [`acquire_config_write_lock`]); it performs no locking itself. No journal
+/// still garbage-collects orphaned staged files and returns `Ok(())`. Each op
+/// is idempotent: an already-renamed write (tmp gone, target present) and an
+/// already-applied delete are skipped. A corrupt journal, a version mismatch,
+/// or a write whose staged tmp AND target are both gone fails closed with the
+/// journal left for forensics — the operator hand-verifies the tree and
+/// removes the journal to proceed. Orphaned `*.tmp.<pid>.<ctr>` staged files
+/// are garbage-collected best-effort while the write lock is held.
+pub(crate) fn recover_pending_publication(config_file: &Path) -> crate::ConfigResult<()> {
+    let journal_path = publication_journal_path(config_file);
+    let raw = match std::fs::read(&journal_path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            collect_staged_garbage(config_file, &HashSet::new());
+            return Ok(());
+        }
+        Err(error) => {
+            return Err(crate::ConfigError::msg(format!(
+                "reading publication journal {} failed: {error}",
+                journal_path.display()
+            )));
+        }
+    };
+    let journal: PublicationJournal = serde_json::from_slice(&raw).map_err(|parse_error| {
+        crate::ConfigError::msg(format!(
+            "publication journal {} is corrupt (malformed JSON: {parse_error}); hand-verify the \
+             config tree, then remove the journal to proceed",
+            journal_path.display()
+        ))
+    })?;
+    if journal.version != PUBLICATION_JOURNAL_VERSION {
+        return Err(crate::ConfigError::msg(format!(
+            "publication journal {} has unsupported version {} (expected \
+             {PUBLICATION_JOURNAL_VERSION}); hand-verify the config tree, then remove the journal \
+             to proceed",
+            journal_path.display(),
+            journal.version
+        )));
+    }
+    for op in &journal.ops {
+        apply_publication_op(op)?;
+    }
+    let listed: HashSet<PathBuf> = journal
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            PublicationOp::Write { tmp, .. } => Some(tmp.clone()),
+            PublicationOp::Delete { .. } => None,
+        })
+        .collect();
+    collect_staged_garbage(config_file, &listed);
+    remove_publication_journal(&journal_path)
+}
+
+/// Best-effort removal of orphaned staged files while the write lock is held.
+///
+/// Only `*.tmp.<pid>.<ctr>` names the stager produces are eligible, minus
+/// `listed` tmps still named by a live journal; operator `*.toml` files never
+/// match. Errors are ignored: leftovers are inert (workspace scans filter by
+/// the `.toml` extension) and retried on the next write-locked open.
+fn collect_staged_garbage(config_file: &Path, listed: &HashSet<PathBuf>) {
+    let Some(config_dir) = config_file.parent() else {
+        return;
+    };
+    let workspaces_dir = config_dir.join("workspaces");
+    for dir in [config_dir, workspaces_dir.as_path()] {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !is_staged_garbage(&entry.file_name()) || listed.contains(&path) {
+                continue;
+            }
+            drop(std::fs::remove_file(&path));
+        }
+    }
+}
+
+/// `true` when `file_name` matches the stager's `<name>.tmp.<pid>.<ctr>` shape.
+fn is_staged_garbage(file_name: &OsStr) -> bool {
+    let Some(name) = file_name.to_str() else {
+        return false;
+    };
+    let Some((_, suffix)) = name.rsplit_once(".tmp.") else {
+        return false;
+    };
+    let Some((pid, counter)) = suffix.split_once('.') else {
+        return false;
+    };
+    !pid.is_empty()
+        && !counter.is_empty()
+        && pid.bytes().all(|byte| byte.is_ascii_digit())
+        && counter.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// Commit every staged config mutation, restoring committed targets if a
+/// later rename, delete, or directory sync fails.
+///
+/// The commit point is the journal write, not the last rename: once the
+/// journal is durable, any crash converges (via
+/// [`recover_pending_publication`], which [`acquire_config_write_lock`]
+/// runs before any read or write observes the tree) instead of stranding
+/// global-new / workspace-old skew. An in-process abort swaps the journal to
+/// the staged restores before applying them, so a crash mid-abort converges
+/// to all-old rather than to a mix the commit journal could no longer
+/// describe. Orphaned staged files are garbage-collected on the next
+/// write-locked open.
+pub(crate) fn commit_staged_config(
+    journal_path: &Path,
+    writes: &mut [StagedWrite],
+    deletes: &mut [StagedDelete],
+) -> crate::ConfigResult<()> {
+    if writes.is_empty() && deletes.is_empty() {
+        return Ok(());
+    }
+    write_publication_journal(journal_path, writes, deletes)?;
+    for write in writes.iter_mut() {
+        if let Err(error) = write.commit() {
+            return abort_staged_config(journal_path, writes, deletes, error);
+        }
+    }
+    for delete in deletes.iter_mut() {
+        if let Err(error) = delete.commit() {
+            return abort_staged_config(journal_path, writes, deletes, error);
+        }
+    }
+    remove_publication_journal(journal_path)
 }
 
 /// Restore every committed target to its pre-commit bytes.
@@ -509,7 +632,7 @@ fn abort_staged_config(
             restore_errors.join("; ")
         )));
     }
-    if let Err(journal_error) = write_publication_journal(journal_path, &restores) {
+    if let Err(journal_error) = write_publication_ops(journal_path, &restores) {
         return Err(crate::ConfigError::msg(format!(
             "{error}; config rollback failed: {journal_error}"
         )));
@@ -532,47 +655,6 @@ fn abort_staged_config(
         "{error}; config rollback failed: {}; abort journal left for recovery",
         apply_errors.join("; ")
     )))
-}
-
-/// Roll a stale publication journal forward. Missing journal is a no-op.
-///
-/// Runs under the exclusive config write lock (see
-/// [`acquire_config_write_lock`]), so no concurrent committer can own the
-/// journal being completed. Each op is idempotent: an already-renamed write
-/// (tmp gone, target present) and an already-applied delete are skipped. A
-/// malformed journal, a version mismatch, or a write whose staged tmp AND
-/// target are both gone fails closed with the journal left for forensics —
-/// the operator hand-verifies the tree and removes the journal to proceed.
-pub(crate) fn recover_publication_journal(journal_path: &Path) -> crate::ConfigResult<()> {
-    let raw = match std::fs::read(journal_path) {
-        Ok(raw) => raw,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(crate::ConfigError::msg(format!(
-                "reading publication journal {} failed: {error}",
-                journal_path.display()
-            )));
-        }
-    };
-    let journal: PublicationJournal = serde_json::from_slice(&raw).map_err(|parse_error| {
-        crate::ConfigError::msg(format!(
-            "publication journal {} is malformed ({parse_error}); hand-verify the config \
-                 tree, then remove the journal to proceed",
-            journal_path.display()
-        ))
-    })?;
-    if journal.version != PUBLICATION_JOURNAL_VERSION {
-        return Err(crate::ConfigError::msg(format!(
-            "publication journal {} has unsupported version {}; hand-verify the config tree, \
-             then remove the journal to proceed",
-            journal_path.display(),
-            journal.version
-        )));
-    }
-    for op in &journal.ops {
-        apply_publication_op(op)?;
-    }
-    remove_publication_journal(journal_path)
 }
 
 fn apply_publication_op(op: &PublicationOp) -> crate::ConfigResult<()> {
@@ -642,6 +724,13 @@ fn open_private(path: &Path) -> std::io::Result<File> {
         options.mode(0o600);
     }
     options.open(path)
+}
+
+/// Leak staged writes without running their cleanup `Drop`, simulating a
+/// crash between staging and rename. Test-only: production drops always run.
+#[cfg(test)]
+pub(crate) fn leak_staged_writes(staged: Vec<StagedWrite>) {
+    let _leaked = std::mem::ManuallyDrop::new(staged);
 }
 
 fn sync_parent(path: &Path) -> crate::ConfigResult<()> {

@@ -45,28 +45,28 @@ pub(crate) fn cursor_auth_path() -> PathBuf {
     )
 }
 
-pub(crate) fn load_cursor_auth() -> Result<CursorAuth, String> {
-    let path = cursor_auth_path();
-    let value = read_json_file(&path)
-        .ok_or_else(|| "Cursor auth.json is missing or unreadable".to_owned())?;
-    cursor_auth_from_value(&value)
-}
-
-/// Parse [`CursorAuth`] from one `auth.json` value. Shared by the default-path
-/// loader and profile snapshots so broker refresh never re-resolves the
-/// default home for a non-default registered root.
-pub(crate) fn cursor_auth_from_value(value: &serde_json::Value) -> Result<CursorAuth, String> {
+/// Pure `auth.json` parse: the ambient loader, per-profile snapshots, and the
+/// discovery lane mint broker material from a selected profile root through
+/// this, so broker refresh never re-resolves the default home for a
+/// non-default registered root. `None` is a present-but-tokenless file.
+pub(crate) fn cursor_auth_from_value(value: &serde_json::Value) -> Option<CursorAuth> {
     let access_token = ["accessToken", "access_token"]
         .into_iter()
         .filter_map(|key| value.get(key).and_then(serde_json::Value::as_str))
         .map(str::trim)
-        .find(|token| !token.is_empty())
-        .ok_or_else(|| "Cursor access token is missing".to_owned())?
+        .find(|token| !token.is_empty())?
         .to_owned();
-    Ok(CursorAuth {
+    Some(CursorAuth {
         user_id: cursor_user_id_from_token(&access_token),
         access_token,
     })
+}
+
+pub(crate) fn load_cursor_auth() -> Result<CursorAuth, String> {
+    let path = cursor_auth_path();
+    let value = read_json_file(&path)
+        .ok_or_else(|| "Cursor auth.json is missing or unreadable".to_owned())?;
+    cursor_auth_from_value(&value).ok_or_else(|| "Cursor access token is missing".to_owned())
 }
 
 /// Extract the Cursor user id from a JWT access token: payload `sub`, part
@@ -87,6 +87,19 @@ pub(crate) fn cursor_user_id_from_token(token: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// Pure `cli-config.json` identity parse (`authInfo`): display label only,
+/// never a credential. Shared by ambient loading and discovery so both read
+/// the same keys.
+pub(crate) fn cursor_cli_identity_from_value(value: &serde_json::Value) -> Option<String> {
+    let info = value.get("authInfo")?;
+    ["email", "displayName", "display_name", "userId"]
+        .into_iter()
+        .filter_map(|key| info.get(key).and_then(serde_json::Value::as_str))
+        .map(str::trim)
+        .find(|identity| !identity.is_empty())
+        .map(str::to_owned)
+}
+
 /// Local CLI identity (`authInfo` in `cli-config.json`): display label only,
 /// never a credential.
 pub(crate) fn load_cursor_cli_identity() -> Option<String> {
@@ -95,19 +108,16 @@ pub(crate) fn load_cursor_cli_identity() -> Option<String> {
         |dir| PathBuf::from(dir).join("cli-config.json"),
     );
     let value = read_json_file(&path)?;
-    cursor_identity_from_cli_config(&value)
+    cursor_cli_identity_from_value(&value)
 }
 
 /// Display label from one `cli-config.json` value (`authInfo`): email first,
 /// then display name. Never a credential.
+///
+/// Same parse as [`cursor_cli_identity_from_value`]; both names are called
+/// by `usage/cursor/tests.rs`, so they reconcile together.
 pub(crate) fn cursor_identity_from_cli_config(value: &serde_json::Value) -> Option<String> {
-    let info = value.get("authInfo")?;
-    ["email", "displayName", "display_name", "userId"]
-        .into_iter()
-        .filter_map(|key| info.get(key).and_then(serde_json::Value::as_str))
-        .map(str::trim)
-        .find(|identity| !identity.is_empty())
-        .map(str::to_owned)
+    cursor_cli_identity_from_value(value)
 }
 
 // ---------------------------------------------------------------------------
@@ -124,10 +134,6 @@ pub(crate) fn cursor_default_base() -> bool {
     env_value("CURSOR_API_ENDPOINT").is_none()
 }
 
-pub(crate) fn cursor_dashboard_url(method: &str) -> String {
-    cursor_dashboard_url_with_base(&cursor_dashboard_base(), method)
-}
-
 /// Pure URL join for a dashboard base: the hermetic seam tests use so a live
 /// `CURSOR_API_ENDPOINT` can never break (or leak into) assertions.
 pub(crate) fn cursor_dashboard_url_with_base(base: &str, method: &str) -> String {
@@ -139,12 +145,13 @@ pub(crate) fn cursor_dashboard_url_with_base(base: &str, method: &str) -> String
 
 /// Connect-protocol POST: JSON body `{}`, bearer auth, protocol version 1.
 pub(crate) fn cursor_dashboard_post(
+    base: &str,
     token: &str,
     method: &str,
 ) -> Result<serde_json::Value, String> {
     let client = provider_http_client()?;
     let response = client
-        .post(cursor_dashboard_url(method))
+        .post(cursor_dashboard_url_with_base(base, method))
         .bearer_auth(token)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .header(
@@ -175,8 +182,11 @@ pub(crate) struct CursorPeriodUsage {
     pub(crate) is_team: bool,
 }
 
-pub(crate) fn fetch_cursor_period_usage(token: &str) -> Result<CursorPeriodUsage, String> {
-    let value = cursor_dashboard_post(token, "GetCurrentPeriodUsage")?;
+pub(crate) fn fetch_cursor_period_usage(
+    base: &str,
+    token: &str,
+) -> Result<CursorPeriodUsage, String> {
+    let value = cursor_dashboard_post(base, token, "GetCurrentPeriodUsage")?;
     parse_cursor_period_usage(&value)
         .ok_or_else(|| "Cursor period usage was not recognized".to_owned())
 }
@@ -283,8 +293,8 @@ pub(crate) fn cursor_period_buckets(
     buckets
 }
 
-pub(crate) fn fetch_cursor_plan_info(token: &str) -> Result<Option<String>, String> {
-    let value = cursor_dashboard_post(token, "GetPlanInfo")?;
+pub(crate) fn fetch_cursor_plan_info(base: &str, token: &str) -> Result<Option<String>, String> {
+    let value = cursor_dashboard_post(base, token, "GetPlanInfo")?;
     Ok(parse_cursor_plan_info(&value))
 }
 
@@ -300,8 +310,8 @@ pub(crate) fn parse_cursor_plan_info(value: &serde_json::Value) -> Option<String
 }
 
 /// Credit-grant balance in cents (explicit minor units → safe [`Money`]).
-pub(crate) fn fetch_cursor_credit_grants(token: &str) -> Result<i64, String> {
-    let value = cursor_dashboard_post(token, "GetCreditGrantsBalance")?;
+pub(crate) fn fetch_cursor_credit_grants(base: &str, token: &str) -> Result<i64, String> {
+    let value = cursor_dashboard_post(base, token, "GetCreditGrantsBalance")?;
     Ok(parse_cursor_credit_grants(&value))
 }
 
@@ -369,8 +379,11 @@ pub(crate) struct CursorSandUsage {
     pub(crate) reset_at: Option<i64>,
 }
 
-pub(crate) fn fetch_cursor_sand_usage(token: &str) -> Result<Option<CursorSandUsage>, String> {
-    let value = cursor_dashboard_post(token, "GetSandUsageStatus")?;
+pub(crate) fn fetch_cursor_sand_usage(
+    base: &str,
+    token: &str,
+) -> Result<Option<CursorSandUsage>, String> {
+    let value = cursor_dashboard_post(base, token, "GetSandUsageStatus")?;
     Ok(parse_cursor_sand_usage(&value))
 }
 
@@ -1037,14 +1050,14 @@ pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
             );
         }
     };
-    let identity = load_cursor_cli_identity().unwrap_or_default();
     cursor_snapshot_with_auth(
         agent,
         provider,
-        now,
         &auth,
-        identity,
+        load_cursor_cli_identity().as_deref(),
         "OAuth · ~/.cursor/auth.json",
+        &cursor_dashboard_base(),
+        now,
     )
 }
 
@@ -1053,8 +1066,10 @@ pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
 pub(crate) fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> FocusedUsageView {
     let auth = match read_json_file(auth_path)
         .ok_or_else(|| "Cursor auth.json is missing or unreadable".to_owned())
-        .and_then(|value| cursor_auth_from_value(&value))
-    {
+        .and_then(|value| {
+            cursor_auth_from_value(&value)
+                .ok_or_else(|| "Cursor access token is missing".to_owned())
+        }) {
         Ok(auth) => auth,
         Err(error) => {
             return cursor_status_view(agent, None, now, UsageSnapshotStatus::NeedsSecret, &error);
@@ -1063,31 +1078,37 @@ pub(crate) fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -
     let identity = auth_path
         .parent()
         .and_then(|root| read_json_file(&root.join("cli-config.json")))
-        .and_then(|value| cursor_identity_from_cli_config(&value))
-        .unwrap_or_default();
+        .and_then(|value| cursor_cli_identity_from_value(&value));
     cursor_snapshot_with_auth(
         agent,
         None,
-        now,
         &auth,
-        identity,
+        identity.as_deref(),
         "OAuth · configured profile",
+        &cursor_dashboard_base(),
+        now,
     )
 }
 
-fn cursor_snapshot_with_auth(
+/// Personal snapshot from broker-minted material: the selected profile's
+/// token, identity, and origin — never ambient files. The dashboard base is
+/// explicit so hermetic tests can point the RPC at a dead port.
+pub(crate) fn cursor_snapshot_with_auth(
     agent: &str,
     provider: Option<&str>,
-    now: i64,
     auth: &CursorAuth,
-    identity: String,
+    identity: Option<&str>,
     credential_origin: &str,
+    dashboard_base: &str,
+    now: i64,
 ) -> FocusedUsageView {
     let token = auth.access_token.as_str();
-    let (period, period_error) = split_fetch(Some(fetch_cursor_period_usage(token)));
-    let (plan, plan_error) = split_fetch(Some(fetch_cursor_plan_info(token)));
-    let (grants, grants_error) = split_fetch(Some(fetch_cursor_credit_grants(token)));
-    let (sand, sand_error) = split_fetch(Some(fetch_cursor_sand_usage(token)));
+    let (period, period_error) =
+        split_fetch(Some(fetch_cursor_period_usage(dashboard_base, token)));
+    let (plan, plan_error) = split_fetch(Some(fetch_cursor_plan_info(dashboard_base, token)));
+    let (grants, grants_error) =
+        split_fetch(Some(fetch_cursor_credit_grants(dashboard_base, token)));
+    let (sand, sand_error) = split_fetch(Some(fetch_cursor_sand_usage(dashboard_base, token)));
     // Session-REST enrichment only for OAuth-file auth against the default base.
     let rest = auth.user_id.as_deref().filter(|_| cursor_default_base());
     let (summary, summary_error) =
@@ -1170,15 +1191,13 @@ fn cursor_snapshot_with_auth(
             plan
         }
     });
-    let mut view = usage_view(UsageViewInput {
+    let identity = identity.unwrap_or_default();
+    usage_view(UsageViewInput {
         agent,
         provider: provider.or(Some("Cursor")),
-        // No UsageSurface variant exists for Cursor yet (this lane is
-        // constrained to mod lines + re-exports in usage.rs); patch the
-        // provider label until the surface wiring lands.
-        surface: UsageSurface::Unsupported,
-        account_label: identity.clone(),
-        username: (!identity.is_empty()).then_some(identity),
+        surface: UsageSurface::Cursor,
+        account_label: identity.to_owned(),
+        username: (!identity.is_empty()).then(|| identity.to_owned()),
         plan_label,
         credential_origin: Some(credential_origin.to_owned()),
         buckets,
@@ -1195,9 +1214,7 @@ fn cursor_snapshot_with_auth(
         },
         now,
         last_error: (!failures.is_empty()).then(|| failures.join("; ")),
-    });
-    view.account.provider_label = "Cursor".to_owned();
-    view
+    })
 }
 
 pub(crate) fn cursor_enterprise_snapshot(
@@ -1231,10 +1248,10 @@ pub(crate) fn cursor_enterprise_snapshot(
     } else {
         UsageSnapshotStatus::Stale
     };
-    let mut view = usage_view(UsageViewInput {
+    usage_view(UsageViewInput {
         agent,
         provider: provider.or(Some("Cursor")),
-        surface: UsageSurface::Unsupported,
+        surface: UsageSurface::Cursor,
         account_label: String::new(),
         username: None,
         plan_label: Some("Cursor Enterprise".to_owned()),
@@ -1256,9 +1273,7 @@ pub(crate) fn cursor_enterprise_snapshot(
             UsageSnapshotStatus::Fresh => None,
             _ => spend_error,
         },
-    });
-    view.account.provider_label = "Cursor".to_owned();
-    view
+    })
 }
 
 fn cursor_status_view(
@@ -1268,10 +1283,10 @@ fn cursor_status_view(
     status: UsageSnapshotStatus,
     error: &str,
 ) -> FocusedUsageView {
-    let mut view = usage_view(UsageViewInput {
+    usage_view(UsageViewInput {
         agent,
         provider: provider.or(Some("Cursor")),
-        surface: UsageSurface::Unsupported,
+        surface: UsageSurface::Cursor,
         account_label: String::new(),
         username: None,
         plan_label: None,
@@ -1290,9 +1305,7 @@ fn cursor_status_view(
         confidence: UsageConfidence::None,
         now,
         last_error: Some(error.to_owned()),
-    });
-    view.account.provider_label = "Cursor".to_owned();
-    view
+    })
 }
 
 #[cfg(test)]

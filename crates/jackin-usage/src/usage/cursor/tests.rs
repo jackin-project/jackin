@@ -122,8 +122,8 @@ fn profile_auth_and_identity_parse_from_values() {
     let auth = cursor_auth_from_value(&serde_json::json!({"access_token": "tok2"}))
         .expect("snake_case token");
     assert_eq!(auth.access_token, "tok2");
-    assert!(cursor_auth_from_value(&serde_json::json!({"accessToken": "  "})).is_err());
-    assert!(cursor_auth_from_value(&serde_json::json!({})).is_err());
+    assert!(cursor_auth_from_value(&serde_json::json!({"accessToken": "  "})).is_none());
+    assert!(cursor_auth_from_value(&serde_json::json!({})).is_none());
     assert_eq!(
         cursor_identity_from_cli_config(
             &serde_json::json!({"authInfo": {"email": "a@test", "displayName": "A"}})
@@ -315,4 +315,122 @@ fn events_aggregate_without_overview_polling() {
             .is_some_and(|pace| pace.contains("hourly aggregated"))
     );
     assert_eq!(buckets[2].used_label.as_deref(), Some("1.5K"));
+}
+
+#[test]
+fn auth_parses_either_token_key_and_rejects_blank() {
+    let auth = cursor_auth_from_value(&serde_json::json!({"accessToken": "  tok  "}))
+        .expect("camelCase key parses");
+    assert_eq!(auth.access_token, "tok");
+    assert_eq!(auth.user_id, None);
+    assert!(
+        cursor_auth_from_value(&serde_json::json!({"access_token": "tok"}))
+            .is_some_and(|auth| auth.access_token == "tok")
+    );
+    assert!(cursor_auth_from_value(&serde_json::json!({"accessToken": "  "})).is_none());
+    assert!(cursor_auth_from_value(&serde_json::json!({"other": 1})).is_none());
+}
+
+#[test]
+fn cli_identity_reads_auth_info_display_keys() {
+    assert_eq!(
+        cursor_cli_identity_from_value(
+            &serde_json::json!({"authInfo": {"email": "a@example.test"}})
+        )
+        .as_deref(),
+        Some("a@example.test")
+    );
+    assert_eq!(
+        cursor_cli_identity_from_value(&serde_json::json!({"authInfo": {"displayName": "Ada"}}))
+            .as_deref(),
+        Some("Ada")
+    );
+    assert!(cursor_cli_identity_from_value(&serde_json::json!({"authInfo": {}})).is_none());
+    assert!(cursor_cli_identity_from_value(&serde_json::json!({})).is_none());
+}
+
+fn canned_dashboard_response(request: &[u8]) -> &'static str {
+    let text = String::from_utf8_lossy(request);
+    if text.contains("GetCurrentPeriodUsage") {
+        PERIOD_FIXTURE
+    } else if text.contains("GetPlanInfo") {
+        r#"{"planName": "pro_plus"}"#
+    } else if text.contains("GetCreditGrantsBalance") {
+        r#"{"grantTotal": 1500}"#
+    } else {
+        "{}"
+    }
+}
+
+#[test]
+fn snapshot_with_auth_serves_personal_quota_from_canned_rpc() {
+    use std::io::{Read as _, Write as _};
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    // Four personal-RPC calls; the opaque fixture token yields no user id so
+    // session-REST enrichment stays skipped.
+    let server = std::thread::spawn(move || {
+        for _ in 0..4 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let read = stream.read(&mut request).unwrap();
+            let body = canned_dashboard_response(&request[..read]);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        }
+    });
+    let auth = cursor_auth_from_value(&serde_json::json!({"accessToken": "fixture-opaque"}))
+        .expect("fixture auth parses");
+    let view = cursor_snapshot_with_auth(
+        "cursor",
+        Some("Cursor"),
+        &auth,
+        Some("cursor@example.test"),
+        "OAuth · configured profile",
+        &format!("http://{address}"),
+        1_781_728_000,
+    );
+    server.join().unwrap();
+
+    assert_eq!(view.status, UsageSnapshotStatus::Fresh);
+    assert_eq!(view.account.provider_label, "Cursor");
+    assert_eq!(view.account.account_label, "cursor@example.test");
+    assert_eq!(
+        view.account.credential_origin.as_deref(),
+        Some("OAuth · configured profile")
+    );
+    assert_eq!(view.account.plan_label.as_deref(), Some("Pro Plus"));
+    assert!(
+        view.buckets
+            .iter()
+            .any(|bucket| bucket.label == "Billing cycle")
+    );
+    assert!(view.last_error.is_none());
+}
+
+#[test]
+fn snapshot_with_auth_refused_base_is_stale_never_fabricated() {
+    let refused = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = refused.local_addr().unwrap();
+    drop(refused);
+    let auth = cursor_auth_from_value(&serde_json::json!({"accessToken": "fixture-opaque"}))
+        .expect("fixture auth parses");
+    let view = cursor_snapshot_with_auth(
+        "cursor",
+        Some("Cursor"),
+        &auth,
+        None,
+        "OAuth · configured profile",
+        &format!("http://{address}"),
+        1_781_728_000,
+    );
+
+    assert_eq!(view.status, UsageSnapshotStatus::Stale);
+    assert_eq!(view.account.provider_label, "Cursor");
+    assert!(view.last_error.is_some());
 }

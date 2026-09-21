@@ -91,6 +91,113 @@ fn provider_labels_resolve_all_account_refresh_surfaces() {
         resolve_surface("codex", Some("MiniMax")),
         UsageSurface::Minimax
     );
+    assert_eq!(
+        resolve_surface("cursor", Some("Cursor")),
+        UsageSurface::Cursor
+    );
+    assert_eq!(resolve_surface("cursor", None), UsageSurface::Cursor);
+    assert_eq!(
+        resolve_surface("gemini", Some("Google")),
+        UsageSurface::Google
+    );
+    assert_eq!(
+        resolve_surface("codex", Some("Gemini")),
+        UsageSurface::Google
+    );
+    assert_eq!(resolve_surface("gemini", None), UsageSurface::Google);
+    assert_eq!(
+        resolve_surface("opencode", Some("OpenRouter")),
+        UsageSurface::OpenRouter
+    );
+    // Explicitly blocked agents never resolve to a refreshable surface.
+    for agent in ["antigravity", "muse", "omp", "hermes"] {
+        assert_eq!(
+            resolve_surface(agent, None),
+            UsageSurface::Unsupported,
+            "{agent} must stay unsupported"
+        );
+    }
+}
+
+#[test]
+fn capability_matches_newly_wired_surfaces_only() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
+
+    let capability = |surface_id: &str| UsageAccountCapability {
+        account_id: "account-test".to_owned(),
+        surface_id: surface_id.to_owned(),
+    };
+    assert!(capability_matches_surface(
+        "cursor",
+        Some("Cursor"),
+        &capability("cursor")
+    ));
+    assert!(capability_matches_surface(
+        "gemini",
+        Some("Google"),
+        &capability("google")
+    ));
+    assert!(capability_matches_surface(
+        "opencode",
+        Some("OpenRouter"),
+        &capability("openrouter")
+    ));
+    // A presentation-tab override must not reuse a capability under another
+    // surface; blocked agents match nothing.
+    assert!(!capability_matches_surface(
+        "cursor",
+        Some("Cursor"),
+        &capability("google")
+    ));
+    // Blocked agents with no provider label match nothing (their
+    // unwired-ness lives in discovery, which mints no binding for them).
+    assert!(!capability_matches_surface(
+        "antigravity",
+        None,
+        &capability("google")
+    ));
+    assert!(!capability_matches_surface(
+        "muse",
+        Some("Muse"),
+        &capability("meta")
+    ));
+}
+
+#[test]
+fn credential_snapshot_arms_cover_newly_wired_surfaces() {
+    // Cursor API keys cannot drive the personal dashboard: explicit gap.
+    let view = provider_credential_snapshot("cursor", "CURSOR_API_KEY", "fixture-key");
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Cursor");
+    assert!(
+        view.last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("Cursor API-key"))
+    );
+    // Google keys route to the real Gemini collector with the key origin.
+    let view = provider_credential_snapshot("google", "GEMINI_API_KEY", "fixture-key");
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Google");
+    assert_eq!(
+        view.account.credential_origin.as_deref(),
+        Some("API key · env GEMINI_API_KEY")
+    );
+    // Blocked surfaces keep the explicit generic fallback.
+    let view = provider_credential_snapshot("meta", "META_API_KEY", "fixture-key");
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "Usage");
+}
+
+#[test]
+fn credential_snapshot_openrouter_arm_reads_key_quota() {
+    // Live provider read with a fixture key: `/key` rejects it, so the arm
+    // must return the collector's honest NeedsLogin/Error view — never the
+    // generic "no usage adapter" fallback, which would mean the arm is dead.
+    let view = provider_credential_snapshot("openrouter", "OPENROUTER_API_KEY", "fixture-key");
+    assert_ne!(view.status, UsageSnapshotStatus::Fresh);
+    assert_ne!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.account.provider_label, "OpenRouter");
+    assert!(view.last_error.is_some());
 }
 
 fn account_snapshot_view(

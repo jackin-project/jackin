@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use jackin_protocol::control::UsageConfidence;
+use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus};
 
 use super::*;
 
@@ -327,7 +327,12 @@ fn disc_scope_capsule_uses_only_forwarded_capabilities() {
                 },
                 ForwardedUsageAccount {
                     surface_id: "opencode".to_owned(),
-                    capability_id: "excluded".to_owned(),
+                    capability_id: "cap-2".to_owned(),
+                    account_label: None,
+                },
+                ForwardedUsageAccount {
+                    surface_id: "bogus".to_owned(),
+                    capability_id: "skipped".to_owned(),
                     account_label: None,
                 },
             ],
@@ -336,12 +341,58 @@ fn disc_scope_capsule_uses_only_forwarded_capabilities() {
     )
     .unwrap();
 
-    assert_eq!(catalog.candidates.len(), 1);
+    // Duplicate claude capabilities dedup; every known surface (not just the
+    // Desktop glance order) is admitted; unknown ids still skip.
+    assert_eq!(catalog.candidates.len(), 2);
     assert_eq!(catalog.candidates[0].surface_id, "claude");
     assert_eq!(
         catalog.candidates[0].credential_kind,
         UsageCredentialKind::ForwardedCapability
     );
+    assert_eq!(catalog.candidates[1].surface_id, "opencode");
+    assert!(resolver.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn disc_scope_capsule_admits_newly_wired_surfaces() {
+    let resolver = FakeEnvResolver::default();
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::Capsule {
+            forwarded_accounts: vec![
+                ForwardedUsageAccount {
+                    surface_id: "cursor".to_owned(),
+                    capability_id: "cap-cursor".to_owned(),
+                    account_label: Some("cursor@example.test".to_owned()),
+                },
+                ForwardedUsageAccount {
+                    surface_id: "google".to_owned(),
+                    capability_id: "cap-google".to_owned(),
+                    account_label: None,
+                },
+                ForwardedUsageAccount {
+                    surface_id: "openrouter".to_owned(),
+                    capability_id: "cap-openrouter".to_owned(),
+                    account_label: None,
+                },
+                // No collector, registry, or discovery entry exists.
+                ForwardedUsageAccount {
+                    surface_id: "copilot".to_owned(),
+                    capability_id: "skipped".to_owned(),
+                    account_label: None,
+                },
+            ],
+        },
+        &resolver,
+    )
+    .unwrap();
+
+    let mut ids: Vec<_> = catalog
+        .candidates
+        .iter()
+        .map(|candidate| candidate.surface_id.as_str())
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["cursor", "google", "openrouter"]);
     assert!(resolver.calls.lock().unwrap().is_empty());
 }
 
@@ -890,7 +941,7 @@ fn disc_cursor_token_profile_binds_refreshable_material() {
 }
 
 #[test]
-fn disc_cursor_tokenless_profile_keeps_label_only_binding() {
+fn disc_cursor_tokenless_profile_is_malformed_without_binding() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
     let cursor_root = temp.path().join("cursor-bare");
@@ -918,17 +969,213 @@ fn disc_cursor_tokenless_profile_keeps_label_only_binding() {
     )
     .unwrap();
     let validated = validate_usage_sources(catalog, &NoEnvResolver);
-    assert!(
-        validated.diagnostics.is_empty(),
-        "{:?}",
-        validated.diagnostics
+    assert!(validated.bindings.is_empty());
+    assert!(validated.accounts.is_empty());
+    assert_eq!(validated.diagnostics.len(), 1);
+    assert!(matches!(
+        validated.diagnostics[0].issue,
+        UsageDiscoveryIssue::CredentialMalformed
+    ));
+}
+
+#[test]
+fn disc_cursor_profile_mints_material_with_cli_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("cursor");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("auth.json"),
+        r#"{"accessToken":"fixture-opaque-token"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("cli-config.json"),
+        r#"{"authInfo":{"email":"cursor@example.test"}}"#,
+    )
+    .unwrap();
+    let reader = RecordingProfileReader::default();
+
+    let ProfileValidation::Authenticated {
+        account_label,
+        material: Some(material),
+        ..
+    } = profile_identity(&reader, Agent::Cursor, &root, temp.path())
+    else {
+        panic!("cursor profile must authenticate with material");
+    };
+    assert_eq!(account_label.as_deref(), Some("cursor@example.test"));
+    assert!(matches!(
+        *material,
+        ProfileCredentialMaterial::Cursor { .. }
+    ));
+}
+
+#[test]
+fn disc_cursor_profile_tokenless_is_malformed_and_missing_is_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("cursor");
+    std::fs::create_dir_all(&root).unwrap();
+    let reader = RecordingProfileReader::default();
+
+    assert!(matches!(
+        profile_identity(&reader, Agent::Cursor, &root, temp.path()),
+        ProfileValidation::Missing
+    ));
+
+    std::fs::write(root.join("auth.json"), r#"{"noToken":true}"#).unwrap();
+    assert!(matches!(
+        profile_identity(&reader, Agent::Cursor, &root, temp.path()),
+        ProfileValidation::Malformed
+    ));
+}
+
+#[test]
+fn disc_gemini_profile_mints_material_with_or_without_label() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("gemini");
+    std::fs::create_dir_all(&root).unwrap();
+    let reader = RecordingProfileReader::default();
+
+    assert!(matches!(
+        profile_identity(&reader, Agent::Gemini, &root, temp.path()),
+        ProfileValidation::Missing
+    ));
+
+    std::fs::write(
+        root.join("oauth_creds.json"),
+        r#"{"user_email":"g@example.test"}"#,
+    )
+    .unwrap();
+    let ProfileValidation::Authenticated {
+        account_label,
+        material: Some(material),
+        ..
+    } = profile_identity(&reader, Agent::Gemini, &root, temp.path())
+    else {
+        panic!("gemini profile must authenticate with material");
+    };
+    assert_eq!(account_label.as_deref(), Some("g@example.test"));
+    assert!(matches!(
+        *material,
+        ProfileCredentialMaterial::Gemini { .. }
+    ));
+
+    std::fs::write(root.join("oauth_creds.json"), "{}").unwrap();
+    assert!(matches!(
+        profile_identity(&reader, Agent::Gemini, &root, temp.path()),
+        ProfileValidation::Anonymous(Some(_))
+    ));
+
+    std::fs::write(root.join("oauth_creds.json"), b"{invalid").unwrap();
+    assert!(matches!(
+        profile_identity(&reader, Agent::Gemini, &root, temp.path()),
+        ProfileValidation::Malformed
+    ));
+}
+
+#[test]
+fn disc_blocked_providers_mint_no_refresh_material() {
+    let temp = tempfile::tempdir().unwrap();
+    let reader = RecordingProfileReader::default();
+    // Antigravity: Keychain grant the file reader cannot probe.
+    assert!(matches!(
+        profile_identity(&reader, Agent::Antigravity, temp.path(), temp.path()),
+        ProfileValidation::Missing
+    ));
+    // omp/hermes: attribution-only adapters; presence never mints material.
+    let omp = temp.path().join("omp");
+    std::fs::create_dir_all(omp.join("agent")).unwrap();
+    std::fs::write(omp.join("agent/agent.db"), b"sqlite fixture").unwrap();
+    assert!(matches!(
+        profile_identity(&reader, Agent::Omp, &omp, temp.path()),
+        ProfileValidation::Anonymous(None)
+    ));
+    let hermes = temp.path().join("hermes");
+    std::fs::create_dir_all(&hermes).unwrap();
+    std::fs::write(hermes.join("auth.json"), "{}").unwrap();
+    assert!(matches!(
+        profile_identity(&reader, Agent::Hermes, &hermes, temp.path()),
+        ProfileValidation::Anonymous(None)
+    ));
+    // Muse: local identity only; the secret stays in the platform store and
+    // no pollable fetch exists, so no material.
+    let muse = temp.path().join("muse");
+    std::fs::create_dir_all(&muse).unwrap();
+    std::fs::write(
+        muse.join("auth.json"),
+        r#"{"providers":{"meta":{"user_email":"m@example.test"}}}"#,
+    )
+    .unwrap();
+    let ProfileValidation::Authenticated { material: None, .. } =
+        profile_identity(&reader, Agent::Muse, &muse, temp.path())
+    else {
+        panic!("muse profile must carry identity without material");
+    };
+}
+
+fn test_binding(
+    surface: HostSurfaceId,
+    source: ValidatedCredentialSource,
+) -> ValidatedCredentialBinding {
+    ValidatedCredentialBinding {
+        surface,
+        identity: None,
+        source_id: "source-test".to_owned(),
+        capability_id: "cap-test".to_owned(),
+        provenance: BTreeSet::new(),
+        source,
+    }
+}
+
+#[test]
+fn refresh_cursor_binding_dispatches_to_collector() {
+    // Live provider RPC with a fixture token: the dashboard rejects it, so
+    // the arm must return the collector's honest Stale view — never
+    // Malformed/Unsupported, which would mean dispatch never happened. The
+    // material carries the profile root; refresh re-reads it.
+    let temp = tempfile::tempdir().unwrap();
+    let auth_path = temp.path().join("auth.json");
+    std::fs::write(&auth_path, r#"{"accessToken":"fixture-opaque-token"}"#).unwrap();
+    let binding = test_binding(
+        HostSurfaceId::Cursor,
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }),
     );
-    assert_eq!(validated.bindings.len(), 1);
-    assert!(
-        matches!(
-            validated.bindings[0].source,
-            ValidatedCredentialSource::Capability
-        ),
-        "token-less cursor keeps the label-only binding"
+    match refresh_credential_binding(&binding, &NoEnvResolver) {
+        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+            assert_eq!(view.status, UsageSnapshotStatus::Stale);
+            assert_eq!(view.account.provider_label, "Cursor");
+            assert_eq!(view.focused_agent.as_deref(), Some("cursor"));
+            assert!(view.last_error.is_some());
+        }
+        other => panic!("cursor refresh must dispatch to the collector: {other:?}"),
+    }
+}
+
+#[test]
+fn refresh_gemini_binding_dispatches_to_collector() {
+    let temp = tempfile::tempdir().unwrap();
+    let creds = temp.path().join("oauth_creds.json");
+    std::fs::write(&creds, "{}").unwrap();
+    let binding = test_binding(
+        HostSurfaceId::Google,
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Gemini {
+            creds_path: creds.clone(),
+        }),
     );
+    match refresh_credential_binding(&binding, &NoEnvResolver) {
+        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+            assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+            assert_eq!(view.account.provider_label, "Google");
+            assert_eq!(view.focused_agent.as_deref(), Some("gemini"));
+        }
+        other => panic!("gemini refresh must dispatch to the collector: {other:?}"),
+    }
+    // A credential file deleted after discovery re-proves as NeedsSecret.
+    std::fs::remove_file(&creds).unwrap();
+    match refresh_credential_binding(&binding, &NoEnvResolver) {
+        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+            assert_eq!(view.status, UsageSnapshotStatus::NeedsSecret);
+        }
+        other => panic!("deleted gemini creds must need secret: {other:?}"),
+    }
 }
