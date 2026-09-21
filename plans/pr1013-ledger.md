@@ -74,8 +74,12 @@ S1-S10 map to P-rows above. First pass executed @62c2eebf (macOS 27 arm64, no co
 Inherited from feat-branch ledger §Full checklist; every row UNVERIFIED/BLOCKED
 there and unproven here. Re-verify per row after repairs land; do not bulk-pass.
 
+## Parity triage (D1/D2/D6/D7/D10/D11, 2026-09-21 @1a9b8ddc)
+
+- D1/D2/D10/D11 FIXED + verified: `cargo test -p jackin-usage --lib host::projection` 36/36 green on the merged tree (agreement tests, no documented-delta escape).
+- D6 (credential-expiry channel) / D7 (typed issues/retry): ACCEPTED gaps, locked by `documented_delta_*` tests. Root cause is upstream, not renderer parity: no collector, envelope, projection, or broker site produces expiry or retry data (all `credential_expires_at_epoch`/`retry_deadline_epoch`/`issues` producers write `None`/empty; no `UsageIssue` type exists). Both surfaces are equally honest in production; adding dead view fields would be placeholders. Real fix = capture expiry/Retry-After in collectors → envelope → projection → view (producer-pipeline feature, out of parity scope). Compatible with goal §5 (expiry countdowns / typed retry codes not in the §5 content list).
+
 ## Next
 
-1. Land D-UI1, D-UI2, D-SEC1 repairs with regression tests.
-2. Repro or clear D-SEC2/D-SEC3/D-BR1/D-PR1.
-3. Run S1-S10, fill evidence paths, independent review, merge.
+1. S3 tabs e2e: split-spawn stall diagnosis on merged tree (boot-phase isolation proven; F11 harness fix may already resolve).
+2. CI green on candidate, independent review, merge #1013, main verification.
