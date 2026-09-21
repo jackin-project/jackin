@@ -321,3 +321,5 @@ libraries = [
 # upstream resolution exists.
 [patch.crates-io]
 arrayref = { path = "vendor/arrayref" }
+
+# §14 bullet-3 filter-evasion probe: comment-only manifest touch
