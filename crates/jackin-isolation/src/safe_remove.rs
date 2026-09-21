@@ -216,7 +216,12 @@ fn remove_child_dir(
     // The fd pins the exact object being deleted: if its identity differs
     // from the pre-validation metadata, the path was swapped underneath us.
     let actual = fstat(child.as_fd()).map_err(|error| refuse_io(path, error))?;
+    // `st_dev` is `u64` on Linux but `i32` on macOS; widen once for the
+    // comparison with `Metadata::dev` (always `u64`).
+    #[cfg(target_os = "macos")]
     let actual_dev = u64::try_from(actual.st_dev).unwrap_or(u64::MAX);
+    #[cfg(not(target_os = "macos"))]
+    let actual_dev: u64 = actual.st_dev;
     if actual_dev != expected.dev() || actual.st_ino != expected.ino() {
         return refuse(format!(
             "refusing to remove {}: path changed during removal",
