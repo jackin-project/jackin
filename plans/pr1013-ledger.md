@@ -7,13 +7,20 @@ UNVERIFIED/BLOCKED there; historical counts are leads, not proof).
 
 ## Candidate
 
-- PR: #1013 OPEN, head `integrate/pr1002-multi-account` @ `997c18fe`,
-  base `main` @ `fce94cea` (= origin/main, in sync), MERGEABLE/BLOCKED, no human review.
-- Diff: 433 files, +54251/-4402. Replaces #1002 (still OPEN, failing, out of scope).
-- CI run 35537570310 @ head 997c18fe: 43 pass / 1 pending (Swift Apple lane) / 0 fail.
-  Required gates: DCO pass, Policy pass, ci-required aggregator. Policy root cause
-  was generator-state scan-hash drift, fixed by 6713d014 (scan hash only).
-  All 157 non-merge commits carry Signed-off-by. Repairs will move head: re-verify.
+- PR: #1013 OPEN, head `integrate/pr1002-multi-account` @ `01cdd150`,
+  base `main` @ `f664f4d3` (= origin/main, contained, in sync), no human review.
+- Diff vs main: 467 files, +68430/-5053, 176 non-merge commits, all carrying
+  Signed-off-by (DCO satisfied). Commits before the signoff policy carry the
+  legacy `jackin-consolidation` identity; all recent commits carry only
+  `Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>`. Shared history is not
+  rewritten (squash merge carries only the Alexey signoff). Replaces #1002
+  (still OPEN, failing, out of scope).
+- CI @ head 01cdd150: Renovate success, Velnor policy success, CI/PR matrix
+  35562521429 running. Prior matrix on ef54d987 failed 4 Rust units on lints
+  in branch-owned test files; all fixed and verified locally (fmt + clippy
+  -D warnings + nextest per unit): 8ec3640e (runtime scope suite),
+  91e185cf (multi-account tabs suite), eed49ebf (capsule literal,
+  isolation st_dev cfg-split).
 - Reviews: 1 bot review; 1 open P1 inline (Landlock mounts, thread 4057673954);
   zero human reviews.
 - Host: darwin arm64 macOS 27.0 (acceptance contract wants macOS 26 + OrbStack).
@@ -39,6 +46,7 @@ Missing live credentials stay explicit gaps, never passes.
 | D-SEC4 | Supervisor gate PID-equality impersonation | Fixed 4b324478: (pid, start_time) binding from /proc+SO_PEERCRED, fail-closed; relay 12 green | LANDED |
 | S10-auth | Local auth files PRESENT (presence only): Claude (~/.claude.json), Codex, Cursor, Grok. Absent: Kimi, Amp, OpenCode, Gemini paths | host inventory 2026-09-21 | Presence != valid auth; live checks must validate per account |
 | D-PR2 | Gemini adapter has no live fetch; omp/hermes attribution-only; token_monitor lacks Grok/Antigravity/Gemini/Cursor/Muse/omp/Hermes | WS2 evidence | UNVERIFIED, matrix work |
+| F11 | pty e2e harness dead on macOS: BSD script(1) block-buffers pipe stdout (0 live bytes, full flush at exit), so scripted-input waits never match and every pty e2e stalls to timeout. Dialog proven healthy via expect-driven run (modal advanced to credential prompt); stuck process sampled in select_loop/recv | Fixed 01cdd150: macOS typescript pointed at live file + follower thread (pipe still drained, final sync at exit); Linux path unchanged | LANDED, e2e acceptance running |
 
 ## Product acceptance (P01-P10)
 
@@ -55,7 +63,7 @@ All UNVERIFIED on final candidate. Evidence owners in parentheses.
 | P07 | Same identity across clients, no duplicate quota; exact OpenRouter model persists | S7 PASS @c5aa9eac re-run (1 cap/1 row/prov 2; model byte-exact top + per-instance; /tmp/jackin-re57/s7-ident, s7-model/) |
 | P08 | Tabs/splits/reconnect/restore preserve account/provider/model/instance binding | S8 PASS @c5aa9eac (tabs/splits/reconnect via capsule TUI; restore: daemon restart drops live tabs EXPECTED-by-design — tabs in-memory only, restore ladder Tier 1 promises data/homes/conversations, fresh tab correctly bound with no leak; layout rehydration is an unrequested feature, not a defect) |
 | P09 | Full catalog represented; every route proven or explicitly blocked with evidence | S9 host PASS + OrbStack relay harness PASS @c5aa9eac; repo docker:: 12/12 PASS @245b7bdb after F8 (protocol version tracks USAGE_BROKER_PROTOCOL_VERSION) |
-| P10 | Native/protocol parity, independent review, accurate handoff | S10 22/23 @7c0c64d9 (F6 fixed 8/8 host; usage_broker 12/12 via F8; dind sentinel EACCES root-caused to confined /jackin/state — F10 hook-state fix landed @245b7bdb, e2e acceptance running on merged tree; prompt-phase stall seen in builder A/B both before/after fix, env-suspect) |
+| P10 | Native/protocol parity, independent review, accurate handoff | S10 22/23 @7c0c64d9 (F6 fixed 8/8 host; usage_broker 12/12 via F8; dind sentinel EACCES root-caused to confined /jackin/state — F10 hook-state fix landed @245b7bdb; prompt-phase stall root-caused to F11 harness buffering, F11 fix landed @01cdd150, e2e acceptance re-running on merged tree) |
 
 ## Scenario matrix (goal §1-10)
 
