@@ -54,8 +54,8 @@ All UNVERIFIED on final candidate. Evidence owners in parentheses.
 | P06 | Container admits exactly A/B/C; D absent incl direct relay requests | S6-E2E PASS @c5aa9eac (real containers: D 0× in agent.toml/creds/picker/snapshot/registry; relay probe A/B/C ok, D unauthorized; /tmp/jackin-rec/evidence/) |
 | P07 | Same identity across clients, no duplicate quota; exact OpenRouter model persists | S7 PASS @c5aa9eac re-run (1 cap/1 row/prov 2; model byte-exact top + per-instance; /tmp/jackin-re57/s7-ident, s7-model/) |
 | P08 | Tabs/splits/reconnect/restore preserve account/provider/model/instance binding | S8 PASS @c5aa9eac (tabs/splits/reconnect via capsule TUI; restore: daemon restart drops live tabs EXPECTED-by-design — tabs in-memory only, restore ladder Tier 1 promises data/homes/conversations, fresh tab correctly bound with no leak; layout rehydration is an unrequested feature, not a defect) |
-| P09 | Full catalog represented; every route proven or explicitly blocked with evidence | S9 host PASS + OrbStack relay harness PASS @c5aa9eac; repo docker:: 0/4 FAIL test-bug F8 (v1 vs v2, fix dispatched) |
-| P10 | Native/protocol parity, independent review, accurate handoff | S10 18/23 @c5aa9eac (F6 fixed 8/8 host; dind sentinel 1 FAIL — F10 probe dispatched; F8 covers usage_broker docker 0/4) |
+| P09 | Full catalog represented; every route proven or explicitly blocked with evidence | S9 host PASS + OrbStack relay harness PASS @c5aa9eac; repo docker:: 12/12 PASS @245b7bdb after F8 (protocol version tracks USAGE_BROKER_PROTOCOL_VERSION) |
+| P10 | Native/protocol parity, independent review, accurate handoff | S10 22/23 @7c0c64d9 (F6 fixed 8/8 host; usage_broker 12/12 via F8; dind sentinel EACCES root-caused to confined /jackin/state — F10 hook-state fix landed @245b7bdb, e2e acceptance running on merged tree; prompt-phase stall seen in builder A/B both before/after fix, env-suspect) |
 
 ## Scenario matrix (goal §1-10)
 
