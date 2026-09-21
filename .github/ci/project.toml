@@ -985,8 +985,9 @@ label = "Apple app (JackinDesktop, XcodeGen)"
 kind = "swift"
 root = "native"
 watch = ["*.xcconfig", "native/**", "native/project.yml"]
-pr_commands = ["cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
-full_commands = ["cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
+pr_commands = ["mise run desktop-xcframework", "cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
+full_commands = ["mise run desktop-xcframework", "cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
+depends_on = ["rust-jackin-usage-ffi"]
 tool_version = "2.46.0"
 platform = "macos-arm64"
 trust = "untrusted-ok"

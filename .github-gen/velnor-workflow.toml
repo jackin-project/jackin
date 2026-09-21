@@ -175,6 +175,29 @@ depends_on = ["rust-jackin-usage-ffi"]
 id = "rust-jackin-lints"
 mise_tools = ["rust", "cargo-binstall"]
 
+# The Xcode project links the FFI XCFramework (xcodebuild resolves it from
+# target/xcframework), so the bare scan-derived generate/build/test sequence
+# fails without it. The FFI unit declares the framework as a product with no
+# transportable outputs, so the consumer rebuilds it in-job: the prerequisite
+# edge prepends `mise run desktop-xcframework` to these commands (tablerock
+# pattern). mise_tools replaces the scanned set, so xcodegen rides along
+# with the rust chain the framework build needs.
+[[units]]
+id = "rust-jackin-usage-ffi"
+
+[[units.products]]
+name = "xcframework"
+task = "desktop-xcframework"
+
+[[units]]
+id = "swift-xcodegen-native-project-yml-jackindesktop"
+mise_tools = ["xcodegen", "cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
+depends_on = ["rust-jackin-usage-ffi"]
+
+[[units.prerequisites]]
+producer = "rust-jackin-usage-ffi"
+product = "xcframework"
+
 # Q4 obligation, second Swift unit (scanned): AppKit prototype, genuinely
 # Apple-bound, but scan evidence cannot prove it. Row-over-scan merge keeps
 # the scanned base and overrides the platform requirement only (s2 spelling

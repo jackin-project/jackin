@@ -3027,7 +3027,7 @@ jobs:
       plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
-      mise_tools: xcodegen
+      mise_tools: "xcodegen cargo-binstall rust cargo:sccache cargo:boltffi_cli"
       cache_paths: "~/Library/Developer/Xcode/DerivedData"
       cache_key_files: |
         .swift-version
@@ -3037,6 +3037,7 @@ jobs:
       apple_executor: true
       unit_platform: macos-arm64
       unit_trust: untrusted-ok
+      unit_dependencies: rust-jackin-usage-ffi
       unit_admission: github-hosted
   github-hosted-swift-package-native:
     name: "Swift · Apple ·  · github-hosted — swift-package-native"

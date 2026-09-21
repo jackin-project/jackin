@@ -130,6 +130,10 @@ on:
         required: false
         type: string
         default: ""
+      product_transport_ready:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   verify-github-hosted:
