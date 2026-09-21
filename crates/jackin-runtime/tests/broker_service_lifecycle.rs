@@ -178,7 +178,7 @@ fn broker_detaches_from_activating_session() {
         .and_then(serde_json::Value::as_i64)
         .and_then(|pid| i32::try_from(pid).ok())
         .expect("lease process id");
-    let _cleanup = KillOnDrop(Some(pid));
+    let cleanup = KillOnDrop(Some(pid));
 
     // A detached broker leads its own session: session id == pid, and
     // never the activator's session, so the activator's terminal HUP
@@ -201,7 +201,7 @@ fn broker_detaches_from_activating_session() {
     revived
         .current_projection()
         .expect("reactivated client serves");
-    drop(_cleanup);
+    drop(cleanup);
     let _ignored = fs::remove_dir_all(&root);
 }
 

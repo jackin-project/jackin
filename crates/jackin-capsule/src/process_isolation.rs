@@ -237,7 +237,7 @@ mod linux {
         anyhow::ensure!(session_id > 0, "isolated session id cannot be zero");
         let session_root = session_root_path(session_id);
         prepare_session_root(&session_root)?;
-        prepare_pane_homes_parent(&config, instance)?;
+        prepare_pane_homes_parent(config, instance)?;
         let cwd = std::env::current_dir().context("resolve isolated session cwd")?;
         let rules = rules_for(config, instance, &cwd, &session_root)?;
         drop_privileges(identity)?;
