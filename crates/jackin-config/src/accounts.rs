@@ -329,7 +329,7 @@ impl AccountConfig {
     const fn api_key_variable(&self, agent: Agent) -> &'static str {
         match agent {
             Agent::Claude if !matches!(self.provider, AiProvider::Anthropic) => {
-                "ANTHROPIC_AUTH_TOKEN"
+                jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
             }
             Agent::Claude => "ANTHROPIC_API_KEY",
             Agent::Codex if matches!(self.provider, AiProvider::Moonshot) => "KIMI_API_KEY",
@@ -353,8 +353,8 @@ impl AccountConfig {
                 AiProvider::Anthropic => "ANTHROPIC_API_KEY",
                 AiProvider::OpenAi => "OPENAI_API_KEY",
                 AiProvider::Xai => "XAI_API_KEY",
-                AiProvider::Moonshot => "MOONSHOT_API_KEY",
-                AiProvider::Zai => "ZHIPU_API_KEY",
+                AiProvider::Moonshot => jackin_core::MOONSHOT_API_KEY_ENV_NAME,
+                AiProvider::Zai => jackin_core::ZHIPU_API_KEY_ENV_NAME,
                 AiProvider::Minimax => "MINIMAX_API_KEY",
                 AiProvider::Google => "GEMINI_API_KEY",
                 AiProvider::Cursor => "CURSOR_API_KEY",
