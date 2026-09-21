@@ -120,11 +120,14 @@ pub(super) async fn handle_load(
         } else {
             &*config
         };
-        let (selected_id, instances) = resolve_dry_run_identity(
+        // Canonical identity resolution: the same admission call launch
+        // provisions from, so dry-run and launch cannot disagree (F4).
+        let identity = runtime::resolve_dry_run_identity(
             plan_config,
             selected_agent,
             workspace_name.as_ref(),
             &class.to_string(),
+            account.is_some(),
         )?;
         // The image half of the plan is only knowable after the role manifest
         // is read: `published_image` is a manifest field and the
@@ -140,14 +143,14 @@ pub(super) async fn handle_load(
             role_branch.as_deref(),
         )
         .await?;
+        let plan_identity = DryRunPlan {
+            agent: selected_agent,
+            identity: &identity,
+        };
         return print_dry_run_plan(
             &class,
             &resolved_workspace,
-            DryRunIdentity {
-                agent: selected_agent,
-                account_id: selected_id.as_deref(),
-                instances,
-            },
+            &plan_identity,
             role_branch.as_deref(),
             rebuild,
             &format,
@@ -755,73 +758,52 @@ pub(crate) fn dry_run_plan_json(
     })
 }
 
-struct DryRunInstance {
-    config_id: String,
-    agent: jackin_core::Agent,
-    account_id: String,
-    label: String,
+/// Apply the identity half of the `--dry-run` plan onto the JSON wire
+/// shape: the single account (plus its effective model pin, F7) or every
+/// admitted instance, each carrying its effective model. Split out from
+/// printing so the shape is asserted directly, like [`dry_run_plan_json`].
+pub(crate) fn apply_dry_run_identity_json(
+    plan: &mut serde_json::Value,
+    identity: &runtime::DryRunIdentity,
+) {
+    plan["data"]["account"] = serde_json::json!(identity.account_id);
+    plan["data"]["model"] = serde_json::json!(identity.model);
+    plan["data"]["instances"] = serde_json::json!(
+        identity
+            .instances
+            .iter()
+            .map(|instance| serde_json::json!({
+                "config_id": instance.config_id,
+                "agent": instance.agent.slug(),
+                "account": instance.account_id,
+                "label": instance.label,
+                "model": instance.model,
+            }))
+            .collect::<Vec<_>>()
+    );
 }
 
-struct DryRunIdentity<'a> {
+/// Identity half of the `--dry-run` plan as the printer consumes it: the
+/// committed launch agent plus the canonical runtime identity.
+struct DryRunPlan<'a> {
     agent: jackin_core::Agent,
-    account_id: Option<&'a str>,
-    instances: Vec<DryRunInstance>,
-}
-
-/// Resolve the identity half of the `--dry-run` plan: one account for a
-/// single-instance launch, or every admitted instance when several accounts
-/// support the agent (a multi-instance launch admits no single account).
-fn resolve_dry_run_identity(
-    plan_config: &AppConfig,
-    selected_agent: jackin_core::Agent,
-    workspace_name: Option<&jackin_core::WorkspaceName>,
-    role_key: &str,
-) -> Result<(Option<String>, Vec<DryRunInstance>)> {
-    match jackin_config::resolve_account(plan_config, selected_agent, workspace_name, role_key) {
-        Ok(selected_account) => Ok((
-            selected_account.and_then(|selected| {
-                plan_config
-                    .accounts
-                    .iter()
-                    .find(|(_, account)| std::ptr::eq(*account, selected))
-                    .map(|(id, _)| id.clone())
-            }),
-            Vec::new(),
-        )),
-        Err(_) => Ok((
-            None,
-            jackin_config::resolve_launch(
-                plan_config,
-                workspace_name,
-                role_key,
-                None,
-                Some(selected_agent),
-            )?
-            .into_iter()
-            .map(|instance| DryRunInstance {
-                config_id: instance.config_id,
-                agent: instance.agent,
-                account_id: instance.account_id,
-                label: instance.label,
-            })
-            .collect(),
-        )),
-    }
+    identity: &'a runtime::DryRunIdentity,
 }
 
 /// Print the resolved load plan for `--dry-run` and exit without launching.
 fn print_dry_run_plan(
     class: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
-    identity: DryRunIdentity<'_>,
+    plan_identity: &DryRunPlan<'_>,
     role_branch: Option<&str>,
     rebuild: bool,
     format: &str,
     image_plan: &runtime::LaunchImagePlan,
 ) -> Result<()> {
-    let agent_slug = identity.agent.slug();
-    let account_id = identity.account_id;
-    let instances = identity.instances;
+    let agent_slug = plan_identity.agent.slug();
+    let identity = plan_identity.identity;
+    let account_id = identity.account_id.as_deref();
+    let instances = &identity.instances;
 
     let mount_lines: Vec<String> = workspace
         .mounts
@@ -838,18 +820,7 @@ fn print_dry_run_plan(
             rebuild,
             image_plan,
         );
-        plan["data"]["account"] = serde_json::json!(account_id);
-        plan["data"]["instances"] = serde_json::json!(
-            instances
-                .iter()
-                .map(|instance| serde_json::json!({
-                    "config_id": instance.config_id,
-                    "agent": instance.agent.slug(),
-                    "account": instance.account_id,
-                    "label": instance.label,
-                }))
-                .collect::<Vec<_>>()
-        );
+        apply_dry_run_identity_json(&mut plan, identity);
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
         println!("Workspace:  {} ({})", workspace.label, workspace.workdir);
@@ -862,7 +833,7 @@ fn print_dry_run_plan(
         println!("Account:    {}", account_id.unwrap_or("none"));
         if !instances.is_empty() {
             println!("Instances ({}):", instances.len());
-            for instance in &instances {
+            for instance in instances {
                 println!(
                     "  {} [{}] account={} label={}",
                     instance.config_id,
