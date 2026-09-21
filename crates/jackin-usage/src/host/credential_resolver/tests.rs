@@ -55,3 +55,50 @@ fn disc_source_cache_skips_duplicate_protected_resolution() {
     assert_eq!(first, second);
     assert_eq!(resolver.source.resolutions.load(Ordering::Relaxed), 1);
 }
+
+#[test]
+fn disc_source_cache_alias_request_refreshes_through_governed_name() {
+    let mut config = AppConfig::default();
+    config.env.insert(
+        "JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY".to_owned(),
+        EnvValue::Plain("fixture-declaration".to_owned()),
+    );
+    let resolver = CachedProviderCredentialResolver::new(CountingSecretSource::default());
+    let alias = UsageCredentialEnvName {
+        name: "JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY",
+        owner: UsageCredentialOwner::Codex,
+    };
+
+    let resolutions = resolver.resolve_provider_credentials(&config, None, None, &[alias]);
+    assert_eq!(resolutions.len(), 1);
+    assert_eq!(resolutions[0].key, "JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY");
+    let ProviderCredentialEnvOutcome::Resolved(handle) = &resolutions[0].outcome else {
+        panic!("alias declaration must resolve");
+    };
+
+    // Refresh routing addresses the governed name; the alias-resolved secret
+    // must be reachable through it.
+    match resolver.refresh_provider_credential(HostSurfaceId::Codex, "OPENAI_API_KEY", handle) {
+        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+            assert_eq!(
+                view.last_error.as_deref(),
+                Some("OpenAI API-key subscription quota is unavailable")
+            );
+        }
+        other => panic!("governed-name refresh must hit the alias cache: {other:?}"),
+    }
+    // A direct governed-name request for the same declaration shares the entry.
+    let mut governed_config = AppConfig::default();
+    governed_config.env.insert(
+        "OPENAI_API_KEY".to_owned(),
+        EnvValue::Plain("fixture-declaration".to_owned()),
+    );
+    let governed = UsageCredentialEnvName {
+        name: "OPENAI_API_KEY",
+        owner: UsageCredentialOwner::Codex,
+    };
+    let repeat = resolver.resolve_provider_credentials(&governed_config, None, None, &[governed]);
+    assert_eq!(repeat.len(), 1);
+    assert_eq!(repeat[0].outcome, resolutions[0].outcome);
+    assert_eq!(resolver.source.resolutions.load(Ordering::Relaxed), 1);
+}

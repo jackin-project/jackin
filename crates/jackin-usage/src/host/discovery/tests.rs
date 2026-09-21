@@ -305,7 +305,11 @@ fn disc_registry_api_sources_are_isolated_from_ambient_env_declarations() {
     );
     let calls = resolver.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].2, vec!["ZAI_API_KEY"]);
+    // Account credentials are presented under an isolated alias so CLI-side
+    // operator-env attribution (which retains out governed names) resolves
+    // the same declaration the broker resolves.
+    assert_eq!(calls[0].2, vec!["JACKIN_USAGE_ACCOUNT_ZAI_API_KEY"]);
+    assert!(!jackin_core::is_account_env(&calls[0].2[0]));
     assert!(!format!("{catalog:?}").contains("fixture-key"));
 }
 
@@ -1068,6 +1072,393 @@ fn refresh_cursor_binding_dispatches_to_collector() {
         }
         other => panic!("cursor refresh must dispatch to the collector: {other:?}"),
     }
+}
+
+#[test]
+fn disc_account_aliases_avoid_governed_names_and_round_trip() {
+    let mut seen = BTreeSet::new();
+    for entry in jackin_core::USAGE_CREDENTIAL_ENV_REGISTRY {
+        let alias = usage_account_alias_entry(*entry);
+        assert_eq!(alias.owner, entry.owner);
+        assert_ne!(alias.name, entry.name);
+        assert!(
+            !jackin_core::is_account_env(alias.name),
+            "alias must survive operator-env attribution: {}",
+            alias.name
+        );
+        assert_eq!(governed_name_for_account_alias(alias.name), entry.name);
+        assert!(seen.insert(alias.name), "duplicate alias: {}", alias.name);
+    }
+    assert_eq!(
+        governed_name_for_account_alias("ZAI_API_KEY"),
+        "ZAI_API_KEY"
+    );
+}
+
+/// Mimics the CLI/broker secret-source split: resolves only the exact
+/// requested declaration from the isolated config, deduplicating identical
+/// secrets per owner behind one opaque handle.
+#[derive(Default)]
+struct SecretDedupFakeResolver {
+    calls: Mutex<Vec<Vec<String>>>,
+    handles: Mutex<BTreeMap<String, OpaqueCredentialHandle>>,
+}
+
+impl ProviderCredentialEnvResolver for SecretDedupFakeResolver {
+    fn resolve_provider_credentials(
+        &self,
+        config: &AppConfig,
+        _workspace: Option<&WorkspaceName>,
+        _role: Option<&str>,
+        keys: &[UsageCredentialEnvName],
+    ) -> Vec<ProviderCredentialEnvResolution> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(keys.iter().map(|key| key.name.to_owned()).collect());
+        keys.iter()
+            .filter_map(|entry| {
+                let declaration = config.env.get(entry.name)?;
+                let fingerprint = format!("{:?}:{declaration:?}", entry.owner);
+                let mut handles = self.handles.lock().unwrap();
+                let next = handles.len() + 1;
+                let handle = handles
+                    .entry(fingerprint)
+                    .or_insert_with(|| {
+                        OpaqueCredentialHandle::new(format!("fixture-credential-{next}"))
+                    })
+                    .clone();
+                Some(ProviderCredentialEnvResolution {
+                    key: entry.name.to_owned(),
+                    outcome: ProviderCredentialEnvOutcome::Resolved(handle),
+                })
+            })
+            .collect()
+    }
+}
+
+fn write_accounts_config(
+    config_root: &Path,
+    profiles: &[(&str, Agent, &Path)],
+    keys: &[(&str, AiProvider, &str)],
+) {
+    let mut config = AppConfig::default();
+    for (id, agent, directory) in profiles {
+        config.accounts.insert(
+            (*id).to_owned(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: (*id).to_owned(),
+                provider: AiProvider::for_agent(*agent).expect("native-provider agent"),
+                credential: AccountCredential::Profile {
+                    agent: *agent,
+                    directory: directory.to_path_buf(),
+                    xdg_roots: None,
+                    source_selector: None,
+                },
+            },
+        );
+    }
+    for (id, provider, value) in keys {
+        config.accounts.insert(
+            (*id).to_owned(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: (*id).to_owned(),
+                provider: *provider,
+                credential: AccountCredential::ApiKey {
+                    value: jackin_config::EnvValue::Plain((*value).to_owned()),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+    }
+    std::fs::create_dir_all(config_root).unwrap();
+    std::fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+}
+
+fn discover_with(
+    config_root: &Path,
+    home: &Path,
+    resolver: &dyn ProviderCredentialEnvResolver,
+) -> UsageDiscoveryCatalog {
+    discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root: config_root.to_path_buf(),
+            operator_home: home.to_path_buf(),
+        },
+        resolver,
+    )
+    .unwrap()
+}
+
+#[test]
+fn disc_env_key_account_resolves_through_isolated_alias() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    write_accounts_config(
+        &config_root,
+        &[],
+        &[("codex-key", AiProvider::OpenAi, "fixture-openai-key")],
+    );
+    let resolver = SecretDedupFakeResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+
+    assert!(catalog.diagnostics.is_empty(), "{:?}", catalog.diagnostics);
+    assert_eq!(catalog.candidates.len(), 1);
+    assert_eq!(catalog.candidates[0].surface_id, "codex");
+    assert_eq!(
+        catalog.candidates[0].credential_kind,
+        UsageCredentialKind::ApiKey
+    );
+    let calls = resolver.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0], vec!["JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY"]);
+
+    let validated = validate_usage_sources(catalog, &resolver);
+    assert_eq!(validated.accounts.len(), 1);
+    assert_eq!(validated.bindings.len(), 1);
+    assert!(validated.bindings[0].identity.is_some());
+    // Refresh routing and forwarding still address the governed name.
+    assert!(matches!(
+        validated.bindings[0].source,
+        ValidatedCredentialSource::Env { ref key, .. } if key == "OPENAI_API_KEY"
+    ));
+    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(validated.unresolved_capabilities().count(), 0);
+}
+
+#[test]
+fn disc_oauth_token_account_resolves_through_isolated_alias() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "oa-claude".to_owned(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "oa-claude".to_owned(),
+            provider: AiProvider::Anthropic,
+            credential: AccountCredential::OAuthToken {
+                agent: Agent::Claude,
+                value: jackin_config::EnvValue::Plain("fixture-oauth-token".to_owned()),
+            },
+        },
+    );
+    std::fs::create_dir_all(&config_root).unwrap();
+    std::fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let resolver = SecretDedupFakeResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+
+    assert!(catalog.diagnostics.is_empty(), "{:?}", catalog.diagnostics);
+    assert_eq!(catalog.candidates.len(), 1);
+    assert_eq!(
+        catalog.candidates[0].credential_kind,
+        UsageCredentialKind::OAuthToken
+    );
+    let calls = resolver.calls.lock().unwrap();
+    assert_eq!(
+        calls[0],
+        vec!["JACKIN_USAGE_ACCOUNT_CLAUDE_CODE_OAUTH_TOKEN"]
+    );
+    let validated = validate_usage_sources(catalog, &resolver);
+    assert_eq!(validated.accounts.len(), 1);
+    assert!(matches!(
+        validated.bindings[0].source,
+        ValidatedCredentialSource::Env { ref key, .. } if key == "CLAUDE_CODE_OAUTH_TOKEN"
+    ));
+}
+
+#[test]
+fn disc_mixed_profile_and_env_same_provider_merge_to_one_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let profile = temp.path().join("codex-shared");
+    write_accounts_config(
+        &config_root,
+        &[("codex-profile", Agent::Codex, &profile)],
+        &[("codex-key", AiProvider::OpenAi, "fixture-openai-key")],
+    );
+    write_codex_auth(
+        &profile,
+        "same-provider-account",
+        "eyJlbWFpbCI6InNhbWVAZXhhbXBsZS50ZXN0In0",
+        "fixture-secret",
+    );
+    let resolver = SecretDedupFakeResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+    assert_eq!(catalog.candidates.len(), 2);
+
+    let validated =
+        validate_usage_sources_with_reader(catalog, &resolver, &RecordingProfileReader::default());
+
+    assert!(
+        validated.diagnostics.is_empty(),
+        "{:?}",
+        validated.diagnostics
+    );
+    assert_eq!(validated.accounts.len(), 1);
+    assert_eq!(validated.accounts[0].account_label, "same@example.test");
+    assert_eq!(
+        validated.accounts[0].provenance,
+        vec!["account codex-key", "account codex-profile"]
+    );
+    assert_eq!(validated.accounts[0].source_ids.len(), 2);
+    assert!(matches!(
+        validated.accounts[0].identity.subject,
+        CanonicalAccountSubject::ProviderId(_)
+    ));
+    assert_eq!(validated.bindings.len(), 2);
+    assert_eq!(
+        validated.bindings[0].identity,
+        validated.bindings[1].identity
+    );
+    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(validated.unresolved_capabilities().count(), 0);
+}
+
+#[test]
+fn disc_distinct_env_keys_same_provider_keep_distinct_identities() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    write_accounts_config(
+        &config_root,
+        &[],
+        &[
+            ("key-one", AiProvider::OpenAi, "fixture-key-one"),
+            ("key-two", AiProvider::OpenAi, "fixture-key-two"),
+        ],
+    );
+    let resolver = SecretDedupFakeResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+    assert_eq!(catalog.candidates.len(), 2);
+
+    let validated = validate_usage_sources(catalog, &resolver);
+    assert_eq!(validated.accounts.len(), 2);
+    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 2);
+}
+
+#[test]
+fn disc_same_env_key_through_two_accounts_dedupes_to_one_source() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    write_accounts_config(
+        &config_root,
+        &[],
+        &[
+            ("or-alpha", AiProvider::OpenRouter, "fixture-or-shared-key"),
+            ("or-beta", AiProvider::OpenRouter, "fixture-or-shared-key"),
+        ],
+    );
+    let resolver = SecretDedupFakeResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+    assert_eq!(catalog.candidates.len(), 1);
+    assert_eq!(catalog.candidates[0].provenance.len(), 2);
+
+    let validated = validate_usage_sources(catalog, &resolver);
+    assert_eq!(validated.accounts.len(), 1);
+    assert_eq!(validated.accounts[0].provenance.len(), 2);
+    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+}
+
+#[test]
+fn disc_env_key_without_profile_keeps_own_source_scoped_row() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    write_accounts_config(
+        &config_root,
+        &[],
+        &[("xai-key", AiProvider::Xai, "xai-fixture-secret")],
+    );
+    let resolver = SecretDedupFakeResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+
+    let validated = validate_usage_sources(catalog, &resolver);
+    assert_eq!(validated.accounts.len(), 1);
+    assert!(matches!(
+        validated.accounts[0].identity.subject,
+        CanonicalAccountSubject::SourceCapability(_)
+    ));
+    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
+    assert_eq!(validated.unresolved_capabilities().count(), 0);
+}
+
+#[test]
+fn disc_env_key_with_two_provider_identities_stays_separate() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let first = temp.path().join("first-profile");
+    let second = temp.path().join("second-profile");
+    write_accounts_config(
+        &config_root,
+        &[
+            ("codex-one", Agent::Codex, &first),
+            ("codex-two", Agent::Codex, &second),
+        ],
+        &[("codex-key", AiProvider::OpenAi, "fixture-openai-key")],
+    );
+    write_codex_auth(
+        &first,
+        "account-one",
+        "eyJlbWFpbCI6Im9uZUBleGFtcGxlLnRlc3QifQ",
+        "secret-one",
+    );
+    write_codex_auth(
+        &second,
+        "account-two",
+        "eyJlbWFpbCI6InR3b0BleGFtcGxlLnRlc3QifQ",
+        "secret-two",
+    );
+    let resolver = SecretDedupFakeResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+
+    let validated =
+        validate_usage_sources_with_reader(catalog, &resolver, &RecordingProfileReader::default());
+
+    // Ambiguous targets are never guessed: the key keeps its own row.
+    assert_eq!(validated.accounts.len(), 3);
+    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 3);
+}
+
+#[test]
+fn disc_env_key_does_not_attach_to_label_only_profile() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let profile = temp.path().join("codex-profile");
+    write_accounts_config(
+        &config_root,
+        &[("codex-profile", Agent::Codex, &profile)],
+        &[("codex-key", AiProvider::OpenAi, "fixture-openai-key")],
+    );
+    // OAuth material without any provider-issued id or label: the profile
+    // mints a source-scoped identity, which is not an attach target.
+    std::fs::create_dir_all(&profile).unwrap();
+    std::fs::write(
+        profile.join("auth.json"),
+        r#"{"tokens":{"access_token":"fixture-secret"}}"#,
+    )
+    .unwrap();
+    let resolver = SecretDedupFakeResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+
+    let validated =
+        validate_usage_sources_with_reader(catalog, &resolver, &RecordingProfileReader::default());
+
+    assert_eq!(validated.accounts.len(), 2);
+    assert!(validated.accounts.iter().all(|account| matches!(
+        account.identity.subject,
+        CanonicalAccountSubject::SourceCapability(_)
+    )));
+    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 2);
 }
 
 #[test]

@@ -180,6 +180,31 @@ fn grok_billing_error_taxonomy_covers_rest_and_rpc() {
 }
 
 #[test]
+fn grok_env_key_only_snapshot_denies_billing_without_rpc() {
+    // The configured-source arm never attempts a billing RPC on an inference
+    // key: it reports the honest billing gap with zero network.
+    for (key, origin) in [
+        (
+            jackin_core::XAI_API_KEY_ENV_NAME,
+            "API token · env XAI_API_KEY",
+        ),
+        (
+            jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
+            "API token · env GROK_DEPLOYMENT_KEY",
+        ),
+    ] {
+        let view = provider_credential_snapshot("grok", key, "fixture-key");
+        assert_eq!(view.status, UsageSnapshotStatus::Error);
+        assert_eq!(view.source, UsageSource::None);
+        assert_eq!(
+            view.last_error.as_deref(),
+            Some("Grok billing requires an authenticated profile")
+        );
+        assert_eq!(view.account.credential_origin.as_deref(), Some(origin));
+    }
+}
+
+#[test]
 fn grok_subscription_auth_outranks_ambient_keys() {
     assert_eq!(
         resolve_grok_billing_auth(true, true, true),
