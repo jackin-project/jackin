@@ -124,10 +124,11 @@ pub(crate) use self::codex::{
 )]
 pub(crate) use self::cursor::{
     CursorAuth, CursorEnterpriseScope, CursorMemberSpend, CursorPeriodUsage, CursorRequestUsage,
-    CursorSandUsage, CursorTeamSpend, CursorUsageEvents, CursorUsageSummary, cursor_auth_path,
-    cursor_credits_bucket, cursor_dashboard_base, cursor_dashboard_post, cursor_dashboard_url,
-    cursor_default_base, cursor_enterprise_snapshot, cursor_events_buckets,
-    cursor_needs_request_fallback, cursor_period_buckets, cursor_request_bucket, cursor_rest_get,
+    CursorSandUsage, CursorTeamSpend, CursorUsageEvents, CursorUsageSummary,
+    cursor_auth_from_value, cursor_auth_path, cursor_credits_bucket, cursor_dashboard_base,
+    cursor_dashboard_post, cursor_dashboard_url, cursor_default_base, cursor_enterprise_snapshot,
+    cursor_events_buckets, cursor_identity_from_cli_config, cursor_needs_request_fallback,
+    cursor_period_buckets, cursor_profile_snapshot, cursor_request_bucket, cursor_rest_get,
     cursor_sand_bucket, cursor_session_cookie, cursor_snapshot, cursor_summary_buckets,
     cursor_team_spend_buckets, cursor_teams_events_url, cursor_teams_spend_url,
     cursor_user_id_from_token, fetch_cursor_credit_grants, fetch_cursor_period_usage,

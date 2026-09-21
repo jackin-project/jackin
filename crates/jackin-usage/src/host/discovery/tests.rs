@@ -843,3 +843,92 @@ fn disc_dedup_legacy_shared_snapshot_never_creates_active_row() {
 
     assert!(catalog.entries_for_surface(HostSurfaceId::Codex).is_empty());
 }
+
+#[test]
+fn disc_cursor_token_profile_binds_refreshable_material() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let cursor_root = temp.path().join("cursor-work");
+    std::fs::create_dir_all(&cursor_root).unwrap();
+    write_registry(
+        &config_root,
+        &[("cursor-work", Agent::Cursor, &cursor_root)],
+    );
+    std::fs::write(
+        cursor_root.join("auth.json"),
+        r#"{"accessToken":"fixture-token","refreshToken":"fixture-refresh"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        cursor_root.join("cli-config.json"),
+        r#"{"authInfo":{"email":"work@example.test"}}"#,
+    )
+    .unwrap();
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: temp.path().join("home"),
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    assert!(
+        validated.diagnostics.is_empty(),
+        "{:?}",
+        validated.diagnostics
+    );
+    assert_eq!(validated.accounts.len(), 1);
+    assert_eq!(validated.accounts[0].account_label, "work@example.test");
+    assert_eq!(validated.bindings.len(), 1);
+    match &validated.bindings[0].source {
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => {
+            assert_eq!(auth_path, &cursor_root.join("auth.json"));
+        }
+        _ => panic!("cursor token profile must bind refreshable material"),
+    }
+}
+
+#[test]
+fn disc_cursor_tokenless_profile_keeps_label_only_binding() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let cursor_root = temp.path().join("cursor-bare");
+    std::fs::create_dir_all(&cursor_root).unwrap();
+    write_registry(
+        &config_root,
+        &[("cursor-bare", Agent::Cursor, &cursor_root)],
+    );
+    std::fs::write(
+        cursor_root.join("auth.json"),
+        r#"{"refreshToken":"only-refresh"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        cursor_root.join("cli-config.json"),
+        r#"{"authInfo":{"email":"bare@example.test"}}"#,
+    )
+    .unwrap();
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: temp.path().join("home"),
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    assert!(
+        validated.diagnostics.is_empty(),
+        "{:?}",
+        validated.diagnostics
+    );
+    assert_eq!(validated.bindings.len(), 1);
+    assert!(
+        matches!(
+            validated.bindings[0].source,
+            ValidatedCredentialSource::Capability
+        ),
+        "token-less cursor keeps the label-only binding"
+    );
+}

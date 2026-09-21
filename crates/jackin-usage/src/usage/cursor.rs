@@ -49,6 +49,13 @@ pub(crate) fn load_cursor_auth() -> Result<CursorAuth, String> {
     let path = cursor_auth_path();
     let value = read_json_file(&path)
         .ok_or_else(|| "Cursor auth.json is missing or unreadable".to_owned())?;
+    cursor_auth_from_value(&value)
+}
+
+/// Parse [`CursorAuth`] from one `auth.json` value. Shared by the default-path
+/// loader and profile snapshots so broker refresh never re-resolves the
+/// default home for a non-default registered root.
+pub(crate) fn cursor_auth_from_value(value: &serde_json::Value) -> Result<CursorAuth, String> {
     let access_token = ["accessToken", "access_token"]
         .into_iter()
         .filter_map(|key| value.get(key).and_then(serde_json::Value::as_str))
@@ -88,6 +95,12 @@ pub(crate) fn load_cursor_cli_identity() -> Option<String> {
         |dir| PathBuf::from(dir).join("cli-config.json"),
     );
     let value = read_json_file(&path)?;
+    cursor_identity_from_cli_config(&value)
+}
+
+/// Display label from one `cli-config.json` value (`authInfo`): email first,
+/// then display name. Never a credential.
+pub(crate) fn cursor_identity_from_cli_config(value: &serde_json::Value) -> Option<String> {
     let info = value.get("authInfo")?;
     ["email", "displayName", "display_name", "userId"]
         .into_iter()
@@ -169,7 +182,9 @@ pub(crate) fn fetch_cursor_period_usage(token: &str) -> Result<CursorPeriodUsage
 }
 
 pub(crate) fn parse_cursor_period_usage(value: &serde_json::Value) -> Option<CursorPeriodUsage> {
-    let usage = value.get("usage")?;
+    // Live `GetCurrentPeriodUsage` returns `planUsage` at the top level; older
+    // captures nested it under `usage`. Accept both, preferring nested.
+    let usage = value.get("usage").unwrap_or(value);
     let plan = usage.get("planUsage")?;
     let total_percent_used = ["totalPercentUsed", "total_percent_used", "percentUsed"]
         .into_iter()
@@ -1022,6 +1037,52 @@ pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
             );
         }
     };
+    let identity = load_cursor_cli_identity().unwrap_or_default();
+    cursor_snapshot_with_auth(
+        agent,
+        provider,
+        now,
+        &auth,
+        identity,
+        "OAuth · ~/.cursor/auth.json",
+    )
+}
+
+/// Broker-refresh entry: `auth.json` at a registered profile root plus the
+/// sibling `cli-config.json` identity. Never touches the default home.
+pub(crate) fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> FocusedUsageView {
+    let auth = match read_json_file(auth_path)
+        .ok_or_else(|| "Cursor auth.json is missing or unreadable".to_owned())
+        .and_then(|value| cursor_auth_from_value(&value))
+    {
+        Ok(auth) => auth,
+        Err(error) => {
+            return cursor_status_view(agent, None, now, UsageSnapshotStatus::NeedsSecret, &error);
+        }
+    };
+    let identity = auth_path
+        .parent()
+        .and_then(|root| read_json_file(&root.join("cli-config.json")))
+        .and_then(|value| cursor_identity_from_cli_config(&value))
+        .unwrap_or_default();
+    cursor_snapshot_with_auth(
+        agent,
+        None,
+        now,
+        &auth,
+        identity,
+        "OAuth · configured profile",
+    )
+}
+
+fn cursor_snapshot_with_auth(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    auth: &CursorAuth,
+    identity: String,
+    credential_origin: &str,
+) -> FocusedUsageView {
     let token = auth.access_token.as_str();
     let (period, period_error) = split_fetch(Some(fetch_cursor_period_usage(token)));
     let (plan, plan_error) = split_fetch(Some(fetch_cursor_plan_info(token)));
@@ -1109,7 +1170,6 @@ pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
             plan
         }
     });
-    let identity = load_cursor_cli_identity().unwrap_or_default();
     let mut view = usage_view(UsageViewInput {
         agent,
         provider: provider.or(Some("Cursor")),
@@ -1120,7 +1180,7 @@ pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
         account_label: identity.clone(),
         username: (!identity.is_empty()).then_some(identity),
         plan_label,
-        credential_origin: Some("OAuth · ~/.cursor/auth.json".to_owned()),
+        credential_origin: Some(credential_origin.to_owned()),
         buckets,
         status,
         source: if status == UsageSnapshotStatus::Fresh {

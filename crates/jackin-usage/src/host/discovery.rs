@@ -476,6 +476,9 @@ pub(super) enum ProfileCredentialMaterial {
     OpenCode {
         auth_path: PathBuf,
     },
+    Cursor {
+        auth_path: PathBuf,
+    },
 }
 
 impl std::fmt::Debug for UsageDiscoveryCatalog {
@@ -1302,30 +1305,30 @@ fn anonymous_when_present(reader: &dyn ProfileCredentialReader, path: &Path) -> 
 /// Cursor identity comes from the sibling `cli-config.json` (`authInfo`
 /// email), verified locally; the tokens themselves live in `auth.json`.
 fn cursor_profile_identity(reader: &dyn ProfileCredentialReader, root: &Path) -> ProfileValidation {
-    match read_json(reader, &root.join("auth.json")) {
+    let auth_path = root.join("auth.json");
+    let value = match read_json(reader, &auth_path) {
         Ok(None) => return ProfileValidation::Missing,
         Err(outcome) => return outcome,
-        Ok(Some(_)) => {}
-    }
+        Ok(Some(value)) => value,
+    };
+    // Token-bearing profiles refresh through the broker; a token-less
+    // `auth.json` keeps the old label-only binding (no refreshable material).
+    let material = crate::usage::cursor_auth_from_value(&value).ok().map(|_| {
+        Box::new(ProfileCredentialMaterial::Cursor {
+            auth_path: auth_path.clone(),
+        })
+    });
     let label = read_json(reader, &root.join("cli-config.json"))
         .ok()
         .flatten()
-        .and_then(|config| {
-            let info = config.get("authInfo")?;
-            info.get("email")
-                .or_else(|| info.get("displayName"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::trim)
-                .filter(|label| !label.is_empty())
-                .map(str::to_owned)
-        });
+        .and_then(|config| crate::usage::cursor_identity_from_cli_config(&config));
     match label {
         Some(label) => ProfileValidation::Authenticated {
             provider_id: None,
             account_label: Some(label),
-            material: None,
+            material,
         },
-        None => ProfileValidation::Anonymous(None),
+        None => ProfileValidation::Anonymous(material),
     }
 }
 
@@ -1664,6 +1667,13 @@ pub(super) fn refresh_credential_binding(
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => {
             crate::usage::opencode_profile_snapshot(
+                binding.surface.agent_slug(),
+                auth_path,
+                chrono::Utc::now().timestamp(),
+            )
+        }
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => {
+            crate::usage::cursor_profile_snapshot(
                 binding.surface.agent_slug(),
                 auth_path,
                 chrono::Utc::now().timestamp(),
