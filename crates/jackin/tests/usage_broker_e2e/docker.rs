@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
-use jackin_protocol::usage_broker::{UsageBrokerResponse, UsageCoordinationErrorKind};
+use jackin_protocol::usage_broker::{
+    USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerResponse, UsageCoordinationErrorKind,
+};
 use jackin_usage::coordinator::{
     AccountStateEnvelope, AccountStateStore, FileAccountStateStore, ProviderProbeOutcome,
     UsageCoordinatorConfig, UsageProviderExecutor,
@@ -55,6 +57,8 @@ while True:
 "#;
 const CAPSULE_SCRIPT: &str = r#"
 import json, os, socket, time
+# Authorized capability must match the relay allowlist (vec![capability()])
+# and the desktop client: exact match, anything else is unauthorized.
 
 path = "/jackin/run/usage.sock"
 assert not os.path.exists("/jackin/usage-shared")
@@ -62,7 +66,7 @@ assert not any(key.startswith("JACKIN_USAGE_") and key.endswith("_DIR") for key 
 
 def call(operation):
     request = {
-        "protocol_version": "v1",
+        "protocol_version": os.environ["JACKIN_USAGE_E2E_PROTOCOL"],
         "build_id": os.environ["JACKIN_USAGE_E2E_BUILD"],
         "operation": operation,
     }
@@ -100,7 +104,7 @@ if mode == "gated-refresh":
 if mode == "refresh":
     initial = call({
         "operation": "refresh_for_capability",
-        "capability": {"account_id": "account-a", "surface_id": "claude"},
+        "capability": {"account_id": "shared-account", "surface_id": "claude"},
         "observed_generation": 0,
         "force": True,
     })
@@ -109,14 +113,14 @@ if mode == "refresh":
         marker.write(str(initial["state"]["generation"]))
     response = call({
         "operation": "join_for_capability",
-        "capability": {"account_id": "account-a", "surface_id": "claude"},
+        "capability": {"account_id": "shared-account", "surface_id": "claude"},
         "generation": initial["state"]["generation"],
         "timeout_ms": 30000,
     })
 elif mode == "request":
     response = call({
         "operation": "refresh_for_capability",
-        "capability": {"account_id": "account-a", "surface_id": "claude"},
+        "capability": {"account_id": "shared-account", "surface_id": "claude"},
         "observed_generation": 0,
         "force": True,
     })
@@ -578,6 +582,9 @@ impl Drop for DockerCapsule {
 fn run_capsule(container_name: &str, mode: &str) -> Result<UsageBrokerResponse> {
     let mode_env = format!("JACKIN_USAGE_E2E_MODE={mode}");
     let build_env = format!("JACKIN_USAGE_E2E_BUILD={}", env!("CARGO_PKG_VERSION"));
+    // Must track USAGE_BROKER_PROTOCOL_VERSION: serve_stdio_tunnel rejects
+    // anything else with protocol_mismatch before the allowlist runs.
+    let protocol_env = format!("JACKIN_USAGE_E2E_PROTOCOL={USAGE_BROKER_PROTOCOL_VERSION}");
     let output = jackin_process::exec_sync(&jackin_process::ExecRequest::new(
         "docker",
         [
@@ -586,6 +593,8 @@ fn run_capsule(container_name: &str, mode: &str) -> Result<UsageBrokerResponse> 
             &mode_env,
             "--env",
             &build_env,
+            "--env",
+            &protocol_env,
             container_name,
             "python",
             "-c",

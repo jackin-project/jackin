@@ -878,6 +878,29 @@ fn entrypoint_setup_once_marker_is_private_per_session() {
 }
 
 #[test]
+fn entrypoint_exports_hook_state_dir_before_hooks_run() {
+    // Landlock-confined sessions cannot write capsule-wide /jackin/state, so
+    // hooks must write under JACKIN_HOOK_STATE_DIR. The export must precede
+    // ALL hook execution (setup-once, source, preflight) so hooks inherit it.
+    assert!(ENTRYPOINT_SH.contains(
+        "export JACKIN_HOOK_STATE_DIR=\"${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hook-state\""
+    ));
+    assert!(ENTRYPOINT_SH.contains("mkdir -p \"$JACKIN_HOOK_STATE_DIR\""));
+    let export_pos = ENTRYPOINT_SH.find("export JACKIN_HOOK_STATE_DIR=").unwrap();
+    for hook in [
+        "/jackin/runtime/hooks/setup-once.sh",
+        "/jackin/runtime/hooks/source.sh",
+        "/jackin/runtime/hooks/preflight.sh",
+    ] {
+        let hook_pos = ENTRYPOINT_SH.find(hook).unwrap();
+        assert!(
+            export_pos < hook_pos,
+            "hook state export must precede {hook}"
+        );
+    }
+}
+
+#[test]
 fn entrypoint_delegates_deterministic_setup_to_jackin_capsule() {
     assert!(ENTRYPOINT_SH.contains("/jackin/runtime/jackin-capsule runtime-setup"));
     assert!(!ENTRYPOINT_SH.contains("git config --global user.name"));

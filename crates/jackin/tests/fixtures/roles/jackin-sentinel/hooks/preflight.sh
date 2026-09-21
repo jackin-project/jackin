@@ -5,7 +5,7 @@
 
 set -eu
 
-state_dir="${JACKIN_SENTINEL_STATE_DIR:-/jackin/state/jackin-sentinel}"
+state_dir="${JACKIN_SENTINEL_STATE_DIR:-/jackin/state/hook-state/jackin-sentinel}"
 mkdir -p "$state_dir"
 
 if [ "${JACKIN_SENTINEL_SOURCE_HOOK:-}" != "1" ]; then

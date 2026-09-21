@@ -200,6 +200,22 @@ pub fn safe_remove_dir_contained(root: &Path, path: &Path) -> std::io::Result<()
     remove_child_dir(dir_fd.as_fd(), &name, path, &expected)
 }
 
+/// Device id of an `fstat` result as the `u64` that `Metadata::dev`
+/// reports. `st_dev` is already `u64` on Linux, so no conversion exists
+/// there; every other platform converts fallibly (macOS `st_dev` is `i32`).
+#[cfg(target_os = "linux")]
+fn dev_id(stat: &nix::sys::stat::FileStat) -> u64 {
+    stat.st_dev
+}
+
+/// Device id of an `fstat` result as the `u64` that `Metadata::dev`
+/// reports. Portable fallible conversion for non-Linux Unix (macOS
+/// `st_dev` is `i32`); see the Linux variant.
+#[cfg(not(target_os = "linux"))]
+fn dev_id(stat: &nix::sys::stat::FileStat) -> u64 {
+    u64::try_from(stat.st_dev).unwrap_or(u64::MAX)
+}
+
 /// Delete one child `name` of the pinned parent `dir_fd`, verifying it is
 /// still the validated object before recursing.
 fn remove_child_dir(
@@ -216,12 +232,7 @@ fn remove_child_dir(
     // The fd pins the exact object being deleted: if its identity differs
     // from the pre-validation metadata, the path was swapped underneath us.
     let actual = fstat(child.as_fd()).map_err(|error| refuse_io(path, error))?;
-    // `st_dev` is `u64` on Linux but `i32` on macOS; widen once for the
-    // comparison with `Metadata::dev` (always `u64`).
-    #[cfg(target_os = "macos")]
-    let actual_dev = u64::try_from(actual.st_dev).unwrap_or(u64::MAX);
-    #[cfg(not(target_os = "macos"))]
-    let actual_dev: u64 = actual.st_dev;
+    let actual_dev = dev_id(&actual);
     if actual_dev != expected.dev() || actual.st_ino != expected.ino() {
         return refuse(format!(
             "refusing to remove {}: path changed during removal",
