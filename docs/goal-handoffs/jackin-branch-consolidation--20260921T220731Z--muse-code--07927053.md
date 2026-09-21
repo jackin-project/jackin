@@ -3,11 +3,10 @@
 ## A. Identity and pause status
 
 - Handoff ID: `jackin-branch-consolidation--20260921T220731Z--muse-code--07927053`
-- Created (UTC): 2026-09-21T22:07:31Z | Last update (UTC): 2026-09-21T22:07:31Z
-  (timestamps refresh on publish; see PR body for final head SHA).
+- Created (UTC): 2026-09-21T22:07:31Z | Last update (UTC): 2026-09-21T22:25:00Z
+  (publish metadata update; final head SHA in PR body + §7 receipt).
 - Original goal status: `PAUSED_BY_USER`
-- Handoff status: `PREPARING` (→ `READY` after publish + verification in section 7;
-  `BLOCKED` only if a check below fails).
+- Handoff status: `READY` (all §7 checks passed — see publish log below).
 - Worker stop status: VERIFIED. `subagent_status(status_filter=running)` returned
   `not_found` after the single running goal worker (CI watcher ordinal 168) was sent a
   stop message and then cancelled via `subagent_cancel` (accepted; terminal
@@ -35,8 +34,10 @@
   draft PR; TASK-CREATED, cleanup candidate at final completion — NOT during pause).
 - PR base / observed SHA: `main` @ `df4671e4d9f2860e90a5c71d8d0bd85b23d23291`
   (observed 2026-09-21T22:05Z; re-verified unchanged 22:14Z).
-- Handoff PR URL: PENDING (draft PR created in section 6; URL + final head SHA added
-  to this doc and the receipt after push).
+- Handoff PR URL: https://github.com/jackin-project/jackin/pull/1070 (DRAFT,
+  base `main`, head `goal-handoff/jackin-consolidation-07927053`; auto-merge
+  n/a for drafts; no merge queue entry; CI triggered by push is observational
+  only — no repair loop during pause).
 - Recovery portability: NOT fully remote-portable. Depends on explicitly listed
   local artifacts in section I: the campaign store
   `/Users/donbeave/Projects/github/_consolidation/jackin/` (1.3 GB: LEDGER.md,
