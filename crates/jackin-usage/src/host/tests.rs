@@ -190,6 +190,7 @@ fn canonical_projection_keeps_unresolved_capability_out_of_account_rows() {
             identity: None,
             source_id: "source-0001".to_owned(),
             capability_id: "opaque-capability".to_owned(),
+            credential_revision: "credential-revision".to_owned(),
             provenance: std::collections::BTreeSet::from(["workspace sample".to_owned()]),
             source: discovery::ValidatedCredentialSource::Capability,
         }],

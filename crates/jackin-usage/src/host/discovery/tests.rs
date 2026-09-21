@@ -651,6 +651,47 @@ fn disc_source_valid_profiles_resolve_without_network_or_fake_presence() {
 }
 
 #[test]
+fn profile_material_rotation_at_same_path_changes_catalog_entry_revision() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let profile = temp.path().join("codex-profile");
+    write_codex_only_global(&config_root, &profile);
+    write_codex_auth(
+        &profile,
+        "account-1",
+        "eyJlbWFpbCI6ImFsaWNlQGV4YW1wbGUudGVzdCJ9",
+        "fixture-secret-a",
+    );
+    let scope = UsageDiscoveryScope::HostDesktop {
+        config_root: config_root.clone(),
+        operator_home: temp.path().join("home"),
+    };
+    let first_catalog = discover_usage_sources(&scope, &NoEnvResolver).unwrap();
+    let first = validate_usage_sources(first_catalog, &NoEnvResolver);
+    let first_entries = crate::host::broker::usage_catalog_entries(&first);
+
+    write_codex_auth(
+        &profile,
+        "account-1",
+        "eyJlbWFpbCI6ImFsaWNlQGV4YW1wbGUudGVzdCJ9",
+        "fixture-secret-b",
+    );
+    let second_catalog = discover_usage_sources(&scope, &NoEnvResolver).unwrap();
+    let second = validate_usage_sources(second_catalog, &NoEnvResolver);
+    let second_entries = crate::host::broker::usage_catalog_entries(&second);
+
+    assert_eq!(
+        first.bindings[0].capability_id,
+        second.bindings[0].capability_id
+    );
+    assert_ne!(
+        first.bindings[0].credential_revision,
+        second.bindings[0].credential_revision
+    );
+    assert_ne!(first_entries, second_entries);
+}
+
+#[test]
 fn disc_config_generation_rotates_capability_for_same_credential_identity() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
