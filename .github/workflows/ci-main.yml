@@ -2799,7 +2799,7 @@ jobs:
       plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
-      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest cargo:boltffi_cli cargo-binstall"
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest cargo:boltffi_cli cargo:sccache cargo-binstall"
       mbx_enabled: true
       mbx_compat: "085f66798421"
       mbx_dependency_files: |

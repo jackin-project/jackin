@@ -206,6 +206,10 @@ mise_tools = ["rust", "cargo-binstall"]
 # with the rust chain the framework build needs.
 [[units]]
 id = "rust-jackin-usage-ffi"
+# Adds sccache to the scanned install subset (unioned): mise's cargo backend
+# requires the configured cargo:sccache installed before any cargo: tool,
+# and fails the job closed when the subset omits it (FFI Apple evidence).
+mise_tools = ["cargo:sccache"]
 
 [[units.products]]
 name = "xcframework"
