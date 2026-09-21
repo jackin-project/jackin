@@ -808,6 +808,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
         },
         broker.clone(),
         allowlist.clone(),
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied_response else {
@@ -824,6 +825,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
         },
         broker.clone(),
         allowlist.clone(),
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied_capability else {
@@ -840,6 +842,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
         },
         broker.clone(),
         allowlist.clone(),
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::State { state } = refresh else {
@@ -853,6 +856,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
         },
         broker,
         allowlist,
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::State { state } = terminal else {
@@ -881,6 +885,7 @@ async fn usage_relay_dispatch_denies_projection_for_surface() {
         UsageBrokerOperation::CurrentProjectionForSurface,
         broker,
         allowlist,
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied else {
@@ -900,6 +905,7 @@ fn empty_capabilities_do_not_start_a_tunnel_child() {
             broker,
             capabilities: vec![],
             canonical_launch_usage_capabilities: CanonicalLaunchUsageCapabilities::default(),
+            credential_scope: UsageCredentialScope::default(),
         },
     )
     .unwrap();
@@ -952,7 +958,13 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
             timeout_ms: 50,
         },
     ] {
-        let denied = dispatch(operation, broker.clone(), allowlist.clone()).await;
+        let denied = dispatch(
+            operation,
+            broker.clone(),
+            allowlist.clone(),
+            UsageCredentialScope::default(),
+        )
+        .await;
         let UsageBrokerResponse::Error { error } = denied else {
             panic!("forged acc-d returned state");
         };
@@ -967,6 +979,7 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
         },
         broker.clone(),
         allowlist.clone(),
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied else {
@@ -985,6 +998,7 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
         },
         broker.clone(),
         empty,
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied else {
@@ -1003,6 +1017,7 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
             },
             broker.clone(),
             allowlist.clone(),
+            UsageCredentialScope::default(),
         )
         .await;
         let UsageBrokerResponse::State { state } = refresh else {
@@ -1016,6 +1031,7 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
             },
             broker.clone(),
             allowlist.clone(),
+            UsageCredentialScope::default(),
         )
         .await;
         let UsageBrokerResponse::State { state } = terminal else {

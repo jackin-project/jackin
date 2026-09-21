@@ -612,6 +612,10 @@ fn broker_failure_for_anonymous_source_stays_surface_scoped() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One table-style forwarding matrix: six source fixtures share one discovery setup; splitting would duplicate the binding fixtures per case."
+)]
 fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
 
