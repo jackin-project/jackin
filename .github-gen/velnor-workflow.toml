@@ -8,7 +8,12 @@ repository = "jackin-project/jackin"
 revision = "01bc16b2ad074eb3980d7b12a7b441192a7c3bc0"
 
 [scan]
-exclude = ["native/Package.swift", "native/.swiftpm/**"]
+# native/Package.swift scans: the xcframework-first ordering the exclusion
+# used to protect now comes from the FFI product + prerequisite edge below,
+# so the unit is scan-derived (plain swift commands + prepended prepare)
+# instead of hand-declared. .swiftpm/ stays excluded: the filesystem scan
+# would otherwise read untracked SwiftPM workspace state as evidence.
+exclude = ["native/.swiftpm/**"]
 
 # Runner placement: keep both backends for manual dispatch; automatic events
 # (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
@@ -158,22 +163,38 @@ id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
 # XCFramework must exist before `swift build` resolves the binary target.
-# Run desktop-xcframework in the same macOS job as swift-package-native so
-# the binary target path is populated on one runner (separate jobs do not
-# share target/xcframework).
+# The FFI unit declares the framework as a product with no transportable
+# outputs, so the consumer rebuilds it in-job on one macOS runner (separate
+# jobs do not share target/xcframework): the prerequisite edge compiles to
+# depends_on plus a prepended `mise run desktop-xcframework` prepare step,
+# ahead of the scanned plain `swift build` / `swift test --parallel`.
+# Scan-derived (not hand-declared) so the D3 `reads` contract validates:
+# `reads` names scan-produced units only. kind/root/watch restate the scan
+# (no-ops kept explicit); ci_tasks stays empty so nothing appends behind
+# the scanned commands.
 # capabilities = ["xcframework"]: Q4 obligation — without it this Apple-bound
 # unit renders ubuntu + Linux plan-artifact runtime (slice 9 split).
-# depends_on (F2): FFI touches select this Swift consumer; selection coupling
-# only, no forced serialization (the unit rebuilds the XCFramework in-job).
+# depends_on (F2): kept beside the edge (the compiled edge appends the same
+# producer if missing); selection coupling only, no forced serialization.
+[[units]]
+id = "rust-jackin-usage-ffi"
+
+[[units.products]]
+name = "xcframework"
+task = "desktop-xcframework"
+
 [[units]]
 id = "swift-package-native"
 kind = "swift"
 root = "native"
 watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
-ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 capabilities = ["xcframework"]
 depends_on = ["rust-jackin-usage-ffi"]
+
+[[units.prerequisites]]
+producer = "rust-jackin-usage-ffi"
+product = "xcframework"
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
