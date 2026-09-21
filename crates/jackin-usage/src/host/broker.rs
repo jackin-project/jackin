@@ -1071,6 +1071,37 @@ struct StagedDiscoveryCatalog {
     discovery: ValidatedUsageDiscovery,
 }
 
+impl DiscoveryProviderExecutor {
+    /// Build the provider executor from one validated discovery generation.
+    ///
+    /// First binding wins per capability. Later reconciles refresh the
+    /// bindings through live re-discovery, so the seed generation only
+    /// covers probes issued before the first reconcile.
+    fn for_discovery(
+        scope: UsageDiscoveryScope,
+        discovery: &ValidatedUsageDiscovery,
+        resolver: Arc<dyn ProviderCredentialEnvResolver>,
+        probe_budget: Duration,
+    ) -> Self {
+        let mut bindings = BTreeMap::new();
+        for binding in &discovery.bindings {
+            bindings
+                .entry(capability_for_binding(
+                    binding,
+                    discovery.config_generation.as_deref(),
+                ))
+                .or_insert_with(|| binding.clone());
+        }
+        Self {
+            bindings: Mutex::new(bindings),
+            validated_catalog: Mutex::new(None),
+            scope,
+            resolver,
+            probe_budget,
+        }
+    }
+}
+
 impl UsageProviderExecutor for DiscoveryProviderExecutor {
     fn authorize_credential_scope(
         &self,
@@ -1469,15 +1500,57 @@ pub fn ensure_usage_broker(
                          entries: Vec<UsageCatalogEntry>| {
         client.reconcile_catalog_if_projection(expected_projection_id, catalog_revision, entries)
     };
-    ensure_usage_broker_with_hooks(&config, &scope, discovery, &mut discover, &mut reconcile)
+    if sidecar_service_usable(config.service_executable.as_deref()) {
+        let mut activate = |config: UsageBrokerConfig, scope: &UsageDiscoveryScope| {
+            ensure_usage_broker_process(config, scope)
+        };
+        ensure_usage_broker_with_hooks(
+            &config,
+            &scope,
+            discovery,
+            &mut discover,
+            &mut reconcile,
+            &mut activate,
+        )
+    } else {
+        // Missing sidecar (e.g. `cargo install --path crates/jackin` from a
+        // tree predating the bundled broker binary): serve in-process on a
+        // broker thread instead of failing closed. Same leader election,
+        // transport, and CAS reconcile path as the sidecar.
+        let executor: Arc<dyn UsageProviderExecutor> =
+            Arc::new(DiscoveryProviderExecutor::for_discovery(
+                scope.clone(),
+                &discovery,
+                Arc::clone(&resolver),
+                config.coordinator.provider_timeout,
+            ));
+        let mut activate = |config: UsageBrokerConfig, _scope: &UsageDiscoveryScope| {
+            ensure_usage_broker_with_executor(config, Arc::clone(&executor))
+        };
+        ensure_usage_broker_with_hooks(
+            &config,
+            &scope,
+            discovery,
+            &mut discover,
+            &mut reconcile,
+            &mut activate,
+        )
+    }
 }
 
-/// Activation core with injectable discovery/reconcile seams.
+/// Whether the configured sidecar binary exists and can be spawned.
+fn sidecar_service_usable(service_executable: Option<&Path>) -> bool {
+    service_executable.is_some_and(|path| {
+        fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.mode() & 0o111 != 0)
+    })
+}
+
+/// Activation core with injectable discovery/reconcile/activation seams.
 ///
-/// Production passes live discovery and the broker CAS reconcile; tests drive
-/// scripted generations and interleavings through the same path. The
-/// activation lock is held across every attempt's discover→read-lease→
-/// reconcile sequence.
+/// Production passes live discovery, the broker CAS reconcile, and either
+/// sidecar-process or in-process activation; tests drive scripted
+/// generations and interleavings through the same path. The activation lock
+/// is held across every attempt's discover→read-lease→reconcile sequence.
 fn ensure_usage_broker_with_hooks(
     config: &UsageBrokerConfig,
     scope: &UsageDiscoveryScope,
@@ -1489,6 +1562,10 @@ fn ensure_usage_broker_with_hooks(
         String,
         Vec<UsageCatalogEntry>,
     ) -> Result<UsageProjectionV1, UsageCoordinationError>,
+    activate: &mut impl FnMut(
+        UsageBrokerConfig,
+        &UsageDiscoveryScope,
+    ) -> Result<UsageBrokerClient, UsageCoordinationError>,
 ) -> Result<UsageBrokerHandle, UsageCoordinationError> {
     let _activation = lock_activation(&config.data_dir)?;
     let mut scan = || discover().unwrap_or_else(|_| fallback.clone());
@@ -1522,7 +1599,7 @@ fn ensure_usage_broker_with_hooks(
             }
             probe_client
         } else {
-            ensure_usage_broker_process(config.clone(), scope)?
+            activate(config.clone(), scope)?
         };
         let expected_projection_id = client.current_projection()?.projection_id;
         match reconcile(
@@ -1580,8 +1657,11 @@ fn usage_broker_handle_for(
 ///
 /// The caller never supplies an executor to this path. The sibling service
 /// performs discovery and provider work in its own process, then survives the
-/// activating client. Tests and legacy in-process seams use the hidden helper
-/// below until their owning consumers migrate.
+/// activating client. When the sidecar is missing, [`ensure_usage_broker`]
+/// falls back to the in-process activation seam below instead of calling here.
+///
+/// Product callers must use [`ensure_usage_broker`], not this seam: it skips
+/// the missing-sidecar fallback and the post-lease catalog reconcile.
 pub fn ensure_usage_broker_process(
     config: UsageBrokerConfig,
     scope: &UsageDiscoveryScope,
@@ -1590,8 +1670,20 @@ pub fn ensure_usage_broker_process(
     if connect_probe(&client) {
         return Ok(client);
     }
-    let executable = config.service_executable.clone().ok_or_else(unavailable)?;
-    let mut command = Command::new(executable);
+    let Some(executable) = config.service_executable.clone() else {
+        return Err(unavailable_with_detail(
+            "no broker service executable configured \
+             (install jackin-usage-broker alongside jackin or set JACKIN_USAGE_BROKER_BIN)",
+        ));
+    };
+    if !sidecar_service_usable(Some(executable.as_path())) {
+        return Err(unavailable_with_detail(format!(
+            "broker service executable is not usable: {} \
+             (install jackin-usage-broker alongside jackin or set JACKIN_USAGE_BROKER_BIN)",
+            executable.display(),
+        )));
+    }
+    let mut command = Command::new(&executable);
     command
         .arg("--data-dir")
         .arg(&config.data_dir)
@@ -1611,9 +1703,18 @@ pub fn ensure_usage_broker_process(
                 .arg("--operator-home")
                 .arg(operator_home);
         }
-        UsageDiscoveryScope::Capsule { .. } => return Err(unavailable()),
+        UsageDiscoveryScope::Capsule { .. } => {
+            return Err(unavailable_with_detail(
+                "broker activation requires host desktop scope",
+            ));
+        }
     }
-    command.spawn().map_err(|_| unavailable())?;
+    command.spawn().map_err(|error| {
+        unavailable_with_detail(format!(
+            "failed to spawn broker service executable {}: {error}",
+            executable.display(),
+        ))
+    })?;
     wait_for_leader(&client)?;
     Ok(client)
 }
@@ -1631,22 +1732,12 @@ pub fn run_usage_broker_service(
         .clone()
         .unwrap_or_else(|| "empty".to_owned());
     let catalog = usage_catalog_entries(&discovery);
-    let mut bindings = BTreeMap::new();
-    for binding in discovery.bindings {
-        bindings
-            .entry(capability_for_binding(
-                &binding,
-                discovery.config_generation.as_deref(),
-            ))
-            .or_insert(binding);
-    }
-    let executor = Arc::new(DiscoveryProviderExecutor {
-        bindings: Mutex::new(bindings),
-        validated_catalog: Mutex::new(None),
+    let executor = Arc::new(DiscoveryProviderExecutor::for_discovery(
         scope,
+        &discovery,
         resolver,
-        probe_budget: config.coordinator.provider_timeout,
-    });
+        config.coordinator.provider_timeout,
+    ));
     run_usage_broker_service_with_executor_and_metadata(
         config,
         executor,
@@ -1730,7 +1821,11 @@ fn run_usage_broker_service_with_executor_and_metadata(
     Ok(())
 }
 
-/// Test/runtime seam that preserves the same process election and transport.
+/// In-process activation seam with the same leader election and transport.
+///
+/// Serves the broker on a background thread in this process. Used by tests,
+/// the FFI bridge, and the [`ensure_usage_broker`] fallback when the sidecar
+/// binary is missing.
 #[doc(hidden)]
 pub fn ensure_usage_broker_with_executor(
     config: UsageBrokerConfig,
@@ -2639,6 +2734,15 @@ fn unavailable() -> UsageCoordinationError {
     UsageCoordinationError {
         kind: UsageCoordinationErrorKind::Unavailable,
         message: "usage broker is unavailable".to_owned(),
+    }
+}
+
+/// Unavailable error that keeps the stable prefix and names the cause, so
+/// activation failures stay diagnosable instead of opaque.
+fn unavailable_with_detail(detail: impl std::fmt::Display) -> UsageCoordinationError {
+    UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::Unavailable,
+        message: format!("usage broker is unavailable: {detail}"),
     }
 }
 

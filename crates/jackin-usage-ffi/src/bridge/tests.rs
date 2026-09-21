@@ -135,7 +135,12 @@ fn open_runtime_activation_failure_is_error_and_keeps_runtime_closed() {
         allow_live_probes: true,
     })
     .expect("host config");
-    let mut broker_config = UsageBrokerConfig::for_data_dir(dir.path().to_owned());
+    // A regular file as data dir makes the activation lock/run dir
+    // uncreatable, so activation fails closed even with the in-process
+    // fallback (missing sidecar alone no longer fails).
+    let blocker = dir.path().join("not-a-dir");
+    std::fs::write(&blocker, b"fixture").expect("blocker file");
+    let mut broker_config = UsageBrokerConfig::for_data_dir(blocker);
     broker_config.service_executable = None;
 
     let error = bridge
@@ -174,9 +179,14 @@ fn failed_production_rotation_retains_last_good_discovery_and_broker() {
 
     write_account_config(&config_root, "fixture_b", "anthropic");
     {
+        // A regular file as data dir makes rotation activation fail closed
+        // even with the in-process fallback (missing sidecar alone now
+        // falls back instead of failing).
+        let blocker = dir.path().join("failed-rotation-blocker");
+        std::fs::write(&blocker, b"fixture").expect("blocker file");
         let mut current = bridge.broker.lock().unwrap();
         let broker = current.as_mut().expect("attached broker");
-        broker.config.data_dir = dir.path().join("failed-rotation-broker");
+        broker.config.data_dir = blocker;
         broker.config.service_executable = Some(dir.path().join("missing-broker"));
     }
 

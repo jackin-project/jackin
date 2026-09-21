@@ -27,6 +27,10 @@ path = "src/bin/role.rs"
 name = "build-jackin-capsule"
 path = "src/bin/build_jackin_capsule/main.rs"
 
+[[bin]]
+name = "jackin-usage-broker"
+path = "src/bin/usage_broker.rs"
+
 [dependencies]
 jackin-brand = { workspace = true }
 anyhow = { workspace = true }
