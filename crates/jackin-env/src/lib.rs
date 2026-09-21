@@ -16,7 +16,9 @@ mod picker;
 mod process_telemetry;
 mod resolve;
 
-pub use accounts::{is_account_env, resolve_instance_env_with};
+pub use accounts::{
+    credential_env_declarations_for_instance, is_account_env, resolve_instance_env_with,
+};
 pub use env_resolver::{
     EnvPrompter, PromptResult, ResolveEnvError, ResolvedEnv, resolve_env,
     resolve_env_with_overrides,
