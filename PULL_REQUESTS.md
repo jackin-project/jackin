@@ -225,7 +225,7 @@ A `Status: Resolved` roadmap page still sitting in directory is smell, not shipp
 
 Following rules apply only to agents. Full text lives in [.github/AGENTS.md](.github/AGENTS.md), which loads automatically when agent works under that directory; summaries here keep shared flow self-contained:
 
-- **Per-PR merge authorization** — agents never merge without explicit "merge it" confirmation; prior session authorizations don't carry forward.
+- **Per-PR merge authorization** — agents never merge without explicit "merge it" confirmation; prior session authorizations don't carry forward. Exception: a session goal that explicitly authorizes autonomous merging constitutes that confirmation for its in-scope PRs.
 - **Base branch** — agent-created PRs target `main` unless operator explicitly names different target.
 - **Force-push authorization** — agents never rewrite existing remote branch without explicit operator approval.
 - **PR-body refresh policy** — refresh on operator request or at merge-readiness, not after every iteration commit.
