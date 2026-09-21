@@ -45,9 +45,10 @@ pub(crate) fn cursor_auth_path() -> PathBuf {
     )
 }
 
-/// Pure `auth.json` parse: the discovery lane mints broker material from a
-/// selected profile root through this; ambient loading stays in
-/// [`load_cursor_auth`]. `None` is a present-but-tokenless file.
+/// Pure `auth.json` parse: the ambient loader, per-profile snapshots, and the
+/// discovery lane mint broker material from a selected profile root through
+/// this, so broker refresh never re-resolves the default home for a
+/// non-default registered root. `None` is a present-but-tokenless file.
 pub(crate) fn cursor_auth_from_value(value: &serde_json::Value) -> Option<CursorAuth> {
     let access_token = ["accessToken", "access_token"]
         .into_iter()
@@ -108,6 +109,15 @@ pub(crate) fn load_cursor_cli_identity() -> Option<String> {
     );
     let value = read_json_file(&path)?;
     cursor_cli_identity_from_value(&value)
+}
+
+/// Display label from one `cli-config.json` value (`authInfo`): email first,
+/// then display name. Never a credential.
+///
+/// Same parse as [`cursor_cli_identity_from_value`]; both names are called
+/// by `usage/cursor/tests.rs`, so they reconcile together.
+pub(crate) fn cursor_identity_from_cli_config(value: &serde_json::Value) -> Option<String> {
+    cursor_cli_identity_from_value(value)
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +192,9 @@ pub(crate) fn fetch_cursor_period_usage(
 }
 
 pub(crate) fn parse_cursor_period_usage(value: &serde_json::Value) -> Option<CursorPeriodUsage> {
-    let usage = value.get("usage")?;
+    // Live `GetCurrentPeriodUsage` returns `planUsage` at the top level; older
+    // captures nested it under `usage`. Accept both, preferring nested.
+    let usage = value.get("usage").unwrap_or(value);
     let plan = usage.get("planUsage")?;
     let total_percent_used = ["totalPercentUsed", "total_percent_used", "percentUsed"]
         .into_iter()
@@ -1044,6 +1056,35 @@ pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
         &auth,
         load_cursor_cli_identity().as_deref(),
         "OAuth · ~/.cursor/auth.json",
+        &cursor_dashboard_base(),
+        now,
+    )
+}
+
+/// Broker-refresh entry: `auth.json` at a registered profile root plus the
+/// sibling `cli-config.json` identity. Never touches the default home.
+pub(crate) fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> FocusedUsageView {
+    let auth = match read_json_file(auth_path)
+        .ok_or_else(|| "Cursor auth.json is missing or unreadable".to_owned())
+        .and_then(|value| {
+            cursor_auth_from_value(&value)
+                .ok_or_else(|| "Cursor access token is missing".to_owned())
+        }) {
+        Ok(auth) => auth,
+        Err(error) => {
+            return cursor_status_view(agent, None, now, UsageSnapshotStatus::NeedsSecret, &error);
+        }
+    };
+    let identity = auth_path
+        .parent()
+        .and_then(|root| read_json_file(&root.join("cli-config.json")))
+        .and_then(|value| cursor_cli_identity_from_value(&value));
+    cursor_snapshot_with_auth(
+        agent,
+        None,
+        &auth,
+        identity.as_deref(),
+        "OAuth · configured profile",
         &cursor_dashboard_base(),
         now,
     )

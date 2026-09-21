@@ -477,6 +477,22 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
         "usage relay peer is not the Capsule supervisor"
     );
 
+    // Root peer reusing the supervisor PID with a different start time fails
+    // the supervisor gate too.
+    let denied = denied_relay_response(
+        authorization.clone(),
+        supervisor(supervisor_pid),
+        root_peer(supervisor_pid, Some(SUPERVISOR_START_TIME + 1)),
+        UsageBrokerOperation::CurrentForCapability {
+            capability: account_a.clone(),
+        },
+    )
+    .await;
+    assert_eq!(
+        error_message(denied),
+        "usage relay peer is not the Capsule supervisor"
+    );
+
     // Session peer presenting a foreign capability fails the capability gate.
     let denied = denied_relay_response(
         authorization,

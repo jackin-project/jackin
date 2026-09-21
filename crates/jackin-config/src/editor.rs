@@ -24,8 +24,7 @@ use crate::app_config::persist::{
 use crate::auth::GithubAuthMode;
 use crate::persist::{
     ConfigWriteGuard, StagedWrite, acquire_config_write_lock, commit_staged_config,
-    publication_journal_path, recover_pending_publication, stage_atomic_write, stage_delete,
-    validate_workspace_file_stem,
+    publication_journal_path, stage_atomic_write, stage_delete, validate_workspace_file_stem,
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
@@ -377,7 +376,8 @@ impl ConfigEditor {
         lock: ConfigWriteGuard,
     ) -> crate::ConfigResult<(Self, BootstrapReport)> {
         paths.ensure_base_dirs()?;
-        recover_pending_publication(&paths.config_file)?;
+        // The passed-in lock's acquisition already forward-rolled any
+        // pending publication.
         let mut report = BootstrapReport::default();
         let initial_contents = if paths.config_file.exists() {
             None
@@ -820,11 +820,8 @@ impl ConfigEditor {
                         deletes.push(delete);
                     }
                 }
-                commit_staged_config(
-                    &publication_journal_path(&self.path),
-                    &mut staged,
-                    &mut deletes,
-                )?;
+                let journal = publication_journal_path(&self.path);
+                commit_staged_config(&journal, &mut staged, &mut deletes)?;
                 Ok(config)
             })(),
         )

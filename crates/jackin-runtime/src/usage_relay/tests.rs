@@ -711,3 +711,128 @@ fn empty_capabilities_do_not_start_a_tunnel_child() {
     .unwrap();
     assert!(guard.task.is_none());
 }
+
+/// S2: the relay dispatch admits exactly the launch allowlist (W1 = A/B/C).
+/// Forged IDs, same-surface siblings, and empty scopes are denied before any
+/// provider work; every admitted account completes its own generation.
+#[tokio::test]
+async fn s2_relay_dispatch_admits_exactly_abc() {
+    let temp = tempfile::tempdir().unwrap();
+    let executor = Arc::new(CountingExecutor {
+        calls: AtomicUsize::new(0),
+    });
+    let concrete = Arc::clone(&executor);
+    let broker_executor: Arc<dyn UsageProviderExecutor> = concrete;
+    let broker = ensure_usage_broker_with_executor(
+        UsageBrokerConfig::for_data_dir(temp.path().join("data")),
+        broker_executor,
+    )
+    .unwrap();
+    let allowlist = UsageCapabilitySet::new([
+        capability("acc-a"),
+        capability("acc-b"),
+        capability("acc-c"),
+    ]);
+
+    // Forged D across every operation shape: denied, zero provider calls.
+    for operation in [
+        UsageBrokerOperation::Current {
+            capability: capability("acc-d"),
+        },
+        UsageBrokerOperation::Refresh {
+            capability: capability("acc-d"),
+            observed_generation: 0,
+            force: true,
+        },
+        UsageBrokerOperation::Join {
+            capability: capability("acc-d"),
+            generation: 1,
+            timeout_ms: 50,
+        },
+        UsageBrokerOperation::CurrentForCapability {
+            capability: capability("acc-d"),
+        },
+        UsageBrokerOperation::JoinForCapability {
+            capability: capability("acc-d"),
+            generation: 1,
+            timeout_ms: 50,
+        },
+    ] {
+        let denied = dispatch(operation, broker.clone(), allowlist.clone()).await;
+        let UsageBrokerResponse::Error { error } = denied else {
+            panic!("forged acc-d returned state");
+        };
+        assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+    }
+    // Same-surface sibling: same provider surface, non-launched account.
+    let denied = dispatch(
+        UsageBrokerOperation::RefreshForCapability {
+            capability: capability("acc-a-evil"),
+            observed_generation: 0,
+            force: true,
+        },
+        broker.clone(),
+        allowlist.clone(),
+    )
+    .await;
+    let UsageBrokerResponse::Error { error } = denied else {
+        panic!("same-surface forgery returned state");
+    };
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    // Empty scope denies even a well-formed, otherwise-known capability.
+    let empty = UsageCapabilitySet::new([]);
+    let denied = dispatch(
+        UsageBrokerOperation::RefreshForCapability {
+            capability: capability("acc-a"),
+            observed_generation: 0,
+            force: true,
+        },
+        broker.clone(),
+        empty,
+    )
+    .await;
+    let UsageBrokerResponse::Error { error } = denied else {
+        panic!("empty scope returned state");
+    };
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+
+    // Each admitted account refreshes and completes independently.
+    for id in ["acc-a", "acc-b", "acc-c"] {
+        let refresh = dispatch(
+            UsageBrokerOperation::RefreshForCapability {
+                capability: capability(id),
+                observed_generation: 0,
+                force: true,
+            },
+            broker.clone(),
+            allowlist.clone(),
+        )
+        .await;
+        let UsageBrokerResponse::State { state } = refresh else {
+            panic!("admitted {id} returned error");
+        };
+        let terminal = dispatch(
+            UsageBrokerOperation::JoinForCapability {
+                capability: capability(id),
+                generation: state.generation,
+                timeout_ms: 2_000,
+            },
+            broker.clone(),
+            allowlist.clone(),
+        )
+        .await;
+        let UsageBrokerResponse::State { state } = terminal else {
+            panic!("admitted {id} join returned error");
+        };
+        assert_eq!(
+            state.phase,
+            UsageRefreshPhase::Completed,
+            "{id} did not complete"
+        );
+        assert_eq!(state.capability.account_id, id);
+    }
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 3);
+}

@@ -900,6 +900,89 @@ fn disc_dedup_legacy_shared_snapshot_never_creates_active_row() {
 }
 
 #[test]
+fn disc_cursor_token_profile_binds_refreshable_material() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let cursor_root = temp.path().join("cursor-work");
+    std::fs::create_dir_all(&cursor_root).unwrap();
+    write_registry(
+        &config_root,
+        &[("cursor-work", Agent::Cursor, &cursor_root)],
+    );
+    std::fs::write(
+        cursor_root.join("auth.json"),
+        r#"{"accessToken":"fixture-token","refreshToken":"fixture-refresh"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        cursor_root.join("cli-config.json"),
+        r#"{"authInfo":{"email":"work@example.test"}}"#,
+    )
+    .unwrap();
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: temp.path().join("home"),
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    assert!(
+        validated.diagnostics.is_empty(),
+        "{:?}",
+        validated.diagnostics
+    );
+    assert_eq!(validated.accounts.len(), 1);
+    assert_eq!(validated.accounts[0].account_label, "work@example.test");
+    assert_eq!(validated.bindings.len(), 1);
+    match &validated.bindings[0].source {
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => {
+            assert_eq!(auth_path, &cursor_root.join("auth.json"));
+        }
+        _ => panic!("cursor token profile must bind refreshable material"),
+    }
+}
+
+#[test]
+fn disc_cursor_tokenless_profile_is_malformed_without_binding() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let cursor_root = temp.path().join("cursor-bare");
+    std::fs::create_dir_all(&cursor_root).unwrap();
+    write_registry(
+        &config_root,
+        &[("cursor-bare", Agent::Cursor, &cursor_root)],
+    );
+    std::fs::write(
+        cursor_root.join("auth.json"),
+        r#"{"refreshToken":"only-refresh"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        cursor_root.join("cli-config.json"),
+        r#"{"authInfo":{"email":"bare@example.test"}}"#,
+    )
+    .unwrap();
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: temp.path().join("home"),
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    assert!(validated.bindings.is_empty());
+    assert!(validated.accounts.is_empty());
+    assert_eq!(validated.diagnostics.len(), 1);
+    assert!(matches!(
+        validated.diagnostics[0].issue,
+        UsageDiscoveryIssue::CredentialMalformed
+    ));
+}
+
+#[test]
 fn disc_cursor_profile_mints_material_with_cli_identity() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("cursor");
@@ -1052,16 +1135,14 @@ fn test_binding(
 fn refresh_cursor_binding_dispatches_to_collector() {
     // Live provider RPC with a fixture token: the dashboard rejects it, so
     // the arm must return the collector's honest Stale view — never
-    // Malformed/Unsupported, which would mean dispatch never happened.
+    // Malformed/Unsupported, which would mean dispatch never happened. The
+    // material carries the profile root; refresh re-reads it.
+    let temp = tempfile::tempdir().unwrap();
+    let auth_path = temp.path().join("auth.json");
+    std::fs::write(&auth_path, r#"{"accessToken":"fixture-opaque-token"}"#).unwrap();
     let binding = test_binding(
         HostSurfaceId::Cursor,
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor {
-            auth: crate::usage::CursorAuth {
-                access_token: "fixture-opaque-token".to_owned(),
-                user_id: None,
-            },
-            identity: None,
-        }),
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }),
     );
     match refresh_credential_binding(&binding, &NoEnvResolver) {
         ProviderCredentialRefreshOutcome::Snapshot(view) => {

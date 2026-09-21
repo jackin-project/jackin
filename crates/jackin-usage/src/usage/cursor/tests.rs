@@ -87,6 +87,69 @@ fn period_parses_with_team_inference() {
 }
 
 #[test]
+fn period_parses_top_level_live_shape() {
+    // Shape observed live 2026-09-21: `planUsage` at top level, no `usage`
+    // wrapper (usage counters rounded; no credentials involved).
+    let live = serde_json::json!({
+        "billingCycleStart": "1789542030000",
+        "billingCycleEnd": "1792134030000",
+        "planUsage": {
+            "totalSpend": 35950,
+            "includedSpend": 35950,
+            "remaining": 4050,
+            "limit": 40000,
+            "autoPercentUsed": 10.289,
+            "apiPercentUsed": 50.82,
+            "totalPercentUsed": 11.597
+        },
+        "spendLimitUsage": {"limitType": "user"},
+        "enabled": true
+    });
+    let usage = parse_cursor_period_usage(&live).expect("live shape parses");
+    assert!(usage.enabled);
+    assert!(!usage.is_team);
+    assert_eq!(usage.limit, Some(40000.0));
+    assert_eq!(usage.total_spend, Some(35950.0));
+    let buckets = cursor_period_buckets(&usage, None, 1_781_728_000);
+    assert_eq!(buckets[0].remaining_percent, Some(88));
+}
+
+#[test]
+fn profile_auth_and_identity_parse_from_values() {
+    let auth = cursor_auth_from_value(&serde_json::json!({"accessToken": "tok"}))
+        .expect("camelCase token");
+    assert_eq!(auth.access_token, "tok");
+    let auth = cursor_auth_from_value(&serde_json::json!({"access_token": "tok2"}))
+        .expect("snake_case token");
+    assert_eq!(auth.access_token, "tok2");
+    assert!(cursor_auth_from_value(&serde_json::json!({"accessToken": "  "})).is_none());
+    assert!(cursor_auth_from_value(&serde_json::json!({})).is_none());
+    assert_eq!(
+        cursor_identity_from_cli_config(
+            &serde_json::json!({"authInfo": {"email": "a@test", "displayName": "A"}})
+        )
+        .as_deref(),
+        Some("a@test")
+    );
+    assert_eq!(
+        cursor_identity_from_cli_config(&serde_json::json!({"authInfo": {"displayName": "A"}}))
+            .as_deref(),
+        Some("A")
+    );
+    assert_eq!(
+        cursor_identity_from_cli_config(&serde_json::json!({})),
+        None
+    );
+}
+
+#[test]
+fn profile_snapshot_missing_auth_needs_secret_without_network() {
+    let temp = tempfile::tempdir().unwrap();
+    let view = cursor_profile_snapshot("cursor", &temp.path().join("auth.json"), 1_781_728_000);
+    assert_eq!(view.status, UsageSnapshotStatus::NeedsSecret);
+}
+
+#[test]
 fn plan_and_grants_parse() {
     assert_eq!(
         parse_cursor_plan_info(&serde_json::json!({"planName": "pro_plus"})),

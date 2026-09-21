@@ -952,7 +952,10 @@ fn window_percent_summary(
     used: Option<u8>,
     used_raw: Option<i32>,
 ) -> Option<String> {
-    percent_side_summary(remaining, remaining_raw, "remaining")
+    // "left" matches the principal-window value labels (projection-owned)
+    // and the Capsule bucket presentation; "remaining" would be a third word
+    // for the same meaning (S4/S5 parity).
+    percent_side_summary(remaining, remaining_raw, "left")
         .or_else(|| percent_side_summary(used, used_raw, "used"))
 }
 
@@ -1336,7 +1339,7 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
         {
             lines.push(Line::from(Span::styled(
                 bar,
-                meter_style(window.meter_percent().unwrap_or(0)),
+                meter_style(window.quota_state),
             )));
         }
     }
@@ -1489,7 +1492,7 @@ fn append_account_full_body(
         if let Some(bar) = meter_line(width, window.meter_percent()) {
             lines.push(Line::from(Span::styled(
                 bar,
-                meter_style(window.meter_percent().unwrap_or(0)),
+                meter_style(window.quota_state),
             )));
         }
         let detail = if window.reset.is_empty() {
@@ -1609,7 +1612,7 @@ fn append_summary_window(lines: &mut Vec<Line<'static>>, window: &UsageWindow, w
     if let Some(bar) = meter_line(width, window.meter_percent()) {
         lines.push(Line::from(Span::styled(
             bar,
-            meter_style(window.meter_percent().unwrap_or(0)),
+            meter_style(window.quota_state),
         )));
     }
     let detail = if window.reset.is_empty() {
@@ -1630,7 +1633,7 @@ fn append_overview_window(lines: &mut Vec<Line<'static>>, window: &UsageWindow, 
     if let Some(bar) = meter_line(width, window.meter_percent()) {
         lines.push(Line::from(Span::styled(
             bar,
-            meter_style(window.meter_percent().unwrap_or(0)),
+            meter_style(window.quota_state),
         )));
     }
     let detail = if window.reset.is_empty() {
@@ -1725,7 +1728,7 @@ fn append_metric_group(
     if let Some(bar) = meter_line(width, group.meter_percent()) {
         lines.push(Line::from(Span::styled(
             bar,
-            meter_style(group.meter_percent().unwrap_or(0)),
+            meter_style(group.quota_state),
         )));
     }
     if let Some(summary) = metric_group_value_summary(group) {
@@ -1821,10 +1824,17 @@ fn meter_line(width: usize, percent: Option<u8>) -> Option<String> {
     ))
 }
 
-fn meter_style(remaining: u8) -> Style {
-    match remaining {
-        0..=15 => Style::default().fg(Color::Red),
-        16..=35 => Style::default().fg(Color::Yellow),
+/// Meter color from the canonical quota state, never from a local percent
+/// threshold. Severity is Rust-owned quota semantics: the projection maps
+/// API `Danger`→`Exhausted` and `Warn`→`Warning`, and the Capsule accent
+/// reads that same severity — so a renderer-inferred 15/35 split would
+/// color the same bucket differently on the two surfaces (S4/S5 parity).
+/// Unknown and permission states keep the neutral default: without usable
+/// quota the bar usually does not render at all.
+fn meter_style(quota_state: UsageQuotaStateV1) -> Style {
+    match quota_state {
+        UsageQuotaStateV1::Exhausted | UsageQuotaStateV1::Error => Style::default().fg(Color::Red),
+        UsageQuotaStateV1::Warning => Style::default().fg(Color::Yellow),
         _ => Style::default().fg(Color::Green),
     }
 }

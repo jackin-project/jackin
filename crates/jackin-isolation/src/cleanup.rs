@@ -110,12 +110,14 @@ pub async fn force_cleanup_isolated(
     }
 
     // Belt-and-suspenders: nuke the worktree directory if git left
-    // anything. Surface fs errors loudly — a failed rm-rf with the
+    // anything. The record path is untrusted state, so removal is
+    // containment-bound to the container state dir and fd-pinned
+    // (`O_NOFOLLOW` at every level): a swapped parent or a symlink in
+    // place of the worktree is refused loudly instead of followed.
+    // Surface fs errors loudly — a failed rm-rf with the
     // worktree still present means cleanup didn't really happen.
     let wt = Path::new(&record.worktree_path);
-    if wt.exists()
-        && let Err(e) = std::fs::remove_dir_all(wt)
-    {
+    if let Err(e) = crate::safe_remove::safe_remove_dir_contained(container_state_dir, wt) {
         return Err(crate::IsolationError::WorktreeRemove {
             path: record.worktree_path.clone(),
             state_dir: container_state_dir.to_path_buf(),
@@ -126,7 +128,9 @@ pub async fn force_cleanup_isolated(
 
     // Final guard: if the worktree path still exists at this point
     // (shouldn't happen given the rm above), bail rather than forget.
-    if wt.exists() {
+    // `symlink_metadata` (not `exists`) so a dangling or hostile symlink
+    // left behind is still caught.
+    if wt.symlink_metadata().is_ok() {
         return Err(crate::IsolationError::WorktreeStillPresent {
             path: record.worktree_path.clone(),
             state_dir: container_state_dir.to_path_buf(),
@@ -140,14 +144,17 @@ pub async fn force_cleanup_isolated(
 
 fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> anyhow::Result<()> {
     let clone_path = Path::new(&record.worktree_path);
-    if clone_path.exists() {
-        std::fs::remove_dir_all(clone_path).map_err(|e| crate::IsolationError::CloneRemove {
+    // Same owned-validated-path removal as the worktree path: the record
+    // path is untrusted, so containment-bound fd-pinned deletion refuses
+    // escapes and symlinks instead of following them.
+    crate::safe_remove::safe_remove_dir_contained(container_state_dir, clone_path).map_err(
+        |e| crate::IsolationError::CloneRemove {
             path: record.worktree_path.clone(),
             state_dir: container_state_dir.to_path_buf(),
             source: e,
-        })?;
-    }
-    if clone_path.exists() {
+        },
+    )?;
+    if clone_path.symlink_metadata().is_ok() {
         return Err(crate::IsolationError::CloneStillPresent {
             path: record.worktree_path.clone(),
             state_dir: container_state_dir.to_path_buf(),

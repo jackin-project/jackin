@@ -477,8 +477,7 @@ pub(super) enum ProfileCredentialMaterial {
         auth_path: PathBuf,
     },
     Cursor {
-        auth: crate::usage::CursorAuth,
-        identity: Option<String>,
+        auth_path: PathBuf,
     },
     Gemini {
         creds_path: PathBuf,
@@ -1497,27 +1496,27 @@ fn anonymous_when_present(reader: &dyn ProfileCredentialReader, path: &Path) -> 
 }
 
 /// Cursor identity comes from the sibling `cli-config.json` (`authInfo`
-/// email), verified locally; the bearer token is minted as refresh material
-/// from `auth.json`. A present-but-tokenless `auth.json` is malformed, never
-/// an anonymous binding refresh cannot serve.
+/// email), verified locally; token presence in `auth.json` is proven at
+/// discovery and the path is kept as refresh material, so refresh re-reads
+/// the registered root instead of a stale discovery-time copy. A
+/// present-but-tokenless `auth.json` is malformed, never an anonymous
+/// binding refresh cannot serve.
 fn cursor_profile_identity(reader: &dyn ProfileCredentialReader, root: &Path) -> ProfileValidation {
-    let value = match read_json(reader, &root.join("auth.json")) {
+    let auth_path = root.join("auth.json");
+    let value = match read_json(reader, &auth_path) {
         Ok(Some(value)) => value,
         Ok(None) => return ProfileValidation::Missing,
         Err(outcome) => return outcome,
     };
-    let Some(auth) = crate::usage::cursor_auth_from_value(&value) else {
+    if crate::usage::cursor_auth_from_value(&value).is_none() {
         return ProfileValidation::Malformed;
-    };
-    let identity = read_json(reader, &root.join("cli-config.json"))
+    }
+    let material = Some(Box::new(ProfileCredentialMaterial::Cursor { auth_path }));
+    let label = read_json(reader, &root.join("cli-config.json"))
         .ok()
         .flatten()
         .and_then(|config| crate::usage::cursor_cli_identity_from_value(&config));
-    let material = Some(Box::new(ProfileCredentialMaterial::Cursor {
-        auth,
-        identity: identity.clone(),
-    }));
-    match identity {
+    match label {
         Some(label) => ProfileValidation::Authenticated {
             provider_id: None,
             account_label: Some(label),
@@ -1890,18 +1889,13 @@ pub(super) fn refresh_credential_binding(
                 chrono::Utc::now().timestamp(),
             )
         }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor {
-            auth,
-            identity,
-        }) => crate::usage::cursor_snapshot_with_auth(
-            binding.surface.agent_slug(),
-            binding.surface.provider_label(),
-            auth,
-            identity.as_deref(),
-            "OAuth · configured profile",
-            &crate::usage::cursor_dashboard_base(),
-            chrono::Utc::now().timestamp(),
-        ),
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => {
+            crate::usage::cursor_profile_snapshot(
+                binding.surface.agent_slug(),
+                auth_path,
+                chrono::Utc::now().timestamp(),
+            )
+        }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Gemini { creds_path }) => {
             // Re-prove OAuth presence at refresh: a file deleted after
             // discovery is NeedsSecret, never a stale Unsupported.

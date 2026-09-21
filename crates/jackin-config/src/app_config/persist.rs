@@ -19,8 +19,7 @@ use crate::editor::ConfigEditor;
 use crate::migrations;
 use crate::persist::{
     acquire_config_write_lock, commit_staged_config, ensure_replaceable_target,
-    publication_journal_path, recover_pending_publication, stage_atomic_write,
-    validate_workspace_file_stem,
+    publication_journal_path, stage_atomic_write, validate_workspace_file_stem,
 };
 use crate::schema::WorkspaceConfig;
 use crate::validation::validate_workspace_config;
@@ -552,7 +551,7 @@ pub fn load_split_config(
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
     let _lock = acquire_config_write_lock(&paths.config_file)?;
-    recover_pending_publication(&paths.config_file)?;
+    // Lock acquisition already forward-rolled any pending publication.
     let loaded = load_split_config_locked(paths, contents_opt)?;
     loaded.validate()?;
     loaded.commit(&publication_journal_path(&paths.config_file))
@@ -1002,7 +1001,7 @@ impl AppConfig {
     ) -> crate::ConfigResult<(Self, crate::BootstrapReport)> {
         paths.ensure_base_dirs()?;
         let lock = acquire_config_write_lock(&paths.config_file)?;
-        recover_pending_publication(&paths.config_file)?;
+        // Lock acquisition already forward-rolled any pending publication.
         let loaded = (|| {
             let contents_opt = load_config_contents(paths)?;
             let loaded = load_split_config_locked(paths, contents_opt)?;

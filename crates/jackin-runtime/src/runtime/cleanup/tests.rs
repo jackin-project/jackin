@@ -1335,3 +1335,53 @@ async fn prune_jackin_home_is_ok_when_absent() {
     // jackin_home never created — must not panic
     prune_jackin_home(&paths);
 }
+
+// ── owned-validated-path removal ─────────────────────────────────────────
+
+#[tokio::test]
+async fn purge_container_state_refuses_path_escape() {
+    // A container name escaping the data dir must be refused — never
+    // recursively deleted — even though `data_dir.join(name)` resolves.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.data_dir).unwrap();
+    let outside = paths.data_dir.parent().unwrap().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let canary = outside.join("canary.txt");
+    std::fs::write(&canary, "canary").unwrap();
+
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::NotFound])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+    let error = purge_container_state(&paths, "../outside", &docker, &mut runner)
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("escapes") || error.to_string().contains("refusing"),
+        "got: {error}"
+    );
+    assert_eq!(std::fs::read_to_string(&canary).unwrap(), "canary");
+}
+
+#[tokio::test]
+async fn prune_dir_refuses_symlink() {
+    // A symlink where the pruned directory should be is refused loudly;
+    // both the link and its target survive.
+    let temp = tempdir().unwrap();
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let canary = outside.join("canary.txt");
+    std::fs::write(&canary, "canary").unwrap();
+    let link = temp.path().join("cache");
+    std::os::unix::fs::symlink(&outside, &link).unwrap();
+
+    let error = prune_dir(&link, "Cache", "removing cache", "cache").unwrap_err();
+    assert!(format!("{error:#}").contains("symlink"), "got: {error:#}");
+    assert_eq!(std::fs::read_to_string(&canary).unwrap(), "canary");
+    assert!(
+        std::fs::symlink_metadata(&link).is_ok_and(|meta| meta.file_type().is_symlink()),
+        "refused symlink must be left for the operator"
+    );
+}
