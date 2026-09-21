@@ -9,6 +9,9 @@ on:
       selected_units:
         required: true
         type: string
+      selected_unit_ids:
+        required: true
+        type: string
       scope:
         required: true
         type: string
@@ -21,7 +24,10 @@ on:
       head_sha:
         required: true
         type: string
-      lane:
+      plan_digest:
+        required: true
+        type: string
+      provider:
         required: true
         type: string
       mise_tools:
@@ -108,6 +114,14 @@ on:
         required: false
         type: boolean
         default: false
+      unit_platform:
+        required: false
+        type: string
+        default: ""
+      unit_trust:
+        required: false
+        type: string
+        default: ""
       unit_dependencies:
         required: false
         type: string
@@ -118,9 +132,9 @@ on:
         default: ""
 
 jobs:
-  verify-github:
-    name: GitHub
-    if: ${{ inputs.lane == 'github' && contains(format(',{0},', inputs.selected_units), format(',{0},', inputs.unit)) && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  verify-github-hosted:
+    name: "GitHub · hosted"
+    if: ${{ inputs.provider == 'github-hosted' && contains(inputs.selected_units, format('"unit_id":"{0}"', inputs.unit)) && (true) }}
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -146,13 +160,13 @@ jobs:
           UNIT_ID: ${{ inputs.unit }}
           UNIT_DEPENDENCIES: ${{ inputs.unit_dependencies }}
           UNIT_ADMISSION: ${{ inputs.unit_admission }}
-          UNIT_LANE: ${{ inputs.lane }}
+          UNIT_PROVIDER: ${{ inputs.provider }}
         run: |
           {
             echo '## Unit dependencies'
             echo
             echo "- Unit: $UNIT_ID"
-            echo "- Lane: $UNIT_LANE"
+            echo "- Provider: $UNIT_PROVIDER"
             echo "- Admission: $UNIT_ADMISSION"
             if [[ -z "$UNIT_DEPENDENCIES" ]]; then
               echo '- Dependencies: none'
@@ -162,12 +176,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Set up Velnor workflow runtime
         id: runtime
-        if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@01bc16b2ad074eb3980d7b12a7b441192a7c3bc0
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
         with:
-          rev: 01bc16b2ad074eb3980d7b12a7b441192a7c3bc0
+          rev: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=01bc16b2ad074eb3980d7b12a7b441192a7c3bc0" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -186,18 +199,20 @@ jobs:
           SELECTION_BASE_SHA: ${{ inputs.base_sha }}
           SELECTION_HEAD_SHA: ${{ inputs.head_sha }}
           SELECTION_SCOPE: ${{ inputs.scope }}
-          SELECTION_UNITS: ${{ inputs.selected_units }}
+          SELECTION_UNITS: ${{ inputs.selected_unit_ids }}
           SELECTION_FULL_UNITS: ${{ inputs.full_units }}
+          SELECTION_PLAN_DIGEST: ${{ inputs.plan_digest }}
         run: |
           set -euo pipefail
           mkdir -p .velnor-ci-selection
           {
-            printf 'version=1\n'
+            printf 'version=2\n'
             printf 'base_sha=%s\n' "$SELECTION_BASE_SHA"
             printf 'head_sha=%s\n' "$SELECTION_HEAD_SHA"
             printf 'scope=%s\n' "$SELECTION_SCOPE"
             printf 'units=%s\n' "$SELECTION_UNITS"
             printf 'full_units=%s\n' "$SELECTION_FULL_UNITS"
+            printf 'plan_digest=%s\n' "$SELECTION_PLAN_DIGEST"
           } > .velnor-ci-selection/velnor-ci-selection
       - name: Mark selection transport end
         if: always()
@@ -237,9 +252,9 @@ jobs:
         with:
           path: |
             ${{ inputs.cache_paths }}
-          key: ci-${{ runner.os }}-${{ runner.arch }}-swift-${{ hashFiles(inputs.cache_key_files) }}
+          key: ci-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-swift-${{ hashFiles(inputs.cache_key_files) }}
           restore-keys: |
-            ci-${{ runner.os }}-${{ runner.arch }}-swift-
+            ci-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-swift-
       - name: Mark cache prep end
         if: always()
         run: |
@@ -304,7 +319,7 @@ jobs:
         with:
           path: |
             ${{ inputs.cache_paths }}
-          key: ci-${{ runner.os }}-${{ runner.arch }}-swift-${{ hashFiles(inputs.cache_key_files) }}
+          key: ci-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-swift-${{ hashFiles(inputs.cache_key_files) }}
       - name: Mark cleanup end
         if: always()
         run: |
@@ -319,17 +334,19 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@01bc16b2ad074eb3980d7b12a7b441192a7c3bc0
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github
+          cache_declared_layers: cargo
+          cache_cargo_outcome: ${{ steps.cache.outcome }}
           cache_cargo_primary: ${{ steps.cache.outputs.cache-primary-key }}
           cache_cargo_matched: ${{ steps.cache.outputs.cache-matched-key }}
       - name: Record unit result
-        if: ${{ always() && inputs.unit_admission == 'github' }}
+        if: ${{ always() }}
         env:
           VELNOR_RESULT_UNIT: ${{ inputs.unit }}
-          VELNOR_RESULT_LANE: github
+          VELNOR_RESULT_LANE: github-hosted
           VELNOR_RESULT_OUTCOME: ${{ job.status }}
         shell: bash
         run: |
@@ -342,11 +359,11 @@ jobs:
           mkdir -p .velnor-ci-results
           jq -n --arg unit "$VELNOR_RESULT_UNIT" --arg lane "$VELNOR_RESULT_LANE" --arg outcome "$outcome" '{results: [{unit: $unit, lane: $lane, outcome: $outcome}]}' > ".velnor-ci-results/result-$VELNOR_RESULT_UNIT-$VELNOR_RESULT_LANE.json"
       - name: Upload unit result
-        if: ${{ always() && inputs.unit_admission == 'github' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-result-${{ inputs.unit }}-github
-          path: .velnor-ci-results/result-${{ inputs.unit }}-github.json
+          name: velnor-result-${{ inputs.unit }}-github-hosted
+          path: .velnor-ci-results/result-${{ inputs.unit }}-github-hosted.json
           if-no-files-found: error
           overwrite: true
           retention-days: 7

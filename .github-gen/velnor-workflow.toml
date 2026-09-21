@@ -1,59 +1,40 @@
-schema = 1
+schema = 2
 
 [generator]
 repository = "jackin-project/jackin"
-# D19 pin: immutable Velnor source for this generated tree. The matching
-# published runtime is velnor-workflow-runtime-v1-f1e4338feb077e70
-# (closure f1e4338feb077e700b0c9b3c881967a2273e6ff199c4292386385ee7a6d9764b).
-revision = "01bc16b2ad074eb3980d7b12a7b441192a7c3bc0"
+revision = "4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
 
-# Runner placement: keep both backends for manual dispatch; automatic events
-# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
-# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
+# Public repo: GitHub-hosted singleton (no velnor lanes). Automatic events
+# stay GitHub-only so ci-required is not blocked by queued self-hosted jobs
+# when the Velnor fleet is unavailable.
 [workflow]
-runners = "github"
-automatic = "github"
-default_dispatch_runner = "github"
-automatic_lanes = "github"
-github_runner = "ubuntu-26.04"
-macos_runner = "macos-26"
-velnor_labels = ["self-hosted", "velnor-target-mvp"]
+providers = ["github-hosted"]
+automatic_providers = ["github-hosted"]
+default_branch = "main"
+
+[workflow.selectors.github-hosted]
+runs_on = ["ubuntu-26.04"]
 
 [policy]
-ruleset_required_status_checks = ["ci-required"]
+ruleset_required_status_checks = ["ci-required", "Policy"]
 ruleset_external_status_checks = ["DCO"]
 
-# Self-hosted Renovate: schedule + writer identity from the #994 copy
-# (renovate.yml: cron "0 6 * * *", secrets.RENOVATE_TOKEN, RENOVATE_GIT_AUTHOR).
-# lanes = "github": the copy defaulted to velnor, but velnor/both lanes
-# require [workflow] velnor_trusted_label, and no trusted-label fact exists in
-# this repo. Revisit for velnor/both once the fleet label is known.
-# The copy sets RENOVATE_ALLOWED_UNSAFE_EXECUTIONS=mise (intended: let
-# `mise lock` refresh mise.lock in Renovate PRs), but renovate.json
-# configures no post-upgrade execution, so the knob has no live effect and
-# nothing is lost by omitting it. If post-upgrade execution is ever
-# configured, [renovate] allowed_commands renders RENOVATE_ALLOWED_COMMANDS.
-[renovate]
-enabled = true
-reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
-schedule = "0 6 * * *"
-token = "RENOVATE_TOKEN"
-config = "renovate.json"
-validate = true
-lanes = "github"
-author = "Renovate Bot <renovate@whitesourcesoftware.com>"
-signoff = true
+# Self-hosted Renovate (writer on hosted ubuntu-26.04, schedule "0 6 * * *",
+# secrets.RENOVATE_TOKEN, author Renovate Bot): s2 [renovate] requires the
+# velnor provider, which this public hosted-only singleton cannot declare, so
+# the two workflows carry verbatim as static files (byte-identical to the s1
+# render; self-contained — no generator pin references). Revisit if s2 ever
+# renders the writer on the control-plane runner.
+[[static_files]]
+file = ".github/workflows/renovate.yml"
+source = ".github-gen/static/workflows/renovate.yml"
 
-[[declare]]
-primitive = "renovate"
-file = "renovate.yml"
-
-[[declare]]
-primitive = "renovate-validate"
-file = "renovate-validate.yml"
+[[static_files]]
+file = ".github/workflows/renovate-validate.yml"
+source = ".github-gen/static/workflows/renovate-validate.yml"
 
 # Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
 # Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
@@ -149,8 +130,8 @@ name = "Renovate upstream sources"
 events = ["push", "pull_request"]
 branches = ["main"]
 
-# Unit contracts the scan cannot derive. Command arrays are rejected by
-# velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
+# Unit contracts the scan cannot derive. Command arrays are rejected;
+# typed capabilities only (`ci_tasks`, `mise_tools`).
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived
 # `docker build` is self-contained.
 [[units]]
@@ -158,11 +139,11 @@ id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
 # XCFramework must exist before `swift build` resolves the binary target.
-# Run desktop-xcframework in the same macOS job as swift-package-native so
-# the binary target path is populated on one runner (separate jobs do not
+# The ci task rebuilds it in-job on one macOS runner (separate jobs do not
 # share target/xcframework).
-# capabilities = ["xcframework"]: Q4 obligation — without it this Apple-bound
-# unit renders ubuntu + Linux plan-artifact runtime (slice 9 split).
+# platform = "macos-arm64": s2 spelling of the s1 capabilities=["xcframework"]
+# Q4 obligation — without it this Apple-bound unit renders ubuntu + Linux
+# plan-artifact runtime.
 # depends_on (F2): FFI touches select this Swift consumer; selection coupling
 # only, no forced serialization (the unit rebuilds the XCFramework in-job).
 [[units]]
@@ -172,7 +153,7 @@ root = "native"
 watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
 ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-capabilities = ["xcframework"]
+platform = "macos-arm64"
 depends_on = ["rust-jackin-usage-ffi"]
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
@@ -183,10 +164,11 @@ mise_tools = ["rust", "cargo-binstall"]
 
 # Q4 obligation, second Swift unit (scanned): AppKit prototype, genuinely
 # Apple-bound, but scan evidence cannot prove it. Row-over-scan merge keeps
-# the scanned base and overrides the platform requirement only.
+# the scanned base and overrides the platform requirement only (s2 spelling
+# of the s1 capabilities=["xcode"] row).
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
-capabilities = ["xcode"]
+platform = "macos-arm64"
 
 # Desktop release (L10): tag-triggered tasks release over the canonical
 # desktop mise tasks. Each event runs exactly one self-contained job
