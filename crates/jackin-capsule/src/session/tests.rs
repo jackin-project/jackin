@@ -2211,6 +2211,38 @@ fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
 }
 
 #[test]
+fn agent_home_matches_folder_var_target_for_parent_and_xdg_kinds() {
+    // `HOME` echoes the instance home (the folder-var target) for every
+    // folder-var kind — not just `Dir`. Values pinned by the slot-layout
+    // tests; the spawn layer must carry them through unchanged.
+    for (agent, home_dir, folder_var) in [
+        ("gemini", "/home/agent", "GEMINI_CLI_HOME"),
+        ("amp", "/home/agent/.local/share", "XDG_DATA_HOME"),
+    ] {
+        let spec = AgentSpawnSpec {
+            agent,
+            instance: "test-instance",
+            home_dir,
+            forwarded_dir: "/jackin/test-instance",
+            model: None,
+            effort: None,
+            auth_mode: Some("sync"),
+            env_passthrough: &[],
+            cwd: Path::new("/workspace"),
+            codename: "test",
+            identity: jackin_protocol::SessionIdentity {
+                uid: 2_001,
+                gid: 2_001,
+            },
+        };
+        let cmd = build_agent_command(&spec);
+        let env = |name: &str| cmd.get_env(name).and_then(|v| v.to_str());
+        assert_eq!(env(folder_var), Some(home_dir), "{agent} folder var");
+        assert_eq!(env("HOME"), Some(home_dir), "{agent} HOME");
+    }
+}
+
+#[test]
 fn same_agent_instances_keep_model_home_endpoint_and_credential_bound_to_config_id() {
     let credentials: jackin_protocol::AgentCredentialEnv =
         serde_json::from_value(serde_json::json!({

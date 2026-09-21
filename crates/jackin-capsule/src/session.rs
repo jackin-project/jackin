@@ -1779,9 +1779,12 @@ fn is_folder_env(name: &str) -> bool {
 /// var is set to its own home: a stale or foreign value can never leak
 /// this pane into another account's credentials or history. `HOME` is
 /// account-owned the same way (`account_env` strips the ambient value),
-/// so it is re-pointed at the instance home below: the slot root is the
-/// only mutable account path outside the private session root, while
-/// `/home/agent` itself is Landlock read-only.
+/// so it is re-pointed at the instance home below. That is the
+/// folder-var target: a private writable slot root for `Dir`-kind and
+/// folder-less agents, the traverse-only `/home/agent` for primary
+/// `Parent`-kind slots, and the shared XDG data root for `XdgRoot`
+/// agents. `HOME` always equals the folder var, so agent state
+/// resolution stays self-consistent and nothing leaks cross-account.
 #[must_use]
 pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
     let mut cmd = isolated_command(
@@ -1815,9 +1818,12 @@ pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
         cmd.env(var.name, spec.home_dir);
     }
     // `HOME` was stripped with the other account-owned roots above; point it
-    // at this instance's home so shells, hooks, and `$HOME`-relative tool
-    // state land in the pane's own writable slot root — never in another
-    // account's home and never in the read-only `/home/agent`.
+    // at this instance's home (the folder-var target) so the entrypoint,
+    // hooks, and `$HOME`-relative tool state resolve inside this account's
+    // own roots instead of crashing on an unbound `HOME` or leaking into
+    // another account's home. Writability of the `HOME` root itself varies
+    // by folder-var kind (see above); the granted credential child always
+    // holds the durable state.
     cmd.env("HOME", spec.home_dir);
     cmd.env("JACKIN_AGENT", spec.agent);
     cmd.env(jackin_protocol::INSTANCE_ENV, spec.instance);
