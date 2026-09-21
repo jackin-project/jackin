@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use jackin_protocol::control::{FocusedUsageView, UsageSnapshotStatus};
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageCoordinationErrorKind,
-    UsageGenerationView, UsageRefreshPhase,
+    UsageCredentialScope, UsageGenerationView, UsageRefreshPhase,
 };
 
 pub use state::{
@@ -99,6 +99,22 @@ pub trait UsageProviderExecutor: Send + Sync {
         entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
         self.validate_catalog(entries)
+    }
+
+    /// Authorize one launch-scoped source proof before provider work starts.
+    ///
+    /// Executors without source inventory fail closed. The production
+    /// discovery executor overrides this with exact declaration/material
+    /// matching; test doubles must opt into authorization explicitly.
+    fn authorize_credential_scope(
+        &self,
+        _capability: &UsageAccountCapability,
+        _scope: &UsageCredentialScope,
+    ) -> Result<(), UsageCoordinationError> {
+        Err(UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unauthorized,
+            message: "launch credential source authorization unavailable".to_owned(),
+        })
     }
 }
 
@@ -364,6 +380,18 @@ impl UsageCoordinator {
         config: UsageCoordinatorConfig,
     ) -> Self {
         Self::start(executor, store, config, None, None)
+    }
+
+    /// Verify a launch-scoped credential proof against the executor's current
+    /// source binding before admitting a provider operation.
+    pub fn authorize_credential_scope(
+        &self,
+        capability: &UsageAccountCapability,
+        scope: &UsageCredentialScope,
+    ) -> Result<(), UsageCoordinationError> {
+        self.shared
+            .executor
+            .authorize_credential_scope(capability, scope)
     }
 
     /// Start a coordinator with the catalog from the last durable broker

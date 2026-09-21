@@ -3,17 +3,22 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::os::unix::fs::symlink;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
+use crate::host::{HostSurfaceId, OpaqueCredentialHandle};
+use jackin_config::AppConfig;
+use jackin_core::{UsageCredentialEnvName, WorkspaceName};
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
 };
 use jackin_protocol::usage_broker::{
-    UsageCatalogEntry, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageProjectionRefreshStateV1,
-    UsageRefreshPhase,
+    UsageCatalogEntry, UsageCredentialScope, UsageCredentialSourceIdentity,
+    UsageCredentialSourceProof, UsageFreshnessPhaseV1, UsageIdentityKindV1,
+    UsageProjectionRefreshStateV1, UsageRefreshPhase, usage_credential_material_fingerprint,
 };
 
 use super::*;
@@ -42,10 +47,24 @@ impl ProviderCredentialEnvResolver for RetryRecordingResolver {
 
     fn resolve_provider_credentials(
         &self,
-        _config: &jackin_config::AppConfig,
-        _workspace: Option<&jackin_core::WorkspaceName>,
+        _config: &AppConfig,
+        _workspace: Option<&WorkspaceName>,
         _role: Option<&str>,
-        _keys: &[jackin_core::UsageCredentialEnvName],
+        _keys: &[UsageCredentialEnvName],
+    ) -> Vec<ProviderCredentialEnvResolution> {
+        Vec::new()
+    }
+}
+
+struct NoopCredentialResolver;
+
+impl ProviderCredentialEnvResolver for NoopCredentialResolver {
+    fn resolve_provider_credentials(
+        &self,
+        _config: &AppConfig,
+        _workspace: Option<&WorkspaceName>,
+        _role: Option<&str>,
+        _keys: &[UsageCredentialEnvName],
     ) -> Vec<ProviderCredentialEnvResolution> {
         Vec::new()
     }
@@ -98,6 +117,154 @@ fn quota_view() -> FocusedUsageView {
         severity: UsageSeverity::Normal,
     }];
     view
+}
+
+fn env_material(source_name: &str, material: &str) -> ProviderCredentialSourceMaterial {
+    ProviderCredentialSourceMaterial {
+        source: UsageCredentialSourceIdentity::HostEnv {
+            name: source_name.to_owned(),
+        },
+        material_fingerprint: usage_credential_material_fingerprint(material),
+    }
+}
+
+fn env_scope(
+    account_id: &str,
+    surface_id: &str,
+    key: &str,
+    material: &ProviderCredentialSourceMaterial,
+) -> UsageCredentialScope {
+    UsageCredentialScope {
+        sources: BTreeSet::from([UsageCredentialSourceProof {
+            account_id: account_id.to_owned(),
+            surface_id: surface_id.to_owned(),
+            key: key.to_owned(),
+            source: material.source.clone(),
+            material_fingerprint: material.material_fingerprint.clone(),
+        }]),
+    }
+}
+
+#[test]
+fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
+    let capability = UsageAccountCapability {
+        account_id: "shared-account".to_owned(),
+        surface_id: "amp".to_owned(),
+    };
+    let staged = env_material("JACKIN_AGENT_A_KEY", "S1");
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Amp,
+        identity: None,
+        source_id: "source-a".to_owned(),
+        capability_id: "capability-a".to_owned(),
+        credential_revision: "credential-revision-a".to_owned(),
+        provenance: BTreeSet::from(["account shared-account".to_owned()]),
+        source: ValidatedCredentialSource::Env {
+            handle: OpaqueCredentialHandle::new("handle-a"),
+            key: "AMP_API_KEY".to_owned(),
+            material: Some(staged.clone()),
+        },
+    };
+    let executor = DiscoveryProviderExecutor {
+        bindings: Mutex::new(BTreeMap::from([(capability.clone(), binding)])),
+        validated_catalog: Mutex::new(None),
+        scope: UsageDiscoveryScope::HostDesktop {
+            config_root: PathBuf::new(),
+            operator_home: PathBuf::new(),
+        },
+        resolver: Arc::new(NoopCredentialResolver),
+        probe_budget: Duration::from_secs(1),
+    };
+    let staged_scope = env_scope("shared-account", "amp", "AMP_API_KEY", &staged);
+    executor
+        .authorize_credential_scope(&capability, &staged_scope)
+        .expect("staged source should authorize");
+
+    let rotated = env_material("JACKIN_AGENT_A_KEY", "S2");
+    executor
+        .bindings
+        .lock()
+        .unwrap()
+        .get_mut(&capability)
+        .unwrap()
+        .source = ValidatedCredentialSource::Env {
+        handle: OpaqueCredentialHandle::new("handle-a-rotated"),
+        key: "AMP_API_KEY".to_owned(),
+        material: Some(rotated),
+    };
+    let error = executor
+        .authorize_credential_scope(&capability, &staged_scope)
+        .unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+
+    let repointed = env_material("JACKIN_AGENT_B_KEY", "S1");
+    executor
+        .bindings
+        .lock()
+        .unwrap()
+        .get_mut(&capability)
+        .unwrap()
+        .source = ValidatedCredentialSource::Env {
+        handle: OpaqueCredentialHandle::new("handle-b-repointed"),
+        key: "AMP_API_KEY".to_owned(),
+        material: Some(repointed.clone()),
+    };
+    let error = executor
+        .authorize_credential_scope(&capability, &staged_scope)
+        .unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+
+    let mixed_scope = UsageCredentialScope {
+        sources: staged_scope
+            .sources
+            .iter()
+            .cloned()
+            .chain(env_scope("shared-account", "amp", "AMP_API_KEY", &repointed).sources)
+            .collect(),
+    };
+    let error = executor
+        .authorize_credential_scope(&capability, &mixed_scope)
+        .unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
+}
+
+#[test]
+fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() {
+    let capability = UsageAccountCapability {
+        account_id: "zhipu-account".to_owned(),
+        surface_id: "zai".to_owned(),
+    };
+    let staged = env_material("ZAI_HOST_SECRET", "S1");
+    let executor = DiscoveryProviderExecutor {
+        bindings: Mutex::new(BTreeMap::from([(
+            capability.clone(),
+            ValidatedCredentialBinding {
+                surface: HostSurfaceId::Zai,
+                identity: None,
+                source_id: "source-zai".to_owned(),
+                capability_id: "capability-zai".to_owned(),
+                credential_revision: "credential-revision-zai".to_owned(),
+                provenance: BTreeSet::from(["account zhipu-account".to_owned()]),
+                source: ValidatedCredentialSource::Env {
+                    handle: OpaqueCredentialHandle::new("handle-zai"),
+                    key: "ZAI_API_KEY".to_owned(),
+                    material: Some(staged.clone()),
+                },
+            },
+        )])),
+        validated_catalog: Mutex::new(None),
+        scope: UsageDiscoveryScope::HostDesktop {
+            config_root: PathBuf::new(),
+            operator_home: PathBuf::new(),
+        },
+        resolver: Arc::new(NoopCredentialResolver),
+        probe_budget: Duration::from_secs(1),
+    };
+
+    let scope = env_scope("zhipu-account", "zai", "ZHIPU_API_KEY", &staged);
+    executor
+        .authorize_credential_scope(&capability, &scope)
+        .expect("provider-native key alias should authorize");
 }
 
 #[test]
@@ -283,17 +450,17 @@ struct FixedHandleResolver;
 impl ProviderCredentialEnvResolver for FixedHandleResolver {
     fn resolve_provider_credentials(
         &self,
-        config: &jackin_config::AppConfig,
-        _workspace: Option<&jackin_core::WorkspaceName>,
+        config: &AppConfig,
+        _workspace: Option<&WorkspaceName>,
         _role: Option<&str>,
-        keys: &[jackin_core::UsageCredentialEnvName],
+        keys: &[UsageCredentialEnvName],
     ) -> Vec<ProviderCredentialEnvResolution> {
         keys.iter()
             .filter(|entry| config.env.contains_key(entry.name))
             .map(|entry| ProviderCredentialEnvResolution {
                 key: entry.name.to_owned(),
                 outcome: crate::host::ProviderCredentialEnvOutcome::Resolved(
-                    crate::host::OpaqueCredentialHandle::new("fixture-credential-1"),
+                    OpaqueCredentialHandle::new("fixture-credential-1"),
                 ),
             })
             .collect()
@@ -322,7 +489,7 @@ fn failed_generation(
 fn broker_failure_without_snapshot_surfaces_honest_gap_in_snapshot() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
-    let mut config = jackin_config::AppConfig::default();
+    let mut config = AppConfig::default();
     config.accounts.insert(
         "codex-key".to_owned(),
         jackin_config::AccountConfig {
@@ -445,6 +612,10 @@ fn broker_failure_for_anonymous_source_stays_surface_scoped() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One table-style forwarding matrix: six source fixtures share one discovery setup; splitting would duplicate the binding fixtures per case."
+)]
 fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
 
@@ -455,6 +626,12 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     let env_identity = CanonicalAccountIdentity {
         surface: HostSurfaceId::Amp,
         subject: CanonicalAccountSubject::ProviderStableHandle("env@example.test".to_owned()),
+    };
+    let env_material = ProviderCredentialSourceMaterial {
+        source: UsageCredentialSourceIdentity::HostEnv {
+            name: "AMP_API_KEY".to_owned(),
+        },
+        material_fingerprint: usage_credential_material_fingerprint("env-secret"),
     };
     let scope = "workspace sample role test";
     let discovery = ValidatedUsageDiscovery {
@@ -487,8 +664,9 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 credential_revision: "env-revision".to_owned(),
                 provenance: BTreeSet::from([scope.to_owned(), "account account-env".to_owned()]),
                 source: ValidatedCredentialSource::Env {
-                    handle: super::super::OpaqueCredentialHandle::new("env-handle"),
+                    handle: OpaqueCredentialHandle::new("env-handle"),
                     key: "AMP_API_KEY".to_owned(),
+                    material: Some(env_material.clone()),
                 },
             },
         ],
@@ -510,6 +688,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             selected_account_surfaces: BTreeMap::new(),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::new(),
+            credential_scope: UsageCredentialScope::default(),
         },
     );
     assert_eq!(profile_only, vec![profile_capability.clone()]);
@@ -522,6 +701,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             selected_account_surfaces: BTreeMap::new(),
             profile_surface_ids: BTreeSet::new(),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
+            credential_scope: UsageCredentialScope::default(),
         },
     );
     assert_eq!(env_only, vec![env_capability.clone()]);
@@ -537,6 +717,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             )]),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::new(),
+            credential_scope: UsageCredentialScope::default(),
         },
     );
     assert_eq!(selected_profile, vec![profile_capability.clone()]);
@@ -552,6 +733,15 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             )]),
             profile_surface_ids: BTreeSet::new(),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
+            credential_scope: UsageCredentialScope {
+                sources: BTreeSet::from([UsageCredentialSourceProof {
+                    account_id: "account-env".to_owned(),
+                    surface_id: "amp".to_owned(),
+                    key: "AMP_API_KEY".to_owned(),
+                    source: env_material.source.clone(),
+                    material_fingerprint: env_material.material_fingerprint.clone(),
+                }]),
+            },
         },
     );
     assert_eq!(selected_env, vec![env_capability]);
@@ -567,6 +757,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             )]),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::new(),
+            credential_scope: UsageCredentialScope::default(),
         },
     );
     assert!(
@@ -582,6 +773,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
             selected_account_surfaces: BTreeMap::new(),
             profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
+            credential_scope: UsageCredentialScope::default(),
         },
     );
     assert!(wrong_account.is_empty());
@@ -1134,6 +1326,7 @@ fn saturated_join_waiters_do_not_block_refresh_or_current() {
                 generation: active.generation,
                 timeout_ms: 10_000,
             },
+            launch_credential_scope: None,
         };
         let mut bytes = serde_json::to_vec(&request).unwrap();
         bytes.push(b'\n');
@@ -1935,10 +2128,10 @@ struct NoEnvResolver;
 impl ProviderCredentialEnvResolver for NoEnvResolver {
     fn resolve_provider_credentials(
         &self,
-        _config: &jackin_config::AppConfig,
-        _workspace: Option<&jackin_core::WorkspaceName>,
+        _config: &AppConfig,
+        _workspace: Option<&WorkspaceName>,
         _role: Option<&str>,
-        _keys: &[jackin_core::UsageCredentialEnvName],
+        _keys: &[UsageCredentialEnvName],
     ) -> Vec<ProviderCredentialEnvResolution> {
         Vec::new()
     }

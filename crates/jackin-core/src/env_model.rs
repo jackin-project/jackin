@@ -49,8 +49,12 @@ pub const CLAUDE_MODEL_ENV_NAME: &str = "ANTHROPIC_MODEL";
 pub const CLAUDE_EFFORT_ENV_NAME: &str = "CLAUDE_CODE_EFFORT_LEVEL";
 /// Z.AI API key env name.
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
+/// Zhipu's provider-native API key env name.
+pub const ZHIPU_API_KEY_ENV_NAME: &str = "ZHIPU_API_KEY";
 /// Anthropic API key env name (Claude `api_key` mode).
 pub const ANTHROPIC_API_KEY_ENV_NAME: &str = "ANTHROPIC_API_KEY";
+/// Claude-compatible routed API key env name.
+pub const ANTHROPIC_AUTH_TOKEN_ENV_NAME: &str = "ANTHROPIC_AUTH_TOKEN";
 /// `OpenAI` API key env name (Codex `api_key` mode).
 pub const OPENAI_API_KEY_ENV_NAME: &str = "OPENAI_API_KEY";
 /// Amp API key env name.
@@ -66,6 +70,8 @@ pub const MINIMAX_API_KEY_ENV_NAME: &str = "MINIMAX_API_KEY";
 pub const KIMI_CODE_API_KEY_ENV_NAME: &str = "KIMI_CODE_API_KEY";
 /// Alternate Kimi API key env name accepted by the Kimi Code CLI.
 pub const KIMI_API_KEY_ENV_NAME: &str = "KIMI_API_KEY";
+/// Moonshot API key env name used by multi-provider clients routing to Kimi.
+pub const MOONSHOT_API_KEY_ENV_NAME: &str = "MOONSHOT_API_KEY";
 /// `OpenCode` API key env name.
 pub const OPENCODE_API_KEY_ENV_NAME: &str = "OPENCODE_API_KEY";
 /// xAI API key env name (Grok Build).
@@ -144,6 +150,10 @@ pub const USAGE_CREDENTIAL_ENV_REGISTRY: &[UsageCredentialEnvName] = &[
         owner: UsageCredentialOwner::Claude,
     },
     UsageCredentialEnvName {
+        name: ANTHROPIC_AUTH_TOKEN_ENV_NAME,
+        owner: UsageCredentialOwner::Claude,
+    },
+    UsageCredentialEnvName {
         name: CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME,
         owner: UsageCredentialOwner::Claude,
     },
@@ -164,6 +174,10 @@ pub const USAGE_CREDENTIAL_ENV_REGISTRY: &[UsageCredentialEnvName] = &[
         owner: UsageCredentialOwner::Kimi,
     },
     UsageCredentialEnvName {
+        name: MOONSHOT_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Kimi,
+    },
+    UsageCredentialEnvName {
         name: XAI_API_KEY_ENV_NAME,
         owner: UsageCredentialOwner::Grok,
     },
@@ -173,6 +187,10 @@ pub const USAGE_CREDENTIAL_ENV_REGISTRY: &[UsageCredentialEnvName] = &[
     },
     UsageCredentialEnvName {
         name: ZAI_API_KEY_ENV_NAME,
+        owner: UsageCredentialOwner::Zai,
+    },
+    UsageCredentialEnvName {
+        name: ZHIPU_API_KEY_ENV_NAME,
         owner: UsageCredentialOwner::Zai,
     },
     UsageCredentialEnvName {

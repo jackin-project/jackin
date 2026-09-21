@@ -10,10 +10,95 @@ use serde::{Deserialize, Serialize};
 use crate::control::{FocusedUsageView, Money};
 
 /// Usage-broker wire protocol version.
-pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v2";
+pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v3";
 
 /// Maximum newline-delimited request or response body.
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;
+
+/// Exact non-secret identity of a launch credential source.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UsageCredentialSourceIdentity {
+    /// Pinned 1Password reference and, when configured, its account.
+    OnePassword {
+        /// Canonical `op://` reference.
+        reference: String,
+        /// Explicit 1Password account selector.
+        account: Option<String>,
+    },
+    /// Host environment variable name used by a `$VAR` declaration.
+    HostEnv {
+        /// Exact host variable name.
+        name: String,
+    },
+    /// Inline literal source. Its material fingerprint carries the value
+    /// without putting that value on the wire.
+    Literal,
+}
+
+impl UsageCredentialSourceIdentity {
+    /// Derive the source identity from one persisted operator declaration.
+    #[must_use]
+    pub fn from_declaration(declaration: &jackin_core::EnvValue) -> Self {
+        match declaration {
+            jackin_core::EnvValue::OpRef(reference) => Self::OnePassword {
+                reference: reference.op.clone(),
+                account: reference.account.clone(),
+            },
+            jackin_core::EnvValue::Extended(value) => Self::from_plain_value(&value.value),
+            jackin_core::EnvValue::Plain(value) => Self::from_plain_value(value),
+        }
+    }
+
+    fn from_plain_value(value: &str) -> Self {
+        let name = value
+            .strip_prefix("${")
+            .and_then(|value| value.strip_suffix('}'))
+            .or_else(|| value.strip_prefix('$'))
+            .filter(|name| {
+                let mut chars = name.chars();
+                chars
+                    .next()
+                    .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+                    && chars.all(|character| character.is_ascii_alphanumeric() || character == '_')
+            });
+        name.map_or(Self::Literal, |name| Self::HostEnv {
+            name: name.to_owned(),
+        })
+    }
+}
+
+/// Content fingerprint of resolved credential material.
+///
+/// The material is accepted only at launch staging and never serialized.
+/// NOTE: the `-v1` domain below is independent of the staged-binding `-v2`
+/// revision domain, not an older version of it (disjoint evidence spaces).
+#[must_use]
+pub fn usage_credential_material_fingerprint(material: &str) -> String {
+    jackin_core::account_key_hash("usage-credential-material-v1", material)
+}
+
+/// Secret-free proof that one exact launch credential source was staged.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct UsageCredentialSourceProof {
+    /// Configured account selected for the launch instance.
+    pub account_id: String,
+    /// Canonical broker surface.
+    pub surface_id: String,
+    /// Governed environment key consumed by the provider.
+    pub key: String,
+    /// Exact source declaration identity at staging time.
+    pub source: UsageCredentialSourceIdentity,
+    /// Fingerprint of the material staged into the instance credential file.
+    pub material_fingerprint: String,
+}
+
+/// Immutable launch scope carried from staging through the relay to the broker.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageCredentialScope {
+    /// All exact source proofs admitted to this launch.
+    pub sources: BTreeSet<UsageCredentialSourceProof>,
+}
 
 /// Opaque authority for one canonical provider account.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1165,6 +1250,11 @@ pub struct UsageBrokerRequest {
     pub build_id: String,
     /// Requested operation.
     pub operation: UsageBrokerOperation,
+    /// Host-staged credential proof. The Capsule cannot choose this value:
+    /// the host relay replaces any request-supplied scope with its immutable
+    /// launch scope before forwarding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_credential_scope: Option<UsageCredentialScope>,
 }
 
 /// Multiplexed request carried by the host-started container stdio tunnel.

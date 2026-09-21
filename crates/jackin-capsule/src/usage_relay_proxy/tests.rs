@@ -272,6 +272,7 @@ async fn send_request(
         protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
         build_id: env!("CARGO_PKG_VERSION").to_owned(),
         operation,
+        launch_credential_scope: None,
     };
     let mut bytes = serde_json::to_vec(&request).unwrap();
     bytes.push(b'\n');

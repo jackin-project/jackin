@@ -13,7 +13,10 @@ use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
 };
-use jackin_protocol::usage_broker::{UsageCoordinationErrorKind, UsageRefreshPhase};
+use jackin_protocol::usage_broker::{
+    UsageCoordinationError, UsageCoordinationErrorKind, UsageCredentialSourceIdentity,
+    UsageRefreshPhase, usage_credential_material_fingerprint,
+};
 use jackin_usage::coordinator::{ProviderProbeOutcome, UsageCapabilitySet, UsageProviderExecutor};
 use jackin_usage::host::{
     CachedProviderCredentialResolver, UsageDiscoveryScope, discover_usage_sources,
@@ -116,6 +119,182 @@ fn launch_usage_capabilities_preserve_account_identity_and_provider_surface() {
 }
 
 #[test]
+fn staged_scope_pins_zhipu_source_identity_and_material() -> Result<()> {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider};
+
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "zhipu".to_owned(),
+        AccountConfig {
+            enabled: true,
+            name: "Zhipu".to_owned(),
+            provider: AiProvider::Zai,
+            credential: AccountCredential::ApiKey {
+                value: jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+                    op: "op://vault/item/field".to_owned(),
+                    path: "Vault/Item/Field".to_owned(),
+                    account: Some("work".to_owned()),
+                    on_demand: false,
+                }),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    let instances = vec![jackin_config::ResolvedInstance {
+        config_id: "zhipu-opencode".to_owned(),
+        agent: jackin_core::Agent::Opencode,
+        account_id: "zhipu".to_owned(),
+        model: None,
+        base_url: None,
+        xdg_roots: None,
+        label: "Zhipu".to_owned(),
+        synthesized: false,
+    }];
+    let credentials = jackin_protocol::AgentCredentialEnv::new(BTreeMap::from([(
+        "zhipu-opencode".to_owned(),
+        jackin_protocol::InstanceCredentialEnv {
+            agent: "opencode".to_owned(),
+            account_id: "zhipu".to_owned(),
+            env: BTreeMap::from([("ZHIPU_API_KEY".to_owned(), "S1".to_owned())]),
+        },
+    )]));
+
+    let scope = usage_credential_scope_for_staged_launch(&config, &instances, &credentials)?;
+    assert_eq!(scope.sources.len(), 1);
+    let proof = scope.sources.iter().next().expect("one Zhipu proof");
+    assert_eq!(proof.key, "ZHIPU_API_KEY");
+    assert_eq!(proof.account_id, "zhipu");
+    assert_eq!(proof.surface_id, "zai");
+    assert_eq!(
+        proof.source,
+        UsageCredentialSourceIdentity::OnePassword {
+            reference: "op://vault/item/field".to_owned(),
+            account: Some("work".to_owned()),
+        }
+    );
+    assert_eq!(
+        proof.material_fingerprint,
+        usage_credential_material_fingerprint("S1")
+    );
+    Ok(())
+}
+
+#[test]
+fn staged_scope_audits_one_account_across_mixed_agent_consumers() -> Result<()> {
+    use jackin_config::{AccountConfig, AccountCredential, AiProvider};
+
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "shared-zai".to_owned(),
+        AccountConfig {
+            enabled: true,
+            name: "Shared Z.AI".to_owned(),
+            provider: AiProvider::Zai,
+            credential: AccountCredential::ApiKey {
+                value: jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+                    op: "op://vault/shared/field".to_owned(),
+                    path: "Vault/Shared/Field".to_owned(),
+                    account: Some("work".to_owned()),
+                    on_demand: false,
+                }),
+                base_url: None,
+                model: Some("glm-4.5".to_owned()),
+            },
+        },
+    );
+    let instances = vec![
+        jackin_config::ResolvedInstance {
+            config_id: "shared-claude".to_owned(),
+            agent: jackin_core::Agent::Claude,
+            account_id: "shared-zai".to_owned(),
+            model: None,
+            base_url: None,
+            xdg_roots: None,
+            label: "Shared Claude".to_owned(),
+            synthesized: false,
+        },
+        jackin_config::ResolvedInstance {
+            config_id: "shared-codex".to_owned(),
+            agent: jackin_core::Agent::Codex,
+            account_id: "shared-zai".to_owned(),
+            model: Some("glm-4.5".to_owned()),
+            base_url: None,
+            xdg_roots: None,
+            label: "Shared Codex".to_owned(),
+            synthesized: false,
+        },
+        jackin_config::ResolvedInstance {
+            config_id: "shared-opencode".to_owned(),
+            agent: jackin_core::Agent::Opencode,
+            account_id: "shared-zai".to_owned(),
+            model: None,
+            base_url: None,
+            xdg_roots: None,
+            label: "Shared OpenCode".to_owned(),
+            synthesized: false,
+        },
+    ];
+    let credentials = jackin_protocol::AgentCredentialEnv::new(BTreeMap::from([
+        (
+            "shared-claude".to_owned(),
+            jackin_protocol::InstanceCredentialEnv {
+                agent: "claude".to_owned(),
+                account_id: "shared-zai".to_owned(),
+                env: BTreeMap::from([(
+                    jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME.to_owned(),
+                    "S1".to_owned(),
+                )]),
+            },
+        ),
+        (
+            "shared-codex".to_owned(),
+            jackin_protocol::InstanceCredentialEnv {
+                agent: "codex".to_owned(),
+                account_id: "shared-zai".to_owned(),
+                env: BTreeMap::from([(
+                    jackin_core::OPENAI_API_KEY_ENV_NAME.to_owned(),
+                    "S1".to_owned(),
+                )]),
+            },
+        ),
+        (
+            "shared-opencode".to_owned(),
+            jackin_protocol::InstanceCredentialEnv {
+                agent: "opencode".to_owned(),
+                account_id: "shared-zai".to_owned(),
+                env: BTreeMap::from([(
+                    jackin_core::ZHIPU_API_KEY_ENV_NAME.to_owned(),
+                    "S1".to_owned(),
+                )]),
+            },
+        ),
+    ]));
+
+    let scope = usage_credential_scope_for_staged_launch(&config, &instances, &credentials)?;
+    assert_eq!(scope.sources.len(), 3);
+    assert_eq!(
+        scope
+            .sources
+            .iter()
+            .map(|proof| proof.key.as_str())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
+            jackin_core::OPENAI_API_KEY_ENV_NAME,
+            jackin_core::ZHIPU_API_KEY_ENV_NAME,
+        ])
+    );
+    assert!(
+        scope
+            .sources
+            .iter()
+            .all(|proof| proof.account_id == "shared-zai" && proof.surface_id == "zai")
+    );
+    Ok(())
+}
+
+#[test]
 fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Result<()> {
     use jackin_config::{AccountConfig, AccountCredential, AiProvider};
 
@@ -177,6 +356,7 @@ fn launch_discovery_relay_uses_distinct_canonical_ids_for_same_surface() -> Resu
         ]),
         profile_surface_ids: BTreeSet::from(["codex".to_owned()]),
         env_keys: BTreeSet::new(),
+        credential_scope: UsageCredentialScope::default(),
     };
     let forwarded = forwarded_usage_capabilities(&discovery, "unrelated scope", &sources);
     assert_eq!(forwarded.len(), 2);
@@ -424,7 +604,12 @@ async fn docker_relay_guard_closes_child_stdin_and_reaps_proxy() -> Result<()> {
         .stdin_mode(jackin_process::StdioMode::Capture)
         .stdout_mode(jackin_process::StdioMode::Capture)
         .stderr_mode(jackin_process::StdioMode::Inherit);
-    let guard = start_tunnel_process(request, broker, vec![capability("allowed")])?;
+    let guard = start_tunnel_process(
+        request,
+        broker,
+        vec![capability("allowed")],
+        UsageCredentialScope::default(),
+    )?;
 
     drop(guard);
 
@@ -530,6 +715,7 @@ fn hermetic_layout_never_starts_host_usage_discovery() {
         selected_account_surfaces: BTreeMap::new(),
         profile_surface_ids: BTreeSet::new(),
         env_keys: BTreeSet::from(["ZAI_API_KEY".to_owned()]),
+        credential_scope: UsageCredentialScope::default(),
     };
 
     let (_, capabilities, _) =
@@ -545,6 +731,14 @@ struct CountingExecutor {
 }
 
 impl UsageProviderExecutor for CountingExecutor {
+    fn authorize_credential_scope(
+        &self,
+        _capability: &UsageAccountCapability,
+        _scope: &UsageCredentialScope,
+    ) -> Result<(), UsageCoordinationError> {
+        Ok(())
+    }
+
     fn probe(
         &self,
         _capability: &UsageAccountCapability,
@@ -614,6 +808,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
         },
         broker.clone(),
         allowlist.clone(),
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied_response else {
@@ -630,6 +825,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
         },
         broker.clone(),
         allowlist.clone(),
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied_capability else {
@@ -646,6 +842,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
         },
         broker.clone(),
         allowlist.clone(),
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::State { state } = refresh else {
@@ -659,6 +856,7 @@ async fn usage_relay_stdio_dispatch_scopes_exact_capability() {
         },
         broker,
         allowlist,
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::State { state } = terminal else {
@@ -687,6 +885,7 @@ async fn usage_relay_dispatch_denies_projection_for_surface() {
         UsageBrokerOperation::CurrentProjectionForSurface,
         broker,
         allowlist,
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied else {
@@ -706,6 +905,7 @@ fn empty_capabilities_do_not_start_a_tunnel_child() {
             broker,
             capabilities: vec![],
             canonical_launch_usage_capabilities: CanonicalLaunchUsageCapabilities::default(),
+            credential_scope: UsageCredentialScope::default(),
         },
     )
     .unwrap();
@@ -758,7 +958,13 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
             timeout_ms: 50,
         },
     ] {
-        let denied = dispatch(operation, broker.clone(), allowlist.clone()).await;
+        let denied = dispatch(
+            operation,
+            broker.clone(),
+            allowlist.clone(),
+            UsageCredentialScope::default(),
+        )
+        .await;
         let UsageBrokerResponse::Error { error } = denied else {
             panic!("forged acc-d returned state");
         };
@@ -773,6 +979,7 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
         },
         broker.clone(),
         allowlist.clone(),
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied else {
@@ -791,6 +998,7 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
         },
         broker.clone(),
         empty,
+        UsageCredentialScope::default(),
     )
     .await;
     let UsageBrokerResponse::Error { error } = denied else {
@@ -809,6 +1017,7 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
             },
             broker.clone(),
             allowlist.clone(),
+            UsageCredentialScope::default(),
         )
         .await;
         let UsageBrokerResponse::State { state } = refresh else {
@@ -822,6 +1031,7 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
             },
             broker.clone(),
             allowlist.clone(),
+            UsageCredentialScope::default(),
         )
         .await;
         let UsageBrokerResponse::State { state } = terminal else {
