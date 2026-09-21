@@ -7,7 +7,7 @@ handoff_id: verify-jackin-merge-pr1063--20260921T220648Z--muse-code--cb81b336
 created_utc: 2026-09-21T22:06:48Z
 updated_utc: 2026-09-21T22:06:48Z
 original_goal_status: PAUSED_BY_USER
-handoff_status: PREPARING
+handoff_status: READY
 source_cli: Muse Code (session apricot-canopus, id 01a0c4b8-8b97-7570-b7b7-5c1a55026a05)
 repository: git@github.com:jackin-project/jackin.git (local: /Users/donbeave/Projects/jackin-project/jackin-main)
 handoff_path: docs/goal-handoffs/verify-jackin-merge-pr1063--20260921T220648Z--muse-code--cb81b336.md
@@ -17,7 +17,7 @@ checkpoint_code_sha: ec3dbcf662f1f62eb20a53e7a9e4ae6004c05498 (fix(usage) keycha
 preservation_branch: goal-handoff/verify-merge-pr1063-cb81b336
 pr_base: main (observed remote head df4671e4d9f2860e90a5c71d8d0bd85b23d23291; PR base record c52e912bd3757c4ca736be288b0e03779144b561)
 goal_pr: https://github.com/jackin-project/jackin/pull/1063 (OPEN, non-draft, CONFLICTING)
-handoff_pr: TBD
+handoff_pr: https://github.com/jackin-project/jackin/pull/1069 (DRAFT, base fix/usage-broker-fallback, doc-only)
 remote_portable: PARTIAL (code + HANDOFF remote; /tmp evidence reports, docker images/containers, keychain/credential state are machine-local, see §E/I)
 resume_authorization: explicit later user request only
 ```
