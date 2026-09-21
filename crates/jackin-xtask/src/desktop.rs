@@ -674,41 +674,16 @@ fn generate_bindings_into(
     if stray_header.is_file() {
         fs::remove_file(&stray_header)?;
     }
-    for generated in find_files_with_ext(sources, "swift")? {
-        normalize_generated_file(&generated)?;
-    }
+    // Commit boltffi's bytes verbatim: the CI drift gates (this check plus
+    // the generator's FFI-unit gate, which packs directly) byte-compare
+    // regeneration against the committed tree, so any post-processing here
+    // would contradict the gate that does not apply it.
 
     progress(format!(
         "==> generated bindings under {}",
         sources.display()
     ));
     Ok(())
-}
-
-fn normalize_generated_file(path: &Path) -> Result<()> {
-    if !path.is_file() {
-        return Ok(());
-    }
-    let source = fs::read_to_string(path)
-        .with_context(|| format!("reading generated binding {}", path.display()))?;
-    let normalized = normalize_generated_text(&source);
-    if normalized != source {
-        fs::write(path, normalized)
-            .with_context(|| format!("normalizing generated binding {}", path.display()))?;
-    }
-    Ok(())
-}
-
-fn normalize_generated_text(source: &str) -> String {
-    let mut lines = source.lines().map(str::trim_end).collect::<Vec<_>>();
-    while lines.last().is_some_and(|line| line.is_empty()) {
-        lines.pop();
-    }
-    if lines.is_empty() {
-        String::new()
-    } else {
-        format!("{}\n", lines.join("\n"))
-    }
 }
 
 fn build_xcframework(root: &Path) -> Result<()> {
@@ -771,12 +746,8 @@ fn build_xcframework(root: &Path) -> Result<()> {
     cmd::run_streaming(&mut pack)?;
 
     // `boltffi pack` regenerates the Swift module beside the committed native
-    // sources. Keep its whitespace normalization identical to the binding
-    // command/check so a build cannot create drift that the next CI step sees.
-    let generated_sources = root.join("native/Sources/JackinUsageBindings");
-    for generated in find_files_with_ext(&generated_sources, "swift")? {
-        normalize_generated_file(&generated)?;
-    }
+    // sources. Its bytes stay verbatim (see above): post-processing here
+    // would contradict the CI drift gates that compare raw regeneration.
 
     if !xcframework.is_dir() {
         bail!("missing {}", xcframework.display());
@@ -1246,13 +1217,6 @@ fn find_dirs_named(root: &Path, name: &str) -> Result<Vec<PathBuf>> {
     Ok(walk_dirs(root)?
         .into_iter()
         .filter(|p| p.file_name().and_then(|s| s.to_str()) == Some(name))
-        .collect())
-}
-
-fn find_files_with_ext(root: &Path, ext: &str) -> Result<Vec<PathBuf>> {
-    Ok(walk_files(root)?
-        .into_iter()
-        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some(ext))
         .collect())
 }
 

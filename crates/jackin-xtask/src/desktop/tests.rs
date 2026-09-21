@@ -1,6 +1,6 @@
 use super::{
-    MIN_OS, XunitTotals, minos_matches_target, normalize_generated_text, parse_dwarf_uuid,
-    parse_xctest_summary, parse_xunit_totals, tree_differences, validate_build, validate_version,
+    MIN_OS, XunitTotals, minos_matches_target, parse_dwarf_uuid, parse_xctest_summary,
+    parse_xunit_totals, tree_differences, validate_build, validate_version,
 };
 
 #[test]
@@ -33,16 +33,6 @@ fn minos_must_match_current_baseline() {
     assert!(!minos_matches_target("25.0", MIN_OS));
     assert!(!minos_matches_target("26.1", MIN_OS));
     assert!(!minos_matches_target("27.0", MIN_OS));
-}
-
-#[test]
-fn generated_bindings_have_stable_whitespace() {
-    assert_eq!(
-        normalize_generated_text("one  \n  two\t\n\n"),
-        "one\n  two\n"
-    );
-    assert_eq!(normalize_generated_text("one"), "one\n");
-    assert_eq!(normalize_generated_text(" \t\n"), "");
 }
 
 fn write_tree(root: &std::path::Path, files: &[(&str, &[u8])]) {
