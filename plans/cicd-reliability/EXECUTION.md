@@ -21,6 +21,36 @@ failure was reproduced with the published pinned runtime, repaired only by a
 state-sidecar regeneration, and rechecked with `--plain --check`. This is not
 closure for the report findings.
 
+## Post-#1053 live verification — 2026-09-22
+
+Agent `/root/report_postmerge_correction` reconciled the merged report with
+the live candidate evidence. PR #1053 merged as `df4671e4`. Its only generated
+state change was the scan digest in
+`.github/ci/.github-actions-generator-state`:
+`7229bed326311884` → `bbbfa7f57b91cb3b`. The change is a global generator
+input, and the live Control / Planning result selected 40/40 units with the
+explicit fail-closed fallback. This is a correctness pass for conservative
+selection, not a zero-work result.
+
+Evidence:
+
+- [CI / PR run 35651713880](https://github.com/jackin-project/jackin/actions/runs/35651713880), [Swift job 106505596038](https://github.com/jackin-project/jackin/actions/runs/35651713880/job/106505596038): 22m01s; 78 Swift tests passed. The job report recorded repeated native work (`desktop-release` compile, 380 compiler-output lines) and no validated cross-workflow product reuse.
+- [Post-merge Desktop run 35656263744](https://github.com/jackin-project/jackin/actions/runs/35656263744), [job 106520585495](https://github.com/jackin-project/jackin/actions/runs/35656263744/job/106520585495): 35m01s; 19 UI tests passed; the independent Apple path rebuilt native products.
+
+Both Apple correctness verdicts are green. The 120-second objective remains
+FAIL. Reuse remains unproven and is not credited as a gain. No-work remains
+unproven/FAIL for this state-sidecar-changing documentation candidate. The
+historical first-attempt rows below are retained unchanged.
+
+Independent review status: this documentation-only correction is prepared on
+`docs/report-live-results`; parent review is required before merge. No generated
+`.github` file was edited by this change.
+
+Pinned-render check: Velnor source revision `4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0`
+was built from source and run with `--plain --check` against this tree. It
+reported `Generated files are current`; no generated file or state-sidecar
+change was needed for this documentation-only correction.
+
 ## Baselines (2026-09-21, parent-observed)
 
 - Jackin root: `/Users/donbeave/Projects/tailrocks/jackin-project/jackin`, branch `main`, HEAD `fce94cea`, tree clean.
