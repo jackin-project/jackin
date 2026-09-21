@@ -23,6 +23,8 @@ jobs:
       CARGO_TERM_COLOR: always
       DEVELOPER_DIR: "/Applications/Xcode_26.6.app/Contents/Developer"
       MACOSX_DEPLOYMENT_TARGET: "26.0"
+      MISE_NOT_FOUND_AUTO_INSTALL: "false"
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
