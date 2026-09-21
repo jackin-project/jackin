@@ -916,31 +916,58 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
             .clone_from(&bindings);
         Ok(())
     }
+
+    fn validate_catalog(
+        &self,
+        entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        let Some(discovery) = rediscover_discovery(&self.scope, self.resolver.as_ref()) else {
+            return Err(unavailable());
+        };
+        let expected = usage_catalog_entries(&discovery)
+            .into_iter()
+            .map(|entry| (entry.capability, entry.revision))
+            .collect::<BTreeMap<_, _>>();
+        let observed = entries
+            .iter()
+            .map(|entry| (entry.capability.clone(), entry.revision.clone()))
+            .collect::<BTreeMap<_, _>>();
+        if expected == observed {
+            Ok(())
+        } else {
+            Err(catalog_discovery_mismatch())
+        }
+    }
+}
+
+fn rediscover_discovery(
+    scope: &UsageDiscoveryScope,
+    resolver: &dyn ProviderCredentialEnvResolver,
+) -> Option<ValidatedUsageDiscovery> {
+    discover_usage_sources(scope, resolver)
+        .ok()
+        .map(|catalog| validate_usage_sources(catalog, resolver))
 }
 
 fn rediscover_all_bindings(
     scope: &UsageDiscoveryScope,
     resolver: &dyn ProviderCredentialEnvResolver,
 ) -> Option<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>> {
-    resolver.begin_manual_retry();
-    discover_usage_sources(scope, resolver)
-        .ok()
-        .map(|catalog| validate_usage_sources(catalog, resolver))
-        .map(|discovery| {
-            // First binding wins per capability, matching service startup:
-            // profile sources sort before env sources, so a merged canonical
-            // account refreshes through its strongest credential.
-            let mut bindings = BTreeMap::new();
-            for binding in discovery.bindings {
-                bindings
-                    .entry(capability_for_binding(
-                        &binding,
-                        discovery.config_generation.as_deref(),
-                    ))
-                    .or_insert(binding);
-            }
+    rediscover_discovery(scope, resolver).map(|discovery| {
+        // First binding wins per capability, matching service startup:
+        // profile sources sort before env sources, so a merged canonical
+        // account refreshes through its strongest credential.
+        let mut bindings = BTreeMap::new();
+        for binding in discovery.bindings {
             bindings
-        })
+                .entry(capability_for_binding(
+                    &binding,
+                    discovery.config_generation.as_deref(),
+                ))
+                .or_insert(binding);
+        }
+        bindings
+    })
 }
 
 fn rediscover_bindings(
@@ -952,10 +979,16 @@ fn rediscover_bindings(
     Option<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>>,
 ) {
     let bindings = rediscover_all_bindings(scope, resolver);
-    let binding = bindings
-        .as_ref()
-        .and_then(|bindings| bindings.get(capability).cloned());
-    (binding, bindings)
+    let Some(bindings) = bindings else {
+        return (None, None);
+    };
+    let Some(binding) = bindings.get(capability).cloned() else {
+        // A successful scan that cannot reproduce the requested capability is
+        // a catalog mismatch. Do not replace the cache with a partial scan;
+        // the caller must fail closed for this exact capability.
+        return (None, None);
+    };
+    (Some(binding), Some(bindings))
 }
 
 fn refresh_binding_outcome(
@@ -2114,6 +2147,13 @@ fn protocol_error() -> UsageCoordinationError {
     UsageCoordinationError {
         kind: UsageCoordinationErrorKind::ProtocolMismatch,
         message: "usage broker protocol mismatch".to_owned(),
+    }
+}
+
+fn catalog_discovery_mismatch() -> UsageCoordinationError {
+    UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::CatalogRevisionConflict,
+        message: "usage broker catalog does not match current discovery".to_owned(),
     }
 }
 
