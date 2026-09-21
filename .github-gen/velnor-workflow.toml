@@ -22,19 +22,32 @@ runs_on = ["ubuntu-26.04"]
 ruleset_required_status_checks = ["ci-required", "Policy"]
 ruleset_external_status_checks = ["DCO"]
 
-# Self-hosted Renovate (writer on hosted ubuntu-26.04, schedule "0 6 * * *",
-# secrets.RENOVATE_TOKEN, author Renovate Bot): s2 [renovate] requires the
-# velnor provider, which this public hosted-only singleton cannot declare, so
-# the two workflows carry verbatim as static files (byte-identical to the s1
-# render; self-contained — no generator pin references). Revisit if s2 ever
-# renders the writer on the control-plane runner.
-[[static_files]]
-file = ".github/workflows/renovate.yml"
-source = ".github-gen/static/workflows/renovate.yml"
-
-[[static_files]]
-file = ".github/workflows/renovate-validate.yml"
-source = ".github-gen/static/workflows/renovate-validate.yml"
+# [renovate] ON HOLD for wave pin 3 (W4 precedent): s2 `validate_renovate`
+# requires the velnor provider + [workflow.selectors.velnor], but
+# `enforce_visibility_policy` requires public repos to be exactly
+# [github-hosted] and rejects a velnor selector — so [renovate] is
+# unsatisfiable on public repos at this pin. The renderer itself is
+# provider-agnostic (`control_plane_runner`), so the fix is validation-only
+# (G12, generator side). Uncomment below + the two [[declare]] rows at pin 3
+# to restore renovate.yml/renovate-validate.yml; until then both files are
+# absent from the tree (root renovate.json stays for the writer's return).
+# [renovate]
+# enabled = true
+# reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
+# schedule = "0 6 * * *"
+# token = "RENOVATE_TOKEN"
+# config = "renovate.json"
+# validate = true
+# author = "Renovate Bot <renovate@whitesourcesoftware.com>"
+# signoff = true
+#
+# [[declare]]
+# primitive = "renovate"
+# file = "renovate.yml"
+#
+# [[declare]]
+# primitive = "renovate-validate"
+# file = "renovate-validate.yml"
 
 # Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
 # Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
