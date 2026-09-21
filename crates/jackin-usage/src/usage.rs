@@ -216,11 +216,10 @@ pub(crate) use self::view::{
     UsageViewInput, account_snapshot_views_from_cache, account_tab_label_for_parts,
     amp_status_bar_headline, bucket, cached_refreshing_view, cached_unavailable_view,
     compact_account_identity, decorate_surface_view, enrich_provider_tabs, mark_active_tab,
-    most_constrained_fresh_bucket, preserve_cached_quota_on_failed_refresh, provider_tabs,
-    quota_amounts_for_account_snapshot, spend_headline_label, status_bar_fresh_or_stale,
-    status_bar_headline_for_surface, status_bar_label, status_bar_quota_labels, timed_bucket,
-    usage_account_tab_id, usage_tab_source_label, usage_tab_status_label, usage_view,
-    with_status_slot,
+    preserve_cached_quota_on_failed_refresh, provider_tabs, quota_amounts_for_account_snapshot,
+    spend_headline_label, status_bar_fresh_or_stale, status_bar_headline_for_surface,
+    status_bar_label, status_bar_quota_labels, summary_bucket, timed_bucket, usage_account_tab_id,
+    usage_tab_source_label, usage_tab_status_label, usage_view, with_status_slot,
 };
 #[expect(
     unused_imports,

@@ -27,7 +27,6 @@ fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
         reset_at_epoch: Some(1_800_000_000),
         quota_state: UsageQuotaStateV1::Available,
         pace_label: None,
-        runs_out_label: None,
     }
 }
 
@@ -52,6 +51,54 @@ fn test_account(provider_id: &str, account_id: &str, label: &str) -> UsageAccoun
         windows: vec![test_window("weekly", Some(73))],
         metric_groups: Vec::new(),
     }
+}
+
+#[test]
+fn summary_window_selects_first_ranked_metered_limit() {
+    // D30: long-range outranks session and other regardless of provider
+    // order; unmetered windows never qualify; ties break to provider order.
+    let mut account = test_account("antigravity", "a", "pilot");
+    account.windows = vec![
+        UsageWindow {
+            rank: 0,
+            category: UsageWindowCategoryV1::Session,
+            ..test_window("session", Some(73))
+        },
+        UsageWindow {
+            rank: 1,
+            category: UsageWindowCategoryV1::LongRange,
+            ..test_window("weekly", Some(41))
+        },
+        UsageWindow {
+            rank: 2,
+            category: UsageWindowCategoryV1::Other,
+            ..test_window("other", Some(12))
+        },
+    ];
+    assert_eq!(
+        account.summary_window().map(|window| window.label.as_str()),
+        Some("weekly")
+    );
+
+    account.windows = vec![
+        UsageWindow {
+            rank: 0,
+            category: UsageWindowCategoryV1::LongRange,
+            ..test_window("unknown", None)
+        },
+        UsageWindow {
+            rank: 1,
+            category: UsageWindowCategoryV1::Session,
+            ..test_window("session", Some(50))
+        },
+    ];
+    assert_eq!(
+        account.summary_window().map(|window| window.label.as_str()),
+        Some("session")
+    );
+
+    account.windows = vec![test_window("unknown", None)];
+    assert_eq!(account.summary_window(), None);
 }
 
 #[test]
@@ -651,7 +698,6 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
             reset_at_epoch: None,
             quota_state: UsageQuotaStateV1::Available,
             pace_label: None,
-            runs_out_label: None,
         },
         UsageWindow {
             window_id: "weekly".to_owned(),
@@ -667,7 +713,6 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
             reset_at_epoch: None,
             quota_state: UsageQuotaStateV1::Available,
             pace_label: None,
-            runs_out_label: None,
         },
     ];
     let mut claude = test_account("anthropic", "claude:key", "Unresolved (claude:key)");
@@ -810,7 +855,6 @@ fn render_unknown_window_shows_value_without_fabricated_bar() {
         reset_at_epoch: None,
         quota_state: UsageQuotaStateV1::Unknown,
         pace_label: None,
-        runs_out_label: None,
     }];
     manager.usage.screen = Some(UsageScreenState {
         accounts: vec![account],
@@ -1000,7 +1044,7 @@ fn metric_group_projection_fixture() -> (
                     reset_at_epoch: None,
                     quota_state: UsageQuotaStateV1::Warning,
                     pace_label: Some("on pace".to_owned()),
-                    runs_out_label: Some("runs out Friday".to_owned()),
+                    runs_out_label: None,
                 }],
                 metric_groups: vec![balance, spend, plan],
                 credential_expires_at_epoch: Some(epochs.credential_expires_at),
@@ -1060,7 +1104,6 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     assert_eq!(window.used_raw_percent, Some(120));
     assert_eq!(window.quota_state, UsageQuotaStateV1::Warning);
     assert_eq!(window.pace_label, Some("on pace".to_owned()));
-    assert_eq!(window.runs_out_label, Some("runs out Friday".to_owned()));
 
     assert_eq!(account.metric_groups.len(), 3);
     let (balance, spend, plan) = (
@@ -1169,7 +1212,6 @@ fn assert_detail_group_rows(detail: &str) {
             "quota: warning",
             "raw used 120%",
             "pace: on pace",
-            "runs out: runs out Friday",
             "Issues",
             "quota degraded (quota_degraded)",
             "provider: provider maintenance (prov_maint)",
@@ -1444,7 +1486,6 @@ fn detail_toggle_renders_summary_vs_full_bodies() {
     account.windows = vec![UsageWindow {
         quota_state: UsageQuotaStateV1::Warning,
         pace_label: Some("on pace".to_owned()),
-        runs_out_label: Some("runs out Friday".to_owned()),
         ..test_window("weekly", Some(73))
     }];
     account.metric_groups = vec![window_metric_group("Session", Some(5), 1_800_000_000)];
@@ -1478,7 +1519,6 @@ fn detail_toggle_renders_summary_vs_full_bodies() {
     for full_only in [
         "quota: warning",
         "pace: on pace",
-        "runs out: runs out Friday",
         "quota degraded",
         "(window ·",
         "Enter for summary",
@@ -1500,7 +1540,6 @@ fn detail_toggle_renders_summary_vs_full_bodies() {
     for row in [
         "quota: warning",
         "pace: on pace",
-        "runs out: runs out Friday",
         "quota degraded (quota_degraded)",
         "Session (window · available · ",
         "Enter for summary",
@@ -1783,4 +1822,421 @@ fn backend_text(terminal: &ratatui::Terminal<ratatui::backend::TestBackend>) -> 
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+// ---- S8 interaction evidence: keyboard, focus, scroll, refresh, resize ----
+
+fn s8_press(state: &mut crate::tui::state::ManagerState<'_>, code: crossterm::event::KeyCode) {
+    super::handle_key(
+        state,
+        crossterm::event::KeyEvent {
+            code,
+            modifiers: crossterm::event::KeyModifiers::empty(),
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::empty(),
+        },
+    );
+}
+
+fn s8_manager(screen: UsageScreenState) -> crate::tui::state::ManagerState<'static> {
+    // `ManagerState::from_config` borrows nothing `'static`-blocking here: the
+    // config outlives the call via the leaked box, matching how the console
+    // owns config for the whole run.
+    let config: &'static jackin_config::AppConfig =
+        Box::leak(Box::new(jackin_config::AppConfig::default()));
+    let mut manager =
+        crate::tui::state::ManagerState::from_config(config, std::path::Path::new("/test"));
+    manager.usage.screen = Some(screen);
+    manager.usage.visible = true;
+    manager
+}
+
+fn s8_render_full(
+    manager: &crate::tui::state::ManagerState<'_>,
+    width: u16,
+    height: u16,
+) -> String {
+    let backend = ratatui::backend::TestBackend::new(width, height);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| super::render(f, f.area(), manager))
+        .unwrap();
+    backend_text(&terminal)
+}
+
+#[test]
+fn s8_enter_toggles_detail_and_flips_hint() {
+    let mut account = test_account("openai", "a", "work");
+    account.provider = "OpenAI".to_owned();
+    let mut manager = s8_manager(UsageScreenState {
+        accounts: vec![account],
+        selected: 1,
+        selected_id: Some("openai:a".to_owned()),
+        ..UsageScreenState::default()
+    });
+
+    s8_press(&mut manager, crossterm::event::KeyCode::Enter);
+    assert!(manager.usage.screen.as_ref().unwrap().detail);
+    let detail = s8_render_full(&manager, 80, 24);
+    assert!(detail.contains("Enter for summary"), "{detail}");
+
+    s8_press(&mut manager, crossterm::event::KeyCode::Enter);
+    assert!(!manager.usage.screen.as_ref().unwrap().detail);
+    let summary = s8_render_full(&manager, 80, 24);
+    assert!(summary.contains("Enter for full detail"), "{summary}");
+}
+
+#[test]
+fn s8_jk_and_arrows_traverse_and_clamp() {
+    use crossterm::event::KeyCode;
+    let mut manager = s8_manager(UsageScreenState {
+        accounts: vec![
+            test_account("openai", "a", "a"),
+            test_account("anthropic", "b", "b"),
+        ],
+        ..UsageScreenState::default()
+    });
+
+    s8_press(&mut manager, KeyCode::Char('j'));
+    s8_press(&mut manager, KeyCode::Down);
+    assert_eq!(manager.usage.screen.as_ref().unwrap().selected, 2);
+    s8_press(&mut manager, KeyCode::Char('j'));
+    assert_eq!(manager.usage.screen.as_ref().unwrap().selected, 2);
+    s8_press(&mut manager, KeyCode::Char('k'));
+    s8_press(&mut manager, KeyCode::Up);
+    s8_press(&mut manager, KeyCode::Up);
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.selected, 0);
+    assert_eq!(screen.selected_id, None);
+}
+
+#[test]
+fn s8_sort_filter_constrained_keys_reanchor_by_stable_id() {
+    use crossterm::event::KeyCode;
+    use jackin_protocol::usage_broker::{
+        UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1,
+    };
+    let mut low = test_account("anthropic", "b", "home");
+    low.windows = vec![test_window("weekly", Some(10))];
+    low.issues = vec![UsageIssueV1 {
+        code: "quota_degraded".to_owned(),
+        scope: UsageIssueScopeV1::Account,
+        recoverability: UsageIssueRecoverabilityV1::Retryable,
+        message: "quota degraded".to_owned(),
+        retry_at_epoch: None,
+    }];
+    let mut mid = test_account("openai", "c", "lab");
+    mid.windows = vec![test_window("weekly", Some(50))];
+    let mut high = test_account("openai", "a", "work");
+    high.windows = vec![test_window("weekly", Some(73))];
+    let mut manager = s8_manager(UsageScreenState {
+        accounts: vec![high, low, mid],
+        ..UsageScreenState::default()
+    });
+
+    // `c` jumps to the most constrained visible account (10% left).
+    s8_press(&mut manager, KeyCode::Char('c'));
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.selected, 2);
+    assert_eq!(screen.selected_id, Some("anthropic:b".to_owned()));
+
+    // `s` sorts by remaining; the selected row follows its stable id.
+    s8_press(&mut manager, KeyCode::Char('s'));
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.sort, super::UsageSort::Remaining);
+    assert_eq!(screen.selected, 1);
+    assert_eq!(screen.selected_id, Some("anthropic:b".to_owned()));
+
+    // `f` filters to issues; the selected row (which has one) stays put.
+    s8_press(&mut manager, KeyCode::Char('f'));
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.filter, super::UsageFilter::Issues);
+    assert_eq!(screen.selected, 1);
+
+    // Move to Overview, then filter to a set hiding nothing selected: the
+    // parked id restores once the filter clears.
+    s8_press(&mut manager, KeyCode::Char('k'));
+    s8_press(&mut manager, KeyCode::Char('f'));
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.filter, super::UsageFilter::Stale);
+    assert_eq!(screen.selected, 0);
+    s8_press(&mut manager, KeyCode::Char('f'));
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.filter, super::UsageFilter::All);
+}
+
+#[test]
+fn s8_page_keys_scroll_and_saturate() {
+    use crossterm::event::KeyCode;
+    let mut manager = s8_manager(UsageScreenState {
+        accounts: vec![test_account("openai", "a", "a")],
+        ..UsageScreenState::default()
+    });
+
+    s8_press(&mut manager, KeyCode::PageDown);
+    s8_press(&mut manager, KeyCode::PageDown);
+    s8_press(&mut manager, KeyCode::PageDown);
+    assert_eq!(manager.usage.screen.as_ref().unwrap().scroll, 15);
+    s8_press(&mut manager, KeyCode::PageUp);
+    assert_eq!(manager.usage.screen.as_ref().unwrap().scroll, 10);
+    for _ in 0..10 {
+        s8_press(&mut manager, KeyCode::PageUp);
+    }
+    assert_eq!(manager.usage.screen.as_ref().unwrap().scroll, 0);
+}
+
+#[test]
+fn s8_esc_and_q_close_route() {
+    use crossterm::event::KeyCode;
+    let mut manager = s8_manager(UsageScreenState::open_with_snapshot(
+        vec![test_account("openai", "a", "a")],
+        None,
+    ));
+
+    s8_press(&mut manager, KeyCode::Esc);
+    assert!(!manager.usage.visible);
+    manager.usage.visible = true;
+    s8_press(&mut manager, KeyCode::Char('q'));
+    assert!(!manager.usage.visible);
+}
+
+#[test]
+fn s8_unknown_key_is_noop() {
+    use crossterm::event::KeyCode;
+    let mut manager = s8_manager(UsageScreenState::open_with_snapshot(
+        vec![test_account("openai", "a", "a")],
+        None,
+    ));
+    let before = manager.usage.screen.as_ref().unwrap().clone();
+    s8_press(&mut manager, KeyCode::Char('z'));
+    s8_press(&mut manager, KeyCode::F(5));
+    assert_eq!(manager.usage.screen.as_ref().unwrap(), &before);
+    assert!(manager.usage.visible);
+}
+
+#[test]
+fn s8_uppercase_r_refreshes_like_lowercase() {
+    use crossterm::event::KeyCode;
+    for code in [KeyCode::Char('r'), KeyCode::Char('R')] {
+        let mut manager = s8_manager(UsageScreenState::open_with_snapshot(
+            vec![test_account("openai", "a", "a")],
+            None,
+        ));
+        manager.usage.screen.as_mut().unwrap().apply_refresh(
+            vec![test_account("openai", "a", "a")],
+            None,
+            Instant::now(),
+        );
+        assert!(!manager.usage.screen.as_ref().unwrap().refresh_due);
+        s8_press(&mut manager, code);
+        let screen = manager.usage.screen.as_ref().unwrap();
+        assert!(screen.refresh_due, "key {code:?} must mark refresh due");
+        assert!(screen.force_refresh_pending);
+    }
+}
+
+#[test]
+fn s8_refresh_resets_scroll() {
+    let mut state = UsageScreenState::open_with_snapshot(
+        vec![
+            test_account("openai", "a", "a"),
+            test_account("anthropic", "b", "b"),
+        ],
+        None,
+    );
+    state.move_selection(1);
+    state.scroll = 40;
+    state.apply_refresh(
+        vec![
+            test_account("openai", "a", "a"),
+            test_account("anthropic", "b", "b"),
+        ],
+        None,
+        Instant::now(),
+    );
+    assert_eq!(state.scroll, 0);
+    assert_eq!(state.selected, 1);
+    assert_eq!(state.selected_id, Some("openai:a".to_owned()));
+}
+
+#[test]
+fn s8_removal_while_detail_open_returns_to_overview() {
+    let mut state = UsageScreenState::open_with_snapshot(
+        vec![
+            test_account("openai", "a", "work"),
+            test_account("anthropic", "b", "personal"),
+        ],
+        None,
+    );
+    state.move_selection(2);
+    state.detail = true;
+    state.apply_refresh(
+        vec![test_account("openai", "a", "work")],
+        None,
+        Instant::now(),
+    );
+    assert_eq!(state.selected, 0);
+    assert_eq!(state.selected_id, None);
+    assert_eq!(
+        state.notice,
+        Some("Previously selected account unavailable; showing Overview".to_owned())
+    );
+
+    let manager = s8_manager(state);
+    let text = s8_render_full(&manager, 80, 24);
+    assert!(text.contains("Overview"), "{text}");
+    // The notice wraps across rows at 80 columns; the head stays contiguous.
+    assert!(
+        text.contains("Previously selected account unavailable"),
+        "{text}"
+    );
+    // The detail flag is a sticky view-mode preference: removal parks on
+    // Overview without flipping it, so the next selected account still
+    // opens in the operator's preferred mode.
+    assert!(manager.usage.screen.as_ref().unwrap().detail);
+}
+
+#[test]
+fn s8_empty_loading_renders_refreshing_not_unconfigured() {
+    // Open path: refresh due but worker not started yet.
+    let manager = s8_manager(UsageScreenState::open_with_snapshot(Vec::new(), None));
+    assert!(manager.usage.screen.as_ref().unwrap().loading());
+    let text = s8_render_full(&manager, 80, 24);
+    assert!(text.contains("Refreshing usage…"), "{text}");
+    assert!(!text.contains("No providers configured"), "{text}");
+
+    // In-flight refresh over an empty cache: same loading line.
+    let mut manager = s8_manager(UsageScreenState::open_with_snapshot(Vec::new(), None));
+    let screen = manager.usage.screen.as_mut().unwrap();
+    let plan = screen
+        .next_refresh_plan_if_due(Instant::now())
+        .expect("open marks a refresh due");
+    screen.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
+        plan.generation,
+        Ok((Vec::new(), None)),
+    )));
+    let text = s8_render_full(&manager, 80, 24);
+    assert!(text.contains("Refreshing usage…"), "{text}");
+    assert!(!text.contains("No providers configured"), "{text}");
+
+    // Completed empty refresh: genuinely nothing configured.
+    let mut done = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    done.apply_refresh(Vec::new(), None, Instant::now());
+    assert!(!done.loading());
+    let manager = s8_manager(done);
+    let text = s8_render_full(&manager, 80, 24);
+    assert!(text.contains("No providers configured."), "{text}");
+    assert!(text.contains("Press R to refresh."), "{text}");
+    assert!(!text.contains("Refreshing usage…"), "{text}");
+}
+
+#[test]
+fn s8_error_notice_renders_without_moving_selection() {
+    let mut state =
+        UsageScreenState::open_with_snapshot(vec![test_account("openai", "a", "work")], None);
+    state.move_selection(1);
+    state.apply_refresh_error("Usage unavailable: boom".to_owned(), Instant::now());
+    let manager = s8_manager(state);
+    let text = s8_render_full(&manager, 80, 24);
+    assert!(text.contains("Usage unavailable: boom"), "{text}");
+    assert!(text.contains("work"), "{text}");
+    let screen = manager.usage.screen.as_ref().unwrap();
+    assert_eq!(screen.selected, 1);
+    assert_eq!(screen.selected_id, Some("openai:a".to_owned()));
+}
+
+#[test]
+fn s8_long_unicode_labels_render() {
+    let mut account = test_account("anthropic", "u1", "work-巴黎-🚀-memo");
+    account.provider = "Anthropic / Claude".to_owned();
+    account.account.push_str(&"·很长的账户备注".repeat(12));
+    account.windows = vec![UsageWindow {
+        label: "每周配额 weekly 🚀".to_owned(),
+        value: "73% left".to_owned(),
+        reset: "resets 明天".to_owned(),
+        ..test_window("weekly", Some(73))
+    }];
+    let manager = s8_manager(UsageScreenState {
+        accounts: vec![account],
+        selected: 1,
+        selected_id: Some("anthropic:u1".to_owned()),
+        detail: true,
+        ..UsageScreenState::default()
+    });
+    let text = s8_render_full(&manager, 80, 24);
+    assert!(text.contains("Anthropic / Claude"), "{text}");
+    assert!(text.contains("🚀"), "{text}");
+    assert!(text.contains("73% left"), "{text}");
+    // Wide CJK cells dump with spacer cells in the symbol-per-cell harness;
+    // squeeze whitespace before asserting the underlying content survived.
+    let squeezed: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(squeezed.contains("巴黎"), "{text}");
+    assert!(squeezed.contains("每周配额"), "{text}");
+    assert!(squeezed.contains("很长的账户备注"), "{text}");
+}
+
+#[test]
+fn s8_resize_pair_keeps_identity_and_first_reset() {
+    let mut account = test_account("openai", "a", "work");
+    account.provider = "OpenAI".to_owned();
+    account.windows = vec![UsageWindow {
+        label: "5h".to_owned(),
+        value: "10% left".to_owned(),
+        reset: "in 2h".to_owned(),
+        ..test_window("5h", Some(10))
+    }];
+    let manager = s8_manager(UsageScreenState {
+        accounts: vec![account],
+        selected: 1,
+        selected_id: Some("openai:a".to_owned()),
+        detail: true,
+        ..UsageScreenState::default()
+    });
+    for (width, height) in [(80, 24), (40, 20), (120, 40)] {
+        let text = s8_render_full(&manager, width, height);
+        assert!(
+            text.contains("OpenAI"),
+            "identity lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("work"),
+            "identity lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("5h"),
+            "window lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("10% left"),
+            "first detail lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("in 2h"),
+            "reset lost at {width}x{height}:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn s8_scroll_moves_overview_content() {
+    let accounts = (0..12)
+        .map(|n| {
+            let mut account = test_account("openai", &format!("a{n}"), &format!("account-{n}"));
+            account.provider = "OpenAI".to_owned();
+            account
+        })
+        .collect::<Vec<_>>();
+    let manager = s8_manager(UsageScreenState {
+        accounts,
+        ..UsageScreenState::default()
+    });
+    let top = s8_render_full(&manager, 80, 24);
+    assert!(top.contains("account-0"), "{top}");
+
+    let mut scrolled = manager.usage.screen.as_ref().unwrap().clone();
+    scrolled.scroll = 25;
+    let manager = s8_manager(scrolled);
+    let moved = s8_render_full(&manager, 80, 24);
+    assert!(!moved.contains("account-0"), "{moved}");
+    assert!(moved.contains("account-"), "{moved}");
 }

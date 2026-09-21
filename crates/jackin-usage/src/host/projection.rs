@@ -376,6 +376,10 @@ fn project_window(
         reset_at_epoch: bucket.resets_at,
         quota_state: quota_state(bucket),
         pace_label: bucket.pace_label.clone(),
+        // No run-out signal exists outside the provider pace composite (which
+        // already reaches both surfaces via `pace_label`); the field stays
+        // unset rather than deriving a burn-rate estimate no producer stands
+        // behind.
         runs_out_label: None,
     })
 }
@@ -389,19 +393,13 @@ const fn window_category(status_slot: Option<StatusSlot>) -> UsageWindowCategory
 }
 
 /// Raw used percentage from a monetary bucket, unclamped so over-100% overage
-/// survives. Checked math throughout: incompatible denominations, a
-/// non-positive cap, or a failed division yield no representation instead of a
-/// wrapped or fabricated value.
+/// survives. One shared [`Money::raw_percent_of`] rule with the capsule
+/// bucket presentation, so both surfaces recover the same overage magnitude.
 fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
-    let used = bucket.used_money.as_ref()?;
-    let limit = bucket.limit_money.as_ref()?;
-    if used.currency != limit.currency || used.exponent != limit.exponent || limit.amount_minor <= 0
-    {
-        return None;
-    }
-    let scaled = used.amount_minor.saturating_mul(100);
-    let raw = scaled.checked_div(limit.amount_minor)?;
-    Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
+    bucket
+        .used_money
+        .as_ref()?
+        .raw_percent_of(bucket.limit_money.as_ref()?)
 }
 
 /// Build typed metric groups from the existing provider view.

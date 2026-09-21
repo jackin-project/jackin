@@ -778,6 +778,22 @@ impl Money {
         self.major().round() as i64
     }
 
+    /// Raw used percentage of `self` against `cap`, unclamped so over-100%
+    /// overage survives. Checked math: incompatible denominations, a
+    /// non-positive cap, or a failed division yield `None` instead of a
+    /// wrapped or fabricated value. The single money-ratio rule shared by the
+    /// canonical projection and the capsule bucket presentation, so both
+    /// surfaces recover the same overage magnitude.
+    #[must_use]
+    pub fn raw_percent_of(&self, cap: &Money) -> Option<i32> {
+        if self.currency != cap.currency || self.exponent != cap.exponent || cap.amount_minor <= 0 {
+            return None;
+        }
+        let scaled = self.amount_minor.saturating_mul(100);
+        let raw = scaled.checked_div(cap.amount_minor)?;
+        Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
+    }
+
     fn format_with_precision(&self, prec: usize) -> String {
         let value = self.major();
         match self.currency.as_str() {

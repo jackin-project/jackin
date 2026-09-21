@@ -206,6 +206,38 @@ fn money_formats_currency_and_credit_labels() {
 }
 
 #[test]
+fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
+    // Overage survives unclamped; the projection and the capsule presentation
+    // share this rule, so both recover the same magnitude.
+    assert_eq!(
+        Money::new(15_000, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
+        Some(150)
+    );
+    assert_eq!(
+        Money::new(27_00, "USD", 2).raw_percent_of(&Money::new(30_000, "USD", 2)),
+        Some(9)
+    );
+    assert_eq!(
+        Money::new(0, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
+        Some(0)
+    );
+    // Incompatible denominations, a non-positive cap, and overflow saturate
+    // to no representation instead of a wrapped or fabricated value.
+    assert_eq!(
+        Money::new(50_00, "USD", 2).raw_percent_of(&Money::new(10_000, "SGD", 2)),
+        None
+    );
+    assert_eq!(
+        Money::new(1, "USD", 2).raw_percent_of(&Money::new(0, "USD", 2)),
+        None
+    );
+    assert_eq!(
+        Money::new(i64::MAX, "USD", 2).raw_percent_of(&Money::new(1, "USD", 2)),
+        Some(i32::MAX)
+    );
+}
+
+#[test]
 fn status_slot_daily_serializes_as_daily() {
     // snake_case serde repr, matching the FFI `"daily"` slot projection.
     assert_eq!(

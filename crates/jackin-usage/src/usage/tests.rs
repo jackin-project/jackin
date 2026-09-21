@@ -2037,11 +2037,12 @@ fn over_cap_window_surfaces_true_used_percent() {
     assert_eq!(weekly.used_label.as_deref(), Some("150% used"));
 }
 
-/// Bug 5: the overview headline bucket is the tightest *windowed* bucket that
-/// carries a reset — never the reset-less spend bucket, even when spend has the
-/// lowest remaining (so the overview row keeps its reset column).
+/// D30: the overview summary is the first available Rust-ranked limit
+/// (long-range, model-specific, session, then other) — never the tightest
+/// bucket, and never the reset-less spend bucket while a real limit carries a
+/// percent (Bug 5's spend exclusion survives as the last rank).
 #[test]
-fn most_constrained_skips_reset_less_spend_for_windowed_reset_bucket() {
+fn summary_bucket_selects_first_ranked_limit_over_tighter_spend() {
     let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
         "five_hour": { "utilization": 11.0, "resets_at": "2026-06-28T16:40:00Z" },
         "seven_day": { "utilization": 27.0, "resets_at": "2026-07-03T07:00:00Z" },
@@ -2053,26 +2054,24 @@ fn most_constrained_skips_reset_less_spend_for_windowed_reset_bucket() {
         }
     }))
     .expect("valid Claude OAuth usage");
-    // Spend = 70% left (lowest), but reset-less; Weekly = 73% left with a reset.
+    // Spend = 70% left (tightest), Session = 89%, Weekly = 73%: the Weekly
+    // long-range window wins by rank, not by tightness.
     let buckets = usage.into_buckets(1_781_185_560);
-    let chosen = most_constrained_fresh_bucket(&buckets).expect("a windowed bucket");
+    let chosen = summary_bucket(&buckets).expect("a ranked bucket");
     assert_eq!(chosen.status_slot, Some(StatusSlot::Weekly));
-    assert!(
-        chosen.resets_at.is_some(),
-        "chosen bucket must carry a reset"
-    );
+    assert_eq!(chosen.remaining_percent, Some(73));
 }
 
-/// The compact Overview/status row names the bottleneck model when a
-/// model-scoped window (Fable) is the most-constrained, but stays bare for a
-/// headline window (Session/Weekly) — the slot already implies those and the
-/// status bar carries them. So an operator watching the compact surface learns
-/// *which* model is the limit, not just the % left.
+/// D30: a tighter model-scoped window (Fable) does not steal the summary from
+/// the ranked long-range window; the scoped name is still prepended when an
+/// unslotted window wins (nothing slotted carries a percent), so the row
+/// tells the operator *which* limit the % traces to.
 #[test]
-fn usage_tab_status_label_names_scoped_model_when_it_is_most_constrained() {
+fn usage_tab_status_label_selects_ranked_limit_and_names_unslotted_winner() {
     let reset_at = "2026-07-03T06:59:59Z";
-    // Fable (10% left) is tighter than Session (50% left) and Weekly (60%).
-    let fable_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+    // Fable (10% left) is tighter than Session (50% left) and Weekly (60%),
+    // but Weekly wins by rank and stays bare.
+    let ranked_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
         "limits": [
             { "kind": "session", "group": "session", "percent": 50,
               "severity": "normal", "resets_at": "2026-07-03T03:20:00Z", "scope": null },
@@ -2086,28 +2085,28 @@ fn usage_tab_status_label_names_scoped_model_when_it_is_most_constrained() {
     .expect("limits response");
     let mut view = FocusedUsageView::unavailable("x", 1_781_300_000);
     view.status = UsageSnapshotStatus::Fresh;
+    view.buckets = ranked_wins.into_buckets(1_781_300_000);
+    let label = usage_tab_status_label(&view);
+    assert!(
+        label.starts_with("60% left"),
+        "ranked weekly must win over tighter fable: got {label:?}"
+    );
+
+    // Nothing slotted carries a percent: the unslotted Fable window wins and
+    // is named.
+    let fable_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 90,
+              "severity": "danger", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("limits response");
     view.buckets = fable_wins.into_buckets(1_781_300_000);
     let label = usage_tab_status_label(&view);
     assert!(
         label.starts_with("Fable 10% left"),
-        "scoped bottleneck must be named: got {label:?}"
-    );
-
-    // When a headline window (Session) is tightest, no model name is prepended.
-    let session_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
-        "limits": [
-            { "kind": "session", "group": "session", "percent": 95,
-              "severity": "warn", "resets_at": "2026-07-03T03:20:00Z", "scope": null },
-            { "kind": "weekly_all", "group": "weekly", "percent": 10,
-              "severity": "normal", "resets_at": reset_at, "scope": null }
-        ]
-    }))
-    .expect("limits response");
-    view.buckets = session_wins.into_buckets(1_781_300_000);
-    let label = usage_tab_status_label(&view);
-    assert!(
-        label.starts_with("5% left"),
-        "headline bottleneck must stay bare: got {label:?}"
+        "unslotted winner must be named: got {label:?}"
     );
 }
 
@@ -4455,7 +4454,45 @@ fn usage_bucket_presentation_orders_spend_cap() {
         presentation.display_segments,
         vec!["30% used", "Monthly cap: SGD 78.49 / SGD 260.00"]
     );
-    assert_eq!(presentation.meter_percent, Some(30));
+    // Spend text reads used, but meter geometry fills by remaining — the same
+    // rule as every other slot and the console windows.
+    assert_eq!(presentation.meter_percent, Some(70));
+}
+
+#[test]
+fn usage_bucket_presentation_recovers_spend_overage_from_money() {
+    // $150 against a $100 cap with a saturated 0% remaining: the money ratio
+    // recovers the raw "150% used" text (matching the console window value)
+    // and the meter reads empty (nothing left), matching the console meter.
+    let mut bucket = presentation_bucket(
+        "Extra usage",
+        Some(0),
+        Some(StatusSlot::Spend),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("$150.00".to_owned());
+    bucket.limit_label = Some("$100.00".to_owned());
+    bucket.used_money = Some(Money::new(15_000, "USD", 2));
+    bucket.limit_money = Some(Money::new(10_000, "USD", 2));
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.remaining_label.as_deref(), Some("150% used"));
+    assert_eq!(presentation.meter_percent, Some(0));
+
+    // A non-overage money ratio agrees with the remaining percent; the text
+    // still reads used and the meter still fills by remaining.
+    let mut bucket = presentation_bucket(
+        "Extra usage",
+        Some(55),
+        Some(StatusSlot::Spend),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.used_label = Some("$45.20".to_owned());
+    bucket.limit_label = Some("$100.00".to_owned());
+    bucket.used_money = Some(Money::new(4_520, "USD", 2));
+    bucket.limit_money = Some(Money::new(10_000, "USD", 2));
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.remaining_label.as_deref(), Some("45% used"));
+    assert_eq!(presentation.meter_percent, Some(55));
 }
 
 #[test]
