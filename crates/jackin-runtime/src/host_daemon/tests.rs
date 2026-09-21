@@ -240,29 +240,24 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
     server.join().expect("server thread");
     jackin_diagnostics::flush_wire_test_export()?;
 
-    // The poll loop below breaks as soon as the three spans arrive; the
-    // deadline is only a failure detector. 2s tripped on loaded CI runners
-    // (async OTLP export lag), so allow headroom without masking genuine
-    // breakage (no spans still fails, now with the observed set attached).
+    // Flush acknowledges spans already owned by the providers. Final shutdown
+    // owns the providers and their runtime, including the exporter-owned
+    // physical-channel connection span created while flushing.
+    jackin_diagnostics::shutdown_capsule_tracing();
+
+    // Wait for the complete owned export set before asserting exactness. The
+    // deadline is only a failure detector; no span filtering or count
+    // relaxation is allowed here.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     let spans = runtime.block_on(async {
         loop {
-            let spans = testbed
-                .spans()
-                .into_iter()
-                .filter(|span| {
-                    matches!(
-                        span.name.as_str(),
-                        "rpc.client" | "rpc.server" | "connection.attempt"
-                    )
-                })
-                .collect::<Vec<_>>();
-            if spans.len() == 3 {
+            let spans = testbed.spans();
+            if spans.len() == 4 {
                 break spans;
             }
             assert!(
                 std::time::Instant::now() < deadline,
-                "daemon RPC wire spans did not arrive exactly once: got {} ({:?})",
+                "daemon RPC/export wire spans did not arrive exactly once: got {} ({:?})",
                 spans.len(),
                 spans
                     .iter()
@@ -280,14 +275,41 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
         .iter()
         .find(|span| span.name == "rpc.server")
         .expect("server span");
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == "rpc.client")
+            .count(),
+        1
+    );
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == "rpc.server")
+            .count(),
+        1
+    );
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|span| span.name == "connection.attempt")
+            .count(),
+        2,
+        "one daemon and one exporter connection attempt are owned by this export"
+    );
     let connection = spans
         .iter()
-        .find(|span| span.name == "connection.attempt")
+        .find(|span| span.name == "connection.attempt" && span.trace_id == client.trace_id)
         .expect("connection span");
     assert_eq!(server_span.trace_id, client.trace_id);
     assert_eq!(server_span.parent_span_id, client.span_id);
     assert_eq!(connection.trace_id, client.trace_id);
     assert_eq!(connection.parent_span_id, client.span_id);
+    assert!(spans.iter().any(|span| {
+        span.name == "connection.attempt"
+            && span.trace_id != client.trace_id
+            && span.parent_span_id.is_empty()
+    }));
     let wire_text = format!("{spans:?}");
     for expected in ["rpc.client", "rpc.server", "connection.attempt", "status"] {
         assert!(
@@ -302,7 +324,6 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
         Vec::<String>::new()
     );
     assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
-    jackin_diagnostics::shutdown_capsule_tracing();
     Ok(())
 }
 
