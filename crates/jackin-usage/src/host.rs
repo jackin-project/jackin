@@ -310,7 +310,7 @@ impl HostSurfaceId {
             "amp" => Some(Self::Amp),
             "grok" | "grokbuild" | "xai" | "xaigrok" => Some(Self::Grok),
             "zai" | "glm" | "glmzai" => Some(Self::Zai),
-            "kimi" => Some(Self::Kimi),
+            "kimi" | "moonshot" => Some(Self::Kimi),
             "minimax" => Some(Self::Minimax),
             "opencode" => Some(Self::OpenCode),
             "google" | "gemini" | "antigravity" => Some(Self::Google),
