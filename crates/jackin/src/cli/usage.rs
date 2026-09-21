@@ -190,8 +190,8 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
 /// interactive chrome belong in a command intended for pipes and scripts.
 fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     use jackin_usage::host::{
-        HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig, UsageDiscoveryScope,
-        ensure_usage_broker_process, usage_broker_capabilities,
+        HostRuntimeConfig, HostUsageRuntime, ProviderCredentialEnvResolver, UsageBrokerConfig,
+        UsageDiscoveryScope, ensure_usage_broker,
     };
 
     let resolver = Arc::new(CliUsageCredentialResolver::default());
@@ -213,13 +213,17 @@ fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     let discovery = runtime
         .validated_discovery()
         .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-    let client = ensure_usage_broker_process(
+    let broker_resolver: Arc<dyn ProviderCredentialEnvResolver> = resolver;
+    let handle = ensure_usage_broker(
         UsageBrokerConfig::for_data_dir(paths.data_dir.clone()),
-        &discovery_scope,
+        discovery_scope,
+        discovery,
+        broker_resolver,
     )
     .map_err(|error| anyhow::anyhow!(error.message))?;
+    let client = &handle.client;
 
-    for capability in usage_broker_capabilities(&discovery) {
+    for capability in handle.capabilities {
         let current = client
             .current(capability.clone())
             .map_err(|error| anyhow::anyhow!(error.message))?;
@@ -304,8 +308,8 @@ fn run_host_snapshot(
     scope: &UsageHostSnapshotArgs,
 ) -> Result<()> {
     use jackin_usage::host::{
-        HostProbePolicy, HostRuntimeConfig, HostSurfaceId, HostUsageRuntime, UsageBrokerConfig,
-        UsageDiscoveryScope, ensure_usage_broker_process, usage_broker_capabilities,
+        HostProbePolicy, HostRuntimeConfig, HostSurfaceId, HostUsageRuntime,
+        ProviderCredentialEnvResolver, UsageBrokerConfig, UsageDiscoveryScope, ensure_usage_broker,
     };
 
     let surface = HostSurfaceId::from_id(&scope.agent).ok_or_else(|| {
@@ -342,9 +346,16 @@ fn run_host_snapshot(
         let discovery = runtime
             .validated_discovery()
             .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-        let client = ensure_usage_broker_process(broker_config, &discovery_scope)
-            .map_err(|error| anyhow::anyhow!(error.message))?;
-        for capability in usage_broker_capabilities(&discovery)
+        let broker_resolver: Arc<dyn ProviderCredentialEnvResolver> = resolver;
+        let handle = ensure_usage_broker(
+            broker_config,
+            discovery_scope,
+            discovery,
+            broker_resolver,
+        )
+        .map_err(|error| anyhow::anyhow!(error.message))?;
+        let client = &handle.client;
+        for capability in handle.capabilities
             .into_iter()
             .filter(|capability| capability.surface_id == surface.id())
         {

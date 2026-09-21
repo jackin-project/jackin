@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
 use crate::host::{HostSurfaceId, OpaqueCredentialHandle};
-use jackin_config::AppConfig;
+use jackin_config::{AccountCredential, AiProvider, AppConfig};
 use jackin_core::{UsageCredentialEnvName, WorkspaceName};
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
@@ -495,8 +495,8 @@ fn broker_failure_without_snapshot_surfaces_honest_gap_in_snapshot() {
         jackin_config::AccountConfig {
             enabled: true,
             name: "codex-key".to_owned(),
-            provider: jackin_config::AiProvider::OpenAi,
-            credential: jackin_config::AccountCredential::ApiKey {
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::ApiKey {
                 value: jackin_config::EnvValue::Plain("fixture-openai-key".to_owned()),
                 base_url: None,
                 model: None,
@@ -1858,6 +1858,7 @@ fn slow_activator_stale_caller_catalog_never_wins() {
         stale,
         &mut discover,
         &mut reconcile,
+        &mut ensure_usage_broker_process,
     )
     .unwrap();
 
@@ -1942,6 +1943,7 @@ fn catalog_conflict_retries_with_rediscovery_then_succeeds() {
         scripted_discovery(Some("generation-stale"), &[("stale", HostSurfaceId::Amp)]),
         &mut discover,
         &mut reconcile,
+        &mut ensure_usage_broker_process,
     )
     .unwrap();
 
@@ -1997,6 +1999,7 @@ fn catalog_conflict_fails_closed_after_bounded_retries() {
         scripted_discovery(None, &[]),
         &mut discover,
         &mut reconcile,
+        &mut ensure_usage_broker_process,
     )
     .unwrap_err();
 
@@ -2063,6 +2066,7 @@ fn transient_empty_scan_does_not_wipe_live_catalog() {
         good.clone(),
         &mut discover,
         &mut reconcile,
+        &mut ensure_usage_broker_process,
     )
     .unwrap();
 
@@ -2110,6 +2114,7 @@ fn confirmed_empty_scan_still_revokes_live_catalog() {
         good,
         &mut discover,
         &mut reconcile,
+        &mut ensure_usage_broker_process,
     )
     .unwrap();
 
@@ -2225,4 +2230,167 @@ fn sequential_reconcile_after_fresh_read_still_accepts_last_writer() {
         )
         .unwrap();
     assert_eq!(overwritten.discovery_revision, "catalog-stale");
+}
+
+#[test]
+fn sidecar_service_usable_classifies_spawn_candidates() {
+    assert!(!sidecar_service_usable(None));
+    let temp = tempfile::tempdir().unwrap();
+    assert!(!sidecar_service_usable(Some(
+        &temp.path().join("missing-broker")
+    )));
+    assert!(!sidecar_service_usable(Some(temp.path())));
+
+    let plain = temp.path().join("plain-file");
+    fs::write(&plain, "not executable").unwrap();
+    assert!(!sidecar_service_usable(Some(&plain)));
+
+    let runnable = temp.path().join("runnable");
+    fs::write(&runnable, "#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&runnable, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(sidecar_service_usable(Some(&runnable)));
+}
+
+#[test]
+fn process_activation_without_sidecar_names_the_cause() {
+    let temp = tempfile::tempdir().unwrap();
+    let scope = activation_scope(&temp);
+
+    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data-none"));
+    config.service_executable = None;
+    let error = ensure_usage_broker_process(config, &scope).unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert!(
+        error
+            .message
+            .contains("no broker service executable configured")
+            && error.message.contains("JACKIN_USAGE_BROKER_BIN"),
+        "opaque error: {}",
+        error.message,
+    );
+
+    let missing = temp.path().join("missing-broker");
+    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data-missing"));
+    config.service_executable = Some(missing.clone());
+    let error = ensure_usage_broker_process(config, &scope).unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert!(
+        error.message.contains(&format!("{}", missing.display()))
+            && error.message.contains("not usable"),
+        "opaque error: {}",
+        error.message,
+    );
+
+    let plain = temp.path().join("plain-file");
+    fs::write(&plain, "not executable").unwrap();
+    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data-plain"));
+    config.service_executable = Some(plain.clone());
+    let error = ensure_usage_broker_process(config, &scope).unwrap_err();
+    assert!(
+        error.message.contains(&format!("{}", plain.display())),
+        "opaque error: {}",
+        error.message,
+    );
+}
+
+#[test]
+fn process_activation_reports_spawn_failure() {
+    let temp = tempfile::tempdir().unwrap();
+    let scope = activation_scope(&temp);
+    // Passes the usability check (regular file with an exec bit) but the
+    // kernel refuses to execute it, exercising the spawn error mapping.
+    let broken = temp.path().join("broken-broker");
+    fs::write(&broken, "#!/nonexistent-interpreter/exec\n").unwrap();
+    fs::set_permissions(&broken, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data"));
+    config.service_executable = Some(broken.clone());
+    let error = ensure_usage_broker_process(config, &scope).unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert!(
+        error.message.contains("failed to spawn")
+            && error.message.contains(&format!("{}", broken.display()))
+            && error.message.contains("os error"),
+        "spawn cause lost: {}",
+        error.message,
+    );
+}
+
+#[test]
+fn process_activation_from_capsule_scope_reports_host_only_policy() {
+    let temp = tempfile::tempdir().unwrap();
+    let runnable = temp.path().join("runnable");
+    fs::write(&runnable, "#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&runnable, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data"));
+    config.service_executable = Some(runnable);
+
+    let error = ensure_usage_broker_process(
+        config,
+        &UsageDiscoveryScope::Capsule {
+            forwarded_accounts: Vec::new(),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    assert!(
+        error.message.contains("host desktop scope"),
+        "opaque error: {}",
+        error.message,
+    );
+}
+
+#[test]
+fn ensure_usage_broker_falls_back_to_in_process_when_sidecar_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "codex-key".to_owned(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "codex-key".to_owned(),
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::ApiKey {
+                value: jackin_config::EnvValue::Plain("fixture-openai-key".to_owned()),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    fs::create_dir_all(&config_root).unwrap();
+    fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let scope = UsageDiscoveryScope::HostDesktop {
+        config_root,
+        operator_home: temp.path().join("home"),
+    };
+    let resolver: Arc<dyn ProviderCredentialEnvResolver> = Arc::new(FixedHandleResolver);
+    let discovery = validate_usage_sources(
+        discover_usage_sources(&scope, resolver.as_ref()).unwrap(),
+        resolver.as_ref(),
+    );
+    assert!(
+        !usage_catalog_entries(&discovery).is_empty(),
+        "fallback test requires a non-empty live catalog"
+    );
+
+    for service_executable in [None, Some(temp.path().join("missing-broker"))] {
+        let data_dir = tempfile::tempdir_in(temp.path()).unwrap();
+        let mut broker_config = UsageBrokerConfig::for_data_dir(data_dir.path().to_owned());
+        broker_config.service_executable = service_executable;
+        let handle = ensure_usage_broker(
+            broker_config,
+            scope.clone(),
+            discovery.clone(),
+            Arc::clone(&resolver),
+        )
+        .unwrap();
+        let projection = handle.client.current_projection().unwrap();
+        assert_eq!(handle.catalog_lease, projection.projection_id);
+        assert_eq!(handle.capabilities, usage_broker_capabilities(&discovery));
+    }
 }
