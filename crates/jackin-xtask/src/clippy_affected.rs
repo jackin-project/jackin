@@ -348,27 +348,57 @@ fn repo_root() -> Result<PathBuf> {
     Ok(PathBuf::from(root.trim()))
 }
 
-/// `Cargo.lock` refinement against worktree contents (under the stashing hook
-/// the worktree is the staged snapshot). `Ok(None)` means "unprovable":
-/// the caller widens to the full workspace.
+/// `Cargo.lock` refinement over HEAD, index, and worktree blobs. `Ok(None)`
+/// means "unprovable": the caller widens to the full workspace. The index
+/// pair is load-bearing outside the stashing hook: a staged-only edit with
+/// the worktree reverted to HEAD must still select, not skip.
 fn worktree_lock_packages() -> Result<Option<BTreeSet<String>>> {
     let head = affected_crates::git_file("HEAD", Path::new("Cargo.lock"));
+    let index = index_file(Path::new("Cargo.lock"));
     let worktree = std::fs::read("Cargo.lock");
-    let (Ok(head), Ok(worktree)) = (head, worktree) else {
+    let (Ok(head), Ok(index), Ok(worktree)) = (head, index, worktree) else {
         return Ok(None);
     };
-    Ok(Some(affected_crates::changed_lock_packages_from_contents(
-        &head, &worktree,
-    )?))
+    Ok(union_lock_changes(&head, &index, &worktree))
 }
 
 fn worktree_workspace_dependencies() -> Result<Option<BTreeSet<String>>> {
     let head = affected_crates::git_file("HEAD", Path::new("Cargo.toml"));
+    let index = index_file(Path::new("Cargo.toml"));
     let worktree = std::fs::read("Cargo.toml");
-    let (Ok(head), Ok(worktree)) = (head, worktree) else {
+    let (Ok(head), Ok(index), Ok(worktree)) = (head, index, worktree) else {
         return Ok(None);
     };
-    affected_crates::changed_workspace_dependencies_from_contents(&head, &worktree)
+    Ok(union_workspace_dependency_changes(&head, &index, &worktree))
+}
+
+/// Staged (`:path`) blob; a path missing from the index errors so the
+/// caller widens.
+fn index_file(path: &Path) -> Result<Vec<u8>> {
+    affected_crates::git_file("", path)
+}
+
+/// Union of HEAD↔index and index↔worktree lock diffs. Either pair
+/// unparseable widens (`None`): an unprovable scope must never skip.
+fn union_lock_changes(head: &[u8], index: &[u8], worktree: &[u8]) -> Option<BTreeSet<String>> {
+    let head_index = affected_crates::changed_lock_packages_from_contents(head, index).ok()?;
+    let index_worktree =
+        affected_crates::changed_lock_packages_from_contents(index, worktree).ok()?;
+    Some(head_index.into_iter().chain(index_worktree).collect())
+}
+
+/// Union of HEAD↔index and index↔worktree workspace-dependency diffs.
+/// Either pair structural or unparseable widens (`None`).
+fn union_workspace_dependency_changes(
+    head: &[u8],
+    index: &[u8],
+    worktree: &[u8],
+) -> Option<BTreeSet<String>> {
+    let head_index =
+        affected_crates::changed_workspace_dependencies_from_contents(head, index).ok()??;
+    let index_worktree =
+        affected_crates::changed_workspace_dependencies_from_contents(index, worktree).ok()??;
+    Some(head_index.into_iter().chain(index_worktree).collect())
 }
 
 fn discover_nested_packages(root: &Path, graph: &WorkspaceGraph) -> Result<Vec<NestedPackage>> {
