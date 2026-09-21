@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::Context as _;
-use jackin_config::{AccountCredential, AiProvider, AppConfig};
+use jackin_config::{AccountCredential, AiProvider, AppConfig, atomic_write};
 use jackin_core::Agent;
 
 fn account_with_effective_model(
@@ -80,6 +80,83 @@ pub(super) fn configure_accounts(
     Ok(())
 }
 
+/// Read an existing private Codex config without following symlinks or
+/// blocking on FIFOs. `Ok(None)` preserves the historical missing-file path.
+#[cfg(unix)]
+fn read_private_config_file(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
+    use nix::errno::Errno;
+    use nix::fcntl::{OFlag, open};
+    use nix::sys::stat::Mode;
+    use std::io::Read as _;
+
+    let fd = match open(
+        path,
+        OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(Errno::ENOENT) => return Ok(None),
+        Err(error) => {
+            return Err(anyhow::anyhow!(
+                "open private Codex configuration {}: {error}",
+                path.display()
+            ));
+        }
+    };
+    let mut file = std::fs::File::from(fd);
+    // Mandatory: `O_NONBLOCK` alone only makes `open(2)` on a FIFO succeed.
+    // Reject anything that is not a regular file instead of blocking on it.
+    let is_regular = file
+        .metadata()
+        .context("stat private Codex configuration")?
+        .is_file();
+    if !is_regular {
+        anyhow::bail!(
+            "refusing to read private Codex configuration {}: not a regular file",
+            path.display()
+        );
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .context("read private Codex configuration")?;
+    Ok(Some(bytes))
+}
+
+/// Non-Unix fallback: no `O_NOFOLLOW`/`O_NONBLOCK` open flags available.
+#[cfg(not(unix))]
+fn read_private_config_file(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).context("read private Codex configuration"),
+    }
+}
+
+/// Preserve an unparseable config next to the regenerated file so hand-added
+/// keys survive as forensics. Fails closed: a failed rename is an error,
+/// never a silent overwrite.
+fn quarantine_corrupt_config(path: &Path, reason: &str) -> anyhow::Result<toml::Table> {
+    let unix_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    let target = path.with_file_name(format!(
+        "config.toml.corrupt-{unix_secs}-{}",
+        std::process::id()
+    ));
+    std::fs::rename(path, &target).with_context(|| {
+        format!(
+            "quarantine corrupt private Codex configuration {}",
+            path.display()
+        )
+    })?;
+    eprintln!(
+        "[jackin] warning: private Codex configuration {} is corrupt ({reason}); moved to {} and regenerating",
+        path.display(),
+        target.display()
+    );
+    Ok(toml::Table::new())
+}
+
 fn configure_codex(
     root: &Path,
     config: &AppConfig,
@@ -114,10 +191,15 @@ fn configure_codex(
     let directory = root.join("home").join(&slot.container_home_rel);
     std::fs::create_dir_all(&directory).context("create private Codex configuration directory")?;
     let path = directory.join("config.toml");
-    let mut document: toml::Table = match std::fs::read_to_string(&path) {
-        Ok(contents) => toml::from_str(&contents).context("parse private Codex configuration")?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
-        Err(error) => return Err(error).context("read private Codex configuration"),
+    let mut document: toml::Table = match read_private_config_file(&path)? {
+        Some(bytes) => match String::from_utf8(bytes) {
+            Ok(contents) => match toml::from_str(&contents) {
+                Ok(document) => document,
+                Err(_) => quarantine_corrupt_config(&path, "invalid TOML")?,
+            },
+            Err(_) => quarantine_corrupt_config(&path, "non-UTF8 bytes")?,
+        },
+        None => toml::Table::new(),
     };
     let mut provider = toml::Table::new();
     provider.insert("name".into(), account.provider.slug().into());
@@ -125,6 +207,15 @@ fn configure_codex(
     provider.insert("env_key".into(), key.into());
     provider.insert("wire_api".into(), "responses".into());
     provider.insert("requires_openai_auth".into(), false.into());
+    // Same bricking shape as a parse failure: an existing file whose
+    // `model_providers` key is not a table. Only reachable with prior bytes
+    // (a fresh table has no such key), so quarantine and regenerate.
+    if document
+        .get("model_providers")
+        .is_some_and(|value| !value.is_table())
+    {
+        document = quarantine_corrupt_config(&path, "model_providers is not a table")?;
+    }
     let providers = document
         .entry("model_providers")
         .or_insert_with(|| toml::Value::Table(toml::Table::new()));
@@ -142,9 +233,9 @@ fn configure_codex(
                     "Codex model {model:?} does not support reasoning effort {effort:?}"
                 );
             }
-            std::fs::write(
-                directory.join("account-models.json"),
-                serde_json::to_vec_pretty(&catalog)?,
+            atomic_write(
+                &directory.join("account-models.json"),
+                &serde_json::to_string_pretty(&catalog)?,
             )
             .context("write private Codex model metadata")?;
             let catalog_target = Path::new(&slot.folder_target)
@@ -164,7 +255,7 @@ fn configure_codex(
     } else {
         document.remove("model_reasoning_effort");
     }
-    std::fs::write(path, toml::to_string_pretty(&document)?)
+    atomic_write(&path, &toml::to_string_pretty(&document)?)
         .context("write private Codex account configuration")
 }
 
@@ -289,9 +380,9 @@ fn configure_opencode(
         document["model"] = full_model.into();
     }
     document["provider"] = serde_json::json!({ id: provider });
-    std::fs::write(
-        directory.join("opencode.json"),
-        serde_json::to_vec_pretty(&document)?,
+    atomic_write(
+        &directory.join("opencode.json"),
+        &serde_json::to_string_pretty(&document)?,
     )
     .context("write private OpenCode account configuration")
 }
