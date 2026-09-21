@@ -35,7 +35,9 @@ use jackin_protocol::usage_broker::{
     UsageRefreshPhase, UsageWindowCategoryV1,
 };
 
-use crate::coordinator::{FileProjectionStateStore, ProjectionStateEnvelope, UsageCoordinator};
+use crate::coordinator::{
+    FileProjectionStateStore, ProjectionStateEnvelope, StateStoreError, UsageCoordinator,
+};
 
 use super::super::projection::metric_groups_for_view;
 
@@ -219,7 +221,7 @@ impl ProjectionPublisher {
         let previous = projection.clone();
         let mut next = projection.clone();
         retain_revoked_accounts(&mut next, &previous, &catalog, current_catalog.as_ref());
-        next.discovery_revision = catalog_revision;
+        next.discovery_revision = catalog_revision.clone();
         next.broker_generation = next.broker_generation.saturating_add(1);
         next.projection_id = format!("{}:{}", next.broker_instance_id, next.broker_generation);
         next.generated_at_epoch = now_epoch;
@@ -227,9 +229,7 @@ impl ProjectionPublisher {
         if next.validate().is_err() {
             return Err(publisher_corrupt_state());
         }
-        let Ok(previous_envelope) = self.store.load() else {
-            return Err(publisher_unavailable());
-        };
+        let previous_envelope = self.store.load().map_err(projection_store_error)?;
         let envelope = ProjectionStateEnvelope {
             schema_version: 2,
             catalog_revision: next.discovery_revision.clone(),
@@ -242,27 +242,31 @@ impl ProjectionPublisher {
             retry_deadline_epoch: None,
             success_deadline_epoch: None,
         };
-        self.store
-            .store(&envelope)
-            .map_err(|_| publisher_unavailable())?;
-
-        if let Err(error) = self
+        let transaction = self
             .coordinator
-            .reconcile_catalog(entries.iter().cloned(), now_epoch)
-        {
-            let rollback = previous_envelope
-                .clone()
-                .unwrap_or_else(|| previous_envelope_for(&previous, current_catalog.as_ref()));
-            return match self.store.store(&rollback) {
-                Ok(()) => Err(error),
-                Err(_) => Err(publisher_unavailable()),
+            .reconcile_catalog_transaction_with_revision(
+                Some(catalog_revision.as_str()),
+                entries.iter().cloned(),
+                now_epoch,
+            )?;
+        if let Err(error) = self.store.store(&envelope) {
+            let primary = projection_store_error(error);
+            let projection_restore = match previous_envelope.as_ref() {
+                Some(previous) => self.store.store(previous),
+                None => self.store.clear(),
             };
+            let coordinator_restore = transaction.rollback(now_epoch);
+            return Err(preserve_publisher_error(
+                primary,
+                first_publisher_rollback_error(projection_restore, coordinator_restore),
+            ));
         }
 
         *current_catalog = Some(catalog.clone());
         known.retain(|capability| catalog.contains_key(capability));
         published.retain(|capability, _| catalog.contains_key(capability));
         *projection = next.clone();
+        drop(transaction);
         Ok(next)
     }
 
@@ -849,26 +853,47 @@ fn issue_code(kind: UsageCoordinationErrorKind) -> String {
     .to_owned()
 }
 
-fn previous_envelope_for(
-    projection: &UsageProjectionV1,
-    catalog: Option<&BTreeMap<UsageAccountCapability, String>>,
-) -> ProjectionStateEnvelope {
-    ProjectionStateEnvelope {
-        schema_version: 2,
-        catalog_revision: projection.discovery_revision.clone(),
-        catalog: catalog.map(catalog_entries).unwrap_or_default(),
-        broker_instance_id: projection.broker_instance_id.clone(),
-        projection: projection.clone(),
-        aliases: Vec::new(),
-        retry_deadline_epoch: None,
-        success_deadline_epoch: None,
-    }
-}
-
 fn publisher_unavailable() -> UsageCoordinationError {
     UsageCoordinationError {
         kind: UsageCoordinationErrorKind::Unavailable,
         message: "usage projection publisher is unavailable".to_owned(),
+    }
+}
+
+fn projection_store_error(error: StateStoreError) -> UsageCoordinationError {
+    match error {
+        StateStoreError::Unavailable => publisher_unavailable(),
+        StateStoreError::Corrupt => UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::CorruptState,
+            message: "usage broker projection state is corrupt".to_owned(),
+        },
+    }
+}
+
+fn first_publisher_rollback_error(
+    projection: Result<(), StateStoreError>,
+    coordinator: Result<(), UsageCoordinationError>,
+) -> Result<(), UsageCoordinationError> {
+    match (projection, coordinator) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), _) => Err(projection_store_error(error)),
+        (Ok(()), Err(error)) => Err(error),
+    }
+}
+
+fn preserve_publisher_error(
+    primary: UsageCoordinationError,
+    rollback: Result<(), UsageCoordinationError>,
+) -> UsageCoordinationError {
+    match rollback {
+        Ok(()) => primary,
+        Err(rollback) => UsageCoordinationError {
+            kind: primary.kind,
+            message: format!(
+                "{}; publication rollback failed: {}",
+                primary.message, rollback.message
+            ),
+        },
     }
 }
 
@@ -1559,9 +1584,10 @@ mod tests {
             publisher.known_capabilities(),
             Vec::<UsageAccountCapability>::new()
         );
-        let persisted = store.load().unwrap().unwrap();
-        assert_eq!(persisted.catalog, vec![old]);
-        assert_eq!(persisted.projection.discovery_revision, "catalog");
+        assert!(
+            store.load().unwrap().is_none(),
+            "executor rejection must not create a durable projection"
+        );
         assert_eq!(coordinator.current(&account, 1_001).unwrap().generation, 0);
     }
 

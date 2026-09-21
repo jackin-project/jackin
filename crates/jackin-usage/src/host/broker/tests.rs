@@ -177,6 +177,7 @@ fn discovery_executor_rejects_catalog_that_does_not_match_current_scope() {
     });
     let executor = DiscoveryProviderExecutor {
         bindings: Mutex::new(BTreeMap::new()),
+        validated_catalog: Mutex::new(None),
         scope: UsageDiscoveryScope::Capsule {
             forwarded_accounts: Vec::new(),
         },
@@ -467,6 +468,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 identity: Some(profile_identity),
                 source_id: "profile-source".to_owned(),
                 capability_id: "profile-capability".to_owned(),
+                credential_revision: "profile-revision".to_owned(),
                 provenance: BTreeSet::from([
                     scope.to_owned(),
                     "account account-profile".to_owned(),
@@ -482,6 +484,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 identity: Some(env_identity),
                 source_id: "env-source".to_owned(),
                 capability_id: "env-capability".to_owned(),
+                credential_revision: "env-revision".to_owned(),
                 provenance: BTreeSet::from([scope.to_owned(), "account account-env".to_owned()]),
                 source: ValidatedCredentialSource::Env {
                     handle: super::super::OpaqueCredentialHandle::new("env-handle"),
@@ -553,6 +556,24 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     );
     assert_eq!(selected_env, vec![env_capability]);
 
+    let wrong_surface = forwarded_usage_capabilities(
+        &discovery,
+        scope,
+        &ForwardedUsageSources {
+            selected_account_ids: BTreeSet::from(["account-profile".to_owned()]),
+            selected_account_surfaces: BTreeMap::from([(
+                "account-profile".to_owned(),
+                "codex".to_owned(),
+            )]),
+            profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
+            env_keys: BTreeSet::new(),
+        },
+    );
+    assert!(
+        wrong_surface.is_empty(),
+        "account proof must bind both configured account and provider surface"
+    );
+
     let wrong_account = forwarded_usage_capabilities(
         &discovery,
         scope,
@@ -594,6 +615,7 @@ fn rotated_catalog_revision_rejects_in_flight_broker_result() {
         }),
         source_id: "source-0001".to_owned(),
         capability_id: "capability-0001".to_owned(),
+        credential_revision: "credential-revision".to_owned(),
         provenance: BTreeSet::from(["account work".to_owned()]),
         source: ValidatedCredentialSource::Capability,
     };
@@ -641,6 +663,7 @@ fn broker_catalog_admits_current_identity_and_rejects_stale_identity() {
         }),
         source_id: "source-0001".to_owned(),
         capability_id: "capability-0001".to_owned(),
+        credential_revision: "credential-revision".to_owned(),
         provenance: BTreeSet::from(["account work".to_owned()]),
         source: ValidatedCredentialSource::Capability,
     };
@@ -671,6 +694,47 @@ fn broker_catalog_admits_current_identity_and_rejects_stale_identity() {
     assert_eq!(
         client.current(stale).unwrap_err().kind,
         UsageCoordinationErrorKind::CatalogRevoked
+    );
+}
+
+#[test]
+fn broker_catalog_match_requires_full_revision_and_entry_revisions() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: Some("generation-current".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![ValidatedCredentialBinding {
+            surface: HostSurfaceId::Claude,
+            identity: Some(CanonicalAccountIdentity {
+                surface: HostSurfaceId::Claude,
+                subject: CanonicalAccountSubject::ProviderId("provider-account".to_owned()),
+            }),
+            source_id: "source-0001".to_owned(),
+            capability_id: "capability-0001".to_owned(),
+            credential_revision: "credential-revision-a".to_owned(),
+            provenance: BTreeSet::from(["account work".to_owned()]),
+            source: ValidatedCredentialSource::Capability,
+        }],
+    };
+    let entries = usage_catalog_entries(&discovery);
+    ensure_catalog_matches(&discovery, "generation-current", &entries).unwrap();
+
+    let mut changed_entries = entries.clone();
+    changed_entries[0].revision.push_str("-changed");
+    assert_eq!(
+        ensure_catalog_matches(&discovery, "generation-current", &changed_entries)
+            .unwrap_err()
+            .kind,
+        UsageCoordinationErrorKind::CatalogRevisionConflict
+    );
+    assert_eq!(
+        ensure_catalog_matches(&discovery, "generation-old", &entries)
+            .unwrap_err()
+            .kind,
+        UsageCoordinationErrorKind::CatalogRevisionConflict
     );
 }
 
@@ -938,6 +1002,28 @@ fn usage_broker_recovers_stale_guard_with_private_permissions() {
 }
 
 #[test]
+fn broker_startup_failure_cleans_lease_and_socket_before_returning() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let projection = temp.path().join(BROKER_DIR).join("projection.json");
+    fs::create_dir_all(projection.parent().unwrap()).unwrap();
+    fs::create_dir(&projection).unwrap();
+
+    let error = ensure_usage_broker_with_executor(
+        config.clone(),
+        Arc::new(CountingExecutor {
+            calls: AtomicUsize::new(0),
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+
+    let run_dir = temp.path().join(BROKER_DIR).join(BROKER_RUN_DIR);
+    assert!(!run_dir.join(BROKER_LEADER).exists());
+    assert!(!config.socket_path().exists());
+}
+
+#[test]
 fn broker_lease_uses_expiry_and_build_identity_not_pid_reuse() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("lease");
@@ -955,14 +1041,37 @@ fn broker_lease_uses_expiry_and_build_identity_not_pid_reuse() {
     let replacement = claim_leader(&path, "build", Duration::from_secs(30))
         .unwrap()
         .expect("expired lease is reclaimable");
-    assert_ne!(replacement.instance_id, live.instance_id);
+    assert_ne!(replacement.lease.instance_id, live.instance_id);
 
-    fs::write(&path, serde_json::to_vec(&replacement).unwrap()).unwrap();
+    fs::write(&path, serde_json::to_vec(&replacement.lease).unwrap()).unwrap();
     assert!(
         claim_leader(&path, "other-build", Duration::from_secs(30))
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn stale_lease_descriptor_cannot_renew_or_clean_successor_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let lease_path = temp.path().join("lease");
+    let socket_path = temp.path().join("socket");
+    let mut stale = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("first claimant owns the lease");
+    fs::write(&socket_path, b"successor socket").unwrap();
+
+    fs::remove_file(&lease_path).unwrap();
+    let successor = claim_leader(&lease_path, "build", Duration::from_secs(30))
+        .unwrap()
+        .expect("successor owns the replacement lease");
+    let successor_id = successor.lease.instance_id.clone();
+
+    assert!(!renew_lease(&mut stale, Duration::from_secs(30)));
+    assert!(!cleanup_owned_files(&lease_path, &socket_path, &mut stale,));
+    let current: BrokerLease = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
+    assert_eq!(current.instance_id, successor_id);
+    assert!(socket_path.exists());
 }
 
 #[test]
@@ -1484,6 +1593,7 @@ fn scripted_discovery(
                 }),
                 source_id: format!("source-{index}"),
                 capability_id: format!("capability-{index}-{label}"),
+                credential_revision: format!("credential-revision-{index}-{label}"),
                 provenance: BTreeSet::from(["workspace sample role test".to_owned()]),
                 source: ValidatedCredentialSource::Capability,
             })

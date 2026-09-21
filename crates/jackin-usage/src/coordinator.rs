@@ -68,6 +68,17 @@ pub trait UsageProviderExecutor: Send + Sync {
         Ok(())
     }
 
+    /// Reconcile provider bindings against a complete caller catalog. The
+    /// default keeps older in-process executors source-compatible; broker
+    /// executors that can rediscover credentials should compare both values.
+    fn reconcile_catalog_revision(
+        &self,
+        _catalog_revision: &str,
+        entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        self.reconcile_catalog(entries)
+    }
+
     /// Validate a catalog without changing provider bindings.
     ///
     /// The publisher calls this before touching coordinator durable state.
@@ -78,6 +89,16 @@ pub trait UsageProviderExecutor: Send + Sync {
         _entries: &[UsageCatalogEntry],
     ) -> Result<(), UsageCoordinationError> {
         Ok(())
+    }
+
+    /// Validate a complete caller catalog before durable or in-memory
+    /// mutation. The default delegates to the legacy entry-only hook.
+    fn validate_catalog_revision(
+        &self,
+        _catalog_revision: &str,
+        entries: &[UsageCatalogEntry],
+    ) -> Result<(), UsageCoordinationError> {
+        self.validate_catalog(entries)
     }
 }
 
@@ -238,6 +259,7 @@ struct CoordinatorState {
     accounts: BTreeMap<UsageAccountCapability, AccountEntry>,
     blocked: BTreeMap<UsageAccountCapability, UsageCoordinationError>,
     catalog: Option<BTreeMap<UsageAccountCapability, String>>,
+    catalog_revision: Option<String>,
 }
 
 struct Shared {
@@ -249,6 +271,58 @@ struct Shared {
     executor: Arc<dyn UsageProviderExecutor>,
     store: Arc<dyn AccountStateStore>,
     config: UsageCoordinatorConfig,
+}
+
+#[derive(Clone)]
+enum CatalogAccountPreimage {
+    Missing,
+    Present(Box<AccountStateEnvelope>),
+    /// The old bytes were unreadable. Rotation quarantines them instead of
+    /// treating one revoked account as a catalog-wide failure.
+    Corrupt,
+}
+
+/// Coordinator-side catalog commit whose durable projection can still reject
+/// the catalog and restore the exact pre-rotation state.
+pub(crate) struct CatalogTransaction {
+    shared: Arc<Shared>,
+    previous_state: CoordinatorState,
+    preimages: BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
+    previous_entries: Vec<UsageCatalogEntry>,
+    previous_catalog_revision: Option<String>,
+}
+
+impl CatalogTransaction {
+    /// Restore coordinator memory, account state, and executor bindings.
+    /// Corrupt preimages remain in quarantine by design; they are not safe to
+    /// put back into the active account namespace.
+    pub(crate) fn rollback(self, now_epoch: i64) -> Result<(), UsageCoordinationError> {
+        let _catalog_lifecycle = self
+            .shared
+            .catalog_lifecycle
+            .lock()
+            .map_err(|_| unavailable_error())?;
+        let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
+        let durable = restore_catalog_preimages(
+            &self.shared,
+            &self.preimages,
+            self.preimages.keys().cloned().collect(),
+            now_epoch,
+        )
+        .map_err(state_error);
+        let executor = reconcile_executor_catalog(
+            &self.shared,
+            self.previous_catalog_revision.as_deref(),
+            &self.previous_entries,
+        );
+        *state = self.previous_state;
+        self.shared.changed.notify_all();
+        match (durable, executor) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), _) => Err(error),
+            (_, Err(error)) => Err(error),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -289,7 +363,7 @@ impl UsageCoordinator {
         store: Arc<dyn AccountStateStore>,
         config: UsageCoordinatorConfig,
     ) -> Self {
-        Self::start(executor, store, config, None)
+        Self::start(executor, store, config, None, None)
     }
 
     /// Start a coordinator with the catalog from the last durable broker
@@ -306,7 +380,31 @@ impl UsageCoordinator {
             .into_iter()
             .map(|entry| (entry.capability, entry.revision))
             .collect();
-        Self::start(executor, store, config, Some(catalog))
+        Self::start(executor, store, config, Some(catalog), None)
+    }
+
+    /// Start a coordinator with the exact revision persisted beside the
+    /// catalog. Broker recovery uses this so executor rollback is fenced by
+    /// the same caller/service revision as the forward rotation.
+    #[must_use]
+    pub(crate) fn with_catalog_revision(
+        executor: Arc<dyn UsageProviderExecutor>,
+        store: Arc<dyn AccountStateStore>,
+        config: UsageCoordinatorConfig,
+        catalog: impl IntoIterator<Item = UsageCatalogEntry>,
+        catalog_revision: String,
+    ) -> Self {
+        let catalog = catalog
+            .into_iter()
+            .map(|entry| (entry.capability, entry.revision))
+            .collect();
+        Self::start(
+            executor,
+            store,
+            config,
+            Some(catalog),
+            Some(catalog_revision),
+        )
     }
 
     fn start(
@@ -314,6 +412,7 @@ impl UsageCoordinator {
         store: Arc<dyn AccountStateStore>,
         config: UsageCoordinatorConfig,
         catalog: Option<BTreeMap<UsageAccountCapability, String>>,
+        catalog_revision: Option<String>,
     ) -> Self {
         let config = UsageCoordinatorConfig {
             max_concurrency: config.max_concurrency.max(1),
@@ -323,6 +422,7 @@ impl UsageCoordinator {
         let shared = Arc::new(Shared {
             state: Mutex::new(CoordinatorState {
                 catalog,
+                catalog_revision,
                 ..CoordinatorState::default()
             }),
             catalog_lifecycle: Mutex::new(()),
@@ -361,6 +461,20 @@ impl UsageCoordinator {
         entries: impl IntoIterator<Item = UsageCatalogEntry>,
         now_epoch: i64,
     ) -> Result<(), UsageCoordinationError> {
+        self.reconcile_catalog_transaction_with_revision(None, entries, now_epoch)
+            .map(|_| ())
+    }
+
+    /// Apply one catalog rotation with the caller's content-derived catalog
+    /// revision. Broker processes use this stronger boundary so executor
+    /// discovery can reject a caller/service catalog mismatch before state is
+    /// changed.
+    pub(crate) fn reconcile_catalog_transaction_with_revision(
+        &self,
+        catalog_revision: Option<&str>,
+        entries: impl IntoIterator<Item = UsageCatalogEntry>,
+        now_epoch: i64,
+    ) -> Result<CatalogTransaction, UsageCoordinationError> {
         let entries = entries.into_iter().collect::<Vec<_>>();
         let _catalog_lifecycle = self
             .shared
@@ -369,7 +483,13 @@ impl UsageCoordinator {
             .map_err(|_| unavailable_error())?;
         let mut state = self.shared.state.lock().map_err(|_| unavailable_error())?;
         validate_catalog_entries(&entries)?;
-        self.shared.executor.validate_catalog(&entries)?;
+        if let Some(catalog_revision) = catalog_revision {
+            self.shared
+                .executor
+                .validate_catalog_revision(catalog_revision, &entries)?;
+        } else {
+            self.shared.executor.validate_catalog(&entries)?;
+        }
         let previous_state = state.clone();
         let previous = state.catalog.clone().unwrap_or_else(|| {
             state
@@ -395,27 +515,60 @@ impl UsageCoordinator {
                 self.shared
                     .store
                     .load(capability, now_epoch)
-                    .map(|envelope| (capability.clone(), envelope))
-                    .map_err(state_error)
+                    .map(|envelope| {
+                        (
+                            capability.clone(),
+                            envelope.map_or(CatalogAccountPreimage::Missing, |envelope| {
+                                CatalogAccountPreimage::Present(Box::new(envelope))
+                            }),
+                        )
+                    })
+                    .or_else(|error| match error {
+                        StateStoreError::Corrupt => {
+                            Ok((capability.clone(), CatalogAccountPreimage::Corrupt))
+                        }
+                        StateStoreError::Unavailable => Err(state_error(error)),
+                    })
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;
 
-        for capability in &purge {
-            if let Err(error) = self.shared.store.purge(capability).map_err(state_error) {
-                restore_catalog_state(&self.shared, &preimages, now_epoch);
-                return Err(error);
-            }
+        if let Err(error) = reconcile_executor_catalog(&self.shared, catalog_revision, &entries) {
+            let rollback = reconcile_executor_catalog(
+                &self.shared,
+                previous_state.catalog_revision.as_deref(),
+                &catalog_entries_from_map(&previous),
+            );
+            return Err(preserve_catalog_error(error, rollback));
         }
 
-        let executor_result = self.shared.executor.reconcile_catalog(&entries);
-        if let Err(error) = executor_result {
-            restore_catalog_state(&self.shared, &preimages, now_epoch);
-            *state = previous_state;
-            let _rollback = self
-                .shared
-                .executor
-                .reconcile_catalog(&catalog_entries_from_map(&previous));
-            return Err(error);
+        let mut completed_purges = BTreeSet::new();
+        for capability in &purge {
+            let result: Result<(), StateStoreError> = match preimages.get(capability) {
+                Some(CatalogAccountPreimage::Corrupt) => self.shared.store.quarantine(capability),
+                Some(CatalogAccountPreimage::Missing | CatalogAccountPreimage::Present(_)) => {
+                    self.shared.store.purge(capability)
+                }
+                None => Err(StateStoreError::Unavailable),
+            };
+            if let Err(error) = result.map_err(state_error) {
+                let durable = restore_catalog_preimages(
+                    &self.shared,
+                    &preimages,
+                    completed_purges,
+                    now_epoch,
+                )
+                .map_err(state_error);
+                let executor = reconcile_executor_catalog(
+                    &self.shared,
+                    previous_state.catalog_revision.as_deref(),
+                    &catalog_entries_from_map(&previous),
+                );
+                return Err(preserve_catalog_error(
+                    error,
+                    first_catalog_rollback_error(durable, executor),
+                ));
+            }
+            completed_purges.insert(capability.clone());
         }
 
         let account_capabilities = state.accounts.keys().cloned().collect::<Vec<_>>();
@@ -438,8 +591,16 @@ impl UsageCoordinator {
             }
         }
         state.catalog = Some(next);
+        state.catalog_revision = catalog_revision.map(str::to_owned);
+        let previous_catalog_revision = previous_state.catalog_revision.clone();
         self.shared.changed.notify_all();
-        Ok(())
+        Ok(CatalogTransaction {
+            shared: Arc::clone(&self.shared),
+            previous_state,
+            preimages,
+            previous_entries: catalog_entries_from_map(&previous),
+            previous_catalog_revision,
+        })
     }
 
     /// Read current state without dispatching provider work.
@@ -675,6 +836,9 @@ impl UsageCoordinator {
     /// account. Future due times are untouched. Returns the number of
     /// recalculated accounts. Never dispatches provider work.
     pub fn note_wake(&self, now_epoch: i64) -> usize {
+        let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
+            return 0;
+        };
         let Ok(mut state) = self.shared.state.lock() else {
             return 0;
         };
@@ -700,6 +864,9 @@ impl UsageCoordinator {
         observed_generation: u64,
         now_epoch: i64,
     ) {
+        let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
+            return;
+        };
         let Ok(mut state) = self.shared.state.lock() else {
             return;
         };
@@ -1046,6 +1213,9 @@ fn finish_success(
     view: FocusedUsageView,
     finished_at_epoch: i64,
 ) {
+    let Ok(_catalog_lifecycle) = shared.catalog_lifecycle.lock() else {
+        return;
+    };
     let Ok(mut state) = shared.state.lock() else {
         return;
     };
@@ -1082,6 +1252,9 @@ fn finish_failure(
     retry_at_epoch: Option<i64>,
     finished_at_epoch: i64,
 ) {
+    let Ok(_catalog_lifecycle) = shared.catalog_lifecycle.lock() else {
+        return;
+    };
     let Ok(mut state) = shared.state.lock() else {
         return;
     };
@@ -1197,16 +1370,67 @@ fn catalog_entries_from_map(
         .collect()
 }
 
-fn restore_catalog_state(
+fn reconcile_executor_catalog(
     shared: &Arc<Shared>,
-    preimages: &BTreeMap<UsageAccountCapability, Option<AccountStateEnvelope>>,
+    catalog_revision: Option<&str>,
+    entries: &[UsageCatalogEntry],
+) -> Result<(), UsageCoordinationError> {
+    match catalog_revision {
+        Some(catalog_revision) => shared
+            .executor
+            .reconcile_catalog_revision(catalog_revision, entries),
+        None => shared.executor.reconcile_catalog(entries),
+    }
+}
+
+fn restore_catalog_preimages(
+    shared: &Arc<Shared>,
+    preimages: &BTreeMap<UsageAccountCapability, CatalogAccountPreimage>,
+    capabilities: BTreeSet<UsageAccountCapability>,
     now_epoch: i64,
-) {
-    for (capability, envelope) in preimages {
-        match envelope {
-            Some(envelope) => drop(shared.store.store(envelope, now_epoch)),
-            None => drop(shared.store.purge(capability)),
+) -> Result<(), StateStoreError> {
+    for capability in capabilities {
+        let Some(preimage) = preimages.get(&capability) else {
+            return Err(StateStoreError::Unavailable);
+        };
+        match preimage {
+            CatalogAccountPreimage::Present(envelope) => {
+                shared.store.store(envelope, now_epoch)?;
+            }
+            CatalogAccountPreimage::Missing => {
+                shared.store.purge(&capability)?;
+            }
+            // The invalid bytes were deliberately quarantined during the
+            // failed rotation. Reintroducing them would re-poison recovery.
+            CatalogAccountPreimage::Corrupt => {}
         }
+    }
+    Ok(())
+}
+
+fn first_catalog_rollback_error(
+    durable: Result<(), UsageCoordinationError>,
+    executor: Result<(), UsageCoordinationError>,
+) -> Result<(), UsageCoordinationError> {
+    match (durable, executor) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), _) | (Ok(()), Err(error)) => Err(error),
+    }
+}
+
+fn preserve_catalog_error(
+    primary: UsageCoordinationError,
+    rollback: Result<(), UsageCoordinationError>,
+) -> UsageCoordinationError {
+    match rollback {
+        Ok(()) => primary,
+        Err(rollback) => coordination_error(
+            primary.kind,
+            format!(
+                "{}; catalog rollback failed: {}",
+                primary.message, rollback.message
+            ),
+        ),
     }
 }
 

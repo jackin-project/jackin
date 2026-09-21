@@ -7,6 +7,7 @@
 //! this crate. Native clients receive only sanitized descriptors/diagnostics.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::path::{Component, Path, PathBuf};
 
 use jackin_config::{
@@ -443,6 +444,7 @@ pub(super) struct ValidatedCredentialBinding {
     pub identity: Option<CanonicalAccountIdentity>,
     pub source_id: String,
     pub capability_id: String,
+    pub credential_revision: String,
     pub provenance: BTreeSet<String>,
     pub source: ValidatedCredentialSource,
 }
@@ -970,6 +972,7 @@ fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourceKey) -> St
     hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned()
 }
 
+#[derive(Clone)]
 enum ProfileReadOutcome {
     Bytes(Vec<u8>),
     Missing,
@@ -980,6 +983,57 @@ trait ProfileCredentialReader {
     fn read(&self, path: &Path) -> ProfileReadOutcome;
     fn exists(&self, path: &Path) -> bool;
     fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome;
+}
+
+struct CachingProfileCredentialReader<'a> {
+    inner: &'a dyn ProfileCredentialReader,
+    exists: std::cell::RefCell<BTreeMap<PathBuf, bool>>,
+    files: std::cell::RefCell<BTreeMap<PathBuf, ProfileReadOutcome>>,
+    keychain: std::cell::RefCell<BTreeMap<String, ProfileReadOutcome>>,
+}
+
+impl<'a> CachingProfileCredentialReader<'a> {
+    fn new(inner: &'a dyn ProfileCredentialReader) -> Self {
+        Self {
+            inner,
+            exists: std::cell::RefCell::new(BTreeMap::new()),
+            files: std::cell::RefCell::new(BTreeMap::new()),
+            keychain: std::cell::RefCell::new(BTreeMap::new()),
+        }
+    }
+}
+
+impl ProfileCredentialReader for CachingProfileCredentialReader<'_> {
+    fn read(&self, path: &Path) -> ProfileReadOutcome {
+        if let Some(outcome) = self.files.borrow().get(path).cloned() {
+            return outcome;
+        }
+        let outcome = self.inner.read(path);
+        self.files
+            .borrow_mut()
+            .insert(path.to_path_buf(), outcome.clone());
+        outcome
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        if let Some(exists) = self.exists.borrow().get(path).copied() {
+            return exists;
+        }
+        let exists = self.inner.exists(path);
+        self.exists.borrow_mut().insert(path.to_path_buf(), exists);
+        exists
+    }
+
+    fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome {
+        if let Some(outcome) = self.keychain.borrow().get(&scope.service).cloned() {
+            return outcome;
+        }
+        let outcome = self.inner.read_claude_keychain(scope);
+        self.keychain
+            .borrow_mut()
+            .insert(scope.service.clone(), outcome.clone());
+        outcome
+    }
 }
 
 struct SystemProfileCredentialReader;
@@ -1051,17 +1105,18 @@ fn validate_usage_sources_with_reader(
     let mut bindings = Vec::new();
     let mut accounts = BTreeMap::<CanonicalAccountIdentity, AccountAccumulator>::new();
 
+    let profile_reader = CachingProfileCredentialReader::new(profile_reader);
     let validated: Vec<ValidatedSourceParts> = catalog
         .sources
         .into_iter()
-        .map(|source| validate_source(source, env_resolver, profile_reader))
+        .map(|source| validate_source(source, env_resolver, &profile_reader))
         .collect();
     // Provider-issued identities per surface, from any source form. An
     // anonymous env/key credential carries no identity evidence of its own;
     // when exactly one same-surface provider identity exists, the key joins
     // that canonical account instead of minting a source-scoped row.
     let mut strong = BTreeMap::<HostSurfaceId, BTreeSet<CanonicalAccountIdentity>>::new();
-    for (surface, _, _, _, _, outcome) in &validated {
+    for (surface, _, _, _, _, _, outcome) in &validated {
         if let ProfileValidation::Authenticated {
             provider_id: Some(id),
             ..
@@ -1079,7 +1134,7 @@ fn validate_usage_sources_with_reader(
     }
     let (primary, attachable): (Vec<ValidatedSourceParts>, Vec<ValidatedSourceParts>) = validated
         .into_iter()
-        .partition(|parts| !is_attachable_env_source(&parts.4, &parts.5));
+        .partition(|parts| !is_attachable_env_source(&parts.5, &parts.6));
     // Strong sources accumulate first so canonical labels come from
     // authenticated evidence, never from an attached anonymous key.
     for parts in primary {
@@ -1151,7 +1206,8 @@ fn accumulate_validated_source(
     bindings: &mut Vec<ValidatedCredentialBinding>,
     accounts: &mut BTreeMap<CanonicalAccountIdentity, AccountAccumulator>,
 ) {
-    let (surface, source_id, capability_id, provenance, source, outcome) = parts;
+    let (surface, source_id, capability_id, credential_revision, provenance, source, outcome) =
+        parts;
     if let Some(identity) = attach_to {
         let label = match &outcome {
             ProfileValidation::Authenticated {
@@ -1183,6 +1239,7 @@ fn accumulate_validated_source(
             identity: Some(identity),
             source_id,
             capability_id,
+            credential_revision,
             provenance,
             source,
         });
@@ -1216,6 +1273,7 @@ fn accumulate_validated_source(
                     identity: None,
                     source_id,
                     capability_id,
+                    credential_revision,
                     provenance,
                     source,
                 });
@@ -1243,6 +1301,7 @@ fn accumulate_validated_source(
                 identity: Some(identity),
                 source_id,
                 capability_id,
+                credential_revision,
                 provenance,
                 source,
             });
@@ -1252,6 +1311,7 @@ fn accumulate_validated_source(
             identity: None,
             source_id,
             capability_id,
+            credential_revision,
             provenance,
             source,
         }),
@@ -1277,6 +1337,7 @@ type ValidatedSourceParts = (
     HostSurfaceId,
     String,
     String,
+    String,
     BTreeSet<String>,
     ValidatedCredentialSource,
     ProfileValidation,
@@ -1299,6 +1360,8 @@ fn validate_source(
             provenance,
         } => {
             let outcome = profile_identity(profile_reader, agent, &root, &operator_home);
+            let credential_revision =
+                profile_credential_revision(profile_reader, agent, &root, &operator_home);
             let source = match &outcome {
                 ProfileValidation::Authenticated { material, .. }
                 | ProfileValidation::Anonymous(material) => material
@@ -1335,6 +1398,7 @@ fn validate_source(
                 surface,
                 source_id,
                 capability_id,
+                credential_revision,
                 provenance,
                 source,
                 outcome,
@@ -1374,10 +1438,13 @@ fn validate_source(
                 ProviderCredentialIdentityOutcome::Denied => ProfileValidation::Denied,
                 ProviderCredentialIdentityOutcome::Malformed => ProfileValidation::Malformed,
             };
+            let credential_revision =
+                opaque_credential_revision(&format!("env:{}:{}:{}", surface.id(), key, handle.0));
             (
                 surface,
                 source_id,
                 capability_id,
+                credential_revision,
                 provenance,
                 ValidatedCredentialSource::Env { handle, key },
                 outcome,
@@ -1400,7 +1467,8 @@ fn validate_source(
             (
                 surface,
                 source_id,
-                capability_id,
+                capability_id.clone(),
+                opaque_credential_revision(&format!("capability:{capability_id}")),
                 provenance,
                 ValidatedCredentialSource::Capability,
                 outcome,
@@ -1419,6 +1487,82 @@ fn source_diagnostic(
         scope_label: provenance.iter().cloned().collect::<Vec<_>>().join(", "),
         issue,
     }
+}
+
+/// Return an opaque revision for the complete credential material read for a
+/// profile source. The path-derived source id is intentionally not enough:
+/// providers frequently rotate tokens in place without changing the profile
+/// path or account identity.
+fn profile_credential_revision(
+    reader: &dyn ProfileCredentialReader,
+    agent: Agent,
+    root: &Path,
+    operator_home: &Path,
+) -> String {
+    let mut evidence = Vec::new();
+    let mut file = |label: &str, path: PathBuf| {
+        append_profile_read(&mut evidence, label, reader.read(&path));
+    };
+    match agent {
+        Agent::Claude => {
+            file("claude.credentials", root.join(".credentials.json"));
+            file("claude.config", root.join(".claude.json"));
+            if root == operator_home.join(".claude") {
+                file("claude.home-config", operator_home.join(".claude.json"));
+            }
+            if let Some(scope) =
+                jackin_core::claude_keychain_scope(root, operator_home, operator_home)
+            {
+                append_profile_read(
+                    &mut evidence,
+                    "claude.keychain",
+                    reader.read_claude_keychain(&scope),
+                );
+            }
+        }
+        Agent::Codex => file("codex.auth", root.join("auth.json")),
+        Agent::Amp => {
+            let direct = root.join("secrets.json");
+            let path = if reader.exists(&direct) {
+                direct
+            } else {
+                root.join("data/amp/secrets.json")
+            };
+            file("amp.secrets", path);
+        }
+        Agent::Kimi => file("kimi.credentials", root.join("credentials/kimi-code.json")),
+        Agent::Grok => file("grok.auth", root.join("auth.json")),
+        Agent::Opencode => file("opencode.auth", root.join("auth.json")),
+        Agent::Antigravity => evidence.push("antigravity:keychain".to_owned()),
+        Agent::Gemini => file("gemini.oauth", root.join("oauth_creds.json")),
+        Agent::Cursor => {
+            file("cursor.auth", root.join("auth.json"));
+            file("cursor.config", root.join("cli-config.json"));
+        }
+        Agent::Muse => file("muse.auth", root.join("auth.json")),
+        Agent::Omp => file("omp.database", root.join("agent/agent.db")),
+        Agent::Hermes => file("hermes.auth", root.join("auth.json")),
+    }
+    opaque_credential_revision(&evidence.join("|"))
+}
+
+fn append_profile_read(evidence: &mut Vec<String>, label: &str, outcome: ProfileReadOutcome) {
+    match outcome {
+        ProfileReadOutcome::Bytes(bytes) => {
+            let mut hex = String::with_capacity(bytes.len().saturating_mul(2));
+            for byte in &bytes {
+                let _ignored = write!(hex, "{byte:02x}");
+            }
+            evidence.push(format!("{label}:bytes:{}:{hex}", bytes.len()));
+        }
+        ProfileReadOutcome::Missing => evidence.push(format!("{label}:missing")),
+        ProfileReadOutcome::Denied => evidence.push(format!("{label}:denied")),
+    }
+}
+
+fn opaque_credential_revision(evidence: &str) -> String {
+    let hashed = jackin_core::account_key_hash("usage-credential-material-v2", evidence);
+    hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned()
 }
 
 fn profile_identity(

@@ -32,6 +32,7 @@ const MAX_DISPLAY_CHARS: usize = 256;
 /// missing or unknown catalog.
 const PROJECTION_STATE_SCHEMA_VERSION: u32 = 2;
 static STATE_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+static STATE_QUARANTINE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Complete durable state for one canonical account.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -113,6 +114,15 @@ pub trait AccountStateStore: Send + Sync {
     /// Remove durable state for one revoked capability.
     fn purge(&self, _capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
         Ok(())
+    }
+
+    /// Move unreadable durable state out of the active namespace.
+    ///
+    /// A catalog rotation must be able to remove a revoked account even when
+    /// its old state cannot be decoded. Implementations may use a destructive
+    /// purge when no recoverable quarantine namespace exists.
+    fn quarantine(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.purge(capability)
     }
 }
 
@@ -369,6 +379,58 @@ impl AccountStateStore for FileAccountStateStore {
         let directory = self.open_accounts_dir()?;
         let filename = state_filename(capability);
         match unlinkat(&directory, filename.as_str(), UnlinkatFlags::NoRemoveDir) {
+            Ok(()) => fsync(&directory).map_err(|_| StateStoreError::Unavailable),
+            Err(nix::errno::Errno::ENOENT) => Ok(()),
+            Err(_) => Err(StateStoreError::Unavailable),
+        }
+    }
+
+    fn quarantine(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        validate_capability(capability)?;
+        let directory = self.open_accounts_dir()?;
+        let filename = state_filename(capability);
+        let suffix = format!(
+            "{}-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default(),
+            STATE_QUARANTINE_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
+        let quarantined = format!(".{filename}.corrupt.{suffix}");
+        match renameat(
+            &directory,
+            filename.as_str(),
+            &directory,
+            quarantined.as_str(),
+        ) {
+            Ok(()) => fsync(&directory).map_err(|_| StateStoreError::Unavailable),
+            Err(nix::errno::Errno::ENOENT) => Ok(()),
+            Err(_) => Err(StateStoreError::Unavailable),
+        }
+    }
+}
+
+impl FileProjectionStateStore {
+    /// Remove the active envelope after a failed first publication. The
+    /// caller uses this only to restore an absent preimage.
+    pub(crate) fn clear(&self) -> Result<(), StateStoreError> {
+        let Some(parent) = self.path.parent() else {
+            return Err(StateStoreError::Unavailable);
+        };
+        let directory = match open(
+            parent,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        ) {
+            Ok(directory) => directory,
+            Err(nix::errno::Errno::ENOENT) => return Ok(()),
+            Err(_) => return Err(StateStoreError::Unavailable),
+        };
+        let directory = File::from(directory);
+        let filename = self
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or(StateStoreError::Unavailable)?;
+        match unlinkat(&directory, filename, UnlinkatFlags::NoRemoveDir) {
             Ok(()) => fsync(&directory).map_err(|_| StateStoreError::Unavailable),
             Err(nix::errno::Errno::ENOENT) => Ok(()),
             Err(_) => Err(StateStoreError::Unavailable),
