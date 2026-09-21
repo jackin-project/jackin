@@ -107,6 +107,12 @@ impl ProviderCredentialEnvResolver for FakeEnvResolver {
                         ),
                     })
                 }
+                UsageCredentialOwner::OpenRouter => Some(ProviderCredentialEnvResolution {
+                    key: entry.name.to_owned(),
+                    outcome: ProviderCredentialEnvOutcome::Resolved(OpaqueCredentialHandle::new(
+                        "openrouter-shared",
+                    )),
+                }),
                 _ => None,
             })
             .collect()
@@ -311,6 +317,62 @@ fn disc_registry_api_sources_are_isolated_from_ambient_env_declarations() {
     assert_eq!(calls[0].2, vec!["JACKIN_USAGE_ACCOUNT_ZAI_API_KEY"]);
     assert!(!jackin_core::is_account_env(&calls[0].2[0]));
     assert!(!format!("{catalog:?}").contains("fixture-key"));
+}
+
+#[test]
+fn disc_registry_openrouter_api_key_maps_to_usage_surface_and_governed_env() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    std::fs::create_dir_all(&config_root).unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "openrouter-work".to_owned(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "OpenRouter work".to_owned(),
+            provider: AiProvider::OpenRouter,
+            credential: AccountCredential::ApiKey {
+                value: jackin_config::EnvValue::Plain("fixture-openrouter-key".to_owned()),
+                base_url: None,
+                model: Some("openai/gpt-5".to_owned()),
+            },
+        },
+    );
+    std::fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+
+    let resolver = FakeEnvResolver::default();
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: temp.path().join("home"),
+        },
+        &resolver,
+    )
+    .unwrap();
+
+    assert_eq!(catalog.candidates.len(), 1);
+    assert_eq!(catalog.candidates[0].surface_id, "openrouter");
+    assert_eq!(
+        catalog.candidates[0].credential_kind,
+        UsageCredentialKind::ApiKey
+    );
+    assert_eq!(
+        resolver.calls.lock().unwrap()[0].2,
+        vec!["JACKIN_USAGE_ACCOUNT_OPENROUTER_API_KEY"]
+    );
+    assert!(!jackin_core::is_account_env(
+        &resolver.calls.lock().unwrap()[0].2[0]
+    ));
+    assert!(!format!("{catalog:?}").contains("fixture-openrouter-key"));
+
+    let validated = validate_usage_sources(catalog, &resolver);
+    let capabilities = crate::host::usage_broker_capabilities(&validated);
+    assert_eq!(capabilities.len(), 1);
+    assert_eq!(capabilities[0].surface_id, "openrouter");
 }
 
 #[test]

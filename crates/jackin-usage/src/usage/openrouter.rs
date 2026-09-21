@@ -10,6 +10,11 @@
 //! the public `GET {base}/models` catalog; a stale omission is `Unverified`,
 //! never a rejection. A null key cap means no configured cap, not infinite
 //! credit — no percentage bar is drawn without a matching denominator.
+//!
+//! Completed activity history (`GET {base}/activity`) is Management-key-only.
+//! The current account credential contract supplies an inference key, not a
+//! separate Management key, so history remains explicitly unavailable rather
+//! than being fetched with the wrong scope or inferred from live key usage.
 
 #[cfg_attr(
     not(test),
