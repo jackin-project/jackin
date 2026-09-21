@@ -315,18 +315,108 @@ fn openrouter_snapshot_with_base_serves_key_quota_from_canned_api() {
 }
 
 #[test]
-fn openrouter_snapshot_with_refused_base_is_error_never_fabricated() {
-    let refused = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let address = refused.local_addr().unwrap();
-    drop(refused);
-    let view = openrouter_snapshot_with_base(
+fn openrouter_snapshot_with_controlled_connection_error_is_error() {
+    let view = openrouter_snapshot_with_key_fetch(
         "opencode",
         Some("fixture-key"),
-        &format!("http://{address}"),
+        "http://127.0.0.1:40101",
         1_780_000_000,
+        |_base_url, _key| {
+            Err(ProviderHttpError::Transport(
+                "OpenRouter key request failed for http://127.0.0.1:40101/key: connection refused"
+                    .to_owned(),
+            ))
+        },
     );
 
     assert_eq!(view.status, UsageSnapshotStatus::Error);
     assert_eq!(view.account.provider_label, "OpenRouter");
-    assert!(view.last_error.is_some());
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("OpenRouter key request failed for http://127.0.0.1:40101/key: connection refused")
+    );
+}
+
+#[test]
+fn openrouter_transport_text_and_url_401_are_not_auth_failures() {
+    let failures = [
+        ProviderHttpError::Transport(
+            "OpenRouter key request failed: transport reported status 401".to_owned(),
+        ),
+        ProviderHttpError::Transport(
+            "OpenRouter key request failed for http://127.0.0.1:40101/key".to_owned(),
+        ),
+        ProviderHttpError::Decode("OpenRouter key decode failed: payload mentions 401".to_owned()),
+    ];
+
+    for failure in &failures {
+        assert_eq!(
+            openrouter_key_error_status(failure),
+            UsageSnapshotStatus::Error,
+            "non-HTTP-status failure must not become NeedsLogin: {failure}"
+        );
+    }
+    assert_eq!(
+        openrouter_key_error_status(&ProviderHttpError::HttpStatus {
+            status: 401,
+            message: "OpenRouter key HTTP 401 Unauthorized".to_owned(),
+        }),
+        UsageSnapshotStatus::NeedsLogin
+    );
+}
+
+fn one_shot_key_server(status: u16, body: &str) -> (String, std::thread::JoinHandle<()>) {
+    use std::io::{Read as _, Write as _};
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let body = body.to_owned();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 4096];
+        let read = stream.read(&mut request).unwrap();
+        assert!(String::from_utf8_lossy(&request[..read]).contains("/key"));
+        let reason = match status {
+            200 => "OK",
+            401 => "Unauthorized",
+            _ => "Error",
+        };
+        write!(
+            stream,
+            "HTTP/1.1 {status} {reason}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
+    });
+    (format!("http://{address}"), server)
+}
+
+#[test]
+fn openrouter_actual_401_is_needs_login() {
+    let (base_url, server) = one_shot_key_server(401, "unauthorized");
+    let view =
+        openrouter_snapshot_with_base("opencode", Some("fixture-key"), &base_url, 1_780_000_000);
+    server.join().unwrap();
+
+    assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("OpenRouter key HTTP 401 Unauthorized")
+    );
+}
+
+#[test]
+fn openrouter_malformed_key_payload_is_error() {
+    let (base_url, server) = one_shot_key_server(200, "not-json");
+    let view =
+        openrouter_snapshot_with_base("opencode", Some("fixture-key"), &base_url, 1_780_000_000);
+    server.join().unwrap();
+
+    assert_eq!(view.status, UsageSnapshotStatus::Error);
+    assert!(
+        view.last_error
+            .as_deref()
+            .is_some_and(|error| error.starts_with("OpenRouter key decode failed:")),
+        "malformed payload must retain decode failure"
+    );
 }
