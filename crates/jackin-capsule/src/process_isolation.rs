@@ -237,6 +237,7 @@ mod linux {
         anyhow::ensure!(session_id > 0, "isolated session id cannot be zero");
         let session_root = session_root_path(session_id);
         prepare_session_root(&session_root)?;
+        prepare_pane_homes_parent(&config, instance)?;
         let cwd = std::env::current_dir().context("resolve isolated session cwd")?;
         let rules = rules_for(config, instance, &cwd, &session_root)?;
         drop_privileges(identity)?;
@@ -406,13 +407,30 @@ mod linux {
                     READ_FILE_ONLY
                 };
                 required_exact_rule(&mut rules, &path, access);
-                if let Ok(relative) = path.strip_prefix(Path::new("/home/agent/")) {
-                    // Runtime setup may seed this selected slot from the
-                    // image snapshot. Never allow the snapshot root itself:
-                    // it contains every agent's default fragment.
+            }
+            // Concurrent same-instance sessions run in derived pane homes
+            // (`{home}/panes/{seq}`). The parent sits outside the base mount
+            // grants for XDG-parent homes, so it gets its own grant; the
+            // wrapper pre-created it before dropping privileges, and requiring
+            // it here fails closed with the path named when that breaks.
+            let panes = pane_homes_parent(config, instance)?;
+            required_exact_rule(&mut rules, &panes, FULL_WITH_UNIX);
+            // Runtime setup seeds a fresh home — base or derived pane home —
+            // from the image snapshot of this agent's own default fragment(s).
+            // Never the snapshot root itself: it holds every agent's defaults.
+            // The fragment is keyed by the agent runtime, not by the instance
+            // home suffix: seed reads `credential_dir` for every home shape,
+            // so a suffix-derived grant would miss and fail the seed closed.
+            if let Some(slug) = config.agents.get(instance)
+                && let Some(agent) = jackin_core::Agent::from_slug(slug)
+            {
+                let state = agent.runtime().state_paths();
+                let mut fragments = vec![state.credential_dir];
+                fragments.extend(state.config_dir);
+                for fragment in fragments {
                     optional_exact_rule(
                         &mut rules,
-                        &Path::new(jackin_core::container_paths::DEFAULT_HOME_DIR).join(relative),
+                        &Path::new(jackin_core::container_paths::DEFAULT_HOME_DIR).join(fragment),
                         READ_ONLY,
                     );
                 }
@@ -528,6 +546,75 @@ mod linux {
 
     fn session_root_path(session_id: u64) -> PathBuf {
         Path::new(jackin_core::container_paths::SESSION_ROOTS_DIR).join(session_id.to_string())
+    }
+
+    /// Lexical `{home}/panes` parent for an instance's derived pane homes.
+    /// Every admitted instance carries a home entry; a missing entry fails
+    /// the spawn closed (the daemon enforces the same invariant).
+    fn pane_homes_parent(config: &CapsuleConfig, instance: &str) -> Result<PathBuf> {
+        let home = config.instance_home_dirs.get(instance).with_context(|| {
+            format!("admitted instance {instance} has no home dir for pane homes")
+        })?;
+        let home = normalize_existing_path(Path::new(home))?;
+        Ok(home.join(jackin_core::container_paths::PANE_HOMES_DIR_NAME))
+    }
+
+    /// Create the instance's `{home}/panes` parent before dropping UID and
+    /// installing Landlock. The host mount provides the home itself; only the
+    /// leaf is ever created here. A symlink or non-directory at the leaf fails
+    /// closed (a same-instance session could otherwise redirect the next
+    /// spawn's grant outside its home), as does a leaf that resolves outside
+    /// the home. Shell sessions carry no instance home and skip this.
+    fn prepare_pane_homes_parent(config: &CapsuleConfig, instance: Option<&str>) -> Result<()> {
+        let Some(instance) = instance else {
+            return Ok(());
+        };
+        let home = config.instance_home_dirs.get(instance).with_context(|| {
+            format!("admitted instance {instance} has no home dir for pane homes")
+        })?;
+        let home = normalize_existing_path(Path::new(home))?;
+        anyhow::ensure!(
+            home.is_dir(),
+            "isolated pane homes require an existing instance home dir: {}",
+            home.display()
+        );
+        let panes = home.join(jackin_core::container_paths::PANE_HOMES_DIR_NAME);
+        match fs::symlink_metadata(&panes) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                bail!(
+                    "isolated pane homes parent is a symlink: {}",
+                    panes.display()
+                )
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                bail!(
+                    "isolated pane homes parent is not a directory: {}",
+                    panes.display()
+                )
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&panes)
+                    .with_context(|| format!("create isolated pane homes {}", panes.display()))?;
+                fs::set_permissions(&panes, fs::Permissions::from_mode(0o700))
+                    .with_context(|| format!("lock isolated pane homes {}", panes.display()))?;
+            }
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("inspect isolated pane homes {}", panes.display()));
+            }
+        }
+        let canonical_home = fs::canonicalize(&home)
+            .with_context(|| format!("resolve instance home {}", home.display()))?;
+        let canonical_panes = fs::canonicalize(&panes)
+            .with_context(|| format!("resolve isolated pane homes {}", panes.display()))?;
+        anyhow::ensure!(
+            canonical_panes.starts_with(&canonical_home),
+            "isolated pane homes {} escape instance home {}",
+            canonical_panes.display(),
+            canonical_home.display()
+        );
+        Ok(())
     }
 
     /// Create the private tree before dropping UID and installing Landlock.
@@ -844,6 +931,11 @@ mod tests {
         assert_eq!(size_of::<super::linux::PathBeneathAttr>(), 12);
         let config = CapsuleConfig {
             instances: vec!["slot-a".to_owned()],
+            agents: BTreeMap::from([("slot-a".to_owned(), "claude".to_owned())]),
+            instance_home_dirs: BTreeMap::from([(
+                "slot-a".to_owned(),
+                "/home/agent/.claude-a".to_owned(),
+            )]),
             instance_mount_paths: BTreeMap::from([(
                 "slot-a".to_owned(),
                 vec![
@@ -1130,6 +1222,11 @@ mod tests {
 
         let config = CapsuleConfig {
             instances: vec!["slot-a".to_owned()],
+            agents: BTreeMap::from([("slot-a".to_owned(), "claude".to_owned())]),
+            instance_home_dirs: BTreeMap::from([(
+                "slot-a".to_owned(),
+                "/home/agent/.claude-a".to_owned(),
+            )]),
             instance_mount_paths: BTreeMap::from([(
                 "slot-a".to_owned(),
                 vec!["/home/agent/.claude-a".to_owned()],
@@ -1168,6 +1265,11 @@ mod tests {
     fn shared_state_and_tmp_are_not_agent_grants_and_private_root_is_exact() {
         let config = CapsuleConfig {
             instances: vec!["slot-a".to_owned()],
+            agents: BTreeMap::from([("slot-a".to_owned(), "claude".to_owned())]),
+            instance_home_dirs: BTreeMap::from([(
+                "slot-a".to_owned(),
+                "/home/agent/.claude-a".to_owned(),
+            )]),
             instance_mount_paths: BTreeMap::from([(
                 "slot-a".to_owned(),
                 vec!["/home/agent/.claude-a".to_owned()],
@@ -1207,6 +1309,139 @@ mod tests {
         );
         assert_eq!(retained_capability_mask(), 1u32 << 1);
         assert_eq!(retained_capability_mask() & (1u32 << 3), 0);
+    }
+
+    #[test]
+    fn derived_pane_homes_and_agent_seed_fragment_are_granted() {
+        // Secondary same-agent slot: suffixed home, agent default fragment.
+        // The seed reads `/jackin/default-home/.codex` for every home shape,
+        // so the grant must be keyed by runtime — never by home suffix.
+        let config = CapsuleConfig {
+            instances: vec!["cx-b-inst".to_owned()],
+            agents: BTreeMap::from([("cx-b-inst".to_owned(), "codex".to_owned())]),
+            instance_home_dirs: BTreeMap::from([(
+                "cx-b-inst".to_owned(),
+                "/home/agent/.codex-cx-b-inst".to_owned(),
+            )]),
+            instance_mount_paths: BTreeMap::from([(
+                "cx-b-inst".to_owned(),
+                vec!["/home/agent/.codex-cx-b-inst".to_owned()],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let rules = rules_for(
+            &config,
+            Some("cx-b-inst"),
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/4"),
+        )
+        .expect("construct Landlock rules for secondary slot");
+        let panes = rules
+            .iter()
+            .find(|rule| rule.path == Path::new("/home/agent/.codex-cx-b-inst/panes"))
+            .expect("derived pane-homes parent rule");
+        assert_eq!(panes.access, FULL_WITH_UNIX);
+        assert!(panes.required);
+        let fragment = rules
+            .iter()
+            .find(|rule| rule.path == Path::new("/jackin/default-home/.codex"))
+            .expect("agent seed-fragment rule");
+        assert_eq!(fragment.access, READ_ONLY);
+        assert!(!fragment.required);
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/jackin/default-home/.codex-cx-b-inst")
+                && rule.access != super::linux::TRAVERSE
+        }));
+    }
+
+    #[test]
+    fn xdg_parent_home_gets_pane_homes_and_config_fragments() {
+        // XDG-parent home: the base mount grants cover only subpaths, so the
+        // derived `{home}/panes/{seq}` tree needs its own parent grant.
+        let config = CapsuleConfig {
+            instances: vec!["oc-c-inst".to_owned()],
+            agents: BTreeMap::from([("oc-c-inst".to_owned(), "opencode".to_owned())]),
+            instance_home_dirs: BTreeMap::from([(
+                "oc-c-inst".to_owned(),
+                "/home/agent/.local/share".to_owned(),
+            )]),
+            instance_mount_paths: BTreeMap::from([(
+                "oc-c-inst".to_owned(),
+                vec![
+                    "/home/agent/.local/share/opencode".to_owned(),
+                    "/home/agent/.cache/opencode".to_owned(),
+                    "/home/agent/.config/opencode".to_owned(),
+                ],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let rules = rules_for(
+            &config,
+            Some("oc-c-inst"),
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/5"),
+        )
+        .expect("construct Landlock rules for XDG-parent home");
+        let panes = rules
+            .iter()
+            .find(|rule| rule.path == Path::new("/home/agent/.local/share/panes"))
+            .expect("derived pane-homes parent rule");
+        assert_eq!(panes.access, FULL_WITH_UNIX);
+        assert!(panes.required);
+        for fragment in [
+            "/jackin/default-home/.local/share/opencode",
+            "/jackin/default-home/.config/opencode",
+        ] {
+            let rule = rules
+                .iter()
+                .find(|rule| rule.path == Path::new(fragment))
+                .unwrap_or_else(|| panic!("seed-fragment rule for {fragment}"));
+            assert_eq!(rule.access, READ_ONLY);
+            assert!(!rule.required);
+        }
+        // The parent home itself stays ungranted: only the panes subtree and
+        // the instance's own mount subpaths are writable.
+        assert!(!rules.iter().any(|rule| {
+            rule.path == Path::new("/home/agent/.local/share")
+                && rule.access & test_support::WRITABLE != 0
+        }));
+    }
+
+    #[test]
+    fn missing_instance_home_fails_rules_closed() {
+        let config = CapsuleConfig {
+            instances: vec!["slot-a".to_owned()],
+            instance_mount_paths: BTreeMap::from([(
+                "slot-a".to_owned(),
+                vec!["/home/agent/.claude-a".to_owned()],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let error = rules_for(
+            &config,
+            Some("slot-a"),
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect_err("instance without a home entry must fail closed");
+        assert!(error.to_string().contains("no home dir"), "{error:#}");
+    }
+
+    #[test]
+    fn shell_sessions_carry_no_pane_homes_grant() {
+        let rules = rules_for(
+            &CapsuleConfig::default(),
+            None,
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/1"),
+        )
+        .expect("construct shell Landlock rules");
+        assert!(!rules.iter().any(|rule| {
+            rule.path.to_string_lossy().ends_with(&format!(
+                "/{}",
+                jackin_core::container_paths::PANE_HOMES_DIR_NAME
+            )) && rule.access & test_support::WRITABLE != 0
+        }));
     }
 
     #[test]
