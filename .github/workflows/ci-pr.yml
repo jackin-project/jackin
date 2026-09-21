@@ -531,6 +531,11 @@ jobs:
         crates/jackin-config/examples/**
         crates/jackin-config/src/**
         crates/jackin-config/tests/**
+        crates/jackin-console/**/*.rs
+        crates/jackin-console/benches/**
+        crates/jackin-console/examples/**
+        crates/jackin-console/src/**
+        crates/jackin-console/tests/**
         crates/jackin-core/**/*.rs
         crates/jackin-core/benches/**
         crates/jackin-core/examples/**
@@ -542,6 +547,16 @@ jobs:
         crates/jackin-diagnostics/examples/**
         crates/jackin-diagnostics/src/**
         crates/jackin-diagnostics/tests/**
+        crates/jackin-env/**/*.rs
+        crates/jackin-env/benches/**
+        crates/jackin-env/examples/**
+        crates/jackin-env/src/**
+        crates/jackin-env/tests/**
+        crates/jackin-oppicker/**/*.rs
+        crates/jackin-oppicker/benches/**
+        crates/jackin-oppicker/examples/**
+        crates/jackin-oppicker/src/**
+        crates/jackin-oppicker/tests/**
         crates/jackin-otlp-testbed/**/*.rs
         crates/jackin-otlp-testbed/benches/**
         crates/jackin-otlp-testbed/examples/**
@@ -2090,6 +2105,11 @@ jobs:
         crates/jackin-config/examples/**
         crates/jackin-config/src/**
         crates/jackin-config/tests/**
+        crates/jackin-console/**/*.rs
+        crates/jackin-console/benches/**
+        crates/jackin-console/examples/**
+        crates/jackin-console/src/**
+        crates/jackin-console/tests/**
         crates/jackin-core/**/*.rs
         crates/jackin-core/benches/**
         crates/jackin-core/examples/**
@@ -2144,6 +2164,11 @@ jobs:
         crates/jackin-manifest/examples/**
         crates/jackin-manifest/src/**
         crates/jackin-manifest/tests/**
+        crates/jackin-oppicker/**/*.rs
+        crates/jackin-oppicker/benches/**
+        crates/jackin-oppicker/examples/**
+        crates/jackin-oppicker/src/**
+        crates/jackin-oppicker/tests/**
         crates/jackin-otlp-testbed/**/*.rs
         crates/jackin-otlp-testbed/benches/**
         crates/jackin-otlp-testbed/examples/**
@@ -2381,11 +2406,21 @@ jobs:
         rust-toolchain
         rust-toolchain.toml
       mbx_freshness_files: |
+        crates/jackin-brand/**/*.rs
+        crates/jackin-brand/benches/**
+        crates/jackin-brand/examples/**
+        crates/jackin-brand/src/**
+        crates/jackin-brand/tests/**
         crates/jackin-config/**/*.rs
         crates/jackin-config/benches/**
         crates/jackin-config/examples/**
         crates/jackin-config/src/**
         crates/jackin-config/tests/**
+        crates/jackin-console/**/*.rs
+        crates/jackin-console/benches/**
+        crates/jackin-console/examples/**
+        crates/jackin-console/src/**
+        crates/jackin-console/tests/**
         crates/jackin-core/**/*.rs
         crates/jackin-core/benches/**
         crates/jackin-core/examples/**
@@ -2397,11 +2432,26 @@ jobs:
         crates/jackin-diagnostics/examples/**
         crates/jackin-diagnostics/src/**
         crates/jackin-diagnostics/tests/**
+        crates/jackin-env/**/*.rs
+        crates/jackin-env/benches/**
+        crates/jackin-env/examples/**
+        crates/jackin-env/src/**
+        crates/jackin-env/tests/**
+        crates/jackin-oppicker/**/*.rs
+        crates/jackin-oppicker/benches/**
+        crates/jackin-oppicker/examples/**
+        crates/jackin-oppicker/src/**
+        crates/jackin-oppicker/tests/**
         crates/jackin-otlp-testbed/**/*.rs
         crates/jackin-otlp-testbed/benches/**
         crates/jackin-otlp-testbed/examples/**
         crates/jackin-otlp-testbed/src/**
         crates/jackin-otlp-testbed/tests/**
+        crates/jackin-process/**/*.rs
+        crates/jackin-process/benches/**
+        crates/jackin-process/examples/**
+        crates/jackin-process/src/**
+        crates/jackin-process/tests/**
         crates/jackin-protocol/**/*.rs
         crates/jackin-protocol/benches/**
         crates/jackin-protocol/examples/**
@@ -2412,6 +2462,11 @@ jobs:
         crates/jackin-telemetry/examples/**
         crates/jackin-telemetry/src/**
         crates/jackin-telemetry/tests/**
+        crates/jackin-tui/**/*.rs
+        crates/jackin-tui/benches/**
+        crates/jackin-tui/examples/**
+        crates/jackin-tui/src/**
+        crates/jackin-tui/tests/**
         crates/jackin-usage/**/*.rs
         crates/jackin-usage/benches/**
         crates/jackin-usage/examples/**
@@ -2429,7 +2484,7 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-usage"
       cargo_net_offline: true
-      unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry"
+      unit_dependencies: "rust-jackin-config,rust-jackin-console,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry"
       unit_admission: github
   github-rust-jackin-usage-ffi:
     name: "Rust · jackin-usage-ffi"
@@ -2453,11 +2508,21 @@ jobs:
         rust-toolchain
         rust-toolchain.toml
       mbx_freshness_files: |
+        crates/jackin-brand/**/*.rs
+        crates/jackin-brand/benches/**
+        crates/jackin-brand/examples/**
+        crates/jackin-brand/src/**
+        crates/jackin-brand/tests/**
         crates/jackin-config/**/*.rs
         crates/jackin-config/benches/**
         crates/jackin-config/examples/**
         crates/jackin-config/src/**
         crates/jackin-config/tests/**
+        crates/jackin-console/**/*.rs
+        crates/jackin-console/benches/**
+        crates/jackin-console/examples/**
+        crates/jackin-console/src/**
+        crates/jackin-console/tests/**
         crates/jackin-core/**/*.rs
         crates/jackin-core/benches/**
         crates/jackin-core/examples/**
@@ -2474,6 +2539,11 @@ jobs:
         crates/jackin-env/examples/**
         crates/jackin-env/src/**
         crates/jackin-env/tests/**
+        crates/jackin-oppicker/**/*.rs
+        crates/jackin-oppicker/benches/**
+        crates/jackin-oppicker/examples/**
+        crates/jackin-oppicker/src/**
+        crates/jackin-oppicker/tests/**
         crates/jackin-otlp-testbed/**/*.rs
         crates/jackin-otlp-testbed/benches/**
         crates/jackin-otlp-testbed/examples/**
@@ -2494,6 +2564,11 @@ jobs:
         crates/jackin-telemetry/examples/**
         crates/jackin-telemetry/src/**
         crates/jackin-telemetry/tests/**
+        crates/jackin-tui/**/*.rs
+        crates/jackin-tui/benches/**
+        crates/jackin-tui/examples/**
+        crates/jackin-tui/src/**
+        crates/jackin-tui/tests/**
         crates/jackin-usage-ffi/**/*.rs
         crates/jackin-usage-ffi/benches/**
         crates/jackin-usage-ffi/examples/**
