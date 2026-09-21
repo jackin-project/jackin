@@ -78,6 +78,8 @@ pub(crate) use self::antigravity::{
 pub use self::claude::ClaudeUsageDiagnostic;
 #[cfg(any(target_os = "macos", test))]
 pub(crate) use self::claude::classify_claude_keychain_status;
+#[cfg(target_os = "macos")]
+pub(crate) use self::claude::keychain_generic_password_search;
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"

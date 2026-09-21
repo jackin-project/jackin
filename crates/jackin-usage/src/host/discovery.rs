@@ -319,6 +319,8 @@ pub enum UsageDiscoveryIssue {
     CredentialMissing,
     /// Protected credential access was denied/unavailable.
     CredentialDenied,
+    /// Keychain item exists but the operator has not approved access.
+    KeychainConsentRequired,
     /// Credential source is malformed.
     CredentialMalformed,
     /// Credential source requires explicit interaction.
@@ -336,6 +338,7 @@ impl UsageDiscoveryIssue {
             Self::ConfigTransientConflict => "config_transient_conflict",
             Self::CredentialMissing => "credential_missing",
             Self::CredentialDenied => "credential_denied",
+            Self::KeychainConsentRequired => "keychain_consent_required",
             Self::CredentialMalformed => "credential_malformed",
             Self::InteractionRequired => "interaction_required",
         }
@@ -351,6 +354,9 @@ impl UsageDiscoveryIssue {
             Self::ConfigTransientConflict => "Configuration changed while it was being read",
             Self::CredentialMissing => "Credentials are missing",
             Self::CredentialDenied => "Credential access was denied",
+            Self::KeychainConsentRequired => {
+                "Keychain consent required; approve jackin in Keychain Access"
+            }
             Self::CredentialMalformed => "Credentials are malformed",
             Self::InteractionRequired => "Credential access requires interaction",
         }
@@ -1016,6 +1022,9 @@ enum ProfileReadOutcome {
     Bytes(Vec<u8>),
     Missing,
     Denied,
+    /// The secret exists but the operator has not approved this binary's
+    /// access; the lookup failed fast instead of prompting.
+    ConsentRequired,
 }
 
 trait ProfileCredentialReader {
@@ -1118,30 +1127,34 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
             }
             crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
             crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
+            crate::usage::ClaudeKeychainRead::ConsentRequired => {
+                ProfileReadOutcome::ConsentRequired
+            }
         }
     }
 
     fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
         #[cfg(target_os = "macos")]
         {
-            use security_framework::item::{ItemClass, ItemSearchOptions};
-
             // Reference-only search: no `load_data`, so the grant payload is
             // never read into this process — presence is the whole answer.
-            let mut options = ItemSearchOptions::new();
-            options
-                .class(ItemClass::generic_password())
-                .service(crate::usage::ANTIGRAVITY_KEYCHAIN_SERVICE)
-                .limit(1);
-            match options.search() {
+            // Fail-fast: auth-gated items are skipped, never prompted.
+            match crate::usage::keychain_generic_password_search(
+                crate::usage::ANTIGRAVITY_KEYCHAIN_SERVICE,
+                false,
+            ) {
                 Ok(results) if !results.is_empty() => ProfileReadOutcome::Bytes(Vec::new()),
                 Ok(_) => ProfileReadOutcome::Missing,
-                Err(error) => match crate::usage::classify_claude_keychain_status(error.code()) {
-                    // Unreachable: the classifier only emits Denied/Missing.
+                Err(code) => match crate::usage::classify_claude_keychain_status(code) {
+                    // Unreachable: the classifier only emits
+                    // Denied/Missing/ConsentRequired.
                     // Fail closed to absence either way.
                     crate::usage::ClaudeKeychainRead::Payload { .. } => ProfileReadOutcome::Missing,
                     crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
                     crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
+                    crate::usage::ClaudeKeychainRead::ConsentRequired => {
+                        ProfileReadOutcome::ConsentRequired
+                    }
                 },
             }
         }
@@ -1162,6 +1175,8 @@ enum ProfileValidation {
     Missing,
     Denied,
     Malformed,
+    /// Keychain item exists but needs operator consent (fail-fast, no prompt).
+    ConsentRequired,
 }
 
 struct AccountAccumulator {
@@ -1277,9 +1292,10 @@ fn is_attachable_env_source(
             provider_id.as_deref().is_none_or(|id| id.trim().is_empty())
         }
         ProfileValidation::Anonymous(_) => true,
-        ProfileValidation::Missing | ProfileValidation::Denied | ProfileValidation::Malformed => {
-            false
-        }
+        ProfileValidation::Missing
+        | ProfileValidation::Denied
+        | ProfileValidation::Malformed
+        | ProfileValidation::ConsentRequired => false,
     }
 }
 
@@ -1408,6 +1424,11 @@ fn accumulate_validated_source(
             surface,
             &provenance,
             UsageDiscoveryIssue::CredentialDenied,
+        )),
+        ProfileValidation::ConsentRequired => diagnostics.push(source_diagnostic(
+            surface,
+            &provenance,
+            UsageDiscoveryIssue::KeychainConsentRequired,
         )),
         ProfileValidation::Malformed => diagnostics.push(source_diagnostic(
             surface,
@@ -1652,6 +1673,9 @@ fn append_profile_read(evidence: &mut Vec<String>, label: &str, outcome: Profile
         }
         ProfileReadOutcome::Missing => evidence.push(format!("{label}:missing")),
         ProfileReadOutcome::Denied => evidence.push(format!("{label}:denied")),
+        ProfileReadOutcome::ConsentRequired => {
+            evidence.push(format!("{label}:consent-required"));
+        }
     }
 }
 
@@ -1723,8 +1747,8 @@ fn profile_identity(
 }
 
 /// File present (any JSON shape) → anonymous binding; missing/denied/
-/// malformed propagate truthfully. Used for agents whose identity
-/// extraction is deferred to the usage lane.
+/// consent-gated/malformed propagate truthfully. Used for agents whose
+/// identity extraction is deferred to the usage lane.
 fn anonymous_when_present(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
     match read_json(reader, path) {
         Ok(Some(_)) => ProfileValidation::Anonymous(None),
@@ -1790,7 +1814,7 @@ fn gemini_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) ->
 /// Antigravity identity is the host Keychain grant singleton, probed for
 /// presence only: the CLI owns the secret, so any payload is ignored and no
 /// identity label is extracted. Grant present → anonymous binding with
-/// refresh material; absent/denied propagates truthfully.
+/// refresh material; absent/denied/consent-gated propagates truthfully.
 fn antigravity_profile_identity(reader: &dyn ProfileCredentialReader) -> ProfileValidation {
     match reader.read_antigravity_keychain() {
         ProfileReadOutcome::Bytes(_) => {
@@ -1798,6 +1822,7 @@ fn antigravity_profile_identity(reader: &dyn ProfileCredentialReader) -> Profile
         }
         ProfileReadOutcome::Missing => ProfileValidation::Missing,
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
+        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
     }
 }
 
@@ -1846,6 +1871,7 @@ fn opencode_profile_identity(
             }
         }
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
+        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
         ProfileReadOutcome::Bytes(bytes) => {
             let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
                 return ProfileValidation::Malformed;
@@ -1903,6 +1929,7 @@ fn claude_profile_identity(
             }
             Ok(None) => {}
             Err(ProfileValidation::Denied) => return ProfileValidation::Denied,
+            Err(ProfileValidation::ConsentRequired) => return ProfileValidation::ConsentRequired,
             Err(_) => return ProfileValidation::Malformed,
         }
     }
@@ -1960,6 +1987,7 @@ fn claude_profile_identity(
         }
         ProfileReadOutcome::Missing => ProfileValidation::Missing,
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
+        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
     }
 }
 
@@ -2055,6 +2083,7 @@ fn read_json(
             .map_err(|_| ProfileValidation::Malformed),
         ProfileReadOutcome::Missing => Ok(None),
         ProfileReadOutcome::Denied => Err(ProfileValidation::Denied),
+        ProfileReadOutcome::ConsentRequired => Err(ProfileValidation::ConsentRequired),
     }
 }
 

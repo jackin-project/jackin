@@ -1283,6 +1283,80 @@ fn disc_antigravity_grant_mints_cli_refresh_material() {
     }
 }
 
+/// File-blind reader with a configurable Claude Keychain outcome.
+struct ClaudeKeychainStubReader {
+    keychain: ProfileReadOutcome,
+}
+
+impl ProfileCredentialReader for ClaudeKeychainStubReader {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+
+    fn exists(&self, _path: &Path) -> bool {
+        false
+    }
+
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        self.keychain.clone()
+    }
+
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+}
+
+#[test]
+fn disc_keychain_consent_required_is_isolated_consent_diagnostic() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let claude_root = temp.path().join("claude-profile");
+    std::fs::create_dir_all(&claude_root).unwrap();
+    std::fs::create_dir_all(&config_root).unwrap();
+    write_registry(&config_root, &[("claude", Agent::Claude, &claude_root)]);
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home: temp.path().join("home"),
+        },
+        &NoEnvResolver,
+    )
+    .unwrap();
+    // Consent-gated Keychain (fail-fast, never prompted) → consent diagnostic,
+    // never an account row or a refresh binding.
+    let reader = ClaudeKeychainStubReader {
+        keychain: ProfileReadOutcome::ConsentRequired,
+    };
+    let validated = validate_usage_sources_with_reader(catalog, &NoEnvResolver, &reader);
+    assert!(validated.accounts.is_empty());
+    assert!(validated.bindings.is_empty());
+    assert!(
+        validated.diagnostics.iter().any(|diagnostic| {
+            diagnostic.surface_id.as_deref() == Some("claude")
+                && diagnostic.issue == UsageDiscoveryIssue::KeychainConsentRequired
+        }),
+        "consent-gated keychain must diagnose: {:?}",
+        validated.diagnostics
+    );
+    assert_eq!(
+        UsageDiscoveryIssue::KeychainConsentRequired.id(),
+        "keychain_consent_required"
+    );
+    assert_eq!(
+        UsageDiscoveryIssue::KeychainConsentRequired.display_message(),
+        "Keychain consent required; approve jackin in Keychain Access"
+    );
+    // Antigravity consent-gating propagates identically at the identity lane.
+    let grant_reader = AntigravityGrantReader {
+        grant: ProfileReadOutcome::ConsentRequired,
+    };
+    let outcome = profile_identity(&grant_reader, Agent::Antigravity, temp.path(), temp.path());
+    assert!(matches!(outcome, ProfileValidation::ConsentRequired));
+}
+
 #[test]
 fn disc_material_less_profile_binding_is_unpollable() {
     let temp = tempfile::tempdir().unwrap();

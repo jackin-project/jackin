@@ -410,33 +410,72 @@ pub(crate) enum ClaudeKeychainRead {
     },
     Denied,
     Missing,
+    /// The item exists but the operator has not approved this binary's access,
+    /// so the lookup failed fast instead of prompting. Missing-family (file/env
+    /// fallback stays available) with a consent diagnostic attached downstream.
+    ConsentRequired,
 }
 
 /// Classify a macOS `OSStatus` from a Keychain lookup. Only an explicit user
 /// cancel (`errSecUserCanceled` = -128) or auth failure (`errSecAuthFailed` =
-/// -25293) is a terminal `Denied`; item-not-found (-25300), headless
-/// interaction-not-allowed (-25308), and any other failure are `Missing`
-/// (absence), so file/env fallback stays available. Pure and cross-platform so
-/// tests never touch the real Keychain.
+/// -25293) is a terminal `Denied`; headless interaction-not-allowed
+/// (`errSecInteractionNotAllowed` = -25308) is `ConsentRequired` (the item
+/// exists but needs operator approval, so file/env fallback stays available);
+/// item-not-found (-25300) and any other failure are `Missing` (absence). Pure
+/// and cross-platform so tests never touch the real Keychain.
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     match code {
         -128 | -25293 => ClaudeKeychainRead::Denied,
+        -25308 => ClaudeKeychainRead::ConsentRequired,
         _ => ClaudeKeychainRead::Missing,
     }
 }
 
+/// Fail-fast generic-password search: `kSecUseAuthenticationUI` is pinned to
+/// skip, so a lookup that would pop a consent sheet returns immediately
+/// (empty/skipped) instead of blocking forever on a GUI prompt headless.
+/// Already-approved items are unaffected: skip only skips items that WOULD
+/// need UI. The pinned `security-framework` 3.7 `ItemSearchOptions` exposes no
+/// fail control, and this workspace forbids `unsafe`, so a manual
+/// `SecItemCopyMatching` query is not an option — skip plus the presence
+/// disambiguation in [`read_claude_keychain_item`] is the equivalent
+/// fail-instead-of-prompt contract over the safe API.
 #[cfg(target_os = "macos")]
-pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
-    use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
+pub(crate) fn keychain_generic_password_search(
+    service: &str,
+    load_data: bool,
+) -> Result<Vec<security_framework::item::SearchResult>, i32> {
+    use security_framework::item::{ItemClass, ItemSearchOptions};
 
     let mut options = ItemSearchOptions::new();
     options
         .class(ItemClass::generic_password())
         .service(service)
-        .load_data(true)
-        .limit(1);
-    match options.search() {
+        .load_data(load_data)
+        .limit(1)
+        .skip_authenticated_items(true);
+    options
+        .search()
+        .map_err(security_framework::base::Error::code)
+}
+
+/// Presence-only probe for one generic-password service. Never prompts:
+/// metadata reads need no approval, and the search additionally skips
+/// auth-gated items. Fails closed to absent on any error.
+#[cfg(target_os = "macos")]
+fn keychain_generic_password_present(service: &str) -> bool {
+    matches!(
+        keychain_generic_password_search(service, false),
+        Ok(results) if !results.is_empty()
+    )
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
+    use security_framework::item::SearchResult;
+
+    match keychain_generic_password_search(service, true) {
         Ok(results) => {
             for result in results {
                 if let SearchResult::Data(bytes) = result {
@@ -448,9 +487,25 @@ pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
                     };
                 }
             }
-            ClaudeKeychainRead::Missing
+            // No payload: either the item is absent or it was skipped for
+            // pending consent. The presence probe disambiguates without
+            // ever prompting (metadata reads need no approval).
+            if keychain_generic_password_present(service) {
+                ClaudeKeychainRead::ConsentRequired
+            } else {
+                ClaudeKeychainRead::Missing
+            }
         }
-        Err(error) => classify_claude_keychain_status(error.code()),
+        Err(code) => {
+            let classified = classify_claude_keychain_status(code);
+            if matches!(classified, ClaudeKeychainRead::Missing)
+                && keychain_generic_password_present(service)
+            {
+                ClaudeKeychainRead::ConsentRequired
+            } else {
+                classified
+            }
+        }
     }
 }
 
@@ -600,7 +655,11 @@ where
                 None => resolve_claude_fallback(scope, file_probe(), env_reader()),
             }
         }
-        ClaudeKeychainRead::Missing => resolve_claude_fallback(scope, file_probe(), env_reader()),
+        // Consent-gated Keychain is Missing-family: file/env fallback stays
+        // available, and the discovery lane attaches the consent diagnostic.
+        ClaudeKeychainRead::Missing | ClaudeKeychainRead::ConsentRequired => {
+            resolve_claude_fallback(scope, file_probe(), env_reader())
+        }
     }
 }
 

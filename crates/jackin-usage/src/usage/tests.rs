@@ -4308,7 +4308,7 @@ fn classify_claude_keychain_status_maps_denial_and_absence() {
     ));
     assert!(matches!(
         classify_claude_keychain_status(-25308),
-        ClaudeKeychainRead::Missing
+        ClaudeKeychainRead::ConsentRequired
     ));
     assert!(matches!(
         classify_claude_keychain_status(-1),
@@ -4417,6 +4417,56 @@ fn claude_keychain_missing_falls_back_to_file_then_env() {
         claude_wave_policy(&with_env),
         ClaudeWavePolicy::LocalAnonymous
     );
+}
+
+#[test]
+fn claude_keychain_consent_required_falls_back_like_missing() {
+    // Interaction-not-allowed (-25308) is Missing-family: a consent-gated
+    // Keychain item must not short-circuit file/env fallback the way an
+    // explicit Denied does, and an empty fallback resolves to Missing
+    // (the discovery lane attaches the consent diagnostic).
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let with_file = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::ConsentRequired,
+        || ClaudeFileProbe {
+            credential: claude_oauth_from_value(
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token","refreshToken":"rt"}}),
+            ),
+            origin: Some("OAuth · file".to_owned()),
+            account_email: None,
+            organization_type: None,
+        },
+        || None,
+    );
+    match with_file {
+        ClaudeWaveResolution::Resolved(r) => assert_eq!(r.access_token, "file-token"),
+        _ => panic!("file fallback must run past consent-gated keychain"),
+    }
+    let state2 = ClaudeKeychainState::default();
+    let empty = resolve_claude_refresh_wave_with(
+        &scope,
+        &state2,
+        |_| ClaudeKeychainRead::ConsentRequired,
+        empty_file_probe,
+        || None,
+    );
+    assert!(matches!(empty, ClaudeWaveResolution::Missing));
+    assert_eq!(claude_wave_policy(&empty), ClaudeWavePolicy::LocalMissing);
+    // Consent-gated is never cached as terminal: a later wave re-reads, so
+    // an operator approval is picked up without a restart.
+    assert_eq!(state2.read_count(), 1);
+    let again = resolve_claude_refresh_wave_with(
+        &scope,
+        &state2,
+        |_| ClaudeKeychainRead::ConsentRequired,
+        empty_file_probe,
+        || None,
+    );
+    assert!(matches!(again, ClaudeWaveResolution::Missing));
+    assert_eq!(state2.read_count(), 2);
 }
 
 #[test]

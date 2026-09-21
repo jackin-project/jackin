@@ -982,6 +982,12 @@ impl HostUsageRuntime {
                 "needs secret",
                 format!("credential access denied for {label}"),
             ),
+            UsageDiscoveryIssue::KeychainConsentRequired => (
+                UsageSnapshotStatus::NeedsSecret,
+                "Needs secret",
+                "needs secret",
+                format!("keychain consent required for {label}; approve jackin in Keychain Access"),
+            ),
             UsageDiscoveryIssue::InteractionRequired => (
                 UsageSnapshotStatus::NeedsSecret,
                 "Needs secret",
