@@ -35,6 +35,7 @@ const HOST_TARGET: &str = "aarch64-apple-darwin";
 const ARCH: &str = "arm64";
 /// Crate holding `boltffi.toml`; boltffi resolves the crate from its cwd.
 const FFI_CRATE_DIR: &str = "crates/jackin-usage-ffi";
+const FFI_CRATE: &str = "jackin-usage-ffi";
 /// Symbol-rich release lane for the desktop static library (see workspace
 /// `[profile.desktop-release]`); release CI archives its unstripped bytes.
 const DESKTOP_PROFILE: &str = "desktop-release";
@@ -720,6 +721,28 @@ fn build_xcframework(root: &Path) -> Result<()> {
     rustup.args(["target", "add", HOST_TARGET]);
     // Already-installed target is fine; surface other rustup failures below if cargo fails.
     drop(cmd::run(&mut rustup));
+
+    // Stream the long staticlib build directly: boltffi captures cargo's
+    // output and only summarizes, leaving CI silent for 400s+ on a healthy
+    // full build — indistinguishable from a stall to the 600s watchdog.
+    // Same profile/target/env as boltffi's own invocation, so its cargo
+    // call below goes incremental and fast; mismatch degrades to a slow
+    // but correct rebuild, never wrong output.
+    progress("==> building staticlib (streaming cargo progress)");
+    let mut prebuild = cmd::command("cargo");
+    prebuild
+        .current_dir(root.join(FFI_CRATE_DIR))
+        .env("MACOSX_DEPLOYMENT_TARGET", MIN_OS)
+        .args([
+            "build",
+            "--profile",
+            DESKTOP_PROFILE,
+            "--target",
+            HOST_TARGET,
+            "-p",
+            FFI_CRATE,
+        ]);
+    cmd::run_streaming(&mut prebuild)?;
 
     let out_dir = root.join("target/xcframework");
     let xcframework = out_dir.join(format!("{FRAMEWORK_NAME}.xcframework"));
