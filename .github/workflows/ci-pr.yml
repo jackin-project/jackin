@@ -59,11 +59,11 @@ jobs:
       - name: Set up Velnor workflow runtime
         id: runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@fff18da87096d8546f5c313f87c36be39ae07069
         with:
-          rev: 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
+          rev: fff18da87096d8546f5c313f87c36be39ae07069
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=fff18da87096d8546f5c313f87c36be39ae07069" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -79,7 +79,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
+          EXPECTED_REVISION: fff18da87096d8546f5c313f87c36be39ae07069
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -98,13 +98,13 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-fff18da87096d8546f5c313f87c36be39ae07069-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
   github-bun-jackin-docs:
     name: "Bun · Bun package (jackin-docs)"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',bun-jackin-docs,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',bun-jackin-docs,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-bun.yml
     with:
@@ -122,7 +122,7 @@ jobs:
       unit_admission: github
   github-docker-docker-construct:
     name: "Docker · Docker (docker/construct)"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',docker-docker-construct,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',docker-docker-construct,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-docker.yml
     with:
@@ -136,7 +136,7 @@ jobs:
       unit_admission: github
   github-rust-arrayref:
     name: "Rust · arrayref"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-arrayref,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-arrayref,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -149,7 +149,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: f2022e9877c7
+      mbx_compat: c1bb2bec564d
       mbx_dependency_files: |
         .cargo/**
         rust-toolchain
@@ -174,9 +174,10 @@ jobs:
       cargo_root: "vendor/arrayref"
       cargo_net_offline: true
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin:
     name: "Rust · jackin"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -189,7 +190,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "15ffd13d4f8f"
+      mbx_compat: d4d8ae52f17d
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -342,9 +343,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-config,rust-jackin-console,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-env,rust-jackin-image,rust-jackin-launch,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-runtime,rust-jackin-telemetry,rust-jackin-test-support,rust-jackin-tui,rust-jackin-usage"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-agent-status:
     name: "Rust · jackin-agent-status"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-agent-status,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-agent-status,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -357,7 +359,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "6398f3359057"
+      mbx_compat: ae1e63e88f80
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -398,9 +400,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-core,rust-jackin-protocol"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-brand:
     name: "Rust · jackin-brand"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-brand,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-brand,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -413,7 +416,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: a97dbac94e8e
+      mbx_compat: "79190c680e32"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -437,9 +440,10 @@ jobs:
       cargo_root: "crates/jackin-brand"
       cargo_net_offline: true
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-build-meta:
     name: "Rust · jackin-build-meta"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-build-meta,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-build-meta,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -452,7 +456,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "4b506e613be7"
+      mbx_compat: "5c53c9b823a8"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -482,9 +486,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: rust-jackin-process
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-capsule:
     name: "Rust · jackin-capsule"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-capsule,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-capsule,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -497,7 +502,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "7fc27fde338d"
+      mbx_compat: "55dc1c3cc66e"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -586,9 +591,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-agent-status,rust-jackin-brand,rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-tui,rust-jackin-usage"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-config:
     name: "Rust · jackin-config"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -601,7 +607,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: e5d27256fd16
+      mbx_compat: feabb06ad2e7
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -647,9 +653,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-telemetry"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-config-fuzz:
     name: "Rust · jackin-config-fuzz"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-config-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -715,9 +722,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: rust-jackin-config
       unit_admission: github
+      validation_phases: "fmt,clippy,test"
   github-rust-jackin-console:
     name: "Rust · jackin-console"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-console,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-console,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -730,7 +738,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "5f04b15cdc79"
+      mbx_compat: "5ff2a384a8a9"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -812,9 +820,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-env,rust-jackin-oppicker,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-tui"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-core:
     name: "Rust · jackin-core"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-core,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-core,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -827,7 +836,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: e0ac30872b0e
+      mbx_compat: c3a660a7fe0e
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -851,9 +860,10 @@ jobs:
       cargo_root: "crates/jackin-core"
       cargo_net_offline: true
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-dev:
     name: "Rust · jackin-dev"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-dev,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-dev,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -890,9 +900,10 @@ jobs:
       cargo_root: "crates/jackin-dev"
       cargo_net_offline: true
       unit_admission: github
+      validation_phases: "fmt,clippy,test"
   github-rust-jackin-diagnostics:
     name: "Rust · jackin-diagnostics"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-diagnostics,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-diagnostics,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -905,7 +916,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "5469d1fb2947"
+      mbx_compat: a698122e1948
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -946,9 +957,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-core,rust-jackin-otlp-testbed,rust-jackin-telemetry"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-docker:
     name: "Rust · jackin-docker"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-docker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-docker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -961,7 +973,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "3c2e6f2f6ff8"
+      mbx_compat: "70cf80dbe965"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1018,9 +1030,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-telemetry"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-env:
     name: "Rust · jackin-env"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1033,7 +1046,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "644a6bb030fe"
+      mbx_compat: fe4982e96228
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1095,9 +1108,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-env-fuzz:
     name: "Rust · jackin-env-fuzz"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-env-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1179,9 +1193,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-env"
       unit_admission: github
+      validation_phases: "fmt,clippy,test"
   github-rust-jackin-host:
     name: "Rust · jackin-host"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-host,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-host,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1194,7 +1209,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "3bece7e1f1b6"
+      mbx_compat: "377aac94fa50"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1277,9 +1292,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-image:
     name: "Rust · jackin-image"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-image,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-image,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1292,7 +1308,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "4955b672c198"
+      mbx_compat: fea806cdf2e7
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1370,9 +1386,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-telemetry"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-instance:
     name: "Rust · jackin-instance"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-instance,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-instance,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1385,7 +1402,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "3e033fa71093"
+      mbx_compat: b42e9baf5660
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1446,9 +1463,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-manifest,rust-jackin-process,rust-jackin-telemetry"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-isolation:
     name: "Rust · jackin-isolation"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-isolation,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-isolation,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1461,7 +1479,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: a12c31da741a
+      mbx_compat: "9f832e6cb07a"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1544,9 +1562,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-launch:
     name: "Rust · jackin-launch"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-launch,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-launch,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1559,7 +1578,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "3423e465a06b"
+      mbx_compat: "659d6c1dc35b"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1626,9 +1645,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-telemetry,rust-jackin-tui"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-manifest:
     name: "Rust · jackin-manifest"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1641,7 +1661,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "7f14f09bc371"
+      mbx_compat: "4694d328844d"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1692,9 +1712,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-config,rust-jackin-core"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-manifest-fuzz:
     name: "Rust · jackin-manifest-fuzz"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-manifest-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1765,9 +1786,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: rust-jackin-manifest
       unit_admission: github
+      validation_phases: "fmt,clippy,test"
   github-rust-jackin-oppicker:
     name: "Rust · jackin-oppicker"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-oppicker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-oppicker,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1780,7 +1802,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: c67f4898349b
+      mbx_compat: d6e165a32ea9
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1815,9 +1837,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-core,rust-jackin-telemetry"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-otlp-testbed:
     name: "Rust · jackin-otlp-testbed"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-otlp-testbed,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-otlp-testbed,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1830,7 +1853,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "3ad5e2dad850"
+      mbx_compat: b03100b6e894
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1860,9 +1883,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: rust-jackin-telemetry
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-pr-trailers:
     name: "Rust · jackin-pr-trailers"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-pr-trailers,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-pr-trailers,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1905,9 +1929,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: rust-jackin-process
       unit_admission: github
+      validation_phases: "fmt,clippy,test"
   github-rust-jackin-process:
     name: "Rust · jackin-process"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-process,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-process,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1920,7 +1945,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: c51ba9a4f3c6
+      mbx_compat: "1670062b1119"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1944,9 +1969,10 @@ jobs:
       cargo_root: "crates/jackin-process"
       cargo_net_offline: true
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-protocol:
     name: "Rust · jackin-protocol"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -1959,7 +1985,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: fc53800597c3
+      mbx_compat: fde671f90d70
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -1995,9 +2021,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-core,rust-jackin-telemetry"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-protocol-fuzz:
     name: "Rust · jackin-protocol-fuzz"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-protocol-fuzz,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2053,9 +2080,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: rust-jackin-protocol
       unit_admission: github
+      validation_phases: "fmt,clippy,test"
   github-rust-jackin-runtime:
     name: "Rust · jackin-runtime"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-runtime,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-runtime,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2068,7 +2096,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "68b6c981bdbb"
+      mbx_compat: "1b2a1149415c"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2204,9 +2232,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-brand,rust-jackin-build-meta,rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-docker,rust-jackin-env,rust-jackin-host,rust-jackin-image,rust-jackin-instance,rust-jackin-isolation,rust-jackin-launch,rust-jackin-manifest,rust-jackin-otlp-testbed,rust-jackin-process,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-test-support,rust-jackin-usage"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-telemetry:
     name: "Rust · jackin-telemetry"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-telemetry,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-telemetry,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2219,7 +2248,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: e00d2559f64f
+      mbx_compat: "2b9af5bb6d6e"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2243,9 +2272,10 @@ jobs:
       cargo_root: "crates/jackin-telemetry"
       cargo_net_offline: true
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-test-support:
     name: "Rust · jackin-test-support"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-test-support,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-test-support,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2258,7 +2288,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "9f14a6ee6d5c"
+      mbx_compat: c7f26978bf35
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2314,9 +2344,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-core,rust-jackin-manifest"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-tui:
     name: "Rust · jackin-tui"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-tui,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-tui,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2329,7 +2360,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "1b9d69e08da8"
+      mbx_compat: "5d6cdb1e4878"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2359,9 +2390,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: rust-jackin-brand
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-usage:
     name: "Rust · jackin-usage"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2374,7 +2406,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "28cc7e855a72"
+      mbx_compat: "9be9adf88698"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2431,9 +2463,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-diagnostics,rust-jackin-otlp-testbed,rust-jackin-protocol,rust-jackin-telemetry"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-usage-ffi:
     name: "Rust · jackin-usage-ffi"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage-ffi,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-usage-ffi,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2446,7 +2479,7 @@ jobs:
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "7be196d4c9a1"
+      mbx_compat: "97ef82475024"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2518,9 +2551,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-env,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-usage"
       unit_admission: github
+      validation_phases: "fmt,clippy,test,doctest"
   github-rust-jackin-xtask:
     name: "Rust · jackin-xtask"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-xtask,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-jackin-xtask,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2563,9 +2597,10 @@ jobs:
       cargo_net_offline: true
       unit_dependencies: rust-jackin-process
       unit_admission: github
+      validation_phases: "fmt,clippy,test"
   github-rust-policy:
     name: "Rust · Rust dependency policy"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-policy,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-policy,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -2600,7 +2635,7 @@ jobs:
       unit_admission: github
   github-swift-package-native-design-prototypes-unifiedagentusage:
     name: "Swift · Apple · Swift package (native/Design/Prototypes/UnifiedAgentUsage)"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native-design-prototypes-unifiedagentusage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native-design-prototypes-unifiedagentusage,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
@@ -2620,7 +2655,7 @@ jobs:
       unit_admission: github
   github-swift-package-native:
     name: "Swift · Apple · "
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
@@ -2637,7 +2672,7 @@ jobs:
       unit_admission: github
   ci-required:
     name: ci-required
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     needs: [plan, github-bun-jackin-docs, github-docker-docker-construct, github-rust-arrayref, github-rust-jackin, github-rust-jackin-agent-status, github-rust-jackin-brand, github-rust-jackin-build-meta, github-rust-jackin-capsule, github-rust-jackin-config, github-rust-jackin-config-fuzz, github-rust-jackin-console, github-rust-jackin-core, github-rust-jackin-dev, github-rust-jackin-diagnostics, github-rust-jackin-docker, github-rust-jackin-env, github-rust-jackin-env-fuzz, github-rust-jackin-host, github-rust-jackin-image, github-rust-jackin-instance, github-rust-jackin-isolation, github-rust-jackin-launch, github-rust-jackin-manifest, github-rust-jackin-manifest-fuzz, github-rust-jackin-oppicker, github-rust-jackin-otlp-testbed, github-rust-jackin-pr-trailers, github-rust-jackin-process, github-rust-jackin-protocol, github-rust-jackin-protocol-fuzz, github-rust-jackin-runtime, github-rust-jackin-telemetry, github-rust-jackin-test-support, github-rust-jackin-tui, github-rust-jackin-usage, github-rust-jackin-usage-ffi, github-rust-jackin-xtask, github-rust-policy, github-swift-package-native-design-prototypes-unifiedagentusage, github-swift-package-native]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -3461,7 +3496,7 @@ jobs:
           fi
   required:
     name: "Control / Required"
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     needs: [ci-required]
     runs-on: ubuntu-26.04
     timeout-minutes: 5

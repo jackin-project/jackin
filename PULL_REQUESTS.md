@@ -15,7 +15,7 @@ When agent-only + shared rules cover same topic (e.g. "include Verify-locally se
 
 ## Canonical Body Shape
 
-Template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Copy as start for every new PR body; fill placeholders. GitHub auto-loads when PR opened via web UI.
+Template at [`docs/PULL_REQUEST_TEMPLATE.md`](docs/PULL_REQUEST_TEMPLATE.md). Copy as start for every new PR body; fill placeholders. GitHub auto-loads when PR opened via web UI.
 
 Sections, in order (drop optional when N/A — template comments say which):
 
@@ -54,7 +54,7 @@ Any PR touching `crates/jackin-capsule/` requires Checkout block to build + expo
 
 `jackin-dev pr sync` cannot mutate parent shell directly. It writes `JACKIN_CAPSULE_BIN` into generated `env.sh` only when the PR requires a local capsule; Checkout block must source that file before any smoke command. If PR also needs a local construct image, `jackin-dev` detects construct inputs from the diff and writes `JACKIN_CONSTRUCT_IMAGE` into the same env file.
 
-Full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports forbidden, required verify checklist, prefix-surface opt-in — lives under `## jackin-capsule PRs (hard rule)` section of rules under `.github/`. PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships checkout command + smoke block in correct order; copy rather than rewriting build invocation.
+Full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports forbidden, required verify checklist, prefix-surface opt-in — lives under `## jackin-capsule PRs (hard rule)` section of rules under `.github/`. PR template at [`docs/PULL_REQUEST_TEMPLATE.md`](docs/PULL_REQUEST_TEMPLATE.md) ships checkout command + smoke block in correct order; copy rather than rewriting build invocation.
 
 A `crates/jackin-capsule/` PR that puts a `jackin` launch before Checkout block's `jackin-dev pr sync` step is incomplete. Unit tests passing necessary but not sufficient.
 
@@ -75,7 +75,7 @@ A `.mdx`-only PR that omits Docs checks gate or local-render step incomplete. Fi
 
 ### Verify-locally section policy
 
-Exact copy-paste commands live only in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Do not duplicate here; update template when command changes. This file describes when each block required + invariants each protects.
+Exact copy-paste commands live only in [`docs/PULL_REQUEST_TEMPLATE.md`](docs/PULL_REQUEST_TEMPLATE.md). Do not duplicate here; update template when command changes. This file describes when each block required + invariants each protects.
 
 Checkout step in template splits into two code fences: one paste disables `tirith` paste scanner for rest of session, second paste performs checkout. Keep that split in PR bodies.
 
