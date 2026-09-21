@@ -61,11 +61,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@80bc420dae37ae459e2545af2362d0220fa70bb9
         with:
-          rev: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+          rev: 80bc420dae37ae459e2545af2362d0220fa70bb9
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=80bc420dae37ae459e2545af2362d0220fa70bb9" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -92,7 +92,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+          EXPECTED_REVISION: 80bc420dae37ae459e2545af2362d0220fa70bb9
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -111,7 +111,7 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-80bc420dae37ae459e2545af2362d0220fa70bb9-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
@@ -150,9 +150,9 @@ jobs:
           fi
           git checkout --quiet --detach "$HEAD_SHA"
       - name: Set up Velnor workflow runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@80bc420dae37ae459e2545af2362d0220fa70bb9
         with:
-          rev: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+          rev: 80bc420dae37ae459e2545af2362d0220fa70bb9
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Read declared generator pin
         id: pin
@@ -165,13 +165,13 @@ jobs:
           echo "value=$pin" >> "$GITHUB_OUTPUT"
       - name: Set up declared generator product
         id: renderer
-        if: steps.pin.outputs.value != '4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0'
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+        if: steps.pin.outputs.value != '80bc420dae37ae459e2545af2362d0220fa70bb9'
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@80bc420dae37ae459e2545af2362d0220fa70bb9
         with:
           rev: ${{ steps.pin.outputs.value }}
           checkout-path: ${{ github.workspace }}/policy-checkout
       - name: Resolve declared generator product
-        if: steps.pin.outputs.value != '4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0'
+        if: steps.pin.outputs.value != '80bc420dae37ae459e2545af2362d0220fa70bb9'
         run: |
           set -euo pipefail
           binary="$HOME/.cache/velnor/workflow-runtime/${{ steps.renderer.outputs.closure }}/bin/velnor-workflow"
@@ -205,7 +205,7 @@ jobs:
           WORKFLOW_ROOT: ${{ github.workspace }}/policy-checkout
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-          VELNOR_WORKFLOW_POLICY_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+          VELNOR_WORKFLOW_POLICY_REVISION: 80bc420dae37ae459e2545af2362d0220fa70bb9
         run: |
           set -euo pipefail
           velnor-workflow policy \
@@ -2799,9 +2799,9 @@ jobs:
       plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
-      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
+      mise_tools: "aqua:nextest-rs/nextest/cargo-nextest cargo:boltffi_cli cargo-binstall"
       mbx_enabled: true
-      mbx_compat: cec2c0eccec2
+      mbx_compat: "085f66798421"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -2891,11 +2891,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/jackin-usage-ffi"
       cargo_net_offline: true
-      unit_platform: linux-x64
+      apple_executor: true
+      unit_platform: macos-arm64
       unit_trust: untrusted-ok
       unit_dependencies: "rust-jackin-config,rust-jackin-core,rust-jackin-env,rust-jackin-protocol,rust-jackin-telemetry,rust-jackin-usage"
       unit_admission: github-hosted
-      validation_phases: "fmt,clippy,test,doctest"
   github-hosted-rust-jackin-xtask:
     name: "Rust · jackin-xtask · github-hosted — rust-jackin-xtask"
     if: ${{ always() && needs.plan.result == 'success' && needs.policy.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-jackin-xtask"') && (true) }}
@@ -3070,12 +3070,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-80bc420dae37ae459e2545af2362d0220fa70bb9-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+          EXPECTED_REVISION: 80bc420dae37ae459e2545af2362d0220fa70bb9
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -3089,7 +3089,7 @@ jobs:
       - name: Add Velnor workflow runtime to PATH
         shell: bash
         env:
-          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+          EXPECTED_REVISION: 80bc420dae37ae459e2545af2362d0220fa70bb9
         run: |
           set -euo pipefail
           home="$RUNNER_TEMP/velnor-workflow-runtime-artifact"
