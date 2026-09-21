@@ -112,3 +112,70 @@ with thread-local set_default (no process-global install, observability.rs:1590+
 runtime has a single in-process init_wire_test_export user (host_daemon test;
 launch tests self-isolate via subprocess respawn), so no in-process race exists.
 Local verify @63206f21: clippy clean both crates, fmt clean, broker 2/2, capsule lib 892/892.
+
+## Post-merge verification (main, 2026-09-21)
+
+PR #1013 merged as 9ee50f6a; follow-up #1025 merged as ebf5d5cd
+(2026-09-21T11:22:03Z); live-gap follow-up #1039 merged as 820ed5d6.
+Squash-only policy means cited branch SHAs are not main ancestors;
+every behavior below was re-verified on the landed SHAs themselves.
+
+PR #1025: candidate 90b02efe (merge of origin/main 03d1fe8d incl #1027
+account-config; nix-features conflict resolved as feature union),
+CI 46/46 green (run 35591029629), independent review APPROVE.
+Pre-merge reds were 2 clippy lints in our code (needless_borrow
+process_isolation.rs:240, used_underscore_binding
+broker_service_lifecycle.rs:204), fixed 63206f21 — never test failures.
+A telemetry-guard race theory was investigated and DISPROVEN
+(test_capsule_layers is local-providers + thread-local subscriber;
+runtime has one in-process wire-export user); speculative guard edits
+reverted uncommitted.
+
+Landed ebf5d5cd, local runs (darwin arm64 macOS 27.0, docker 29.4.0):
+- broker_service_lifecycle 2/2, account_config 13/13, capsule --lib
+  892/892, console --lib 1362 pass 1 ignored, usage --lib 560/560.
+- jackin --lib 482-483 intermittent: host_account_cache span-count
+  (0 vs 7) flakes under parallel load; 5/5 isolated green, 1/2
+  single-threaded; last touched #793 (pre-existing, untouched by
+  #1013/#1025); CI green on candidate and main. Scan-worker timeout
+  flaked once under docker+e2e+suite contention; isolated green.
+- S3 multi_account_tabs_e2e PASS @ebf5d5cd: single test, full arc —
+  3 tabs (2 same-provider OpenAI cx-a/cx-b + opencode oc-c), split,
+  agent-picker tab, client-kill + hardline reconnect, container-remove
+  + hardline restore; per-pane bindings preserved. Capsule Linux/aarch64
+  binary built from ebf5d5cd source via repo builder; construct
+  projectjackin/construct:trixie.
+- Main CI on ebf5d5cd: green (only downstream Desktop-merge-cadence
+  lagged; zero failures).
+
+Live S10 @ebf5d5cd via Linux docker egress (macOS host async HTTP
+stalls below Jackin — reqwest/tokio hostname-connect 10s stall while
+curl/python succeed; docker wget 401 in 0.43s, no stall):
+- codex: weekly 5%, reset epoch 1790532831 exact, plan "Pro 20x",
+  identity email — all MATCH direct wham/usage HTTP 200.
+- cursor: cycle 11.596774193548388%, reset 1792134030, spend
+  $35950/$40000, auto/API splits, $0 credits, Grok Bot 0% + reset —
+  all MATCH direct RPC HTTP 200s.
+- Gaps found live (fixed by #1039): cursor plan_label null (live
+  GetPlanInfo nests under planInfo.planName="ultra"); codex reset
+  bucket absent on broker lane (profile snapshot never fetched
+  reset credits; live has 2 Full-reset grants exp Oct 4/5).
+- Host-attempt gaps (explicit, recorded): grok local OIDC expired,
+  Jackin correctly refuses, no refresh token; kimi creds file empty;
+  opencode auth.json absent (db-only); google no auth; claude token
+  in Keychain, headless SecItemCopyMatching hangs for GUI approval.
+  Identity PASS (codex/cursor/grok) before usage-data gaps.
+
+PR #1039: 21de30cd (cursor.rs + codex.rs + tests, +124/-6), usage
+563/563 + clippy/fmt clean locally, live re-verified in docker
+(cursor plan_label "Ultra"; codex "2 manual resets available,
+next expires Oct 4" matching direct available_count=2; zero
+regressions in previously-matching fields), independent review
+APPROVE, CI 34/34 green, squash 820ed5d6. Landed 820ed5d6 smoke:
+usage --lib 569/569.
+
+Declared remaining gaps (environmental, not product): macOS-host
+live reads blocked by sub-Jackin transport stall (docker path
+works); grok/claude/kimi/opencode/google per-account causes above;
+acceptance env macOS 26 vs host 27 (declared in Candidate);
+jackin-lib span-count flake (pre-existing, CI green).
