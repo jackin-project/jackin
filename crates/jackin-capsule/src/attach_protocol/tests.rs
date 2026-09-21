@@ -9,7 +9,8 @@ use tokio::{
     sync::{Semaphore, mpsc},
 };
 
-use super::{ClientFrame, handle_attach_client};
+use super::{ClientFrame, handle_attach_client, initial_spawn_requests};
+use crate::protocol::attach::SpawnRequest;
 
 #[tokio::test(flavor = "current_thread")]
 async fn control_socket_exports_client_parent_server_and_completes_after_reply_write() {
@@ -290,4 +291,54 @@ async fn legacy_uncontextual_control_is_rejected_before_daemon_dispatch() {
 
     assert!(matches!(cmd_rx.recv().await, Some(ClientFrame::Detach)));
     cmd_rx.try_recv().unwrap_err();
+}
+
+fn launch_config_with_instances(instances: &[&str]) -> jackin_protocol::CapsuleConfig {
+    jackin_protocol::CapsuleConfig {
+        instances: instances.iter().map(ToString::to_string).collect(),
+        ..jackin_protocol::CapsuleConfig::default()
+    }
+}
+
+#[test]
+fn boot_spawns_initial_instance_first_then_config_order() {
+    let config = launch_config_with_instances(&["cx-a-inst", "cx-b-inst", "oc-c-inst"]);
+    assert_eq!(
+        initial_spawn_requests("cx-a-inst", &config),
+        vec![
+            SpawnRequest::Instance("cx-a-inst".to_owned()),
+            SpawnRequest::Instance("cx-b-inst".to_owned()),
+            SpawnRequest::Instance("oc-c-inst".to_owned()),
+        ]
+    );
+    // A non-first initial instance still boots first; the rest follow in
+    // config order so every default_launch member starts exactly once.
+    assert_eq!(
+        initial_spawn_requests("oc-c-inst", &config),
+        vec![
+            SpawnRequest::Instance("oc-c-inst".to_owned()),
+            SpawnRequest::Instance("cx-a-inst".to_owned()),
+            SpawnRequest::Instance("cx-b-inst".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn boot_spawns_single_tab_for_solo_and_shell_launches() {
+    let solo = launch_config_with_instances(&["codex-work"]);
+    assert_eq!(
+        initial_spawn_requests("codex-work", &solo),
+        vec![SpawnRequest::Instance("codex-work".to_owned())]
+    );
+    let shell_only = launch_config_with_instances(&[]);
+    assert_eq!(
+        initial_spawn_requests("", &shell_only),
+        vec![SpawnRequest::Shell]
+    );
+    // A shell initial target never invents agent tabs.
+    let config = launch_config_with_instances(&["cx-a-inst", "cx-b-inst"]);
+    assert_eq!(
+        initial_spawn_requests("", &config),
+        vec![SpawnRequest::Shell]
+    );
 }

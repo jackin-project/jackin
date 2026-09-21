@@ -86,6 +86,71 @@ fn enter_on_palette_emits_command() {
 }
 
 #[test]
+fn coalesced_typing_builds_palette_filter() {
+    // Scripted input arrives as one multi-byte `Data` chunk — every
+    // printable byte must land in the filter, not drop as a no-op.
+    let mut d = palette();
+    assert_eq!(d.handle_key(b"spl", None), DialogAction::Redraw);
+    let Dialog::CommandPalette {
+        filter, selected, ..
+    } = &d
+    else {
+        unreachable!()
+    };
+    assert_eq!(filter, "spl");
+    assert_eq!(*selected, 0);
+}
+
+#[test]
+fn coalesced_filter_then_confirm_emits_matching_command() {
+    let mut d = palette();
+    match d.handle_key(b"split\r", None) {
+        DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Split),
+        other => panic!("expected Command(Split), got {other:?}"),
+    }
+}
+
+#[test]
+fn coalesced_escape_chunk_stays_noop() {
+    // Chunks holding ESC keep whole-chunk dispatch so escape sequences
+    // stay atomic: filter untouched, no confirm, no dismiss.
+    let mut d = palette();
+    assert_eq!(d.handle_key(b"ab\x1b[Z", None), DialogAction::Redraw);
+    let Dialog::CommandPalette {
+        filter, selected, ..
+    } = &d
+    else {
+        unreachable!()
+    };
+    assert!(filter.is_empty());
+    assert_eq!(*selected, 0);
+}
+
+#[test]
+fn coalesced_direction_filter_confirms() {
+    let mut d = Dialog::SplitDirectionPicker {
+        selected: 0,
+        filter: String::new(),
+    };
+    assert_eq!(
+        d.handle_key(b"below\r", None),
+        DialogAction::SplitDirection(SplitDirection::Below)
+    );
+}
+
+#[test]
+fn coalesced_agent_filter_confirms_spawn() {
+    let mut d = picker(vec!["cx-b-inst"]);
+    match d.handle_key(b"cx-b-inst\r", None) {
+        DialogAction::SpawnAgent { agent, intent } => {
+            assert_eq!(agent.as_deref(), Some("cx-b-inst"));
+            assert_eq!(intent, PickerIntent::NewTab);
+        }
+        other => panic!("expected SpawnAgent, got {other:?}"),
+    }
+}
+
+#[test]
 fn enter_on_agent_picker_emits_spawn() {
     let mut d = picker(vec!["claude", "codex"]);
     match d.handle_key(b"\r", None) {
@@ -2634,4 +2699,233 @@ fn trparity_capsule_exit_inspect_arrows_scroll_without_dismissing() {
     // Second Down clamps at the last row.
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
     assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
+}
+
+// ---- S8 interaction evidence: keyboard, focus, scroll, refresh, resize ----
+
+fn s8_usage_scroll(d: &Dialog) -> (u16, u16) {
+    let Dialog::Usage { scroll, .. } = d else {
+        panic!("usage dialog");
+    };
+    (scroll.scroll_x, scroll.scroll_y)
+}
+
+fn s8_usage_tab_bar_focused(d: &Dialog) -> bool {
+    let Dialog::Usage {
+        tab_bar_focused, ..
+    } = d
+    else {
+        panic!("usage dialog");
+    };
+    *tab_bar_focused
+}
+
+#[test]
+fn s8_usage_r_and_shift_r_request_refresh() {
+    for key in [b"r".as_slice(), b"R".as_slice()] {
+        let mut d = Dialog::new_usage(usage_view_fixture());
+        assert_eq!(
+            d.handle_key(key, None),
+            DialogAction::RefreshUsage,
+            "key {key:?} must request a joined refresh"
+        );
+    }
+}
+
+#[test]
+fn s8_usage_shift_tab_restores_tab_focus() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    assert!(s8_usage_tab_bar_focused(&d));
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    assert!(!s8_usage_tab_bar_focused(&d));
+    assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
+    assert!(s8_usage_tab_bar_focused(&d));
+}
+
+#[test]
+fn s8_usage_esc_reverses_focus_then_dismisses() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    assert!(!s8_usage_tab_bar_focused(&d));
+
+    // First Esc walks focus back to the tab bar (focus reversal).
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Redraw);
+    assert!(s8_usage_tab_bar_focused(&d));
+
+    // Second Esc dismisses the dialog.
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
+}
+
+#[test]
+fn s8_usage_content_arrows_scroll_two_axes() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    // Tab-bar focus owns Left/Right for tab switches: no scroll movement.
+    assert_eq!(
+        d.handle_key(b"\x1b[C", None),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Claude".to_owned(),
+            account_id: "test-tab-claude".to_owned(),
+        }
+    );
+    assert_eq!(s8_usage_scroll(&d), (0, 0));
+
+    // Content focus owns every arrow plus hjkl for two-axis scrolling.
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 1));
+    assert_eq!(d.handle_key(b"j", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 2));
+    assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"k", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 0));
+    assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (1, 0));
+    assert_eq!(d.handle_key(b"l", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (2, 0));
+    assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"h", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 0));
+}
+
+#[test]
+fn s8_usage_right_from_last_tab_wraps_to_overview() {
+    let mut view = usage_view_fixture();
+    for tab in &mut view.tabs {
+        tab.active = tab.id == "test-tab-minimax";
+    }
+    let mut d = Dialog::new_usage(view);
+    assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    assert_eq!(d.usage_selected_tab(), Some(UsageDialogTab::Overview));
+    let state = d.usage_state().expect("usage state");
+    assert_eq!(state.rows()[0].label(), "OpenAI");
+}
+
+#[test]
+fn s8_usage_left_from_overview_goes_to_last_tab() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    assert_eq!(
+        d.handle_key(b"\x1b[D", None),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "MiniMax".to_owned(),
+            account_id: "test-tab-minimax".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn s8_usage_removed_account_renders_honest_unavailable() {
+    // Daemon fallback for a tab whose account left the cache (removal while
+    // the dialog is open): an honest unavailable view, never a sibling.
+    let view = jackin_protocol::control::FocusedUsageView::unavailable(
+        "usage unavailable: account not cached",
+        1_781_185_560,
+    );
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    assert!(
+        state
+            .rows()
+            .iter()
+            .any(|row| row.value() == "usage unavailable: account not cached"),
+        "removed account must render its reason: {state:?}"
+    );
+    let text = render_usage_dialog_snapshot_for_view(
+        100,
+        32,
+        UsageDialogTab::Provider,
+        jackin_protocol::control::FocusedUsageView::unavailable(
+            "usage unavailable: account not cached",
+            1_781_185_560,
+        ),
+    );
+    assert!(
+        text.contains("usage unavailable: account not cached"),
+        "{text}"
+    );
+}
+
+#[test]
+fn s8_usage_shrunk_tabs_overview_renders_remaining_rows() {
+    let mut view = usage_view_fixture();
+    view.tabs.truncate(2);
+    let d = Dialog::new_usage_with_tab(view, UsageDialogTab::Overview);
+    let state = d.usage_state().expect("usage state");
+    assert_eq!(state.rows().len(), 2);
+    assert_eq!(state.rows()[0].label(), "OpenAI");
+    assert_eq!(state.rows()[1].label(), "Anthropic");
+    let text = render_usage_dialog_snapshot(100, 32, UsageDialogTab::Overview);
+    assert!(text.contains("Overview"), "{text}");
+}
+
+#[test]
+fn s8_usage_refreshing_placeholder_renders_loading() {
+    let view =
+        jackin_protocol::control::FocusedUsageView::refreshing(Some("OpenAI"), 1_781_185_560);
+    assert!(view.is_refreshing_placeholder());
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    assert!(
+        state
+            .rows()
+            .iter()
+            .any(|row| row.value().contains("Refreshing") || row.value().contains("refreshing")),
+        "refreshing placeholder must render loading copy: {state:?}"
+    );
+}
+
+#[test]
+fn s8_usage_long_unicode_labels_render() {
+    let mut view = usage_view_fixture();
+    view.account.account_label = format!("work-巴黎-🚀-memo{}", "·很长的账户备注".repeat(6));
+    let text = render_usage_dialog_snapshot_for_view(100, 32, UsageDialogTab::Provider, view);
+    assert!(text.contains("Usage"), "{text}");
+    assert!(text.contains("🚀"), "{text}");
+    let squeezed: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(squeezed.contains("巴黎"), "{text}");
+    assert!(squeezed.contains("很长的账户备注"), "{text}");
+}
+
+#[test]
+fn s8_usage_resize_pair_keeps_identity() {
+    for (width, height) in [(80, 24), (60, 18), (120, 40)] {
+        let text = render_usage_dialog_snapshot(width, height, UsageDialogTab::Provider);
+        assert!(
+            text.contains("alexey@example.com"),
+            "account lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("Pro 20x"),
+            "plan lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("Updated now"),
+            "activity lost at {width}x{height}:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn s8_usage_extreme_scroll_still_renders_chrome() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    for _ in 0..500 {
+        assert_eq!(d.handle_key(b"j", None), DialogAction::Redraw);
+    }
+    assert!(s8_usage_scroll(&d).1 >= 500);
+    // Render clamps the runaway offset: chrome survives, no panic.
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(18, 60);
+    let backend = TestBackend::new(60, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer();
+    let rendered = (0..18)
+        .map(|y| (0..60).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Usage"), "{rendered}");
 }

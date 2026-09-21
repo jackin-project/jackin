@@ -46,7 +46,7 @@ use crate::agent_status::rules::RulePackRegistry;
 use crate::attach_protocol::{
     AttachHandshake, ControlRequest, ControlResponse, detach_attached_task, detach_client,
     drain_and_exit, drain_and_exit_with_reason, handle_attach_client_with_handshake,
-    initial_spawn_request, perform_handshake, spawn_request_label,
+    initial_spawn_requests, perform_handshake, spawn_request_label,
 };
 use crate::clipboard::{
     CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT, ClipboardImageTransfers, cleanup_clipboard_run_dir,
@@ -452,6 +452,11 @@ pub struct Multiplexer {
     pub(crate) render: RenderState,
     pub(crate) launch_env: LaunchEnv,
     pub(crate) resource_metrics: resource_metrics::ResourceMetricsSampler,
+    /// Monotonic suffix for derived per-pane state roots. The first live
+    /// session of an instance uses its launch-config home; every further
+    /// concurrent session gets `{home}/panes/{seq}` so concurrent panes
+    /// never share one account's state root.
+    pub(crate) pane_home_seq: u64,
     pub(crate) widget_focus: jackin_telemetry::ui::WidgetFocusTracker,
     /// Wall/monotonic clock for lifecycle timestamps (plan 025). Tests inject
     /// [`jackin_core::ManualClock`] via [`Multiplexer::with_clock`].
@@ -684,6 +689,7 @@ impl Multiplexer {
                 workdir_context,
             },
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
+            pane_home_seq: 0,
             widget_focus: jackin_telemetry::ui::WidgetFocusTracker::default(),
             clock,
         };
@@ -1218,6 +1224,22 @@ async fn run_daemon_for_test(
     run_daemon_loop(initial_agent, launch_config, telemetry, socket_path).await
 }
 
+/// Drain the deferred boot tabs into fresh sessions, stopping at the
+/// first spawn failure. Returns the failure so the attach handshake can
+/// report it; a partial boot never silently drops a `default_launch` tab.
+fn spawn_boot_tabs(
+    mux: &mut Multiplexer,
+    pending: &mut Vec<SpawnRequest>,
+) -> Option<anyhow::Error> {
+    let boot = std::mem::take(pending);
+    for request in boot {
+        if let Err(err) = mux.spawn_request(request, &[]) {
+            return Some(err);
+        }
+    }
+    None
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "Top-level daemon entry point: spawns the event loop, the attach \
@@ -1252,14 +1274,14 @@ async fn run_daemon_loop(
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
 
-    let initial_spawn = initial_spawn_request(&initial_agent);
+    let initial_spawns = initial_spawn_requests(&initial_agent, &launch_config);
     let mut mux = Multiplexer::new(rows, cols, launch_config)?;
     start_git_context_watcher(mux.launch_env.workdir.clone(), mux.control.event_tx.clone());
-    // Defer the first pane until the first attach Hello has supplied
+    // Defer the boot tabs until the first attach Hello has supplied
     // real outer-terminal dimensions. Later panes already spawn after
-    // attach-time resize; routing the first pane through the same
+    // attach-time resize; routing the boot tabs through the same
     // path removes first-tab-only scrollback/chrome differences.
-    let mut pending_initial_spawn = Some(initial_spawn);
+    let mut pending_initial_spawns = initial_spawns;
 
     let mut new_clients = socket::start_listener_at(socket_path)?;
     telemetry.listener_ready();
@@ -1448,8 +1470,9 @@ async fn run_daemon_loop(
                 mux.apply_client_colors_to_sessions();
                 mux.client_registry.pointer_shape = PointerShape::Default;
                 if mux.session_supervisor.sessions.is_empty()
-                    && let Some(request) = pending_initial_spawn.take()
-                    && let Err(err) = mux.spawn_request(request, &[])
+                    && !pending_initial_spawns.is_empty()
+                    && let Some(err) =
+                        spawn_boot_tabs(&mut mux, &mut pending_initial_spawns)
                 {
                     if let Some(operation) = attach_operation {
                         operation.complete(

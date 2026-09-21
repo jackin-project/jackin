@@ -4,6 +4,7 @@
 //! Unit tests for `jackin-capsule` daemon: input dispatch, session management,
 //! tab lifecycle, git context, status-bar rendering, and PTY session behavior.
 use super::*;
+use crate::attach_protocol::initial_spawn_request;
 use std::collections::BTreeMap;
 
 #[test]
@@ -9932,7 +9933,7 @@ fn two_codex_mux() -> Multiplexer {
 
 #[test]
 fn codex_session_launch_fans_model_and_effort_to_each_slot() {
-    let mux = two_codex_mux();
+    let mut mux = two_codex_mux();
     let stale_global_env = mux.launch_env.env_passthrough.clone();
     let work = mux
         .session_launch(Some("codex-work"), None, &stale_global_env, "test")
@@ -9993,8 +9994,45 @@ fn codex_session_launch_fans_model_and_effort_to_each_slot() {
 }
 
 #[test]
+fn session_launch_derives_state_root_for_second_live_pane() {
+    let mut mux = two_codex_mux();
+    let first = mux
+        .session_launch(Some("codex-work"), None, &[], "test")
+        .expect("first pane launches");
+    assert_eq!(
+        first.cmd.get_env("CODEX_HOME").and_then(|v| v.to_str()),
+        Some("/home/agent/.codex")
+    );
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex-work".to_owned()));
+    mux.session_supervisor.sessions.insert(1, session);
+
+    let second = mux
+        .session_launch(Some("codex-work"), None, &[], "test")
+        .expect("second pane launches");
+    assert_eq!(
+        second.cmd.get_env("CODEX_HOME").and_then(|v| v.to_str()),
+        Some("/home/agent/.codex/panes/0")
+    );
+    let third = mux
+        .session_launch(Some("codex-work"), None, &[], "test")
+        .expect("third pane launches");
+    assert_eq!(
+        third.cmd.get_env("CODEX_HOME").and_then(|v| v.to_str()),
+        Some("/home/agent/.codex/panes/1")
+    );
+    // A sibling instance without live panes keeps its own base home.
+    let sibling = mux
+        .session_launch(Some("codex-personal"), None, &[], "test")
+        .expect("sibling instance launches");
+    assert_eq!(
+        sibling.cmd.get_env("CODEX_HOME").and_then(|v| v.to_str()),
+        Some("/home/agent/.codex-codex-personal")
+    );
+}
+
+#[test]
 fn session_launch_renders_instance_labels_for_same_agent_instances() {
-    let mux = two_claude_mux();
+    let mut mux = two_claude_mux();
     let work = mux
         .session_launch(Some("claude-work"), None, &[], "test")
         .expect("known instance launches");

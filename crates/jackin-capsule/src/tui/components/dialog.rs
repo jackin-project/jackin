@@ -637,6 +637,37 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
+        // Coalesced typing (scripted input, paste, batched PTY reads)
+        // arrives as one multi-byte `Data` chunk — the input parser
+        // coalesces contiguous plain bytes. Dispatch an ESC-free chunk
+        // byte-by-byte in order so filter-then-confirm (`b"split\r"`)
+        // works as one write; the first substantive action wins and
+        // stops the scan. Chunks holding ESC keep the legacy
+        // whole-chunk dispatch so escape sequences stay atomic.
+        if key.len() > 1 && !key.contains(&0x1B) {
+            let mut result = DialogAction::Redraw;
+            for byte in key {
+                let action = self.handle_filter_list_key(&[*byte]);
+                if !matches!(action, DialogAction::Redraw) {
+                    result = action;
+                    break;
+                }
+            }
+            return result;
+        }
+        self.handle_filter_list_key(key)
+    }
+
+    /// Single-unit dispatch for the type-to-filter list dialogs.
+    /// `key` is one byte (or one escape sequence) — see `handle_key`
+    /// for the coalesced-chunk split.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Filter-list key dispatcher with one arm per key binding. \
+                  Each arm carries its focused state transition; extracting \
+                  arms into sub-dispatchers would obscure per-binding readability."
+    )]
+    fn handle_filter_list_key(&mut self, key: &[u8]) -> DialogAction {
         // From here on, only the type-to-filter list dialogs reach this
         // code path. Dispatch through `FILTER_LIST_KEYMAP`: navigation,
         // confirm, filter-backspace, and dismiss are advertised keys;
@@ -829,11 +860,12 @@ impl Dialog {
                 },
                 _ => DialogAction::Redraw,
             },
-            // Printable ASCII single-byte chunks become filter input. Multi-
-            // byte sequences (CSI fragments that did not match a known key,
-            // etc.) are no-op redraws — the parser already classified them,
-            // and feeding them into the filter would garble the visible
-            // typing state.
+            // Printable ASCII single-byte chunks become filter input.
+            // Multi-byte chunks that reach here hold ESC (CSI fragments
+            // that did not match a known key, etc.) — `handle_key` splits
+            // ESC-free chunks before dispatch. They stay no-op redraws:
+            // the parser already classified them, and feeding escape
+            // bytes into the filter would garble the visible typing state.
             None => {
                 if let Some(c) = printable_filter_char(key) {
                     match self {

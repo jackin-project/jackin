@@ -240,7 +240,11 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
     server.join().expect("server thread");
     jackin_diagnostics::flush_wire_test_export()?;
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    // The poll loop below breaks as soon as the three spans arrive; the
+    // deadline is only a failure detector. 2s tripped on loaded CI runners
+    // (async OTLP export lag), so allow headroom without masking genuine
+    // breakage (no spans still fails, now with the observed set attached).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     let spans = runtime.block_on(async {
         loop {
             let spans = testbed
@@ -258,7 +262,12 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
             }
             assert!(
                 std::time::Instant::now() < deadline,
-                "daemon RPC wire spans did not arrive exactly once"
+                "daemon RPC wire spans did not arrive exactly once: got {} ({:?})",
+                spans.len(),
+                spans
+                    .iter()
+                    .map(|span| span.name.as_str())
+                    .collect::<Vec<_>>()
             );
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }

@@ -223,13 +223,34 @@ impl Multiplexer {
         self.spawn_active_usage_account_refresh();
     }
 
+    /// Derived-root suffix for one more concurrent session of `instance`.
+    /// The first live session keeps the launch-config home; every further
+    /// concurrent session gets `{home}/panes/{seq}` with a daemon-monotonic
+    /// `seq`, so concurrent panes never share one account's state root.
+    /// The entrypoint seeds credentials into the derived root from the
+    /// instance's forwarded dir, exactly like a fresh base home.
+    fn assign_pane_home_seq(&mut self, instance: &str) -> Option<u64> {
+        let live = self
+            .session_supervisor
+            .sessions
+            .values()
+            .any(|session| session.agent.as_deref() == Some(instance));
+        if !live {
+            return None;
+        }
+        let seq = self.pane_home_seq;
+        self.pane_home_seq = self.pane_home_seq.wrapping_add(1);
+        Some(seq)
+    }
+
     pub(super) fn session_launch(
-        &self,
+        &mut self,
         instance: Option<&str>,
         provider_label: Option<&str>,
         env_passthrough: &[(String, String)],
         codename: &str,
     ) -> Result<SessionLaunch> {
+        let derived_home_seq = instance.and_then(|id| self.assign_pane_home_seq(id));
         let cwd = self.launch_env.workdir.as_path();
         match instance {
             Some(instance) => {
@@ -237,9 +258,17 @@ impl Multiplexer {
                 let slug = config.agent_for_instance(instance).ok_or_else(|| {
                     anyhow::anyhow!("instance {instance:?} has no agent runtime in launch config")
                 })?;
-                let home_dir = config.home_for_instance(instance).ok_or_else(|| {
+                let base_home = config.home_for_instance(instance).ok_or_else(|| {
                     anyhow::anyhow!("instance {instance:?} has no home dir in launch config")
                 })?;
+                let derived_home;
+                let home_dir = match derived_home_seq {
+                    Some(seq) => {
+                        derived_home = format!("{base_home}/panes/{seq}");
+                        derived_home.as_str()
+                    }
+                    None => base_home,
+                };
                 let forwarded_dir = config.forwarded_for_instance(instance).ok_or_else(|| {
                     anyhow::anyhow!("instance {instance:?} has no forwarded dir in launch config")
                 })?;

@@ -416,7 +416,10 @@ pub struct UsageLimitWindowV1 {
     /// Optional rich-surface pace label.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pace_label: Option<String>,
-    /// Optional rich current-detail run-out estimate.
+    /// Optional rich current-detail run-out estimate. Reserved: no producer
+    /// emits it (both window builders leave it unset, and provider run-out
+    /// text already travels inside `pace_label`), so consumers must not
+    /// render a row for it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runs_out_label: Option<String>,
 }
