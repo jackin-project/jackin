@@ -1,6 +1,11 @@
 use super::local_version_override;
 
 #[test]
+fn probe_deliberate_test_defect_do_not_merge() {
+    assert_eq!(1 + 1, 3, "probe: must fail in Tests step only");
+}
+
+#[test]
 fn local_build_defaults_to_package_version() {
     assert_eq!(
         local_version_override(None, false, "0.6.0-dev").as_deref(),
