@@ -7,22 +7,26 @@ UNVERIFIED/BLOCKED there; historical counts are leads, not proof).
 
 ## Candidate
 
-- PR: #1013 OPEN, head `integrate/pr1002-multi-account` @ `01cdd150`,
-  base `main` @ `f664f4d3` (= origin/main, contained, in sync), no human review.
-- Diff vs main: 467 files, +68430/-5053, 176 non-merge commits, all carrying
+- PR: #1013 OPEN MERGEABLE, head `integrate/pr1002-multi-account` @ `d80d99bd`,
+  base `main` @ `fd18e95c` (= origin/main #1018, contained, in sync). Main
+  #1018 (Velnor pin fff18da8, phased rust incl. doctests) merged d80d99bd;
+  CI conflicts resolved by pinned-generator regen (dry-run 0 changes, plan
+  parses; branch deltas — console/usage dep, telemetry/test-support dep,
+  config fixture watch — re-derived).
+- Diff vs main: 469 files, +70081/-5138, 188 non-merge commits, all carrying
   Signed-off-by (DCO satisfied). Commits before the signoff policy carry the
   legacy `jackin-consolidation` identity; all recent commits carry only
   `Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>`. Shared history is not
   rewritten (squash merge carries only the Alexey signoff). Replaces #1002
   (still OPEN, failing, out of scope).
-- CI @ head 01cdd150: Renovate success, Velnor policy success, CI/PR matrix
-  35562521429 running. Prior matrix on ef54d987 failed 4 Rust units on lints
-  in branch-owned test files; all fixed and verified locally (fmt + clippy
-  -D warnings + nextest per unit): 8ec3640e (runtime scope suite),
-  91e185cf (multi-account tabs suite), eed49ebf (capsule literal,
-  isolation st_dev cfg-split).
-- Reviews: 1 bot review; 1 open P1 inline (Landlock mounts, thread 4057673954);
-  zero human reviews.
+- CI @ head d80d99bd: matrix running (phased units incl. new doctest phase;
+  local doctest sweep 27 suites green). Prior heads: 45ab71b7 matrix green
+  (PR+Velnor+Renovate); ef54d987 failed 4 Rust units on branch-owned test
+  lints, fixed 8ec3640e/91e185cf/eed49ebf and verified locally.
+- Reviews: 1 bot review (Codex, no suggestions on fa76ee1); 1 P1 inline
+  (Landlock mounts) ADDRESSED by ef0c6d31 with owner reply; independent
+  subagent review of HOME fix 880d0117 (approve-with-nits; per-kind comment
+  correction landed f1d229a8 + spawn-layer pins). Zero human approvals.
 - Host: darwin arm64 macOS 27.0 (acceptance contract wants macOS 26 + OrbStack).
 
 ## Status rules
@@ -46,7 +50,9 @@ Missing live credentials stay explicit gaps, never passes.
 | D-SEC4 | Supervisor gate PID-equality impersonation | Fixed 4b324478: (pid, start_time) binding from /proc+SO_PEERCRED, fail-closed; relay 12 green | LANDED |
 | S10-auth | Local auth files PRESENT (presence only): Claude (~/.claude.json), Codex, Cursor, Grok. Absent: Kimi, Amp, OpenCode, Gemini paths | host inventory 2026-09-21 | Presence != valid auth; live checks must validate per account |
 | D-PR2 | Gemini adapter has no live fetch; omp/hermes attribution-only; token_monitor lacks Grok/Antigravity/Gemini/Cursor/Muse/omp/Hermes | WS2 evidence | UNVERIFIED, matrix work |
-| F11 | pty e2e harness dead on macOS: BSD script(1) block-buffers pipe stdout (0 live bytes, full flush at exit), so scripted-input waits never match and every pty e2e stalls to timeout. Dialog proven healthy via expect-driven run (modal advanced to credential prompt); stuck process sampled in select_loop/recv | Fixed 01cdd150: macOS typescript pointed at live file + follower thread (pipe still drained, final sync at exit); Linux path unchanged | LANDED, e2e acceptance running |
+| F11 | pty e2e harness dead on macOS: BSD script(1) block-buffers pipe stdout (0 live bytes, full flush at exit), so scripted-input waits never match and every pty e2e stalls to timeout. Dialog proven healthy via expect-driven run (modal advanced to credential prompt); stuck process sampled in select_loop/recv | Fixed 01cdd150: macOS typescript pointed at live file + follower thread (pipe still drained, final sync at exit); Linux path unchanged | LANDED |
+| F12 | Sentinel dind e2e: usage-relay socket path 112B exceeded 104B sun_path limit | Fixed: socket-alias redirect + stale capsule/broker rebuild; relay green, exposed F13 | LANDED |
+| F13 | Sentinel dind e2e: account-env strip removed ambient HOME and nothing re-set it; entrypoint died on unbound HOME (inherited from #1002, which never set session HOME) | Fixed 880d0117: agent HOME = instance home_dir (folder-var target; private writable slot for Dir/folder-less kinds, traverse-only /home/agent for primary Parent, shared XDG root for XdgRoot), shell restores daemon container HOME, hostile passthrough still rejected; unit pins incl. Parent/XdgRoot carry-through; sentinel e2e PASS 30.8s. Independent review approve-with-nits; comment correction f1d229a8. Follow-ups (out of consolidation scope, nil isolation impact): durable per-kind writable HOME, deny path-valued keys in credential validation | LANDED, e2e acceptance green |
 
 ## Product acceptance (P01-P10)
 
@@ -81,5 +87,11 @@ there and unproven here. Re-verify per row after repairs land; do not bulk-pass.
 
 ## Next
 
-1. S3 tabs e2e: split-spawn stall diagnosis on merged tree (boot-phase isolation proven; F11 harness fix may already resolve).
-2. CI green on candidate, independent review, merge #1013, main verification.
+1. CI green @ d80d99bd, then squash-merge #1013 (squash message carries
+   Alexey signoff only), verify post-merge main, close #1002 with
+   selective-integration links, guarded-delete source + integration branches.
+2. Continue oldest-first queue; refresh remote inventory after each branch.
+3. Carried open question (pre-existing ledger item, unverified this session):
+   S3 tabs e2e split-spawn stall diagnosis on merged tree (boot-phase
+   isolation proven; F11 harness fix may already resolve). Verify or record
+   before final completion report.
