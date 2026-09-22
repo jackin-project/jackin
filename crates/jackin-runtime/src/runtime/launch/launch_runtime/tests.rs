@@ -71,8 +71,8 @@ async fn sibling_auth_prewarm_join_barrier_waits_for_detached_work() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes() {
+    use std::fmt::Write as _;
     use sha2::{Digest as _, Sha256};
-    use std::fs::OpenOptions;
     use std::sync::mpsc::sync_channel;
 
     let temp = tempfile::tempdir().unwrap();
@@ -130,11 +130,11 @@ async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes(
     };
     let mut key = Sha256::new();
     key.update(normalized_target.as_bytes());
-    let key = key
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let digest = key.finalize();
+    let mut key = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        write!(&mut key, "{byte:02x}").unwrap();
+    }
     let lock_path = target
         .parent()
         .unwrap()
@@ -162,13 +162,16 @@ async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes(
 
     drop(state);
     let lock_path_for_probe = lock_path.clone();
+    let probe_file = tokio::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(lock_path_for_probe)
+        .await
+        .unwrap()
+        .into_std()
+        .await;
     let still_held = tokio::task::spawn_blocking(move || {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(lock_path_for_probe)
-            .unwrap();
-        file.try_lock().is_err()
+        probe_file.try_lock().is_err()
     })
     .await
     .unwrap();
@@ -178,14 +181,17 @@ async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes(
     );
 
     release_tx.send(()).unwrap();
+    let release_file = tokio::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .await
+        .unwrap()
+        .into_std()
+        .await;
     tokio::task::spawn_blocking(move || {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(lock_path)
-            .unwrap();
-        file.lock().unwrap();
-        file.unlock().unwrap();
+        release_file.lock().unwrap();
+        release_file.unlock().unwrap();
     })
     .await
     .unwrap();
