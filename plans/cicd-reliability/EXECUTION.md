@@ -15,7 +15,11 @@ per push head; multi-commit pushes retain all raw commit IDs and verify the
 first-parent range without creating disappearing intermediate obligations.
 Missing or contaminated ledger runs/artifacts, chain gaps, missing tree or
 remote identity, and invalid provenance fail closed. Observed workflow heads
-and the capped Events feed are never denominator sources.
+and the capped Events feed are never denominator sources. The first selected
+push is anchored to a separately validated predecessor ledger artifact; an
+unproven boundary fails closed. Qualified green claims additionally require
+scheduled `main` `ci-evidence.yml` provenance; local/test rollups cannot
+qualify.
 
 The generated workflow also has Velnor's unavoidable `workflow_dispatch`
 trigger. Its task rejects non-`push` events, and the collector accepts no
@@ -36,8 +40,10 @@ push-head-ledger source before use. Schema 4 remains a hard boundary.
 | `01a0c9fb-a693-75c1-9e5f-d378af1b05a4` | Performance S3/S5 slice | investigation/implementation active |
 | `01a0ca00-c6f8-7781-a05e-319e4dc36491` | Collector blocker repair | implementation active |
 
-Parent integration branch: `codex/ci-reliability-20260922`, current head
-`e3c3e0bb`. Independent review remains required before merge or closure.
+Latest integrated parent base before this repair: `43d9268f` on
+`codex/ci-reliability-20260922`. This repair owns the collector changes and
+the corresponding record update; independent review remains required before
+merge or closure.
 
 | Agent | Assignment | Result | Independent status |
 |---|---|---|---|
