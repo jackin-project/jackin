@@ -16,11 +16,16 @@ clippy, generator `--plain --check`, actionlint, fmt, diff, `jackin-usage` lib
 
 | Area | Evidence | Current verdict |
 |---|---|---|
-| Collector | Post-rebase gates pass: schema-4 durable push-head ledger with predecessor-boundary, chain, provenance, remote-tip, and wrong-workflow checks; xtask full serialized `402`, evidence-focused `30`, xtask clippy, generator `--plain --check`, actionlint, fmt, and diff. | Structurally fail-closed. **Not production-qualified**: no default-branch `ci-evidence` ledger run/artifact exists. |
+| Collector | Evidence rollup schema `4` consumes the durable push-head `push-head.json` artifact schema `1`; predecessor-boundary, chain, provenance, remote-tip, and wrong-workflow checks pass. Post-rebase xtask full serialized `402`, evidence-focused `30`, xtask clippy, generator `--plain --check`, actionlint, fmt, and diff pass. | Structurally fail-closed. **Not production-qualified**: no default-branch `ci-evidence` ledger run/artifact exists. |
 | Performance audit | Post-rebase xtask full serialized `402` and evidence-focused `30` pass; failure markers exclude legitimate skipped/neutral/success jobs and missing reports count only completed report-producing jobs. Warm evidence had 40/40 report producers valid and zero missing/fallback/parse failures. | Semantics fixed. No 120-second or cross-workflow reuse claim. |
 | Provider retries | Post-rebase `jackin-usage` lib `588` passed and usage clippy passed; typed status/retry-after handling covers OpenRouter, Claude, and Codex. | Local coverage PASS. Real-provider behavior is unverified; no live credentials or provider fixture run is claimed. |
 | FFI | Post-rebase FFI `16` tests passed and FFI clippy passed. | Local PASS. |
 | Desktop | Generated candidate and merge-cadence trigger/parity workflows were rerun after rebase. | Advisory only. Desktop is not a required ruleset context and has no claimed live pre-merge proof. |
+
+Schema boundary: evidence/rollup schema `4` and push-head artifact schema `1`
+are separate contracts. Schema `1` is the durable `ci-push-head-ledger`
+artifact input; it is not an evidence schema `4` artifact and neither is
+interchangeable with the other.
 
 ### Upstream and PR status
 
@@ -31,24 +36,27 @@ clippy, generator `--plain --check`, actionlint, fmt, diff, `jackin-usage` lib
   candidate product within 15 minutes because no same-head `ci-pr` workflow run
   existed. DCO passed. Rawls recorded the head as 9 commits behind Velnor main
   `d4443aa` and returned **NO-GO** for preview/release and Apple/fork gaps. The
-  live API now reports Velnor main `61b6edd`; no newer behind-count claim is
-  made. GitHub previously reported `CONFLICTING`/`DIRTY`; the current API is
-  temporarily `UNKNOWN`. The repair has not been live-proven, merged,
+  live API reports current Velnor main `61b6edd`; no newer behind-count claim
+  is made. GitHub reports `CONFLICTING`/`DIRTY`. The repair has not been live-proven, merged,
   published as a runtime, or adopted by Jackin. The Jackin pin remains
   unchanged.
-- Jackin [#1083](https://github.com/jackin-project/jackin/pull/1083) is stale at
-  `4b2d244c93ce3edbba4ff91e685ded6875b5647c`, `CONFLICTING`/`DIRTY`; only
-  Policy and DCO are shown green. Its generated files and hook work were not
-  reused.
+- Jackin [#1089](https://github.com/jackin-project/jackin/pull/1089) is the
+  current carrier at head `f3f752298d26d9b0ceb36f8ed7dfa565d9c5d0ae` before
+  this docs-only push. Its completed checks are green, but Desktop merge
+  cadence, usage-FFI Apple, and Swift Apple checks are still queued; GitHub
+  reports merge state `BLOCKED` and no merge claim is made. PR #1083 is not the
+  current carrier and was not reused.
 
 ### Open acceptance rows
 
-1. Merge and publish Velnor #1076, then adopt/regenerate its runtime in Jackin.
-2. Obtain a default-branch ledger run/artifact before claiming collector
+1. Complete the pending CI for Jackin #1089; do not claim merge while its
+   queued checks remain.
+2. Merge and publish Velnor #1076, then adopt/regenerate its runtime in Jackin.
+3. Obtain a default-branch ledger run/artifact before claiming collector
    qualification.
-3. Close empty-selection, release-tool, result-provenance, merge-group, and
+4. Close empty-selection, release-tool, result-provenance, merge-group, and
    Desktop obligation gaps.
-4. Keep the 120-second and cross-workflow reuse rows FAIL/UNPROVEN until
+5. Keep the 120-second and cross-workflow reuse rows FAIL/UNPROVEN until
    representative live measurements pass.
 
 No completion, six-nines, or reuse claim is made. This sidecar is
