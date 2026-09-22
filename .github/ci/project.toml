@@ -985,9 +985,9 @@ label = "Apple app (JackinDesktop, XcodeGen)"
 kind = "swift"
 root = "native"
 watch = ["*.xcconfig", "native/**", "native/project.yml"]
-pr_commands = ["mise run desktop-xcframework", "cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
-full_commands = ["mise run desktop-xcframework", "cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
-depends_on = ["rust-jackin-usage-ffi"]
+pr_commands = ["cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
+full_commands = ["cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
+depends_on = ["rust-jackin-usage-ffi-xcframework"]
 tool_version = "2.46.0"
 platform = "macos-arm64"
 trust = "untrusted-ok"
@@ -1011,7 +1011,26 @@ root = "native"
 watch = ["crates/jackin-xtask/**", "native/**/*.swift", "native/.swiftpm/Package.resolved", "native/Package.resolved", "native/Package.swift"]
 pr_commands = ["mise run swift-package-native-ci"]
 full_commands = ["mise run swift-package-native-ci"]
-depends_on = ["rust-jackin-usage-ffi"]
+depends_on = ["rust-jackin-usage-ffi-xcframework"]
+platform = "macos-arm64"
+trust = "untrusted-ok"
+[unit.capabilities]
+docker = false
+nested_privileged_docker = false
+buildx_compose = false
+testcontainers = false
+services_with_readiness = false
+browser_binaries = false
+native_macos_arm64 = false
+
+[[unit]]
+id = "rust-jackin-usage-ffi-xcframework"
+label = ""
+kind = "rust"
+root = "crates/jackin-usage-ffi"
+watch = ["Cargo.lock", "Cargo.toml", "crates/jackin-usage-ffi/**", "crates/jackin-xtask/**", "mise.toml", "native/Sources/JackinUsageBindings/**", "rust-toolchain", "rust-toolchain.toml"]
+pr_commands = ["mise run desktop-xcframework"]
+full_commands = ["mise run desktop-xcframework"]
 platform = "macos-arm64"
 trust = "untrusted-ok"
 [unit.capabilities]
