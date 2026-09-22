@@ -114,16 +114,14 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
                 + cohort.data_quality
         })
         .sum();
-    let scheduled_collection = evidence.provenance.event == "schedule"
-        && evidence.provenance.branch == "main"
-        && evidence.provenance.workflow_path == "ci-evidence.yml"
-        && evidence.provenance.run_id.is_some();
+    let qualification_bound = docs::repo_root()
+        .is_ok_and(|root| validate_qualification_binding(&root, evidence).is_ok());
     let green_claim_qualified = total_first_attempt_failures == 0
         && !evidence.expected.is_empty()
         && evidence.denominator.source == DenominatorSource::PushHeadLedger
         && evidence.denominator.fetch_succeeded
         && evidence.unclassified_runs.is_empty()
-        && scheduled_collection;
+        && qualification_bound;
     RollupFile {
         schema: SCHEMA,
         repository: evidence.repository.clone(),
@@ -165,7 +163,7 @@ fn require_qualified(rollup: &RollupFile) -> Result<()> {
         reasons.push("first-attempt failures or missing obligations are present");
     }
     if !rollup.green_claim_qualified {
-        reasons.push("green claim is not qualified");
+        reasons.push("green claim is not qualified (workflow/Git/artifact binding is absent)");
     }
     if reasons.is_empty() {
         Ok(())
