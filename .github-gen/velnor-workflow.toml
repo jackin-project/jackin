@@ -230,6 +230,11 @@ timeout_minutes = 90
 [release.job.env]
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+# Keep release jobs fail-fast after the declared tool setup. The release
+# graph invokes mise tasks in the same job; allowing task-level auto-install
+# would silently rebuild the full toolset after the setup cache is saved.
+MISE_TASK_RUN_AUTO_INSTALL = "false"
+MISE_NOT_FOUND_AUTO_INSTALL = "false"
 
 [[release.job]]
 id = "sign"
@@ -249,6 +254,8 @@ attestations = "write"
 [release.job.env]
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+MISE_TASK_RUN_AUTO_INSTALL = "false"
+MISE_NOT_FOUND_AUTO_INSTALL = "false"
 DEVELOPER_ID_APPLICATION_P12_BASE64 = "${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}"
 DEVELOPER_ID_APPLICATION_P12_PASSWORD = "${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}"
 APP_STORE_CONNECT_API_KEY_P8 = "${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}"

@@ -2,7 +2,59 @@
 
 Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, separate fmt/clippy/test steps, 120s pipelines, no repeated setup.
 
-## Current continuation — 2026-09-22
+## Current authoritative sidecar — 2026-09-22
+
+Status: **NOT COMPLETE**. This sidecar records the exact evidence used for the
+current continuation. Earlier sections are retained historical records; they
+do not override this status or close any open acceptance row.
+
+### Mandatory run evidence
+
+| Run / job | Exact observation | Disposition |
+|---|---|---|
+| [CI / main run 35521080097](https://github.com/jackin-project/jackin/actions/runs/35521080097), [job 106105226160](https://github.com/jackin-project/jackin/actions/runs/35521080097/job/106105226160), attempt 1 | Main `fce94cea8a15de0c2db3bb4ff880d741baf5c00a`; job `15:56:03–15:56:59Z`; `conformance_partial_success_is_not_retried` failed at `crates/jackin-diagnostics/tests/wire_failure_support/mod.rs:51`, left `7`, right `1`. Summary: `108/122` run, `107` passed, `1` failed, `1` skipped; `14/122` were not run after fail-fast cancellation. | Failure retained. Mechanism is not closed by a rerun. |
+| [CI / main run 35521080097](https://github.com/jackin-project/jackin/actions/runs/35521080097), [job 106150119934](https://github.com/jackin-project/jackin/actions/runs/35521080097/job/106150119934), attempt 2 | Same head and diagnostics job; `21:11:07–21:12:58Z`; the unit check completed successfully. | Attempt-2 success does not erase attempt 1. |
+| [Desktop merge run 35515575859](https://github.com/jackin-project/jackin/actions/runs/35515575859), [job 106090835001](https://github.com/jackin-project/jackin/actions/runs/35515575859/job/106090835001) | Main `0163d1b7c654753f23d9ee7334866569c24615d0`; job `14:08:46–14:44:14Z`; `Run desktop-merge` `14:09:12–14:44:09Z` (`34m57s`) and was cancelled. Mise first reported `26` missing tools, then installed `26`; cargo-audit, cargo-dylint, codebook-lsp, and dylint-link used source-fallback installs. | Cancellation/bootstrap failure class retained; no test failure was observed. |
+
+### Current main red and PR candidate
+
+- [Current main run 35722770593](https://github.com/jackin-project/jackin/actions/runs/35722770593) is red at head `de046d3345bb2ec44f9749655cd29164b6e4e4c9`. [Job 106729665225](https://github.com/jackin-project/jackin/actions/runs/35722770593/job/106729665225) failed `Tests` in `jackin-usage`: `parity_console_render_smoke_detail_scopes` failed at `crates/jackin-usage/src/host/projection/tests.rs:3067`; expected `expires in 30d`, output contained `expires in 29d`. The job reported `148/577` tests run (`147` passed, `1` failed) and `429/577` not run. `ci-required` and `Control / Required` failed as consequences.
+- PR [#1079](https://github.com/jackin-project/jackin/pull/1079) is commit `7090d8c45c6cd72644dc66f0732a6b50c7167403` (`ci: disable release mise auto-install`). Its [CI / PR run 35738453565](https://github.com/jackin-project/jackin/actions/runs/35738453565) is green. This proves only the candidate checks for the release auto-install configuration; it does not prove release execution, 120-second completion, reuse, parity, or overall goal completion.
+
+### Measured performance and reuse status
+
+- The measured Swift critical path is `22m15s` in [run 35537475111](https://github.com/jackin-project/jackin/actions/runs/35537475111): Mise miss `211s`; checks `1097s` (`cargo xtask` `55s`, `boltffi pack` `16m16s`, Swift `65s`). Main samples are roughly `15–16m`; Desktop samples are `33–42m`.
+- The measured target is therefore **FAIL** for every sampled class. No timeout, coverage cut, or warm-only result changes that verdict.
+- Reuse is not proven. The cache audit found `30` Actions cache entries totaling `11.14GB` against a `10GB` cap, with MBX blobs dominating. The generated tree has no authoritative `RUSTC_WRAPPER`/`SCCACHE_*` transport for the affected paths; Swift reuse remains separate and unproven. The 26-tool bootstrap repeats setup/download/compile work.
+
+### Acceptance matrix
+
+| Acceptance condition | Current verdict | Evidence / blocker |
+|---|---|---|
+| Mandatory historical runs and attempts preserved | PASS | Runs `35521080097` attempts 1/2 and `35515575859` recorded above. |
+| Candidate PR checks green | PASS (narrow) | PR #1079 / run `35738453565`; candidate scope only. |
+| Rust formatting, Clippy, tests, doctests are separate and ordered on every generated path | PARTIAL | Jackin generated paths show separate phases; Velnor regeneration/preparation can still clear phase identity. Upstream phase fix is not merged, published, adopted, and regenerated. |
+| Empty selection is fail-closed | OPEN | Upstream empty-selection contract is not merged, published, and live-verified. |
+| Release jobs have an exact locked tool closure with auto-install disabled | OPEN | PR #1079 disables auto-install; it does not yet provision the release tool closure. |
+| Result artifacts prove candidate/base/plan/generator/phase/lane provenance | OPEN | Upstream provenance contract is not merged, published, adopted, and live-verified. |
+| PR, merge-group, main, Desktop, release, and final-gate parity | FAIL / OPEN | Velnor omits `merge_group`; no merge-group run exists. Desktop is not a PR obligation; release is outside PR coverage. |
+| All sampled pipeline classes complete within 120 seconds | FAIL | Measured samples above are minutes, not seconds. |
+| Reuse is measured, trusted, invalidated, and avoids repeated work | FAIL / UNPROVEN | Cache pressure, MBX churn, missing Rust transport wiring, and repeated native work remain. |
+| Six-nines reliability or full failure inventory proven | NOT CLAIMED | The accessible inventory has bounded API coverage and retained gaps; no statistical completion claim is valid. |
+
+### Open blockers
+
+1. **Velnor phase composition:** preserve typed phase identity through regen-gates and platform preparation in both schemas; publish the immutable runtime; then regenerate and adopt it in Jackin.
+2. **Empty-selection guard:** carry scope and an explicit legitimate-no-work reason into the required gate; reject empty results without that proof.
+3. **Release provisioning:** declare and validate the exact Rust/`boltffi`/XcodeGen release tool closure from the lockfile before disabling auto-install.
+4. **Result provenance:** bind candidate SHA, base SHA, plan digest, generator/runtime identity, phase, and lane to every result consumed by the final gate.
+5. **Merge-group parity:** add generic Velnor merge-group trigger, full-scope/base-SHA binding, non-canceling SHA-scoped concurrency, and queue-capable final-gate admission. Current Jackin ruleset has no merge-group evidence and `strict_required_status_checks_policy=false`.
+6. **Performance/reuse:** remove repeated setup and native compilation with measured cache transport and cross-workflow reuse; retain the 120-second FAIL until representative classes pass.
+
+No completion claim is made. The sidecar is documentation-only and does not
+change workflows or source.
+
+## Historical continuation — superseded by current sidecar
 
 | Agent | Assignment | Result | Independent status |
 |---|---|---|---|
@@ -21,7 +73,7 @@ failure was reproduced with the published pinned runtime, repaired only by a
 state-sidecar regeneration, and rechecked with `--plain --check`. This is not
 closure for the report findings.
 
-## Post-#1053 live verification — 2026-09-22
+## Historical post-#1053 live verification — 2026-09-22
 
 Agent `/root/report_postmerge_correction` reconciled the merged report with
 the live candidate evidence. PR #1053 merged as `df4671e4`. Its only generated
@@ -51,7 +103,7 @@ was built from source and run with `--plain --check` against this tree. It
 reported `Generated files are current`; no generated file or state-sidecar
 change was needed for this documentation-only correction.
 
-## Baselines (2026-09-21, parent-observed)
+## Historical baselines (2026-09-21, parent-observed)
 
 - Jackin root: `/Users/donbeave/Projects/tailrocks/jackin-project/jackin`, branch `main`, HEAD `fce94cea`, tree clean.
 - Velnor root: `/Users/donbeave/Projects/tailrocks/velnor-project/velnor`, branch `codex/rolling-preview-legacy-migration-20260920` (NOT main), 1 commit ahead, untracked work present (`.firecrawl/`, `goal-finish-and-merge-ci-runtime-products.md`, `velnor-bastion-final-plan.md`, `__pycache__/`). DO NOT disturb; coordinate before checkout/branch moves.
