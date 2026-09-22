@@ -175,6 +175,8 @@ pub(crate) fn run(args: CiAuditArgs) -> Result<()> {
         } else {
             0
         };
+        let report_expected =
+            job_report_expected(&job.status, job.conclusion.as_deref(), &job.steps);
         let mut markers = logs
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -182,12 +184,18 @@ pub(crate) fn run(args: CiAuditArgs) -> Result<()> {
             .map_or_else(
                 || {
                     let mut markers = Markers::default();
-                    if job.status == "completed" && job.conclusion.as_deref() != Some("skipped") {
+                    if report_expected {
                         markers.report_missing = 1;
                     }
                     markers
                 },
-                |bytes| scan_log(&String::from_utf8_lossy(&bytes)),
+                |bytes| {
+                    let mut markers = scan_log(&String::from_utf8_lossy(&bytes));
+                    if !report_expected {
+                        markers.report_missing = 0;
+                    }
+                    markers
+                },
             );
         let mut longest_step = String::from("-");
         let mut longest_step_seconds = 0;
@@ -232,6 +240,14 @@ pub(crate) fn run(args: CiAuditArgs) -> Result<()> {
         bail!("warm run emitted forbidden dependency/cache/compiler/product/report markers");
     }
     Ok(())
+}
+
+fn job_report_expected(status: &str, conclusion: Option<&str>, steps: &[Step]) -> bool {
+    status == "completed"
+        && conclusion != Some("skipped")
+        && steps
+            .iter()
+            .any(|step| step.name == "Report phase timings and cache outcomes")
 }
 
 fn download_logs(repository: &str, jobs: &[Job]) -> Result<JobLogs> {
@@ -577,7 +593,10 @@ impl ProductMarkers {
         };
         if let Some(count) = kind {
             *count += 1;
-            if result != "success" {
+            if matches!(
+                result.to_ascii_lowercase().as_str(),
+                "failure" | "cancelled" | "timed_out" | "action_required" | "stale"
+            ) {
                 self.non_success += 1;
             }
         }
@@ -594,7 +613,7 @@ fn append_summary(
     let mut text = String::new();
     text.push_str(&format!("### {label} performance audit\n\n"));
     text.push_str(&format!(
-        "- Dependency/toolchain download markers: {}\n- Third-party compile/check/build markers: {}\n- Source-tool compile markers: {}\n- Cache log outcomes: {} exact hits, {} partial restores, {} misses\n- Structured Velnor reports: {} valid, {} missing, {} fallback, {} parse errors\n- Reported cache layers: {} exact, {} non-exact, {} inactive, {} unknown\n- Reported compiler lines: {}\n- Mr. Boxington object cache: {} hits, {} misses\n- Product transport steps: {} staged, {} uploaded, {} downloaded, {} verified, {} non-success\n\n",
+        "- Dependency/toolchain download markers: {}\n- Third-party compile/check/build markers: {}\n- Source-tool compile markers: {}\n- Cache log outcomes: {} exact hits, {} partial restores, {} misses\n- Structured Velnor reports: {} valid, {} missing, {} fallback, {} parse errors\n- Reported cache layers: {} exact, {} non-exact, {} inactive, {} unknown\n- Reported compiler lines: {}\n- Mr. Boxington object cache: {} hits, {} misses\n- Product transport steps: {} staged, {} uploaded, {} downloaded, {} verified, {} failures\n\n",
         totals.downloads,
         totals.builds,
         totals.source_tools,
