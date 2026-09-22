@@ -6,6 +6,7 @@
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
+use super::refresh::{ProviderError, ProviderRateLimit, split_provider_fetch};
 #[cfg_attr(
     not(test),
     expect(clippy::wildcard_imports, reason = "target-dependent")
@@ -35,7 +36,7 @@ pub(crate) fn claude_account_identity() -> Option<String> {
 }
 
 pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
-    claude_view_from_wave(agent, provider, now, resolve_claude_wave())
+    claude_view_from_wave_with_rate_limit(agent, provider, now, resolve_claude_wave()).0
 }
 
 /// Production Claude wave resolution: derive the Keychain scope from the
@@ -121,16 +122,15 @@ pub(crate) enum ClaudeWavePolicy {
     LocalAnonymous,
 }
 
-/// Build the Claude view for a resolved wave.
-pub(crate) fn claude_view_from_wave(
+pub(crate) fn claude_view_from_wave_with_rate_limit(
     agent: &str,
     provider: Option<&str>,
     now: i64,
     resolution: ClaudeWaveResolution,
-) -> FocusedUsageView {
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
     match resolution {
-        ClaudeWaveResolution::Denied => claude_denied_view(agent, provider, now),
-        ClaudeWaveResolution::Missing => claude_missing_view(agent, provider, now),
+        ClaudeWaveResolution::Denied => (claude_denied_view(agent, provider, now), None),
+        ClaudeWaveResolution::Missing => (claude_missing_view(agent, provider, now), None),
         ClaudeWaveResolution::Resolved(resolved) => {
             claude_resolved_view(agent, provider, now, *resolved)
         }
@@ -197,18 +197,11 @@ fn claude_missing_view(agent: &str, provider: Option<&str>, now: i64) -> Focused
 }
 
 /// True when the OAuth usage fetch failed because the token lacks the quota
-/// scope (an inference-only grant): HTTP 403 / forbidden / scope-denied, but
-/// never a 401 (expired/revoked) or a transport/decode failure. Pure so the
-/// inference-only state is unit-testable without provider I/O.
-pub(crate) fn claude_error_is_scope_restriction(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    if lower.contains("401") || lower.contains("unauthorized") {
-        return false;
-    }
-    lower.contains("403")
-        || lower.contains("forbidden")
-        || lower.contains("scope")
-        || lower.contains("permission")
+/// scope (an inference-only grant): only a typed HTTP 403. A 401, another
+/// status, or any transport/decode/CLI failure is not scope restriction. Pure
+/// so the inference-only state is unit-testable without provider I/O.
+pub(crate) fn claude_error_is_scope_restriction(error: &ProviderError) -> bool {
+    error.status() == Some(403)
 }
 
 /// Pick the provider error label for a resolved view: OAuth first, CLI second.
@@ -216,8 +209,8 @@ pub(crate) fn claude_error_is_scope_restriction(error: &str) -> bool {
 /// message so the operator sees *why* quota is unavailable instead of a bare
 /// HTTP status; every other error passes through verbatim.
 pub(crate) fn claude_provider_error_label(
-    oauth_error: Option<&str>,
-    cli_error: Option<&str>,
+    oauth_error: Option<&ProviderError>,
+    cli_error: Option<&ProviderError>,
 ) -> Option<String> {
     let error = oauth_error.or(cli_error)?;
     if oauth_error.is_some_and(claude_error_is_scope_restriction) {
@@ -225,7 +218,7 @@ pub(crate) fn claude_provider_error_label(
             "Claude token lacks usage scope (inference-only); quota unavailable".to_owned(),
         );
     }
-    Some(error.to_owned())
+    Some(error.message().to_owned())
 }
 
 fn claude_resolved_view(
@@ -233,22 +226,28 @@ fn claude_resolved_view(
     provider: Option<&str>,
     now: i64,
     resolved: ClaudeResolved,
-) -> FocusedUsageView {
-    let (oauth_quota, oauth_error) =
-        split_fetch(Some(fetch_claude_oauth_usage(&resolved.access_token)));
-    let (cli_usage, cli_error) = split_fetch(oauth_quota.is_none().then(fetch_claude_cli_usage));
-    let provider_error = claude_provider_error_label(oauth_error.as_deref(), cli_error.as_deref());
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    let (oauth_quota, oauth_error) = split_provider_fetch(Some(
+        fetch_claude_oauth_usage(&resolved.access_token).map_err(ProviderError::from),
+    ));
+    let (cli_usage, cli_error) =
+        split_provider_fetch(oauth_quota.is_none().then(fetch_claude_cli_usage));
+    let provider_error = claude_provider_error_label(oauth_error.as_ref(), cli_error.as_ref());
     let status = if oauth_quota.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else {
         UsageSnapshotStatus::Stale
     };
+    let rate_limit = (status != UsageSnapshotStatus::Fresh)
+        .then_some(oauth_error.as_ref().or(cli_error.as_ref()))
+        .flatten()
+        .and_then(ProviderError::rate_limit);
     let buckets = oauth_quota
         .map(|usage| usage.into_buckets(now))
         .or_else(|| cli_usage.as_ref().map(ClaudeCliUsage::buckets))
         .filter(|buckets| !buckets.is_empty())
         .unwrap_or_else(|| claude_pending_buckets(status, provider_error.as_deref()));
-    usage_view(UsageViewInput {
+    let view = usage_view(UsageViewInput {
         agent,
         provider,
         surface: UsageSurface::Claude,
@@ -278,7 +277,8 @@ fn claude_resolved_view(
         },
         now,
         last_error: claude_resolved_last_error(status, provider_error, cli_usage.is_some()),
-    })
+    });
+    (view, rate_limit)
 }
 
 /// `last_error` for a resolved view: the normalized provider error when stale,
@@ -1236,7 +1236,7 @@ pub(crate) fn normalize_claude_spend(
 
 pub(crate) fn fetch_claude_oauth_usage(
     access_token: &str,
-) -> Result<ClaudeOAuthUsageResponse, String> {
+) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError> {
     let user_agent = claude_code_user_agent();
     get_json_bearer(
         jackin_telemetry::schema::enums::ProviderName::Anthropic,
@@ -1255,7 +1255,6 @@ pub(crate) fn fetch_claude_oauth_usage(
             (reqwest::header::USER_AGENT, &user_agent),
         ],
     )
-    .map_err(|error| error.to_string())
 }
 
 pub(crate) fn claude_code_user_agent() -> String {
@@ -1311,16 +1310,16 @@ pub struct ClaudeUsageDiagnostic {
     pub fetched_at_epoch: i64,
 }
 
-pub(crate) fn fetch_claude_cli_usage() -> Result<ClaudeCliUsage, String> {
-    let diagnostic = run_claude_usage_diagnostic()?;
+pub(crate) fn fetch_claude_cli_usage() -> Result<ClaudeCliUsage, ProviderError> {
+    let diagnostic = run_claude_usage_diagnostic().map_err(ProviderError::from)?;
     if !diagnostic.success {
-        return Err(format!(
+        return Err(ProviderError::from(format!(
             "Claude CLI usage exited with status {:?}",
             diagnostic.exit_code
-        ));
+        )));
     }
     parse_claude_usage_output(&diagnostic.stdout)
-        .ok_or_else(|| "Claude CLI usage output was not recognized".to_owned())
+        .ok_or_else(|| ProviderError::from("Claude CLI usage output was not recognized".to_owned()))
 }
 
 #[cfg(test)]
