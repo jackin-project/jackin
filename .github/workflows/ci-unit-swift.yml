@@ -134,6 +134,10 @@ on:
         required: false
         type: string
         default: ""
+      validation_phases:
+        required: false
+        type: string
+        default: ""
 
 env:
   CARGO_INCREMENTAL: "0"
@@ -186,11 +190,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@aa2345bd22bbab45b0261a95c94f47689d0b4ec1
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2
         with:
-          rev: aa2345bd22bbab45b0261a95c94f47689d0b4ec1
+          rev: 45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=aa2345bd22bbab45b0261a95c94f47689d0b4ec1" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -335,8 +339,63 @@ jobs:
             target/xcframework/JackinUsage.xcframework/Info.plist
             target/xcframework/JackinUsage.xcframework/macos-arm64/Headers/module.modulemap
             target/xcframework/JackinUsage.xcframework/macos-arm64/libjackin_usage_ffi.a
-        run: velnor-workflow verify-product --producer 'rust-jackin-usage-ffi' --product 'xcframework-jackinusage' --digest '82cbae4389af71418bc2d01895ab4ffabd83a7baa2af37559bb0e8c14cc80c45' --stage "$RUNNER_TEMP/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage" --marker VELNOR_PRODUCT_RUST_JACKIN_USAGE_FFI__XCFRAMEWORK_JACKINUSAGE_READY
+          VELNOR_PRODUCT_IDENTITY: |
+            {"schema":"velnor-native-product/1","producer":"rust-jackin-usage-ffi","product":"xcframework-jackinusage","adapter":"","source":"native/Sources/JackinUsageBindings/BoltFFI","inputs_digest":"82cbae4389af71418bc2d01895ab4ffabd83a7baa2af37559bb0e8c14cc80c45","host_abi":"macos-arm64","target":"apple-xcframework","target_triple":"aarch64-apple-darwin","architectures":["macos-arm64"],"sdk":"","deployment_target":"16.0","toolchain":{"rust.channel":"1.97.1","rust.components":"clippy,rustfmt","rust.targets":"aarch64-unknown-linux-gnu,x86_64-unknown-linux-gnu"},"profile":"","features":[],"flags":[],"generation":{"bindings_dir":"native/Sources/JackinUsageBindings/BoltFFI","bindings_file":"native/Sources/JackinUsageBindings/BoltFFI/JackinUsageFfiBoltFFI.swift","output_files":"target/xcframework/JackinUsage.xcframework/Info.plist\u0000target/xcframework/JackinUsage.xcframework/macos-arm64/Headers/module.modulemap\u0000target/xcframework/JackinUsage.xcframework/macos-arm64/libjackin_usage_ffi.a","outputs":"target/xcframework/JackinUsage.xcframework","rebuild":"rm -rf 'target/xcframework/JackinUsage.xcframework'\u0000test -d 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings `native/Sources/JackinUsageBindings/BoltFFI` are missing from the checkout; the native pack needs them to compare against' >&2; exit 1; } && rm -rf 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && mkdir -p 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && cp -R 'native/Sources/JackinUsageBindings/BoltFFI' 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings'\u0000cd -- 'crates/jackin-usage-ffi' && MACOSX_DEPLOYMENT_TARGET='26.0' boltffi -v --cargo-arg=--locked --cargo-arg=--profile --cargo-arg='desktop-release' pack apple\u0000diff -r 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings in `native/Sources/JackinUsageBindings/BoltFFI` drifted from regeneration; rerun the native pack locally and commit the result' >&2; exit 1; }"}}
+        run: velnor-workflow verify-product --producer 'rust-jackin-usage-ffi' --product 'xcframework-jackinusage' --digest '82cbae4389af71418bc2d01895ab4ffabd83a7baa2af37559bb0e8c14cc80c45' --identity "$VELNOR_PRODUCT_IDENTITY" --stage "$RUNNER_TEMP/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage" --marker VELNOR_PRODUCT_RUST_JACKIN_USAGE_FFI__XCFRAMEWORK_JACKINUSAGE_READY
+      - name: Swift build
+        if: ${{ contains(format(',{0},', inputs.validation_phases), ',swift-build,') }}
+        env:
+          CI_SCOPE: ${{ inputs.scope }}
+          CI_UNIT_ID: ${{ inputs.unit }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -o pipefail
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CHECKS_STARTED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+          rc=0
+          velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" --phase swift-build 2>&1 | tee -a "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
+          exit $rc
+      - name: Swift tests
+        if: ${{ contains(format(',{0},', inputs.validation_phases), ',swift-test,') }}
+        env:
+          CI_SCOPE: ${{ inputs.scope }}
+          CI_UNIT_ID: ${{ inputs.unit }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -o pipefail
+          rc=0
+          velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" --phase swift-test 2>&1 | tee -a "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CHECKS_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+          exit $rc
       - name: Run unit checks
+        if: ${{ inputs.validation_phases == '' }}
         env:
           CI_SCOPE: ${{ inputs.scope }}
           CI_UNIT_ID: ${{ inputs.unit }}
@@ -391,7 +450,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@aa2345bd22bbab45b0261a95c94f47689d0b4ec1
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github

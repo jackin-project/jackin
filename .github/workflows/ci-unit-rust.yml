@@ -185,12 +185,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-aa2345bd22bbab45b0261a95c94f47689d0b4ec1-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: aa2345bd22bbab45b0261a95c94f47689d0b4ec1
+          EXPECTED_REVISION: 45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -204,7 +204,7 @@ jobs:
       - name: Add Velnor workflow runtime to PATH
         shell: bash
         env:
-          EXPECTED_REVISION: aa2345bd22bbab45b0261a95c94f47689d0b4ec1
+          EXPECTED_REVISION: 45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2
         run: |
           set -euo pipefail
           home="$RUNNER_TEMP/velnor-workflow-runtime-artifact"
@@ -634,7 +634,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@aa2345bd22bbab45b0261a95c94f47689d0b4ec1
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github
@@ -721,11 +721,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@aa2345bd22bbab45b0261a95c94f47689d0b4ec1
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2
         with:
-          rev: aa2345bd22bbab45b0261a95c94f47689d0b4ec1
+          rev: 45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=aa2345bd22bbab45b0261a95c94f47689d0b4ec1" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2" >> "$GITHUB_ENV"
       - name: Mark runner setup end
         if: always()
         run: |
@@ -843,50 +843,6 @@ jobs:
             velnor-mbx-v3-${{ inputs.mbx_compat }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-${{ inputs.unit }}-${{ hashFiles(inputs.mbx_dependency_files) }}-
             velnor-mbx-v3-${{ inputs.mbx_compat }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-${{ inputs.unit }}-
           save-on-workflow-dispatch: true
-      - name: Restore mold 2.42.0 cache
-        id: mold-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/velnor/mold/2.42.0
-          key: velnor-mold-2.42.0-${{ runner.os }}-${{ runner.arch }}
-      - name: Set up mold 2.42.0
-        shell: bash
-        env:
-          MOLD_VERSION: 2.42.0
-        run: |
-          set -euo pipefail
-          case "$(uname -m)" in
-            x86_64) mold_arch=x86_64; expected='f5ed2f6e31d1ada4f07fe766fe0de7a73104d1c5cdc59086fcecc16a43720b6d' ;;
-            aarch64) mold_arch=aarch64; expected='3c9a0a3624aac8a2007569ae50c33b3129a0f0ae8bcc974aeee2f8939d295190' ;;
-            *) echo "unsupported mold architecture: $(uname -m)" >&2; exit 1 ;;
-          esac
-          cache_dir="$HOME/.cache/velnor/mold/$MOLD_VERSION"
-          archive="$cache_dir/mold-$MOLD_VERSION-$mold_arch-linux.tar.gz"
-          mkdir -p "$cache_dir"
-          if [[ ! -s "$archive" ]]; then
-            temporary="$archive.download"
-            trap 'rm -f "$temporary"' EXIT
-            curl --fail --show-error --silent --location --http1.1 --continue-at - --retry 20 --retry-all-errors --retry-delay 5 --retry-max-time 1800 --connect-timeout 30 --max-time 900 \
-              --output "$temporary" \
-              "https://github.com/rui314/mold/releases/download/v$MOLD_VERSION/mold-$MOLD_VERSION-$mold_arch-linux.tar.gz"
-            printf '%s  %s\n' "$expected" "$temporary" | sha256sum --check --strict
-            mv "$temporary" "$archive"
-            trap - EXIT
-          fi
-          printf '%s  %s\n' "$expected" "$archive" | sha256sum --check --strict
-          if [[ "$(id -u)" -eq 0 ]]; then
-            tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
-          else
-            sudo tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
-          fi
-          command -v mold >/dev/null
-          mold --version | grep -F "$MOLD_VERSION"
-      - name: Save mold 2.42.0 cache
-        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.mold-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/velnor/mold/2.42.0
-          key: velnor-mold-2.42.0-${{ runner.os }}-${{ runner.arch }}
       - name: Mark tool bootstrap end
         if: always()
         run: |
@@ -986,7 +942,9 @@ jobs:
         env:
           VELNOR_TRANSPORT_OUTPUTS: |
             target/xcframework/JackinUsage.xcframework
-        run: velnor-workflow stage-product --producer 'rust-jackin-usage-ffi' --product 'xcframework-jackinusage' --digest '82cbae4389af71418bc2d01895ab4ffabd83a7baa2af37559bb0e8c14cc80c45' --stage "$RUNNER_TEMP/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage"
+          VELNOR_PRODUCT_IDENTITY: |
+            {"schema":"velnor-native-product/1","producer":"rust-jackin-usage-ffi","product":"xcframework-jackinusage","adapter":"","source":"native/Sources/JackinUsageBindings/BoltFFI","inputs_digest":"82cbae4389af71418bc2d01895ab4ffabd83a7baa2af37559bb0e8c14cc80c45","host_abi":"macos-arm64","target":"apple-xcframework","target_triple":"aarch64-apple-darwin","architectures":["macos-arm64"],"sdk":"","deployment_target":"16.0","toolchain":{"rust.channel":"1.97.1","rust.components":"clippy,rustfmt","rust.targets":"aarch64-unknown-linux-gnu,x86_64-unknown-linux-gnu"},"profile":"","features":[],"flags":[],"generation":{"bindings_dir":"native/Sources/JackinUsageBindings/BoltFFI","bindings_file":"native/Sources/JackinUsageBindings/BoltFFI/JackinUsageFfiBoltFFI.swift","output_files":"target/xcframework/JackinUsage.xcframework/Info.plist\u0000target/xcframework/JackinUsage.xcframework/macos-arm64/Headers/module.modulemap\u0000target/xcframework/JackinUsage.xcframework/macos-arm64/libjackin_usage_ffi.a","outputs":"target/xcframework/JackinUsage.xcframework","rebuild":"rm -rf 'target/xcframework/JackinUsage.xcframework'\u0000test -d 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings `native/Sources/JackinUsageBindings/BoltFFI` are missing from the checkout; the native pack needs them to compare against' >&2; exit 1; } && rm -rf 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && mkdir -p 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && cp -R 'native/Sources/JackinUsageBindings/BoltFFI' 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings'\u0000cd -- 'crates/jackin-usage-ffi' && MACOSX_DEPLOYMENT_TARGET='26.0' boltffi -v --cargo-arg=--locked --cargo-arg=--profile --cargo-arg='desktop-release' pack apple\u0000diff -r 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings in `native/Sources/JackinUsageBindings/BoltFFI` drifted from regeneration; rerun the native pack locally and commit the result' >&2; exit 1; }"}}
+        run: velnor-workflow stage-product --producer 'rust-jackin-usage-ffi' --product 'xcframework-jackinusage' --digest '82cbae4389af71418bc2d01895ab4ffabd83a7baa2af37559bb0e8c14cc80c45' --identity "$VELNOR_PRODUCT_IDENTITY" --stage "$RUNNER_TEMP/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage"
       - name: Upload product velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -1015,17 +973,14 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@aa2345bd22bbab45b0261a95c94f47689d0b4ec1
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github
-          cache_declared_layers: rustup,mold,mbx,cargo
+          cache_declared_layers: rustup,mbx,cargo
           cache_rustup_outcome: ${{ steps.rustup-toolchain.outcome }}
           cache_rustup_primary: ${{ steps.rustup-toolchain.outputs.cache-primary-key }}
           cache_rustup_matched: ${{ steps.rustup-toolchain.outputs.cache-matched-key }}
-          cache_mold_outcome: ${{ steps.mold-cache.outcome }}
-          cache_mold_primary: ${{ steps.mold-cache.outputs.cache-primary-key }}
-          cache_mold_matched: ${{ steps.mold-cache.outputs.cache-matched-key }}
           cache_mbx_outcome: ${{ steps.mbx-cache.outcome }}
           cache_mbx_hit: ${{ steps.mbx-cache.outputs.cache-hit }}
           cache_mbx_primary: ${{ steps.mbx-cache.outputs.cache-primary-key }}
