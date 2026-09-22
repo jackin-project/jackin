@@ -85,13 +85,13 @@ pub(crate) use self::claude::{
     ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney,
     ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeQuotaWindow,
     ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution, claude_account_identity,
-    claude_code_user_agent, claude_code_user_agent_with, claude_code_version_from_text,
-    claude_email_from_value, claude_error_is_scope_restriction, claude_oauth_candidates,
-    claude_oauth_from_value, claude_organization_type_from_value, claude_provider_error_label,
-    claude_snapshot, claude_spend_bucket, claude_view_from_wave, claude_wave_policy,
-    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
-    normalize_claude_spend, push_claude_dollar_windows, read_claude_keychain_item,
-    resolve_claude_wave,
+    claude_api_key_snapshot, claude_code_user_agent, claude_code_user_agent_with,
+    claude_code_version_from_text, claude_email_from_value, claude_error_is_scope_restriction,
+    claude_oauth_candidates, claude_oauth_from_value, claude_organization_type_from_value,
+    claude_provider_error_label, claude_snapshot, claude_spend_bucket, claude_view_from_wave,
+    claude_wave_policy, fetch_claude_cli_usage, fetch_claude_oauth_usage,
+    load_claude_account_email, normalize_claude_spend, push_claude_dollar_windows,
+    read_claude_keychain_item, resolve_claude_wave,
 };
 #[cfg(test)]
 pub(crate) use self::claude::{
@@ -790,19 +790,22 @@ pub fn provider_credential_snapshot(
 ) -> FocusedUsageView {
     let now = now_epoch();
     match surface_id {
-        "claude" => claude_view_from_wave(
-            "claude",
-            Some("Claude"),
-            now,
-            ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
-                access_token: secret.to_owned(),
-                subscription_type: None,
-                account_email: None,
-                organization_type: None,
-                credential_origin: "OAuth · configured source".to_owned(),
-                is_anonymous: true,
-            })),
-        ),
+        "claude" if key_name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME => {
+            claude_view_from_wave(
+                "claude",
+                Some("Claude"),
+                now,
+                ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
+                    access_token: secret.to_owned(),
+                    subscription_type: None,
+                    account_email: None,
+                    organization_type: None,
+                    credential_origin: "OAuth · configured source".to_owned(),
+                    is_anonymous: true,
+                })),
+            )
+        }
+        "claude" => claude_api_key_snapshot("claude", Some("Claude"), key_name, secret, now),
         "amp" => amp_api_key_snapshot("amp", secret, now),
         "zai" => provider_key_snapshot("codex", UsageSurface::Zai, key_name, Some(secret), now),
         "kimi" => kimi_snapshot("kimi", Some(secret), now),
