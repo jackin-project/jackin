@@ -209,7 +209,8 @@ async fn background_sidecar_prewarm_once(
     if super::launch::prewarmed_dind_state_is_live(paths, &docker).await {
         return Ok(SidecarPrewarmOutcome::Skipped);
     }
-    let warmed = super::launch::prewarm_dind_sidecar_container(&docker, true).await?;
+    let warmed =
+        super::launch::prewarm_dind_sidecar_container_with_paths(paths, &docker, true).await?;
     super::launch::write_prewarmed_dind_state(paths, &warmed)?;
     Ok(SidecarPrewarmOutcome::Completed)
 }

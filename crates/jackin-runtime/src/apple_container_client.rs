@@ -322,6 +322,10 @@ impl FakeAppleContainerClient {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "the Apple-container test double implements the async CLI seam with immediate in-memory results"
+)]
 impl AppleContainerApi for FakeAppleContainerClient {
     async fn run_container(&self, name: &str, _spec: &AppleContainerSpec) -> Result<()> {
         self.containers.lock().unwrap().push(AppleContainerInfo {

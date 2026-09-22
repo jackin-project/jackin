@@ -193,16 +193,18 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     let mut finalize_runner = ScriptedRunner::new(&["", branches]);
     let mut prompt = NoPrompt;
     let docker = common::NoOpDocker;
-    let dec = finalize_foreground_session(
-        "jackin-the-architect",
-        &cdir,
-        AttachOutcome::stopped(0),
-        false,
-        jackin::workspace::DirtyExitPolicy::Ask,
-        &mut prompt,
-        &docker,
-        &mut finalize_runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-the-architect",
+        container_state_dir: &cdir,
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: jackin::workspace::DirtyExitPolicy::Ask,
+        prompt: &mut prompt,
+        docker: &docker,
+        runner: &mut finalize_runner,
+        container: jackin_core::ContainerHandle::new("jackin-the-architect", "test-finalizer-id")
+            .unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);

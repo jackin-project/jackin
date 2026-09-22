@@ -1,6 +1,11 @@
 //! `FakeRunner`: an in-memory `jackin_core::CommandRunner` fake for subprocess
 //! injection in tests.
 
+#![expect(
+    clippy::unused_async_trait_impl,
+    reason = "the command-runner fake implements the async seam with immediate in-memory results"
+)]
+
 use jackin_core::{CommandRunner, RunOptions};
 use std::collections::VecDeque;
 
@@ -76,6 +81,20 @@ impl FakeRunner {
 }
 
 impl CommandRunner for FakeRunner {
+    async fn observe(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        _cwd: Option<&std::path::Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<()> {
+        let command = format!("{} {}", program, args.join(" "));
+        self.run_options.push(opts.clone());
+        self.run_recorded.push(command.clone());
+        self.recorded.push(command.clone());
+        self.check_command(&command)
+    }
+
     async fn run(
         &mut self,
         program: &str,

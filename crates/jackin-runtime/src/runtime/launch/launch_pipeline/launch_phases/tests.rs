@@ -3,11 +3,11 @@ use super::*;
 use crate::instance::{DockerResources, InstanceManifest, NewInstanceManifest};
 use jackin_config::AppConfig;
 use jackin_core::Agent;
-use jackin_core::ContainerState;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
+use jackin_core::{ContainerHandle, ContainerState};
 use jackin_test_support::FakeDockerClient;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use tempfile::tempdir;
 
 fn test_manifest(container: &str) -> InstanceManifest {
@@ -73,8 +73,14 @@ fn grant_phase_rejects_root_sudo_without_docker_io() {
 }
 
 #[tokio::test]
-async fn grant_failure_cleanup_removes_adopted_sidecar_resources() {
-    let docker = FakeDockerClient::default();
+async fn grant_failure_cleanup_removes_adopted_sidecar_and_owned_resources() {
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            "jk-role-dind".to_owned(),
+            ContainerState::Running,
+        )])),
+        ..Default::default()
+    };
     let cleanup = LoadCleanup::new(
         "jk-role".into(),
         "jk-role-dind".into(),
@@ -82,6 +88,7 @@ async fn grant_failure_cleanup_removes_adopted_sidecar_resources() {
         "jk-role-net".into(),
         std::env::temp_dir().join("jackin-suite-a-sock"),
     );
+    cleanup.set_dind_handle(ContainerHandle::new("jk-role-dind", "jk-role-dind-id").unwrap());
     cleanup_after_grant_failure(&cleanup, &docker).await;
     let recorded = docker.recorded.borrow();
     assert!(
@@ -92,13 +99,13 @@ async fn grant_failure_cleanup_removes_adopted_sidecar_resources() {
         recorded
             .iter()
             .any(|c| c == "docker network rm jk-role-net"),
-        "grant-failure cleanup must remove network; recorded: {recorded:?}"
+        "owned network must be removed with the adopted sidecar; recorded: {recorded:?}"
     );
     assert!(
         recorded
             .iter()
             .any(|c| c == "docker volume rm jk-role-certs"),
-        "grant-failure cleanup must remove certs volume; recorded: {recorded:?}"
+        "owned cert volume must be removed with the adopted sidecar; recorded: {recorded:?}"
     );
 }
 
@@ -114,6 +121,10 @@ async fn mid_pipeline_failed_setup_still_runs_cleanup() {
     manifest.write(&container_state).unwrap();
 
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            format!("{container}-dind"),
+            ContainerState::Running,
+        )])),
         inspect_queue: std::cell::RefCell::new(VecDeque::new()),
         ..Default::default()
     };
@@ -123,6 +134,9 @@ async fn mid_pipeline_failed_setup_still_runs_cleanup() {
         format!("{container}-certs"),
         format!("{container}-net"),
         paths.jackin_home.join("sockets").join(container),
+    );
+    cleanup.set_dind_handle(
+        ContainerHandle::new(format!("{container}-dind"), "failed-setup-dind-id").unwrap(),
     );
 
     mark_failed_setup_then_cleanup(
@@ -158,6 +172,10 @@ async fn post_start_failure_preserves_terminal_role_evidence_but_cleans_sidecars
     std::fs::create_dir(&socket_dir).unwrap();
     std::fs::write(socket_dir.join("agent.toml"), "bounded evidence").unwrap();
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            "jk-failed-start-dind".to_owned(),
+            ContainerState::Running,
+        )])),
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 1,
             oom_killed: false,
@@ -170,6 +188,9 @@ async fn post_start_failure_preserves_terminal_role_evidence_but_cleans_sidecars
         "jk-failed-start-certs".into(),
         "jk-failed-start-net".into(),
         socket_dir.clone(),
+    );
+    cleanup.set_dind_handle(
+        ContainerHandle::new("jk-failed-start-dind", "failed-start-dind-id").unwrap(),
     );
 
     cleanup.run_preserving_evidence(&docker).await;
@@ -190,12 +211,14 @@ async fn post_start_failure_preserves_terminal_role_evidence_but_cleans_sidecars
     assert!(
         recorded
             .iter()
-            .any(|call| call == "docker volume rm jk-failed-start-certs")
+            .any(|call| call == "docker volume rm jk-failed-start-certs"),
+        "owned sidecar identity must permit shared volume cleanup"
     );
     assert!(
         recorded
             .iter()
-            .any(|call| call == "docker network rm jk-failed-start-net")
+            .any(|call| call == "docker network rm jk-failed-start-net"),
+        "owned sidecar identity must permit shared network cleanup"
     );
 }
 
@@ -205,6 +228,10 @@ async fn post_start_failure_cleans_live_role_and_private_socket() {
     let socket_dir = temp.path().join("socket");
     std::fs::create_dir(&socket_dir).unwrap();
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            "jk-live-start".to_owned(),
+            ContainerState::Running,
+        )])),
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
     };
@@ -216,6 +243,9 @@ async fn post_start_failure_cleans_live_role_and_private_socket() {
         socket_dir.clone(),
     );
 
+    cleanup
+        .set_dind_handle(ContainerHandle::new("jk-live-start-dind", "live-start-dind-id").unwrap());
+    cleanup.set_role_handle(ContainerHandle::new("jk-live-start", "live-start-role-id").unwrap());
     cleanup.run_preserving_evidence(&docker).await;
 
     let recorded = docker.recorded.borrow();
@@ -285,7 +315,13 @@ async fn grant_failure_then_cleanup_matches_run_launch_core_order() {
     });
     assert!(err.is_err(), "bad grants must fail before Docker ops");
     drop(err.unwrap_err());
-    let docker = FakeDockerClient::default();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            "jk-order-dind".to_owned(),
+            ContainerState::Running,
+        )])),
+        ..Default::default()
+    };
     let cleanup = LoadCleanup::new(
         "jk-order".into(),
         "jk-order-dind".into(),
@@ -293,6 +329,7 @@ async fn grant_failure_then_cleanup_matches_run_launch_core_order() {
         "jk-order-net".into(),
         std::env::temp_dir().join("jackin-order-sock"),
     );
+    cleanup.set_dind_handle(ContainerHandle::new("jk-order-dind", "order-dind-id").unwrap());
     cleanup_after_grant_failure(&cleanup, &docker).await;
     let recorded = docker.recorded.borrow();
     assert!(

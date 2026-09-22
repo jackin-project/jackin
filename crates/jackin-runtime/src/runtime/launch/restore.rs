@@ -137,8 +137,9 @@ pub(super) async fn related_restore_candidates(
             continue;
         }
         let docker_state = docker
-            .inspect_container_state(&manifest.container_base)
-            .await;
+            .inspect_container_by_name(&manifest.container_base)
+            .await
+            .state;
         let should_prompt = match docker_state {
             ContainerState::InspectUnavailable(_) | ContainerState::NotFound => true,
             ContainerState::Running

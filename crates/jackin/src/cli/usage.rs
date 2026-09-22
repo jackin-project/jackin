@@ -12,6 +12,7 @@ use std::time::Duration;
 use crate::cli::format::{OutputEnvelope, OutputFormat};
 use crate::cli::{BANNER, HELP_STYLES};
 use jackin_core::JackinPaths;
+use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 use jackin_runtime::instance::{InstanceIndex, InstanceStatus};
 use jackin_runtime::runtime::snapshot;
 
@@ -176,9 +177,20 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("missing usage scope; choose `accounts` or `verify`"))?;
     let target = resolve_usage_target(paths, instance)?;
+    let docker = BollardDockerClient::connect()?;
+    let inspection = docker.inspect_container_by_name(&target.container).await;
+    let container = inspection.handle.ok_or_else(|| {
+        anyhow::anyhow!(
+            "cannot resolve container {}: {}",
+            target.container,
+            inspection.state.inspect_label()
+        )
+    })?;
     match scope {
-        UsageScope::Accounts(scope_args) => run_accounts(args, paths, &target, scope_args).await,
-        UsageScope::Verify => run_verify(paths, &target),
+        UsageScope::Accounts(scope_args) => {
+            run_accounts(args, paths, &target, &container, scope_args).await
+        }
+        UsageScope::Verify => run_verify(paths, &target, &container).await,
         UsageScope::Snapshot(_) => {
             anyhow::bail!("`jackin usage <instance> snapshot` is only valid with instance `host`")
         }
@@ -449,9 +461,10 @@ async fn run_accounts(
     args: &UsageArgs,
     paths: &JackinPaths,
     target: &UsageTarget,
+    container: &jackin_core::ContainerHandle,
     scope_args: &UsageAccountsArgs,
 ) -> Result<()> {
-    let accounts = snapshot::fetch_usage_accounts(paths, &target.container)?.unwrap_or_default();
+    let accounts = snapshot::fetch_usage_accounts(paths, container)?.unwrap_or_default();
     let synced_host_cache_path = if scope_args.sync_host_cache {
         let path = store::upsert_accounts(paths, &accounts).await?;
         Some(path)
@@ -489,8 +502,12 @@ async fn run_accounts(
     Ok(())
 }
 
-fn run_verify(paths: &JackinPaths, target: &UsageTarget) -> Result<()> {
-    let accounts = snapshot::fetch_usage_accounts(paths, &target.container)?.unwrap_or_default();
+async fn run_verify(
+    paths: &JackinPaths,
+    target: &UsageTarget,
+    container: &jackin_core::ContainerHandle,
+) -> Result<()> {
+    let accounts = snapshot::fetch_usage_accounts(paths, container)?.unwrap_or_default();
     let checks = verify_usage_accounts(&accounts);
     print!("{BANNER}");
     println!("usage verification for {}\n", target.display_label());

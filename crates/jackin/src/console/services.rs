@@ -684,10 +684,11 @@ pub(super) mod instances {
                 handles.push(jackin_telemetry::spawn::thread_scoped_joined(
                     scope,
                     move || {
-                        let result =
+                        let result = resolve_snapshot_container(&container).and_then(|handle| {
                             jackin_runtime::runtime::snapshot::fetch_snapshot_with_transport(
-                                paths, &container,
-                            );
+                                paths, &handle,
+                            )
+                        });
                         (container, result)
                     },
                 ));
@@ -710,6 +711,37 @@ pub(super) mod instances {
                 Err(anyhow::anyhow!("snapshot worker thread panicked: {detail}")),
             )
         })
+    }
+
+    fn resolve_snapshot_container(
+        container_name: &str,
+    ) -> anyhow::Result<jackin_core::ContainerHandle> {
+        let request = jackin_process::ExecRequest::new(
+            "docker",
+            ["inspect", "--format", "{{.ID}}\\t{{.Name}}", container_name],
+        );
+        let output = crate::process_telemetry::exec_sync(&request)
+            .context("resolving immutable container identity for snapshot")?;
+        anyhow::ensure!(
+            output.success,
+            "docker inspect failed while resolving snapshot container {container_name}"
+        );
+        let line = String::from_utf8_lossy(&output.stdout);
+        let (id, raw_name) = line
+            .lines()
+            .map(str::trim)
+            .find_map(|line| line.split_once('\t'))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "docker inspect returned no identity for snapshot container {container_name}"
+                )
+            })?;
+        let name = raw_name.trim_start_matches('/');
+        anyhow::ensure!(
+            name == container_name,
+            "docker inspect identity changed for snapshot container {container_name}: {name}"
+        );
+        jackin_core::ContainerHandle::new(name, id)
     }
 }
 pub(super) mod role_load {

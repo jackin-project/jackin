@@ -19,7 +19,7 @@
 use crate::instance::{InstanceIndex, InstanceManifest, InstanceStatus, RegistrationState};
 use anyhow::Context as _;
 use jackin_core::container_paths;
-use jackin_core::{CommandRunner, JACKIN_STATUS_CMD, RunOptions};
+use jackin_core::{CommandRunner, ContainerHandle, JACKIN_STATUS_CMD, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 use jackin_protocol::attach::SpawnRequest;
 use std::path::PathBuf;
@@ -69,11 +69,11 @@ pub enum HostAttachTransportPlan {
     },
 }
 
-pub fn attach_proxy_exec_args(container_name: &str) -> Vec<String> {
+pub fn attach_proxy_exec_args(container: &ContainerHandle) -> Vec<String> {
     vec![
         "exec".to_owned(),
         "-i".to_owned(),
-        container_name.to_owned(),
+        container.id().to_owned(),
         JACKIN_CAPSULE_PATH.to_owned(),
         ATTACH_PROXY_SUBCOMMAND.to_owned(),
     ]
@@ -128,9 +128,9 @@ pub fn select_host_attach_transport(
     }
 }
 
-pub(super) async fn wait_for_capsule_daemon(
+async fn wait_for_capsule_daemon_with_handle(
     paths: &JackinPaths,
-    container_name: &str,
+    container: &ContainerHandle,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     const MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -140,18 +140,18 @@ pub(super) async fn wait_for_capsule_daemon(
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "wait_capsule_socket",
-        Some(container_name),
+        Some(container.name()),
     );
     let wait_result = wait_for_capsule_daemon_ready(
         paths,
-        container_name,
+        container,
         docker,
         MAX_WAIT,
         INITIAL_INTERVAL,
         MAX_INTERVAL,
     )
     .await
-    .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"));
+    .with_context(|| format!("waiting for jackin-capsule daemon in {}", container.name()));
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "wait_capsule_socket",
@@ -172,7 +172,7 @@ pub(super) async fn wait_for_capsule_daemon(
 
 async fn wait_for_capsule_daemon_ready(
     paths: &JackinPaths,
-    container_name: &str,
+    container: &ContainerHandle,
     docker: &impl DockerApi,
     max_wait: std::time::Duration,
     initial_interval: std::time::Duration,
@@ -182,12 +182,12 @@ async fn wait_for_capsule_daemon_ready(
     let mut interval = initial_interval;
 
     loop {
-        if capsule_daemon_socket_connects(paths, container_name) {
+        if capsule_daemon_socket_connects(paths, container.name()) {
             return Ok(());
         }
 
         let Err(exec_error) = docker
-            .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
+            .exec_capture_by_id(container, &["sh", "-c", JACKIN_STATUS_CMD])
             .await
         else {
             return Ok(());
@@ -231,7 +231,7 @@ pub enum AgentSessionInventory {
 
 pub async fn inspect_agent_sessions(
     docker: &impl DockerApi,
-    container_name: &str,
+    container: &ContainerHandle,
     state: &ContainerState,
 ) -> AgentSessionInventory {
     if matches!(state, ContainerState::InspectUnavailable(_)) {
@@ -244,7 +244,7 @@ pub async fn inspect_agent_sessions(
     }
 
     match docker
-        .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
+        .exec_capture_by_id(container, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
         Ok(output) => match parse_jackin_sessions(&output) {
@@ -624,22 +624,48 @@ pub(super) async fn reconnect_or_create_session_with_focus_with_lease(
 ) -> anyhow::Result<()> {
     validate_current_account_admission(paths, container_name, admission_lease)
         .map_err(mark_reconnect_admission_failure)?;
+    let inspection = docker.inspect_container_by_name(container_name).await;
+    let container = inspection
+        .handle
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "cannot resolve container {container_name}: {}",
+                inspection.state.inspect_label()
+            )
+        })
+        .map_err(mark_reconnect_admission_failure)?;
+    reconnect_or_create_session_with_container_handle_with_lease(
+        paths,
+        container_name,
+        focus_session,
+        admission_lease,
+        docker,
+        runner,
+        &container,
+    )
+    .await
+}
+
+pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease(
+    paths: &JackinPaths,
+    container_name: &str,
+    focus_session: Option<u64>,
+    admission_lease: &super::launch::AccountConfigRevision,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    container: &ContainerHandle,
+) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    wait_for_capsule_daemon(paths, container_name, docker)
+    wait_for_capsule_daemon_with_handle(paths, container, docker)
         .await
         .map_err(mark_reconnect_admission_failure)?;
     admission_lease
         .ensure_current(paths)
         .map_err(mark_reconnect_admission_failure)?;
     if super::host_attach::host_attach_enabled(paths) {
-        let outcome = super::host_attach::run_host_attach_session(
-            paths,
-            container_name,
-            None,
-            focus_session,
-            &[],
-        )
-        .await;
+        let outcome =
+            super::host_attach::run_host_attach_session(paths, container, None, focus_session, &[])
+                .await;
         jackin_diagnostics::reassert_alt_screen();
         admission_lease
             .ensure_current(paths)
@@ -648,7 +674,7 @@ pub(super) async fn reconnect_or_create_session_with_focus_with_lease(
     }
     let focus_arg = focus_session.map(|id| id.to_string());
     let run_as_user = Some(crate::runtime::identity::CAPSULE_SUPERVISOR_USER);
-    let mut args: Vec<&str> = vec!["exec", "-it", container_name, container_paths::CAPSULE_BIN];
+    let mut args: Vec<&str> = vec!["exec", "-it", container.id(), container_paths::CAPSULE_BIN];
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }
@@ -726,13 +752,48 @@ pub(super) async fn start_or_reconnect_capsule_client_with_lease(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    start_or_reconnect_capsule_client_with_handle_with_lease(
+        paths,
+        container_name,
+        admission_lease,
+        docker,
+        runner,
+        None,
+    )
+    .await
+    .map(|_| ())
+}
+
+async fn start_or_reconnect_capsule_client_with_handle_with_lease(
+    paths: &JackinPaths,
+    container_name: &str,
+    admission_lease: &super::launch::AccountConfigRevision,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    known_container: Option<&ContainerHandle>,
+) -> anyhow::Result<ContainerHandle> {
     validate_current_account_admission(paths, container_name, admission_lease)?;
+    if let Some(container) = known_container {
+        anyhow::ensure!(
+            container.name() == container_name,
+            "container handle name mismatch: expected {container_name}, got {}",
+            container.name()
+        );
+    }
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "restore_inspect",
         Some(container_name),
     );
-    let inspect = docker.inspect_container_state(container_name).await;
+    let (inspect, inspect_handle) = if let Some(container) = known_container {
+        (
+            docker.inspect_container_by_id(container).await,
+            Some(container.clone()),
+        )
+    } else {
+        let inspection = docker.inspect_container_by_name(container_name).await;
+        (inspection.state, inspection.handle)
+    };
     let inspect_label = inspect.short_label();
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Capsule,
@@ -740,26 +801,18 @@ pub(super) async fn start_or_reconnect_capsule_client_with_lease(
         Some(&inspect_label),
     );
     match inspect {
-        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+            if inspect_handle.is_none() {
+                anyhow::bail!("container '{container_name}' inspection returned no immutable ID");
+            }
+        }
         ContainerState::Stopped { .. } | ContainerState::Created => {
+            let Some(container) = inspect_handle.clone() else {
+                anyhow::bail!("container '{container_name}' inspection returned no immutable ID");
+            };
             let resources =
                 crate::runtime::cleanup::docker_resources_for_state(paths, container_name);
-            if let Some(dind_name) = resources.dind_container.as_deref() {
-                match docker.inspect_container_state(dind_name).await {
-                    ContainerState::Stopped { .. } | ContainerState::Created => {
-                        admission_lease.ensure_current(paths)?;
-                        drop(docker.start_container(dind_name).await);
-                        super::launch::ensure_current_or_remove_stale_container(
-                            admission_lease,
-                            paths,
-                            dind_name,
-                            docker,
-                        )
-                        .await?;
-                    }
-                    _ => {}
-                }
-            }
+            restart_stopped_dind_if_needed(paths, container_name, admission_lease, docker).await?;
 
             jackin_diagnostics::active_timing_started(
                 jackin_diagnostics::DiagnosticStage::Capsule,
@@ -768,7 +821,7 @@ pub(super) async fn start_or_reconnect_capsule_client_with_lease(
             );
             admission_lease.ensure_current(paths)?;
             let start_result = docker
-                .start_container(container_name)
+                .start_container_by_id(&container)
                 .await
                 .with_context(|| format!("starting role container {container_name}"));
             jackin_diagnostics::active_timing_done(
@@ -784,7 +837,7 @@ pub(super) async fn start_or_reconnect_capsule_client_with_lease(
                 super::launch::ensure_current_or_remove_stale_container(
                     admission_lease,
                     paths,
-                    container_name,
+                    &container,
                     docker,
                 )
                 .await?;
@@ -799,7 +852,7 @@ pub(super) async fn start_or_reconnect_capsule_client_with_lease(
                 super::launch::ensure_current_or_remove_stale_container(
                     admission_lease,
                     paths,
-                    container_name,
+                    &container,
                     docker,
                 )
                 .await?;
@@ -815,7 +868,7 @@ pub(super) async fn start_or_reconnect_capsule_client_with_lease(
             super::launch::ensure_current_or_remove_stale_container(
                 admission_lease,
                 paths,
-                container_name,
+                &container,
                 docker,
             )
             .await?;
@@ -840,15 +893,49 @@ pub(super) async fn start_or_reconnect_capsule_client_with_lease(
         }
     }
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
-    reconnect_or_create_session_with_focus_with_lease(
+    let Some(container) = inspect_handle else {
+        anyhow::bail!("container '{container_name}' has no immutable ID for attach");
+    };
+    reconnect_or_create_session_with_container_handle_with_lease(
         paths,
         container_name,
         None,
         admission_lease,
         docker,
         runner,
+        &container,
     )
-    .await
+    .await?;
+    Ok(container)
+}
+
+async fn restart_stopped_dind_if_needed(
+    paths: &JackinPaths,
+    container_name: &str,
+    admission_lease: &super::launch::AccountConfigRevision,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
+    let resources = crate::runtime::cleanup::docker_resources_for_state(paths, container_name);
+    if resources.dind_container.is_none() {
+        return Ok(());
+    }
+    let Some(dind) =
+        crate::runtime::cleanup::resolve_dind_handle_for_state(paths, container_name, docker)
+            .await?
+    else {
+        return Ok(());
+    };
+    let dind_state = docker.inspect_container_by_id(&dind).await;
+    if !matches!(
+        dind_state,
+        ContainerState::Stopped { .. } | ContainerState::Created
+    ) {
+        return Ok(());
+    }
+    admission_lease.ensure_current(paths)?;
+    drop(docker.start_container_by_id(&dind).await);
+    super::launch::ensure_current_or_remove_stale_container(admission_lease, paths, &dind, docker)
+        .await
 }
 
 pub(super) async fn start_or_hardline_agent(
@@ -859,28 +946,83 @@ pub(super) async fn start_or_hardline_agent(
     runner: &mut impl CommandRunner,
     start_first: bool,
 ) -> anyhow::Result<()> {
+    start_or_hardline_agent_with_known_container(
+        paths,
+        container_name,
+        admission_lease,
+        docker,
+        runner,
+        start_first,
+        None,
+    )
+    .await
+}
+
+pub(super) async fn start_or_hardline_agent_with_container_handle(
+    paths: &JackinPaths,
+    container_name: &str,
+    admission_lease: &super::launch::AccountConfigRevision,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    start_first: bool,
+    container: &ContainerHandle,
+) -> anyhow::Result<()> {
+    start_or_hardline_agent_with_known_container(
+        paths,
+        container_name,
+        admission_lease,
+        docker,
+        runner,
+        start_first,
+        Some(container),
+    )
+    .await
+}
+
+async fn start_or_hardline_agent_with_known_container(
+    paths: &JackinPaths,
+    container_name: &str,
+    admission_lease: &super::launch::AccountConfigRevision,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    start_first: bool,
+    known_container: Option<&ContainerHandle>,
+) -> anyhow::Result<()> {
     validate_current_account_admission(paths, container_name, admission_lease)?;
     match crate::runtime::backend::backend_for_state(paths, container_name) {
         crate::runtime::backend::InstanceBackend::Docker => {
             if start_first {
-                start_or_reconnect_capsule_client_with_lease(
+                let container = start_or_reconnect_capsule_client_with_handle_with_lease(
                     paths,
                     container_name,
                     admission_lease,
                     docker,
                     runner,
+                    known_container,
                 )
                 .await?;
                 admission_lease.ensure_current(paths)?;
-                finalize_reconnected_foreground_session_with_lease(
+                finalize_reconnected_foreground_session_with_handle(
                     paths,
                     container_name,
                     admission_lease,
                     docker,
                     runner,
+                    &container,
                 )
                 .await
             } else {
+                let container = if let Some(container) = known_container {
+                    container.clone()
+                } else {
+                    let inspection = docker.inspect_container_by_name(container_name).await;
+                    inspection.handle.ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "cannot resolve container {container_name}: {}",
+                            inspection.state.inspect_label()
+                        )
+                    })?
+                };
                 hardline_docker_agent_with_focus_with_lease(
                     paths,
                     container_name,
@@ -888,11 +1030,16 @@ pub(super) async fn start_or_hardline_agent(
                     admission_lease,
                     docker,
                     runner,
+                    &container,
                 )
                 .await
             }
         }
         crate::runtime::backend::InstanceBackend::AppleContainer => {
+            anyhow::ensure!(
+                known_container.is_none(),
+                "immutable Docker container handle supplied for Apple Container backend"
+            );
             admission_lease.ensure_current(paths)?;
             crate::runtime::apple_container::reconnect(paths, container_name, None).await?;
             admission_lease.ensure_current(paths)?;
@@ -909,11 +1056,11 @@ async fn require_container_reachable(
     container_name: &str,
     docker: &impl DockerApi,
     stopped_hint: &str,
-) -> anyhow::Result<super::launch::AccountConfigRevision> {
-    require_container_running(paths, container_name, docker, stopped_hint).await?;
+) -> anyhow::Result<(super::launch::AccountConfigRevision, ContainerHandle)> {
+    let container = require_container_running(paths, container_name, docker, stopped_hint).await?;
     let admission_lease = super::launch::AccountConfigRevision::acquire(paths)?;
     validate_current_account_admission(paths, container_name, &admission_lease)?;
-    Ok(admission_lease)
+    Ok((admission_lease, container))
 }
 
 /// Verify only the Docker lifecycle state. New-agent sessions call this
@@ -924,9 +1071,14 @@ async fn require_container_running(
     container_name: &str,
     docker: &impl DockerApi,
     stopped_hint: &str,
-) -> anyhow::Result<()> {
-    match docker.inspect_container_state(container_name).await {
-        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => Ok(()),
+) -> anyhow::Result<ContainerHandle> {
+    let inspection = docker.inspect_container_by_name(container_name).await;
+    match inspection.state {
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+            inspection.handle.ok_or_else(|| {
+                anyhow::anyhow!("container '{container_name}' inspection returned no immutable ID")
+            })
+        }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
                 anyhow::bail!("{message}");
@@ -959,21 +1111,20 @@ pub async fn spawn_shell_session(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    let admission_lease = require_container_reachable(
+    let (admission_lease, container) = require_container_reachable(
         paths,
         container_name,
         docker,
         "restart it before opening a shell",
     )
     .await?;
-
     set_role_terminal_title(paths, container_name);
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     admission_lease.ensure_current(paths)?;
     if super::host_attach::host_attach_enabled(paths) {
         let result = super::host_attach::run_host_attach_session(
             paths,
-            container_name,
+            &container,
             Some(SpawnRequest::Shell),
             None,
             &[],
@@ -983,12 +1134,13 @@ pub async fn spawn_shell_session(
         admission_lease.ensure_current(paths)?;
         eprintln!();
         result?;
-        return finalize_reconnected_foreground_session_with_lease(
+        return finalize_reconnected_foreground_session_with_handle(
             paths,
             container_name,
             &admission_lease,
             docker,
             runner,
+            &container,
         )
         .await;
     }
@@ -996,7 +1148,7 @@ pub async fn spawn_shell_session(
     let mut args: Vec<&str> = vec![
         "exec",
         "-it",
-        container_name,
+        container.id(),
         container_paths::CAPSULE_BIN,
         "new",
     ];
@@ -1042,12 +1194,13 @@ pub async fn spawn_shell_session(
     admission_lease.ensure_current(paths)?;
     eprintln!();
     result?;
-    finalize_reconnected_foreground_session_with_lease(
+    finalize_reconnected_foreground_session_with_handle(
         paths,
         container_name,
         &admission_lease,
         docker,
         runner,
+        &container,
     )
     .await
 }
@@ -1078,7 +1231,7 @@ pub async fn spawn_agent_session(
             .any(|(name, _)| jackin_env::is_account_env(name)),
         "account credential and routing overrides are not allowed; select an assigned account and recreate the container"
     );
-    require_container_running(
+    let container = require_container_running(
         paths,
         container_name,
         docker,
@@ -1115,7 +1268,7 @@ pub async fn spawn_agent_session(
         admission_lease.ensure_current(paths)?;
         let result = super::host_attach::run_host_attach_session(
             paths,
-            container_name,
+            &container,
             Some(spawn_request),
             None,
             &session_env_overrides,
@@ -1125,12 +1278,13 @@ pub async fn spawn_agent_session(
         admission_lease.ensure_current(paths)?;
         eprintln!();
         result?;
-        return finalize_reconnected_foreground_session_with_lease(
+        return finalize_reconnected_foreground_session_with_handle(
             paths,
             container_name,
             &admission_lease,
             docker,
             runner,
+            &container,
         )
         .await;
     }
@@ -1147,7 +1301,7 @@ pub async fn spawn_agent_session(
     for flag in &env_flags {
         exec_args.push(flag.as_str());
     }
-    exec_args.push(container_name);
+    exec_args.push(container.id());
     exec_args.extend_from_slice(&[container_paths::CAPSULE_BIN, "new", spawn_target]);
     if let Some(flag) = host_alt_screen_exec_flag() {
         exec_args.insert(1, flag);
@@ -1191,12 +1345,13 @@ pub async fn spawn_agent_session(
     admission_lease.ensure_current(paths)?;
     eprintln!();
     result?;
-    finalize_reconnected_foreground_session_with_lease(
+    finalize_reconnected_foreground_session_with_handle(
         paths,
         container_name,
         &admission_lease,
         docker,
         runner,
+        &container,
     )
     .await
 }
@@ -1249,7 +1404,9 @@ pub(crate) async fn hardline_docker_agent_with_focus(
         "hardline_container_inspect",
         Some(container_name),
     );
-    let container_state = docker.inspect_container_state(container_name).await;
+    let inspection = docker.inspect_container_by_name(container_name).await;
+    let container_state = inspection.state;
+    let container_handle = inspection.handle;
     let container_state_label = container_state.short_label();
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Hardline,
@@ -1258,6 +1415,9 @@ pub(crate) async fn hardline_docker_agent_with_focus(
     );
     match container_state {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+            let Some(container) = container_handle else {
+                anyhow::bail!("container '{container_name}' inspection returned no immutable ID");
+            };
             let admission_lease = require_current_account_admission(paths, container_name)?;
             hardline_docker_agent_with_focus_with_lease(
                 paths,
@@ -1266,6 +1426,7 @@ pub(crate) async fn hardline_docker_agent_with_focus(
                 &admission_lease,
                 docker,
                 runner,
+                &container,
             )
             .await
         }
@@ -1320,6 +1481,7 @@ async fn hardline_docker_agent_with_focus_with_lease(
     admission_lease: &super::launch::AccountConfigRevision,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
+    container: &ContainerHandle,
 ) -> anyhow::Result<()> {
     validate_current_account_admission(paths, container_name, admission_lease)
         .map_err(mark_reconnect_admission_failure)?;
@@ -1327,13 +1489,14 @@ async fn hardline_docker_agent_with_focus_with_lease(
     // capsule exec until the session ends, so the post-hardline reconcile in
     // the app layer would fire too late.
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
-    let attach_outcome = reconnect_or_create_session_with_focus_with_lease(
+    let attach_outcome = reconnect_or_create_session_with_container_handle_with_lease(
         paths,
         container_name,
         focus_session,
         admission_lease,
         docker,
         runner,
+        container,
     )
     .await;
     // A clean last-session shutdown surfaces as a non-zero attach result (the
@@ -1346,10 +1509,10 @@ async fn hardline_docker_agent_with_focus_with_lease(
         {
             return Err(error);
         }
-        let inspect = docker.inspect_container_state(container_name).await;
-        if let Some(diag) = super::launch::diagnose_with_state(
+        let inspect = docker.inspect_container_by_id(container).await;
+        if let Some(diag) = super::launch::diagnose_with_state_by_id(
             runner,
-            container_name,
+            container,
             &inspect,
             super::launch::ExitPhase::PostAttach,
         )
@@ -1363,12 +1526,13 @@ async fn hardline_docker_agent_with_focus_with_lease(
         let _warning = jackin_telemetry::record_recovered_degradation();
     }
 
-    finalize_reconnected_foreground_session_with_lease(
+    finalize_reconnected_foreground_session_with_handle(
         paths,
         container_name,
         admission_lease,
         docker,
         runner,
+        container,
     )
     .await
 }
@@ -1397,6 +1561,35 @@ pub(crate) async fn finalize_reconnected_foreground_session_with_lease(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    let inspection = docker.inspect_container_by_name(container_name).await;
+    let container = inspection
+        .handle
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "cannot resolve container {container_name}: {}",
+                inspection.state.inspect_label()
+            )
+        })
+        .map_err(mark_reconnect_admission_failure)?;
+    finalize_reconnected_foreground_session_with_handle(
+        paths,
+        container_name,
+        admission_lease,
+        docker,
+        runner,
+        &container,
+    )
+    .await
+}
+
+pub(super) async fn finalize_reconnected_foreground_session_with_handle(
+    paths: &JackinPaths,
+    container_name: &str,
+    admission_lease: &super::launch::AccountConfigRevision,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    container: &ContainerHandle,
+) -> anyhow::Result<()> {
     validate_current_account_admission(paths, container_name, admission_lease)?;
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Hardline,
@@ -1405,7 +1598,7 @@ pub(crate) async fn finalize_reconnected_foreground_session_with_lease(
     );
     admission_lease.ensure_current(paths)?;
     let mut outcome =
-        crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+        crate::runtime::launch::inspect_attach_outcome_by_id(docker, container).await?;
     admission_lease.ensure_current(paths)?;
     let outcome_label = outcome.as_label();
     jackin_diagnostics::active_timing_done(
@@ -1426,14 +1619,17 @@ pub(crate) async fn finalize_reconnected_foreground_session_with_lease(
         Some(container_name),
     );
     let mut decision = crate::isolation::finalize::finalize_foreground_session(
-        container_name,
-        &paths.data_dir.join(container_name),
-        outcome,
-        interactive,
-        jackin_config::DirtyExitPolicy::Ask,
-        &mut prompt,
-        docker,
-        runner,
+        crate::isolation::finalize::FinalizeContext {
+            container_name,
+            container_state_dir: &paths.data_dir.join(container_name),
+            outcome,
+            is_interactive: interactive,
+            dirty_exit_policy: jackin_config::DirtyExitPolicy::Ask,
+            prompt: &mut prompt,
+            docker,
+            runner,
+            container: container.clone(),
+        },
     )
     .await?;
     admission_lease.ensure_current(paths)?;
@@ -1448,12 +1644,14 @@ pub(crate) async fn finalize_reconnected_foreground_session_with_lease(
         crate::isolation::finalize::FinalizeDecision::ReturnToAgent
     ) {
         admission_lease.ensure_current(paths)?;
-        start_or_reconnect_capsule_client_with_lease(
+        reconnect_or_create_session_with_container_handle_with_lease(
             paths,
             container_name,
+            None,
             admission_lease,
             docker,
             runner,
+            container,
         )
         .await?;
         jackin_diagnostics::active_timing_started(
@@ -1462,7 +1660,7 @@ pub(crate) async fn finalize_reconnected_foreground_session_with_lease(
             Some(container_name),
         );
         admission_lease.ensure_current(paths)?;
-        outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+        outcome = crate::runtime::launch::inspect_attach_outcome_by_id(docker, container).await?;
         admission_lease.ensure_current(paths)?;
         let outcome_label = outcome.as_label();
         jackin_diagnostics::active_timing_done(
@@ -1477,14 +1675,17 @@ pub(crate) async fn finalize_reconnected_foreground_session_with_lease(
             Some(container_name),
         );
         decision = crate::isolation::finalize::finalize_foreground_session(
-            container_name,
-            &paths.data_dir.join(container_name),
-            outcome,
-            interactive,
-            jackin_config::DirtyExitPolicy::Ask,
-            &mut prompt,
-            docker,
-            runner,
+            crate::isolation::finalize::FinalizeContext {
+                container_name,
+                container_state_dir: &paths.data_dir.join(container_name),
+                outcome,
+                is_interactive: interactive,
+                dirty_exit_policy: jackin_config::DirtyExitPolicy::Ask,
+                prompt: &mut prompt,
+                docker,
+                runner,
+                container: container.clone(),
+            },
         )
         .await?;
         admission_lease.ensure_current(paths)?;
@@ -1495,7 +1696,8 @@ pub(crate) async fn finalize_reconnected_foreground_session_with_lease(
         );
     }
 
-    finalize_reconnected_resources(paths, container_name, outcome, decision, docker).await
+    finalize_reconnected_resources(paths, container_name, outcome, decision, docker, container)
+        .await
 }
 
 async fn finalize_reconnected_resources(
@@ -1504,6 +1706,7 @@ async fn finalize_reconnected_resources(
     outcome: crate::isolation::finalize::AttachOutcome,
     decision: crate::isolation::finalize::FinalizeDecision,
     docker: &impl DockerApi,
+    container: &ContainerHandle,
 ) -> anyhow::Result<()> {
     use crate::isolation::finalize::{AttachOutcome, FinalizeDecision};
 
@@ -1526,7 +1729,16 @@ async fn finalize_reconnected_resources(
     if let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) {
         super::launch::write_instance_status(paths, &state_dir, &mut manifest, status)?;
     }
-    super::cleanup::eject_role(paths, container_name, docker).await
+    let dind_handle =
+        super::cleanup::resolve_dind_handle_for_state(paths, container_name, docker).await?;
+    super::cleanup::eject_docker_role_with_handles(
+        paths,
+        container_name,
+        docker,
+        container,
+        dind_handle.as_ref(),
+    )
+    .await
 }
 
 pub async fn inspect_hardline_instance(
@@ -1555,18 +1767,26 @@ pub async fn inspect_hardline_instance(
         |manifest| manifest.docker.certs_volume.clone(),
     );
 
-    let (role_container_state, dind_state_raw, network_result) = tokio::join!(
-        docker.inspect_container_state(container_name),
+    let (role_inspection, dind_state_raw, network_result) = tokio::join!(
+        docker.inspect_container_by_name(container_name),
         async {
             if let Some(dind_name) = dind_name.as_deref() {
-                Some(docker.inspect_container_state(dind_name).await)
+                let inspection = docker.inspect_container_by_name(dind_name).await;
+                Some(match inspection.handle {
+                    Some(handle) => docker.inspect_container_by_id(&handle).await,
+                    None => inspection.state,
+                })
             } else {
                 None
             }
         },
         inspect_docker_network(docker, &network_name),
     );
-    let sessions = inspect_agent_sessions(docker, container_name, &role_container_state).await;
+    let role_container_state = role_inspection.state;
+    let sessions = match role_inspection.handle {
+        Some(container) => inspect_agent_sessions(docker, &container, &role_container_state).await,
+        None => AgentSessionInventory::NotRunning,
+    };
     let role_state = role_container_state.inspect_label();
     let dind_state = dind_state_raw
         .as_ref()
@@ -1706,7 +1926,7 @@ fn missing_restore_message(
 }
 
 pub(super) async fn wait_for_dind(
-    dind_name: &str,
+    dind: &ContainerHandle,
     certs_volume: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
@@ -1724,16 +1944,21 @@ pub(super) async fn wait_for_dind(
         MAX_INTERVAL,
         || async {
             docker
-                .exec_capture(dind_name, &["docker", "info"])
+                .exec_capture_by_id(dind, &["docker", "info"])
                 .await
                 .map(|_| ())
         },
     )
     .await
-    .with_context(|| format!("timed out waiting for Docker-in-Docker sidecar {dind_name}"))?;
+    .with_context(|| {
+        format!(
+            "timed out waiting for Docker-in-Docker sidecar {}",
+            dind.name()
+        )
+    })?;
 
     match docker
-        .exec_capture(dind_name, &["test", "-f", "/certs/client/ca.pem"])
+        .exec_capture_by_id(dind, &["test", "-f", "/certs/client/ca.pem"])
         .await
     {
         Ok(_) => {}
@@ -1743,7 +1968,7 @@ pub(super) async fn wait_for_dind(
                  the DinD sidecar may have started without generating certificates"
             );
         }
-        Err(e) => return Err(e.context(format!("checking TLS cert presence in {dind_name}"))),
+        Err(e) => return Err(e.context(format!("checking TLS cert presence in {}", dind.name()))),
     }
 
     Ok(())

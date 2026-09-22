@@ -197,6 +197,10 @@ where
         self.finalize(paths, container_name, runner).await
     }
 
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the Phase 0 Apple backend has no finalization I/O yet but must satisfy the async backend contract"
+    )]
     async fn finalize(
         &self,
         _paths: &JackinPaths,

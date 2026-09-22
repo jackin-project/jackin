@@ -9,7 +9,8 @@
 
 use jackin_core::JackinPaths;
 use jackin_docker::docker_client::{
-    ContainerRow, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
+    ContainerHandle, ContainerInspection, ContainerRow, ContainerState, DockerApi, NetworkRow,
+    RemoveImageOutcome,
 };
 use std::collections::HashMap;
 
@@ -75,15 +76,26 @@ const _: fn(&mut FakeRunner, &JackinPaths) -> ObservedHostEnvFile = observe_host
 #[derive(Debug)]
 pub struct NoOpDocker;
 
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "the integration-test DockerApi stub implements the async seam with immediate no-op results"
+)]
 impl DockerApi for NoOpDocker {
     async fn ping(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    async fn inspect_container_state(&self, _name: &str) -> ContainerState {
+    async fn inspect_container_by_name(&self, _name: &str) -> ContainerInspection {
+        ContainerInspection {
+            handle: None,
+            state: ContainerState::NotFound,
+        }
+    }
+
+    async fn inspect_container_by_id(&self, _container: &ContainerHandle) -> ContainerState {
         ContainerState::NotFound
     }
-    async fn remove_container(&self, _name: &str) -> anyhow::Result<()> {
+    async fn remove_container_by_id(&self, _container: &ContainerHandle) -> anyhow::Result<()> {
         Ok(())
     }
     async fn list_containers(
@@ -95,12 +107,12 @@ impl DockerApi for NoOpDocker {
     }
     async fn create_container(
         &self,
-        _name: &str,
+        name: &str,
         _spec: jackin_docker::docker_client::ContainerSpec,
-    ) -> anyhow::Result<()> {
-        Ok(())
+    ) -> anyhow::Result<ContainerHandle> {
+        ContainerHandle::new(name, name.to_owned())
     }
-    async fn start_container(&self, _name: &str) -> anyhow::Result<()> {
+    async fn start_container_by_id(&self, _container: &ContainerHandle) -> anyhow::Result<()> {
         Ok(())
     }
     async fn remove_volume(&self, _name: &str) -> anyhow::Result<()> {
@@ -135,7 +147,11 @@ impl DockerApi for NoOpDocker {
     async fn pull_image(&self, _image: &str) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn exec_capture(&self, _container: &str, _cmd: &[&str]) -> anyhow::Result<String> {
+    async fn exec_capture_by_id(
+        &self,
+        _container: &ContainerHandle,
+        _cmd: &[&str],
+    ) -> anyhow::Result<String> {
         Ok(String::new())
     }
 }

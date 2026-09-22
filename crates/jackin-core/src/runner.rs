@@ -78,6 +78,20 @@ impl Default for RunOptions {
 
 /// Subprocess execution seam for `docker`, `git`, and other external commands.
 pub trait CommandRunner {
+    /// Observe a command without executing it.
+    ///
+    /// Runtime tests use this seam to retain argument assertions after a
+    /// typed API replaces a command-line lifecycle operation. Production
+    /// runners intentionally do nothing here.
+    async fn observe(
+        &mut self,
+        _program: &str,
+        _args: &[&str],
+        _cwd: Option<&Path>,
+        _opts: &RunOptions,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
     /// Run `program` with `args`, applying `opts`; fails on non-zero exit.
     async fn run(
         &mut self,
