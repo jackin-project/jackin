@@ -7,7 +7,7 @@ fn conformance_endpoint_loss_never_blocks_product_emission() -> anyhow::Result<(
         .worker_threads(2)
         .enable_all()
         .build()?;
-    let mut testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
+    let testbed = runtime.block_on(async { jackin_otlp_testbed::Testbed::start() })?;
     let runtime_guard = runtime.enter();
     jackin_diagnostics::init_wire_test_export(
         &testbed.endpoint(),

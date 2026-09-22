@@ -7,7 +7,6 @@ use std::fs;
 
 use jackin_core::JackinPaths;
 
-use crate::DIAGNOSTICS_TEST_LOCK;
 use crate::run::RunDiagnostics;
 
 // ── OpenTelemetry conformance tests ─────────────────────────────────────────
@@ -431,9 +430,6 @@ fn conformance_log_attr(
 
 #[test]
 fn conformance_exported_bodies_have_no_bracket_prefix() {
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     for log in export.all_logs() {
         if let Some(body) = conformance_log_body(&log.record) {
@@ -449,9 +445,6 @@ fn conformance_exported_bodies_have_no_bracket_prefix() {
 fn conformance_records_have_complete_otlp_shape() {
     use opentelemetry::logs::Severity;
 
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let logs = export.all_logs();
     let mut observed = std::collections::BTreeSet::new();
@@ -486,9 +479,6 @@ fn conformance_records_have_complete_otlp_shape() {
 
 #[test]
 fn conformance_export_invokes_sensitive_boundary_canary_gate() {
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let logs = export.all_logs();
     let dump = format!("{logs:?}");
@@ -514,9 +504,6 @@ fn conformance_export_invokes_sensitive_boundary_canary_gate() {
 fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
     use opentelemetry::logs::Severity;
 
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let logs = export.all_logs();
     let errors: Vec<_> = logs
@@ -550,9 +537,6 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
 
 #[test]
 fn conformance_waterfall_has_distinct_rows() {
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let spans = export.all_spans();
     let names: std::collections::BTreeSet<_> =
@@ -586,9 +570,6 @@ fn conformance_waterfall_has_distinct_rows() {
 
 #[test]
 fn conformance_logs_correlate_to_traces() {
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let spans = export.all_spans();
     let logs = export.all_logs();
@@ -604,9 +585,6 @@ fn conformance_logs_correlate_to_traces() {
 
 #[test]
 fn conformance_export_volume_stays_within_budget() {
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let logs = export.all_logs();
     let spans = export.all_spans();
@@ -643,9 +621,6 @@ fn conformance_export_volume_stays_within_budget() {
 
 #[test]
 fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     for log in export.all_logs() {
         if let Some(body) = conformance_log_body(&log.record) {
@@ -670,9 +645,6 @@ fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
 
 #[test]
 fn conformance_has_no_legacy_screen_span_attributes() {
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let spans = export.all_spans();
     assert!(spans.iter().all(|span| {
@@ -684,9 +656,6 @@ fn conformance_has_no_legacy_screen_span_attributes() {
 
 #[test]
 fn conformance_has_no_screen_lifetime_spans() {
-    let _lock = DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let export = drive_standard_conformance_scenario();
     let spans = export.all_spans();
     assert!(spans.iter().all(|span| {
