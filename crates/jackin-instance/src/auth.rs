@@ -3729,7 +3729,8 @@ fn provision_single_blob_credential_from_content(
 /// credential file with standard `AuthForwardMode` semantics.
 ///
 /// `treat_empty_as_missing` — when `true`, an empty/whitespace file on the
-/// host is treated as host-missing. When `false`, an empty file is written as-is.
+/// host is treated as host-missing and invalidates stale role-state auth.
+/// When `false`, an empty file is written as-is.
 ///
 /// `warn_on_oauth` — when `true`, receiving `OAuthToken` mode logs a warning
 /// that the parser invariant was bypassed. When `false`, `OAuthToken`
@@ -3787,6 +3788,7 @@ fn provision_single_file_credential_with_content(
 
     reject_auth_path(target)?;
 
+    let mut retain_existing_on_missing = true;
     let outcome = match mode {
         AuthForwardMode::OAuthToken => {
             if warn_on_oauth {
@@ -3812,7 +3814,11 @@ fn provision_single_file_credential_with_content(
         AuthForwardMode::Sync => match content {
             Some(content) if treat_empty_as_missing && content.trim().is_empty() => {
                 eprintln!("[jackin] host {label} is empty/whitespace — treating as host-missing");
-                repair_permissions(target)?;
+                // Empty input is an invalid source, not an absent host login:
+                // invalidate any persisted role-state credential before mount
+                // admission so a later launch cannot reuse stale auth.
+                retain_existing_on_missing = false;
+                wipe_agent_file_state(target, label)?;
                 AuthProvisionOutcome::HostMissing
             }
             Some(content) => {
@@ -3845,7 +3851,14 @@ fn provision_single_file_credential_with_content(
     let mounted = match outcome {
         AuthProvisionOutcome::Synced => Some(target.to_path_buf()),
         AuthProvisionOutcome::Skipped => None,
-        AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
+        AuthProvisionOutcome::HostMissing => {
+            if retain_existing_on_missing && private_file_exists(target)? {
+                Some(target.to_path_buf())
+            } else {
+                None
+            }
+        }
+        AuthProvisionOutcome::TokenMode => {
             private_file_exists(target)?.then(|| target.to_path_buf())
         }
     };

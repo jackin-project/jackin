@@ -1311,6 +1311,106 @@ agents = ["codex"]
     );
 }
 
+#[test]
+fn codex_source_auth_rerun_and_prewarm_fail_closed_after_persisted_state() {
+    use crate::instance::{AuthProvisionOutcome, PrepareResolvers, RoleState};
+    use jackin_core::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(host_home.join(".codex")).unwrap();
+    let resolvers = PrepareResolvers {
+        auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+        sync_source_dirs: &|_| None,
+    };
+    let host_auth = host_home.join(".codex/auth.json");
+
+    for invalid_source in ["", " \n\t"] {
+        std::fs::write(&host_auth, "{\"token\":\"valid\"}").unwrap();
+        let (state, outcome) = RoleState::prepare(
+            &paths,
+            "jk-agent-smith",
+            &manifest,
+            &resolvers,
+            &crate::instance::GithubAuthContext::default(),
+            &host_home,
+            Agent::Codex,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        let target = state.root.join("codex/auth.json");
+        assert!(
+            agent_mounts(&state)
+                .unwrap()
+                .iter()
+                .any(|mount| mount.contains("/jackin/codex/auth.json")),
+            "valid persisted Codex auth must be mounted"
+        );
+        drop(state);
+
+        std::fs::write(&host_auth, invalid_source).unwrap();
+        assert_eq!(
+            RoleState::prewarm_auth_for_agents(
+                &paths,
+                "jk-agent-smith",
+                &manifest,
+                &resolvers,
+                &host_home,
+                &[Agent::Codex],
+            )
+            .unwrap(),
+            1
+        );
+        assert!(
+            !target.exists(),
+            "invalid source must invalidate persisted Codex auth during prewarm"
+        );
+
+        let (state, outcome) = RoleState::prepare(
+            &paths,
+            "jk-agent-smith",
+            &manifest,
+            &resolvers,
+            &crate::instance::GithubAuthContext::default(),
+            &host_home,
+            Agent::Codex,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        let mounts = agent_mounts(&state).unwrap();
+        assert!(
+            !mounts
+                .iter()
+                .any(|mount| mount.contains("/jackin/codex/auth.json")),
+            "invalid Codex source must not regain a stale auth mount: {mounts:?}"
+        );
+        assert!(
+            state.auth_mount_paths.is_empty(),
+            "invalid Codex source must not acquire an auth mount lease"
+        );
+    }
+}
+
 #[tokio::test]
 async fn codex_launch_preflight_rejects_empty_host_auth_without_mounting_it() {
     use crate::instance::{AuthProvisionOutcome, PrepareResolvers, RoleState};
