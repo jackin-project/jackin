@@ -101,17 +101,18 @@ SCCACHE_GHA_ENABLED = "true"
 MISE_TASK_RUN_AUTO_INSTALL = "false"
 MISE_NOT_FOUND_AUTO_INSTALL = "false"
 
-# One file, one trigger set, faithful to the copy: the merge tier runs on
-# push-to-main + dispatch (copy desktop-cadence.yml push: branches: [main],
-# merge job gated on event != schedule); the scheduled tier keeps the
-# copy's Monday cron.
+# One file, one trigger set: the merge tier runs the same desktop graph on
+# main pushes and pull-request/merge-queue candidates, plus dispatch. The
+# `branches` filter scopes only push; the published scheduled-checks renderer
+# preserves candidate coverage and uses non-canceling SHA groups for committed
+# and merge-group events. The scheduled tier keeps its Monday cron.
 [[declare]]
 primitive = "scheduled-checks"
 file = "desktop-merge.yml"
 [declare.args]
 profiles = ["desktop-merge"]
 name = "Desktop merge cadence"
-events = ["push"]
+events = ["push", "pull_request", "merge_group"]
 branches = ["main"]
 
 [[declare]]
