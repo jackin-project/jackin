@@ -3528,6 +3528,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "criterion",
+ "httpdate",
  "icu_collator",
  "icu_locale",
  "jackin-config",

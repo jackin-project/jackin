@@ -360,7 +360,8 @@ fn openrouter_transport_text_and_url_401_are_not_auth_failures() {
         openrouter_key_error_status(&ProviderHttpError::HttpStatus {
             status: 401,
             message: "OpenRouter key HTTP 401 Unauthorized".to_owned(),
-            retry_after_seconds: None,
+            retry_after: None,
+            response_received_at_epoch: 1_700_000_000,
         }),
         UsageSnapshotStatus::NeedsLogin
     );
@@ -390,6 +391,80 @@ fn one_shot_key_server(status: u16, body: &str) -> (String, std::thread::JoinHan
         .unwrap();
     });
     (format!("http://{address}"), server)
+}
+
+fn one_shot_key_server_with_retry_after(
+    status: u16,
+    retry_after: &str,
+    body: &str,
+) -> (String, std::thread::JoinHandle<()>) {
+    use std::io::{Read as _, Write as _};
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let retry_after = retry_after.to_owned();
+    let body = body.to_owned();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("Retry-After fixture accept");
+        let mut request = [0_u8; 4096];
+        let read = stream.read(&mut request).expect("Retry-After fixture read");
+        assert!(String::from_utf8_lossy(&request[..read]).contains("/key"));
+        write!(
+            stream,
+            "HTTP/1.1 {status} Too Many Requests\r\nRetry-After: {retry_after}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .expect("Retry-After fixture write");
+    });
+    (format!("http://{address}"), server)
+}
+
+#[test]
+fn openrouter_actual_429_preserves_typed_retry_after_and_response_clock() {
+    let reference_epoch = 1_780_000_200;
+    let (base_url, server) = one_shot_key_server_with_retry_after(
+        429,
+        "37",
+        "provider body mentions 429 and Retry-After: 37",
+    );
+    let (view, rate_limit) = openrouter_snapshot_with_base_with_rate_limit_at(
+        "opencode",
+        Some("fixture-key"),
+        &base_url,
+        1_780_000_000,
+        || reference_epoch,
+    );
+    server.join().expect("429 fixture server");
+
+    assert_eq!(view.status, UsageSnapshotStatus::Error);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("OpenRouter key HTTP 429 Too Many Requests")
+    );
+    assert_eq!(
+        rate_limit,
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(reference_epoch + 37),
+        })
+    );
+}
+
+#[test]
+fn openrouter_forged_429_text_does_not_create_rate_limit_metadata() {
+    let (view, rate_limit) = openrouter_snapshot_with_key_fetch_with_rate_limit(
+        "opencode",
+        Some("fixture-key"),
+        "http://fixture.invalid",
+        1_780_000_000,
+        |_base_url, _key| {
+            Err(ProviderHttpError::Transport(
+                "transport body mentions HTTP 429; Retry-After: 37".to_owned(),
+            ))
+        },
+    );
+
+    assert_eq!(view.status, UsageSnapshotStatus::Error);
+    assert_eq!(rate_limit, None);
 }
 
 #[test]
