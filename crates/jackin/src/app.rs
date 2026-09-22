@@ -347,8 +347,13 @@ async fn prompt_explicit_hardline_action_if_multiple_sessions(
     if !std::io::stdin().is_terminal() {
         return Ok(HardlineAction::Reconnect);
     }
-    let state = docker.inspect_container_state(container).await;
-    let sessions = runtime::inspect_agent_sessions(docker, container, &state).await;
+    let inspection = docker.inspect_container_by_name(container).await;
+    let sessions = match inspection.handle.as_ref() {
+        Some(handle) => runtime::inspect_agent_sessions(docker, handle, &inspection.state).await,
+        None => runtime::AgentSessionInventory::Unavailable(
+            "container inspection returned no immutable ID".to_owned(),
+        ),
+    };
     if !has_multiple_agent_sessions(&sessions) {
         return Ok(HardlineAction::Reconnect);
     }

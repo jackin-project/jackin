@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
+use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_PROTOCOL_VERSION, UsageBrokerResponse, UsageCoordinationError,
     UsageCoordinationErrorKind, UsageCredentialScope,
@@ -552,6 +553,8 @@ async fn start_capsule(
         "starting test Capsule failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let docker = BollardDockerClient::connect()?;
+    let container = docker.resolve_container_by_name(&name).await?;
     let proxy_command = vec![
         "python".to_owned(),
         "-u".to_owned(),
@@ -559,7 +562,7 @@ async fn start_capsule(
         TUNNEL_PROXY_SCRIPT.to_owned(),
     ];
     let relay = jackin_runtime::usage_relay::start_docker_tunnel_with_command(
-        &name,
+        &container,
         broker,
         vec![capability()],
         UsageCredentialScope::default(),

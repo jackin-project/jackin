@@ -17,9 +17,9 @@
 use super::prune_output;
 use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
 use fs4::FileExt;
-use jackin_core::CommandRunner;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
+use jackin_core::{CommandRunner, ContainerHandle};
 use jackin_docker::docker_client::{ContainerState, DockerApi, RemoveImageOutcome};
 use owo_colors::OwoColorize;
 
@@ -165,9 +165,16 @@ pub async fn eject_role(
     let _timing = cleanup_timing("eject_role");
     match super::backend::backend_for_state(paths, container_name) {
         InstanceBackend::Docker => {
-            super::backend::DockerBackend::new(docker)
-                .eject(paths, container_name)
-                .await
+            let role_handle = resolve_container_handle(docker, container_name).await?;
+            let dind_handle = resolve_dind_handle_for_state(paths, container_name, docker).await?;
+            eject_docker_role_with_handles(
+                paths,
+                container_name,
+                docker,
+                &role_handle,
+                dind_handle.as_ref(),
+            )
+            .await
         }
         InstanceBackend::AppleContainer => {
             super::backend::AppleContainerBackend::production()
@@ -182,12 +189,56 @@ pub(crate) async fn eject_docker_role(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
+    let role_handle = resolve_container_handle(docker, container_name).await?;
+    let dind_handle = resolve_dind_handle_for_state(paths, container_name, docker).await?;
+    eject_docker_role_with_handles(
+        paths,
+        container_name,
+        docker,
+        &role_handle,
+        dind_handle.as_ref(),
+    )
+    .await
+}
+
+/// Eject a Docker role using identities captured before any destructive
+/// operation. A persisted sidecar name is lookup context only: if its
+/// immutable identity is unavailable, this function refuses to remove either
+/// container rather than risking a same-name replacement.
+pub(crate) async fn eject_docker_role_with_handles(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+    role_handle: &ContainerHandle,
+    dind_handle: Option<&ContainerHandle>,
+) -> anyhow::Result<()> {
     let resources = docker_resources_for_state(paths, container_name);
+    anyhow::ensure!(
+        role_handle.name() == container_name,
+        "role container handle name mismatch: expected {container_name}, got {}",
+        role_handle.name()
+    );
+    if let Some(dind_container) = resources.dind_container.as_deref() {
+        let Some(dind_handle) = dind_handle else {
+            anyhow::bail!(
+                "DinD container identity unavailable; refusing name-based destructive cleanup for {dind_container}"
+            );
+        };
+        anyhow::ensure!(
+            dind_handle.name() == dind_container,
+            "DinD container handle name mismatch: expected {dind_container}, got {}",
+            dind_handle.name()
+        );
+    }
 
     // Remove containers first so the network has no active endpoints.
-    docker.remove_container(container_name).await?;
-    if let Some(dind_container) = resources.dind_container.as_deref() {
-        docker.remove_container(dind_container).await?;
+    docker.remove_container_by_id(role_handle).await?;
+    if resources.dind_container.is_some() {
+        // The prevalidated handle is the only permitted destructive target.
+        let dind_handle = dind_handle.ok_or_else(|| {
+            anyhow::anyhow!("DinD container identity disappeared before destructive cleanup")
+        })?;
+        docker.remove_container_by_id(dind_handle).await?;
     }
 
     // Volume and network are independent of each other once containers are gone.
@@ -205,6 +256,42 @@ pub(crate) async fn eject_docker_role(
     remove_socket_dir(paths, container_name);
 
     Ok(())
+}
+
+async fn resolve_container_handle(
+    docker: &impl DockerApi,
+    name: &str,
+) -> anyhow::Result<ContainerHandle> {
+    resolve_optional_container_handle(docker, name)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("container {name} is not present"))
+}
+
+pub(crate) async fn resolve_dind_handle_for_state(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<ContainerHandle>> {
+    let resources = docker_resources_for_state(paths, container_name);
+    match resources.dind_container.as_deref() {
+        Some(name) => resolve_optional_container_handle(docker, name).await,
+        None => Ok(None),
+    }
+}
+
+pub(crate) async fn resolve_optional_container_handle(
+    docker: &impl DockerApi,
+    name: &str,
+) -> anyhow::Result<Option<ContainerHandle>> {
+    let inspection = docker.inspect_container_by_name(name).await;
+    match inspection.handle {
+        Some(handle) => Ok(Some(handle)),
+        None if matches!(inspection.state, ContainerState::NotFound) => Ok(None),
+        None => anyhow::bail!(
+            "cannot resolve container {name}: {}",
+            inspection.state.inspect_label()
+        ),
+    }
 }
 
 pub(crate) fn docker_resources_for_state(
@@ -263,32 +350,33 @@ fn remove_socket_dir(paths: &JackinPaths, container_name: &str) {
 
 /// Parsed row from `docker ps` for a `DinD` sidecar.
 struct DindInfo {
-    name: String,
+    handle: ContainerHandle,
     role: String,
 }
 
 async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Result<Vec<DindInfo>> {
     let rows = docker.list_containers(&[LABEL_KIND_DIND], true).await?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|row| {
-            if row
-                .labels
-                .get("jackin.kind")
-                .is_some_and(|kind| kind != "dind")
-            {
-                return None;
-            }
-            let role = row.labels.get(LABEL_ROLE_KEY)?.clone();
-            if role.is_empty() {
-                return None;
-            }
-            Some(DindInfo {
-                name: row.name,
-                role,
-            })
-        })
-        .collect())
+    let mut sidecars = Vec::new();
+    for row in rows {
+        if row
+            .labels
+            .get("jackin.kind")
+            .is_some_and(|kind| kind != "dind")
+        {
+            continue;
+        }
+        let Some(role) = row.labels.get(LABEL_ROLE_KEY).cloned() else {
+            continue;
+        };
+        if role.is_empty() {
+            continue;
+        }
+        sidecars.push(DindInfo {
+            handle: row.handle()?,
+            role,
+        });
+    }
+    Ok(sidecars)
 }
 
 /// Return `DinD` sidecar containers whose corresponding role container is no
@@ -326,7 +414,7 @@ pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
     }
 
     // Fetch existing roles once; reuse for both orphan detection and network GC.
-    let existing = match list_role_names(docker, true).await {
+    let existing_rows = match docker.list_containers(&[LABEL_KIND_ROLE], true).await {
         Ok(v) => v,
         Err(err) => {
             eprintln!(
@@ -336,6 +424,10 @@ pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
             return;
         }
     };
+    let existing = existing_rows
+        .iter()
+        .map(|row| row.name.clone())
+        .collect::<Vec<_>>();
 
     let orphaned = filter_orphaned_dind(sidecars, &existing);
 
@@ -343,20 +435,37 @@ pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
         let certs_volume = dind_certs_volume(&info.role);
         let network = role_network_name(&info.role);
 
-        // Remove containers before the network (network rm requires no active endpoints).
-        let (r1, r2) = tokio::join!(
-            docker.remove_container(&info.role),
-            docker.remove_container(&info.name),
-        );
+        // The role is absent by definition of `orphaned`. Remove only the
+        // sidecar row's immutable ID; resolving/removing the role by name
+        // could destroy a same-name replacement created after the listing.
+        let r1 = docker.remove_container_by_id(&info.handle).await;
+        if let Err(err) = &r1 {
+            eprintln!(
+                "  {} GC of dind sidecar for {}: {err}; refusing shared-resource cleanup",
+                "warning:".yellow().bold(),
+                info.role
+            );
+            continue;
+        }
+        let role_inspection = docker.inspect_container_by_name(&info.role).await;
+        if role_inspection.handle.is_some()
+            || !matches!(role_inspection.state, ContainerState::NotFound)
+        {
+            eprintln!(
+                "  {} GC of shared resources for {} skipped: role identity is no longer absent",
+                "warning:".yellow().bold(),
+                info.role
+            );
+            continue;
+        }
         let (r3, r4) = tokio::join!(
             docker.remove_volume(&certs_volume),
             docker.remove_network(&network),
         );
-        let results = [&r1, &r2, &r3, &r4];
-        for (result, label) in
-            results
-                .iter()
-                .zip(["role container", "dind sidecar", "certs volume", "network"])
+        let results = [&r1, &r3, &r4];
+        for (result, label) in results
+            .iter()
+            .zip(["dind sidecar", "certs volume", "network"])
         {
             if let Err(err) = result {
                 eprintln!(
@@ -395,8 +504,17 @@ async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerApi) 
             return;
         }
     };
+    let Some(state_dind) = state_dind else {
+        if !rows.is_empty() {
+            eprintln!(
+                "  {} GC of prewarm sidecar skipped: retained identity is unavailable",
+                "warning:".yellow().bold()
+            );
+        }
+        return;
+    };
     for row in rows {
-        if state_dind.as_deref() == Some(row.name.as_str()) {
+        if state_dind == row.name {
             continue;
         }
         if row.name != "jk-prewarm-dind-dind" {
@@ -404,8 +522,16 @@ async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerApi) 
         }
         let certs_volume = "jk-prewarm-dind-certs";
         let network = "jk-prewarm-dind-net";
+        let Ok(handle) = row.handle() else {
+            eprintln!(
+                "  {} GC of prewarm sidecar {} skipped: Docker row had no immutable ID",
+                "warning:".yellow().bold(),
+                row.name
+            );
+            continue;
+        };
         let (r1, r2, r3) = tokio::join!(
-            docker.remove_container(&row.name),
+            docker.remove_container_by_id(&handle),
             docker.remove_volume(certs_volume),
             docker.remove_network(network),
         );
@@ -480,6 +606,14 @@ async fn gc_orphaned_networks(
 
     for (net_name, role) in networks {
         if existing_set.contains(&role) {
+            continue;
+        }
+        let inspection = docker.inspect_container_by_name(&role).await;
+        if inspection.handle.is_some() || !matches!(inspection.state, ContainerState::NotFound) {
+            eprintln!(
+                "  {} GC of network {net_name} skipped: role {role} is no longer absent",
+                "warning:".yellow().bold()
+            );
             continue;
         }
         if let Err(err) = docker.remove_network(&net_name).await {

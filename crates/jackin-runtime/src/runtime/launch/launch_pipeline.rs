@@ -8,13 +8,15 @@ use jackin_config::AppConfig;
 use jackin_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
-use jackin_core::{CommandRunner, WorkspaceName};
+use jackin_core::{CommandRunner, ContainerHandle, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 use tracing::Instrument as _;
 
 use super::launch_slot::{claim_container_name, claim_known_container_name};
 use super::trust::inject_workspace_mise_env;
-use crate::runtime::attach::{ContainerState, start_or_hardline_agent};
+use crate::runtime::attach::{
+    ContainerState, start_or_hardline_agent, start_or_hardline_agent_with_container_handle,
+};
 use crate::runtime::naming::{image_name, image_name_for_branch};
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
@@ -313,9 +315,9 @@ fn git_pull_program(_opts: &super::LoadOptions) -> std::path::PathBuf {
     std::path::PathBuf::from("git")
 }
 
-async fn restore_current_role_now(
+async fn restore_current_role_now_with_handle(
     paths: &JackinPaths,
-    container: &str,
+    container: &ContainerHandle,
     admission_lease: &super::account_identity::AccountConfigRevision,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
@@ -323,30 +325,66 @@ async fn restore_current_role_now(
     start_first: bool,
 ) -> anyhow::Result<()> {
     steps.finish_progress();
-    let load_result = start_or_hardline_agent(
+    let container_name = container.name();
+    let load_result = start_or_hardline_agent_with_container_handle(
         paths,
-        container,
+        container_name,
         admission_lease,
         docker,
         runner,
         start_first,
+        container,
     )
     .await;
     super::render_exit(paths, docker).await;
     load_result
 }
 
-async fn teardown_recreate_container(
+pub(super) async fn teardown_recreate_container(
     paths: &JackinPaths,
     container: &str,
+    known_role_handle: Option<&ContainerHandle>,
     docker: &impl DockerApi,
-) {
+) -> anyhow::Result<()> {
     let resources = crate::runtime::cleanup::docker_resources_for_state(paths, container);
-    drop(docker.remove_container(container).await);
-    if let Some(dind) = resources.dind_container.as_deref() {
-        drop(docker.remove_container(dind).await);
+    // Resolve every container identity before removing any object. Names are
+    // mutable lookup keys; resolving the sidecar after removing the role
+    // could target a same-name replacement created by a concurrent launch.
+    let role_handle = match known_role_handle {
+        Some(handle) => {
+            anyhow::ensure!(
+                handle.name() == container,
+                "role container handle name mismatch: expected {container}, got {}",
+                handle.name()
+            );
+            Some(handle.clone())
+        }
+        None => {
+            crate::runtime::cleanup::resolve_optional_container_handle(docker, container).await?
+        }
+    };
+    let dind_handle =
+        crate::runtime::cleanup::resolve_dind_handle_for_state(paths, container, docker).await?;
+    if let Some(dind_name) = resources.dind_container.as_deref() {
+        match (role_handle.is_some(), dind_handle.is_some()) {
+            (true, true) | (false, false) => {}
+            (true, false) | (false, true) => {
+                anyhow::bail!(
+                    "role/DinD identity set is incomplete; refusing name-based destructive cleanup for {container} / {dind_name}"
+                );
+            }
+        }
     }
-    drop(docker.remove_network(&resources.network).await);
+    if let Some(handle) = role_handle.as_ref() {
+        docker.remove_container_by_id(handle).await?;
+    }
+    if resources.dind_container.is_some()
+        && let Some(handle) = dind_handle.as_ref()
+    {
+        docker.remove_container_by_id(handle).await?;
+    }
+    docker.remove_network(&resources.network).await?;
+    Ok(())
 }
 
 pub async fn resolve_supported_agents_for_console(
@@ -449,7 +487,8 @@ async fn restore_explicit_container(
         "explicit_restore_container",
         Some(container),
     );
-    let docker_state = docker.inspect_container_state(container).await;
+    let inspection = docker.inspect_container_by_name(container).await;
+    let docker_state = inspection.state;
     admission_lease.ensure_current(paths)?;
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Restore,
@@ -470,6 +509,11 @@ async fn restore_explicit_container(
             return Ok(false);
         }
     };
+    let Some(container_handle) = inspection.handle else {
+        anyhow::bail!(
+            "explicit restore container '{container}' inspection returned no immutable ID"
+        );
+    };
     super::emit_launch_plan(
         if start {
             super::LaunchPlan::StartStopped
@@ -484,9 +528,9 @@ async fn restore_explicit_container(
         Some(container),
     );
     opts.record_launched_instance(container);
-    restore_current_role_now(
+    restore_current_role_now_with_handle(
         paths,
-        container,
+        &container_handle,
         admission_lease,
         docker,
         runner,
@@ -937,9 +981,10 @@ pub(crate) async fn load_role_with(
                 })
                 .transpose()?
             {
-                Some(super::RestoreResolution::StartCurrentRole(container)) => {
-                    opts.record_launched_instance(&container);
-                    return restore_current_role_now(
+                Some(super::RestoreResolution::StartCurrentRoleWithHandle(container)) => {
+                    let container_name = container.name().to_owned();
+                    opts.record_launched_instance(&container_name);
+                    return restore_current_role_now_with_handle(
                         paths,
                         &container,
                         &initial_account_revision,
@@ -949,6 +994,16 @@ pub(crate) async fn load_role_with(
                         true,
                     )
                     .await;
+                }
+                Some(super::RestoreResolution::RecreateCurrentRoleWithHandle(container)) => {
+                    let container_name = container.name().to_owned();
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(super::RestoreResolution::RecreateCurrentRoleWithHandle(
+                            container.clone(),
+                        )),
+                    };
+                    Some(container_name)
                 }
                 Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
                     early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
@@ -999,11 +1054,12 @@ pub(crate) async fn load_role_with(
                 .transpose()?
             {
                 Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::StartCurrentRole(container),
+                    resolution: super::RestoreResolution::StartCurrentRoleWithHandle(container),
                     ..
                 }) => {
-                    opts.record_launched_instance(&container);
-                    return restore_current_role_now(
+                    let container_name = container.name().to_owned();
+                    opts.record_launched_instance(&container_name);
+                    return restore_current_role_now_with_handle(
                         paths,
                         &container,
                         &initial_account_revision,
@@ -1013,6 +1069,20 @@ pub(crate) async fn load_role_with(
                         true,
                     )
                     .await;
+                }
+                Some(super::UnselectedCurrentRestoreResolution {
+                    resolution: super::RestoreResolution::RecreateCurrentRoleWithHandle(container),
+                    agent,
+                }) => {
+                    let container_name = container.name().to_owned();
+                    early_restore_agent = Some(agent);
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(super::RestoreResolution::RecreateCurrentRoleWithHandle(
+                            container.clone(),
+                        )),
+                    };
+                    Some(container_name)
                 }
                 Some(super::UnselectedCurrentRestoreResolution {
                     resolution: super::RestoreResolution::RecreateCurrentRole(container),
@@ -1205,7 +1275,7 @@ pub(crate) async fn load_role_with(
         // `--rebuild` skips the early gate above (it is `&& !opts.rebuild && opts.account.is_none()`), so
         // a forced rebuild actually falls through to *this* resolution. Without
         // the same guard here, `resolve_restore_candidate` would still return
-        // `StartCurrentRole`/`RecreateCurrentRole` and `return` straight into the
+        // a current-role start/recreate decision and `return` straight into the
         // existing container — silently skipping the build the operator asked
         // for. Leave `restore_container` `None` so the normal pipeline runs
         // `decide_agent_image` -> `ExplicitRebuild` and always rebuilds;
@@ -1233,9 +1303,10 @@ pub(crate) async fn load_role_with(
             &role_key,
         )? {
             super::RestoreResolution::StartFresh => None,
-            super::RestoreResolution::StartCurrentRole(container) => {
-                opts.record_launched_instance(&container);
-                return restore_current_role_now(
+            super::RestoreResolution::StartCurrentRoleWithHandle(container) => {
+                let container_name = container.name().to_owned();
+                opts.record_launched_instance(&container_name);
+                return restore_current_role_now_with_handle(
                     paths,
                     &container,
                     &account_revision,
@@ -1246,6 +1317,18 @@ pub(crate) async fn load_role_with(
                 )
                 .await;
             }
+            super::RestoreResolution::RecreateCurrentRoleWithHandle(container_handle) => {
+                let container = container_handle.name().to_owned();
+                // D7: extract pinned recipe so Tier 3 rebuild uses the original
+                // role SHA rather than current HEAD of the cached repo.
+                let container_state = paths.data_dir.join(&container);
+                if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
+                    restore_pinned_sha = stored.role_git_sha;
+                }
+                teardown_recreate_container(paths, &container, Some(&container_handle), docker)
+                    .await?;
+                Some(container)
+            }
             super::RestoreResolution::RecreateCurrentRole(container) => {
                 // D7: extract pinned recipe so Tier 3 rebuild uses the original
                 // role SHA rather than current HEAD of the cached repo.
@@ -1253,7 +1336,7 @@ pub(crate) async fn load_role_with(
                 if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
                     restore_pinned_sha = stored.role_git_sha;
                 }
-                teardown_recreate_container(paths, &container, docker).await;
+                teardown_recreate_container(paths, &container, None, docker).await?;
                 Some(container)
             }
             super::RestoreResolution::RestoreCurrentRole(container) => {
@@ -1262,7 +1345,7 @@ pub(crate) async fn load_role_with(
                 if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
                     restore_pinned_sha = stored.role_git_sha;
                 }
-                teardown_recreate_container(paths, &container, docker).await;
+                teardown_recreate_container(paths, &container, None, docker).await?;
                 Some(container)
             }
             super::RestoreResolution::RecoverRelatedRole(container) => {

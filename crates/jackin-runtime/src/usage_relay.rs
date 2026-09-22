@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
 use jackin_config::AppConfig;
-use jackin_core::{JackinPaths, UsageCredentialEnvName, WorkspaceName};
+use jackin_core::{ContainerHandle, JackinPaths, UsageCredentialEnvName, WorkspaceName};
 use jackin_protocol::CapsuleConfig;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
@@ -442,11 +442,11 @@ impl PreparedUsageRelay {
 
 /// Start the production Docker stdio tunnel after the Capsule is running.
 pub fn start_docker_tunnel(
-    container_name: &str,
+    container: &ContainerHandle,
     prepared: PreparedUsageRelay,
 ) -> Result<UsageRelayGuard> {
     start_docker_tunnel_with_command(
-        container_name,
+        container,
         prepared.broker,
         prepared.capabilities,
         prepared.credential_scope,
@@ -488,16 +488,21 @@ fn apple_tunnel_args(container_name: &str) -> Vec<String> {
 /// Test seam for a real container proxy command using production tunnel framing.
 #[doc(hidden)]
 pub fn start_docker_tunnel_with_command(
-    container_name: &str,
+    container: &ContainerHandle,
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
     credential_scope: UsageCredentialScope,
     proxy_command: &[String],
 ) -> Result<UsageRelayGuard> {
-    let mut args = vec!["exec".to_owned(), "-i".to_owned()];
-    args.push(container_name.to_owned());
-    args.extend_from_slice(proxy_command);
+    let args = docker_tunnel_args(container, proxy_command);
     start_tunnel_with_command(broker, capabilities, credential_scope, "docker", args)
+}
+
+fn docker_tunnel_args(container: &ContainerHandle, proxy_command: &[String]) -> Vec<String> {
+    let mut args = vec!["exec".to_owned(), "-i".to_owned()];
+    args.push(container.id().to_owned());
+    args.extend_from_slice(proxy_command);
+    args
 }
 
 fn start_tunnel_with_command(

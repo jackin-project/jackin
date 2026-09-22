@@ -21,14 +21,15 @@ impl RuntimeDispatch {
         use crate::runtime::launch::launch_runtime::LaunchOutcome;
 
         match outcome {
-            LaunchOutcome::Detached => {
+            LaunchOutcome::Detached(_container_handle) => {
                 // Ownership passes to the running instance. Only a later attach
                 // or eject may decide to finalize its resources.
                 launched.cleanup.disarm();
                 Self::Detached(container_name.to_owned())
             }
-            LaunchOutcome::ForegroundSessionEnded => {
+            LaunchOutcome::ForegroundSessionEnded(container_handle) => {
                 launched.cleanup.keep_socket_dir();
+                launched.container_handle = Some(container_handle);
                 Self::Docker(Box::new(launched))
             }
         }
@@ -49,6 +50,7 @@ pub(super) async fn complete_docker_launch(
             &mut launched.instance_manifest,
             container_name,
             &launched.cleanup,
+            launched.container_handle.as_ref(),
             docker,
         )
         .await;

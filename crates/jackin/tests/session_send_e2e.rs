@@ -37,7 +37,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use jackin_core::JackinPaths;
+use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_protocol::control::{AgentState, SessionEventKind};
 use jackin_runtime::runtime::session_control::{SessionEvents, send_session_text};
 use jackin_runtime::runtime::snapshot::fetch_snapshot;
@@ -221,7 +221,7 @@ fn observe_session_send(home: &Path, workspace_dir: &Path) -> Result<Observed, S
         workspace_dir.join("agent-ready.txt").exists()
     })?;
     let container = wait_for_value(Duration::from_mins(2), "the instance container", || {
-        running_container_name()
+        running_container_handle()
     })?;
 
     let session = wait_for_value(Duration::from_mins(2), "a session in the snapshot", || {
@@ -271,22 +271,26 @@ fn observe_session_send(home: &Path, workspace_dir: &Path) -> Result<Observed, S
     })
 }
 
-fn running_container_name() -> Option<String> {
+fn running_container_handle() -> Option<ContainerHandle> {
     let output = Command::new("docker")
         .args([
             "ps",
             "--filter",
             &format!("label=jackin.class={ROLE_KEY}"),
             "--format",
-            "{{.Names}}",
+            "{{.ID}}\\t{{.Names}}",
         ])
         .output()
         .ok()?;
     String::from_utf8_lossy(&output.stdout)
         .lines()
-        .map(str::trim)
-        .find(|name| !name.is_empty() && !name.ends_with("-dind"))
-        .map(str::to_owned)
+        .filter_map(|line| {
+            let (id, name) = line.trim().split_once('\t')?;
+            (!name.is_empty() && !name.ends_with("-dind"))
+                .then(|| ContainerHandle::new(name, id).ok())
+                .flatten()
+        })
+        .next()
 }
 
 fn wait_for(timeout: Duration, what: &str, mut ready: impl FnMut() -> bool) -> Result<(), String> {

@@ -2407,6 +2407,21 @@ fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
 
 fn fake_docker_for_clean_attached_exit() -> jackin_test_support::FakeDockerClient {
     jackin_test_support::FakeDockerClient {
+        inspect_by_id_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            },
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            },
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            },
+        ])),
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
             String::new(),
             String::new(),
@@ -4342,7 +4357,14 @@ plugins = []
     )
     .unwrap();
 
-    let docker = jackin_test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
     let error = load_role(
         &paths,
         &mut config,
@@ -4350,7 +4372,7 @@ plugins = []
         &repo_workspace(&repo_dir),
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap_err();
@@ -4757,7 +4779,14 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
         None,
         "0",
     );
-    let mut docker = jackin_test_support::FakeDockerClient::default();
+    let mut docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
     docker
         .list_image_tags_queue
         .borrow_mut()
@@ -4795,16 +4824,16 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     );
     let docker_recorded = docker.recorded.borrow();
     assert!(
-        docker_recorded
+        !docker_recorded
             .iter()
             .any(|call| call.starts_with("docker rm -f jk-") && !call.ends_with("-dind")),
-        "role container cleanup missing after sidecar failure: {docker_recorded:?}"
+        "role cleanup must fail closed without a captured role ID: {docker_recorded:?}"
     );
     assert!(
-        docker_recorded
+        !docker_recorded
             .iter()
             .any(|call| call.starts_with("docker rm -f jk-") && call.ends_with("-dind")),
-        "DinD cleanup missing after sidecar failure: {docker_recorded:?}"
+        "DinD cleanup must fail closed without a captured DinD ID: {docker_recorded:?}"
     );
     assert!(
         docker_recorded
@@ -5296,6 +5325,7 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
         &paths,
         &DindSidecarPrewarm {
             dind: prewarm_dind.to_owned(),
+            dind_id: "prewarm-b4-dind-id".to_owned(),
             network: prewarm_net.to_owned(),
             certs_volume: prewarm_certs.to_owned(),
             ready_ms: 12,
@@ -5314,6 +5344,10 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
+    docker
+        .container_id_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), "prewarm-b4-dind-id".to_owned());
     // Adoption: pin the prewarmed dind to Running by name (the restore/claim
     // inspects that run first hit the default NotFound), and give its network
     // the prewarm labels so adoption accepts it.
@@ -5413,6 +5447,7 @@ async fn load_agent_grant_validation_failure_tears_down_adopted_dind() {
         &paths,
         &DindSidecarPrewarm {
             dind: prewarm_dind.to_owned(),
+            dind_id: "prewarm-grants-dind-id".to_owned(),
             network: prewarm_net.to_owned(),
             certs_volume: prewarm_certs.to_owned(),
             ready_ms: 12,
@@ -5430,6 +5465,10 @@ async fn load_agent_grant_validation_failure_tears_down_adopted_dind() {
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
+    docker
+        .container_id_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), "prewarm-grants-dind-id".to_owned());
     docker
         .inspect_state_by_name
         .borrow_mut()
@@ -6391,7 +6430,15 @@ plugins = ["code-review@claude-plugins-official"]
     .unwrap();
 
     let workspace = repo_workspace(&repo_dir);
-    let docker = jackin_test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+            ContainerState::Created,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
     let error = load_role(
         &paths,
         &mut config,
@@ -6407,36 +6454,32 @@ plugins = ["code-review@claude-plugins-official"]
     assert!(error.to_string().contains("docker run -d --name jk-"));
     let container_name = launched_role_container_name(&runner);
     let dind = format!("{container_name}-dind");
-    let certs_volume = format!("{container_name}-dind-certs");
-    let network = format!("{container_name}-net");
-    // Cleanup uses docker (bollard) for rm operations
+    // The test-only command runner failed before the typed create call
+    // returned a role handle. Cleanup must therefore leave every Docker
+    // resource untouched rather than remove a same-name replacement.
     assert!(
         docker
             .recorded
             .borrow()
             .iter()
-            .any(|call| call == &format!("docker rm -f {container_name}"))
+            .all(|call| call != &format!("docker rm -f {container_name}"))
     );
     assert!(
         docker
             .recorded
             .borrow()
             .iter()
-            .any(|call| call == &format!("docker rm -f {dind}"))
+            .all(|call| call != &format!("docker rm -f {dind}"))
     );
     assert!(
         docker
             .recorded
             .borrow()
             .iter()
-            .any(|call| call == &format!("docker volume rm {certs_volume}"))
-    );
-    assert!(
-        docker
-            .recorded
-            .borrow()
-            .iter()
-            .any(|call| call == &format!("docker network rm {network}"))
+            .all(|call| !call.starts_with("docker volume rm")
+                && !call.starts_with("docker network rm")),
+        "no-handle cleanup must not remove shared resources: {:?}",
+        docker.recorded.borrow()
     );
 }
 
@@ -7492,6 +7535,7 @@ async fn render_exit_preserves_universe_marker_when_instances_remain() {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-still-running".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::new(),
             },
         ]])),
@@ -8474,7 +8518,9 @@ async fn stopped_matching_instance_starts_current_role() {
 
     assert_eq!(
         candidate,
-        RestoreResolution::StartCurrentRole(container_name.to_owned())
+        RestoreResolution::StartCurrentRoleWithHandle(
+            jackin_core::ContainerHandle::new(container_name, container_name).unwrap(),
+        )
     );
 }
 
@@ -8491,8 +8537,8 @@ async fn stopped_matching_instance_with_missing_network_recreates_current_role()
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // When the network is missing, StartCurrentRole cannot succeed via docker start,
-    // so candidate resolution must downgrade to RecreateCurrentRole.
+    // When the network is missing, the captured role identity is retained for
+    // ID-bound teardown before recreation.
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
@@ -8508,7 +8554,61 @@ async fn stopped_matching_instance_with_missing_network_recreates_current_role()
 
     assert_eq!(
         candidate,
-        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
+        RestoreResolution::RecreateCurrentRoleWithHandle(
+            jackin_core::ContainerHandle::new(container_name, container_name).unwrap(),
+        )
+    );
+}
+
+#[tokio::test]
+async fn recreate_refuses_partial_role_and_dind_identity() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::Agent::Claude,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    let dind_name = manifest.docker.dind_container.clone().unwrap();
+    let docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::Running,
+        ])),
+        container_id_by_name: std::cell::RefCell::new(
+            [(dind_name.clone(), "replacement-dind-id".to_owned())]
+                .into_iter()
+                .collect(),
+        ),
+        ..Default::default()
+    };
+
+    let error =
+        super::launch_pipeline::teardown_recreate_container(&paths, container_name, None, &docker)
+            .await
+            .unwrap_err();
+
+    assert!(
+        error.to_string().contains("identity set is incomplete"),
+        "partial identity must fail closed: {error:#}"
+    );
+    assert!(docker.bound_operations.borrow().is_empty());
+    assert!(
+        !docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("docker rm"))
+    );
+    assert!(
+        !docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("docker network rm"))
     );
 }
 

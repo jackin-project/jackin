@@ -23,10 +23,12 @@ async fn count_keep_awake_agents_counts_nonempty_lines() {
         list_containers_queue: RefCell::new(VecDeque::from([vec![
             ContainerRow {
                 name: "jk-agent-smith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             },
             ContainerRow {
                 name: "jk-the-architect".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             },
         ]])),

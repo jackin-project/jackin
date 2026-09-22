@@ -80,6 +80,7 @@ async fn detect_drift_flags_running_containers() {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             ContainerRow {
                 name: "jk-a1b2c3d4-jackin".to_owned(),
+                id: "container-id".to_owned(),
                 labels: std::collections::HashMap::default(),
             },
         ]])),

@@ -34,7 +34,7 @@ pub use launch_dind::DIND_IMAGE;
 pub(super) use launch_dind::create_role_network;
 pub(crate) use launch_dind::prewarmed_dind_state_container_name;
 pub use launch_dind::{
-    DindSidecarPrewarm, prewarm_dind_sidecar_container, write_prewarmed_dind_state,
+    DindSidecarPrewarm, prewarm_dind_sidecar_container_with_paths, write_prewarmed_dind_state,
 };
 use launch_dind::{adopt_prewarmed_dind_sidecar, run_dind_sidecar_headless};
 #[cfg(not(test))]
@@ -258,9 +258,11 @@ pub(crate) use capsule_setup::{
 
 #[cfg(test)]
 pub(crate) use exit_diagnosis::diagnose_premature_exit;
+pub(crate) use exit_diagnosis::diagnose_with_state_by_id;
+#[cfg(test)]
+pub(crate) use exit_diagnosis::inspect_attach_outcome;
 pub(crate) use exit_diagnosis::{
-    ExitPhase, attach_failure_error, diagnose_with_state, inspect_attach_outcome,
-    is_known_socket_close,
+    ExitPhase, attach_failure_error, inspect_attach_outcome_by_id, is_known_socket_close,
 };
 
 #[cfg(test)]
