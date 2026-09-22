@@ -4,19 +4,22 @@ Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, se
 
 ## Current authoritative sidecar — 2026-09-23
 
-Status: **NOT COMPLETE**. Parent HEAD before this documentation commit is
-`96c5830`; current Jackin main is `7e562432`. Repairs are integrated; live
-qualification and upstream adoption remain open. Generated workflows were
-rerun after the rebase in `96c5830`; parent local gates must be rerun on this
-rebased tree before prior local results are treated as current.
+Status: **NOT COMPLETE**. Parent docs HEAD before this correction is
+`027dd762`; code/generated parent is `96c5830`; current Jackin main is
+`7e562432`. Repairs are integrated; live qualification and upstream adoption
+remain open. Generated workflows were rerun after the rebase. Post-rebase local
+gates now pass: xtask full serialized `402`, evidence-focused `30`, xtask
+clippy, generator `--plain --check`, actionlint, fmt, diff, `jackin-usage` lib
+`588`, usage clippy, and FFI `16` tests plus clippy.
 
 ### Repair and evidence status
 
 | Area | Evidence | Current verdict |
 |---|---|---|
-| Collector | Pre-rebase evidence: schema-4 durable push-head ledger with predecessor-boundary, chain, provenance, remote-tip, and wrong-workflow checks; `cargo test -p jackin-xtask --locked` had 402 passes, with clippy, formatter, actionlint, and diff checks passing. | Structurally fail-closed. **Not production-qualified**: no default-branch `ci-evidence` ledger run/artifact exists; parent gates need rerun. |
-| Performance audit | Pre-rebase evidence: failure markers exclude legitimate skipped/neutral/success jobs and missing reports count only completed report-producing jobs. Local warm evidence had 40/40 report producers valid and zero missing/fallback/parse failures. | Semantics fixed. The 402-test result needs a post-rebase rerun. No 120-second or cross-workflow reuse claim. |
-| Provider retries | Pre-rebase evidence: typed status/retry-after handling for OpenRouter, Claude, and Codex; local `jackin-usage` coverage was 592 library tests. | Local coverage recorded; parent gates need rerun. Real-provider behavior is unverified; no live credentials or provider fixture run is claimed. |
+| Collector | Post-rebase gates pass: schema-4 durable push-head ledger with predecessor-boundary, chain, provenance, remote-tip, and wrong-workflow checks; xtask full serialized `402`, evidence-focused `30`, xtask clippy, generator `--plain --check`, actionlint, fmt, and diff. | Structurally fail-closed. **Not production-qualified**: no default-branch `ci-evidence` ledger run/artifact exists. |
+| Performance audit | Post-rebase xtask full serialized `402` and evidence-focused `30` pass; failure markers exclude legitimate skipped/neutral/success jobs and missing reports count only completed report-producing jobs. Warm evidence had 40/40 report producers valid and zero missing/fallback/parse failures. | Semantics fixed. No 120-second or cross-workflow reuse claim. |
+| Provider retries | Post-rebase `jackin-usage` lib `588` passed and usage clippy passed; typed status/retry-after handling covers OpenRouter, Claude, and Codex. | Local coverage PASS. Real-provider behavior is unverified; no live credentials or provider fixture run is claimed. |
+| FFI | Post-rebase FFI `16` tests passed and FFI clippy passed. | Local PASS. |
 | Desktop | Generated candidate and merge-cadence trigger/parity workflows were rerun after rebase. | Advisory only. Desktop is not a required ruleset context and has no claimed live pre-merge proof. |
 
 ### Upstream and PR status
