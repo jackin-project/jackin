@@ -4,6 +4,29 @@ Jackin CI/CD goal, refreshed 2026-09-22. Everything below remains FAIL,
 unproven, or actively being repaired; no entry is closed merely because it has
 another owner or an earlier PR. Evidence record: [EXECUTION.md](EXECUTION.md).
 
+## Current session status — 2026-09-22
+
+- Jackin branch `codex/ci-reliability-20260922` carries typed provider errors
+  (`b6b3744d`), deterministic render time (`67f89e95`), OTLP lifecycle fixes
+  (`7c178a8a`, `900d7b6f`), schema-2 Apple discovery/product transport and
+  Renovate regeneration (`762ea61e`), and static Apple sccache wiring
+  (`63c8e8b1`). No hosted performance gain is claimed.
+- The collector is implemented and live-tested: `381` xtask tests, clippy,
+  format, and actionlint pass. A live window collected `18` attempts across
+  `18` obligations, but recorded `2` missing-push-event gaps and produced a
+  deliberately unqualified rollup (`11` successes; `7` failure, missing, or
+  data-quality outcomes). Independent review found remaining denominator,
+  identity, artifact-retention, and fail-closed gaps; it is not closed.
+- Velnor selection PR [#1075](https://github.com/tailrocks/velnor/pull/1075)
+  merged as `aa2345bd`; Jackin cannot use it until a runtime product is
+  published and pinned. Velnor phase-retention PR
+  [#1076](https://github.com/tailrocks/velnor/pull/1076) is blocked because
+  the base runtime rejects the new `precondition` phase before candidate
+  publication. This is an active bootstrap defect.
+- Product defects are structurally fixed and locally verified. The 120-second
+  target, six-nines claim, Desktop candidate coverage, and cross-workflow
+  reuse remain FAIL or unproven.
+
 ---
 
 ## Post-#1053 live result — correctness green; performance and no-work remain FAIL
@@ -215,14 +238,16 @@ the pipeline.
 
 ## Continuation checklist (for whoever picks this up)
 
-- [ ] Converge #1044 and #1052 into one current-runtime schema-2 migration;
+- [x] Converge #1044 and #1052 into one current-runtime schema-2 migration;
       preserve generic Apple discovery, Renovate behavior, and verified
       BoltFFI/XcodeGen producer-consumer materialization.
-- [ ] Implement S2/S3/S5 reuse slices; run D3 selection adversarial/live probes;
-      re-measure per class.
-- [ ] Implement the tested first-attempt collector and scheduled rollup (#2.2).
+- [x] Implement the static S2 Apple sccache slice; hosted hit/reuse evidence
+      remains unmeasured. S3/S5 and the 120-second re-measurement remain open.
+- [ ] Harden and operationally verify the first-attempt collector and
+      scheduled rollup (#2.2); current live evidence is explicitly unqualified.
 - [ ] Establish Desktop candidate coverage and lossless per-main evidence.
-- [ ] Repair Velnor D19 promotion and composable self-unit phases (#4a).
+- [ ] Repair Velnor D19 promotion and composable self-unit phases (#4a);
+      phase-retention implementation is blocked on candidate bootstrap.
 - [x] Land structural fixes and independent verification for all three product
       defects (#4b); verify their merged-main verdicts and retain first-attempt
       evidence.

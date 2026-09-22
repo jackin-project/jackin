@@ -21,6 +21,34 @@ failure was reproduced with the published pinned runtime, repaired only by a
 state-sidecar regeneration, and rechecked with `--plain --check`. This is not
 closure for the report findings.
 
+## 2026-09-22 continuation — parent branch `codex/ci-reliability-20260922`
+
+- Jackin commits `67f89e95`, `7c178a8a`, and `900d7b6f` close the fixed-clock
+  render and OTLP testbed lifecycle defects with focused regression tests.
+- `762ea61e` converges the schema-2 Apple migration on published Velnor
+  `816046893ef55359ee2f41903d1f1f893d59303e`: generic Swift/XcodeGen/BoltFFI
+  discovery, typed XCFramework producer-consumer transport, Xcode 26.6 pin,
+  Renovate writer/validator, and generated state all pass exact regeneration.
+- `63c8e8b1` wires sccache only where generated Apple profiles provision
+  `cargo:sccache`; Rust MBX and release jobs remain wrapper-free. This is
+  static/configuration evidence only. No hosted speedup claim is made.
+- `b6b3744d` preserves typed HTTP status across Codex/Claude provider fetches;
+  transport/decode text cannot synthesize auth or rate-limit classes. Usage,
+  broker, FFI, diagnostics, OTLP, projection, xtask tests, clippy, format,
+  actionlint, and exact generator checks pass locally.
+- Collector `7c57de6c` live probe (window `2026-09-22T10:00:00Z` →
+  `15:10:54Z`) collected `18` obligations/attempts and recorded `2` missing
+  push-event gaps. Rollup: `11` successes, `7` non-success outcomes; Desktop
+  had cancellations/data-quality; qualified green and six-nines remain false.
+  Independent review found the scheduled 31-day event-cap, retired-workflow
+  identity, inferred-obligation, artifact-retention, and mutable-derived-field
+  gaps. Collector hardening is still active.
+- Velnor selection PR #1075 merged as `aa2345bd`; runtime publication/pin
+  promotion is pending. Phase-retention PR #1076 passed local Velnor tests but
+  its first live PR run failed before candidate publication because base
+  runtime `37e7814` rejected generated `precondition` phases. A bootstrap fix
+  is delegated; Jackin does not pin or claim the unproven phase change.
+
 ## Post-#1053 live verification — 2026-09-22
 
 Agent `/root/report_postmerge_correction` reconciled the merged report with
