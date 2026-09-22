@@ -77,7 +77,8 @@ report does not claim that all gates passed:
 - JSON parse: `jq empty plans/repository-consolidation/20260923-jackin/PROVENANCE.json` — passed.
 - Provenance gates: `cargo xtask roadmap audit` and `cargo xtask research check` — passed.
 - Documentation link audit: `cargo xtask docs repo-links` — failed with exit 1 on
-  exact PR head `3b65588dad6c976e0a8fa1eca344908373f746ae` and base
+  exact PR head `146720b90b7d0c0e22dcef83eabfd64acbfdea58`, its parent
+  `3b65588dad6c976e0a8fa1eca344908373f746ae`, and base
   `55e21f05bdee37a1424464ce69b86fc5e550307a`, producing the same six
   pre-existing references:
   - `docs/content/reference/getting-oriented/xtasks.mdx:45` — missing `.github/PULL_REQUEST_TEMPLATE.md`.
