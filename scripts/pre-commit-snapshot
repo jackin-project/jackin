@@ -1,0 +1,143 @@
+#!/bin/sh
+# shellcheck disable=SC2329 # Functions are invoked through signal/exit traps.
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+stash_ref=
+stash_oid=
+patch_file=
+archive_file=
+mode_file=
+
+record_mode() {
+    relative_path=$1
+    path="./$relative_path"
+    if [ -L "$path" ]; then
+        return 0
+    fi
+    if [ ! -e "$path" ]; then
+        return 0
+    fi
+    mode=$(stat -f '%Lp' "$path" 2>/dev/null || stat -c '%a' "$path") || return 1
+    printf '%s\t%s\n' "$mode" "$path" >> "$mode_file"
+}
+
+restore_modes() {
+    if [ -n "$mode_file" ] && [ -s "$mode_file" ]; then
+        while IFS="	" read -r mode path; do
+            if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+                printf '%s\n' "error: failed to restore mode for missing $path; stash retained at $stash_oid" >&2
+                return 1
+            fi
+            if [ -L "$path" ]; then
+                continue
+            fi
+            if ! chmod "$mode" "$path"; then
+                printf '%s\n' "error: failed to restore mode for $path; stash retained at $stash_oid" >&2
+                return 1
+            fi
+        done < "$mode_file"
+    fi
+}
+
+verify_snapshot_ref() {
+    current_stash=$(git rev-parse --verify --quiet refs/stash 2>/dev/null || true)
+    if [ "$current_stash" != "$stash_oid" ]; then
+        printf '%s\n' "error: pre-commit snapshot ref changed; stash retained at $stash_oid" >&2
+        return 1
+    fi
+}
+
+restore_worktree() {
+    hook_status=$?
+    trap - EXIT HUP INT TERM
+
+    if [ -n "$stash_oid" ]; then
+        if ! verify_snapshot_ref; then
+            rm -f "$patch_file" "$archive_file" "$mode_file"
+            exit 1
+        fi
+
+        patch_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
+        if ! git diff --binary "$stash_oid^2" "$stash_oid" > "$patch_file"; then
+            printf '%s\n' "error: failed to read the pre-commit snapshot; stash retained at $stash_oid" >&2
+            exit 1
+        fi
+        if [ -s "$patch_file" ] && ! git apply --binary --whitespace=nowarn "$patch_file"; then
+            printf '%s\n' "error: failed to restore unstaged tracked work; stash retained at $stash_oid" >&2
+            exit 1
+        fi
+
+        untracked_tree=$(git rev-parse --verify --quiet "$stash_oid^3" 2>/dev/null || true)
+        if [ -n "$untracked_tree" ]; then
+            archive_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
+            if ! git archive --format=tar "$untracked_tree" > "$archive_file"; then
+                printf '%s\n' "error: failed to read untracked snapshot; stash retained at $stash_oid" >&2
+                exit 1
+            fi
+            if ! tar -xpf "$archive_file"; then
+                printf '%s\n' "error: failed to restore untracked work; stash retained at $stash_oid" >&2
+                exit 1
+            fi
+        fi
+
+        if ! restore_modes; then
+            exit 1
+        fi
+
+        if ! verify_snapshot_ref; then
+            rm -f "$patch_file" "$archive_file" "$mode_file"
+            exit 1
+        fi
+        if ! git stash drop "$stash_ref"; then
+            printf '%s\n' "error: restored the pre-commit snapshot but could not drop $stash_oid" >&2
+            exit 1
+        fi
+    fi
+
+    rm -f "$patch_file" "$archive_file" "$mode_file"
+    exit "$hook_status"
+}
+
+trap restore_worktree EXIT HUP INT TERM
+
+# hk 2.0.1's path-limited stash drops untracked paths before invoking Git.
+# Snapshot every non-index path, including ignored files, leaving the index view.
+mode_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
+path_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
+{
+    git diff --name-only
+    git ls-files --others --exclude-standard
+    git ls-files --others --ignored --exclude-standard
+} > "$path_file"
+while IFS= read -r relative_path; do
+    if [ -n "$relative_path" ]; then
+        record_mode "$relative_path"
+    fi
+done < "$path_file"
+rm -f "$path_file"
+
+before_stash=$(git rev-parse --verify --quiet refs/stash 2>/dev/null || true)
+set +e
+git stash push --all --keep-index --message "jackin pre-commit"
+stash_status=$?
+set -e
+after_stash=$(git rev-parse --verify --quiet refs/stash 2>/dev/null || true)
+
+if [ "$after_stash" != "$before_stash" ]; then
+    stash_ref='stash@{0}'
+    stash_oid=$after_stash
+fi
+
+if [ "$stash_status" -ne 0 ]; then
+    printf '%s\n' "error: failed to create the pre-commit snapshot" >&2
+    exit "$stash_status"
+fi
+
+set +e
+mise x -- hk run pre-commit --from-hook "$@"
+hook_status=$?
+set -e
+exit "$hook_status"
