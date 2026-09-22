@@ -3000,6 +3000,7 @@ jobs:
       plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_tools: "cargo:sccache"
       cache_paths: "~/.swiftpm"
       cache_key_files: |
         .swift-version

@@ -63,9 +63,13 @@ tasks = ["desktop-merge"]
 timeout_minutes = 90
 status = "required"
 [check_profile.env]
+CARGO_INCREMENTAL = "0"
 CARGO_TERM_COLOR = "always"
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+RUSTC_WRAPPER = "sccache"
+# sccache is installed by this profile before the desktop task runs.
+SCCACHE_GHA_ENABLED = "true"
 # S1: `mise run` auto-installs every missing toolset entry before the task
 # (26 tools, 576s on run 35542103447 despite a mise-cache HIT on the 9
 # install_args tools). The desktop graph only invokes the 9 installed tools
@@ -85,26 +89,31 @@ tasks = ["desktop-scheduled"]
 timeout_minutes = 90
 status = "required"
 [check_profile.env]
+CARGO_INCREMENTAL = "0"
 CARGO_TERM_COLOR = "always"
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+RUSTC_WRAPPER = "sccache"
+# Keep the wrapper tied to this profile's installed cargo:sccache tool.
+SCCACHE_GHA_ENABLED = "true"
 # S1: same as desktop-merge — skip the whole-toolset auto-install
 # (scheduled tier additionally needs periphery for desktop-deadcode, already
 # in this profile's tool list). Audit: plans/cicd-reliability/s1-result.md.
 MISE_TASK_RUN_AUTO_INSTALL = "false"
 MISE_NOT_FOUND_AUTO_INSTALL = "false"
 
-# One file, one trigger set, faithful to the copy: the merge tier runs on
-# push-to-main + dispatch (copy desktop-cadence.yml push: branches: [main],
-# merge job gated on event != schedule); the scheduled tier keeps the
-# copy's Monday cron.
+# One file, one trigger set: the merge tier runs on main pushes and pull
+# requests, plus dispatch; the scheduled tier keeps its Monday cron. The
+# pinned 4dec renderer does not accept `merge_group` for this primitive and
+# emits ref-based concurrency, so those newer semantics remain a Velnor pin
+# upgrade blocker rather than hand-authored generated output.
 [[declare]]
 primitive = "scheduled-checks"
 file = "desktop-merge.yml"
 [declare.args]
 profiles = ["desktop-merge"]
 name = "Desktop merge cadence"
-events = ["push"]
+events = ["push", "pull_request"]
 branches = ["main"]
 
 [[declare]]
@@ -168,6 +177,10 @@ ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 platform = "macos-arm64"
 depends_on = ["rust-jackin-usage-ffi"]
+[units.env]
+CARGO_INCREMENTAL = "0"
+RUSTC_WRAPPER = "sccache"
+SCCACHE_GHA_ENABLED = "true"
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
@@ -193,6 +206,10 @@ task = "desktop-xcframework"
 id = "swift-xcodegen-native-project-yml-jackindesktop"
 mise_tools = ["xcodegen", "cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 depends_on = ["rust-jackin-usage-ffi"]
+[units.env]
+CARGO_INCREMENTAL = "0"
+RUSTC_WRAPPER = "sccache"
+SCCACHE_GHA_ENABLED = "true"
 
 [[units.prerequisites]]
 producer = "rust-jackin-usage-ffi"
@@ -205,6 +222,10 @@ product = "xcframework"
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
 platform = "macos-arm64"
+# The Swift kind is one shared reusable workflow. Provision sccache for this
+# non-Cargo member because the shared job carries the wrapper env for the
+# Cargo-backed Apple members.
+mise_tools = ["cargo:sccache"]
 
 # Desktop release (L10): tag-triggered tasks release over the canonical
 # desktop mise tasks. Each event runs exactly one self-contained job
