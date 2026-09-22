@@ -5,6 +5,7 @@
 //! attach failures, and outcome inspection.
 
 use jackin_core::CommandRunner;
+use jackin_core::ContainerHandle;
 use jackin_diagnostics;
 use jackin_docker::docker_client::DockerApi;
 
@@ -28,6 +29,7 @@ pub(crate) enum ExitPhase {
 ///
 /// Returns `None` when the container is still running (the normal
 /// happy path) so the caller can proceed to the session exec.
+#[cfg(test)]
 pub(crate) async fn diagnose_premature_exit(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
@@ -38,13 +40,46 @@ pub(crate) async fn diagnose_premature_exit(
     diagnose_with_state(runner, container_name, &state, phase).await
 }
 
+/// Diagnose a container whose immutable ID was already captured by the
+/// lifecycle caller. Both inspect and log retrieval remain bound to that ID.
+pub(crate) async fn diagnose_premature_exit_by_id(
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    container: &ContainerHandle,
+    phase: ExitPhase,
+) -> Option<anyhow::Error> {
+    let state = docker.inspect_container_by_id(container).await;
+    diagnose_with_state_by_target(runner, container.name(), container.id(), &state, phase).await
+}
+
+/// Apply exit diagnosis to state already inspected by immutable ID.
+pub(crate) async fn diagnose_with_state_by_id(
+    runner: &mut impl CommandRunner,
+    container: &ContainerHandle,
+    state: &ContainerState,
+    phase: ExitPhase,
+) -> Option<anyhow::Error> {
+    diagnose_with_state_by_target(runner, container.name(), container.id(), state, phase).await
+}
+
 /// Same diagnostic logic as `diagnose_premature_exit` but with the
 /// inspected state passed in — callers that already inspected the
 /// container can avoid a second `docker inspect` round-trip (and the
 /// TOCTOU window between the two).
+#[cfg(test)]
 pub(crate) async fn diagnose_with_state(
     runner: &mut impl CommandRunner,
     container_name: &str,
+    state: &ContainerState,
+    phase: ExitPhase,
+) -> Option<anyhow::Error> {
+    diagnose_with_state_by_target(runner, container_name, container_name, state, phase).await
+}
+
+async fn diagnose_with_state_by_target(
+    runner: &mut impl CommandRunner,
+    container_name: &str,
+    container_ref: &str,
     state: &ContainerState,
     phase: ExitPhase,
 ) -> Option<anyhow::Error> {
@@ -84,7 +119,7 @@ pub(crate) async fn diagnose_with_state(
             // signal the operator needs (daemon down, container gone)
             // rather than the empty body the prose body falls back to.
             let logs = match runner
-                .capture("docker", &["logs", "--tail", "40", container_name], None)
+                .capture("docker", &["logs", "--tail", "40", container_ref], None)
                 .await
             {
                 Ok(text) => {
@@ -164,6 +199,7 @@ pub(crate) fn is_known_socket_close(error: &anyhow::Error, state: &ContainerStat
 /// could auto-delete worktrees of containers that may actually still be
 /// running. `still_running()` instead skips the auto-cleanup path entirely
 /// and preserves records for `jackin hardline` to recover.
+#[cfg(test)]
 pub(crate) async fn inspect_attach_outcome(
     docker: &impl DockerApi,
     container: &str,
@@ -176,6 +212,35 @@ pub(crate) async fn inspect_attach_outcome(
     // containers that may resume. Dead is rare (daemon failed to deinitialize)
     // and also preserved for operator inspection.
     Ok(match docker.inspect_container_state(container).await {
+        ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Created
+        | ContainerState::Removing => AttachOutcome::still_running(),
+        ContainerState::Dead => {
+            let _warning = jackin_telemetry::record_recovered_degradation();
+            AttachOutcome::still_running()
+        }
+        ContainerState::Stopped {
+            oom_killed: true, ..
+        } => AttachOutcome::oom_killed(),
+        ContainerState::Stopped { exit_code, .. } => AttachOutcome::stopped(exit_code),
+        ContainerState::NotFound | ContainerState::InspectUnavailable(_) => {
+            let _warning = jackin_telemetry::record_recovered_degradation();
+            AttachOutcome::still_running()
+        }
+    })
+}
+
+/// Inspect attach outcome by the immutable container ID captured for the
+/// foreground lifecycle. This avoids resolving a mutable name again after
+/// the attach command returns.
+pub(crate) async fn inspect_attach_outcome_by_id(
+    docker: &impl DockerApi,
+    container: &ContainerHandle,
+) -> anyhow::Result<crate::isolation::finalize::AttachOutcome> {
+    use crate::isolation::finalize::AttachOutcome;
+    Ok(match docker.inspect_container_by_id(container).await {
         ContainerState::Running
         | ContainerState::Paused
         | ContainerState::Restarting

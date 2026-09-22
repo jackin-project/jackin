@@ -19,7 +19,7 @@ use helpers::{
     emit_auth_breadcrumbs, resolve_provision_inputs, reuse_sentinel, sidecar_replenish,
     workspace_launch_config,
 };
-use jackin_core::{CommandRunner, ContainerId, WorkspaceName};
+use jackin_core::{CommandRunner, ContainerHandle, ContainerId, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 
 use anyhow::Context;
@@ -33,7 +33,7 @@ use crate::instance::{
 };
 use crate::runtime::attach::{
     AgentSessionInventory, ContainerState, inspect_agent_sessions,
-    start_or_reconnect_capsule_client_with_lease,
+    reconnect_or_create_session_with_container_handle_with_lease,
 };
 use crate::runtime::docker_profile::{DockerSecurityProfile, EffectiveGrants, ProfileSource};
 
@@ -73,6 +73,7 @@ struct FinalizeSession<'a, D, R> {
     docker: &'a D,
     runner: &'a mut R,
     container_name: &'a str,
+    container: &'a ContainerHandle,
     container_state: &'a std::path::Path,
     instance_manifest: &'a mut InstanceManifest,
     cleanup: &'a mut super::super::super::LoadCleanup,
@@ -93,6 +94,7 @@ where
         docker,
         runner,
         container_name,
+        container,
         container_state,
         instance_manifest,
         cleanup,
@@ -114,7 +116,7 @@ where
                 .and_then(|name| config.workspaces.get(name)),
         );
         admission_lease.ensure_current(paths)?;
-        let outcome = super::super::super::inspect_attach_outcome(docker, container_name).await?;
+        let outcome = super::super::super::inspect_attach_outcome_by_id(docker, container).await?;
         admission_lease.ensure_current(paths)?;
         super::super::super::write_instance_attach_outcome(
             paths,
@@ -122,7 +124,7 @@ where
             instance_manifest,
             outcome,
         )?;
-        let mut decision = crate::isolation::finalize::finalize_foreground_session(
+        let mut decision = crate::isolation::finalize::finalize_foreground_session_by_id(
             container_name,
             &paths.data_dir.join(container_name),
             outcome,
@@ -131,6 +133,7 @@ where
             &mut prompt,
             docker,
             runner,
+            container,
         )
         .await?;
         admission_lease.ensure_current(paths)?;
@@ -145,17 +148,19 @@ where
             crate::isolation::finalize::FinalizeDecision::ReturnToAgent
         ) {
             admission_lease.ensure_current(paths)?;
-            start_or_reconnect_capsule_client_with_lease(
+            reconnect_or_create_session_with_container_handle_with_lease(
                 paths,
                 container_name,
+                None,
                 admission_lease,
                 docker,
                 runner,
+                container,
             )
             .await?;
             admission_lease.ensure_current(paths)?;
             let outcome =
-                super::super::super::inspect_attach_outcome(docker, container_name).await?;
+                super::super::super::inspect_attach_outcome_by_id(docker, container).await?;
             admission_lease.ensure_current(paths)?;
             super::super::super::write_instance_attach_outcome(
                 paths,
@@ -163,7 +168,7 @@ where
                 instance_manifest,
                 outcome,
             )?;
-            decision = crate::isolation::finalize::finalize_foreground_session(
+            decision = crate::isolation::finalize::finalize_foreground_session_by_id(
                 container_name,
                 &paths.data_dir.join(container_name),
                 outcome,
@@ -172,6 +177,7 @@ where
                 &mut prompt,
                 docker,
                 runner,
+                container,
             )
             .await?;
             admission_lease.ensure_current(paths)?;
@@ -188,7 +194,7 @@ where
     match finalize_result {
         Ok(decision) => Ok(SessionFinalized { decision }),
         Err(error) => {
-            cleanup.run(docker).await;
+            cleanup.run_with_role_handle(docker, container).await;
             Err(error)
         }
     }
@@ -203,6 +209,7 @@ struct ClassifyCleanup<'a, D, R> {
     instance_manifest: &'a mut InstanceManifest,
     cleanup: &'a mut super::super::super::LoadCleanup,
     finalized: SessionFinalized,
+    container: &'a ContainerHandle,
 }
 
 async fn classify_cleanup<D, R>(
@@ -221,18 +228,19 @@ where
         instance_manifest,
         cleanup,
         finalized: SessionFinalized { decision },
+        container,
     } = input;
     let is_preserved = matches!(
         decision,
         crate::isolation::finalize::FinalizeDecision::Preserved
     );
     let teardown_result: anyhow::Result<()> = async {
-        match docker.inspect_container_state(container_name).await {
+        let inspected_state = docker.inspect_container_by_id(container).await;
+        match inspected_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
                 if is_preserved {
                     let sessions =
-                        inspect_agent_sessions(docker, container_name, &ContainerState::Running)
-                            .await;
+                        inspect_agent_sessions(docker, container, &ContainerState::Running).await;
                     if let AgentSessionInventory::Unavailable(_) = sessions {
                         let _warning = jackin_telemetry::record_recovered_degradation();
                     }
@@ -243,7 +251,7 @@ where
                             instance_manifest,
                             InstanceStatus::CleanExited,
                         )?;
-                        cleanup.run(docker).await;
+                        cleanup.run_with_role_handle(docker, container).await;
                     } else {
                         cleanup.disarm();
                     }
@@ -254,18 +262,18 @@ where
                         instance_manifest,
                         InstanceStatus::CleanExited,
                     )?;
-                    cleanup.run(docker).await;
+                    cleanup.run_with_role_handle(docker, container).await;
                 }
             }
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
-            } if is_preserved => cleanup.run(docker).await,
+            } if is_preserved => cleanup.run_with_role_handle(docker, container).await,
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
             } => {
-                cleanup.run(docker).await;
+                cleanup.run_with_role_handle(docker, container).await;
                 purge_or_mark_clean_exited(
                     paths,
                     container_name,
@@ -286,7 +294,7 @@ where
                     instance_manifest,
                     InstanceStatus::Crashed,
                 )?;
-                cleanup.run(docker).await;
+                cleanup.run_with_role_handle(docker, container).await;
             }
             ContainerState::InspectUnavailable(reason) => {
                 cleanup.disarm();
@@ -299,10 +307,10 @@ where
                 );
             }
             ContainerState::NotFound if is_preserved => {
-                cleanup.run(docker).await;
+                cleanup.run_with_role_handle(docker, container).await;
             }
             ContainerState::NotFound => {
-                cleanup.run(docker).await;
+                cleanup.run_with_role_handle(docker, container).await;
                 purge_or_mark_clean_exited(
                     paths,
                     container_name,
@@ -318,7 +326,7 @@ where
     }
     .await;
     if let Err(error) = teardown_result {
-        cleanup.run(docker).await;
+        cleanup.run_with_role_handle(docker, container).await;
         return Err(error);
     }
     Ok(CleanupClassified {
@@ -476,6 +484,7 @@ async fn handle_launch_failure<D: DockerApi>(
     instance_manifest: &mut InstanceManifest,
     container_name: &str,
     cleanup: &super::super::super::LoadCleanup,
+    container: Option<&ContainerHandle>,
     docker: &D,
 ) {
     if let Err(status_error) = super::super::super::write_instance_status(
@@ -493,7 +502,14 @@ async fn handle_launch_failure<D: DockerApi>(
             ),
         );
     }
-    cleanup.run_preserving_evidence(docker).await;
+    match container {
+        Some(container) => {
+            cleanup
+                .run_preserving_evidence_with_role_handle(docker, container)
+                .await;
+        }
+        None => cleanup.run_preserving_evidence(docker).await,
+    }
 }
 
 struct MaterializeWorkspace<'a, D, R> {
@@ -1075,6 +1091,9 @@ async fn initialize_launch<D: DockerApi>(
         network.clone(),
         paths.jackin_home.join("sockets").join(container_name),
     );
+    if let Some(sidecar) = adopted.as_ref() {
+        cleanup.set_dind_handle(sidecar.dind_handle.clone());
+    }
     let grants = super::super::launch_phases::validate_launch_grants(
         super::super::launch_phases::GrantPhaseInput {
             config,
@@ -1139,6 +1158,7 @@ where
         container_state,
         mut cleanup,
         account_revision,
+        container_handle,
     } = match launched {
         RuntimeDispatch::AppleContainer(container_name)
         | RuntimeDispatch::Detached(container_name) => {
@@ -1146,6 +1166,9 @@ where
         }
         RuntimeDispatch::Docker(launched) => *launched,
     };
+    let container_handle = container_handle
+        .as_ref()
+        .context("Docker launch completed without an immutable container identity")?;
     let finalized = finalize_session(FinalizeSession {
         paths,
         config,
@@ -1154,6 +1177,7 @@ where
         docker,
         runner,
         container_name,
+        container: container_handle,
         container_state: &container_state,
         instance_manifest: &mut instance_manifest,
         cleanup: &mut cleanup,
@@ -1168,6 +1192,7 @@ where
         instance_manifest: &mut instance_manifest,
         cleanup: &mut cleanup,
         finalized,
+        container: container_handle,
     })
     .await?;
     Ok(container_name)
@@ -1702,8 +1727,10 @@ where
         source,
         opts.role_branch.as_deref(),
     );
+    let container_handle = std::cell::RefCell::new(None);
     let ctx = super::super::super::LaunchContext {
         container_name,
+        container_handle: &container_handle,
         image: &image,
         network,
         dind,
@@ -1749,6 +1776,8 @@ where
         account_revision: &account_revision,
     };
     let launch_result = super::super::super::launch_role_runtime(&ctx, steps, docker, runner).await;
+    drop(ctx);
+    let container_handle = container_handle.into_inner();
     complete_docker_launch(
         launch_result,
         RuntimeLaunched {
@@ -1756,6 +1785,7 @@ where
             container_state,
             cleanup,
             account_revision,
+            container_handle,
         },
         paths,
         container_name,
@@ -1864,6 +1894,7 @@ where
     let sidecar_dind = launch.initialized.dind.clone();
     let sidecar_certs_volume = launch.initialized.certs_volume.clone();
     let sidecar_dind_grant = launch.initialized.effective_grants.dind;
+    let sidecar_dind_handle_slot = launch.initialized.cleanup.dind_handle_slot();
     let sidecar_network_disabled =
         crate::runtime::docker_profile::network_disabled(&launch.initialized.effective_grants);
     let role_network_internal = crate::runtime::docker_profile::role_network_internal(
@@ -1894,6 +1925,7 @@ where
                 &sidecar_dind,
                 &sidecar_certs_volume,
                 sidecar_dind_grant,
+                sidecar_dind_handle_slot,
                 docker,
             )
             .await

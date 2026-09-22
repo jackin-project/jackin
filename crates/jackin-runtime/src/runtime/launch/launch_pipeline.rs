@@ -342,9 +342,9 @@ async fn teardown_recreate_container(
     docker: &impl DockerApi,
 ) {
     let resources = crate::runtime::cleanup::docker_resources_for_state(paths, container);
-    drop(docker.remove_container(container).await);
+    drop(crate::runtime::cleanup::remove_container_by_name(docker, container).await);
     if let Some(dind) = resources.dind_container.as_deref() {
-        drop(docker.remove_container(dind).await);
+        drop(crate::runtime::cleanup::remove_container_by_name(docker, dind).await);
     }
     drop(docker.remove_network(&resources.network).await);
 }

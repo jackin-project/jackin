@@ -25,6 +25,10 @@ fn short_test_paths() -> (TempDir, JackinPaths) {
     (dir, paths)
 }
 
+fn test_container_handle(name: &str) -> ContainerHandle {
+    ContainerHandle::new(name, format!("{name}-id")).unwrap()
+}
+
 type ScheduledConfigRotation = (String, PathBuf, Vec<u8>);
 
 fn config_rotation_slot() -> &'static Mutex<Vec<ScheduledConfigRotation>> {
@@ -235,11 +239,11 @@ fn ensure_socket_parent(paths: &JackinPaths, container_name: &str) -> PathBuf {
 #[test]
 fn attach_proxy_exec_args_use_stdio_not_tty() {
     assert_eq!(
-        attach_proxy_exec_args("jk-agent-smith"),
+        attach_proxy_exec_args(&test_container_handle("jk-agent-smith")),
         vec![
             "exec",
             "-i",
-            "jk-agent-smith",
+            "jk-agent-smith-id",
             JACKIN_CAPSULE_PATH,
             ATTACH_PROXY_SUBCOMMAND,
         ]
@@ -352,7 +356,7 @@ async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
         ..Default::default()
     };
 
-    wait_for_capsule_daemon(&paths, "jk-agent-smith", &docker)
+    wait_for_capsule_daemon_with_handle(&paths, &test_container_handle("jk-agent-smith"), &docker)
         .await
         .unwrap();
 
@@ -659,6 +663,11 @@ async fn hardline_clean_exit_ejects_runtime_resources() {
                 exit_code: 0,
                 oom_killed: false,
             },
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            },
+            ContainerState::Running,
         ])),
         ..Default::default()
     };
@@ -1278,8 +1287,12 @@ async fn inspect_agent_sessions_lists_jackin_sessions() {
             ..Default::default()
         };
 
-    let sessions =
-        inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
+    let sessions = inspect_agent_sessions(
+        &docker,
+        &test_container_handle("jk-agent-smith"),
+        &ContainerState::Running,
+    )
+    .await;
 
     let AgentSessionInventory::Sessions(sessions) = sessions else {
         panic!("expected sessions");
@@ -1296,8 +1309,12 @@ async fn inspect_agent_sessions_returns_empty_when_no_sessions_running() {
         ..Default::default()
     };
 
-    let sessions =
-        inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
+    let sessions = inspect_agent_sessions(
+        &docker,
+        &test_container_handle("jk-agent-smith"),
+        &ContainerState::Running,
+    )
+    .await;
 
     assert_eq!(sessions, AgentSessionInventory::Sessions(vec![]));
 }
@@ -1311,8 +1328,12 @@ async fn inspect_agent_sessions_returns_unavailable_on_missing_header() {
         ..Default::default()
     };
 
-    let sessions =
-        inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
+    let sessions = inspect_agent_sessions(
+        &docker,
+        &test_container_handle("jk-agent-smith"),
+        &ContainerState::Running,
+    )
+    .await;
 
     assert!(
         matches!(sessions, AgentSessionInventory::Unavailable(_)),
@@ -1329,8 +1350,12 @@ async fn inspect_agent_sessions_returns_unavailable_on_count_mismatch() {
         ..Default::default()
     };
 
-    let sessions =
-        inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
+    let sessions = inspect_agent_sessions(
+        &docker,
+        &test_container_handle("jk-agent-smith"),
+        &ContainerState::Running,
+    )
+    .await;
 
     assert!(
         matches!(sessions, AgentSessionInventory::Unavailable(_)),
@@ -1344,7 +1369,7 @@ async fn inspect_agent_sessions_skips_query_when_container_is_not_running() {
 
     let sessions = inspect_agent_sessions(
         &docker,
-        "jk-agent-smith",
+        &test_container_handle("jk-agent-smith"),
         &ContainerState::Stopped {
             exit_code: 137,
             oom_killed: false,
@@ -1485,9 +1510,13 @@ async fn wait_for_dind_times_out_when_all_attempts_fail() {
         ..Default::default()
     };
 
-    let err = wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
-        .await
-        .unwrap_err();
+    let err = wait_for_dind(
+        &test_container_handle("jk-agent-smith-dind"),
+        "jk-agent-smith-dind-certs",
+        &docker,
+    )
+    .await
+    .unwrap_err();
 
     assert!(err.to_string().contains("timed out"), "got: {err}");
 }
@@ -1507,9 +1536,13 @@ async fn wait_for_dind_fails_when_cert_absent() {
         ..Default::default()
     };
 
-    let err = wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
-        .await
-        .unwrap_err();
+    let err = wait_for_dind(
+        &test_container_handle("jk-agent-smith-dind"),
+        "jk-agent-smith-dind-certs",
+        &docker,
+    )
+    .await
+    .unwrap_err();
 
     assert!(
         err.to_string()
@@ -1578,7 +1611,8 @@ async fn hardline_agent_errors_on_inactive_states() {
 async fn inspect_agent_sessions_returns_not_running_for_non_running_states() {
     for state in [ContainerState::Paused, ContainerState::Restarting] {
         let docker = FakeDockerClient::default();
-        let sessions = inspect_agent_sessions(&docker, "jk-agent-smith", &state).await;
+        let sessions =
+            inspect_agent_sessions(&docker, &test_container_handle("jk-agent-smith"), &state).await;
         assert_eq!(
             sessions,
             AgentSessionInventory::NotRunning,
@@ -1602,9 +1636,13 @@ async fn wait_for_dind_succeeds_when_daemon_ready_immediately() {
         ..Default::default()
     };
 
-    wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
-        .await
-        .unwrap();
+    wait_for_dind(
+        &test_container_handle("jk-agent-smith-dind"),
+        "jk-agent-smith-dind-certs",
+        &docker,
+    )
+    .await
+    .unwrap();
 }
 
 #[test]

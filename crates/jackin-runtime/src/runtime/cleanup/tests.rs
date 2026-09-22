@@ -5,8 +5,9 @@
 use super::super::naming::matching_family;
 use super::*;
 use crate::instance::{DockerResources, InstanceManifest};
-use jackin_core::JackinPaths;
+use crate::runtime::launch::LoadCleanup;
 use jackin_core::RoleSelector;
+use jackin_core::{DockerApi, JackinPaths};
 use jackin_docker::docker_client::{ContainerRow, ContainerState, NetworkRow};
 use jackin_test_support::{FakeDockerClient, FakeRunner};
 use std::collections::{HashMap, VecDeque};
@@ -15,6 +16,99 @@ use tempfile::tempdir;
 fn gc_test_paths() -> JackinPaths {
     let temp = tempdir().unwrap();
     JackinPaths::for_tests(temp.path())
+}
+
+#[tokio::test]
+async fn lifecycle_operations_keep_original_id_after_same_name_replacement() {
+    let name = "jk-agent-smith";
+    let docker = FakeDockerClient::default();
+    docker
+        .container_id_by_name
+        .borrow_mut()
+        .insert(name.to_owned(), "old-container-id".to_owned());
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert(name.to_owned(), ContainerState::Running);
+
+    let inspection = docker.inspect_container_by_name(name).await;
+    let handle = inspection.handle.expect("running container has an ID");
+
+    // A replacement can claim the mutable name after lookup. Every lifecycle
+    // operation below must still target the originally inspected daemon ID.
+    docker
+        .container_id_by_name
+        .borrow_mut()
+        .insert(name.to_owned(), "replacement-container-id".to_owned());
+    docker.start_container_by_id(&handle).await.unwrap();
+    docker.exec_capture_by_id(&handle, &["true"]).await.unwrap();
+    docker.remove_container_by_id(&handle).await.unwrap();
+
+    assert_eq!(
+        docker.bound_operations.borrow().as_slice(),
+        [
+            "start:old-container-id",
+            "exec:old-container-id",
+            "remove:old-container-id",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn cleanup_keeps_captured_role_and_dind_ids_after_same_name_replacement() {
+    let role = "jk-agent-smith";
+    let dind = "jk-agent-smith-dind";
+    let docker = FakeDockerClient::default();
+    docker.container_id_by_name.borrow_mut().extend([
+        (role.to_owned(), "old-role-id".to_owned()),
+        (dind.to_owned(), "old-dind-id".to_owned()),
+    ]);
+    docker.inspect_state_by_name.borrow_mut().extend([
+        (role.to_owned(), ContainerState::Running),
+        (dind.to_owned(), ContainerState::Running),
+    ]);
+    let role_handle = docker
+        .inspect_container_by_name(role)
+        .await
+        .handle
+        .expect("role container has an ID");
+    let dind_handle = docker
+        .inspect_container_by_name(dind)
+        .await
+        .handle
+        .expect("DinD container has an ID");
+    let cleanup = LoadCleanup::new(
+        role.to_owned(),
+        dind.to_owned(),
+        "jk-agent-smith-dind-certs".to_owned(),
+        "jk-agent-smith-net".to_owned(),
+        std::env::temp_dir().join("jackin-cleanup-replacement-test"),
+    );
+    cleanup.set_dind_handle(dind_handle);
+
+    docker.container_id_by_name.borrow_mut().extend([
+        (role.to_owned(), "replacement-role-id".to_owned()),
+        (dind.to_owned(), "replacement-dind-id".to_owned()),
+    ]);
+    cleanup.run_with_role_handle(&docker, &role_handle).await;
+
+    let bound = docker.bound_operations.borrow();
+    assert!(
+        bound.contains(&"remove:old-role-id".to_owned()),
+        "{bound:?}"
+    );
+    assert!(
+        bound.contains(&"remove:old-dind-id".to_owned()),
+        "{bound:?}"
+    );
+    assert!(
+        !bound.contains(&"remove:replacement-role-id".to_owned()),
+        "{bound:?}"
+    );
+    assert!(
+        !bound.contains(&"remove:replacement-dind-id".to_owned()),
+        "{bound:?}"
+    );
 }
 
 #[tokio::test]
@@ -209,7 +303,13 @@ async fn purge_container_state_refuses_for_active_non_running_states() {
 
 #[tokio::test]
 async fn eject_agent_removes_container_dind_and_network() {
-    let docker = FakeDockerClient::default();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([
+            ("jk-agent-smith".to_owned(), ContainerState::Running),
+            ("jk-agent-smith-dind".to_owned(), ContainerState::Running),
+        ])),
+        ..Default::default()
+    };
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
 
@@ -218,7 +318,9 @@ async fn eject_agent_removes_container_dind_and_network() {
     assert_eq!(
         docker.recorded.borrow().clone(),
         vec![
+            "docker inspect jk-agent-smith",
             "docker rm -f jk-agent-smith",
+            "docker inspect jk-agent-smith-dind",
             "docker rm -f jk-agent-smith-dind",
             "docker volume rm jk-agent-smith-dind-certs",
             "docker network rm jk-agent-smith-net",
@@ -228,7 +330,13 @@ async fn eject_agent_removes_container_dind_and_network() {
 
 #[tokio::test]
 async fn eject_agent_removes_manifest_recorded_sidecar_resources() {
-    let docker = FakeDockerClient::default();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([
+            ("jk-agent-smith".to_owned(), ContainerState::Running),
+            ("jk-prewarm-dind-dind".to_owned(), ContainerState::Running),
+        ])),
+        ..Default::default()
+    };
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-agent-smith";
@@ -262,7 +370,9 @@ async fn eject_agent_removes_manifest_recorded_sidecar_resources() {
     assert_eq!(
         docker.recorded.borrow().clone(),
         vec![
+            "docker inspect jk-agent-smith",
             "docker rm -f jk-agent-smith",
+            "docker inspect jk-prewarm-dind-dind",
             "docker rm -f jk-prewarm-dind-dind",
             "docker volume rm jk-prewarm-dind-certs",
             "docker network rm jk-prewarm-dind-net",
@@ -281,8 +391,8 @@ async fn eject_agent_ignores_missing_runtime_resources() {
     assert_eq!(
         docker.recorded.borrow().clone(),
         vec![
-            "docker rm -f jk-agent-smith",
-            "docker rm -f jk-agent-smith-dind",
+            "docker inspect jk-agent-smith",
+            "docker inspect jk-agent-smith-dind",
             "docker volume rm jk-agent-smith-dind-certs",
             "docker network rm jk-agent-smith-net",
         ]
@@ -293,6 +403,10 @@ async fn eject_agent_ignores_missing_runtime_resources() {
 async fn eject_role_phase1_failure_prevents_phase2_calls() {
     // When remove_container fails, remove_volume and remove_network must not be called.
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            "jk-agent-smith".to_owned(),
+            ContainerState::Running,
+        )])),
         fail_with: vec![(
             "docker rm -f jk-agent-smith".to_owned(),
             "Error response from daemon: permission denied".to_owned(),
@@ -330,13 +444,30 @@ async fn eject_role_phase1_failure_prevents_phase2_calls() {
 #[tokio::test]
 async fn exile_all_ejects_all_managed_agents() {
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([
+            ("jk-k7p9m2xq-agentsmith".to_owned(), ContainerState::Running),
+            (
+                "jk-k7p9m2xq-agentsmith-dind".to_owned(),
+                ContainerState::Running,
+            ),
+            (
+                "jk-a1b2c3d4-myworkspace-agentsmith".to_owned(),
+                ContainerState::Running,
+            ),
+            (
+                "jk-a1b2c3d4-myworkspace-agentsmith-dind".to_owned(),
+                ContainerState::Running,
+            ),
+        ])),
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
             ContainerRow {
                 name: "jk-k7p9m2xq-agentsmith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             },
             ContainerRow {
                 name: "jk-a1b2c3d4-myworkspace-agentsmith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             },
         ]])),
@@ -380,13 +511,30 @@ async fn exile_all_ejects_all_managed_agents() {
 #[tokio::test]
 async fn exile_all_continues_when_some_runtime_resources_are_missing() {
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([
+            ("jk-k7p9m2xq-agentsmith".to_owned(), ContainerState::Running),
+            (
+                "jk-k7p9m2xq-agentsmith-dind".to_owned(),
+                ContainerState::Running,
+            ),
+            (
+                "jk-a1b2c3d4-myworkspace-agentsmith".to_owned(),
+                ContainerState::Running,
+            ),
+            (
+                "jk-a1b2c3d4-myworkspace-agentsmith-dind".to_owned(),
+                ContainerState::Running,
+            ),
+        ])),
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
             ContainerRow {
                 name: "jk-k7p9m2xq-agentsmith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             },
             ContainerRow {
                 name: "jk-a1b2c3d4-myworkspace-agentsmith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             },
         ]])),
@@ -401,11 +549,15 @@ async fn exile_all_continues_when_some_runtime_resources_are_missing() {
         docker.recorded.borrow().clone(),
         vec![
             "docker ps -a --filter jackin.kind=role",
+            "docker inspect jk-k7p9m2xq-agentsmith",
             "docker rm -f jk-k7p9m2xq-agentsmith",
+            "docker inspect jk-k7p9m2xq-agentsmith-dind",
             "docker rm -f jk-k7p9m2xq-agentsmith-dind",
             "docker volume rm jk-k7p9m2xq-agentsmith-dind-certs",
             "docker network rm jk-k7p9m2xq-agentsmith-net",
+            "docker inspect jk-a1b2c3d4-myworkspace-agentsmith",
             "docker rm -f jk-a1b2c3d4-myworkspace-agentsmith",
+            "docker inspect jk-a1b2c3d4-myworkspace-agentsmith-dind",
             "docker rm -f jk-a1b2c3d4-myworkspace-agentsmith-dind",
             "docker volume rm jk-a1b2c3d4-myworkspace-agentsmith-dind-certs",
             "docker network rm jk-a1b2c3d4-myworkspace-agentsmith-net",
@@ -422,6 +574,7 @@ async fn gc_removes_orphaned_dind_and_network() {
             // collect_labeled_dind: DinD sidecar with jackin.role label
             vec![ContainerRow {
                 name: "jk-agent-smith-dind".to_owned(),
+                id: "container-id".to_owned(),
                 labels: labels.clone(),
             }],
             // list_role_names (running): no running role containers
@@ -472,11 +625,13 @@ async fn gc_skips_dind_when_agent_is_running() {
             // collect_labeled_dind: DinD sidecar present
             vec![ContainerRow {
                 name: "jk-agent-smith-dind".to_owned(),
+                id: "container-id".to_owned(),
                 labels: labels.clone(),
             }],
             // list_role_names (running): role IS running — skip GC
             vec![ContainerRow {
                 name: "jk-agent-smith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             }],
         ])),
@@ -504,11 +659,13 @@ async fn gc_skips_dind_when_agent_is_stopped() {
             // collect_labeled_dind: DinD sidecar present
             vec![ContainerRow {
                 name: "jk-agent-smith-dind".to_owned(),
+                id: "container-id".to_owned(),
                 labels: labels.clone(),
             }],
             // list_role_names (including stopped): role container exists (stopped)
             vec![ContainerRow {
                 name: "jk-agent-smith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             }],
         ])),
@@ -551,6 +708,7 @@ async fn gc_keeps_state_owned_prewarm_dind_resources() {
             vec![],
             vec![ContainerRow {
                 name: "jk-prewarm-dind-dind".to_owned(),
+                id: "container-id".to_owned(),
                 labels,
             }],
         ])),
@@ -583,6 +741,7 @@ async fn gc_removes_state_less_prewarm_dind_resources() {
             vec![],
             vec![ContainerRow {
                 name: "jk-prewarm-dind-dind".to_owned(),
+                id: "container-id".to_owned(),
                 labels,
             }],
         ])),
@@ -673,6 +832,7 @@ async fn gc_preserves_network_when_role_container_is_stopped() {
             // list_role_names (including stopped): role container exists (stopped)
             vec![ContainerRow {
                 name: "jk-agent-smith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             }],
         ])),
@@ -709,10 +869,12 @@ async fn gc_cleans_multiple_orphans() {
             vec![
                 ContainerRow {
                     name: "jk-agent-smith-dind".to_owned(),
+                    id: "container-id".to_owned(),
                     labels: labels_smith,
                 },
                 ContainerRow {
                     name: "jk-neo-dind".to_owned(),
+                    id: "container-id".to_owned(),
                     labels: labels_neo,
                 },
             ],
@@ -1006,6 +1168,7 @@ async fn prune_images_skips_images_in_use_by_role_containers() {
         ]])),
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
             name: "jk-foo".to_owned(),
+            id: "container-id".to_owned(),
             labels: image_labels,
         }]])),
         ..Default::default()
@@ -1126,6 +1289,7 @@ async fn prune_images_mixed_removed_and_skipped() {
         ]])),
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
             name: "jk-bar".to_owned(),
+            id: "container-id".to_owned(),
             labels: image_labels,
         }]])),
         remove_image_queue: std::cell::RefCell::new(VecDeque::from([RemoveImageOutcome::Removed])),

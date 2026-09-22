@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use jackin_core::ContainerState;
+use jackin_core::{ContainerHandle, ContainerState};
 use jackin_docker::docker_client::DockerApi;
 
 use crate::runtime::progress::launch_output;
@@ -41,6 +41,7 @@ pub(crate) fn write_if_changed_atomic(
 pub struct LoadCleanup {
     container_name: String,
     dind: String,
+    dind_handle_slot: std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>>,
     certs_volume: String,
     network: String,
     /// Host-side bind-mount dir (`~/.jackin/sockets/<container>/`).
@@ -60,7 +61,7 @@ pub struct LoadCleanup {
 impl LoadCleanup {
     /// Arm cleanup for the named role container + `DinD` + network + certs volume.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         container_name: String,
         dind: String,
         certs_volume: String,
@@ -70,6 +71,7 @@ impl LoadCleanup {
         Self {
             container_name,
             dind,
+            dind_handle_slot: std::sync::Arc::new(std::sync::Mutex::new(None)),
             certs_volume,
             network,
             socket_dir,
@@ -91,9 +93,35 @@ impl LoadCleanup {
         self.clean_socket_dir = false;
     }
 
+    /// Share the sidecar identity sink with the concurrent sidecar launch.
+    pub(crate) fn dind_handle_slot(
+        &self,
+    ) -> std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>> {
+        std::sync::Arc::clone(&self.dind_handle_slot)
+    }
+
+    /// Bind cleanup to a sidecar identity already captured during adoption.
+    pub(crate) fn set_dind_handle(&self, container: ContainerHandle) {
+        *self
+            .dind_handle_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(container);
+    }
+
     /// Best-effort remove role/DinD containers, cert volume, network, and socket dir.
     pub async fn run(&self, docker: &impl DockerApi) {
-        self.run_inner(docker, false).await;
+        self.run_inner(docker, false, None).await;
+    }
+
+    /// Clean up with the role container identity captured by the launch
+    /// operation. The sidecar identity is captured in the shared slot when
+    /// its create call succeeds.
+    pub(crate) async fn run_with_role_handle(
+        &self,
+        docker: &impl DockerApi,
+        container: &ContainerHandle,
+    ) {
+        self.run_inner(docker, false, Some(container)).await;
     }
 
     /// Best-effort cleanup after the role container has started and failed.
@@ -104,11 +132,32 @@ impl LoadCleanup {
     /// cannot leave a running container or private socket endpoint behind.
     pub async fn run_preserving_evidence(&self, docker: &impl DockerApi) {
         let state = docker.inspect_container_state(&self.container_name).await;
-        self.run_inner(docker, preserves_failed_start_evidence(&state))
+        self.run_inner(docker, preserves_failed_start_evidence(&state), None)
             .await;
     }
 
-    async fn run_inner(&self, docker: &impl DockerApi, preserve_role_evidence: bool) {
+    /// Preserve terminal role evidence while keeping cleanup bound to the
+    /// immutable role identity captured by launch.
+    pub(crate) async fn run_preserving_evidence_with_role_handle(
+        &self,
+        docker: &impl DockerApi,
+        container: &ContainerHandle,
+    ) {
+        let state = docker.inspect_container_by_id(container).await;
+        self.run_inner(
+            docker,
+            preserves_failed_start_evidence(&state),
+            Some(container),
+        )
+        .await;
+    }
+
+    async fn run_inner(
+        &self,
+        docker: &impl DockerApi,
+        preserve_role_evidence: bool,
+        role_handle: Option<&ContainerHandle>,
+    ) {
         if !self.armed {
             return;
         }
@@ -123,7 +172,13 @@ impl LoadCleanup {
         }
 
         if !preserve_role_evidence
-            && let Err(e) = docker.remove_container(&self.container_name).await
+            && let Err(e) = match role_handle {
+                Some(container) => docker.remove_container_by_id(container).await,
+                None => {
+                    crate::runtime::cleanup::remove_container_by_name(docker, &self.container_name)
+                        .await
+                }
+            }
         {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact("cleanup", &format!("cleanup failed (container): {e}"));
@@ -131,7 +186,16 @@ impl LoadCleanup {
             record_cleanup_teardown_failure("cleanup failed (container)");
             launch_output().step_fail(&format!("cleanup failed (container): {e}"));
         }
-        if let Err(e) = docker.remove_container(&self.dind).await {
+        let dind_handle = self
+            .dind_handle_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let dind_result = match dind_handle.as_ref() {
+            Some(container) => docker.remove_container_by_id(container).await,
+            None => crate::runtime::cleanup::remove_container_by_name(docker, &self.dind).await,
+        };
+        if let Err(e) = dind_result {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact("cleanup", &format!("cleanup failed (dind): {e}"));
             }

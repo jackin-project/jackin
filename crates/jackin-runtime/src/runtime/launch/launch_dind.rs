@@ -12,8 +12,8 @@ use crate::runtime::naming::{
 };
 use anyhow::Context as _;
 use fs4::FileExt;
-use jackin_core::ContainerSpec;
 use jackin_core::JackinPaths;
+use jackin_core::{ContainerHandle, ContainerSpec};
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +43,7 @@ pub(super) struct DindSidecarPrewarmState {
 
 pub(super) struct AdoptedDindSidecar {
     pub sidecar: DindSidecarPrewarm,
+    pub dind_handle: ContainerHandle,
     _lock: std::fs::File,
 }
 
@@ -96,6 +97,7 @@ pub(super) async fn run_dind_sidecar_headless(
     dind: &str,
     certs_volume: &str,
     grant: crate::runtime::docker_profile::DindGrant,
+    dind_handle_slot: std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>>,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     run_dind_sidecar_headless_with_owner(
@@ -104,6 +106,7 @@ pub(super) async fn run_dind_sidecar_headless(
         dind,
         certs_volume,
         grant,
+        Some(dind_handle_slot),
         docker,
     )
     .await
@@ -152,6 +155,7 @@ async fn run_dind_sidecar_headless_with_owner(
     dind: &str,
     certs_volume: &str,
     grant: crate::runtime::docker_profile::DindGrant,
+    dind_handle_slot: Option<std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>>>,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     // WP4 Part B: image + privileged flag are tier-aware. `rootless` uses the
@@ -240,14 +244,19 @@ async fn run_dind_sidecar_headless_with_owner(
             Some("error")
         },
     );
-    create_dind_result?;
+    let dind_handle = create_dind_result?;
+    if let Some(slot) = &dind_handle_slot {
+        *slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(dind_handle.clone());
+    }
 
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Sidecar,
         "docker_start_dind",
         Some(dind),
     );
-    let start_dind = docker.start_container(dind);
+    let start_dind = docker.start_container_by_id(&dind_handle);
     let start_dind_result = start_dind.await;
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Sidecar,
@@ -265,7 +274,7 @@ async fn run_dind_sidecar_headless_with_owner(
         "wait_dind_ready",
         Some(dind),
     );
-    let dind_ready = wait_for_dind(dind, certs_volume, docker);
+    let dind_ready = wait_for_dind(&dind_handle, certs_volume, docker);
     let dind_ready_result = dind_ready.await;
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Sidecar,
@@ -305,7 +314,7 @@ pub async fn prewarm_dind_sidecar_container(
     });
 
     let stale_cleanup_degraded = [
-        docker.remove_container(&dind).await,
+        crate::runtime::cleanup::remove_container_by_name(docker, &dind).await,
         docker.remove_volume(&certs_volume).await,
         docker.remove_network(&network).await,
     ]
@@ -318,19 +327,28 @@ pub async fn prewarm_dind_sidecar_container(
     let started = std::time::Instant::now();
     // Prewarm warms the privileged DinD path (the only one a prewarmed sidecar
     // can be adopted into today); a rootless launch starts its own sidecar.
+    let dind_handle_slot = std::sync::Arc::new(std::sync::Mutex::new(None));
     let result = run_dind_sidecar_headless_with_owner(
         DindSidecarOwner::Prewarm,
         &network,
         &dind,
         &certs_volume,
         crate::runtime::docker_profile::DindGrant::Privileged,
+        Some(std::sync::Arc::clone(&dind_handle_slot)),
         docker,
     )
     .await;
     let ready_ms = started.elapsed().as_millis();
 
     if result.is_err() || !keep {
-        let remove_container = docker.remove_container(&dind).await;
+        let dind_handle = dind_handle_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let remove_container = match dind_handle.as_ref() {
+            Some(container) => docker.remove_container_by_id(container).await,
+            None => crate::runtime::cleanup::remove_container_by_name(docker, &dind).await,
+        };
         let remove_volume = docker.remove_volume(&certs_volume).await;
         let remove_network = docker.remove_network(&network).await;
 
@@ -433,10 +451,11 @@ pub(crate) async fn prewarmed_dind_state_is_live(
     if state.schema_version != 1 || !state.kept {
         return false;
     }
-    if !matches!(
-        docker.inspect_container_state(&state.dind).await,
-        ContainerState::Running
-    ) {
+    let inspection = docker.inspect_container_by_name(&state.dind).await;
+    let Some(dind_handle) = inspection.handle else {
+        return false;
+    };
+    if !matches!(inspection.state, ContainerState::Running) {
         return false;
     }
     let Ok(Some(network_row)) = docker.inspect_network(&state.network).await else {
@@ -445,7 +464,7 @@ pub(crate) async fn prewarmed_dind_state_is_live(
     if network_row.labels.get("jackin.kind").map(String::as_str) != Some("prewarm-dind") {
         return false;
     }
-    wait_for_dind(&state.dind, &state.certs_volume, docker)
+    wait_for_dind(&dind_handle, &state.certs_volume, docker)
         .await
         .is_ok()
 }
@@ -518,19 +537,28 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     let network = state.network.clone();
     let certs_volume = state.certs_volume.clone();
 
-    match docker.inspect_container_state(&dind).await {
-        ContainerState::Running => {}
-        docker_state => {
-            let reason = format!("container:{}", docker_state.short_label());
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Sidecar,
-                "adopt_prewarmed_dind",
-                Some(&format!("skip:{reason}")),
-            );
-            emit_prewarmed_dind_adoption("skipped", &prewarmed_dind_state_detail(&reason, &state));
-            remove_prewarmed_dind_state(paths);
-            return None;
-        }
+    let inspection = docker.inspect_container_by_name(&dind).await;
+    let Some(dind_handle) = inspection.handle else {
+        let reason = format!("container:{}", inspection.state.short_label());
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Sidecar,
+            "adopt_prewarmed_dind",
+            Some(&format!("skip:{reason}")),
+        );
+        emit_prewarmed_dind_adoption("skipped", &prewarmed_dind_state_detail(&reason, &state));
+        remove_prewarmed_dind_state(paths);
+        return None;
+    };
+    if !matches!(inspection.state, ContainerState::Running) {
+        let reason = format!("container:{}", inspection.state.short_label());
+        jackin_diagnostics::active_timing_done(
+            jackin_diagnostics::DiagnosticStage::Sidecar,
+            "adopt_prewarmed_dind",
+            Some(&format!("skip:{reason}")),
+        );
+        emit_prewarmed_dind_adoption("skipped", &prewarmed_dind_state_detail(&reason, &state));
+        remove_prewarmed_dind_state(paths);
+        return None;
     }
 
     let network_row = match docker.inspect_network(&network).await {
@@ -578,7 +606,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     }
 
     let started = std::time::Instant::now();
-    if let Err(_error) = wait_for_dind(&dind, &certs_volume, docker).await {
+    if let Err(_error) = wait_for_dind(&dind_handle, &certs_volume, docker).await {
         record_recovered_degradation();
         jackin_diagnostics::active_timing_done(
             jackin_diagnostics::DiagnosticStage::Sidecar,
@@ -612,6 +640,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             ready_ms,
             kept: true,
         },
+        dind_handle,
         _lock: lock,
     })
 }

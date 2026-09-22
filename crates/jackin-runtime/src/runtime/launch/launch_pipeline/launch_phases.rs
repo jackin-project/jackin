@@ -253,6 +253,9 @@ pub(crate) struct RuntimeLaunched {
     pub cleanup: LoadCleanup,
     /// Caller-bound account/config generation lease carried into reconnects.
     pub account_revision: crate::runtime::launch::account_identity::AccountConfigRevision,
+    /// Immutable role-container identity captured by the launch operation and
+    /// carried into foreground finalization.
+    pub container_handle: Option<jackin_core::ContainerHandle>,
 }
 
 /// Foreground attach finalization decision.
