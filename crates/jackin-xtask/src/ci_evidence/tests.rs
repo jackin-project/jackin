@@ -4,14 +4,14 @@ fn commit_from_source(sha: &str, source: DenominatorSource) -> ExpectedCommit {
     ExpectedCommit {
         sha: sha.to_owned(),
         base_sha: Some("base".to_owned()),
-        tree_sha: Some("tree".to_owned()),
+        tree_sha: "tree".to_owned(),
         committed_at: Some("2026-09-22T00:00:00Z".to_owned()),
         source,
     }
 }
 
 fn obligation(sha: &str, cohort: Cohort) -> ExpectedObligation {
-    obligation_from_source(sha, cohort, DenominatorSource::FirstParentHistory)
+    obligation_from_source(sha, cohort, DenominatorSource::Fixture)
 }
 
 fn expected_for_sha(sha: &str) -> Vec<ExpectedObligation> {
@@ -30,9 +30,28 @@ fn obligation_from_source(
         commit: commit_from_source(sha, source),
         cohort,
         provenance: match source {
-            DenominatorSource::FirstParentHistory => ObligationProvenance::FirstParentHistory,
+            DenominatorSource::PushHeadLedger => ObligationProvenance::PushHeadLedger,
             DenominatorSource::Fixture => ObligationProvenance::Fixture,
         },
+    }
+}
+
+fn test_runtime() -> RuntimeIdentity {
+    RuntimeIdentity {
+        runtime_revision: Some("0123456789abcdef0123456789abcdef01234567".to_owned()),
+        contract_digest: Some(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
+        ),
+    }
+}
+
+fn test_provenance() -> CollectionProvenance {
+    CollectionProvenance {
+        repository: "example/repo".to_owned(),
+        branch: "main".to_owned(),
+        event: "test".to_owned(),
+        workflow_path: "test".to_owned(),
+        run_id: None,
     }
 }
 
@@ -54,9 +73,9 @@ fn attempt(
         workflow_path: Some(".github/workflows/renamed.yml".to_owned()),
         event: Some("push".to_owned()),
         head_sha: sha.to_owned(),
-        denominator_source: DenominatorSource::FirstParentHistory,
+        denominator_source: DenominatorSource::Fixture,
         base_sha: Some("base".to_owned()),
-        tree_sha: Some("tree".to_owned()),
+        tree_sha: "tree".to_owned(),
         created_at: created_at.to_owned(),
         started_at: Some(created_at.to_owned()),
         completed_at: Some(created_at.to_owned()),
@@ -87,10 +106,21 @@ fn attempt(
         classification,
         data_quality_reason: None,
         conflicting_observations: Vec::new(),
-        runtime: RuntimeIdentity {
-            runtime_revision: Some("runtime".to_owned()),
-            contract_digest: Some("contract".to_owned()),
-        },
+        raw_observations: vec![RawAttemptObservation {
+            status: "completed".to_owned(),
+            conclusion: Some(
+                match classification {
+                    OutcomeClass::Success => "success",
+                    OutcomeClass::Cancellation => "cancelled",
+                    OutcomeClass::Inapplicable => "skipped",
+                    OutcomeClass::Infrastructure => "timed_out",
+                    _ => "failure",
+                }
+                .to_owned(),
+            ),
+            jobs: completed_jobs(cohort),
+        }],
+        runtime: test_runtime(),
         evidence_urls: vec![format!("https://example.test/runs/{run_id}")],
         first_observed_at: "2026-09-22T00:01:00Z".to_owned(),
     }
@@ -123,21 +153,28 @@ fn evidence(expected: Vec<ExpectedObligation>, attempts: Vec<AttemptEvidence>) -
             until: "2026-09-23T00:00:00Z".to_owned(),
         },
         generated_at: "2026-09-22T00:00:00Z".to_owned(),
-        runtime: RuntimeIdentity {
-            runtime_revision: Some("runtime".to_owned()),
-            contract_digest: Some("contract".to_owned()),
+        runtime: test_runtime(),
+        provenance: CollectionProvenance {
+            repository: "example/repo".to_owned(),
+            branch: "main".to_owned(),
+            event: "test".to_owned(),
+            workflow_path: "test".to_owned(),
+            run_id: None,
         },
         denominator: DenominatorProof {
-            source: DenominatorSource::FirstParentHistory,
+            source: DenominatorSource::Fixture,
             branch: "main".to_owned(),
             window: TimeWindow {
                 since: "2026-09-21T00:00:00Z".to_owned(),
                 until: "2026-09-23T00:00:00Z".to_owned(),
             },
-            fetch_succeeded: true,
+            fetch_succeeded: false,
             commit_count: history.len(),
+            source_workflow: None,
+            source_run_count: 0,
         },
         history,
+        push_heads: Vec::new(),
         expected,
         attempts,
         unclassified_runs: Vec::new(),
@@ -163,17 +200,55 @@ fn update_denominator(
         .collect::<Vec<_>>();
     (
         DenominatorProof {
-            source: DenominatorSource::FirstParentHistory,
+            source: DenominatorSource::Fixture,
             branch: "main".to_owned(),
             window: TimeWindow {
                 since: "2026-09-21T00:00:00Z".to_owned(),
                 until: "2026-09-23T00:00:00Z".to_owned(),
             },
-            fetch_succeeded: true,
+            fetch_succeeded: false,
             commit_count: history.len(),
+            source_workflow: None,
+            source_run_count: 0,
         },
         history,
     )
+}
+
+fn push_head_observation(head_sha: &str, before_sha: &str, run_id: u64) -> PushHeadObservation {
+    PushHeadObservation {
+        repository: "example/repo".to_owned(),
+        branch: "main".to_owned(),
+        event: "push".to_owned(),
+        workflow_id: 7,
+        workflow_path: DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned(),
+        run_id,
+        head_sha: head_sha.to_owned(),
+        before_sha: before_sha.to_owned(),
+        tree_sha: format!("tree-{head_sha}"),
+        committed_at: "2026-09-22T00:00:00Z".to_owned(),
+        created_at: "2026-09-22T00:01:00Z".to_owned(),
+        pushed_commits: vec![head_sha.to_owned()],
+        raw_event_sha256: "a".repeat(64),
+    }
+}
+
+fn push_head_denominator(
+    history: Vec<HistoryCommitObservation>,
+    push_heads: Vec<PushHeadObservation>,
+) -> DenominatorProof {
+    DenominatorProof {
+        source: DenominatorSource::PushHeadLedger,
+        branch: "main".to_owned(),
+        window: TimeWindow {
+            since: "2026-09-21T00:00:00Z".to_owned(),
+            until: "2026-09-23T00:00:00Z".to_owned(),
+        },
+        fetch_succeeded: true,
+        commit_count: history.len(),
+        source_workflow: Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()),
+        source_run_count: push_heads.len(),
+    }
 }
 
 fn completed_jobs(cohort: Cohort) -> Vec<JobEvidence> {
@@ -218,7 +293,10 @@ fn retired_workflow_alias_is_unclassified_without_stable_id() {
         workflow_name: Some("CI / Main".to_owned()),
         path: Some(".github/workflows/ci-main-v2.yml".to_owned()),
         event: Some("push".to_owned()),
+        head_branch: Some("main".to_owned()),
         head_sha: "sha".to_owned(),
+        status: "completed".to_owned(),
+        conclusion: Some("success".to_owned()),
         run_attempt: 1,
         created_at: "2026-09-22T00:00:00Z".to_owned(),
         html_url: None,
@@ -237,7 +315,10 @@ fn stable_workflow_id_survives_path_and_name_rename() {
         workflow_name: Some("renamed".to_owned()),
         path: Some(".github/workflows/renamed.yml".to_owned()),
         event: Some("push".to_owned()),
+        head_branch: Some("main".to_owned()),
         head_sha: "sha".to_owned(),
+        status: "completed".to_owned(),
+        conclusion: Some("success".to_owned()),
         run_attempt: 1,
         created_at: "2026-09-22T00:00:00Z".to_owned(),
         html_url: None,
@@ -302,19 +383,81 @@ fn conflict_marker_requires_raw_conflicting_observations() {
             unclassified_runs: Vec::new(),
             denominator,
             history,
+            push_heads: Vec::new(),
             repository: "example/repo".to_owned(),
             window: TimeWindow {
                 since: "2026-09-21T00:00:00Z".to_owned(),
                 until: "2026-09-23T00:00:00Z".to_owned(),
             },
-            runtime: RuntimeIdentity::default(),
+            runtime: test_runtime(),
+            provenance: test_provenance(),
         },
     )
     .unwrap();
+    assert_eq!(
+        merged.attempts[0].data_quality_reason,
+        Some(DataQualityReason::ConflictingTerminalObservation)
+    );
+    assert_eq!(merged.attempts[0].classification, OutcomeClass::DataQuality);
+    assert_eq!(merged.attempts[0].conflicting_observations.len(), 2);
+    assert!(merged.attempts[0].raw_observations.len() >= 2);
+    validate_evidence(&merged).unwrap();
+    let mut raw_forged = merged.clone();
+    raw_forged.attempts[0].raw_observations.clear();
+    let error = validate_evidence(&raw_forged).unwrap_err();
+    assert!(error.to_string().contains("retained row"));
     let mut forged = merged;
     forged.attempts[0].conflicting_observations.clear();
     let error = validate_evidence(&forged).unwrap_err();
     assert!(error.to_string().contains("unproven data-quality conflict"));
+}
+
+#[test]
+fn same_class_terminal_change_remains_sticky_conflict() {
+    let expected = expected_for_sha("same-class");
+    let existing = evidence(
+        expected.clone(),
+        vec![attempt(
+            10,
+            1,
+            Cohort::CiMain,
+            "same-class",
+            OutcomeClass::Product,
+            "2026-09-22T00:02:00Z",
+        )],
+    );
+    let (denominator, history) = update_denominator(&expected);
+    let mut incoming = attempt(
+        10,
+        1,
+        Cohort::CiMain,
+        "same-class",
+        OutcomeClass::Product,
+        "2026-09-22T00:03:00Z",
+    );
+    incoming.jobs[0].id = 99;
+    let merged = merge_evidence(
+        existing,
+        EvidenceUpdate {
+            expected,
+            attempts: vec![incoming],
+            unclassified_runs: Vec::new(),
+            denominator,
+            history,
+            push_heads: Vec::new(),
+            repository: "example/repo".to_owned(),
+            window: TimeWindow {
+                since: "2026-09-21T00:00:00Z".to_owned(),
+                until: "2026-09-23T00:00:00Z".to_owned(),
+            },
+            runtime: test_runtime(),
+            provenance: test_provenance(),
+        },
+    )
+    .unwrap();
+    assert_eq!(merged.attempts[0].classification, OutcomeClass::DataQuality);
+    assert_eq!(merged.attempts[0].conflicting_observations.len(), 2);
+    validate_evidence(&merged).unwrap();
 }
 
 #[test]
@@ -326,7 +469,10 @@ fn active_attempt_has_no_terminal_timing_verdict() {
         workflow_name: Some("CI/Main".to_owned()),
         path: Some(".github/workflows/ci-main.yml".to_owned()),
         event: Some("push".to_owned()),
+        head_branch: Some("main".to_owned()),
         head_sha: "active".to_owned(),
+        status: "in_progress".to_owned(),
+        conclusion: None,
         run_attempt: 1,
         created_at: "2026-09-22T00:00:00Z".to_owned(),
         html_url: None,
@@ -406,12 +552,14 @@ fn merge_deduplicates_delivery_and_keeps_rerun_attempt() {
             unclassified_runs: Vec::new(),
             denominator,
             history,
+            push_heads: Vec::new(),
             repository: "example/repo".to_owned(),
             window: TimeWindow {
                 since: "2026-09-21T00:00:00Z".to_owned(),
                 until: "2026-09-23T00:00:00Z".to_owned(),
             },
-            runtime: RuntimeIdentity::default(),
+            runtime: test_runtime(),
+            provenance: test_provenance(),
         },
     )
     .unwrap();
@@ -453,17 +601,26 @@ fn merge_does_not_replace_terminal_observation_with_stale_in_progress_row() {
             unclassified_runs: Vec::new(),
             denominator,
             history,
+            push_heads: Vec::new(),
             repository: "example/repo".to_owned(),
             window: TimeWindow {
                 since: "2026-09-21T00:00:00Z".to_owned(),
                 until: "2026-09-23T00:00:00Z".to_owned(),
             },
-            runtime: RuntimeIdentity::default(),
+            runtime: test_runtime(),
+            provenance: test_provenance(),
         },
     )
     .unwrap();
     assert_eq!(merged.attempts[0].classification, OutcomeClass::Product);
     assert_eq!(merged.attempts[0].status, "completed");
+    assert!(
+        merged.attempts[0]
+            .raw_observations
+            .iter()
+            .any(|observation| observation.status == "in_progress")
+    );
+    validate_evidence(&merged).unwrap();
 }
 
 #[test]
@@ -588,6 +745,7 @@ fn forged_success_classification_is_rejected() {
     );
     row.jobs = vec![JobEvidence::default()];
     row.observed_work = vec!["wrong".to_owned()];
+    row.raw_observations = vec![raw_attempt_observation(&row)];
     let error = validate_evidence(&evidence(expected, vec![row])).unwrap_err();
     assert!(error.to_string().contains("classification"));
 }
@@ -614,20 +772,120 @@ fn duplicate_first_attempts_are_data_quality() {
 }
 
 #[test]
-fn first_parent_history_derives_both_contract_obligations() {
+fn denominator_history_derives_both_contract_obligations() {
     let history = vec![HistoryCommitObservation {
         sha: "main-head".to_owned(),
         base_sha: Some("base".to_owned()),
-        tree_sha: Some("tree".to_owned()),
+        tree_sha: "tree".to_owned(),
         committed_at: "2026-09-22T00:00:00Z".to_owned(),
     }];
-    let expected = expected_from_history(&history, DenominatorSource::FirstParentHistory).unwrap();
+    let expected = expected_from_history(&history, DenominatorSource::Fixture).unwrap();
 
     assert_eq!(expected.len(), Cohort::ALL.len());
     assert!(expected.iter().all(|obligation| {
-        obligation.commit.source == DenominatorSource::FirstParentHistory
-            && obligation.provenance == ObligationProvenance::FirstParentHistory
+        obligation.commit.source == DenominatorSource::Fixture
+            && obligation.provenance == ObligationProvenance::Fixture
     }));
+}
+
+#[test]
+fn push_head_ledger_counts_one_obligation_unit_per_push_head() {
+    let history = vec![HistoryCommitObservation {
+        sha: "push-head".to_owned(),
+        base_sha: Some("before".to_owned()),
+        tree_sha: "tree-push-head".to_owned(),
+        committed_at: "2026-09-22T00:00:00Z".to_owned(),
+    }];
+    let expected = expected_from_history(&history, DenominatorSource::PushHeadLedger).unwrap();
+
+    assert_eq!(expected.len(), Cohort::ALL.len());
+    assert!(expected.iter().all(|obligation| {
+        obligation.commit.sha == "push-head"
+            && obligation.commit.source == DenominatorSource::PushHeadLedger
+            && obligation.provenance == ObligationProvenance::PushHeadLedger
+    }));
+}
+
+#[test]
+fn missing_push_head_ledger_proof_is_rejected() {
+    let window = TimeWindow {
+        since: "2026-09-21T00:00:00Z".to_owned(),
+        until: "2026-09-23T00:00:00Z".to_owned(),
+    };
+    let proof = DenominatorProof {
+        source: DenominatorSource::PushHeadLedger,
+        branch: "main".to_owned(),
+        window: window.clone(),
+        fetch_succeeded: true,
+        commit_count: 0,
+        source_workflow: Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()),
+        source_run_count: 0,
+    };
+    let error = validate_denominator("example/repo", &proof, &[], &[], &window).unwrap_err();
+    assert!(error.to_string().contains("durable source proof"));
+}
+
+#[test]
+fn push_head_chain_gap_is_rejected_without_observed_head_fallback() {
+    let first = push_head_observation("head-a", "base", 1);
+    let second = push_head_observation("head-b", "unrelated", 2);
+    let history = vec![
+        HistoryCommitObservation {
+            sha: first.head_sha.clone(),
+            base_sha: Some(first.before_sha.clone()),
+            tree_sha: first.tree_sha.clone(),
+            committed_at: first.committed_at.clone(),
+        },
+        HistoryCommitObservation {
+            sha: second.head_sha.clone(),
+            base_sha: Some(second.before_sha.clone()),
+            tree_sha: second.tree_sha.clone(),
+            committed_at: second.committed_at.clone(),
+        },
+    ];
+    let push_heads = vec![first, second];
+    let proof = push_head_denominator(history.clone(), push_heads.clone());
+    let error = validate_denominator("example/repo", &proof, &history, &push_heads, &proof.window)
+        .unwrap_err();
+    assert!(error.to_string().contains("coverage gap"));
+}
+
+#[test]
+fn missing_tree_identity_is_rejected() {
+    let mut expected = expected_for_sha("tree-missing");
+    expected[0].commit.tree_sha.clear();
+    let error = validate_expected(&expected).unwrap_err();
+    assert!(error.to_string().contains("no tree identity"));
+}
+
+#[test]
+fn runtime_and_collection_provenance_are_required() {
+    let mut evidence = evidence(expected_for_sha("runtime"), Vec::new());
+    evidence.runtime = RuntimeIdentity::default();
+    let error = validate_evidence(&evidence).unwrap_err();
+    assert!(error.to_string().contains("runtime revision proof"));
+
+    let mut provenance = test_provenance();
+    provenance.event = "workflow_dispatch".to_owned();
+    let error = validate_collection_provenance(&provenance, "example/repo").unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported CI evidence collection event")
+    );
+}
+
+#[test]
+fn remote_identity_parser_rejects_unbound_hosts() {
+    assert_eq!(
+        remote_repository_identity("git@github.com:example/repo.git").unwrap(),
+        "example/repo"
+    );
+    assert!(
+        remote_repository_identity("git@gitlab.com:example/repo.git")
+            .err()
+            .is_some()
+    );
 }
 
 #[test]
@@ -653,7 +911,8 @@ fn derived_history_rejects_edited_expected_source() {
         ],
         Vec::new(),
     );
-    evidence.expected[0].commit.source = DenominatorSource::Fixture;
+    evidence.expected[0].commit.source = DenominatorSource::PushHeadLedger;
+    evidence.expected[0].provenance = ObligationProvenance::PushHeadLedger;
     let error = validate_evidence(&evidence).unwrap_err();
     assert!(error.to_string().contains("not derived"));
 }
@@ -681,12 +940,14 @@ fn rolling_window_merge_prunes_attempts_outside_new_denominator() {
             unclassified_runs: Vec::new(),
             denominator,
             history,
+            push_heads: Vec::new(),
             repository: "example/repo".to_owned(),
             window: TimeWindow {
                 since: "2026-09-21T00:00:00Z".to_owned(),
                 until: "2026-09-23T00:00:00Z".to_owned(),
             },
-            runtime: RuntimeIdentity::default(),
+            runtime: test_runtime(),
+            provenance: test_provenance(),
         },
     )
     .unwrap();
