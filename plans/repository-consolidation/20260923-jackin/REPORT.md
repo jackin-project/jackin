@@ -1,6 +1,6 @@
 # Repository provenance repair
 
-Recorded 2026-09-23 against upstream `main` at
+Recorded 2026-09-23 against the PR's historical `main` base at
 `55e21f05bdee37a1424464ce69b86fc5e550307a`.
 
 ## Result
@@ -10,9 +10,15 @@ rewritten. The companion `PROVENANCE.json` restores auditable attribution,
 trailers, pull-request identity, scope, and verification for the seven landed
 squash merges covered here.
 
-The source commit is the GitHub PR head. Scope is the GitHub PR base-to-source
-diff. The squash parent is the actual first parent of the published merge
-commit, which can differ from the PR base when another PR landed first.
+Each source commit is the immutable GitHub PR head recorded for a landed PR.
+Scope is the GitHub PR base-to-source diff. The squash parent is the actual
+first parent of the published merge commit, which can differ from the PR base
+when another PR landed first.
+
+Verification below is anchored to immutable source-series commits, not to the
+mutable head of this PR. `PROVENANCE.json` records the audit target, its parent,
+and the historical PR base so later documentation commits cannot change what
+was tested.
 
 ## Explicit mappings
 
@@ -26,7 +32,7 @@ commit, which can differ from the PR base when another PR landed first.
 | [#1087](https://github.com/jackin-project/jackin/pull/1087) | `15df337ef1e16ca1415df950587b6a34ebf9804a` | `7e5624322d2cfb9ad9cdf0772b8f48418721cc98` | `5ba333ee04b8545fbafb08ac658f281f7b94547f` | 16 files, +848/-280 |
 | [#1086](https://github.com/jackin-project/jackin/pull/1086) | `f51c68d8bff51dd9a778bc4f4416af7dce71d14a` | `55e21f05bdee37a1424464ce69b86fc5e550307a` | `7e5624322d2cfb9ad9cdf0772b8f48418721cc98` | 7 files, +573/-47 |
 
-The two current-head repairs are therefore explicit:
+The two source-to-squash repairs are therefore explicit:
 
 - #1087: `15df337ef1e16ca1415df950587b6a34ebf9804a` → squash
   `7e5624322d2cfb9ad9cdf0772b8f48418721cc98`, parent
@@ -70,15 +76,15 @@ The first-parent sequence covered by this report is:
 
 The provenance and generated-state checks passed in an isolated worktree. The
 exact pinned Velnor generator computes and accepts scan input
-`ee4d10ecde1b6a03` for this PR tree; the policy result is 11 rules, 0 failed.
-The repository link audit remains a carried pre-existing limitation; this
-report does not claim that all gates passed:
+`ee4d10ecde1b6a03` for the audited source-series tree; the policy result is 11
+rules, 0 failed. The repository link audit remains a carried pre-existing
+limitation; this report does not claim that all gates passed:
 
 - JSON parse: `jq empty plans/repository-consolidation/20260923-jackin/PROVENANCE.json` — passed.
 - Provenance gates: `cargo xtask roadmap audit` and `cargo xtask research check` — passed.
-- Documentation link audit: `cargo xtask docs repo-links` — failed with exit 1 on
-  exact PR head `146720b90b7d0c0e22dcef83eabfd64acbfdea58`, its parent
-  `3b65588dad6c976e0a8fa1eca344908373f746ae`, and base
+- Documentation link audit: `cargo xtask docs repo-links` — failed with exit 1
+  on the immutable audit target `146720b90b7d0c0e22dcef83eabfd64acbfdea58`,
+  its parent `3b65588dad6c976e0a8fa1eca344908373f746ae`, and historical PR base
   `55e21f05bdee37a1424464ce69b86fc5e550307a`, producing the same six
   pre-existing references:
   - `docs/content/reference/getting-oriented/xtasks.mdx:45` — missing `.github/PULL_REQUEST_TEMPLATE.md`.
