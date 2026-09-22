@@ -1511,6 +1511,8 @@ mod otlp {
         pub(crate) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
         pub(crate) tracer_provider: SdkTracerProvider,
         pub(crate) logger_provider: SdkLoggerProvider,
+        #[cfg(test)]
+        _test_state_guard: Option<std::sync::MutexGuard<'static, ()>>,
     }
 
     #[cfg(test)]
@@ -1525,6 +1527,9 @@ mod otlp {
     ) -> (TestExport, impl tracing::Subscriber) {
         use opentelemetry::trace::TracerProvider as _;
 
+        let test_state_guard = crate::DIAGNOSTICS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         jackin_telemetry::limits::install_redactor(crate::redact::redact_text);
         let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
         let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
@@ -1580,6 +1585,7 @@ mod otlp {
                 logs,
                 tracer_provider,
                 logger_provider,
+                _test_state_guard: Some(test_state_guard),
             },
             subscriber,
         )
@@ -1645,6 +1651,8 @@ mod otlp {
                 logs,
                 tracer_provider,
                 logger_provider,
+                #[cfg(test)]
+                _test_state_guard: None,
             },
             subscriber,
         )
