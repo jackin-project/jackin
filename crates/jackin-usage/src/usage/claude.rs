@@ -39,6 +39,52 @@ pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
     claude_view_from_wave_with_rate_limit(agent, provider, now, resolve_claude_wave()).0
 }
 
+/// Claude API keys do not authenticate the OAuth quota endpoint. Keep this
+/// route explicit and unsupported rather than feeding an API key into the
+/// OAuth adapter and reporting a misleading login/error state.
+pub(crate) fn claude_api_key_snapshot(
+    agent: &str,
+    provider: Option<&str>,
+    key_name: &str,
+    secret: &str,
+    now: i64,
+) -> FocusedUsageView {
+    let has_secret = !secret.trim().is_empty();
+    let status = if has_secret {
+        UsageSnapshotStatus::Unsupported
+    } else {
+        UsageSnapshotStatus::NeedsSecret
+    };
+    let message = if has_secret {
+        "Claude API-key quota is unavailable; OAuth usage requires CLAUDE_CODE_OAUTH_TOKEN"
+    } else {
+        "Claude API key is missing"
+    };
+    usage_view(UsageViewInput {
+        agent,
+        provider: provider.or(Some("Claude")),
+        surface: UsageSurface::Claude,
+        account_label: "Claude API key".to_owned(),
+        username: None,
+        plan_label: None,
+        credential_origin: Some(format!("API key · env {key_name}")),
+        buckets: vec![bucket(
+            "Usage",
+            None,
+            None,
+            None,
+            None,
+            Some(message),
+            status,
+        )],
+        status,
+        source: UsageSource::None,
+        confidence: UsageConfidence::None,
+        now,
+        last_error: Some(message.to_owned()),
+    })
+}
+
 /// Production Claude wave resolution: derive the Keychain scope from the
 /// effective `CLAUDE_CONFIG_DIR`, then resolve Keychain-first with
 /// scope-appropriate file/env fallback.
