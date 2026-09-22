@@ -1539,10 +1539,13 @@ fn socket_dir_is_private_with_zero_exec_bindings() {
 }
 
 #[test]
-fn launch_args_move_every_non_jackin_value_to_host_env_file() {
+fn launch_args_keep_exact_safe_metadata_inline() {
     let token = "fake-github-token-for-argv-test";
     let token_entry = format!("GH_TOKEN={token}");
     let headers_entry = "OTEL_EXPORTER_OTLP_HEADERS=authorization=fake".to_owned();
+    let secret = "fake-jackin-secret-for-argv-test";
+    let secret_entry = format!("JACKIN_SECRET={secret}");
+    let role_suffix_entry = "JACKIN_ROLE_METADATA=not-inline";
     let mut args = vec![
         "run",
         "-e",
@@ -1551,12 +1554,17 @@ fn launch_args_move_every_non_jackin_value_to_host_env_file() {
         token_entry.as_str(),
         "-e",
         headers_entry.as_str(),
+        "-e",
+        secret_entry.as_str(),
+        "-e",
+        role_suffix_entry,
     ];
 
     let host_only = extract_host_env_entries(&mut args).unwrap();
 
     assert_eq!(args, ["run", "-e", "JACKIN_ROLE=fixture"]);
     assert!(!args.join(" ").contains(token));
+    assert!(!args.join(" ").contains(secret));
     assert_eq!(
         host_only,
         [
@@ -1564,7 +1572,9 @@ fn launch_args_move_every_non_jackin_value_to_host_env_file() {
             (
                 "OTEL_EXPORTER_OTLP_HEADERS".to_owned(),
                 "authorization=fake".to_owned()
-            )
+            ),
+            ("JACKIN_SECRET".to_owned(), secret.to_owned()),
+            ("JACKIN_ROLE_METADATA".to_owned(), "not-inline".to_owned()),
         ]
     );
 }
