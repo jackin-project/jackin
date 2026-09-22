@@ -15,7 +15,6 @@ on:
         type: string
 
 permissions:
-  actions: write
   contents: read
 
 concurrency:
@@ -28,6 +27,9 @@ jobs:
     if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.pull_request_number != '') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: read
     steps:
       - name: Delete merge-ref cache namespace
         env:
@@ -112,12 +114,12 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
       - name: Set up Velnor workflow runtime
         id: runtime
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@816046893ef55359ee2f41903d1f1f893d59303e
         with:
-          rev: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+          rev: 816046893ef55359ee2f41903d1f1f893d59303e
       - name: Set trusted workflow policy revision
         if: steps.retention-gate.outputs.skip != 'true'
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=816046893ef55359ee2f41903d1f1f893d59303e" >> "$GITHUB_ENV"
       - name: Sweep closed-PR merge-ref caches
         if: steps.retention-gate.outputs.skip != 'true'
         env:
