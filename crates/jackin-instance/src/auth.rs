@@ -1356,7 +1356,7 @@ mod auth_directory {
         _lock: Arc<File>,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Debug)]
     pub struct AuthMountLease {
         _lock: Arc<File>,
     }
@@ -3102,11 +3102,12 @@ impl RoleState {
                 ));
             };
             if content.trim().is_empty() {
-                repair_permissions(auth_json)?;
-                return Ok((
-                    AuthProvisionOutcome::HostMissing,
-                    private_file_exists(auth_json)?.then(|| auth_json.to_path_buf()),
-                ));
+                // A present-but-blank ambient file is invalid input, not an
+                // absent host login. Preserve the documented missing-file
+                // behavior (an in-container login may survive), but never
+                // carry stale role-state credentials across this invalidation.
+                wipe_agent_file_state(auth_json, "OpenCode auth.json")?;
+                return Ok((AuthProvisionOutcome::HostMissing, None));
             }
             let value = serde_json::from_str::<serde_json::Value>(&content)
                 .map_err(|_| anyhow::anyhow!("OpenCode auth.json is malformed"))?;

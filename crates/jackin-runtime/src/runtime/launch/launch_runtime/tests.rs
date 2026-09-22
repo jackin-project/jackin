@@ -70,7 +70,7 @@ async fn sibling_auth_prewarm_join_barrier_waits_for_detached_work() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes() {
+async fn canceled_sibling_auth_prewarm_does_not_release_foreground_mount_lease() {
     use sha2::{Digest as _, Sha256};
     use std::fmt::Write as _;
     use std::sync::mpsc::sync_channel;
@@ -142,7 +142,7 @@ async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes(
 
     let (started_tx, started_rx) = sync_channel(0);
     let (release_tx, release_rx) = sync_channel(0);
-    let prewarm = spawn_auth_prewarm_worker(state.auth_mount_leases.clone(), move || {
+    let prewarm = spawn_auth_prewarm_worker(move || {
         started_tx.send(()).unwrap();
         release_rx.recv().unwrap();
     });
@@ -160,7 +160,6 @@ async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes(
     waiter.abort();
     assert!(waiter.await.unwrap_err().is_cancelled());
 
-    drop(state);
     let lock_path_for_probe = lock_path.clone();
     let probe_file = tokio::fs::OpenOptions::new()
         .read(true)
@@ -175,10 +174,11 @@ async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes(
         .unwrap();
     assert!(
         still_held,
-        "cancellation released the mount lease too early"
+        "cancellation released the foreground mount lease"
     );
 
     release_tx.send(()).unwrap();
+    drop(state);
     let release_file = tokio::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -193,4 +193,124 @@ async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes(
     })
     .await
     .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn default_launch_sibling_auth_prewarm_finishes_before_mount_admission() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let opencode_source = temp.path().join("opencode-profile");
+    std::fs::create_dir_all(&opencode_source).unwrap();
+    std::fs::write(
+        opencode_source.join("auth.json"),
+        r#"{"opencode-go":{"type":"api","key":"opencode-test"}}"#,
+    )
+    .unwrap();
+    let mut config = AppConfig {
+        default_launch: Some(vec!["codex-main".into(), "opencode-main".into()]),
+        ..AppConfig::default()
+    };
+    config.accounts.insert(
+        "codex".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Codex".into(),
+            provider: jackin_config::AiProvider::OpenAi,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: "codex-test".into(),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    config.accounts.insert(
+        "opencode".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "OpenCode".into(),
+            provider: jackin_config::AiProvider::Opencode,
+            credential: jackin_config::AccountCredential::Profile {
+                agent: jackin_core::Agent::Opencode,
+                directory: opencode_source,
+                xdg_roots: None,
+                source_selector: None,
+            },
+        },
+    );
+    config.agent_configurations.insert(
+        "codex-main".into(),
+        jackin_config::AgentConfiguration {
+            agent: jackin_core::Agent::Codex,
+            account: "codex".into(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+    config.agent_configurations.insert(
+        "opencode-main".into(),
+        jackin_config::AgentConfiguration {
+            agent: jackin_core::Agent::Opencode,
+            account: "opencode".into(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+    let manifest_dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        manifest_dir.path().join("jackin.role.toml"),
+        "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\nagents = [\"codex\", \"opencode\"]\n\n[codex]\n\n[opencode]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_dir.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_dir.path()).unwrap();
+    let prewarm = SiblingAuthPrewarm {
+        manifest: &manifest,
+        config: &config,
+        workspace_name: "",
+        role_key: "test-role",
+    };
+    let worker = spawn_sibling_auth_prewarm(
+        &paths,
+        "jk-auth-default-launch",
+        &prewarm,
+        jackin_core::Agent::Codex,
+    )
+    .expect("default_launch must produce an OpenCode sibling prewarm");
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        await_sibling_auth_prewarm(Some(worker)),
+    )
+    .await
+    .expect("sibling prewarm must not deadlock before admission")
+    .unwrap();
+
+    let instances = jackin_config::resolve_launch(&config, None, "test-role", None, None).unwrap();
+    let bindings =
+        crate::runtime::launch::capsule_setup::instance_auth_bindings(&config, &instances).unwrap();
+    let (state, _) = RoleState::prepare_for_bindings(
+        &paths,
+        "jk-auth-default-launch",
+        &manifest,
+        &bindings,
+        &crate::instance::GithubAuthContext::default(),
+        &paths.home_dir,
+        jackin_core::Agent::Codex,
+    )
+    .unwrap();
+
+    assert!(
+        state.auth.slots["opencode-main"]
+            .credential_paths
+            .iter()
+            .all(|path| path.exists())
+    );
+    assert!(!state.auth_mount_leases.is_empty());
 }
