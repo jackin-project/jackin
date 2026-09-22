@@ -250,12 +250,40 @@ fn source_remote_parser_accepts_only_expected_github_shapes() {
 }
 
 #[test]
-fn current_contract_requires_the_complete_package_asset_set() {
-    let expected = expected_package_file_names();
-    assert_eq!(expected.len(), 29);
-    let mut incomplete = expected.clone();
-    incomplete.remove("identity.json");
-    assert_ne!(incomplete, expected);
+fn current_contract_requires_content_verification_after_asset_set_check() {
+    let release = GithubRelease {
+        id: 1,
+        tag_name: LEGACY_TAG.to_owned(),
+        name: "Current preview".to_owned(),
+        body: Some("current".to_owned()),
+        draft: false,
+        prerelease: true,
+        assets: expected_package_file_names()
+            .into_iter()
+            .map(|name| GithubReleaseAsset {
+                name,
+                digest: Some(format!("sha256:{}", "a".repeat(64))),
+            })
+            .collect(),
+    };
+    let candidate = "abcdef0123456789abcdef0123456789abcdef01";
+    let rejected = classify_release_with(
+        Some(&release),
+        LEGACY_SOURCE_REPOSITORY,
+        Some(candidate),
+        |_, _, _| Err(anyhow::anyhow!("malformed package contents")),
+    )
+    .unwrap();
+    assert_eq!(rejected, LegacyReleaseState::Unknown);
+
+    let accepted = classify_release_with(
+        Some(&release),
+        LEGACY_SOURCE_REPOSITORY,
+        Some(candidate),
+        |_, _, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(accepted, LegacyReleaseState::CurrentContract);
 }
 
 #[test]

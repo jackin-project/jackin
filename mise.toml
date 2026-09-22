@@ -487,8 +487,8 @@ case "$origin_url" in
   https://github.com/jackin-project/jackin|https://github.com/jackin-project/jackin.git|git@github.com:jackin-project/jackin|git@github.com:jackin-project/jackin.git|ssh://git@github.com/jackin-project/jackin|ssh://git@github.com/jackin-project/jackin.git) ;;
   *) echo "preview source origin is not $source_repository: $origin_url" >&2; exit 1 ;;
 esac
-[ "$(git rev-parse 'refs/remotes/origin/main^{commit}')" = "$source_commit" ] || {
-  echo "preview source commit is not the fetched origin/main" >&2
+[ "$(git ls-remote "$origin_url" refs/heads/main | awk '$2 == "refs/heads/main" { print $1 }')" = "$source_commit" ] || {
+  echo "preview source commit is not the live origin/main" >&2
   exit 1
 }
 [ -z "$(git status --porcelain=v1 --untracked-files=all)" ] || {
@@ -511,20 +511,36 @@ esac
 version="${base_version}-preview.${commit_count}+${short_commit}"
 
 package_dir="${VELNOR_VERIFIED_PACKAGE_DIR:?missing VELNOR_VERIFIED_PACKAGE_DIR}"
-runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+runner_temp="${RUNNER_TEMP:?missing RUNNER_TEMP}"
 case "$runner_temp" in
-  ''|/) echo "runner temp directory is unsafe: $runner_temp" >&2; exit 1 ;;
+  /*) ;;
+  *) echo "RUNNER_TEMP must be an absolute path: $runner_temp" >&2; exit 1 ;;
 esac
-safe_package_dir="$runner_temp/jackin-preview-package"
+[ -d "$runner_temp" ] || { echo "RUNNER_TEMP is not a directory: $runner_temp" >&2; exit 1; }
+workspace_root="$(pwd -P)"
+runner_temp="$(cd -- "$runner_temp" && pwd -P)"
+case "$runner_temp" in
+  "$workspace_root"|"$workspace_root"/*)
+    echo "RUNNER_TEMP must not be inside the source checkout: $runner_temp" >&2
+    exit 1
+    ;;
+esac
+run_id="${GITHUB_RUN_ID:?missing GITHUB_RUN_ID}"
+run_attempt="${GITHUB_RUN_ATTEMPT:?missing GITHUB_RUN_ATTEMPT}"
+case "$run_id:$run_attempt" in
+  ''|*[!0-9:]*) echo "GitHub run identity is not numeric" >&2; exit 1 ;;
+esac
+task_root="$runner_temp/jackin-preview-$run_id-$run_attempt"
+safe_package_dir="$task_root/package"
 [ "$package_dir" = "$safe_package_dir" ] || {
-  echo "VELNOR_VERIFIED_PACKAGE_DIR must be the task-owned runner-temp path $safe_package_dir" >&2
+  echo "VELNOR_VERIFIED_PACKAGE_DIR must be the unique task-owned path $safe_package_dir" >&2
   exit 1
 }
-archive_root="$runner_temp/jackin-preview-archives"
-check_dir="$runner_temp/jackin-preview-check"
-rm -rf -- "$archive_root" "$check_dir" "$package_dir"
+archive_root="$task_root/archives"
+check_dir="$task_root/check"
+rm -rf -- "$task_root"
 mkdir -p -- "$archive_root/jackin" "$archive_root/capsule" "$package_dir" "$check_dir"
-trap 'rm -rf -- "$archive_root" "$check_dir"' EXIT
+trap 'rm -rf -- "$task_root"' EXIT
 
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 cargo xtask release-archives \

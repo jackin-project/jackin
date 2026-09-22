@@ -21,6 +21,7 @@ const GITHUB_REPO: &str = "jackin-project/jackin";
 mod package;
 pub(crate) use package::{
     ReleaseVerifyPackageArgs, expected_file_names as expected_package_file_names, run_package,
+    verify_preview_package,
 };
 
 #[derive(Debug, Args)]

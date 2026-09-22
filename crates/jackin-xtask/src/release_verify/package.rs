@@ -152,12 +152,14 @@ pub(crate) fn run_package(_args: ReleaseVerifyPackageArgs) -> Result<()> {
     let package_dir = env::var_os("VELNOR_VERIFIED_PACKAGE_DIR")
         .map(PathBuf::from)
         .context("missing VELNOR_VERIFIED_PACKAGE_DIR")?;
-    verify_preview_package(&package_dir)?;
+    let source_checkout =
+        env::var_os("VELNOR_SOURCE_CHECKOUT_DIR").map_or_else(|| PathBuf::from("."), PathBuf::from);
+    verify_preview_package(&package_dir, &source_checkout)?;
     println!("ok: verified preview package {}", package_dir.display());
     Ok(())
 }
 
-fn verify_preview_package(package_dir: &Path) -> Result<()> {
+pub(crate) fn verify_preview_package(package_dir: &Path, source_checkout: &Path) -> Result<()> {
     ensure!(
         package_dir.is_dir(),
         "verified package directory does not exist or is not a directory: {}",
@@ -176,9 +178,7 @@ fn verify_preview_package(package_dir: &Path) -> Result<()> {
         .with_context(|| format!("parsing package identity {}", identity_path.display()))?;
 
     verify_manifest_provenance(&manifest, &identity, &manifest_value)?;
-    let source_checkout =
-        env::var_os("VELNOR_SOURCE_CHECKOUT_DIR").map_or_else(|| PathBuf::from("."), PathBuf::from);
-    verify_source_checkout(&source_checkout, &manifest)?;
+    verify_source_checkout(source_checkout, &manifest)?;
 
     let payload_digests = verify_manifest_assets(
         package_dir,
@@ -337,14 +337,18 @@ fn verify_source_checkout(source_checkout: &Path, manifest: &PackageManifest) ->
         status.is_empty(),
         "source checkout is not clean; refusing to verify a package from mutable source"
     );
-    let remote_main = git_output(
-        source_checkout,
-        &["rev-parse", "refs/remotes/origin/main^{commit}"],
-    )?;
+    verify_source_index_state(source_checkout)?;
+    let remote = git_output(source_checkout, &["config", "--get", "remote.origin.url"])?;
+    let repository = github_repository(&remote)?;
+    ensure!(
+        repository == SOURCE_REPOSITORY,
+        "source checkout origin is not {SOURCE_REPOSITORY}: {remote}"
+    );
+    let remote_main = git_remote_branch(source_checkout, &remote, "refs/heads/main")?;
     validate_commit(&remote_main, "origin/main")?;
     ensure!(
         remote_main == manifest.source_commit,
-        "package manifest source_commit does not match origin/main"
+        "package manifest source_commit does not match the live origin/main"
     );
     for name in ["EXPECTED_SOURCE_COMMIT", "VELNOR_SOURCE_COMMIT"] {
         if let Some(expected) = env::var_os(name) {
@@ -358,13 +362,58 @@ fn verify_source_checkout(source_checkout: &Path, manifest: &PackageManifest) ->
         }
     }
 
-    let remote = git_output(source_checkout, &["remote", "get-url", "origin"])?;
-    let repository = github_repository(&remote)?;
-    ensure!(
-        repository == SOURCE_REPOSITORY,
-        "source checkout origin is not {SOURCE_REPOSITORY}: {remote}"
-    );
     Ok(())
+}
+
+fn verify_source_index_state(source_checkout: &Path) -> Result<()> {
+    let assume_unchanged = git_output(source_checkout, &["ls-files", "-v", "-z"])?;
+    for record in assume_unchanged
+        .split('\0')
+        .filter(|record| !record.is_empty())
+    {
+        ensure!(
+            !record.starts_with("h "),
+            "source checkout has an assume-unchanged index entry: {}",
+            record[2..].trim()
+        );
+    }
+
+    let skip_worktree = git_output(source_checkout, &["ls-files", "-t", "-z"])?;
+    for record in skip_worktree
+        .split('\0')
+        .filter(|record| !record.is_empty())
+    {
+        ensure!(
+            !record.starts_with("S "),
+            "source checkout has a skip-worktree index entry: {}",
+            record[2..].trim()
+        );
+    }
+    Ok(())
+}
+
+fn git_remote_branch(source_checkout: &Path, remote: &str, reference: &str) -> Result<String> {
+    let output = git_output(source_checkout, &["ls-remote", remote, reference])?;
+    let mut lines = output.lines();
+    let line = lines
+        .next()
+        .with_context(|| format!("{remote} did not publish {reference}"))?;
+    ensure!(
+        lines.next().is_none(),
+        "{remote} published multiple results for {reference}"
+    );
+    let mut fields = line.split_whitespace();
+    let commit = fields
+        .next()
+        .with_context(|| format!("{remote} response omitted the object for {reference}"))?;
+    let actual_reference = fields
+        .next()
+        .with_context(|| format!("{remote} response omitted the ref for {reference}"))?;
+    ensure!(
+        fields.next().is_none() && actual_reference == reference,
+        "{remote} response did not identify {reference} exactly"
+    );
+    Ok(commit.to_owned())
 }
 
 fn git_output(source_checkout: &Path, args: &[&str]) -> Result<String> {

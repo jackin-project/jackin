@@ -268,6 +268,8 @@ fn validates_source_bound_preview_version() {
 #[test]
 fn source_checkout_requires_clean_tree_and_fetched_main_identity() {
     let directory = tempfile::tempdir().unwrap();
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "--bare", "--quiet"]);
     git(directory.path(), &["init", "--quiet"]);
     git(directory.path(), &["config", "user.name", "test"]);
     git(
@@ -286,10 +288,18 @@ fn source_checkout_requires_clean_tree_and_fetched_main_identity() {
             "https://github.com/jackin-project/jackin.git",
         ],
     );
+    git(
+        directory.path(),
+        &[
+            "config",
+            &format!("url.file://{}.insteadOf", remote.path().display()),
+            "https://github.com/jackin-project/jackin.git",
+        ],
+    );
     let commit = git(directory.path(), &["rev-parse", "HEAD"]);
     git(
         directory.path(),
-        &["update-ref", "refs/remotes/origin/main", &commit],
+        &["push", "--quiet", "origin", "HEAD:refs/heads/main"],
     );
 
     verify_source_checkout(directory.path(), &source_manifest(commit.clone())).unwrap();
@@ -299,6 +309,34 @@ fn source_checkout_requires_clean_tree_and_fetched_main_identity() {
         .expect_err("untracked source changes must fail closed");
     assert!(error.to_string().contains("not clean"));
     fs::remove_file(directory.path().join("untracked")).unwrap();
+
+    fs::write(directory.path().join("tracked"), "hidden modification\n").unwrap();
+    git(
+        directory.path(),
+        &["update-index", "--assume-unchanged", "tracked"],
+    );
+    let error = verify_source_checkout(directory.path(), &source_manifest(commit.clone()))
+        .expect_err("assume-unchanged tracked changes must fail closed");
+    assert!(error.to_string().contains("assume-unchanged"));
+    git(
+        directory.path(),
+        &["update-index", "--no-assume-unchanged", "tracked"],
+    );
+    fs::write(directory.path().join("tracked"), "tracked\n").unwrap();
+
+    fs::write(directory.path().join("tracked"), "hidden skip-worktree\n").unwrap();
+    git(
+        directory.path(),
+        &["update-index", "--skip-worktree", "tracked"],
+    );
+    let error = verify_source_checkout(directory.path(), &source_manifest(commit.clone()))
+        .expect_err("skip-worktree tracked changes must fail closed");
+    assert!(error.to_string().contains("skip-worktree"));
+    git(
+        directory.path(),
+        &["update-index", "--no-skip-worktree", "tracked"],
+    );
+    fs::write(directory.path().join("tracked"), "tracked\n").unwrap();
 
     git(
         directory.path(),
@@ -310,7 +348,7 @@ fn source_checkout_requires_clean_tree_and_fetched_main_identity() {
     assert!(error.to_string().contains("origin/main"));
     git(
         directory.path(),
-        &["update-ref", "refs/remotes/origin/main", &advanced],
+        &["push", "--quiet", "origin", "HEAD:refs/heads/main"],
     );
 
     git(
