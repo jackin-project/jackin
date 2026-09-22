@@ -19,6 +19,7 @@ pub(crate) struct ProviderError {
     message: String,
     http_status: Option<u16>,
     retry_after_seconds: Option<u64>,
+    response_received_at_epoch: Option<i64>,
 }
 
 /// Typed rate-limit metadata carried from a provider snapshot to the host
@@ -36,14 +37,21 @@ impl ProviderError {
             message,
             http_status: None,
             retry_after_seconds: None,
+            response_received_at_epoch: None,
         }
     }
 
-    fn http_status(message: String, status: u16, retry_after_seconds: Option<u64>) -> Self {
+    fn http_status(
+        message: String,
+        status: u16,
+        retry_after_seconds: Option<u64>,
+        response_received_at_epoch: Option<i64>,
+    ) -> Self {
         Self {
             message,
             http_status: Some(status),
             retry_after_seconds,
+            response_received_at_epoch,
         }
     }
 
@@ -59,11 +67,14 @@ impl ProviderError {
         self.retry_after_seconds
     }
 
-    pub(crate) fn rate_limit(&self, now: i64) -> Option<ProviderRateLimit> {
+    pub(crate) fn rate_limit(&self) -> Option<ProviderRateLimit> {
         (self.status() == Some(429)).then(|| ProviderRateLimit {
             retry_at_epoch: self
                 .retry_after_seconds
-                .map(|seconds| now.saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX))),
+                .zip(self.response_received_at_epoch)
+                .map(|(seconds, received_at)| {
+                    received_at.saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX))
+                }),
         })
     }
 }
@@ -84,7 +95,13 @@ impl From<ProviderHttpError> for ProviderError {
                 status,
                 message,
                 retry_after_seconds,
-            } => Self::http_status(message, status, retry_after_seconds),
+                response_received_at_epoch,
+            } => Self::http_status(
+                message,
+                status,
+                retry_after_seconds,
+                response_received_at_epoch,
+            ),
         }
     }
 }

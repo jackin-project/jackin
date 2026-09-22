@@ -289,7 +289,7 @@ pub(crate) fn codex_profile_snapshot_with_rate_limit(
     let rate_limit = (quota.is_none())
         .then_some(error.as_ref())
         .flatten()
-        .and_then(|error| error.rate_limit(now));
+        .and_then(ProviderError::rate_limit);
     let buckets = quota
         .as_ref()
         .map(|usage| usage.buckets(now))
@@ -1240,12 +1240,14 @@ pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, 
                         "Codex token refresh request failed: {err}"
                     ))
                 })?;
+            let response_received_at_epoch = now_epoch();
             let status = response.status();
             if !status.is_success() {
                 return Err(ProviderHttpError::HttpStatus {
                     status: status.as_u16(),
                     message: format!("Codex token refresh HTTP {status}"),
                     retry_after_seconds: retry_after_header_seconds(response.headers()),
+                    response_received_at_epoch: Some(response_received_at_epoch),
                 });
             }
             let value: serde_json::Value = response.json().map_err(|err| {

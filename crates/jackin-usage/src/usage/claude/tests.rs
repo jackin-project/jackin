@@ -9,6 +9,7 @@ fn cli_fallback_last_error_uses_normalized_scope_message() {
         status: 403,
         message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
         retry_after_seconds: None,
+        response_received_at_epoch: None,
     });
     let normalized =
         claude_provider_error_label(Some(&oauth_error), None).expect("normalized label");
@@ -60,6 +61,7 @@ fn scope_restriction_requires_typed_http_403() {
             status: 403,
             message: "message mentions HTTP 401".to_owned(),
             retry_after_seconds: None,
+            response_received_at_epoch: None,
         },
     )));
     for status in [401, 429] {
@@ -72,6 +74,7 @@ fn scope_restriction_requires_typed_http_403() {
                     "message mentions HTTP 401".to_owned()
                 },
                 retry_after_seconds: None,
+                response_received_at_epoch: None,
             },
         )));
     }

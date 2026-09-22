@@ -2046,6 +2046,7 @@ fn unauthorized_errors_are_distinguished_from_transient() {
                 status,
                 message: format!("HTTP {status}"),
                 retry_after_seconds: None,
+                response_received_at_epoch: None,
             },
         )));
     }
@@ -2061,6 +2062,7 @@ fn unauthorized_errors_are_distinguished_from_transient() {
             status: 429,
             message: "usage HTTP 429 rate limit".to_owned(),
             retry_after_seconds: None,
+            response_received_at_epoch: None,
         },
     )));
 }
@@ -2071,11 +2073,12 @@ fn typed_rate_limit_preserves_retry_after_but_rendered_429_text_does_not() {
         status: 429,
         message: "provider response body mentions 429".to_owned(),
         retry_after_seconds: Some(37),
+        response_received_at_epoch: Some(1_700_000_000),
     });
     assert!(usage_error_is_rate_limited(&typed));
     assert_eq!(typed.retry_after_seconds(), Some(37));
     assert_eq!(
-        typed.rate_limit(1_700_000_000),
+        typed.rate_limit(),
         Some(ProviderRateLimit {
             retry_at_epoch: Some(1_700_000_037),
         })
@@ -2091,7 +2094,7 @@ fn typed_rate_limit_preserves_retry_after_but_rendered_429_text_does_not() {
     ] {
         assert!(!usage_error_is_rate_limited(&error));
         assert_eq!(error.retry_after_seconds(), None);
-        assert_eq!(error.rate_limit(1_700_000_000), None);
+        assert_eq!(error.rate_limit(), None);
     }
 }
 
@@ -4573,12 +4576,13 @@ fn claude_keychain_metadata_makes_resolution_shared() {
 
 #[test]
 fn claude_denied_view_has_no_quota_and_exact_error() {
-    let view = claude_view_from_wave(
+    let view = claude_view_from_wave_with_rate_limit(
         "claude",
         Some("Anthropic / Claude"),
         1_781_185_560,
         ClaudeWaveResolution::Denied,
-    );
+    )
+    .0;
     assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
     assert!(view.buckets.is_empty());
     assert!(view.account.account_label.is_empty());
@@ -5176,6 +5180,7 @@ fn claude_scope_restriction_error_is_explicit() {
         status: 403,
         message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
         retry_after_seconds: None,
+        response_received_at_epoch: None,
     });
     assert!(claude_error_is_scope_restriction(&forbidden));
     assert!(!claude_error_is_scope_restriction(&ProviderError::from(
@@ -5186,6 +5191,7 @@ fn claude_scope_restriction_error_is_explicit() {
             status: 401,
             message: "Claude OAuth usage HTTP 401 Unauthorized".to_owned(),
             retry_after_seconds: None,
+            response_received_at_epoch: None,
         },
     )));
     assert!(!claude_error_is_scope_restriction(&ProviderError::from(

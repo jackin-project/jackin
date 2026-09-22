@@ -25,6 +25,7 @@ fn auth_and_rate_limit_classification_requires_typed_http_status() {
                 status,
                 message: message.to_owned(),
                 retry_after_seconds: None,
+                response_received_at_epoch: None,
             },
         )));
     }
@@ -33,6 +34,7 @@ fn auth_and_rate_limit_classification_requires_typed_http_status() {
             status: 429,
             message: "message mentions 401".to_owned(),
             retry_after_seconds: None,
+            response_received_at_epoch: None,
         },
     )));
 }
@@ -158,9 +160,14 @@ fn profile_snapshot_surfaces_reset_credits_from_fixture() {
     );
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "test-only delayed HTTP fixture runs on an owned OS helper thread"
+)]
 #[test]
 fn profile_snapshot_carries_typed_429_retry_after_to_broker_boundary() {
     use std::io::{Read as _, Write as _};
+    use std::time::Duration;
 
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
@@ -169,6 +176,7 @@ fn profile_snapshot_carries_typed_429_retry_after_to_broker_boundary() {
         let mut request = [0_u8; 4096];
         let read = stream.read(&mut request).expect("429 fixture read");
         assert!(read > 0, "fixture must receive the usage request");
+        std::thread::sleep(Duration::from_millis(1_100));
         let body = "{\"error\":\"provider body mentions 429\"}";
         write!(
             stream,
@@ -190,9 +198,9 @@ fn profile_snapshot_carries_typed_429_retry_after_to_broker_boundary() {
         account_label: None,
         refresh_token: None,
     };
-    let now = 1_781_728_000;
+    let request_now = now_epoch().saturating_sub(120);
     let (view, rate_limit) =
-        codex_profile_snapshot_with_rate_limit("codex", &credentials, home.path(), now);
+        codex_profile_snapshot_with_rate_limit("codex", &credentials, home.path(), request_now);
     server.join().expect("429 fixture server");
 
     assert_eq!(view.status, UsageSnapshotStatus::Stale);
@@ -202,10 +210,12 @@ fn profile_snapshot_carries_typed_429_retry_after_to_broker_boundary() {
             .is_some_and(|message| message.contains("429")),
         "typed HTTP status should remain visible in the snapshot message"
     );
-    assert_eq!(
-        rate_limit,
-        Some(ProviderRateLimit {
-            retry_at_epoch: Some(now + 37),
-        })
+    let retry_at = rate_limit
+        .expect("429 must reach the rate-limit boundary")
+        .retry_at_epoch
+        .expect("numeric Retry-After must produce an absolute deadline");
+    assert!(
+        retry_at >= request_now + 100,
+        "deadline must start from response receipt, not request start: retry_at={retry_at}, request_now={request_now}"
     );
 }

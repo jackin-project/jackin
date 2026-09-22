@@ -36,7 +36,7 @@ pub(crate) fn claude_account_identity() -> Option<String> {
 }
 
 pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
-    claude_view_from_wave(agent, provider, now, resolve_claude_wave())
+    claude_view_from_wave_with_rate_limit(agent, provider, now, resolve_claude_wave()).0
 }
 
 /// Production Claude wave resolution: derive the Keychain scope from the
@@ -120,16 +120,6 @@ pub(crate) enum ClaudeWavePolicy {
     LocalDenied,
     LocalMissing,
     LocalAnonymous,
-}
-
-/// Build the Claude view for a resolved wave.
-pub(crate) fn claude_view_from_wave(
-    agent: &str,
-    provider: Option<&str>,
-    now: i64,
-    resolution: ClaudeWaveResolution,
-) -> FocusedUsageView {
-    claude_view_from_wave_with_rate_limit(agent, provider, now, resolution).0
 }
 
 pub(crate) fn claude_view_from_wave_with_rate_limit(
@@ -251,7 +241,7 @@ fn claude_resolved_view(
     let rate_limit = (status != UsageSnapshotStatus::Fresh)
         .then_some(oauth_error.as_ref().or(cli_error.as_ref()))
         .flatten()
-        .and_then(|error| error.rate_limit(now));
+        .and_then(ProviderError::rate_limit);
     let buckets = oauth_quota
         .map(|usage| usage.into_buckets(now))
         .or_else(|| cli_usage.as_ref().map(ClaudeCliUsage::buckets))

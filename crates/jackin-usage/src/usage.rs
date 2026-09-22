@@ -88,10 +88,10 @@ pub(crate) use self::claude::{
     claude_code_user_agent, claude_code_user_agent_with, claude_code_version_from_text,
     claude_email_from_value, claude_error_is_scope_restriction, claude_oauth_candidates,
     claude_oauth_from_value, claude_organization_type_from_value, claude_provider_error_label,
-    claude_snapshot, claude_spend_bucket, claude_view_from_wave,
-    claude_view_from_wave_with_rate_limit, claude_wave_policy, fetch_claude_cli_usage,
-    fetch_claude_oauth_usage, load_claude_account_email, normalize_claude_spend,
-    push_claude_dollar_windows, read_claude_keychain_item, resolve_claude_wave,
+    claude_snapshot, claude_spend_bucket, claude_view_from_wave_with_rate_limit,
+    claude_wave_policy, fetch_claude_cli_usage, fetch_claude_oauth_usage,
+    load_claude_account_email, normalize_claude_spend, push_claude_dollar_windows,
+    read_claude_keychain_item, resolve_claude_wave,
 };
 #[cfg(test)]
 pub(crate) use self::claude::{
@@ -197,7 +197,8 @@ pub(crate) use self::openrouter::{
     OpenRouterModelCheck, check_openrouter_model_in_catalog, fetch_openrouter_credits,
     fetch_openrouter_key_usage, fetch_openrouter_model_check, openrouter_base_url,
     openrouter_base_url_from, openrouter_credits_bucket, openrouter_snapshot,
-    openrouter_snapshot_with_base, parse_openrouter_credits, parse_openrouter_key_usage,
+    openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit, parse_openrouter_credits,
+    parse_openrouter_key_usage,
 };
 #[cfg(test)]
 pub(crate) use self::refresh::MaterializedUsageAccounts;
@@ -815,6 +816,9 @@ pub(crate) fn provider_credential_snapshot_with_rate_limit(
             })),
         );
     }
+    if surface_id == "openrouter" {
+        return openrouter_snapshot_with_rate_limit("opencode", Some(secret), now);
+    }
     let view = match surface_id {
         "amp" => amp_api_key_snapshot("amp", secret, now),
         "zai" => provider_key_snapshot("codex", UsageSurface::Zai, key_name, Some(secret), now),
@@ -870,7 +874,6 @@ pub(crate) fn provider_credential_snapshot_with_rate_limit(
             &format!("API key · env {key_name}"),
             now,
         ),
-        "openrouter" => openrouter_snapshot("opencode", Some(secret), now),
         // Explicitly blocked (no production dispatch): `meta` (Muse has no
         // pollable usage fetch by design), `antigravity` (grant lives in the
         // host Keychain, which the file reader cannot probe), `omp`/`hermes`
@@ -1431,6 +1434,7 @@ pub(crate) enum ProviderHttpError {
         status: u16,
         message: String,
         retry_after_seconds: Option<u64>,
+        response_received_at_epoch: Option<i64>,
     },
     Decode(String),
 }
@@ -1477,6 +1481,7 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
         let response = request.send().map_err(|err| {
             ProviderHttpError::Transport(format!("{label} request failed: {err}"))
         })?;
+        let response_received_at_epoch = now_epoch();
         let status = response.status();
         let retry_after_seconds = retry_after_header_seconds(response.headers());
         if !status.is_success() {
@@ -1484,6 +1489,7 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
                 status: status.as_u16(),
                 message: format!("{label} HTTP {status}"),
                 retry_after_seconds,
+                response_received_at_epoch: Some(response_received_at_epoch),
             });
         }
         response
