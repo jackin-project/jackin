@@ -138,14 +138,14 @@ pub(crate) async fn ensure_current_or_remove_stale_container_by_name(
         return Ok(());
     };
     let inspection = docker.inspect_container_by_name(container_name).await;
-    if let Some(container) = inspection.handle {
-        if let Err(cleanup_error) = docker.remove_container_by_id(&container).await {
-            return Err(error.context(format!(
-                "stale-generation container {} ({}) cleanup failed: {cleanup_error:#}",
-                container.name(),
-                container.id()
-            )));
-        }
+    if let Some(container) = inspection.handle
+        && let Err(cleanup_error) = docker.remove_container_by_id(&container).await
+    {
+        return Err(error.context(format!(
+            "stale-generation container {} ({}) cleanup failed: {cleanup_error:#}",
+            container.name(),
+            container.id()
+        )));
     }
     Err(error)
 }

@@ -650,21 +650,16 @@ pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease
     container: &ContainerHandle,
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    wait_for_capsule_daemon_with_handle(paths, &container, docker)
+    wait_for_capsule_daemon_with_handle(paths, container, docker)
         .await
         .map_err(mark_reconnect_admission_failure)?;
     admission_lease
         .ensure_current(paths)
         .map_err(mark_reconnect_admission_failure)?;
     if super::host_attach::host_attach_enabled(paths) {
-        let outcome = super::host_attach::run_host_attach_session(
-            paths,
-            &container,
-            None,
-            focus_session,
-            &[],
-        )
-        .await;
+        let outcome =
+            super::host_attach::run_host_attach_session(paths, container, None, focus_session, &[])
+                .await;
         jackin_diagnostics::reassert_alt_screen();
         admission_lease
             .ensure_current(paths)
@@ -798,19 +793,18 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
                 crate::runtime::cleanup::docker_resources_for_state(paths, container_name);
             if let Some(dind_name) = resources.dind_container.as_deref() {
                 let dind_inspection = docker.inspect_container_by_name(dind_name).await;
-                match (dind_inspection.handle, dind_inspection.state) {
-                    (Some(dind), ContainerState::Stopped { .. } | ContainerState::Created) => {
-                        admission_lease.ensure_current(paths)?;
-                        drop(docker.start_container_by_id(&dind).await);
-                        super::launch::ensure_current_or_remove_stale_container(
-                            admission_lease,
-                            paths,
-                            &dind,
-                            docker,
-                        )
-                        .await?;
-                    }
-                    _ => {}
+                if let (Some(dind), ContainerState::Stopped { .. } | ContainerState::Created) =
+                    (dind_inspection.handle, dind_inspection.state)
+                {
+                    admission_lease.ensure_current(paths)?;
+                    drop(docker.start_container_by_id(&dind).await);
+                    super::launch::ensure_current_or_remove_stale_container(
+                        admission_lease,
+                        paths,
+                        &dind,
+                        docker,
+                    )
+                    .await?;
                 }
             }
 

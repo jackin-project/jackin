@@ -97,7 +97,7 @@ impl LoadCleanup {
     pub(crate) fn dind_handle_slot(
         &self,
     ) -> std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>> {
-        self.dind_handle_slot.clone()
+        std::sync::Arc::clone(&self.dind_handle_slot)
     }
 
     /// Bind cleanup to a sidecar identity already captured during adoption.
@@ -105,7 +105,7 @@ impl LoadCleanup {
         *self
             .dind_handle_slot
             .lock()
-            .expect("DinD handle slot is not poisoned") = Some(container);
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(container);
     }
 
     /// Best-effort remove role/DinD containers, cert volume, network, and socket dir.
@@ -189,7 +189,7 @@ impl LoadCleanup {
         let dind_handle = self
             .dind_handle_slot
             .lock()
-            .expect("DinD handle slot is not poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         let dind_result = match dind_handle.as_ref() {
             Some(container) => docker.remove_container_by_id(container).await,

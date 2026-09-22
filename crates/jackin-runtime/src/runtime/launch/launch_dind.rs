@@ -246,7 +246,9 @@ async fn run_dind_sidecar_headless_with_owner(
     );
     let dind_handle = create_dind_result?;
     if let Some(slot) = &dind_handle_slot {
-        *slot.lock().expect("DinD handle slot is not poisoned") = Some(dind_handle.clone());
+        *slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(dind_handle.clone());
     }
 
     jackin_diagnostics::active_timing_started(
@@ -332,7 +334,7 @@ pub async fn prewarm_dind_sidecar_container(
         &dind,
         &certs_volume,
         crate::runtime::docker_profile::DindGrant::Privileged,
-        Some(dind_handle_slot.clone()),
+        Some(std::sync::Arc::clone(&dind_handle_slot)),
         docker,
     )
     .await;
@@ -341,7 +343,7 @@ pub async fn prewarm_dind_sidecar_container(
     if result.is_err() || !keep {
         let dind_handle = dind_handle_slot
             .lock()
-            .expect("DinD handle slot is not poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         let remove_container = match dind_handle.as_ref() {
             Some(container) => docker.remove_container_by_id(container).await,
