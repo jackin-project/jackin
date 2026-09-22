@@ -7,6 +7,10 @@ revision = "4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0"
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
 
+[native.apple]
+cargo_profile = "desktop-release"
+deployment_floor = "26.0"
+
 # Public repo: GitHub-hosted singleton (no velnor lanes). Automatic events
 # stay GitHub-only so ci-required is not blocked by queued self-hosted jobs
 # when the Velnor fleet is unavailable.
