@@ -147,7 +147,18 @@ run = "cargo xtask desktop bindings-check"
 
 [tasks.desktop-xcframework]
 description = "Build the arm64 static JackinUsageFFI XCFramework"
-run = "cargo xtask desktop xcframework"
+# The Swift reusable workflow installs cargo:sccache before it invokes this
+# task. Keep the wrapper task-local so the installer never inherits it; the
+# command still works locally when sccache is not installed.
+run = '''
+set -euo pipefail
+if command -v sccache >/dev/null 2>&1; then
+  CARGO_INCREMENTAL=0 RUSTC_WRAPPER=sccache SCCACHE_GHA_ENABLED=true \
+    cargo xtask desktop xcframework
+else
+  cargo xtask desktop xcframework
+fi
+'''
 
 [tasks.swift-package-native-ci]
 description = "CI gate for native SwiftPM package (xcframework then build/test)"
@@ -235,14 +246,21 @@ run = "cargo xtask desktop test"
 description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
 run = '''
 set -euo pipefail
-mise run desktop-bindings-check
+run_with_sccache() {
+  if command -v sccache >/dev/null 2>&1; then
+    CARGO_INCREMENTAL=0 RUSTC_WRAPPER=sccache SCCACHE_GHA_ENABLED=true "$@"
+  else
+    "$@"
+  fi
+}
+run_with_sccache mise run desktop-bindings-check
 mise run desktop-generate
 mise run desktop-format-check
 mise run desktop-lint
-mise run desktop-test
-mise run desktop-build
-cargo xtask desktop test-swift
-mise run desktop-verify
+run_with_sccache mise run desktop-test
+run_with_sccache mise run desktop-build
+run_with_sccache cargo xtask desktop test-swift
+run_with_sccache mise run desktop-verify
 '''
 
 [tasks.desktop-merge]
