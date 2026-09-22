@@ -49,10 +49,13 @@ pub(crate) fn claude_api_key_snapshot(
     now: i64,
 ) -> FocusedUsageView {
     let has_secret = !secret.trim().is_empty();
-    let status = if has_secret {
-        UsageSnapshotStatus::Unsupported
+    let (status, confidence) = if has_secret {
+        (
+            UsageSnapshotStatus::Unsupported,
+            UsageConfidence::PresenceOnly,
+        )
     } else {
-        UsageSnapshotStatus::NeedsSecret
+        (UsageSnapshotStatus::NeedsSecret, UsageConfidence::None)
     };
     let message = if has_secret {
         "Claude API-key quota is unavailable; OAuth usage requires CLAUDE_CODE_OAUTH_TOKEN"
@@ -78,7 +81,7 @@ pub(crate) fn claude_api_key_snapshot(
         )],
         status,
         source: UsageSource::None,
-        confidence: UsageConfidence::None,
+        confidence,
         now,
         last_error: Some(message.to_owned()),
     })

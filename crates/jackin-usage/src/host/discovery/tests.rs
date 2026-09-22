@@ -1633,6 +1633,52 @@ fn disc_env_key_without_profile_keeps_own_source_scoped_row() {
 }
 
 #[test]
+fn disc_present_unsupported_claude_api_key_stays_out_of_canonical_accounts() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
+        .unwrap();
+
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Claude,
+        identity: None,
+        source_id: "source-claude-api-key".to_owned(),
+        capability_id: "capability-claude-api-key".to_owned(),
+        credential_revision: "revision-1".to_owned(),
+        provenance: BTreeSet::from(["account claude-api-key".to_owned()]),
+        source: ValidatedCredentialSource::Env {
+            handle: OpaqueCredentialHandle::new("fixture-handle"),
+            key: jackin_core::ANTHROPIC_API_KEY_ENV_NAME.to_owned(),
+            material: None,
+        },
+    };
+    runtime.discovery = Some(ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![binding.clone()],
+    });
+
+    let view = crate::usage::provider_credential_snapshot(
+        "claude",
+        jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
+        "fixture-api-key",
+    );
+    assert_eq!(view.confidence, UsageConfidence::PresenceOnly);
+    runtime.record_discovered_snapshot(&binding, view);
+
+    assert!(runtime.discovery.as_ref().unwrap().accounts.is_empty());
+    assert!(runtime.discovered_views.is_empty());
+    assert!(
+        runtime
+            .discovered_provider_views
+            .contains_key(&HostSurfaceId::Claude)
+    );
+}
+
+#[test]
 fn disc_env_key_with_two_provider_identities_stays_separate() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");

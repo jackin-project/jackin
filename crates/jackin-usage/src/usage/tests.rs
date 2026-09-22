@@ -148,6 +148,7 @@ fn claude_api_key_snapshot_does_not_use_oauth_adapter() {
     );
 
     assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.confidence, UsageConfidence::PresenceOnly);
     assert_eq!(view.source, UsageSource::None);
     assert_eq!(view.account.account_label, "Claude API key");
     assert_eq!(
