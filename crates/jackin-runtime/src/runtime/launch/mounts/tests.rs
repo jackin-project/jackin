@@ -21,10 +21,10 @@ fn role_state(root: &Path, slots: Vec<(&str, ProvisionedInstanceAuth)>) -> RoleS
     for slot in slots.values().filter(|slot| slot.forward_auth) {
         for path in &slot.credential_paths {
             auth_mount_paths.insert(path.clone());
-            if !matches!(slot.agent, Agent::Kimi | Agent::Hermes) {
-                if let Some(parent) = path.parent() {
-                    auth_mount_paths.insert(parent.to_path_buf());
-                }
+            if !matches!(slot.agent, Agent::Kimi | Agent::Hermes)
+                && let Some(parent) = path.parent()
+            {
+                auth_mount_paths.insert(parent.to_path_buf());
             }
         }
     }
