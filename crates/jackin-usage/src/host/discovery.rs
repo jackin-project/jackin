@@ -280,7 +280,12 @@ pub enum ProviderCredentialIdentityOutcome {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProviderCredentialRefreshOutcome {
     /// Provider snapshot, including authenticated identity when supplied.
-    Snapshot(Box<FocusedUsageView>),
+    Snapshot {
+        /// Provider view with secret-free account/quota data.
+        view: Box<FocusedUsageView>,
+        /// Typed provider rate-limit metadata, when the provider returned HTTP 429.
+        rate_limit: Option<crate::usage::ProviderRateLimit>,
+    },
     /// Credential disappeared after discovery.
     Missing,
     /// Protected credential access is no longer authorized.
@@ -2036,7 +2041,7 @@ pub(super) fn refresh_credential_binding(
     binding: &ValidatedCredentialBinding,
     env_resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderCredentialRefreshOutcome {
-    let view = match &binding.source {
+    let (view, rate_limit) = match &binding.source {
         ValidatedCredentialSource::Env { handle, key, .. } => {
             return env_resolver.refresh_provider_credential(binding.surface, key, handle);
         }
@@ -2044,7 +2049,7 @@ pub(super) fn refresh_credential_binding(
             return ProviderCredentialRefreshOutcome::Malformed;
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Claude(resolved)) => {
-            crate::usage::claude_view_from_wave(
+            crate::usage::claude_view_from_wave_with_rate_limit(
                 binding.surface.agent_slug(),
                 binding.surface.provider_label(),
                 chrono::Utc::now().timestamp(),
@@ -2054,66 +2059,85 @@ pub(super) fn refresh_credential_binding(
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Codex {
             credentials,
             root,
-        }) => crate::usage::codex_profile_snapshot(
+        }) => crate::usage::codex_profile_snapshot_with_rate_limit(
             binding.surface.agent_slug(),
             credentials,
             root,
             chrono::Utc::now().timestamp(),
         ),
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Amp { key }) => {
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Amp { key }) => (
             crate::usage::amp_api_key_snapshot(
                 binding.surface.agent_slug(),
                 key,
                 chrono::Utc::now().timestamp(),
-            )
-        }
+            ),
+            None,
+        ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Grok { auth_path }) => {
             let now = chrono::Utc::now().timestamp();
             let result = crate::usage::fetch_grok_rest_billing(auth_path, now)
                 .map(|response| crate::usage::GrokBillingSnapshot::Rest(Box::new(response)));
-            crate::usage::grok_snapshot_from_rpc_result(
-                binding.surface.agent_slug(),
-                now,
-                auth_path,
-                true,
-                false,
-                false,
-                result,
+            (
+                crate::usage::grok_snapshot_from_rpc_result(
+                    binding.surface.agent_slug(),
+                    now,
+                    auth_path,
+                    true,
+                    false,
+                    false,
+                    result,
+                ),
+                None,
             )
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Kimi { token }) => {
             let now = chrono::Utc::now().timestamp();
-            crate::usage::kimi_snapshot(binding.surface.agent_slug(), Some(token.as_str()), now)
+            (
+                crate::usage::kimi_snapshot(
+                    binding.surface.agent_slug(),
+                    Some(token.as_str()),
+                    now,
+                ),
+                None,
+            )
         }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => {
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => (
             crate::usage::opencode_profile_snapshot(
                 binding.surface.agent_slug(),
                 auth_path,
                 chrono::Utc::now().timestamp(),
-            )
-        }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => {
+            ),
+            None,
+        ),
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => (
             crate::usage::cursor_profile_snapshot(
                 binding.surface.agent_slug(),
                 auth_path,
                 chrono::Utc::now().timestamp(),
-            )
-        }
+            ),
+            None,
+        ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Gemini { creds_path }) => {
             // Re-prove OAuth presence at refresh: a file deleted after
             // discovery is NeedsSecret, never a stale Unsupported.
             let has_oauth = creds_path.is_file();
-            crate::usage::gemini_snapshot_with_presence(
-                binding.surface.agent_slug(),
-                binding.surface.provider_label(),
-                has_oauth,
-                false,
-                "OAuth · configured profile",
-                chrono::Utc::now().timestamp(),
+            (
+                crate::usage::gemini_snapshot_with_presence(
+                    binding.surface.agent_slug(),
+                    binding.surface.provider_label(),
+                    has_oauth,
+                    false,
+                    "OAuth · configured profile",
+                    chrono::Utc::now().timestamp(),
+                ),
+                None,
             )
         }
     };
-    ProviderCredentialRefreshOutcome::Snapshot(Box::new(view))
+    ProviderCredentialRefreshOutcome::Snapshot {
+        view: Box::new(view),
+        rate_limit,
+    }
 }
 
 impl HostUsageRuntime {

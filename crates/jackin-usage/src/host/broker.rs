@@ -1340,7 +1340,9 @@ fn refresh_binding_outcome(
     resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderProbeOutcome {
     match refresh_credential_binding(binding, resolver) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => provider_probe_outcome(*view),
+        ProviderCredentialRefreshOutcome::Snapshot { view, rate_limit } => {
+            provider_probe_outcome_with_rate_limit(*view, rate_limit)
+        }
         ProviderCredentialRefreshOutcome::Missing
         | ProviderCredentialRefreshOutcome::Denied
         | ProviderCredentialRefreshOutcome::InteractionRequired => ProviderProbeOutcome::Failure {
@@ -1356,24 +1358,22 @@ fn refresh_binding_outcome(
     }
 }
 
+#[cfg(test)]
 fn provider_probe_outcome(
     view: jackin_protocol::control::FocusedUsageView,
 ) -> ProviderProbeOutcome {
-    if let Some(error) = view
-        .last_error
-        .as_deref()
-        .filter(|error| crate::usage::usage_error_is_rate_limited(error))
-    {
-        let retry_at_epoch = crate::usage::parse_retry_after_seconds(&error.to_ascii_lowercase())
-            .map(|seconds| {
-                chrono::Utc::now()
-                    .timestamp()
-                    .saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX))
-            });
+    provider_probe_outcome_with_rate_limit(view, None)
+}
+
+fn provider_probe_outcome_with_rate_limit(
+    view: jackin_protocol::control::FocusedUsageView,
+    rate_limit: Option<crate::usage::ProviderRateLimit>,
+) -> ProviderProbeOutcome {
+    if let Some(rate_limit) = rate_limit {
         return ProviderProbeOutcome::Failure {
             kind: UsageCoordinationErrorKind::RateLimited,
             message: "usage provider rate limit is active".to_owned(),
-            retry_at_epoch,
+            retry_at_epoch: rate_limit.retry_at_epoch,
         };
     }
     match view.status {

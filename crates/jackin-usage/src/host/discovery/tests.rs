@@ -1304,7 +1304,7 @@ fn refresh_cursor_binding_dispatches_to_collector() {
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }),
     );
     match refresh_credential_binding(&binding, &NoEnvResolver) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(view.status, UsageSnapshotStatus::Stale);
             assert_eq!(view.account.provider_label, "Cursor");
             assert_eq!(view.focused_agent.as_deref(), Some("cursor"));
@@ -1713,7 +1713,7 @@ fn refresh_gemini_binding_dispatches_to_collector() {
         }),
     );
     match refresh_credential_binding(&binding, &NoEnvResolver) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
             assert_eq!(view.account.provider_label, "Google");
             assert_eq!(view.focused_agent.as_deref(), Some("gemini"));
@@ -1723,7 +1723,7 @@ fn refresh_gemini_binding_dispatches_to_collector() {
     // A credential file deleted after discovery re-proves as NeedsSecret.
     std::fs::remove_file(&creds).unwrap();
     match refresh_credential_binding(&binding, &NoEnvResolver) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(view.status, UsageSnapshotStatus::NeedsSecret);
         }
         other => panic!("deleted gemini creds must need secret: {other:?}"),

@@ -3,43 +3,117 @@
 
 //! Materialized-account writes and provider error classification.
 
-use super::{AtomicU64, FocusedUsageView, Ordering, Path, Serialize, Write, fs};
+use super::{AtomicU64, FocusedUsageView, Ordering, Path, ProviderHttpError, Serialize, Write, fs};
 #[cfg(test)]
 use serde::Deserialize;
 
 pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-pub(crate) fn usage_error_is_rate_limited(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    lower.contains("429")
-        || lower.contains("rate limit")
-        || lower.contains("retry-after")
-        || lower.contains("retry after")
+/// Error carrier used after provider fetches leave the shared HTTP boundary.
+///
+/// Only `ProviderHttpError::HttpStatus` contributes a status. Transport,
+/// decode, CLI, and RPC messages remain statusless even when their rendered
+/// text contains status-looking digits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProviderError {
+    message: String,
+    http_status: Option<u16>,
+    retry_after_seconds: Option<u64>,
+}
+
+/// Typed rate-limit metadata carried from a provider snapshot to the host
+/// broker. The deadline is absent when the provider returned HTTP 429 without
+/// a valid numeric `Retry-After` header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderRateLimit {
+    /// Absolute epoch deadline derived from the provider's `Retry-After` header.
+    pub retry_at_epoch: Option<i64>,
+}
+
+impl ProviderError {
+    fn new(message: String) -> Self {
+        Self {
+            message,
+            http_status: None,
+            retry_after_seconds: None,
+        }
+    }
+
+    fn http_status(message: String, status: u16, retry_after_seconds: Option<u64>) -> Self {
+        Self {
+            message,
+            http_status: Some(status),
+            retry_after_seconds,
+        }
+    }
+
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub(crate) fn status(&self) -> Option<u16> {
+        self.http_status
+    }
+
+    pub(crate) fn retry_after_seconds(&self) -> Option<u64> {
+        self.retry_after_seconds
+    }
+
+    pub(crate) fn rate_limit(&self, now: i64) -> Option<ProviderRateLimit> {
+        (self.status() == Some(429)).then(|| ProviderRateLimit {
+            retry_at_epoch: self
+                .retry_after_seconds
+                .map(|seconds| now.saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX))),
+        })
+    }
+}
+
+impl std::fmt::Display for ProviderError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl From<ProviderHttpError> for ProviderError {
+    fn from(error: ProviderHttpError) -> Self {
+        match error {
+            ProviderHttpError::Transport(message) | ProviderHttpError::Decode(message) => {
+                Self::new(message)
+            }
+            ProviderHttpError::HttpStatus {
+                status,
+                message,
+                retry_after_seconds,
+            } => Self::http_status(message, status, retry_after_seconds),
+        }
+    }
+}
+
+impl From<String> for ProviderError {
+    fn from(message: String) -> Self {
+        Self::new(message)
+    }
+}
+
+pub(crate) fn split_provider_fetch<U>(
+    result: Option<Result<U, ProviderError>>,
+) -> (Option<U>, Option<ProviderError>) {
+    match result {
+        Some(Ok(value)) => (Some(value), None),
+        Some(Err(error)) => (None, Some(error)),
+        None => (None, None),
+    }
 }
 
 /// True when a provider fetch failed because the token was rejected (expired or
 /// revoked), as opposed to a transient/network error. Drives the honest
 /// `NeedsLogin` status so a stale on-disk token reads as "login", not "stale".
-pub(crate) fn usage_error_is_unauthorized(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    lower.contains("http 401") || lower.contains("http 403") || lower.contains("unauthorized")
+pub(crate) fn usage_error_is_unauthorized(error: &ProviderError) -> bool {
+    matches!(error.status(), Some(401 | 403))
 }
 
-pub(crate) fn parse_retry_after_seconds(error: &str) -> Option<u64> {
-    for marker in ["retry-after", "retry after"] {
-        let Some((_, tail)) = error.split_once(marker) else {
-            continue;
-        };
-        let digits = tail
-            .chars()
-            .skip_while(|ch| !ch.is_ascii_digit())
-            .take_while(char::is_ascii_digit)
-            .collect::<String>();
-        if let Ok(seconds) = digits.parse::<u64>() {
-            return Some(seconds);
-        }
-    }
-    None
+pub(crate) fn usage_error_is_rate_limited(error: &ProviderError) -> bool {
+    error.status() == Some(429)
 }
 
 /// Owned document shape for reading materialized accounts JSON (tests + any

@@ -360,6 +360,7 @@ fn openrouter_transport_text_and_url_401_are_not_auth_failures() {
         openrouter_key_error_status(&ProviderHttpError::HttpStatus {
             status: 401,
             message: "OpenRouter key HTTP 401 Unauthorized".to_owned(),
+            retry_after_seconds: None,
         }),
         UsageSnapshotStatus::NeedsLogin
     );

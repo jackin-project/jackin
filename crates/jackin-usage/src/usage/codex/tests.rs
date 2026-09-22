@@ -4,6 +4,40 @@
 use super::*;
 
 #[test]
+fn auth_and_rate_limit_classification_requires_typed_http_status() {
+    let misleading = [
+        ProviderError::from(ProviderHttpError::Transport(
+            "Codex OAuth usage request failed for port 401".to_owned(),
+        )),
+        ProviderError::from(ProviderHttpError::Decode(
+            "Codex OAuth usage decode failed: payload mentions 403".to_owned(),
+        )),
+        ProviderError::from("Codex app-server response contains HTTP 429".to_owned()),
+    ];
+    for error in &misleading {
+        assert!(!usage_error_is_unauthorized(error));
+        assert!(!usage_error_is_rate_limited(error));
+    }
+
+    for (status, message) in [(401, "message mentions 403"), (403, "message mentions 429")] {
+        assert!(usage_error_is_unauthorized(&ProviderError::from(
+            ProviderHttpError::HttpStatus {
+                status,
+                message: message.to_owned(),
+                retry_after_seconds: None,
+            },
+        )));
+    }
+    assert!(usage_error_is_rate_limited(&ProviderError::from(
+        ProviderHttpError::HttpStatus {
+            status: 429,
+            message: "message mentions 401".to_owned(),
+            retry_after_seconds: None,
+        },
+    )));
+}
+
+#[test]
 fn codex_over_cap_keeps_raw_label_with_clamped_bar() {
     let window: CodexWindowSnapshot =
         serde_json::from_value(serde_json::json!({"used_percent": 142}))
@@ -121,5 +155,57 @@ fn profile_snapshot_surfaces_reset_credits_from_fixture() {
     assert!(
         detail.starts_with("2 manual resets available"),
         "unexpected reset detail: {detail}"
+    );
+}
+
+#[test]
+fn profile_snapshot_carries_typed_429_retry_after_to_broker_boundary() {
+    use std::io::{Read as _, Write as _};
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("429 fixture accept");
+        let mut request = [0_u8; 4096];
+        let read = stream.read(&mut request).expect("429 fixture read");
+        assert!(read > 0, "fixture must receive the usage request");
+        let body = "{\"error\":\"provider body mentions 429\"}";
+        write!(
+            stream,
+            "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 37\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .expect("429 fixture write");
+    });
+
+    let home = tempfile::tempdir().unwrap();
+    fs::write(
+        home.path().join("config.toml"),
+        format!("chatgpt_base_url = \"http://{address}\"\n"),
+    )
+    .unwrap();
+    let credentials = CodexOAuthCredentials {
+        access_token: "fixture-token".to_owned(),
+        account_id: None,
+        account_label: None,
+        refresh_token: None,
+    };
+    let now = 1_781_728_000;
+    let (view, rate_limit) =
+        codex_profile_snapshot_with_rate_limit("codex", &credentials, home.path(), now);
+    server.join().expect("429 fixture server");
+
+    assert_eq!(view.status, UsageSnapshotStatus::Stale);
+    assert!(
+        view.last_error
+            .as_deref()
+            .is_some_and(|message| message.contains("429")),
+        "typed HTTP status should remain visible in the snapshot message"
+    );
+    assert_eq!(
+        rate_limit,
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(now + 37),
+        })
     );
 }
