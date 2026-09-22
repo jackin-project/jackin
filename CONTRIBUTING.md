@@ -61,10 +61,11 @@ git add -p && git commit -m "..."
 
 `hk fix` applies the same fixes outside a commit; `hk check` runs checks
 on modified files. Partial commits are safe: the repo-owned launcher creates
-an isolated `git stash push --all --keep-index` snapshot, validates
-the staged snapshot only, then restores — byte-identical when green. The user
-stash stack is not used for the hook snapshot. If restoration fails or the
-snapshot/stash identity changes, the snapshot is retained under
+an isolated stash snapshot, publishes its private identity before clearing the
+worktree, validates the staged snapshot only, then restores — byte-identical
+when green. The user stash stack is not used for the hook snapshot. If
+restoration fails or the snapshot/stash identity changes, the snapshot is
+retained under
 `refs/jackin/pre-commit-snapshot/*`; inspect `git status` and
 `git show-ref refs/jackin/pre-commit-snapshot/` and recover it before changing
 the worktree. Bypass with `HK=0 git commit`

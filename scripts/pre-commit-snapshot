@@ -7,18 +7,33 @@ cd "$repo_root"
 
 stash_oid=
 snapshot_ref=
+snapshot_published=0
+clear_started=0
+worktree_cleared=0
 snapshot_git_dir=
 snapshot_index_file=
 snapshot_objects_dir=
+untracked_index_file=
 patch_file=
 archive_file=
 mode_file=
 path_file=
+untracked_path_file=
 
 snapshot_git() {
     GIT_DIR=$snapshot_git_dir \
     GIT_WORK_TREE=$repo_root \
     GIT_INDEX_FILE=$snapshot_index_file \
+    GIT_OBJECT_DIRECTORY=$snapshot_objects_dir \
+        git "$@"
+}
+
+snapshot_index_git() {
+    temporary_index=$1
+    shift
+    GIT_DIR=$snapshot_git_dir \
+    GIT_WORK_TREE=$repo_root \
+    GIT_INDEX_FILE=$temporary_index \
     GIT_OBJECT_DIRECTORY=$snapshot_objects_dir \
         git "$@"
 }
@@ -48,7 +63,12 @@ cleanup_snapshot_storage() {
 }
 
 cleanup_snapshot_files() {
-    for snapshot_file in "$path_file" "$patch_file" "$archive_file" "$mode_file"; do
+    for snapshot_file in \
+        "$path_file" \
+        "$untracked_path_file" \
+        "$patch_file" \
+        "$archive_file" \
+        "$mode_file"; do
         if [ -n "$snapshot_file" ]; then
             rm -f "$snapshot_file"
         fi
@@ -140,10 +160,29 @@ restore_worktree() {
     hook_status=$?
     trap - EXIT HUP INT TERM
 
-    if [ -n "$stash_oid" ]; then
+    if [ "$snapshot_published" -eq 1 ]; then
         if ! verify_snapshot_ref; then
             cleanup_snapshot_files
             exit 1
+        fi
+
+        if [ "$clear_started" -eq 1 ] && [ "$worktree_cleared" -eq 0 ]; then
+            if ! git clean -dfx --quiet || ! git restore --worktree -- .; then
+                printf '%s\n' "error: failed to reset the pre-commit worktree; snapshot retained at $stash_oid" >&2
+                cleanup_snapshot_files
+                exit 1
+            fi
+        fi
+
+        if [ "$clear_started" -eq 0 ]; then
+            if ! drop_snapshot; then
+                printf '%s\n' "error: snapshot was published but the worktree was not cleared; could not remove $snapshot_ref ($stash_oid)" >&2
+                cleanup_snapshot_files
+                exit 1
+            fi
+            cleanup_snapshot_files
+            cleanup_snapshot_storage
+            exit "$hook_status"
         fi
 
         patch_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
@@ -198,9 +237,10 @@ trap restore_worktree EXIT HUP INT TERM
 
 # hk 2.0.1's path-limited stash drops untracked paths before invoking Git.
 # Snapshot every non-index path, including ignored files, leaving the index view.
-# Git's stash ref is a shared reflog, so create the snapshot in an isolated
-# temporary Git dir, publish its OID under a private ref, and remove that ref
-# with a refs/stash baseline check in the same CAS transaction.
+# Git's stash ref is a shared reflog. Create the snapshot without changing the
+# worktree, publish its OID under a private ref, and only then clear the
+# worktree. Remove that ref with a refs/stash baseline check in the same CAS
+# transaction.
 mode_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
 path_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
 {
@@ -233,28 +273,82 @@ head_oid=$(git rev-parse HEAD)
 snapshot_git update-ref refs/heads/jackin-pre-commit "$head_oid"
 snapshot_git symbolic-ref HEAD refs/heads/jackin-pre-commit
 
+# `git stash push --all --keep-index` clears the worktree before this script
+# can publish ownership of its OID. `git stash create` records tracked state
+# without clearing it; add non-index paths to a temporary index and construct
+# the optional third stash parent explicitly.
 set +e
-snapshot_git stash push --all --keep-index --message "jackin pre-commit"
+tracked_stash_oid=$(snapshot_git stash create "jackin pre-commit")
 stash_status=$?
 set -e
-after_stash=$(snapshot_git rev-parse --verify --quiet refs/stash 2>/dev/null || true)
-
-if [ -n "$after_stash" ]; then
-    stash_oid=$after_stash
-    snapshot_ref="refs/jackin/pre-commit-snapshot/$(basename "$snapshot_git_dir")"
-    if ! printf 'start\ncreate %s %s\nprepare\ncommit\n' \
-        "$snapshot_ref" "$stash_oid" | git update-ref --stdin >/dev/null; then
-        printf '%s\n' "error: failed to publish the pre-commit snapshot; snapshot retained in $snapshot_git_dir" >&2
-        exit 1
-    fi
-    cleanup_snapshot_storage
-else
-    cleanup_snapshot_storage
-fi
-
 if [ "$stash_status" -ne 0 ]; then
     printf '%s\n' "error: failed to create the pre-commit snapshot" >&2
     exit "$stash_status"
+fi
+
+if [ -n "$tracked_stash_oid" ]; then
+    index_oid=$(snapshot_git rev-parse "$tracked_stash_oid^2")
+    worktree_tree=$(snapshot_git rev-parse "$tracked_stash_oid^{tree}")
+else
+    index_tree=$(snapshot_git write-tree)
+    index_oid=$(printf '%s\n' 'index on jackin-pre-commit' |
+        snapshot_git commit-tree "$index_tree" -p "$head_oid")
+    worktree_tree=$(snapshot_git rev-parse "$head_oid^{tree}")
+fi
+
+untracked_path_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
+{
+    git ls-files --others --exclude-standard -z
+    git ls-files --others --ignored --exclude-standard -z
+} > "$untracked_path_file"
+
+untracked_commit=
+if [ -s "$untracked_path_file" ]; then
+    untracked_index_file=$(mktemp "$snapshot_git_dir/index.XXXXXX")
+    snapshot_index_git "$untracked_index_file" read-tree --empty
+    snapshot_index_git "$untracked_index_file" \
+        --literal-pathspecs add -f \
+        --pathspec-from-file="$untracked_path_file" \
+        --pathspec-file-nul
+    untracked_tree=$(snapshot_index_git "$untracked_index_file" write-tree)
+    untracked_commit=$(printf '%s\n' 'untracked files on jackin-pre-commit' |
+        snapshot_git commit-tree "$untracked_tree")
+fi
+
+if [ -n "$untracked_commit" ]; then
+    stash_oid=$(printf '%s\n' 'jackin pre-commit' |
+        snapshot_git commit-tree "$worktree_tree" \
+            -p "$head_oid" \
+            -p "$index_oid" \
+            -p "$untracked_commit")
+else
+    stash_oid=$tracked_stash_oid
+fi
+
+if [ -n "$stash_oid" ]; then
+    snapshot_ref="refs/jackin/pre-commit-snapshot/$(basename "$snapshot_git_dir")"
+    if ! printf 'start\ncreate %s %s\nprepare\ncommit\n' \
+        "$snapshot_ref" "$stash_oid" | git update-ref --stdin >/dev/null; then
+        printf '%s\n' "error: failed to publish the pre-commit snapshot; worktree was not cleared" >&2
+        exit 1
+    fi
+    snapshot_published=1
+
+    clear_started=1
+    set +e
+    git restore --worktree -- .
+    clear_status=$?
+    if [ "$clear_status" -eq 0 ]; then
+        git clean -dfx --quiet
+        clear_status=$?
+    fi
+    set -e
+    if [ "$clear_status" -ne 0 ]; then
+        printf '%s\n' "error: failed to clear the pre-commit worktree; snapshot retained at $snapshot_ref ($stash_oid)" >&2
+        exit "$clear_status"
+    fi
+    worktree_cleared=1
+    cleanup_snapshot_storage
 fi
 
 set +e

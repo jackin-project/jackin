@@ -9,6 +9,8 @@ snapshot_tmp=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-tmp.XXXXXX")
 marker="$fixture/interrupt.marker"
 mise_pid_file="$fixture/mise.pid"
 race_marker="$snapshot_tmp/race.marker"
+stash_marker="$snapshot_tmp/stash.marker"
+stash_pid_file="$fixture/stash.pid"
 trap 'rm -rf "$fixture" "$fake_bin" "$snapshot_tmp"' EXIT
 
 mode_of() {
@@ -131,6 +133,15 @@ if [ "${FIXTURE_MODE:-}" = race ] &&
     exit "$status"
 fi
 
+if [ "${FIXTURE_MODE:-}" = stash-interrupt ] &&
+    [ "${1:-}" = stash ] &&
+    [ "${2:-}" = create ]; then
+    : > "$STASH_MARKER"
+    printf '%s\n' "$$" > "$STASH_PID_FILE"
+    trap 'exit 143' HUP INT TERM
+    while :; do sleep 1; done
+fi
+
 exec "$REAL_GIT" "$@"
 EOF
 chmod +x "$fake_bin/git"
@@ -168,6 +179,37 @@ assert_restored() {
     test -z "$(git -C "$fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
     test -z "$(ls -A "$snapshot_tmp")"
 }
+
+preexisting_snapshot_ref=refs/jackin/pre-commit-snapshot
+preexisting_snapshot_oid=$(git -C "$fixture" rev-parse HEAD)
+git -C "$fixture" update-ref "$preexisting_snapshot_ref" "$preexisting_snapshot_oid"
+set +e
+(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=success REAL_GIT="$real_git" "$hook")
+status=$?
+set -e
+test "$status" -ne 0
+test "$(git -C "$fixture" rev-parse --verify "$preexisting_snapshot_ref")" = "$preexisting_snapshot_oid"
+assert_restored
+git -C "$fixture" update-ref -d "$preexisting_snapshot_ref"
+
+rm -f "$stash_marker" "$stash_pid_file"
+(cd "$fixture" && exec env TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=stash-interrupt REAL_GIT="$real_git" STASH_MARKER="$stash_marker" STASH_PID_FILE="$stash_pid_file" "$hook") &
+hook_pid=$!
+attempt=0
+while [ ! -f "$stash_marker" ] && [ "$attempt" -lt 50 ]; do
+    sleep 0.1
+    attempt=$((attempt + 1))
+done
+test -f "$stash_marker"
+stash_pid=$(cat "$stash_pid_file")
+kill -TERM "$stash_pid" 2>/dev/null || true
+set +e
+wait "$hook_pid"
+status=$?
+set -e
+test "$status" -ne 0
+rm -f "$stash_marker" "$stash_pid_file"
+assert_restored
 
 (cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=success REAL_GIT="$real_git" "$hook")
 assert_restored
