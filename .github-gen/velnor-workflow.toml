@@ -123,9 +123,9 @@ name = "Desktop scheduled cadence"
 
 # Durable post-merge evidence: one scheduled job records all first attempts
 # and reruns for the CI/Main and Desktop obligations, then uploads the
-# fail-closed JSON/Markdown rollup. First-parent main history is the complete
-# denominator proof; the rollup task exits nonzero for any unqualified result.
-# Observed failures remain red in the report and are never recoded as success.
+# fail-closed JSON/Markdown rollup. The push-head ledger is the denominator
+# source; the rollup task exits nonzero for any unqualified result. Observed
+# failures remain red in the report and are never recoded as success.
 [[check_profile]]
 id = "ci-evidence"
 name = "CI first-attempt evidence"
@@ -146,6 +146,30 @@ file = "ci-evidence.yml"
 [declare.args]
 profiles = ["ci-evidence"]
 name = "CI first-attempt evidence"
+
+# Git history does not record where a multi-commit push ends. This producer
+# runs once per main push and retains the exact push payload as a durable
+# artifact. ci-evidence treats missing, stale, or contaminated artifacts as a
+# source-proof failure; it never reconstructs push heads from observed runs.
+[[check_profile]]
+id = "ci-push-head-ledger"
+name = "CI push-head ledger"
+runner = "github"
+tasks = ["ci-push-head-ledger"]
+timeout_minutes = 10
+status = "required"
+artifacts = ["target/ci-push-head-ledger/"]
+[check_profile.permissions]
+actions = "read"
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "ci-push-head-ledger.yml"
+[declare.args]
+profiles = ["ci-push-head-ledger"]
+name = "CI push-head ledger"
+events = ["push"]
+branches = ["main"]
 
 # Renovate upstream liveness (D2): the #994 renovate-validate.yml job that
 # verifies the pinned mise release still ships both construct architectures.

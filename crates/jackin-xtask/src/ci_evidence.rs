@@ -28,6 +28,8 @@ const SCHEMA: u32 = 4;
 const DEFAULT_WINDOW_DAYS: i64 = 31;
 const DEFAULT_CI_WORKFLOW: &str = "ci-main.yml";
 const DEFAULT_DESKTOP_WORKFLOW: &str = "desktop-merge.yml";
+const DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW: &str = "ci-push-head-ledger.yml";
+const DEFAULT_PUSH_HEAD_LEDGER_ARTIFACT: &str = "ci-push-head-ledger";
 
 /// Independently counted post-merge obligations.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
@@ -108,7 +110,7 @@ pub(crate) struct RuntimeIdentity {
 pub(crate) struct ExpectedCommit {
     pub(crate) sha: String,
     pub(crate) base_sha: Option<String>,
-    pub(crate) tree_sha: Option<String>,
+    pub(crate) tree_sha: String,
     pub(crate) committed_at: Option<String>,
     pub(crate) source: DenominatorSource,
 }
@@ -117,14 +119,14 @@ pub(crate) struct ExpectedCommit {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DenominatorSource {
-    FirstParentHistory,
+    PushHeadLedger,
     Fixture,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ObligationProvenance {
-    FirstParentHistory,
+    PushHeadLedger,
     Fixture,
 }
 
@@ -135,14 +137,44 @@ pub(crate) struct DenominatorProof {
     pub(crate) window: TimeWindow,
     pub(crate) fetch_succeeded: bool,
     pub(crate) commit_count: usize,
+    pub(crate) source_workflow: Option<String>,
+    pub(crate) source_run_count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct HistoryCommitObservation {
     pub(crate) sha: String,
     pub(crate) base_sha: Option<String>,
-    pub(crate) tree_sha: Option<String>,
+    pub(crate) tree_sha: String,
     pub(crate) committed_at: String,
+}
+
+/// One durable push event and its producer-run binding.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PushHeadObservation {
+    pub(crate) repository: String,
+    pub(crate) branch: String,
+    pub(crate) event: String,
+    pub(crate) workflow_id: u64,
+    pub(crate) workflow_path: String,
+    pub(crate) run_id: u64,
+    pub(crate) head_sha: String,
+    pub(crate) before_sha: String,
+    pub(crate) tree_sha: String,
+    pub(crate) committed_at: String,
+    pub(crate) created_at: String,
+    pub(crate) pushed_commits: Vec<String>,
+    pub(crate) raw_event_sha256: String,
+}
+
+/// Provenance of the collector invocation that wrote an evidence file.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct CollectionProvenance {
+    pub(crate) repository: String,
+    pub(crate) branch: String,
+    pub(crate) event: String,
+    pub(crate) workflow_path: String,
+    pub(crate) run_id: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -188,7 +220,7 @@ pub(crate) struct AttemptEvidence {
     pub(crate) head_sha: String,
     pub(crate) denominator_source: DenominatorSource,
     pub(crate) base_sha: Option<String>,
-    pub(crate) tree_sha: Option<String>,
+    pub(crate) tree_sha: String,
     pub(crate) created_at: String,
     pub(crate) started_at: Option<String>,
     pub(crate) completed_at: Option<String>,
@@ -202,6 +234,7 @@ pub(crate) struct AttemptEvidence {
     pub(crate) classification: OutcomeClass,
     pub(crate) data_quality_reason: Option<DataQualityReason>,
     pub(crate) conflicting_observations: Vec<RawAttemptObservation>,
+    pub(crate) raw_observations: Vec<RawAttemptObservation>,
     pub(crate) runtime: RuntimeIdentity,
     pub(crate) evidence_urls: Vec<String>,
     /// Retained when a later collection turns a nonterminal row terminal.
@@ -226,6 +259,7 @@ pub(crate) struct UnclassifiedRun {
 pub(crate) enum UnclassifiedRunReason {
     UnknownWorkflowId,
     OutsideDenominator,
+    ContaminatedProvenance,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -235,8 +269,10 @@ pub(crate) struct EvidenceFile {
     pub(crate) window: TimeWindow,
     pub(crate) generated_at: String,
     pub(crate) runtime: RuntimeIdentity,
+    pub(crate) provenance: CollectionProvenance,
     pub(crate) denominator: DenominatorProof,
     pub(crate) history: Vec<HistoryCommitObservation>,
+    pub(crate) push_heads: Vec<PushHeadObservation>,
     pub(crate) expected: Vec<ExpectedObligation>,
     pub(crate) attempts: Vec<AttemptEvidence>,
     pub(crate) unclassified_runs: Vec<UnclassifiedRun>,
@@ -301,8 +337,8 @@ pub(crate) struct CollectArgs {
     branch: String,
     #[arg(long, default_value = "target/ci-evidence/attempts.json")]
     output: PathBuf,
-    /// Optional expected-obligation fixture. Without it, first-parent main
-    /// commits are derived from the checkout after a shallow-since fetch.
+    /// Optional expected-obligation fixture. Without it, expected obligations
+    /// are derived only from the durable main push-head ledger.
     #[arg(long)]
     expected: Option<PathBuf>,
     #[arg(long, value_name = "PATH", action = clap::ArgAction::Append)]
@@ -334,7 +370,8 @@ pub(crate) fn run(command: CiEvidenceCommand) -> Result<()> {
 
 fn collect(args: CollectArgs) -> Result<()> {
     let root = docs::repo_root()?;
-    let repository = nonempty_or_env(args.repository, "GITHUB_REPOSITORY")?;
+    let repository = canonical_repository(&nonempty_or_env(args.repository, "GITHUB_REPOSITORY")?)?;
+    validate_git_remote_identity(&root, &repository)?;
     let until = args.until.unwrap_or_else(now_rfc3339);
     let since = args
         .since
@@ -344,6 +381,7 @@ fn collect(args: CollectArgs) -> Result<()> {
         until: until.clone(),
     };
     validate_window(&window)?;
+    let provenance = collection_provenance(&repository, &args.branch)?;
     let runtime = runtime_identity(
         &root,
         RuntimeIdentity {
@@ -357,17 +395,38 @@ fn collect(args: CollectArgs) -> Result<()> {
     );
     let ci_workflows = names_or_default(args.ci_workflow, DEFAULT_CI_WORKFLOW);
     let desktop_workflows = names_or_default(args.desktop_workflow, DEFAULT_DESKTOP_WORKFLOW);
-    let (ci_workflow_ids, desktop_workflow_ids) =
+    let (ci_workflow_ids, desktop_workflow_ids, ledger_workflow_ids) =
         list_workflow_ids(&repository, &ci_workflows, &desktop_workflows)?;
     let denominator = match args.expected {
-        Some(path) => denominator_from_fixture(read_expected(&path)?, &args.branch, &window),
-        None => expected_from_first_parent(&root, &args.branch, &window)?,
+        Some(path) => denominator_from_fixture(read_expected(&path)?, &args.branch, &window)?,
+        None => expected_from_push_head_ledger(
+            &root,
+            &repository,
+            &args.branch,
+            &window,
+            &ledger_workflow_ids,
+        )?,
     };
     let expected = denominator.expected.clone();
     let runs = list_runs(&repository, &args.branch, &window)?;
     let mut attempts = Vec::new();
     let mut unclassified_runs = Vec::new();
     for run in runs {
+        if run
+            .workflow_id
+            .is_some_and(|id| ledger_workflow_ids.contains(&id))
+        {
+            continue;
+        }
+        if run.event.as_deref() != Some("push")
+            || run.head_branch.as_deref() != Some(args.branch.as_str())
+        {
+            unclassified_runs.push(unclassified_run(
+                &run,
+                UnclassifiedRunReason::ContaminatedProvenance,
+            ));
+            continue;
+        }
         let Some(cohort) = classify_workflow(&run, &ci_workflow_ids, &desktop_workflow_ids) else {
             unclassified_runs.push(unclassified_run(
                 &run,
@@ -404,7 +463,13 @@ fn collect(args: CollectArgs) -> Result<()> {
             )?);
         }
     }
-    let existing = read_evidence(&args.output, &repository, &window, runtime.clone())?;
+    let existing = read_evidence(
+        &args.output,
+        &repository,
+        &args.branch,
+        &window,
+        runtime.clone(),
+    )?;
     let merged = merge_evidence(
         existing,
         EvidenceUpdate {
@@ -413,9 +478,11 @@ fn collect(args: CollectArgs) -> Result<()> {
             unclassified_runs,
             denominator: denominator.denominator,
             history: denominator.history,
+            push_heads: denominator.push_heads,
             repository,
             window,
             runtime,
+            provenance,
         },
     )?;
     write_json(&args.output, &merged)?;
@@ -469,6 +536,94 @@ fn nonempty_or_env(value: String, name: &str) -> Result<String> {
     }
 }
 
+fn canonical_repository(value: &str) -> Result<String> {
+    let value = value.trim().trim_matches('/');
+    let mut parts = value.split('/');
+    let owner = parts.next().unwrap_or_default();
+    let name = parts.next().unwrap_or_default().trim_end_matches(".git");
+    if owner.is_empty()
+        || name.is_empty()
+        || parts.next().is_some()
+        || owner == "."
+        || owner == ".."
+        || name == "."
+        || name == ".."
+    {
+        bail!("repository must be an owner/name identity, got `{value}`");
+    }
+    Ok(format!("{owner}/{name}"))
+}
+
+fn remote_repository_identity(url: &str) -> Result<String> {
+    let url = url.trim().trim_end_matches('/');
+    let path = if let Some(path) = url.strip_prefix("git@github.com:") {
+        path
+    } else if let Some(path) = url.strip_prefix("https://github.com/") {
+        path
+    } else if let Some(path) = url.strip_prefix("http://github.com/") {
+        path
+    } else if let Some(path) = url.strip_prefix("ssh://git@github.com/") {
+        path
+    } else if let Some(path) = url.strip_prefix("git://github.com/") {
+        path
+    } else {
+        bail!("origin remote is not a supported github.com repository URL: `{url}`");
+    };
+    canonical_repository(path)
+}
+
+fn validate_git_remote_identity(root: &Path, repository: &str) -> Result<()> {
+    let remote = cmd::output_string(
+        Command::new("git")
+            .current_dir(root)
+            .args(["remote", "get-url", "origin"]),
+    )?;
+    let remote_repository = remote_repository_identity(&remote)?;
+    if remote_repository != repository {
+        bail!("git origin `{remote_repository}` does not match --repository `{repository}`");
+    }
+    Ok(())
+}
+
+fn collection_provenance(repository: &str, branch: &str) -> Result<CollectionProvenance> {
+    if env::var("GITHUB_ACTIONS").ok().as_deref() != Some("true") {
+        return Ok(CollectionProvenance {
+            repository: repository.to_owned(),
+            branch: branch.to_owned(),
+            event: "local".to_owned(),
+            workflow_path: "local".to_owned(),
+            run_id: None,
+        });
+    }
+    let event = env::var("GITHUB_EVENT_NAME").context("GITHUB_EVENT_NAME is missing")?;
+    let ref_name = env::var("GITHUB_REF_NAME").context("GITHUB_REF_NAME is missing")?;
+    let workflow_ref = env::var("GITHUB_WORKFLOW_REF").context("GITHUB_WORKFLOW_REF is missing")?;
+    let workflow_path = workflow_ref
+        .split_once("/.github/workflows/")
+        .and_then(|(_, suffix)| suffix.split_once('@').map(|(path, _)| path.to_owned()))
+        .context("GITHUB_WORKFLOW_REF has no workflow path")?;
+    let run_id = env::var("GITHUB_RUN_ID")
+        .context("GITHUB_RUN_ID is missing")?
+        .parse::<u64>()
+        .context("GITHUB_RUN_ID is not a number")?;
+    if event != "schedule"
+        || ref_name != branch
+        || branch != "main"
+        || workflow_path != "ci-evidence.yml"
+    {
+        bail!(
+            "CI evidence must run as the main scheduled ci-evidence workflow; event={event}, ref={ref_name}, workflow={workflow_path}"
+        );
+    }
+    Ok(CollectionProvenance {
+        repository: repository.to_owned(),
+        branch: branch.to_owned(),
+        event,
+        workflow_path,
+        run_id: Some(run_id),
+    })
+}
+
 fn names_or_default(values: Vec<String>, default: &str) -> Vec<String> {
     if values.is_empty() {
         vec![default.to_owned()]
@@ -499,6 +654,24 @@ fn runtime_identity(root: &Path, mut identity: RuntimeIdentity) -> RuntimeIdenti
         });
     }
     identity
+}
+
+fn validate_runtime_identity(identity: &RuntimeIdentity) -> Result<()> {
+    let revision = identity
+        .runtime_revision
+        .as_deref()
+        .context("runtime revision proof is missing")?;
+    if revision.len() != 40 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("runtime revision proof is not a 40-character hexadecimal identity");
+    }
+    let digest = identity
+        .contract_digest
+        .as_deref()
+        .context("contract digest proof is missing")?;
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("contract digest proof is not a 64-character hexadecimal identity");
+    }
+    Ok(())
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
@@ -535,7 +708,7 @@ fn denominator_from_fixture(
     expected: Vec<ExpectedObligation>,
     branch: &str,
     window: &TimeWindow,
-) -> ExpectedDenominator {
+) -> Result<ExpectedDenominator> {
     let expected = expected
         .into_iter()
         .map(|obligation| ExpectedObligation {
@@ -562,7 +735,7 @@ fn denominator_from_fixture(
                     .unwrap_or_else(now_rfc3339),
             });
     }
-    ExpectedDenominator {
+    let denominator = ExpectedDenominator {
         expected,
         denominator: DenominatorProof {
             source: DenominatorSource::Fixture,
@@ -570,9 +743,14 @@ fn denominator_from_fixture(
             window: window.clone(),
             fetch_succeeded: false,
             commit_count: history.len(),
+            source_workflow: None,
+            source_run_count: 0,
         },
         history: history.into_values().collect(),
-    }
+        push_heads: Vec::new(),
+    };
+    validate_expected(&denominator.expected)?;
+    Ok(denominator)
 }
 
 fn validate_expected(expected: &[ExpectedObligation]) -> Result<()> {
@@ -580,6 +758,13 @@ fn validate_expected(expected: &[ExpectedObligation]) -> Result<()> {
     for obligation in expected {
         if obligation.commit.sha.is_empty() {
             bail!("expected obligation has an empty commit SHA");
+        }
+        if obligation.commit.tree_sha.is_empty() {
+            bail!(
+                "expected obligation {} / {} has no tree identity",
+                obligation.commit.sha,
+                obligation.cohort.label()
+            );
         }
         if !seen.insert((obligation.commit.sha.clone(), obligation.cohort)) {
             bail!(
@@ -589,7 +774,7 @@ fn validate_expected(expected: &[ExpectedObligation]) -> Result<()> {
             );
         }
         let expected_source = match obligation.provenance {
-            ObligationProvenance::FirstParentHistory => DenominatorSource::FirstParentHistory,
+            ObligationProvenance::PushHeadLedger => DenominatorSource::PushHeadLedger,
             ObligationProvenance::Fixture => DenominatorSource::Fixture,
         };
         if obligation.commit.source != expected_source {
@@ -608,86 +793,416 @@ struct ExpectedDenominator {
     expected: Vec<ExpectedObligation>,
     denominator: DenominatorProof,
     history: Vec<HistoryCommitObservation>,
+    push_heads: Vec<PushHeadObservation>,
 }
 
-fn expected_from_first_parent(
+fn required_tree_sha(root: &Path, sha: &str) -> Result<String> {
+    let tree = cmd::output_string(
+        Command::new("git")
+            .current_dir(root)
+            .args(["rev-parse", &format!("{sha}^{{tree}}")]),
+    )?;
+    let tree = tree.trim();
+    if tree.is_empty() {
+        bail!("commit {sha} has no tree identity");
+    }
+    Ok(tree.to_owned())
+}
+
+const PUSH_HEAD_LEDGER_SCHEMA: u32 = 1;
+
+#[derive(Clone, Debug, Deserialize)]
+struct PushHeadLedgerArtifact {
+    schema: u32,
+    repository: String,
+    branch: String,
+    event: String,
+    workflow_path: String,
+    run_id: u64,
+    head_sha: String,
+    before_sha: String,
+    tree_sha: String,
+    committed_at: String,
+    pushed_commits: Vec<String>,
+    raw_event_sha256: String,
+}
+
+fn expected_from_push_head_ledger(
     root: &Path,
+    repository: &str,
     branch: &str,
     window: &TimeWindow,
+    ledger_workflow_ids: &BTreeSet<u64>,
 ) -> Result<ExpectedDenominator> {
-    // A shallow checkout is not an expected-work source. Extend it by the
-    // requested window, then enumerate only the default branch's first-parent
-    // history. The fetch result is part of the proof retained in the artifact.
-    let fetch_succeeded = cmd::run(Command::new("git").current_dir(root).args([
-        "fetch",
-        "--no-tags",
-        "--shallow-since",
-        &window.since,
-        "origin",
-        branch,
-    ]))
-    .is_ok();
-    if !fetch_succeeded {
-        let shallow = cmd::output_string(
-            Command::new("git")
-                .current_dir(root)
-                .args(["rev-parse", "--is-shallow-repository"]),
-        )
-        .map_or(true, |value| value.trim() == "true");
-        if shallow {
+    if ledger_workflow_ids.is_empty() {
+        bail!(
+            "durable push-head ledger workflow {DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW} was not found"
+        );
+    }
+    let shallow = cmd::output_string(
+        Command::new("git")
+            .current_dir(root)
+            .args(["rev-parse", "--is-shallow-repository"]),
+    )?;
+    let shallow = match shallow.trim() {
+        "true" => true,
+        "false" => false,
+        value => bail!("git returned invalid shallow-repository proof `{value}`"),
+    };
+    let fetch_args = if shallow {
+        vec!["fetch", "--no-tags", "--unshallow", "origin", branch]
+    } else {
+        vec!["fetch", "--no-tags", "origin", branch]
+    };
+    cmd::run(Command::new("git").current_dir(root).args(fetch_args)).with_context(|| {
+        format!("fetching complete {branch} history required to verify durable push-head coverage")
+    })?;
+
+    let runs = list_push_head_runs(repository, branch, window, ledger_workflow_ids)?;
+    if runs.is_empty() {
+        bail!(
+            "no durable push-head ledger runs cover {branch} in {}..{}",
+            window.since,
+            window.until
+        );
+    }
+    let mut observations = Vec::with_capacity(runs.len());
+    for run in runs {
+        let workflow_id = run
+            .workflow_id
+            .context("push-head ledger run has no workflow identity")?;
+        if !ledger_workflow_ids.contains(&workflow_id) {
             bail!(
-                "cannot derive expected main obligations: history fetch failed for shallow checkout"
+                "push-head ledger run {} has an unconfigured workflow ID",
+                run.id
+            );
+        }
+        if run.event.as_deref() != Some("push")
+            || run.head_branch.as_deref() != Some(branch)
+            || run.path.as_deref().is_some_and(|path| {
+                !workflow_path_matches(path, &[DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()])
+            })
+            || !run.status.eq_ignore_ascii_case("completed")
+            || run.conclusion.as_deref() != Some("success")
+        {
+            bail!(
+                "push-head ledger run {} is not a successful main push: event={:?}, branch={:?}, status={}, conclusion={:?}",
+                run.id,
+                run.event,
+                run.head_branch,
+                run.status,
+                run.conclusion
+            );
+        }
+        let artifact = download_push_head_artifact(repository, run.id)?;
+        observations.push(validate_push_head_artifact(
+            root,
+            repository,
+            branch,
+            &run,
+            workflow_id,
+            artifact,
+        )?);
+    }
+    observations.sort_by_key(|observation| (observation.created_at.clone(), observation.run_id));
+    validate_push_head_chain(root, branch, &observations)?;
+    let history = observations
+        .iter()
+        .map(|observation| HistoryCommitObservation {
+            sha: observation.head_sha.clone(),
+            base_sha: Some(observation.before_sha.clone()),
+            tree_sha: observation.tree_sha.clone(),
+            committed_at: observation.committed_at.clone(),
+        })
+        .collect::<Vec<_>>();
+    let expected = expected_from_history(&history, DenominatorSource::PushHeadLedger)?;
+    Ok(ExpectedDenominator {
+        expected,
+        denominator: DenominatorProof {
+            source: DenominatorSource::PushHeadLedger,
+            branch: branch.to_owned(),
+            window: window.clone(),
+            fetch_succeeded: true,
+            commit_count: history.len(),
+            source_workflow: Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()),
+            source_run_count: observations.len(),
+        },
+        history,
+        push_heads: observations,
+    })
+}
+
+fn list_push_head_runs(
+    repository: &str,
+    branch: &str,
+    window: &TimeWindow,
+    workflow_ids: &BTreeSet<u64>,
+) -> Result<Vec<ApiRun>> {
+    let mut runs: Vec<ApiRun> = Vec::new();
+    for workflow_id in workflow_ids {
+        let endpoint = format!(
+            "repos/{repository}/actions/workflows/{workflow_id}/runs?branch={branch}&event=push&per_page=100&created={since}..{until}",
+            since = api_timestamp(&window.since),
+            until = api_timestamp(&window.until)
+        );
+        runs.extend(decode_pages(&api_pages(&endpoint)?, "workflow_runs")?);
+    }
+    runs.sort_by_key(|run: &ApiRun| (run.created_at.clone(), run.id));
+    runs.dedup_by_key(|run| run.id);
+    let since = parse_timestamp(&window.since)?;
+    let until = parse_timestamp(&window.until)?;
+    for run in &runs {
+        let created_at = parse_timestamp(&run.created_at)
+            .with_context(|| format!("parsing push-head run {} creation time", run.id))?;
+        if created_at < since || created_at > until {
+            bail!(
+                "push-head ledger run {} is outside the requested window",
+                run.id
+            );
+        }
+    }
+    Ok(runs)
+}
+
+fn download_push_head_artifact(repository: &str, run_id: u64) -> Result<(Vec<u8>, Vec<u8>)> {
+    let temp = tempfile::tempdir().context("creating push-head artifact staging directory")?;
+    cmd::run(Command::new("gh").args([
+        "run",
+        "download",
+        &run_id.to_string(),
+        "--repo",
+        repository,
+        "--name",
+        DEFAULT_PUSH_HEAD_LEDGER_ARTIFACT,
+        "--dir",
+        temp.path().to_string_lossy().as_ref(),
+    ]))
+    .with_context(|| format!("downloading push-head ledger artifact for run {run_id}"))?;
+    let mut names = BTreeSet::new();
+    for entry in fs::read_dir(temp.path()).context("reading push-head artifact contents")? {
+        let entry = entry.context("reading push-head artifact entry")?;
+        if !entry.file_type()?.is_file() {
+            bail!("push-head ledger artifact contains a non-file entry");
+        }
+        names.insert(entry.file_name());
+    }
+    let expected_names = BTreeSet::from([
+        std::ffi::OsString::from("event.json"),
+        std::ffi::OsString::from("push-head.json"),
+    ]);
+    if names != expected_names {
+        bail!("push-head ledger artifact for run {run_id} has unexpected files: {names:?}");
+    }
+    Ok((
+        fs::read(temp.path().join("push-head.json")).context("reading push-head manifest")?,
+        fs::read(temp.path().join("event.json")).context("reading raw push event")?,
+    ))
+}
+
+fn validate_push_head_artifact(
+    root: &Path,
+    repository: &str,
+    branch: &str,
+    run: &ApiRun,
+    workflow_id: u64,
+    artifact: (Vec<u8>, Vec<u8>),
+) -> Result<PushHeadObservation> {
+    let (manifest_bytes, raw_event_bytes) = artifact;
+    let manifest: PushHeadLedgerArtifact = serde_json::from_slice(&manifest_bytes)
+        .with_context(|| format!("parsing push-head ledger manifest for run {}", run.id))?;
+    if manifest.schema != PUSH_HEAD_LEDGER_SCHEMA {
+        bail!(
+            "push-head ledger run {} has unsupported artifact schema {}",
+            run.id,
+            manifest.schema
+        );
+    }
+    if manifest.repository != repository
+        || manifest.branch != branch
+        || manifest.event != "push"
+        || manifest.workflow_path != DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW
+        || manifest.run_id != run.id
+        || manifest.head_sha != run.head_sha
+    {
+        bail!(
+            "push-head ledger manifest for run {} has mismatched provenance",
+            run.id
+        );
+    }
+    if manifest.before_sha.is_empty()
+        || manifest.head_sha.is_empty()
+        || manifest.tree_sha.is_empty()
+        || manifest.pushed_commits.is_empty()
+        || manifest.raw_event_sha256.is_empty()
+    {
+        bail!("push-head ledger manifest for run {} is incomplete", run.id);
+    }
+    let raw_digest = sha256_hex(&raw_event_bytes);
+    if manifest.raw_event_sha256 != raw_digest {
+        bail!(
+            "push-head ledger raw event digest mismatch for run {}",
+            run.id
+        );
+    }
+    let raw_event: serde_json::Value = serde_json::from_slice(&raw_event_bytes)
+        .with_context(|| format!("parsing raw push event for run {}", run.id))?;
+    let raw_repository = raw_event
+        .get("repository")
+        .and_then(|value| value.get("full_name"))
+        .and_then(serde_json::Value::as_str);
+    let raw_ref = raw_event.get("ref").and_then(serde_json::Value::as_str);
+    let raw_before = raw_event.get("before").and_then(serde_json::Value::as_str);
+    let raw_after = raw_event.get("after").and_then(serde_json::Value::as_str);
+    let raw_commits = raw_event
+        .get("commits")
+        .and_then(serde_json::Value::as_array)
+        .context("raw push event has no commits array")?
+        .iter()
+        .map(|commit| {
+            commit
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .context("raw push event contains a commit without an ID")
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if raw_repository != Some(repository)
+        || raw_ref != Some(format!("refs/heads/{branch}").as_str())
+        || raw_before != Some(manifest.before_sha.as_str())
+        || raw_after != Some(manifest.head_sha.as_str())
+        || raw_commits != manifest.pushed_commits
+    {
+        bail!(
+            "raw push event does not match push-head ledger manifest for run {}",
+            run.id
+        );
+    }
+    let tree_sha = required_tree_sha(root, &manifest.head_sha)?;
+    if tree_sha != manifest.tree_sha {
+        bail!("push-head ledger tree identity mismatch for run {}", run.id);
+    }
+    let committed_at = required_commit_time(root, &manifest.head_sha)?;
+    if api_timestamp(&committed_at) != api_timestamp(&manifest.committed_at) {
+        bail!(
+            "push-head ledger commit timestamp mismatch for run {}",
+            run.id
+        );
+    }
+    parse_timestamp(&run.created_at)?;
+    parse_timestamp(&manifest.committed_at)?;
+    Ok(PushHeadObservation {
+        repository: manifest.repository,
+        branch: manifest.branch,
+        event: manifest.event,
+        workflow_id,
+        workflow_path: manifest.workflow_path,
+        run_id: manifest.run_id,
+        head_sha: manifest.head_sha,
+        before_sha: manifest.before_sha,
+        tree_sha: manifest.tree_sha,
+        committed_at: manifest.committed_at,
+        created_at: run.created_at.clone(),
+        pushed_commits: manifest.pushed_commits,
+        raw_event_sha256: manifest.raw_event_sha256,
+    })
+}
+
+fn required_commit_time(root: &Path, sha: &str) -> Result<String> {
+    let committed_at = cmd::output_string(Command::new("git").current_dir(root).args([
+        "show",
+        "-s",
+        "--format=%cI",
+        sha,
+    ]))?;
+    let committed_at = committed_at.trim();
+    if committed_at.is_empty() {
+        bail!("commit {sha} has no committed-at identity");
+    }
+    Ok(committed_at.to_owned())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(bytes);
+    hex::encode(digest.finalize())
+}
+
+fn is_hex_digest(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn validate_push_head_chain(
+    root: &Path,
+    branch: &str,
+    observations: &[PushHeadObservation],
+) -> Result<()> {
+    let mut seen_runs = BTreeSet::new();
+    let mut seen_heads = BTreeSet::new();
+    for (index, observation) in observations.iter().enumerate() {
+        if !seen_runs.insert(observation.run_id) || !seen_heads.insert(observation.head_sha.clone())
+        {
+            bail!("push-head ledger contains a duplicate run or head");
+        }
+        if index > 0 && observations[index - 1].head_sha != observation.before_sha {
+            bail!(
+                "push-head ledger has a coverage gap before {}: expected {}, got {}",
+                observation.head_sha,
+                observations[index - 1].head_sha,
+                observation.before_sha
+            );
+        }
+        if is_zero_sha(&observation.before_sha) {
+            bail!("push-head ledger has an all-zero before SHA for {branch}");
+        }
+        cmd::run(Command::new("git").current_dir(root).args([
+            "merge-base",
+            "--is-ancestor",
+            &observation.before_sha,
+            &observation.head_sha,
+        ]))
+        .with_context(|| {
+            format!(
+                "verifying push-head range {}..{}",
+                observation.before_sha, observation.head_sha
+            )
+        })?;
+        let range = cmd::output_string(Command::new("git").current_dir(root).args([
+            "rev-list",
+            "--first-parent",
+            &format!("{}..{}", observation.before_sha, observation.head_sha),
+        ]))?;
+        let range = range.lines().map(str::trim).collect::<BTreeSet<_>>();
+        if range.is_empty()
+            || !range.iter().all(|sha| {
+                observation
+                    .pushed_commits
+                    .iter()
+                    .any(|pushed| pushed == sha)
+            })
+        {
+            bail!(
+                "push-head ledger entry {} does not cover its first-parent commit range",
+                observation.run_id
             );
         }
     }
     let remote = format!("refs/remotes/origin/{branch}");
-    let output = cmd::output(Command::new("git").current_dir(root).args([
-        "log",
-        "--first-parent",
-        "--since",
-        &window.since,
-        "--until",
-        &window.until,
-        "--format=%H%x00%P%x00%cI",
-        &remote,
-    ]))?;
-    let text = String::from_utf8(output).context("git log returned non-UTF-8")?;
-    let mut history = Vec::new();
-    for row in text.lines() {
-        let mut fields = row.split('\0');
-        let sha = fields.next().unwrap_or_default().to_owned();
-        let parents = fields.next().unwrap_or_default();
-        let committed_at = fields.next().unwrap_or_default().to_owned();
-        if sha.is_empty() {
-            continue;
-        }
-        let tree_sha = cmd::output_string(
-            Command::new("git")
-                .current_dir(root)
-                .args(["rev-parse", &format!("{sha}^{{tree}}")]),
-        )
-        .ok()
-        .map(|value| value.trim().to_owned());
-        history.push(HistoryCommitObservation {
-            sha,
-            base_sha: parents.split_whitespace().next().map(str::to_owned),
-            tree_sha,
-            committed_at,
-        });
+    let tip = cmd::output_string(
+        Command::new("git")
+            .current_dir(root)
+            .args(["rev-parse", &remote]),
+    )?;
+    if observations
+        .last()
+        .is_none_or(|observation| observation.head_sha != tip.trim())
+    {
+        bail!("push-head ledger does not reach the current origin/{branch} tip");
     }
-    let denominator = DenominatorProof {
-        source: DenominatorSource::FirstParentHistory,
-        branch: branch.to_owned(),
-        window: window.clone(),
-        fetch_succeeded,
-        commit_count: history.len(),
-    };
-    let expected = expected_from_history(&history, DenominatorSource::FirstParentHistory)?;
-    Ok(ExpectedDenominator {
-        expected,
-        denominator,
-        history,
-    })
+    Ok(())
+}
+
+fn is_zero_sha(value: &str) -> bool {
+    !value.is_empty() && value.chars().all(|character| character == '0')
 }
 
 fn expected_from_history(
@@ -701,10 +1216,7 @@ fn expected_from_history(
             bail!("history commit observation has incomplete identity");
         }
         if !seen.insert(history_commit.sha.clone()) {
-            bail!(
-                "duplicate first-parent history commit {}",
-                history_commit.sha
-            );
+            bail!("duplicate denominator commit {}", history_commit.sha);
         }
         let commit = ExpectedCommit {
             sha: history_commit.sha.clone(),
@@ -718,9 +1230,7 @@ fn expected_from_history(
                 commit: commit.clone(),
                 cohort,
                 provenance: match source {
-                    DenominatorSource::FirstParentHistory => {
-                        ObligationProvenance::FirstParentHistory
-                    }
+                    DenominatorSource::PushHeadLedger => ObligationProvenance::PushHeadLedger,
                     DenominatorSource::Fixture => ObligationProvenance::Fixture,
                 },
             });
@@ -748,7 +1258,13 @@ struct ApiRun {
     path: Option<String>,
     #[serde(default)]
     event: Option<String>,
+    #[serde(default)]
+    head_branch: Option<String>,
     head_sha: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    conclusion: Option<String>,
     #[serde(default)]
     run_attempt: u32,
     created_at: String,
@@ -799,7 +1315,7 @@ fn list_runs(repository: &str, branch: &str, window: &TimeWindow) -> Result<Vec<
         since = api_timestamp(&window.since),
         until = api_timestamp(&window.until)
     );
-    let mut runs = decode_pages(&api_pages(&endpoint)?, "workflow_runs")?;
+    let mut runs: Vec<ApiRun> = decode_pages(&api_pages(&endpoint)?, "workflow_runs")?;
     runs.sort_by_key(|run: &ApiRun| (run.created_at.clone(), run.id));
     runs.dedup_by_key(|run| run.id);
     Ok(runs)
@@ -809,7 +1325,7 @@ fn list_workflow_ids(
     repository: &str,
     ci_workflows: &[String],
     desktop_workflows: &[String],
-) -> Result<(BTreeSet<u64>, BTreeSet<u64>)> {
+) -> Result<(BTreeSet<u64>, BTreeSet<u64>, BTreeSet<u64>)> {
     let pages = api_pages(&format!(
         "repos/{repository}/actions/workflows?per_page=100"
     ))?;
@@ -824,13 +1340,28 @@ fn list_workflow_ids(
         .filter(|workflow| workflow_path_matches(&workflow.path, desktop_workflows))
         .map(|workflow| workflow.id)
         .collect::<BTreeSet<_>>();
+    let ledger_ids = workflows
+        .iter()
+        .filter(|workflow| {
+            workflow_path_matches(
+                &workflow.path,
+                &[DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()],
+            )
+        })
+        .map(|workflow| workflow.id)
+        .collect::<BTreeSet<_>>();
     if ci_ids.is_empty() {
         bail!("configured CI/Main workflow was not found in the Actions API");
     }
     if desktop_ids.is_empty() {
         bail!("configured Desktop workflow was not found in the Actions API");
     }
-    Ok((ci_ids, desktop_ids))
+    if ledger_ids.is_empty() {
+        bail!(
+            "durable push-head ledger workflow {DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW} was not found in the Actions API"
+        );
+    }
+    Ok((ci_ids, desktop_ids, ledger_ids))
 }
 
 fn api_timestamp(value: &str) -> String {
@@ -1016,6 +1547,11 @@ fn normalize_attempt(
         .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
     let classification = classify_outcome(status, conclusion, &jobs, &expected_work);
+    let raw_observation = RawAttemptObservation {
+        status: status.clone(),
+        conclusion: attempt.conclusion.clone(),
+        jobs: jobs.clone(),
+    };
     let mut evidence_urls = Vec::new();
     if let Some(url) = attempt.html_url.clone().or_else(|| run.html_url.clone()) {
         evidence_urls.push(url);
@@ -1074,6 +1610,7 @@ fn normalize_attempt(
         classification,
         data_quality_reason: None,
         conflicting_observations: Vec::new(),
+        raw_observations: vec![raw_observation],
         runtime,
         evidence_urls,
         first_observed_at: now_rfc3339(),
@@ -1139,6 +1676,7 @@ fn classify_outcome(
 fn read_evidence(
     path: &Path,
     repository: &str,
+    branch: &str,
     window: &TimeWindow,
     runtime: RuntimeIdentity,
 ) -> Result<EvidenceFile> {
@@ -1157,6 +1695,20 @@ fn read_evidence(
     if existing.repository != repository {
         bail!("evidence repository differs from requested repository");
     }
+    if existing.provenance.repository != repository || existing.provenance.branch != branch {
+        bail!("evidence collection provenance differs from requested repository/branch");
+    }
+    if existing.runtime != runtime {
+        bail!("evidence runtime identity differs from the current collector runtime");
+    }
+    let existing_since = parse_timestamp(&existing.window.since)?;
+    let current_since = parse_timestamp(&window.since)?;
+    if parse_timestamp(&existing.window.until)? > parse_timestamp(&window.until)? {
+        bail!("evidence window extends beyond the current collection window");
+    }
+    if existing_since > current_since {
+        bail!("evidence window starts after the current collection window");
+    }
     Ok(existing)
 }
 
@@ -1167,14 +1719,24 @@ fn empty_evidence(repository: &str, window: &TimeWindow, runtime: RuntimeIdentit
         window: window.clone(),
         generated_at: now_rfc3339(),
         runtime,
+        provenance: CollectionProvenance {
+            repository: repository.to_owned(),
+            branch: String::new(),
+            event: "local".to_owned(),
+            workflow_path: "local".to_owned(),
+            run_id: None,
+        },
         denominator: DenominatorProof {
             source: DenominatorSource::Fixture,
             branch: String::new(),
             window: window.clone(),
             fetch_succeeded: false,
             commit_count: 0,
+            source_workflow: None,
+            source_run_count: 0,
         },
         history: Vec::new(),
+        push_heads: Vec::new(),
         expected: Vec::new(),
         attempts: Vec::new(),
         unclassified_runs: Vec::new(),
@@ -1187,9 +1749,11 @@ struct EvidenceUpdate {
     unclassified_runs: Vec<UnclassifiedRun>,
     denominator: DenominatorProof,
     history: Vec<HistoryCommitObservation>,
+    push_heads: Vec<PushHeadObservation>,
     repository: String,
     window: TimeWindow,
     runtime: RuntimeIdentity,
+    provenance: CollectionProvenance,
 }
 
 fn merge_evidence(mut existing: EvidenceFile, update: EvidenceUpdate) -> Result<EvidenceFile> {
@@ -1199,15 +1763,21 @@ fn merge_evidence(mut existing: EvidenceFile, update: EvidenceUpdate) -> Result<
         mut unclassified_runs,
         denominator,
         history,
+        push_heads,
         repository,
         window,
         runtime,
+        provenance,
     } = update;
     let derived_expected = expected_from_history(&history, denominator.source)?;
     if expected != derived_expected {
-        bail!("expected obligations do not match raw first-parent history");
+        bail!("expected obligations do not match raw denominator history");
     }
     validate_expected(&expected)?;
+    validate_denominator(&repository, &denominator, &history, &push_heads, &window)?;
+    if !existing.expected.is_empty() && existing.denominator.source != denominator.source {
+        bail!("restored evidence uses a different denominator source");
+    }
     let expected_keys = expected
         .iter()
         .map(|obligation| (obligation.commit.sha.clone(), obligation.cohort))
@@ -1217,37 +1787,11 @@ fn merge_evidence(mut existing: EvidenceFile, update: EvidenceUpdate) -> Result<
         .drain(..)
         .map(|attempt| ((attempt.run_id, attempt.attempt), attempt))
         .collect::<BTreeMap<_, _>>();
-    for attempt in attempts {
+    for mut attempt in attempts {
+        preserve_raw_attempt_snapshot(&mut attempt);
         let key = (attempt.run_id, attempt.attempt);
         if let Some(previous) = by_key.get_mut(&key) {
-            // A delayed API response must not replace a terminal verdict with
-            // an older in-progress snapshot. The collector is append-only for
-            // the identity `(run_id, attempt)`; only a nonterminal row may be
-            // completed by a later terminal observation.
-            if is_terminal(&previous.status, previous.conclusion.as_deref())
-                && !is_terminal(&attempt.status, attempt.conclusion.as_deref())
-            {
-                continue;
-            }
-            if is_terminal(&previous.status, previous.conclusion.as_deref())
-                && is_terminal(&attempt.status, attempt.conclusion.as_deref())
-                && raw_attempt_observation(previous) != raw_attempt_observation(&attempt)
-            {
-                if previous.conflicting_observations.is_empty() {
-                    let previous_observation = raw_attempt_observation(previous);
-                    previous.conflicting_observations.push(previous_observation);
-                }
-                previous
-                    .conflicting_observations
-                    .push(raw_attempt_observation(&attempt));
-                previous.classification = OutcomeClass::DataQuality;
-                previous.data_quality_reason =
-                    Some(DataQualityReason::ConflictingTerminalObservation);
-                continue;
-            }
-            let first_observed_at = previous.first_observed_at.clone();
-            *previous = attempt;
-            previous.first_observed_at = first_observed_at;
+            merge_attempt_observation(previous, attempt);
         } else {
             by_key.insert(key, attempt);
         }
@@ -1263,8 +1807,10 @@ fn merge_evidence(mut existing: EvidenceFile, update: EvidenceUpdate) -> Result<
     existing.window = window;
     existing.generated_at = now_rfc3339();
     existing.runtime = runtime;
+    existing.provenance = provenance;
     existing.denominator = denominator;
     existing.history = history;
+    existing.push_heads = push_heads;
     existing.expected = expected;
     existing.attempts = attempts;
     unclassified_runs.sort_by_key(|run| (run.created_at.clone(), run.run_id));
@@ -1282,6 +1828,68 @@ fn raw_attempt_observation(attempt: &AttemptEvidence) -> RawAttemptObservation {
     }
 }
 
+fn preserve_raw_attempt_snapshot(attempt: &mut AttemptEvidence) {
+    let current = raw_attempt_observation(attempt);
+    if !attempt.raw_observations.contains(&current) {
+        attempt.raw_observations.push(current);
+    }
+    for observation in attempt.conflicting_observations.clone() {
+        if !attempt.raw_observations.contains(&observation) {
+            attempt.raw_observations.push(observation);
+        }
+    }
+}
+
+fn merge_attempt_observation(previous: &mut AttemptEvidence, incoming: AttemptEvidence) {
+    let previous_raw = raw_attempt_observation(previous);
+    let incoming_raw = raw_attempt_observation(&incoming);
+    let first_observed_at = previous.first_observed_at.clone();
+    let previous_terminal = is_terminal(&previous.status, previous.conclusion.as_deref());
+    let incoming_terminal = is_terminal(&incoming.status, incoming.conclusion.as_deref());
+    let keep_previous = previous_terminal && (!incoming_terminal || previous_raw != incoming_raw);
+    let mut raw_observations = previous.raw_observations.clone();
+    for observation in incoming.raw_observations.iter().cloned() {
+        if !raw_observations.contains(&observation) {
+            raw_observations.push(observation);
+        }
+    }
+    for observation in [previous_raw, incoming_raw] {
+        if !raw_observations.contains(&observation) {
+            raw_observations.push(observation);
+        }
+    }
+    let sticky_reason = previous
+        .data_quality_reason
+        .or(incoming.data_quality_reason);
+    let terminal_observations = terminal_raw_observations(&raw_observations);
+    let conflicting = sticky_reason == Some(DataQualityReason::ConflictingTerminalObservation)
+        || terminal_observations.len() > 1;
+    if !keep_previous {
+        *previous = incoming;
+    }
+    previous.first_observed_at = first_observed_at;
+    previous.raw_observations = raw_observations;
+    if conflicting {
+        previous.data_quality_reason = Some(DataQualityReason::ConflictingTerminalObservation);
+        previous.conflicting_observations = terminal_observations;
+        previous.classification = OutcomeClass::DataQuality;
+    } else {
+        previous.data_quality_reason = sticky_reason;
+    }
+}
+
+fn terminal_raw_observations(observations: &[RawAttemptObservation]) -> Vec<RawAttemptObservation> {
+    let mut terminal = Vec::new();
+    for observation in observations {
+        if is_terminal(&observation.status, observation.conclusion.as_deref())
+            && !terminal.contains(observation)
+        {
+            terminal.push(observation.clone());
+        }
+    }
+    terminal
+}
+
 fn is_terminal(status: &str, _conclusion: Option<&str>) -> bool {
     status.eq_ignore_ascii_case("completed")
 }
@@ -1295,10 +1903,18 @@ fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
         bail!("unsupported evidence schema {}", evidence.schema);
     }
     validate_window(&evidence.window)?;
-    validate_denominator(&evidence.denominator, &evidence.history, &evidence.window)?;
+    validate_runtime_identity(&evidence.runtime)?;
+    validate_collection_provenance(&evidence.provenance, &evidence.repository)?;
+    validate_denominator(
+        &evidence.repository,
+        &evidence.denominator,
+        &evidence.history,
+        &evidence.push_heads,
+        &evidence.window,
+    )?;
     let derived_expected = expected_from_history(&evidence.history, evidence.denominator.source)?;
     if evidence.expected != derived_expected {
-        bail!("expected obligations are not derived from raw first-parent history");
+        bail!("expected obligations are not derived from raw denominator history");
     }
     validate_expected(&evidence.expected)?;
     let expected = evidence
@@ -1344,6 +1960,22 @@ fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
                 attempt.run_id
             );
         }
+        let expected_commit = evidence
+            .expected
+            .iter()
+            .find(|obligation| {
+                obligation.commit.sha == attempt.head_sha && obligation.cohort == attempt.cohort
+            })
+            .context("attempt expected obligation disappeared during validation")?;
+        if attempt.tree_sha.is_empty() || attempt.tree_sha != expected_commit.commit.tree_sha {
+            bail!(
+                "attempt {} has a missing or stale tree identity",
+                attempt.run_id
+            );
+        }
+        if attempt.runtime != evidence.runtime {
+            bail!("attempt {} has stale runtime provenance", attempt.run_id);
+        }
         let expected_work = attempt
             .cohort
             .expected_work()
@@ -1376,45 +2008,50 @@ fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
             &attempt.jobs,
             &attempt.expected_work,
         );
+        let retained_observation = raw_attempt_observation(attempt);
+        if attempt.raw_observations.is_empty()
+            || !attempt.raw_observations.contains(&retained_observation)
+            || attempt
+                .raw_observations
+                .iter()
+                .any(|observation| observation.status.is_empty())
+        {
+            bail!(
+                "attempt {} retained row is not represented by complete raw observations",
+                attempt.run_id
+            );
+        }
+        let terminal_observations = terminal_raw_observations(&attempt.raw_observations);
         if let Some(reason) = attempt.data_quality_reason {
             if reason != DataQualityReason::ConflictingTerminalObservation
                 || attempt.classification != OutcomeClass::DataQuality
-                || attempt.conflicting_observations.len() < 2
+                || terminal_observations.len() < 2
+                || attempt.conflicting_observations != terminal_observations
             {
                 bail!(
                     "attempt {} has an unproven data-quality conflict",
                     attempt.run_id
                 );
             }
-            let first = &attempt.conflicting_observations[0];
-            if !attempt
+            if attempt
                 .conflicting_observations
                 .iter()
-                .skip(1)
-                .any(|observation| {
-                    observation.status != first.status
-                        || observation.conclusion != first.conclusion
-                        || observation.jobs != first.jobs
-                })
+                .any(|observation| !attempt.raw_observations.contains(observation))
+                || (is_terminal(&attempt.status, attempt.conclusion.as_deref())
+                    && !attempt
+                        .conflicting_observations
+                        .contains(&retained_observation))
             {
                 bail!(
-                    "attempt {} conflict marker has no distinct raw observations",
+                    "attempt {} conflict marker is not represented by retained raw observations",
                     attempt.run_id
                 );
             }
-            if !attempt.conflicting_observations.iter().any(|observation| {
-                classify_outcome(
-                    &observation.status,
-                    observation.conclusion.as_deref(),
-                    &observation.jobs,
-                    &attempt.expected_work,
-                ) != recomputed
-            }) {
-                bail!(
-                    "attempt {} conflict marker does not change derived classification",
-                    attempt.run_id
-                );
-            }
+        } else if terminal_observations.len() > 1 || !attempt.conflicting_observations.is_empty() {
+            bail!(
+                "attempt {} terminal conflict provenance was cleared",
+                attempt.run_id
+            );
         } else if attempt.classification != recomputed {
             bail!(
                 "attempt {} classification does not match its raw status, conclusion, and jobs",
@@ -1458,9 +2095,37 @@ fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
     Ok(())
 }
 
+fn validate_collection_provenance(
+    provenance: &CollectionProvenance,
+    repository: &str,
+) -> Result<()> {
+    if provenance.repository != repository
+        || provenance.branch.is_empty()
+        || provenance.event.is_empty()
+        || provenance.workflow_path.is_empty()
+    {
+        bail!("collection provenance is incomplete or bound to another repository");
+    }
+    match provenance.event.as_str() {
+        "schedule" => {
+            if provenance.branch != "main"
+                || provenance.workflow_path != "ci-evidence.yml"
+                || provenance.run_id.is_none()
+            {
+                bail!("scheduled evidence provenance is not bound to main ci-evidence");
+            }
+        }
+        "local" | "test" => {}
+        event => bail!("unsupported CI evidence collection event `{event}`"),
+    }
+    Ok(())
+}
+
 fn validate_denominator(
+    repository: &str,
     proof: &DenominatorProof,
     history: &[HistoryCommitObservation],
+    push_heads: &[PushHeadObservation],
     window: &TimeWindow,
 ) -> Result<()> {
     if proof.branch.is_empty() || proof.window != *window {
@@ -1469,10 +2134,76 @@ fn validate_denominator(
     if proof.commit_count != history.len() {
         bail!("denominator proof commit count does not match history");
     }
-    if proof.source == DenominatorSource::FirstParentHistory && !proof.fetch_succeeded {
-        bail!("first-parent denominator is missing a successful history fetch proof");
+    match proof.source {
+        DenominatorSource::PushHeadLedger => {
+            if !proof.fetch_succeeded
+                || proof.source_workflow.as_deref() != Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW)
+                || proof.source_run_count != push_heads.len()
+                || push_heads.is_empty()
+                || history.len() != push_heads.len()
+            {
+                bail!("push-head denominator is missing durable source proof");
+            }
+            let mut seen_heads = BTreeSet::new();
+            let mut seen_runs = BTreeSet::new();
+            for observation in push_heads {
+                if observation.repository != repository
+                    || observation.branch != proof.branch
+                    || observation.event != "push"
+                    || observation.workflow_path != DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW
+                    || observation.run_id == 0
+                    || observation.head_sha.is_empty()
+                    || observation.before_sha.is_empty()
+                    || observation.tree_sha.is_empty()
+                    || observation.pushed_commits.is_empty()
+                    || !is_hex_digest(&observation.raw_event_sha256)
+                    || !observation
+                        .pushed_commits
+                        .iter()
+                        .any(|commit| commit == &observation.head_sha)
+                    || observation
+                        .pushed_commits
+                        .iter()
+                        .collect::<BTreeSet<_>>()
+                        .len()
+                        != observation.pushed_commits.len()
+                    || !seen_heads.insert(observation.head_sha.clone())
+                    || !seen_runs.insert(observation.run_id)
+                {
+                    bail!("push-head denominator contains invalid or duplicate provenance");
+                }
+                parse_timestamp(&observation.committed_at)?;
+                parse_timestamp(&observation.created_at)?;
+            }
+            if history.iter().zip(push_heads).any(|(commit, observation)| {
+                commit.sha != observation.head_sha
+                    || commit.base_sha.as_deref() != Some(observation.before_sha.as_str())
+                    || commit.tree_sha != observation.tree_sha
+                    || commit.committed_at != observation.committed_at
+            }) {
+                bail!("push-head denominator history is not the retained ledger");
+            }
+            if push_heads
+                .windows(2)
+                .any(|pair| pair[1].before_sha != pair[0].head_sha)
+            {
+                bail!("push-head denominator chain has a coverage gap");
+            }
+        }
+        DenominatorSource::Fixture => {
+            if proof.fetch_succeeded
+                || proof.source_workflow.is_some()
+                || proof.source_run_count != 0
+                || !push_heads.is_empty()
+            {
+                bail!("fixture denominator contains durable-source provenance");
+            }
+        }
     }
     for commit in history {
+        if commit.sha.is_empty() || commit.tree_sha.is_empty() {
+            bail!("denominator commit is missing SHA/tree identity");
+        }
         parse_timestamp(&commit.committed_at)?;
     }
     Ok(())
@@ -1596,7 +2327,7 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
         .sum();
     let green_claim_qualified = total_first_attempt_failures == 0
         && !evidence.expected.is_empty()
-        && evidence.denominator.source == DenominatorSource::FirstParentHistory
+        && evidence.denominator.source == DenominatorSource::PushHeadLedger
         && evidence.denominator.fetch_succeeded
         && evidence.unclassified_runs.is_empty();
     RollupFile {
@@ -1627,8 +2358,8 @@ fn timing_counts(attempts: &[&AttemptEvidence]) -> (usize, usize) {
 
 fn require_qualified(rollup: &RollupFile) -> Result<()> {
     let mut reasons = Vec::new();
-    if rollup.denominator.source != DenominatorSource::FirstParentHistory {
-        reasons.push("denominator is not first-parent main history");
+    if rollup.denominator.source != DenominatorSource::PushHeadLedger {
+        reasons.push("denominator is not the durable push-head ledger");
     }
     if !rollup.denominator.fetch_succeeded {
         reasons.push("denominator fetch proof is incomplete");

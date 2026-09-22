@@ -4,6 +4,26 @@ Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, se
 
 ## Current continuation — 2026-09-23
 
+### Collector repair state
+
+The collector repair replaces the historical first-parent denominator with a
+durable `PushHeadLedger`. The generated `ci-push-head-ledger.yml` records one
+successful `push` event for each `main` push, including the raw event,
+`before`/`after`, every pushed commit, tree and commit-time proofs, and a
+payload digest. Collector coverage is one CI/Main and one Desktop obligation
+per push head; multi-commit pushes retain all raw commit IDs and verify the
+first-parent range without creating disappearing intermediate obligations.
+Missing or contaminated ledger runs/artifacts, chain gaps, missing tree or
+remote identity, and invalid provenance fail closed. Observed workflow heads
+and the capped Events feed are never denominator sources.
+
+The generated workflow also has Velnor's unavoidable `workflow_dispatch`
+trigger. Its task rejects non-`push` events, and the collector accepts no
+manual artifact, so dispatch cannot manufacture denominator coverage. Scheduled
+rollover restores only the exact completed scheduled `main` `ci-evidence.yml`
+artifact and validates repository, branch, window, runtime, provenance, and
+push-head-ledger source before use. Schema 4 remains a hard boundary.
+
 | Agent ID | Assignment | Current result |
 |---|---|---|
 | `01a0c9b8-95ba-7f42-a60c-5beb137891ad` | Schema-4 evidence collector | `12dea6c5` implemented; live rollup is fail-closed; independent review found four blockers; repair delegated |
@@ -53,14 +73,12 @@ closure for the report findings.
   cannot synthesize auth or rate-limit classes. `587` usage tests and clippy
   pass, but independent review found OpenRouter propagation and pre-response
   clock gaps; provider repair remains active.
-- `3c390a9c` hardens the collector to schema 4, first-parent history, stable
-  workflow IDs, raw conflict observations, terminal timing, schema reset, and
-  nonzero unqualified rollups. The live window `2026-09-22T10:00:00Z` →
-  `16:23:18Z` collected `22` obligations/attempts across `11` commits:
-  `14` successes and `8` non-green outcomes; `11` runs were unclassified,
-  qualified green and six-nines remained false. Independent review found
-  push-head denominator, remote/tree identity, sticky-conflict, and artifact
-  provenance blockers. Repair is active.
+- `3c390a9c` hardened the collector to schema 4, stable workflow IDs, raw
+  conflict observations, terminal timing, schema reset, and nonzero
+  unqualified rollups. Its historical first-parent denominator was rejected by
+  independent review because multi-commit pushes could hide absent workflow
+  obligations. The repair now requires the durable push-head ledger described
+  above; no observed-head or first-parent-history fallback is complete.
 - Velnor selection PR #1075 merged as `aa2345bd`; its runtime product is
   published and pinned by `2b814caa`. Phase-retention PR #1076 passed local
   Velnor tests but its first live PR run failed before candidate publication

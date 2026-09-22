@@ -986,7 +986,7 @@ jobs:
         env:
           VELNOR_TRANSPORT_OUTPUTS: |
             target/xcframework/JackinUsage.xcframework
-        run: velnor-workflow stage-product --producer 'rust-jackin-usage-ffi' --product 'xcframework-jackinusage' --digest 'af3d20c1ea5e2df48310ea6aeed82598d1d60ad1cf583446e23e1bd99aabbf31' --stage "$RUNNER_TEMP/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage"
+        run: velnor-workflow stage-product --producer 'rust-jackin-usage-ffi' --product 'xcframework-jackinusage' --digest 'bc79727d4e4686c4696fd8231d2a32ba8975dd9843cbdd8f7fc346905fa7982a' --stage "$RUNNER_TEMP/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage"
       - name: Upload product velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
