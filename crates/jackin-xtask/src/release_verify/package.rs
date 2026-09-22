@@ -20,6 +20,7 @@ use tar::Archive;
 use super::{
     archive_sha256, sibling_with_suffix, verify_cosign_bundle, verify_sbom, verify_sha256_file,
 };
+use crate::fs_util::read_dir_sorted;
 
 #[cfg(test)]
 mod tests;
@@ -235,11 +236,9 @@ fn verify_context() -> Result<()> {
 fn verify_exact_package_files(package_dir: &Path) -> Result<()> {
     let expected = expected_file_names();
     let mut actual = BTreeSet::new();
-    for entry in fs::read_dir(package_dir)
+    for entry in read_dir_sorted(package_dir)
         .with_context(|| format!("reading package directory {}", package_dir.display()))?
     {
-        let entry =
-            entry.with_context(|| format!("reading package entry in {}", package_dir.display()))?;
         let file_type = entry
             .file_type()
             .with_context(|| format!("stating package entry in {}", package_dir.display()))?;
