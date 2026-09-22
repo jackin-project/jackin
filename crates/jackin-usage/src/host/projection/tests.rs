@@ -541,9 +541,8 @@ fn parity_issue(
     }
 }
 
-/// Clock-parameterized bucket builder. Structural tests pass the fixed
-/// `PARITY_NOW`; render tests pass wall time because the console renderer
-/// hardcodes a wall-clock `now` for its relative labels.
+/// Clock-parameterized bucket builder. Structural and render tests pass the
+/// same fixed `PARITY_NOW` into every layer that derives relative labels.
 fn parity_bucket_view_at(def: &ParityBucket, now: i64) -> QuotaBucketView {
     let mut view = timed_bucket(
         def.label,
@@ -2213,7 +2212,7 @@ fn parity_s4_empty_inventory() {
     assert!(provider_tabs(&[]).is_empty());
     assert!(parity_tabs(&[]).is_empty());
 
-    let text = parity_render_text(screen, 100, 24);
+    let text = parity_render_text(screen, 100, 24, PARITY_NOW);
     assert!(
         text.contains("No providers configured"),
         "empty inventory must explain itself:\n{text}"
@@ -2336,7 +2335,12 @@ fn parity_unresolved_stays_console_only() {
     assert_eq!(enriched[0].tabs[0].account_label, "zero@example.test");
 }
 
-fn parity_render_text(screen_state: UsageScreenState, width: u16, height: u16) -> String {
+fn parity_render_text(
+    screen_state: UsageScreenState,
+    width: u16,
+    height: u16,
+    render_at: i64,
+) -> String {
     use jackin_console::tui::state::ManagerState;
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -2347,7 +2351,12 @@ fn parity_render_text(screen_state: UsageScreenState, width: u16, height: u16) -
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            jackin_console::tui::screens::usage::render(frame, frame.area(), &manager);
+            jackin_console::tui::screens::usage::render_at(
+                frame,
+                frame.area(),
+                &manager,
+                render_at,
+            );
         })
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
@@ -2880,91 +2889,12 @@ fn documented_delta_error_buckets_carry_no_percent() {
     assert!(error_view.buckets.is_empty());
 }
 
-/// Wall clock for render tests only. The console renderer hardcodes wall
-/// time for relative labels, so render fixtures are shifted to wall time
-/// while every structural assertion keeps the fixed `PARITY_NOW`.
-fn parity_wall_now() -> i64 {
-    let elapsed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)
-}
-
-/// Shift every absolute timestamp in one fixture account by `delta`,
-/// preserving all ages and countdowns.
-fn parity_shift_account(account: &ParityAccount, delta: i64) -> ParityAccount {
-    let mut shifted = account.clone();
-    shifted.fetched_at += delta;
-    for bucket in &mut shifted.buckets {
-        if let Some(reset) = bucket.reset_at.as_mut() {
-            *reset += delta;
-        }
-    }
-    for issue in &mut shifted.account_issues {
-        if let Some(retry) = issue.retry_at_epoch.as_mut() {
-            *retry += delta;
-        }
-    }
-    if let Some(expires) = shifted.credential_expires_at.as_mut() {
-        *expires += delta;
-    }
-    for group in &mut shifted.extra_groups {
-        group.fetched_at += delta;
-        for epoch in [
-            &mut group.observed_at,
-            &mut group.last_success_at,
-            &mut group.reset_at,
-            &mut group.renews_at,
-        ] {
-            if let Some(epoch) = epoch.as_mut() {
-                *epoch += delta;
-            }
-        }
-        if let UsageMetricValueV1::Balance {
-            expires_at_epoch: Some(expires),
-            ..
-        } = &mut group.value
-        {
-            *expires += delta;
-        }
-    }
-    shifted
-}
-
-fn parity_shift_providers(providers: &[ParityProvider], delta: i64) -> Vec<ParityProvider> {
-    providers
-        .iter()
-        .map(|provider| ParityProvider {
-            provider_id: provider.provider_id,
-            display_name: provider.display_name,
-            accounts: provider
-                .accounts
-                .iter()
-                .map(|account| parity_shift_account(account, delta))
-                .collect(),
-            provider_issues: provider
-                .provider_issues
-                .iter()
-                .map(|issue| {
-                    let mut shifted = issue.clone();
-                    if let Some(retry) = shifted.retry_at_epoch.as_mut() {
-                        *retry += delta;
-                    }
-                    shifted
-                })
-                .collect(),
-        })
-        .collect()
-}
-
-fn parity_mega_screen() -> UsageScreenState {
-    // Wall-relative: the renderer reads wall time for relative labels.
-    // Fixture offsets sit mid-bucket (≥30s from every edge), so the render
-    // that follows within milliseconds cannot straddle a bucket boundary.
-    let now = parity_wall_now();
-    let providers = parity_shift_providers(&parity_mega_providers(), now - PARITY_NOW);
+fn parity_mega_screen(render_at: i64) -> UsageScreenState {
+    // The fixture and renderer share one explicit epoch. This keeps relative
+    // labels stable without mutating fixture timestamps to wall time.
+    let providers = parity_mega_providers();
     let (projection, _) = parity_projection_at(
-        now,
+        render_at,
         &providers,
         parity_unresolved_entries(),
         vec![parity_projection_issue()],
@@ -2976,7 +2906,13 @@ fn parity_mega_screen() -> UsageScreenState {
 fn parity_console_render_smoke_overview() {
     // Renderer-private strings pinned end to end: every scenario provider,
     // both unresolved rows, the notice, and the projection issue.
-    let text = parity_render_text(parity_mega_screen(), 150, 240);
+    let screen = parity_mega_screen(PARITY_NOW);
+    let text = parity_render_text(screen.clone(), 150, 240, PARITY_NOW);
+    let repeated = parity_render_text(screen, 150, 240, PARITY_NOW);
+    assert_eq!(
+        text, repeated,
+        "fixed-clock parity render must be repeatable"
+    );
     for expected in [
         // Antigravity two-family fixture.
         "Antigravity · pilot@example.test",
@@ -3046,10 +2982,10 @@ fn parity_console_render_smoke_overview() {
 #[test]
 fn parity_console_render_smoke_detail_scopes() {
     // Group scope lines only render in the account detail pane.
-    let mut screen = parity_mega_screen();
+    let mut screen = parity_mega_screen(PARITY_NOW);
     screen.selected = 1;
     screen.detail = true;
-    let text = parity_render_text(screen, 120, 70);
+    let text = parity_render_text(screen, 120, 70, PARITY_NOW);
     for expected in [
         "Provider  Antigravity",
         "Account   pilot@example.test",
@@ -3070,10 +3006,10 @@ fn parity_console_render_smoke_detail_scopes() {
         );
     }
 
-    let mut screen = parity_mega_screen();
+    let mut screen = parity_mega_screen(PARITY_NOW);
     screen.selected = 2;
     screen.detail = true;
-    let text = parity_render_text(screen, 120, 70);
+    let text = parity_render_text(screen, 120, 70, PARITY_NOW);
     for expected in [
         "Tokens (token totals · n/a · updated 2m ago)",
         "scope: model claude-opus-4-6",
@@ -3096,20 +3032,20 @@ fn parity_console_render_smoke_detail_scopes() {
 
 #[test]
 fn parity_s5_render_smoke() {
-    let now = parity_wall_now();
-    let providers = parity_shift_providers(
-        &[ParityProvider {
-            provider_id: "anthropic",
-            display_name: "Anthropic",
-            accounts: vec![parity_claude_work_account(), parity_old_stale_account()],
-            provider_issues: Vec::new(),
-        }],
-        now - PARITY_NOW,
+    let providers = [ParityProvider {
+        provider_id: "anthropic",
+        display_name: "Anthropic",
+        accounts: vec![parity_claude_work_account(), parity_old_stale_account()],
+        provider_issues: Vec::new(),
+    }];
+    let (projection, _) = parity_projection_at(
+        PARITY_NOW,
+        &providers,
+        Vec::new(),
+        vec![parity_projection_issue()],
     );
-    let (projection, _) =
-        parity_projection_at(now, &providers, Vec::new(), vec![parity_projection_issue()]);
     let screen = UsageScreenState::from_projection(&projection);
-    let text = parity_render_text(screen, 120, 50);
+    let text = parity_render_text(screen, 120, 50, PARITY_NOW);
     for expected in [
         "Anthropic · work@example.test",
         "updated 2m ago",
