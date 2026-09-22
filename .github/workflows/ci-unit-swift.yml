@@ -135,6 +135,11 @@ on:
         type: string
         default: ""
 
+env:
+  CARGO_INCREMENTAL: "0"
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
+
 jobs:
   verify-github-hosted:
     name: "GitHub · hosted"
@@ -231,7 +236,6 @@ jobs:
             fi
           fi
       - name: Set up Mise tools
-        if: ${{ inputs.mise_tools != '' }}
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install_args: ${{ inputs.mise_tools }}

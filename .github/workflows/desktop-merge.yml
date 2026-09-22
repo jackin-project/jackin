@@ -5,6 +5,7 @@ run-name: "Desktop merge cadence · ${{ github.event_name }}"
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -12,7 +13,7 @@ permissions:
 
 concurrency:
   group: desktop-merge-${{ github.repository }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   desktop-merge:
@@ -20,11 +21,14 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 90
     env:
+      CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       DEVELOPER_DIR: "/Applications/Xcode_26.6.app/Contents/Developer"
       MACOSX_DEPLOYMENT_TARGET: "26.0"
       MISE_NOT_FOUND_AUTO_INSTALL: "false"
       MISE_TASK_RUN_AUTO_INSTALL: "false"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
