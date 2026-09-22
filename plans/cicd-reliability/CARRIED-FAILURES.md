@@ -6,6 +6,34 @@ another owner or an earlier PR. Evidence record: [EXECUTION.md](EXECUTION.md).
 
 ---
 
+## Post-#1053 live result — correctness green; performance and no-work remain FAIL
+
+PR #1053 merged as [`df4671e4`](https://github.com/jackin-project/jackin/commit/df4671e4d9f2860e90a5c71d8d0bd85b23d23291).
+The report changed the tracked generator state sidecar: the scan digest in
+`.github/ci/.github-actions-generator-state` moved from `7229bed326311884` to
+`bbbfa7f57b91cb3b`. That generated-state change is a global input. The live
+Control / Planning job therefore selected all 40 units with the explicit
+fail-closed fallback. This is correct safety behavior; it is not evidence that
+the no-work path works for documentation changes.
+
+The merged candidate's Apple evidence is:
+
+| Evidence | Live result | Verdict |
+|---|---|---|
+| [CI / PR run 35651713880](https://github.com/jackin-project/jackin/actions/runs/35651713880), [Swift job 106505596038](https://github.com/jackin-project/jackin/actions/runs/35651713880/job/106505596038) | 22m01s; 78 Swift tests passed; native build/code-generation work repeated, including a fresh `desktop-release` compile and 380 compiler-output lines | Correctness green; 120s and validated reuse FAIL |
+| [post-merge Desktop run 35656263744](https://github.com/jackin-project/jackin/actions/runs/35656263744), [Desktop job 106520585495](https://github.com/jackin-project/jackin/actions/runs/35656263744/job/106520585495) | 35m01s total; 19 UI tests passed; native products were rebuilt on the independent Apple path | Correctness green; 120s and cross-workflow reuse FAIL |
+
+The result is therefore a green correctness verdict only. The 120-second
+objective remains FAIL, cross-job/native-product reuse remains unproven and is
+recorded as FAIL for planning purposes, and a zero-work result for this
+documentation/state-sidecar change was not observed. No performance gain is
+claimed from this run.
+
+The preceding measurements and first-attempt failures remain historical
+evidence below; this addendum does not replace or recolor them.
+
+---
+
 ## 1. 120s pipeline budget — FAIL, all classes
 
 ### Observed measurements (all wall-clock, trigger → terminal)
@@ -15,6 +43,8 @@ another owner or an earlier PR. Evidence record: [EXECUTION.md](EXECUTION.md).
 | Swift unit (green) | 25 min in-step (12:14→12:38), 13 min macOS queue before start | run 35597160258 |
 | Swift unit (green) | 21 min 42 s job; 18 min 15 s unit checks | run 35598142741 (#1036) |
 | Swift unit | 26+ min queued without starting (runner starvation) | run 35602945743 (#1041) |
+| #1053 Swift unit (green) | 22 min 01 s; 78 Swift tests; repeated native compilation | [run 35651713880, job 106505596038](https://github.com/jackin-project/jackin/actions/runs/35651713880/job/106505596038) |
+| #1053 post-merge Desktop (green) | 35 min 01 s; 19 UI tests; independent native rebuild | [run 35656263744, job 106520585495](https://github.com/jackin-project/jackin/actions/runs/35656263744/job/106520585495) |
 | Full CI/Main | 18–32 min typical | session sample |
 | Desktop merge | was ~35 min, S1 cut ~22 min via bootstrap scoping | — |
 | Full matrix CI | 46 checks incl. macOS; queue + build dominate | runs 35598570563, 35611817500 |
@@ -32,10 +62,12 @@ representative measurements and remain unproven, not measured FAIL.
    mis-measurement.
 2. **macOS queue starvation.** 13-min waits observed; jobs sit `queued` while
    Linux jobs drain. External capacity constraint (GitHub-hosted).
-3. **Full-matrix fan-in.** Global generator/state-sidecar changes force broad
-   work (28–46 units). D3's closed read contracts make unmatched paths
-   irrelevant/no-work for declared closed units, so `plans/**` is not a blanket
-   FULL trigger; current live probes still need to prove the selected set.
+3. **Full-matrix fan-in.** The #1053 state-sidecar change selected all 40 units
+   through the explicit fail-closed path. That selection is correct, but it
+   proves neither a zero-work result for a genuine instruction-only change nor
+   a reusable native product. D3's closed read contracts remain useful for
+   declared closed units; they do not justify treating a changed global
+   sidecar as no-work.
 4. **Repeated setup.** S1 fixed the Desktop bootstrap (−22 min); per-unit
    duplication (tool install, cargo fetch, docker build) remains. S4's
    selection/read-contract capability landed in D3, while reuse and bootstrap
@@ -44,9 +76,11 @@ representative measurements and remain unproven, not measured FAIL.
 ### What was tried
 
 - S1 (Desktop bootstrap scoping): landed, −22 min. Only realized gain.
-- Affected-selection narrowing: D3 landed generic closed read contracts;
-  post-adoption adversarial/live probes are still required. Earlier 37/40
-  narrow-scope adjudications remain historical evidence, not D3 proof.
+- Affected-selection narrowing: D3 landed generic closed read contracts. The
+  #1053 live selection is an explicit 40/40 fail-closed result because the
+  state sidecar changed; it is evidence of correct conservative behavior, not
+  a no-work proof. Earlier 37/40 narrow-scope adjudications remain historical
+  evidence and do not establish no-work for this candidate.
 - S2, S3, and S5 (unit setup dedup, shared caches/cross-workflow reuse,
   cold-bootstrap slimming): scoped, not implemented.
 
