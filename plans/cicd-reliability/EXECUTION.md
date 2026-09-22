@@ -4,13 +4,12 @@ Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, se
 
 ## Current authoritative sidecar — 2026-09-23
 
-Status: **NOT COMPLETE**. Parent docs HEAD before this correction is
-`027dd762`; code/generated parent is `96c5830`; current Jackin main is
-`7e562432`. Repairs are integrated; live qualification and upstream adoption
-remain open. Generated workflows were rerun after the rebase. Post-rebase local
-gates now pass: xtask full serialized `402`, evidence-focused `30`, xtask
-clippy, generator `--plain --check`, actionlint, fmt, diff, `jackin-usage` lib
-`588`, usage clippy, and FFI `16` tests plus clippy.
+Status: **NOT COMPLETE**. Parent HEAD before this docs correction is
+`b997bb3`; current PR #1089 base `main` is
+`55e21f05bdee37a1424464ce69b86fc5e550307a`. Repairs are integrated; live
+qualification and upstream adoption remain open. The parent rebase regenerated
+workflows. Checks from heads `f3f7522` and `45149fe` were discarded; fresh PR
+CI is pending.
 
 ### Repair and evidence status
 
@@ -41,11 +40,12 @@ interchangeable with the other.
   published as a runtime, or adopted by Jackin. The Jackin pin remains
   unchanged.
 - Jackin [#1089](https://github.com/jackin-project/jackin/pull/1089) is the
-  current carrier at head `f3f752298d26d9b0ceb36f8ed7dfa565d9c5d0ae` before
-  this docs-only push. Its completed checks are green, but Desktop merge
-  cadence, usage-FFI Apple, and Swift Apple checks are still queued; GitHub
-  reports merge state `BLOCKED` and no merge claim is made. PR #1083 is not the
-  current carrier and was not reused.
+  current carrier at head
+  `b997bb3ea28461351f9dd44f07737da4094d566e`, based on `main`
+  `55e21f05bdee37a1424464ce69b86fc5e550307a`. Checks from heads `f3f7522` and
+  `45149fe` were discarded; fresh CI is pending and GitHub reports merge state
+  `BLOCKED`. No merge claim is made. PR #1083 is not the current carrier and
+  was not reused.
 
 ### Open acceptance rows
 
