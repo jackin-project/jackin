@@ -146,14 +146,14 @@ description = "Fail when committed boltffi bindings drift from regeneration"
 run = "cargo xtask desktop bindings-check"
 
 [tasks.desktop-xcframework]
-description = "Build the arm64 static JackinUsageFFI XCFramework"
+description = "Build the arm64 static JackinUsageFFI XCFramework from checked bindings"
+depends = ["desktop-bindings-check"]
 run = "cargo xtask desktop xcframework"
 
 [tasks.swift-package-native-ci]
-description = "CI gate for native SwiftPM package (xcframework then build/test)"
+description = "CI gate for native SwiftPM package using the prepared XCFramework"
 run = '''
 set -euo pipefail
-mise run desktop-xcframework
 cd native && swift build && swift test --parallel
 '''
 
@@ -187,6 +187,7 @@ run = "cd native && periphery scan --project JackinDesktop.xcodeproj --schemes J
 
 [tasks.desktop-build]
 description = "Build JackinDesktop.app (prints absolute path + how to run)"
+depends = ["desktop-bindings-check"]
 usage = '''
 arg "[version]" help="CFBundleShortVersionString (e.g. 0.6.0)"
 arg "[build]" help="CFBundleVersion numeric build (e.g. 1)"
@@ -235,12 +236,10 @@ run = "cargo xtask desktop test"
 description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
 run = '''
 set -euo pipefail
-mise run desktop-bindings-check
-mise run desktop-generate
 mise run desktop-format-check
 mise run desktop-lint
-mise run desktop-test
 mise run desktop-build
+mise run desktop-test
 cargo xtask desktop test-swift
 mise run desktop-verify
 '''

@@ -197,17 +197,16 @@ fn cadence_tasks_define_the_canonical_graph() {
     assert_subsequence(
         task_block(&mise, "desktop-ci"),
         &[
-            "desktop-bindings-check",
-            "desktop-generate",
             "desktop-format-check",
             "desktop-lint",
-            "desktop-test\n",
             "desktop-build",
+            "desktop-test\n",
             "desktop test-swift",
             "desktop-verify",
         ],
         "desktop-ci",
     );
+    assert!(!task_block(&mise, "desktop-ci").contains("desktop-generate"));
     assert_subsequence(
         task_block(&mise, "desktop-merge"),
         &["desktop-ci", "desktop-test-ui"],
@@ -218,6 +217,35 @@ fn cadence_tasks_define_the_canonical_graph() {
         &["desktop-merge", "desktop-deadcode"],
         "desktop-scheduled",
     );
+}
+
+#[test]
+fn desktop_products_have_one_checked_producer_and_no_consumer_rebuild() {
+    let mise = repo_text("mise.toml");
+    let desktop = repo_text("crates/jackin-xtask/src/desktop.rs");
+    let workflow = repo_text(".github-gen/velnor-workflow.toml");
+
+    assert!(
+        task_block(&mise, "desktop-xcframework").contains("depends = [\"desktop-bindings-check\"]")
+    );
+    assert!(
+        task_block(&mise, "swift-package-native-ci")
+            .contains("cd native && swift build && swift test --parallel")
+    );
+    assert!(!task_block(&mise, "swift-package-native-ci").contains("desktop-xcframework"));
+    assert!(desktop.contains("\"--regenerate=false\""));
+    assert!(desktop.contains("\"--xcframework-only\""));
+
+    assert!(workflow.contains("id = \"rust-jackin-usage-ffi-xcframework\""));
+    assert!(workflow.contains("native/Sources/JackinUsageBindings"));
+    assert_eq!(
+        workflow
+            .matches("producer = \"rust-jackin-usage-ffi-xcframework\"")
+            .count(),
+        2
+    );
+    assert!(!workflow.contains("task = \"desktop-xcframework\""));
+    assert!(!workflow.contains("producer = \"rust-jackin-usage-ffi\""));
 }
 
 #[test]
