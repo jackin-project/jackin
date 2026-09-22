@@ -13,6 +13,7 @@ mod ci_audit;
 mod ci_build_times;
 mod ci_cargo_audit;
 mod ci_doc_examples;
+mod ci_evidence;
 mod ci_fuzz;
 mod ci_junit;
 mod ci_result;
@@ -78,6 +79,9 @@ enum Command {
     /// Measure clean-package and incremental build time without discarding dependencies.
     #[command(name = "ci-build-times")]
     CiBuildTimes(ci_build_times::CiBuildTimesArgs),
+    /// Collect and roll up durable first-attempt CI evidence.
+    #[command(name = "ci-evidence", subcommand)]
+    CiEvidence(ci_evidence::CiEvidenceCommand),
     /// Run `cargo audit` without fetching when a restored advisory database is usable.
     #[command(name = "ci-cargo-audit")]
     CiCargoAudit(ci_cargo_audit::CiCargoAuditArgs),
@@ -325,6 +329,7 @@ fn main() -> ExitCode {
         Command::Ci(args) => ci::run(args),
         Command::CiAudit(args) => ci_audit::run(args),
         Command::CiBuildTimes(args) => ci_build_times::run(args),
+        Command::CiEvidence(command) => ci_evidence::run(command),
         Command::CiCargoAudit(args) => ci_cargo_audit::run(args),
         Command::CiDocExamples(args) => ci_doc_examples::run(args),
         Command::CiFuzz(args) => ci_fuzz::run(args),
