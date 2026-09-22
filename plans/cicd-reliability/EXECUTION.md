@@ -2,6 +2,14 @@
 
 Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, separate fmt/clippy/test steps, 120s pipelines, no repeated setup.
 
+## Current continuation ledger — 2026-09-23
+
+Status: **NOT GREEN; NOT COMPLETE**. Velnor PR [#1089](https://github.com/tailrocks/velnor/pull/1089) is at exact head `9eefa50256f0bd43a09adb1bb6bf44e18af32ea9`.
+
+- The prior Velnor CI failure in [run `35765039957`](https://github.com/tailrocks/velnor/actions/runs/35765039957) / [job `106872946609`](https://github.com/tailrocks/velnor/actions/runs/35765039957/job/106872946609), at `crates/velnor-tools/tests/github_raw_store.rs:1038` (`cleanup_leaves_replaced_regular_temporary_name_instead_of_unlinking_it`) is fixed by the current candidate.
+- Current PR CI [run `35770597421`](https://github.com/tailrocks/velnor/actions/runs/35770597421) fails in Rust `velnor-runner` at `scaleset_allocator` test `occupancy_never_exceeds_n_under_churn`; the relevant assertions are at lines `323`, `333`, and `348`.
+- Runtime adoption, the 120-second target, and six-nines reliability remain **UNPROVEN**. The current candidate is not green, so downstream required checks are consequently not a completion signal. No completion or runtime claim is made.
+
 ## Current authoritative sidecar — 2026-09-22
 
 Status: **NOT COMPLETE**. This sidecar records the exact evidence used for the
