@@ -19,7 +19,10 @@ const CERTIFICATE_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.c
 const GITHUB_REPO: &str = "jackin-project/jackin";
 
 mod package;
-pub(crate) use package::{ReleaseVerifyPackageArgs, run_package};
+pub(crate) use package::{
+    ReleaseVerifyPackageArgs, expected_file_names as expected_package_file_names, run_package,
+    verify_preview_package,
+};
 
 #[derive(Debug, Args)]
 pub(crate) struct ReleaseVerifyArgs {

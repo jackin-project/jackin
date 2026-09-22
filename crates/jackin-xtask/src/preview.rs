@@ -29,6 +29,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::release_verify::{expected_package_file_names, verify_preview_package};
+
 #[cfg(test)]
 mod tests;
 
@@ -414,7 +416,13 @@ fn migrate_legacy_preview() -> Result<()> {
     loop {
         let release = github_release_by_tag(&repository, LEGACY_TAG, &token)?;
         let tag_target = git_tag_target(&source_checkout, &token, LEGACY_TAG)?;
-        let release_state = classify_release(release.as_ref(), &repository, tag_target.as_deref())?;
+        let release_state = classify_release(
+            release.as_ref(),
+            &repository,
+            tag_target.as_deref(),
+            &source_checkout,
+            &token,
+        )?;
         let tag_state = classify_tag_target(tag_target.as_deref(), &expected_source_commit)?;
 
         if release_state == LegacyReleaseState::Absent && tag_state == LegacyTagState::Legacy {
@@ -556,13 +564,46 @@ fn classify_release(
     release: Option<&GithubRelease>,
     repository: &str,
     tag_target: Option<&str>,
+    source_checkout: &Path,
+    token: &str,
 ) -> Result<LegacyReleaseState> {
+    classify_release_with(
+        release,
+        repository,
+        tag_target,
+        |release, repository, snapshot| {
+            verify_current_contract_release(release, repository, snapshot, source_checkout, token)
+        },
+    )
+}
+
+fn classify_release_with<F>(
+    release: Option<&GithubRelease>,
+    repository: &str,
+    tag_target: Option<&str>,
+    verify_current_contract: F,
+) -> Result<LegacyReleaseState>
+where
+    F: FnOnce(&GithubRelease, &str, &RollingReleaseSnapshot) -> Result<()>,
+{
     let Some(release) = release else {
         return Ok(LegacyReleaseState::Absent);
     };
     let names = release_asset_names(release)?;
-    if names.contains("release-manifest.json") && names.contains("identity.json") {
-        return Ok(LegacyReleaseState::CurrentContract);
+    if names == expected_package_file_names() {
+        let Some(tag_target) = tag_target else {
+            return Ok(LegacyReleaseState::Unknown);
+        };
+        let Ok(snapshot) = release.snapshot(repository, tag_target.to_owned()) else {
+            return Ok(LegacyReleaseState::Unknown);
+        };
+        return Ok(
+            if verify_current_contract(release, repository, &snapshot).is_ok() {
+                LegacyReleaseState::CurrentContract
+            } else {
+                LegacyReleaseState::Unknown
+            },
+        );
     }
     let Some(tag_target) = tag_target else {
         return Ok(LegacyReleaseState::Unknown);
@@ -575,6 +616,45 @@ fn classify_release(
     } else {
         Ok(LegacyReleaseState::Unknown)
     }
+}
+
+fn verify_current_contract_release(
+    release: &GithubRelease,
+    repository: &str,
+    snapshot: &RollingReleaseSnapshot,
+    source_checkout: &Path,
+    token: &str,
+) -> Result<()> {
+    let transaction =
+        tempfile::tempdir().context("creating current preview release verification transaction")?;
+    download_release(repository, LEGACY_TAG, token, transaction.path())?;
+    ensure_downloaded_release_matches_metadata(release, snapshot, transaction.path())?;
+    verify_preview_package(transaction.path(), source_checkout)
+        .context("verifying current preview release package contents")
+}
+
+fn ensure_downloaded_release_matches_metadata(
+    release: &GithubRelease,
+    snapshot: &RollingReleaseSnapshot,
+    directory: &Path,
+) -> Result<()> {
+    ensure!(
+        release_asset_names(release)? == expected_package_file_names(),
+        "current preview release asset set changed during download"
+    );
+    for (name, expected_digest) in &snapshot.assets {
+        let path = directory.join(name);
+        ensure!(
+            path.is_file(),
+            "downloaded current preview release asset is missing: {name}"
+        );
+        let actual_digest = file_sha256(&path)?;
+        ensure!(
+            actual_digest == *expected_digest,
+            "downloaded current preview release asset digest changed: {name}"
+        );
+    }
+    Ok(())
 }
 
 fn release_asset_names(release: &GithubRelease) -> Result<BTreeSet<String>> {
@@ -778,7 +858,6 @@ fn github_repository_from_remote(remote: &str) -> Option<String> {
     let remote = remote.trim().trim_end_matches('/');
     let path = remote
         .strip_prefix("https://github.com/")
-        .or_else(|| remote.strip_prefix("http://github.com/"))
         .or_else(|| remote.strip_prefix("ssh://git@github.com/"))
         .or_else(|| remote.strip_prefix("git@github.com:"))?;
     let path = path.strip_suffix(".git").unwrap_or(path);
@@ -1540,12 +1619,13 @@ fn extract_release_mise(source: &str) -> Vec<String> {
             section = "";
             continue;
         }
-        let key = line
+        let raw_key = line
             .split('=')
             .next()
             .unwrap_or("")
             .trim()
             .trim_matches('"');
+        let key = raw_key.strip_prefix("cargo:").unwrap_or(raw_key);
         if keep_release_mise_key(section, key) {
             lines.push(format!("{section}.{key}={line}"));
         }

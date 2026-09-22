@@ -472,16 +472,29 @@ description = "Build and attest the complete six-payload Homebrew preview packag
 run = '''
 set -euo pipefail
 
-source_commit="${VELNOR_SOURCE_COMMIT:-$(git rev-parse HEAD)}"
+source_commit="${VELNOR_SOURCE_COMMIT:?missing VELNOR_SOURCE_COMMIT}"
 case "$source_commit" in
   ''|*[!0-9a-f]*) echo "source commit is not lowercase hex: $source_commit" >&2; exit 1 ;;
 esac
 [ "$(printf '%s' "$source_commit" | wc -c | tr -d ' ')" = 40 ]
 [ "$(git rev-parse HEAD)" = "$source_commit" ]
 
-source_ref="${VELNOR_SOURCE_REF:-refs/heads/main}"
+source_ref="${VELNOR_SOURCE_REF:?missing VELNOR_SOURCE_REF}"
 [ "$source_ref" = "refs/heads/main" ] || { echo "preview source ref must be refs/heads/main: $source_ref" >&2; exit 1; }
 source_repository="jackin-project/jackin"
+origin_url="$(git remote get-url origin)"
+case "$origin_url" in
+  https://github.com/jackin-project/jackin|https://github.com/jackin-project/jackin.git|git@github.com:jackin-project/jackin|git@github.com:jackin-project/jackin.git|ssh://git@github.com/jackin-project/jackin|ssh://git@github.com/jackin-project/jackin.git) ;;
+  *) echo "preview source origin is not $source_repository: $origin_url" >&2; exit 1 ;;
+esac
+[ "$(git ls-remote "$origin_url" refs/heads/main | awk '$2 == "refs/heads/main" { print $1 }')" = "$source_commit" ] || {
+  echo "preview source commit is not the live origin/main" >&2
+  exit 1
+}
+[ -z "$(git status --porcelain=v1 --untracked-files=all)" ] || {
+  echo "preview source checkout must be clean" >&2
+  exit 1
+}
 base_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 case "$base_version" in
   ''|*[!0-9.]*|.*|*.|*..*) echo "workspace version is not X.Y.Z: $base_version" >&2; exit 1 ;;
@@ -498,12 +511,36 @@ esac
 version="${base_version}-preview.${commit_count}+${short_commit}"
 
 package_dir="${VELNOR_VERIFIED_PACKAGE_DIR:?missing VELNOR_VERIFIED_PACKAGE_DIR}"
-runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-archive_root="$runner_temp/jackin-preview-archives"
-check_dir="$runner_temp/jackin-preview-check"
-rm -rf -- "$archive_root" "$check_dir" "$package_dir"
+runner_temp="${RUNNER_TEMP:?missing RUNNER_TEMP}"
+case "$runner_temp" in
+  /*) ;;
+  *) echo "RUNNER_TEMP must be an absolute path: $runner_temp" >&2; exit 1 ;;
+esac
+[ -d "$runner_temp" ] || { echo "RUNNER_TEMP is not a directory: $runner_temp" >&2; exit 1; }
+workspace_root="$(pwd -P)"
+runner_temp="$(cd -- "$runner_temp" && pwd -P)"
+case "$runner_temp" in
+  "$workspace_root"|"$workspace_root"/*)
+    echo "RUNNER_TEMP must not be inside the source checkout: $runner_temp" >&2
+    exit 1
+    ;;
+esac
+run_id="${GITHUB_RUN_ID:?missing GITHUB_RUN_ID}"
+run_attempt="${GITHUB_RUN_ATTEMPT:?missing GITHUB_RUN_ATTEMPT}"
+case "$run_id:$run_attempt" in
+  ''|*[!0-9:]*) echo "GitHub run identity is not numeric" >&2; exit 1 ;;
+esac
+task_root="$runner_temp/jackin-preview-$run_id-$run_attempt"
+safe_package_dir="$task_root/package"
+[ "$package_dir" = "$safe_package_dir" ] || {
+  echo "VELNOR_VERIFIED_PACKAGE_DIR must be the unique task-owned path $safe_package_dir" >&2
+  exit 1
+}
+archive_root="$task_root/archives"
+check_dir="$task_root/check"
+rm -rf -- "$task_root"
 mkdir -p -- "$archive_root/jackin" "$archive_root/capsule" "$package_dir" "$check_dir"
-trap 'rm -rf -- "$archive_root" "$check_dir"' EXIT
+trap 'rm -rf -- "$task_root"' EXIT
 
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 cargo xtask release-archives \

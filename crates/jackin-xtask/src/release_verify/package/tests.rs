@@ -9,6 +9,27 @@ use super::*;
 
 const CAPSULE_VERSION: &str = "0.6.4-preview.1+0123456";
 
+fn git(directory: &Path, args: &[&str]) -> String {
+    let mut command = crate::cmd::command("git");
+    command.arg("-C").arg(directory).args(args);
+    String::from_utf8(crate::cmd::output(&mut command).unwrap())
+        .unwrap()
+        .trim()
+        .to_owned()
+}
+
+fn source_manifest(source_commit: String) -> PackageManifest {
+    PackageManifest {
+        assets: Vec::new(),
+        schema: MANIFEST_SCHEMA.to_owned(),
+        source_commit,
+        source_ref: SOURCE_REF.to_owned(),
+        source_repository: SOURCE_REPOSITORY.to_owned(),
+        supporting_assets: Vec::new(),
+        version: String::new(),
+    }
+}
+
 fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -242,4 +263,104 @@ fn validates_source_bound_preview_version() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn source_checkout_requires_clean_tree_and_fetched_main_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "--bare", "--quiet"]);
+    git(directory.path(), &["init", "--quiet"]);
+    git(directory.path(), &["config", "user.name", "test"]);
+    git(
+        directory.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    fs::write(directory.path().join("tracked"), "tracked\n").unwrap();
+    git(directory.path(), &["add", "tracked"]);
+    git(directory.path(), &["commit", "--quiet", "-m", "seed"]);
+    git(
+        directory.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/jackin-project/jackin.git",
+        ],
+    );
+    git(
+        directory.path(),
+        &[
+            "config",
+            &format!("url.file://{}.insteadOf", remote.path().display()),
+            "https://github.com/jackin-project/jackin.git",
+        ],
+    );
+    let commit = git(directory.path(), &["rev-parse", "HEAD"]);
+    git(
+        directory.path(),
+        &["push", "--quiet", "origin", "HEAD:refs/heads/main"],
+    );
+
+    verify_source_checkout(directory.path(), &source_manifest(commit.clone())).unwrap();
+
+    fs::write(directory.path().join("untracked"), "must fail\n").unwrap();
+    let error = verify_source_checkout(directory.path(), &source_manifest(commit.clone()))
+        .expect_err("untracked source changes must fail closed");
+    assert!(error.to_string().contains("not clean"));
+    fs::remove_file(directory.path().join("untracked")).unwrap();
+
+    fs::write(directory.path().join("tracked"), "hidden modification\n").unwrap();
+    git(
+        directory.path(),
+        &["update-index", "--assume-unchanged", "tracked"],
+    );
+    let error = verify_source_checkout(directory.path(), &source_manifest(commit.clone()))
+        .expect_err("assume-unchanged tracked changes must fail closed");
+    assert!(error.to_string().contains("assume-unchanged"));
+    git(
+        directory.path(),
+        &["update-index", "--no-assume-unchanged", "tracked"],
+    );
+    fs::write(directory.path().join("tracked"), "tracked\n").unwrap();
+
+    fs::write(directory.path().join("tracked"), "hidden skip-worktree\n").unwrap();
+    git(
+        directory.path(),
+        &["update-index", "--skip-worktree", "tracked"],
+    );
+    let error = verify_source_checkout(directory.path(), &source_manifest(commit.clone()))
+        .expect_err("skip-worktree tracked changes must fail closed");
+    assert!(error.to_string().contains("skip-worktree"));
+    git(
+        directory.path(),
+        &["update-index", "--no-skip-worktree", "tracked"],
+    );
+    fs::write(directory.path().join("tracked"), "tracked\n").unwrap();
+
+    git(
+        directory.path(),
+        &["commit", "--quiet", "--allow-empty", "-m", "advance"],
+    );
+    let advanced = git(directory.path(), &["rev-parse", "HEAD"]);
+    let error = verify_source_checkout(directory.path(), &source_manifest(advanced.clone()))
+        .expect_err("source not equal to fetched origin/main must fail closed");
+    assert!(error.to_string().contains("origin/main"));
+    git(
+        directory.path(),
+        &["push", "--quiet", "origin", "HEAD:refs/heads/main"],
+    );
+
+    git(
+        directory.path(),
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "http://github.com/jackin-project/jackin.git",
+        ],
+    );
+    let error = verify_source_checkout(directory.path(), &source_manifest(advanced))
+        .expect_err("HTTP GitHub remotes must fail closed");
+    assert!(error.to_string().contains("GitHub repository URL"));
 }

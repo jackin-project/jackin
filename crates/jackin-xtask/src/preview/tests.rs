@@ -43,6 +43,13 @@ fn mise_release_tool_pin_change_requires_preview() {
 }
 
 #[test]
+fn mise_release_tool_aliases_include_cargo_prefixed_tools() {
+    let base = "[tools]\n\"cargo:cargo-zigbuild\" = \"0.22.0\"\n\"cargo:sccache\" = \"0.15.0\"\n";
+    let head = "[tools]\n\"cargo:cargo-zigbuild\" = \"0.23.0\"\n\"cargo:sccache\" = \"0.16.0\"\n";
+    assert!(mise_release_tools_changed(base, head));
+}
+
+#[test]
 fn unrelated_mise_tool_change_does_not_require_preview() {
     let base = "[tools]\nbun = \"1.3.14\"\n";
     let head = "[tools]\nbun = \"1.3.15\"\n";
@@ -236,6 +243,47 @@ fn source_remote_parser_accepts_only_expected_github_shapes() {
         github_repository_from_remote("https://evil.example/jackin-project/jackin"),
         None
     );
+    assert_eq!(
+        github_repository_from_remote("http://github.com/jackin-project/jackin.git"),
+        None
+    );
+}
+
+#[test]
+fn current_contract_requires_content_verification_after_asset_set_check() {
+    let release = GithubRelease {
+        id: 1,
+        tag_name: LEGACY_TAG.to_owned(),
+        name: "Current preview".to_owned(),
+        body: Some("current".to_owned()),
+        draft: false,
+        prerelease: true,
+        assets: expected_package_file_names()
+            .into_iter()
+            .map(|name| GithubReleaseAsset {
+                name,
+                digest: Some(format!("sha256:{}", "a".repeat(64))),
+            })
+            .collect(),
+    };
+    let candidate = "abcdef0123456789abcdef0123456789abcdef01";
+    let rejected = classify_release_with(
+        Some(&release),
+        LEGACY_SOURCE_REPOSITORY,
+        Some(candidate),
+        |_, _, _| Err(anyhow::anyhow!("malformed package contents")),
+    )
+    .unwrap();
+    assert_eq!(rejected, LegacyReleaseState::Unknown);
+
+    let accepted = classify_release_with(
+        Some(&release),
+        LEGACY_SOURCE_REPOSITORY,
+        Some(candidate),
+        |_, _, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(accepted, LegacyReleaseState::CurrentContract);
 }
 
 #[test]
