@@ -6,15 +6,18 @@ Evidence record: [EXECUTION.md](EXECUTION.md).
 
 ## Current authoritative carried state — 2026-09-23
 
-Parent HEAD before this documentation commit: `cb439e3`. Repairs are locally
-integrated and independently checked, but the overall goal is not complete.
+Parent HEAD before this documentation commit: `96c5830`. Current Jackin main is
+`7e562432`. Repairs are integrated, but the overall goal is not complete.
+Generated workflows were rerun after the rebase in `96c5830`; the parent local
+gates must be rerun on this rebased tree before prior local results are treated
+as current.
 
 | Area | Evidence | Verdict |
 |---|---|---|
-| Collector | Schema-4 durable push-head ledger with predecessor-boundary, chain, provenance, remote-tip, and wrong-workflow checks. `cargo test -p jackin-xtask --locked`: 402 passed; clippy, formatter, actionlint, and diff checks pass. | Structurally repaired and fail-closed. **Not production-qualified**: no default-branch `ci-evidence` ledger run/artifact exists for this parent. |
-| Performance audit | Failure classification excludes legitimate skipped/neutral/success jobs and counts missing reports only for completed report-producing jobs. Local warm evidence: 40/40 report producers valid; zero missing/fallback/parse failures. | Semantics fixed; 402 xtask tests pass. No 120-second or cross-workflow reuse claim. |
-| Provider retries | Typed status/retry-after handling for OpenRouter, Claude, and Codex; local `jackin-usage` coverage is 592 library tests. | Local PASS. Real-provider behavior remains unverified; no live credentials or provider fixture run is claimed. |
-| Desktop | Candidate and merge-cadence trigger/parity generation is locally checked. | Advisory only. Desktop is not a required ruleset context and has no claimed live pre-merge proof. |
+| Collector | Pre-rebase evidence: schema-4 durable push-head ledger with predecessor-boundary, chain, provenance, remote-tip, and wrong-workflow checks; `cargo test -p jackin-xtask --locked` had 402 passes, with clippy, formatter, actionlint, and diff checks passing. | Structurally repaired and fail-closed. **Not production-qualified**: no default-branch `ci-evidence` ledger run/artifact exists; parent gates need rerun. |
+| Performance audit | Pre-rebase evidence: failure classification excludes legitimate skipped/neutral/success jobs; local warm evidence had 40/40 report producers valid and zero missing/fallback/parse failures. | Semantics fixed. The 402-test result needs a post-rebase rerun. No 120-second or cross-workflow reuse claim. |
+| Provider retries | Pre-rebase evidence: typed status/retry-after handling for OpenRouter, Claude, and Codex; local `jackin-usage` coverage was 592 library tests. | Local coverage recorded; parent gates need rerun. Real-provider behavior remains unverified; no live credentials or provider fixture run is claimed. |
+| Desktop | Generated candidate and merge-cadence trigger/parity workflows were rerun after rebase. | Advisory only. Desktop is not a required ruleset context and has no claimed live pre-merge proof. |
 
 ### Upstream and PR status
 
@@ -23,10 +26,12 @@ integrated and independently checked, but the overall goal is not complete.
   35767882457](https://github.com/tailrocks/velnor/actions/runs/35767882457)
   completed **FAILURE**: `Acquire candidate generator product` found no
   candidate product within 15 minutes because no same-head `ci-pr` workflow run
-  existed. DCO passed. GitHub reports `CONFLICTING`/`DIRTY`; locally the head is
-  based directly on current `origin/main` `1e094e97`. The repair is therefore
-  neither live-proven nor published/adopted by Jackin. The Jackin pin remains
-  unchanged.
+  existed. DCO passed. Rawls recorded the head as 9 commits behind Velnor main
+  `d4443aa` and returned **NO-GO** for preview/release and Apple/fork gaps. The
+  live API now reports Velnor main `61b6edd`; no newer behind-count claim is
+  made. GitHub previously reported `CONFLICTING`/`DIRTY`; the current API is
+  temporarily `UNKNOWN`. The repair is neither live-proven nor
+  published/adopted by Jackin. The Jackin pin remains unchanged.
 - Jackin [#1083](https://github.com/jackin-project/jackin/pull/1083) is stale
   at `4b2d244c93ce3edbba4ff91e685ded6875b5647c`, `CONFLICTING`/`DIRTY`; only
   Policy and DCO are shown green. Its generated files and hook work were not
