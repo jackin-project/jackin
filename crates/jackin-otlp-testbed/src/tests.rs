@@ -169,6 +169,44 @@ async fn shutdown_forces_an_open_delayed_client_after_grace_timeout() {
     );
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn shutdown_closes_a_half_open_connection_task() {
+    let mut testbed = Testbed::start().expect("start testbed");
+    let client = TcpStream::connect(testbed.addr)
+        .await
+        .expect("connect half-open client");
+
+    assert!(
+        testbed
+            .connections
+            .wait_for_connection(std::time::Duration::from_secs(1))
+            .await,
+        "testbed must register the accepted connection before shutdown"
+    );
+    assert!(
+        testbed
+            .connections
+            .wait_for_io_poll(std::time::Duration::from_secs(1))
+            .await,
+        "Tonic must poll the detached connection before shutdown"
+    );
+
+    let shutdown = tokio::time::timeout(std::time::Duration::from_secs(2), testbed.shutdown())
+        .await
+        .expect("half-open connection shutdown must be bounded");
+    assert!(matches!(shutdown, Err(ShutdownError::Timeout)));
+    assert_eq!(
+        testbed.connections.active_count(),
+        0,
+        "forced shutdown must release every detached Tonic connection"
+    );
+    assert!(
+        testbed.traces().is_empty(),
+        "an incomplete stream must not reach the export service"
+    );
+    drop(client);
+}
+
 #[test]
 fn namespace_detector_rejects_synthetic_legacy_attribute() {
     let attributes = [opentelemetry_proto::tonic::common::v1::KeyValue {
