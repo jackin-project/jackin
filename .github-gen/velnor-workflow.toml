@@ -151,14 +151,12 @@ branches = ["main"]
 id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
-# XCFramework must exist before `swift build` resolves the binary target.
-# The ci task rebuilds it in-job on one macOS runner (separate jobs do not
-# share target/xcframework).
+# XCFramework is a transportable product of the dedicated macOS producer.
+# Swift consumers receive its immutable outputs before their checks.
 # platform = "macos-arm64": s2 spelling of the s1 capabilities=["xcframework"]
 # Q4 obligation — without it this Apple-bound unit renders ubuntu + Linux
 # plan-artifact runtime.
-# depends_on (F2): FFI touches select this Swift consumer; selection coupling
-# only, no forced serialization (the unit rebuilds the XCFramework in-job).
+# The explicit product prerequisite below supplies selection and transport.
 [[units]]
 id = "swift-package-native"
 kind = "swift"
@@ -167,7 +165,10 @@ watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved",
 ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 platform = "macos-arm64"
-depends_on = ["rust-jackin-usage-ffi"]
+
+[[units.prerequisites]]
+producer = "rust-jackin-usage-ffi-xcframework"
+product = "xcframework"
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
@@ -175,27 +176,45 @@ depends_on = ["rust-jackin-usage-ffi"]
 id = "rust-jackin-lints"
 mise_tools = ["rust", "cargo-binstall"]
 
-# The Xcode project links the FFI XCFramework (xcodebuild resolves it from
-# target/xcframework), so the bare scan-derived generate/build/test sequence
-# fails without it. The FFI unit declares the framework as a product with no
-# transportable outputs, so the consumer rebuilds it in-job: the prerequisite
-# edge prepends `mise run desktop-xcframework` to these commands (tablerock
-# pattern). mise_tools replaces the scanned set, so xcodegen rides along
-# with the rust chain the framework build needs.
+# Keep the scanned Linux FFI unit on its native test lane. The macOS product
+# has its own producer below; no consumer edge points back here.
 [[units]]
 id = "rust-jackin-usage-ffi"
+platform = "linux-x64"
+
+# One macOS producer owns bindings and the XCFramework. Its product is
+# taskless so consumers can only use the verified transport artifact.
+[[units]]
+id = "rust-jackin-usage-ffi-xcframework"
+kind = "rust"
+root = "crates/jackin-usage-ffi"
+watch = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain",
+    "rust-toolchain.toml",
+    "crates/jackin-usage-ffi/**",
+    "crates/jackin-xtask/**",
+    "native/Sources/JackinUsageBindings/**",
+    "mise.toml",
+]
+ci_tasks = ["desktop-xcframework"]
+mise_tools = ["rust", "cargo:sccache", "cargo:boltffi_cli"]
+platform = "macos-arm64"
 
 [[units.products]]
 name = "xcframework"
-task = "desktop-xcframework"
+outputs = [
+    "target/xcframework/JackinUsage.xcframework",
+    "native/Sources/JackinUsageBindings",
+]
 
 [[units]]
 id = "swift-xcodegen-native-project-yml-jackindesktop"
 mise_tools = ["xcodegen", "cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-depends_on = ["rust-jackin-usage-ffi"]
 
 [[units.prerequisites]]
-producer = "rust-jackin-usage-ffi"
+producer = "rust-jackin-usage-ffi-xcframework"
 product = "xcframework"
 
 # Q4 obligation, second Swift unit (scanned): AppKit prototype, genuinely
