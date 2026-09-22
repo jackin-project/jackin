@@ -742,7 +742,7 @@ plugins = []
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/jackin/state")),
         "jackin state mount missing: {mounts:?}"
@@ -777,10 +777,12 @@ fn github_config_mount_skips_absent_ignored_state() {
         },
         auth: crate::instance::ProvisionedAuth::default(),
         auth_outcomes: std::collections::BTreeMap::new(),
+        auth_mount_paths: std::collections::BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
 
     assert!(
-        github_config_mount(&state).is_none(),
+        github_config_mount(&state).unwrap().is_none(),
         "ignored GitHub auth with no state should not make docker create an empty gh config dir"
     );
 }
@@ -801,10 +803,13 @@ fn github_config_mount_keeps_existing_ignored_state() {
         },
         auth: crate::instance::ProvisionedAuth::default(),
         auth_outcomes: std::collections::BTreeMap::new(),
+        auth_mount_paths: std::collections::BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
 
     assert!(
         github_config_mount(&state)
+            .unwrap()
             .as_deref()
             .is_some_and(|mount| mount.ends_with(":/home/agent/.config/gh")),
         "existing jackin-owned GitHub state should still mount"
@@ -944,7 +949,7 @@ plugins = []
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts
             .iter()
@@ -1004,7 +1009,7 @@ plugins = []
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts
             .iter()
@@ -1060,7 +1065,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/jackin/state")),
         "jackin state mount missing: {mounts:?}"
@@ -1124,7 +1129,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
         "durable Codex home mount missing: {mounts:?}"
@@ -1200,7 +1205,7 @@ async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     // Primary keeps legacy destinations; the secondary gets suffixed
     // home + handoff dirs.
     for expected in [
@@ -1295,7 +1300,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
         "durable Codex home mount missing: {mounts:?}"
@@ -1354,7 +1359,7 @@ agents = ["amp"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts
             .iter()
@@ -1409,7 +1414,7 @@ agents = ["amp"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/jackin/state")),
         "jackin state mount missing: {mounts:?}"
@@ -1680,7 +1685,7 @@ fn home_mounts_for(agent_slug: &str, agent: jackin_core::Agent) -> Vec<String> {
         agent,
     )
     .unwrap();
-    agent_mounts(&state)
+    agent_mounts(&state).unwrap()
 }
 
 #[tokio::test]
@@ -2147,6 +2152,8 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
             )]),
         },
         auth_outcomes: std::collections::BTreeMap::new(),
+        auth_mount_paths: std::collections::BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
     let workspace = jackin_config::ResolvedWorkspace {
         name: String::new(),
