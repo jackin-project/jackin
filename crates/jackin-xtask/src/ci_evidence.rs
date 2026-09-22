@@ -139,6 +139,17 @@ pub(crate) struct DenominatorProof {
     pub(crate) commit_count: usize,
     pub(crate) source_workflow: Option<String>,
     pub(crate) source_run_count: usize,
+    pub(crate) boundary: DenominatorBoundary,
+}
+
+/// Proof that the first in-window push is attached to the immediately prior
+/// durable ledger entry. A missing predecessor is a missing denominator proof.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum DenominatorBoundary {
+    PushHead {
+        predecessor: Box<PushHeadObservation>,
+    },
+    Fixture,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -745,6 +756,7 @@ fn denominator_from_fixture(
             commit_count: history.len(),
             source_workflow: None,
             source_run_count: 0,
+            boundary: DenominatorBoundary::Fixture,
         },
         history: history.into_values().collect(),
         push_heads: Vec::new(),
@@ -866,34 +878,23 @@ fn expected_from_push_head_ledger(
             window.until
         );
     }
+    let predecessor_run =
+        list_push_head_predecessor_runs(repository, branch, &window.since, ledger_workflow_ids)?
+            .pop()
+            .context("no durable push-head ledger predecessor before the collection window")?;
+    let predecessor_workflow_id =
+        validate_push_head_run(&predecessor_run, branch, ledger_workflow_ids)?;
+    let boundary_predecessor = validate_push_head_artifact(
+        root,
+        repository,
+        branch,
+        &predecessor_run,
+        predecessor_workflow_id,
+        download_push_head_artifact(repository, predecessor_run.id)?,
+    )?;
     let mut observations = Vec::with_capacity(runs.len());
     for run in runs {
-        let workflow_id = run
-            .workflow_id
-            .context("push-head ledger run has no workflow identity")?;
-        if !ledger_workflow_ids.contains(&workflow_id) {
-            bail!(
-                "push-head ledger run {} has an unconfigured workflow ID",
-                run.id
-            );
-        }
-        if run.event.as_deref() != Some("push")
-            || run.head_branch.as_deref() != Some(branch)
-            || run.path.as_deref().is_some_and(|path| {
-                !workflow_path_matches(path, &[DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()])
-            })
-            || !run.status.eq_ignore_ascii_case("completed")
-            || run.conclusion.as_deref() != Some("success")
-        {
-            bail!(
-                "push-head ledger run {} is not a successful main push: event={:?}, branch={:?}, status={}, conclusion={:?}",
-                run.id,
-                run.event,
-                run.head_branch,
-                run.status,
-                run.conclusion
-            );
-        }
+        let workflow_id = validate_push_head_run(&run, branch, ledger_workflow_ids)?;
         let artifact = download_push_head_artifact(repository, run.id)?;
         observations.push(validate_push_head_artifact(
             root,
@@ -905,7 +906,7 @@ fn expected_from_push_head_ledger(
         )?);
     }
     observations.sort_by_key(|observation| (observation.created_at.clone(), observation.run_id));
-    validate_push_head_chain(root, branch, &observations)?;
+    validate_push_head_chain(root, branch, &observations, &boundary_predecessor)?;
     let history = observations
         .iter()
         .map(|observation| HistoryCommitObservation {
@@ -926,6 +927,9 @@ fn expected_from_push_head_ledger(
             commit_count: history.len(),
             source_workflow: Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()),
             source_run_count: observations.len(),
+            boundary: DenominatorBoundary::PushHead {
+                predecessor: Box::new(boundary_predecessor),
+            },
         },
         history,
         push_heads: observations,
@@ -962,6 +966,69 @@ fn list_push_head_runs(
         }
     }
     Ok(runs)
+}
+
+fn list_push_head_predecessor_runs(
+    repository: &str,
+    branch: &str,
+    since: &str,
+    workflow_ids: &BTreeSet<u64>,
+) -> Result<Vec<ApiRun>> {
+    let mut runs: Vec<ApiRun> = Vec::new();
+    for workflow_id in workflow_ids {
+        let endpoint = format!(
+            "repos/{repository}/actions/workflows/{workflow_id}/runs?branch={branch}&event=push&per_page=100&created=1970-01-01T00:00:00Z..{since}",
+            since = api_timestamp(since)
+        );
+        runs.extend(decode_pages(&api_pages(&endpoint)?, "workflow_runs")?);
+    }
+    let since = parse_timestamp(since)?;
+    runs.sort_by_key(|run: &ApiRun| (run.created_at.clone(), run.id));
+    runs.dedup_by_key(|run| run.id);
+    let mut predecessors = Vec::new();
+    for run in runs {
+        let created_at = parse_timestamp(&run.created_at).with_context(|| {
+            format!("parsing push-head predecessor run {} creation time", run.id)
+        })?;
+        if created_at < since {
+            predecessors.push(run);
+        }
+    }
+    Ok(predecessors)
+}
+
+fn validate_push_head_run(
+    run: &ApiRun,
+    branch: &str,
+    ledger_workflow_ids: &BTreeSet<u64>,
+) -> Result<u64> {
+    let workflow_id = run
+        .workflow_id
+        .context("push-head ledger run has no workflow identity")?;
+    if !ledger_workflow_ids.contains(&workflow_id) {
+        bail!(
+            "push-head ledger run {} has an unconfigured workflow ID",
+            run.id
+        );
+    }
+    if run.event.as_deref() != Some("push")
+        || run.head_branch.as_deref() != Some(branch)
+        || !run.path.as_deref().is_some_and(|path| {
+            workflow_path_matches(path, &[DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()])
+        })
+        || !run.status.eq_ignore_ascii_case("completed")
+        || run.conclusion.as_deref() != Some("success")
+    {
+        bail!(
+            "push-head ledger run {} is not a successful main push: event={:?}, branch={:?}, status={}, conclusion={:?}",
+            run.id,
+            run.event,
+            run.head_branch,
+            run.status,
+            run.conclusion
+        );
+    }
+    Ok(workflow_id)
 }
 
 fn download_push_head_artifact(repository: &str, run_id: u64) -> Result<(Vec<u8>, Vec<u8>)> {
@@ -1135,9 +1202,25 @@ fn validate_push_head_chain(
     root: &Path,
     branch: &str,
     observations: &[PushHeadObservation],
+    boundary_predecessor: &PushHeadObservation,
 ) -> Result<()> {
     let mut seen_runs = BTreeSet::new();
     let mut seen_heads = BTreeSet::new();
+    let first = observations
+        .first()
+        .context("push-head ledger has no in-window first entry")?;
+    if boundary_predecessor.head_sha != first.before_sha {
+        bail!(
+            "push-head ledger boundary predecessor {} does not match first before SHA {}",
+            boundary_predecessor.head_sha,
+            first.before_sha
+        );
+    }
+    if boundary_predecessor.run_id == first.run_id
+        || parse_timestamp(&boundary_predecessor.created_at)? >= parse_timestamp(&first.created_at)?
+    {
+        bail!("push-head ledger boundary predecessor is not strictly earlier");
+    }
     for (index, observation) in observations.iter().enumerate() {
         if !seen_runs.insert(observation.run_id) || !seen_heads.insert(observation.head_sha.clone())
         {
@@ -1734,6 +1817,7 @@ fn empty_evidence(repository: &str, window: &TimeWindow, runtime: RuntimeIdentit
             commit_count: 0,
             source_workflow: None,
             source_run_count: 0,
+            boundary: DenominatorBoundary::Fixture,
         },
         history: Vec::new(),
         push_heads: Vec::new(),
@@ -2121,6 +2205,39 @@ fn validate_collection_provenance(
     Ok(())
 }
 
+fn validate_push_head_observation(
+    repository: &str,
+    branch: &str,
+    observation: &PushHeadObservation,
+) -> Result<()> {
+    if observation.repository != repository
+        || observation.branch != branch
+        || observation.event != "push"
+        || observation.workflow_path != DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW
+        || observation.run_id == 0
+        || observation.head_sha.is_empty()
+        || observation.before_sha.is_empty()
+        || observation.tree_sha.is_empty()
+        || observation.pushed_commits.is_empty()
+        || !is_hex_digest(&observation.raw_event_sha256)
+        || !observation
+            .pushed_commits
+            .iter()
+            .any(|commit| commit == &observation.head_sha)
+        || observation
+            .pushed_commits
+            .iter()
+            .collect::<BTreeSet<_>>()
+            .len()
+            != observation.pushed_commits.len()
+    {
+        bail!("push-head denominator contains invalid provenance");
+    }
+    parse_timestamp(&observation.committed_at)?;
+    parse_timestamp(&observation.created_at)?;
+    Ok(())
+}
+
 fn validate_denominator(
     repository: &str,
     proof: &DenominatorProof,
@@ -2144,36 +2261,32 @@ fn validate_denominator(
             {
                 bail!("push-head denominator is missing durable source proof");
             }
+            let boundary_predecessor = match &proof.boundary {
+                DenominatorBoundary::PushHead { predecessor } => predecessor,
+                DenominatorBoundary::Fixture => {
+                    bail!("push-head denominator is missing its boundary predecessor proof")
+                }
+            };
+            validate_push_head_observation(repository, &proof.branch, boundary_predecessor)?;
             let mut seen_heads = BTreeSet::new();
             let mut seen_runs = BTreeSet::new();
             for observation in push_heads {
-                if observation.repository != repository
-                    || observation.branch != proof.branch
-                    || observation.event != "push"
-                    || observation.workflow_path != DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW
-                    || observation.run_id == 0
-                    || observation.head_sha.is_empty()
-                    || observation.before_sha.is_empty()
-                    || observation.tree_sha.is_empty()
-                    || observation.pushed_commits.is_empty()
-                    || !is_hex_digest(&observation.raw_event_sha256)
-                    || !observation
-                        .pushed_commits
-                        .iter()
-                        .any(|commit| commit == &observation.head_sha)
-                    || observation
-                        .pushed_commits
-                        .iter()
-                        .collect::<BTreeSet<_>>()
-                        .len()
-                        != observation.pushed_commits.len()
-                    || !seen_heads.insert(observation.head_sha.clone())
+                validate_push_head_observation(repository, &proof.branch, observation)?;
+                if !seen_heads.insert(observation.head_sha.clone())
                     || !seen_runs.insert(observation.run_id)
                 {
-                    bail!("push-head denominator contains invalid or duplicate provenance");
+                    bail!("push-head denominator contains duplicate provenance");
                 }
-                parse_timestamp(&observation.committed_at)?;
-                parse_timestamp(&observation.created_at)?;
+            }
+            let first = push_heads
+                .first()
+                .context("push-head denominator has no first in-window entry")?;
+            if boundary_predecessor.head_sha != first.before_sha
+                || boundary_predecessor.run_id == first.run_id
+                || parse_timestamp(&boundary_predecessor.created_at)?
+                    >= parse_timestamp(&first.created_at)?
+            {
+                bail!("push-head denominator boundary predecessor is not adjacent");
             }
             if history.iter().zip(push_heads).any(|(commit, observation)| {
                 commit.sha != observation.head_sha
@@ -2195,6 +2308,7 @@ fn validate_denominator(
                 || proof.source_workflow.is_some()
                 || proof.source_run_count != 0
                 || !push_heads.is_empty()
+                || !matches!(proof.boundary, DenominatorBoundary::Fixture)
             {
                 bail!("fixture denominator contains durable-source provenance");
             }
@@ -2325,11 +2439,17 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
                 + cohort.data_quality
         })
         .sum();
+    let scheduled_collection = evidence.provenance.repository == evidence.repository
+        && evidence.provenance.branch == "main"
+        && evidence.provenance.event == "schedule"
+        && evidence.provenance.workflow_path == "ci-evidence.yml"
+        && evidence.provenance.run_id.is_some();
     let green_claim_qualified = total_first_attempt_failures == 0
         && !evidence.expected.is_empty()
         && evidence.denominator.source == DenominatorSource::PushHeadLedger
         && evidence.denominator.fetch_succeeded
-        && evidence.unclassified_runs.is_empty();
+        && evidence.unclassified_runs.is_empty()
+        && scheduled_collection;
     RollupFile {
         schema: SCHEMA,
         repository: evidence.repository.clone(),
@@ -2371,7 +2491,8 @@ fn require_qualified(rollup: &RollupFile) -> Result<()> {
         reasons.push("first-attempt failures or missing obligations are present");
     }
     if !rollup.green_claim_qualified {
-        reasons.push("green claim is not qualified");
+        reasons
+            .push("green claim is not qualified (requires scheduled main ci-evidence provenance)");
     }
     if reasons.is_empty() {
         Ok(())

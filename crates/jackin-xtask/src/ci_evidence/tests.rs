@@ -172,6 +172,7 @@ fn evidence(expected: Vec<ExpectedObligation>, attempts: Vec<AttemptEvidence>) -
             commit_count: history.len(),
             source_workflow: None,
             source_run_count: 0,
+            boundary: DenominatorBoundary::Fixture,
         },
         history,
         push_heads: Vec::new(),
@@ -210,6 +211,7 @@ fn update_denominator(
             commit_count: history.len(),
             source_workflow: None,
             source_run_count: 0,
+            boundary: DenominatorBoundary::Fixture,
         },
         history,
     )
@@ -237,6 +239,9 @@ fn push_head_denominator(
     history: Vec<HistoryCommitObservation>,
     push_heads: Vec<PushHeadObservation>,
 ) -> DenominatorProof {
+    let first = push_heads.first().expect("push-head boundary");
+    let mut predecessor = push_head_observation(&first.before_sha, "boundary-root", 99);
+    predecessor.created_at = "2026-09-21T23:59:00Z".to_owned();
     DenominatorProof {
         source: DenominatorSource::PushHeadLedger,
         branch: "main".to_owned(),
@@ -248,6 +253,9 @@ fn push_head_denominator(
         commit_count: history.len(),
         source_workflow: Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()),
         source_run_count: push_heads.len(),
+        boundary: DenominatorBoundary::PushHead {
+            predecessor: Box::new(predecessor),
+        },
     }
 }
 
@@ -820,6 +828,7 @@ fn missing_push_head_ledger_proof_is_rejected() {
         commit_count: 0,
         source_workflow: Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()),
         source_run_count: 0,
+        boundary: DenominatorBoundary::Fixture,
     };
     let error = validate_denominator("example/repo", &proof, &[], &[], &window).unwrap_err();
     assert!(error.to_string().contains("durable source proof"));
@@ -848,6 +857,23 @@ fn push_head_chain_gap_is_rejected_without_observed_head_fallback() {
     let error = validate_denominator("example/repo", &proof, &history, &push_heads, &proof.window)
         .unwrap_err();
     assert!(error.to_string().contains("coverage gap"));
+}
+
+#[test]
+fn push_head_window_requires_a_verified_boundary_predecessor() {
+    let first = push_head_observation("head-a", "missing-predecessor", 1);
+    let history = vec![HistoryCommitObservation {
+        sha: first.head_sha.clone(),
+        base_sha: Some(first.before_sha.clone()),
+        tree_sha: first.tree_sha.clone(),
+        committed_at: first.committed_at.clone(),
+    }];
+    let push_heads = vec![first];
+    let mut proof = push_head_denominator(history.clone(), push_heads.clone());
+    proof.boundary = DenominatorBoundary::Fixture;
+    let error = validate_denominator("example/repo", &proof, &history, &push_heads, &proof.window)
+        .unwrap_err();
+    assert!(error.to_string().contains("boundary predecessor"));
 }
 
 #[test]
@@ -900,6 +926,52 @@ fn fixture_denominator_cannot_qualify_green() {
     let rollup = build_rollup(&evidence);
     assert!(!rollup.green_claim_qualified);
     assert!(require_qualified(&rollup).is_err());
+}
+
+#[test]
+fn only_scheduled_ci_evidence_provenance_can_qualify_green() {
+    let first = push_head_observation("green-head", "green-before", 1);
+    let history = vec![HistoryCommitObservation {
+        sha: first.head_sha.clone(),
+        base_sha: Some(first.before_sha.clone()),
+        tree_sha: first.tree_sha.clone(),
+        committed_at: first.committed_at.clone(),
+    }];
+    let expected = expected_from_history(&history, DenominatorSource::PushHeadLedger).unwrap();
+    let attempts = Cohort::ALL
+        .into_iter()
+        .enumerate()
+        .map(|(index, cohort)| {
+            let mut attempt = attempt(
+                index as u64 + 1,
+                1,
+                cohort,
+                "green-head",
+                OutcomeClass::Success,
+                "2026-09-22T00:02:00Z",
+            );
+            attempt.denominator_source = DenominatorSource::PushHeadLedger;
+            attempt.tree_sha = first.tree_sha.clone();
+            attempt
+        })
+        .collect();
+    let mut evidence = evidence(expected, attempts);
+    evidence.denominator = push_head_denominator(history, vec![first]);
+    evidence.push_heads = match &evidence.denominator.boundary {
+        DenominatorBoundary::PushHead { .. } => {
+            vec![push_head_observation("green-head", "green-before", 1)]
+        }
+        DenominatorBoundary::Fixture => unreachable!(),
+    };
+
+    let local_rollup = build_rollup(&evidence);
+    assert!(!local_rollup.green_claim_qualified);
+
+    evidence.provenance.event = "schedule".to_owned();
+    evidence.provenance.workflow_path = "ci-evidence.yml".to_owned();
+    evidence.provenance.run_id = Some(7);
+    let scheduled_rollup = build_rollup(&evidence);
+    assert!(scheduled_rollup.green_claim_qualified);
 }
 
 #[test]
