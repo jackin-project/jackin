@@ -128,9 +128,6 @@ fn validation_distinguishes_timeout_from_signal_failure() {
 
 #[test]
 fn provider_shutdown_order_is_tracer_logger_meter() {
-    let _test_lock = super::super::health::TEST_STATE_LOCK
-        .lock()
-        .expect("health test lock");
     let (export, _subscriber) = super::test_layers(false, "unused");
     let meter = opentelemetry_sdk::metrics::SdkMeterProvider::builder().build();
     let generation = super::super::health::set_active_signals();
@@ -359,6 +356,9 @@ fn empty_endpoint_disables_export() {
 
 #[test]
 fn disabled_configuration_creates_no_runtime_and_shutdown_is_idempotent() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = runtime_creation_count();
     let env = |_key: &str| None;
     assert_eq!(super::super::config::resolve_otlp_config(&env), Ok(None));
@@ -500,9 +500,6 @@ fn facade_event_exports_native_event_name_once() {
 fn crash_event_exports_complete_bounded_private_shape() {
     use opentelemetry::logs::AnyValue;
 
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     let session = jackin_telemetry::identity::SessionGuard::claim(
         jackin_telemetry::identity::SessionKind::Console,
@@ -554,9 +551,6 @@ fn crash_event_exports_complete_bounded_private_shape() {
 fn facade_redacts_then_utf8_truncates_body_and_exception_fields() {
     use opentelemetry::logs::AnyValue;
 
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     let sensitive = format!("token=supersecret {}", "🦀".repeat(2_000));
     let attrs = [
@@ -619,9 +613,6 @@ fn facade_redacts_then_utf8_truncates_body_and_exception_fields() {
 fn jank_event_exports_once_per_active_crossing() {
     use opentelemetry::logs::AnyValue;
 
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let mut monitor = jackin_telemetry::ui::JankMonitor::default();
@@ -817,9 +808,6 @@ fn widget_lifecycle_exports_exact_stable_identity_pair() {
 fn isolation_events_export_exact_private_shape() {
     use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
 
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         crate::operation::isolation_decision(
@@ -1142,7 +1130,6 @@ fn every_registered_event_round_trips_once_with_canonical_severity() {
 
 #[test]
 fn governed_operation_line_does_not_duplicate_active_run_log() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let directory = tempfile::tempdir().expect("temporary diagnostics directory");
@@ -1188,7 +1175,6 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
 
     impl std::error::Error for PrivateError {}
 
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let ok: Result<(), PrivateError> = Ok(());
@@ -1234,7 +1220,6 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
 fn recovered_error_helper_exports_one_typed_warning_without_raw_value() {
     use opentelemetry::logs::{AnyValue, Severity};
 
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         jackin_telemetry::record_recovered_degradation().expect("recovered warning");
@@ -1256,7 +1241,6 @@ fn recovered_error_helper_exports_one_typed_warning_without_raw_value() {
 fn detached_failure_automatically_exports_one_typed_error() {
     use opentelemetry::logs::AnyValue;
 
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
     let default = tracing::subscriber::set_default(subscriber);
     tokio::runtime::Builder::new_current_thread()
@@ -1370,8 +1354,8 @@ fn governed_event_level_gates_are_exact_and_do_not_infer_span_state() {
 
 #[test]
 fn governed_unknown_names_and_forged_severity_are_rejected() {
-    let before = jackin_telemetry::facade_health();
     let (export, subscriber) = super::test_layers_at("trace", "unused");
+    let before = jackin_telemetry::facade_health();
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
             name: "unknown.governed.event",
@@ -1414,8 +1398,8 @@ fn governed_unknown_names_and_forged_severity_are_rejected() {
 
 #[test]
 fn governed_unknown_attribute_is_dropped() {
-    let before = jackin_telemetry::facade_health().unknown_attribute;
     let (export, subscriber) = super::test_layers(false, "unused");
+    let before = jackin_telemetry::facade_health().unknown_attribute;
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
             name: "session.start",
@@ -1434,8 +1418,8 @@ fn governed_unknown_attribute_is_dropped() {
 
 #[test]
 fn governed_second_line_drops_private_and_oversized_raw_records() {
-    let before = jackin_telemetry::facade_health();
     let (export, subscriber) = super::test_layers_at("trace", "unused");
+    let before = jackin_telemetry::facade_health();
     let oversized = "x".repeat(jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES + 1);
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
@@ -1729,6 +1713,9 @@ fn assert_raw_metric_batch_rejected(
 
 #[test]
 fn governed_raw_meter_rejects_every_metric_contract_class() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     use opentelemetry::{Array, KeyValue, Value};
 
     assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::UnknownName, |meter| {
@@ -1806,6 +1793,9 @@ fn governed_raw_meter_rejects_every_metric_contract_class() {
 
 #[test]
 fn rejected_metric_collection_is_not_reported_as_exported() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let facade_before = jackin_telemetry::facade_health();
     let export_before = crate::telemetry_health_snapshot();
     let result =
@@ -1837,4 +1827,26 @@ fn rejected_metric_collection_is_not_reported_as_exported() {
         export_after.metrics.failures,
         export_before.metrics.failures + 1
     );
+}
+
+#[test]
+fn in_memory_layers_hold_global_telemetry_lock_until_export_drop() {
+    let (export, _subscriber) = super::test_layers(false, "unused");
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let (_other_export, _other_subscriber) = super::test_layers(false, "unused");
+        ready_tx.send(()).expect("report second layer creation");
+    });
+
+    assert!(
+        ready_rx
+            .recv_timeout(std::time::Duration::from_millis(25))
+            .is_err(),
+        "parallel in-memory layers must wait for the first export scope"
+    );
+    drop(export);
+    ready_rx
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .expect("second layer must start after the first export scope ends");
+    worker.join().expect("second layer thread");
 }
