@@ -2,7 +2,7 @@ schema = 2
 
 [generator]
 repository = "jackin-project/jackin"
-revision = "816046893ef55359ee2f41903d1f1f893d59303e"
+revision = "aa2345bd22bbab45b0261a95c94f47689d0b4ec1"
 
 # Public repo: GitHub-hosted singleton (no velnor lanes). Automatic events
 # stay GitHub-only so ci-required is not blocked by queued self-hosted jobs
