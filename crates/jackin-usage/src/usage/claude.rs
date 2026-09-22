@@ -39,6 +39,52 @@ pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
     claude_view_from_wave_with_rate_limit(agent, provider, now, resolve_claude_wave()).0
 }
 
+/// Claude API keys do not authenticate the OAuth quota endpoint. Keep this
+/// route explicit and unsupported rather than feeding an API key into the
+/// OAuth adapter and reporting a misleading login/error state.
+pub(crate) fn claude_api_key_snapshot(
+    agent: &str,
+    provider: Option<&str>,
+    key_name: &str,
+    secret: &str,
+    now: i64,
+) -> FocusedUsageView {
+    let has_secret = !secret.trim().is_empty();
+    let status = if has_secret {
+        UsageSnapshotStatus::Unsupported
+    } else {
+        UsageSnapshotStatus::NeedsSecret
+    };
+    let message = if has_secret {
+        "Claude API-key quota is unavailable; OAuth usage requires CLAUDE_CODE_OAUTH_TOKEN"
+    } else {
+        "Claude API key is missing"
+    };
+    usage_view(UsageViewInput {
+        agent,
+        provider: provider.or(Some("Claude")),
+        surface: UsageSurface::Claude,
+        account_label: "Claude API key".to_owned(),
+        username: None,
+        plan_label: None,
+        credential_origin: Some(format!("API key · env {key_name}")),
+        buckets: vec![bucket(
+            "Usage",
+            None,
+            None,
+            None,
+            None,
+            Some(message),
+            status,
+        )],
+        status,
+        source: UsageSource::None,
+        confidence: UsageConfidence::None,
+        now,
+        last_error: Some(message.to_owned()),
+    })
+}
+
 /// Production Claude wave resolution: derive the Keychain scope from the
 /// effective `CLAUDE_CONFIG_DIR`, then resolve Keychain-first with
 /// scope-appropriate file/env fallback.
@@ -55,17 +101,21 @@ pub(crate) fn resolve_claude_wave() -> ClaudeWaveResolution {
         claude_keychain_state(),
         read_claude_keychain_item,
         || claude_scope_file_probe(&scope, &config),
-        || {
-            std::env::var("ANTHROPIC_API_KEY")
-                .ok()
-                .filter(|value| !value.is_empty())
-                .or_else(|| {
-                    std::env::var("ANTHROPIC_AUTH_TOKEN")
-                        .ok()
-                        .filter(|value| !value.is_empty())
-                })
-        },
+        || read_claude_oauth_env_token(|name| std::env::var(name)),
     )
+}
+
+/// Read only the Claude Code OAuth environment credential. Anthropic API keys
+/// use a different authentication protocol and must never reach the OAuth
+/// usage endpoint through the standalone resolver.
+pub(crate) fn read_claude_oauth_env_token<F>(mut read: F) -> Option<ClaudeOAuthEnvToken>
+where
+    F: FnMut(&str) -> Result<String, std::env::VarError>,
+{
+    read(jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(ClaudeOAuthEnvToken::new)
 }
 
 /// One-pass file/metadata probe for a Keychain scope. Default scope keeps
@@ -568,7 +618,7 @@ pub(crate) struct ClaudeFileProbe {
 /// Resolve the Claude wave for `scope`: Keychain first, then scope-appropriate
 /// file/env fallback. `keychain_reader` performs the real (or test) Keychain
 /// read; `file_probe` returns the scope's file credential + metadata in one
-/// call; `env_reader` yields an env access token. No process-global env
+/// call; `env_reader` yields an OAuth env token. No process-global env
 /// mutation — all inputs are injected so the whole path is unit-testable.
 pub(crate) fn resolve_claude_refresh_wave_with<K, P, E>(
     scope: &jackin_core::ClaudeKeychainScope,
@@ -580,7 +630,7 @@ pub(crate) fn resolve_claude_refresh_wave_with<K, P, E>(
 where
     K: FnOnce(&str) -> ClaudeKeychainRead,
     P: FnOnce() -> ClaudeFileProbe,
-    E: FnOnce() -> Option<String>,
+    E: FnOnce() -> Option<ClaudeOAuthEnvToken>,
 {
     match state.read_with(&scope.service, keychain_reader) {
         ClaudeKeychainRead::Denied => ClaudeWaveResolution::Denied,
@@ -616,7 +666,7 @@ where
 fn resolve_claude_fallback(
     scope: &jackin_core::ClaudeKeychainScope,
     probe: ClaudeFileProbe,
-    env_token: Option<String>,
+    env_token: Option<ClaudeOAuthEnvToken>,
 ) -> ClaudeWaveResolution {
     if let Some(credential) = probe.credential {
         let origin = probe
@@ -630,17 +680,29 @@ fn resolve_claude_fallback(
         )));
     }
     let _ = scope;
-    if let Some(token) = env_token.filter(|value| !value.is_empty()) {
+    if let Some(token) = env_token {
         return ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
-            access_token: token,
+            access_token: token.0,
             subscription_type: None,
             account_email: probe.account_email,
             organization_type: probe.organization_type,
-            credential_origin: "API token · env ANTHROPIC_API_KEY".to_owned(),
+            credential_origin: format!(
+                "OAuth · env {}",
+                jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
+            ),
             is_anonymous: true,
         }));
     }
     ClaudeWaveResolution::Missing
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClaudeOAuthEnvToken(String);
+
+impl ClaudeOAuthEnvToken {
+    pub(crate) fn new(value: String) -> Self {
+        Self(value)
+    }
 }
 
 fn claude_resolved(
