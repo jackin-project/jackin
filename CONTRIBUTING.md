@@ -26,7 +26,7 @@ root; hk 2.0.1 pinned in `mise.toml`/`mise.lock`). Install per checkout —
 idempotent, safe to re-run:
 
 ```sh
-mise run hooks-install   # hk install --mise (repo-scoped, via `mise x`)
+mise run hooks-install   # installs scripts/pre-commit-snapshot
 ```
 
 No shell activation needed. Requirements: Git 2.54+ (config-based hooks;
@@ -34,7 +34,9 @@ Apple Git 2.54 meets the floor exactly) and `mise` on Git's runtime PATH —
 true in terminals with mise shims, otherwise the hook fails closed with
 `mise: command not found` (use a terminal or add the shims directory to
 the GUI client's PATH). The first hook run builds `jackin-xtask`
-(one-time ~1-2 min); later runs reuse the cache.
+(one-time ~1-2 min); later runs reuse the cache. A global hk pre-commit
+hook is rejected because it would bypass the repository-owned snapshot
+boundary.
 
 What runs on every commit (see `hk.pkl` for the exact commands — each
 mirrors the CI definition it cites):
@@ -58,19 +60,25 @@ git add -p && git commit -m "..."
 ```
 
 `hk fix` applies the same fixes outside a commit; `hk check` runs checks
-on modified files. Partial commits are safe: the hook stashes unstaged
-and untracked work, validates the staged snapshot only, then restores —
-byte-identical when green. Backup patches are kept under
-`~/.local/state/hk/patches/`; if a restore ever fails, read hk's error
-first, inspect `git status` / `git stash list`, and keep the backup until
-recovered. Bypass with `HK=0 git commit` (emergencies only).
+on modified files. Partial commits are safe: the repo-owned launcher creates
+an isolated `git stash push --all --keep-index` snapshot, validates
+the staged snapshot only, then restores — byte-identical when green. The user
+stash stack is not used for the hook snapshot. If restoration fails or the
+snapshot/stash identity changes, the snapshot is retained under
+`refs/jackin/pre-commit-snapshot/*`; inspect `git status` and
+`git show-ref refs/jackin/pre-commit-snapshot/` and recover it before changing
+the worktree. Bypass with `HK=0 git commit`
+(emergencies only).
 
 Two intentional divergences from CI: hook Clippy is closure-scoped while
 CI lints the workspace (same flags; full coverage stays in CI /
 `mise run lint`), and `hk check --all` scopes Clippy by `git status`
 (skips green on a clean tree). The global install
 (`hk install --global --mise`) is GUI-robust but forces `--staged`,
-which disables stashing — hence the repo-scoped bootstrap above.
+which disables stashing — hence the repo-owned bootstrap above. Do not
+install hk globally for this repository: a global hk hook is rejected by
+`mise run hooks-install` because it does not use the repository-owned
+snapshot boundary.
 
 Linux developers: same setup (`mise install`, `mise run hooks-install`;
 hook commands are POSIX `sh` and the Swift steps skip themselves where

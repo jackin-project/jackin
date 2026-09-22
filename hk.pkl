@@ -5,22 +5,18 @@
 // mise.lock, and in the Pkl URL below).
 //
 // Install once per checkout (idempotent):
-//   mise run hooks-install        # hk install --mise (repo-scoped)
-// The local launcher runs steps through `mise x`, so no shell activation
-// is needed — but Git must find `mise` on its runtime PATH, which holds
-// for terminals with mise shims and fails closed ("mise: command not
-// found") for GUI clients without them. The global launcher
-// (`hk install --global --mise`) is GUI-robust but forces `--staged`,
-// which disables stashing entirely (verified against hk 2.0.1) —
-// incompatible with the staged-snapshot isolation below. See
-// CONTRIBUTING.md ("Git hooks") for the full contract.
+//   mise run hooks-install        # install the repo-owned hook boundary
+// The launcher runs steps through `mise x`, so no shell activation is needed —
+// but Git must find `mise` on Git's runtime PATH. The launcher fails closed
+// when `mise` is unavailable. See CONTRIBUTING.md ("Git hooks") for the
+// full contract.
 //
-// Hook mode is REVIEW, not auto-stage: fixers run against the staged
-// snapshot (stash = "git" isolates staged content, including untracked
-// files, and restores afterwards with backup patches under
-// $HK_STATE_DIR/patches/), fixes are left unstaged, and the hook fails so
-// the author reviews the diff, stages, and retries. `hk fix` applies the
-// same fixes outside a commit.
+// Hook mode is REVIEW, not auto-stage: the repo-owned launcher snapshots
+// every non-index path with `git stash --all --keep-index`, then hk runs
+// against the staged worktree. Fixes are left unstaged and the hook fails so
+// the author reviews the diff, stages, and retries. The launcher restores the
+// snapshot on success, failure, or interruption. `hk fix` applies the same
+// fixes outside a commit.
 //
 // Single source of truth: every step command below is textually identical
 // to the command CI runs; steps invoke tools directly (never `mise run`)
@@ -126,7 +122,9 @@ steps {
 hooks {
   ["pre-commit"] {
     fix = true
-    stash = "git"
+    // Snapshot ownership lives in scripts/pre-commit-snapshot. Keeping hk's
+    // own stash disabled prevents a second, path-limited snapshot.
+    stash = "none"
     stage = false
     fail_on_fix = true
   }

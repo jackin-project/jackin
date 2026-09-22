@@ -1,0 +1,224 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+hook="$repo_root/scripts/pre-commit-snapshot"
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-fixture.XXXXXX")
+fake_bin=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-bin.XXXXXX")
+snapshot_tmp=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-tmp.XXXXXX")
+marker="$fixture/interrupt.marker"
+mise_pid_file="$fixture/mise.pid"
+race_marker="$snapshot_tmp/race.marker"
+trap 'rm -rf "$fixture" "$fake_bin" "$snapshot_tmp"' EXIT
+
+mode_of() {
+    stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+}
+
+git -C "$fixture" init -q
+git -C "$fixture" config user.name "Jackin hook fixture"
+git -C "$fixture" config user.email "jackin-hook-fixture@example.invalid"
+git -C "$fixture" config core.fileMode true
+
+newline_name=$(printf 'newline\nname.txt')
+export NEWLINE_FILE="$newline_name"
+
+printf '%s\n' 'ignored.bin' 'ignored-*' > "$fixture/.gitignore"
+printf '%s\n' base > "$fixture/partial.txt"
+printf '%s\n' base > "$fixture/unstaged.txt"
+printf '%s\n' base > "$fixture/staged.txt"
+printf '\001\002\003base\n' > "$fixture/tracked.bin"
+printf '%s\n' base > "$fixture/tracked-link-target"
+ln -s tracked-link-target "$fixture/tracked-link"
+printf '%s\n' base > "$fixture/$newline_name"
+printf '%s\n' mode > "$fixture/mode.sh"
+chmod 644 "$fixture/mode.sh"
+git -C "$fixture" add .
+git -C "$fixture" commit -q -m baseline
+
+# Keep a pre-existing stash: the hook must leave the user stash stack untouched.
+printf '%s\n' retained > "$fixture/retained.txt"
+git -C "$fixture" stash push --all --message pre-existing >/dev/null
+before_stashes=$(git -C "$fixture" stash list --format='%H %gs')
+
+printf '%s\n' staged > "$fixture/partial.txt"
+git -C "$fixture" add partial.txt
+printf '%s\n' staged worktree > "$fixture/partial.txt"
+printf '%s\n' worktree > "$fixture/unstaged.txt"
+printf '%s\n' staged-change > "$fixture/staged.txt"
+git -C "$fixture" add staged.txt
+printf '\004\005\006worktree\n' > "$fixture/tracked.bin"
+rm "$fixture/tracked-link"
+ln -s worktree-link-target "$fixture/tracked-link"
+printf '%s\n' worktree > "$fixture/$newline_name"
+chmod 751 "$fixture/mode.sh"
+chmod 751 "$fixture/$newline_name"
+printf '\007\010\011untracked\n' > "$fixture/untracked.bin"
+chmod 640 "$fixture/untracked.bin"
+printf '%s\n' ignored > "$fixture/ignored.bin"
+chmod 751 "$fixture/ignored.bin"
+printf '%s\n' ignored-target > "$fixture/ignored-target"
+ln -s ignored-target "$fixture/ignored-link"
+printf '%s\n' untracked > "$fixture/ignored-note.txt"
+
+cat > "$fake_bin/mise" <<'EOF'
+#!/bin/sh
+set -eu
+
+[ "$1" = x ]
+[ "$2" = -- ]
+[ "$3" = hk ]
+
+mode_of() {
+    stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+}
+
+test "$(cat partial.txt)" = "staged"
+test "$(cat unstaged.txt)" = "base"
+test "$(cat staged.txt)" = "staged-change"
+printf '\001\002\003base\n' | cmp -s - tracked.bin
+test "$(readlink tracked-link)" = tracked-link-target
+test "$(cat "$NEWLINE_FILE")" = base
+test "$(mode_of "$NEWLINE_FILE")" = 644
+test "$(mode_of mode.sh)" = 644
+test ! -e untracked.bin
+test ! -e ignored.bin
+test ! -L ignored-link
+
+case "${FIXTURE_MODE:-success}" in
+    success)
+        ;;
+    fail)
+        exit 23
+        ;;
+    tamper)
+        printf '%s\n' tampered > tamper.txt
+        git stash push --all --keep-index --message fixture-tamper >/dev/null
+        ;;
+    interrupt)
+        : > "$FIXTURE_MARKER"
+        printf '%s\n' "$$" > "$FIXTURE_MISE_PID"
+        trap 'exit 143' HUP INT TERM
+        while :; do sleep 1; done
+        ;;
+    *)
+        exit 64
+        ;;
+esac
+EOF
+chmod +x "$fake_bin/mise"
+
+real_git=$(command -v git)
+cat > "$fake_bin/git" <<'EOF'
+#!/bin/sh
+set -eu
+
+if [ "${FIXTURE_MODE:-}" = race ] &&
+    [ "${1:-}" = update-ref ] &&
+    [ "${2:-}" = --stdin ]; then
+    update_input=$(mktemp "$RACE_TMP/update-ref.XXXXXX")
+    cat > "$update_input"
+    if grep -F 'delete refs/jackin/pre-commit-snapshot/' "$update_input" >/dev/null &&
+        [ ! -e "$RACE_MARKER" ]; then
+        : > "$RACE_MARKER"
+        "$REAL_GIT" stash push --all --message fixture-race >/dev/null
+    fi
+    set +e
+    "$REAL_GIT" "$@" < "$update_input"
+    status=$?
+    set -e
+    rm -f "$update_input"
+    exit "$status"
+fi
+
+exec "$REAL_GIT" "$@"
+EOF
+chmod +x "$fake_bin/git"
+
+before_status=$(git -C "$fixture" status --porcelain=v1 --untracked-files=all --ignored=matching)
+before_partial=$(git -C "$fixture" hash-object "$fixture/partial.txt")
+before_unstaged=$(git -C "$fixture" hash-object "$fixture/unstaged.txt")
+before_staged=$(git -C "$fixture" hash-object "$fixture/staged.txt")
+before_binary=$(git -C "$fixture" hash-object "$fixture/tracked.bin")
+before_link=$(readlink "$fixture/tracked-link")
+before_newline=$(git -C "$fixture" hash-object "$fixture/$newline_name")
+before_newline_mode=$(mode_of "$fixture/$newline_name")
+before_mode=$(mode_of "$fixture/mode.sh")
+before_untracked=$(git -C "$fixture" hash-object "$fixture/untracked.bin")
+before_ignored=$(git -C "$fixture" hash-object "$fixture/ignored.bin")
+
+assert_restored() {
+    test "$(git -C "$fixture" status --porcelain=v1 --untracked-files=all --ignored=matching)" = "$before_status"
+    test "$(git -C "$fixture" hash-object "$fixture/partial.txt")" = "$before_partial"
+    test "$(git -C "$fixture" hash-object "$fixture/unstaged.txt")" = "$before_unstaged"
+    test "$(git -C "$fixture" hash-object "$fixture/staged.txt")" = "$before_staged"
+    test "$(git -C "$fixture" hash-object "$fixture/tracked.bin")" = "$before_binary"
+    test "$(readlink "$fixture/tracked-link")" = "$before_link"
+    test -f "$fixture/$newline_name"
+    test ! -e "$fixture/newline"
+    test "$(git -C "$fixture" hash-object "$fixture/$newline_name")" = "$before_newline"
+    test "$(mode_of "$fixture/$newline_name")" = "$before_newline_mode"
+    test "$(mode_of "$fixture/mode.sh")" = "$before_mode"
+    test "$(git -C "$fixture" hash-object "$fixture/untracked.bin")" = "$before_untracked"
+    test "$(git -C "$fixture" hash-object "$fixture/ignored.bin")" = "$before_ignored"
+    test "$(mode_of "$fixture/untracked.bin")" = 640
+    test "$(readlink "$fixture/ignored-link")" = ignored-target
+    test "$(mode_of "$fixture/ignored.bin")" = 751
+    test "$(git -C "$fixture" stash list --format='%H %gs')" = "$before_stashes"
+    test -z "$(git -C "$fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
+    test -z "$(ls -A "$snapshot_tmp")"
+}
+
+(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=success REAL_GIT="$real_git" "$hook")
+assert_restored
+
+if (cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=fail REAL_GIT="$real_git" "$hook"); then
+    printf '%s\n' 'expected failing hook to return nonzero' >&2
+    exit 1
+else
+    status=$?
+    test "$status" -eq 23
+fi
+assert_restored
+
+rm -f "$marker" "$mise_pid_file"
+(cd "$fixture" && exec env TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=interrupt REAL_GIT="$real_git" FIXTURE_MARKER="$marker" FIXTURE_MISE_PID="$mise_pid_file" "$hook") &
+hook_pid=$!
+attempt=0
+while [ ! -f "$marker" ] && [ "$attempt" -lt 50 ]; do
+    sleep 0.1
+    attempt=$((attempt + 1))
+done
+test -f "$marker"
+mise_pid=$(cat "$mise_pid_file")
+kill -TERM "$mise_pid" 2>/dev/null || true
+set +e
+wait "$hook_pid"
+status=$?
+set -e
+test "$status" -ne 0
+rm -f "$marker" "$mise_pid_file"
+assert_restored
+
+set +e
+(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=tamper REAL_GIT="$real_git" "$hook")
+status=$?
+set -e
+test "$status" -ne 0
+git -C "$fixture" stash list --format='%gs' | grep -F 'fixture-tamper' >/dev/null
+test -n "$(git -C "$fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
+test -z "$(ls -A "$snapshot_tmp")"
+
+rm -f "$race_marker"
+set +e
+(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=race RACE_MARKER="$race_marker" RACE_TMP="$snapshot_tmp" REAL_GIT="$real_git" "$hook")
+status=$?
+set -e
+test "$status" -ne 0
+test -f "$race_marker"
+rm -f "$race_marker"
+git -C "$fixture" stash list --format='%gs' | grep -F 'fixture-race' >/dev/null
+test -n "$(git -C "$fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
+test -z "$(ls -A "$snapshot_tmp")"
+
+printf '%s\n' 'pre-commit snapshot fixture passed'
