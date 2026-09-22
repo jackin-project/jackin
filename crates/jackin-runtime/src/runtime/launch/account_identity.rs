@@ -10,7 +10,7 @@
 use crate::instance::{AdmittedInstance, InstanceManifest};
 use anyhow::Context as _;
 use jackin_config::{AppConfig, ConfigGeneration, ConfigReadGuard, ReadOnlyConfigSnapshot};
-use jackin_core::WorkspaceName;
+use jackin_core::{ContainerHandle, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 use sha2::{Digest as _, Sha256};
 use std::fmt::Write as _;
@@ -109,15 +109,17 @@ impl AccountConfigRevision {
 pub(crate) async fn ensure_current_or_remove_stale_container(
     revision: &AccountConfigRevision,
     paths: &jackin_core::JackinPaths,
-    container_name: &str,
+    container: &ContainerHandle,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     let Err(error) = revision.ensure_current(paths) else {
         return Ok(());
     };
-    if let Err(cleanup_error) = docker.remove_container(container_name).await {
+    if let Err(cleanup_error) = docker.remove_container_by_id(container).await {
         return Err(error.context(format!(
-            "stale-generation container {container_name} cleanup failed: {cleanup_error:#}"
+            "stale-generation container {} ({}) cleanup failed: {cleanup_error:#}",
+            container.name(),
+            container.id()
         )));
     }
     Err(error)
@@ -829,10 +831,11 @@ pub(super) fn admit_restore(
     let container = match &resolution {
         super::RestoreResolution::StartFresh
         | super::RestoreResolution::PurgeAndRestartFresh(_) => return Ok(resolution),
-        super::RestoreResolution::StartCurrentRole(name)
-        | super::RestoreResolution::RecreateCurrentRole(name)
+        super::RestoreResolution::RecreateCurrentRole(name)
         | super::RestoreResolution::RestoreCurrentRole(name)
         | super::RestoreResolution::RecoverRelatedRole(name) => name,
+        super::RestoreResolution::StartCurrentRoleWithHandle(handle)
+        | super::RestoreResolution::RecreateCurrentRoleWithHandle(handle) => handle.name(),
         super::RestoreResolution::RebuildRelatedRole(manifest) => &manifest.container_base,
     };
     if account_configuration_matches(&root.join(container), config, workspace, role)? {

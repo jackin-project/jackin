@@ -74,14 +74,10 @@ impl OpCli {
     /// Long-timeout variant for interactive TUI flows where the operator may
     /// need to complete SSO (Okta, SAML, etc.) in a browser before `op`
     /// returns. Five minutes covers typical SSO redirect + approval round-trips.
-    #[expect(
-        clippy::duration_suboptimal_units,
-        reason = "std has no from_mins; from_secs is the canonical constructor for a 5-minute timeout"
-    )]
     pub fn new_interactive() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_owned(),
-            timeout: std::time::Duration::from_secs(300),
+            timeout: std::time::Duration::from_mins(5),
             account: None,
         }
     }

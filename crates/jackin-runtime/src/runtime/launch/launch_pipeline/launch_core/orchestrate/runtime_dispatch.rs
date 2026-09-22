@@ -9,7 +9,10 @@ use jackin_docker::docker_client::DockerApi;
 pub(super) enum RuntimeDispatch {
     AppleContainer(String),
     Detached(String),
-    Docker(Box<RuntimeLaunched>),
+    Docker {
+        launched: Box<RuntimeLaunched>,
+        container: jackin_core::ContainerHandle,
+    },
 }
 
 impl RuntimeDispatch {
@@ -21,15 +24,18 @@ impl RuntimeDispatch {
         use crate::runtime::launch::launch_runtime::LaunchOutcome;
 
         match outcome {
-            LaunchOutcome::Detached => {
+            LaunchOutcome::Detached(_container_handle) => {
                 // Ownership passes to the running instance. Only a later attach
                 // or eject may decide to finalize its resources.
                 launched.cleanup.disarm();
                 Self::Detached(container_name.to_owned())
             }
-            LaunchOutcome::ForegroundSessionEnded => {
+            LaunchOutcome::ForegroundSessionEnded(container) => {
                 launched.cleanup.keep_socket_dir();
-                Self::Docker(Box::new(launched))
+                Self::Docker {
+                    launched: Box::new(launched),
+                    container,
+                }
             }
         }
     }

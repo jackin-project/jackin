@@ -203,6 +203,7 @@ where
         _container_name: &str,
         _runner: &mut impl CommandRunner,
     ) -> Result<()> {
+        std::future::ready(()).await;
         anyhow::bail!("apple-container finalize not yet implemented - Phase 0")
     }
 }

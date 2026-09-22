@@ -5,25 +5,19 @@
 mod common;
 
 use common::{
-    FakeRunner, NoOpDocker, install_agent_binary_stubs, install_capsule_binary_stub,
-    observe_host_env_file,
+    FakeDockerClient, FakeRunner, install_agent_binary_stubs, install_capsule_binary_stub,
+    launched_role_container,
 };
 
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use jackin_config::{AccountConfig, AccountCredential, AiProvider, AppConfig, ConfigEditor};
 use jackin_core::Agent;
+use jackin_core::ContainerSpec;
 use jackin_core::JackinPaths;
 use jackin_core::MountIsolation;
 use jackin_core::RoleSelector;
 use jackin_runtime::runtime::{LoadOptions, load_role};
 use tempfile::tempdir;
-
-fn recorded_role_container_name(run_cmd: &str) -> &str {
-    run_cmd
-        .split_once(" --name ")
-        .and_then(|(_, rest)| rest.split_whitespace().next())
-        .expect("role docker run should include --name")
-}
 
 fn assert_amp_not_staged_without_install_recipe(dockerfile: &str) {
     // This direct build-context helper call does not pass an agent install
@@ -34,8 +28,54 @@ fn assert_amp_not_staged_without_install_recipe(dockerfile: &str) {
     );
 }
 
+fn assert_amp_container_spec(spec: &ContainerSpec) {
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("JACKIN_AGENT=")),
+        "JACKIN_AGENT must not be a container env var; got: {:?}",
+        spec.env
+    );
+    assert_eq!(spec.command, Some(vec!["amp-main".to_owned()]));
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.ends_with(":/home/agent/.amp/bin/amp:ro")),
+        "amp binary is baked into the image and must not be bind-mounted at run time; got: {:?}",
+        spec.binds
+    );
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("JACKIN_ROLE=")),
+        "{spec:?}"
+    );
+    assert!(!spec.env.iter().any(|entry| entry.contains("test-amp-key")));
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.contains("/jackin/claude/"))
+    );
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.contains("/jackin/codex/"))
+    );
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.contains("/jackin/amp/secrets.json"))
+    );
+}
+
 #[tokio::test]
-async fn amp_launch_invokes_docker_run_with_amp_agent() {
+async fn amp_launch_creates_container_with_amp_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -109,8 +149,7 @@ agents = ["amp"]
     // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
-    let observed_env = observe_host_env_file(&mut runner, &paths);
-    let docker = NoOpDocker;
+    let docker = FakeDockerClient::default();
 
     load_role(
         &paths,
@@ -124,35 +163,12 @@ agents = ["amp"]
     .await
     .unwrap();
 
-    let run_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
-        .expect("role docker run should run");
-    assert!(
-        !run_cmd.contains("JACKIN_AGENT="),
-        "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
-    );
-    assert!(
-        run_cmd.ends_with(" amp-main"),
-        "initial instance must be passed as container argv; got: {run_cmd}"
-    );
-    assert!(
-        !run_cmd.contains(":/home/agent/.amp/bin/amp:ro"),
-        "amp binary is baked into the image and must not be bind-mounted at run time; got: {run_cmd}"
-    );
-    assert!(!run_cmd.contains("-e JACKIN_ROLE="), "{run_cmd}");
-    assert!(run_cmd.contains("--env-file"), "{run_cmd}");
-    assert!(!run_cmd.contains("test-amp-key"), "{run_cmd}");
-    let (env_path, env_contents) = observed_env.lock().unwrap().clone().unwrap();
-    assert!(!env_contents.contains("test-amp-key"), "{env_contents}");
-    let credentials_path = paths
-        .data_dir
-        .join(recorded_role_container_name(run_cmd))
-        .join(format!(
-            "credentials/{}",
-            jackin_protocol::account_credentials_filename("amp-main")
-        ));
+    let (container_name, spec) = launched_role_container(&docker);
+    assert_amp_container_spec(&spec);
+    let credentials_path = paths.data_dir.join(&container_name).join(format!(
+        "credentials/{}",
+        jackin_protocol::account_credentials_filename("amp-main")
+    ));
     let credentials: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
     assert_eq!(credentials["schema_version"], 1);
@@ -173,17 +189,10 @@ agents = ["amp"]
             0o600
         );
     }
-    assert!(
-        !env_path.exists(),
-        "host env file must be removed after run"
-    );
-    assert!(!run_cmd.contains("/jackin/claude/"), "{run_cmd}");
-    assert!(!run_cmd.contains("/jackin/codex/"), "{run_cmd}");
-    assert!(!run_cmd.contains("/jackin/amp/secrets.json"), "{run_cmd}");
     let capsule_config_path = paths
         .jackin_home
         .join("sockets")
-        .join(recorded_role_container_name(run_cmd))
+        .join(&container_name)
         .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
     let capsule_config: jackin_protocol::CapsuleConfig =
         toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap();
@@ -195,7 +204,7 @@ agents = ["amp"]
 }
 
 #[tokio::test]
-async fn amp_launch_profile_account_mounts_secrets_json_in_docker_run() {
+async fn amp_launch_profile_account_mounts_secrets_json_in_container() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -294,7 +303,7 @@ agents = ["amp"]
     // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
-    let docker = NoOpDocker;
+    let docker = FakeDockerClient::default();
 
     load_role(
         &paths,
@@ -308,18 +317,21 @@ agents = ["amp"]
     .await
     .unwrap();
 
-    let run_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
-        .expect("role docker run should run");
+    let (_, spec) = launched_role_container(&docker);
     assert!(
-        run_cmd.contains(":/jackin/amp/secrets.json"),
-        "Sync mode must mount secrets.json into the container: {run_cmd}"
+        spec.binds
+            .iter()
+            .any(|bind| bind.contains(":/jackin/amp/secrets.json")),
+        "Sync mode must mount secrets.json into the container: {:?}",
+        spec.binds
     );
     // No AMP_API_KEY in env config → no -e flag.
     assert!(
-        !run_cmd.contains("-e AMP_API_KEY="),
-        "Sync mode without AMP_API_KEY must not inject the var: {run_cmd}"
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("AMP_API_KEY=")),
+        "Sync mode without AMP_API_KEY must not inject the var: {:?}",
+        spec.env
     );
 }

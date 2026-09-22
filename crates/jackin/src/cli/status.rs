@@ -22,7 +22,7 @@ where
 
 use crate::cli::BANNER;
 use crate::cli::format::OutputFormat;
-use jackin_core::JackinPaths;
+use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_docker::docker_client::{BollardDockerClient, ContainerState, DockerApi};
 use jackin_runtime::instance::manifest::InstanceIndex;
 
@@ -116,7 +116,10 @@ async fn run_level0(
         for (name, entries) in &workspaces {
             let mut instances = Vec::new();
             for entry in entries {
-                let state = docker.inspect_container_state(&entry.container_base).await;
+                let state = docker
+                    .inspect_container_by_name(&entry.container_base)
+                    .await
+                    .state;
                 instances.push(serde_json::json!({
                     "instance_id": entry.instance_id,
                     "container_base": entry.container_base,
@@ -150,11 +153,12 @@ async fn run_level0(
     // Query container states for each workspace (sequential; fast enough for small fleets).
     let mut workspace_rows: Vec<(String, usize, usize, usize)> = Vec::new(); // (name, total, running, stopped)
     for (ws_name, entries) in &sorted_ws {
-        let states = poll_sequential(
-            entries
-                .iter()
-                .map(|e| docker.inspect_container_state(&e.container_base)),
-        )
+        let states = poll_sequential(entries.iter().map(|e| async {
+            docker
+                .inspect_container_by_name(&e.container_base)
+                .await
+                .state
+        }))
         .await;
         let running = states
             .iter()
@@ -248,11 +252,12 @@ async fn run_level1(
     }
 
     // Gather state for each instance.
-    let states = poll_sequential(
-        instances
-            .iter()
-            .map(|e| docker.inspect_container_state(&e.container_base)),
-    )
+    let states = poll_sequential(instances.iter().map(|e| async {
+        docker
+            .inspect_container_by_name(&e.container_base)
+            .await
+            .state
+    }))
     .await;
 
     // Apply state filter.
@@ -356,7 +361,9 @@ async fn run_level2(
     })?;
 
     let container_name = &entry.container_base;
-    let state = docker.inspect_container_state(container_name).await;
+    let inspection = docker.inspect_container_by_name(container_name).await;
+    let state = inspection.state;
+    let container = inspection.handle;
     let is_running = matches!(state, ContainerState::Running);
 
     // Fetch agents registry (only when running).
@@ -365,8 +372,11 @@ async fn run_level2(
         reason = "documented residual allow; prefer expect when site is lint-true"
     )]
     let agents_json: Option<Vec<jackin_protocol::control::AgentRegistryEntry>> = if is_running {
+        let Some(container) = container.as_ref() else {
+            return Ok(());
+        };
         match docker
-            .exec_capture(container_name, &["sh", "-c", JACKIN_AGENTS_CMD])
+            .exec_capture_by_id(container, &["sh", "-c", JACKIN_AGENTS_CMD])
             .await
         {
             Err(_) => None, // socket not yet up or container exec failed — expected transient
@@ -387,8 +397,11 @@ async fn run_level2(
     // is a transient or expected case (container just confirmed up but git not
     // available), and GIT_BRANCH_CMD already suppresses git errors with `2>/dev/null`.
     let branch: Option<String> = if is_running {
+        let Some(container) = container.as_ref() else {
+            return Ok(());
+        };
         docker
-            .exec_capture(container_name, &["sh", "-c", GIT_BRANCH_CMD])
+            .exec_capture_by_id(container, &["sh", "-c", GIT_BRANCH_CMD])
             .await
             .ok()
             .map(|s| s.trim().to_owned())
@@ -399,7 +412,10 @@ async fn run_level2(
 
     // Fetch PR info via gh (only when running and branch is known).
     let pr_info: Option<PrInfo> = if is_running && branch.is_some() {
-        fetch_pr_info(docker, container_name).await
+        match container.as_ref() {
+            Some(container) => fetch_pr_info(docker, container).await,
+            None => None,
+        }
     } else {
         None
     };
@@ -518,11 +534,11 @@ impl PrInfo {
     }
 }
 
-async fn fetch_pr_info(docker: &impl DockerApi, container_name: &str) -> Option<PrInfo> {
+async fn fetch_pr_info(docker: &impl DockerApi, container: &ContainerHandle) -> Option<PrInfo> {
     // Both exec failure (gh absent / no token) and parse failure mean "no PR info available";
     // .ok()? is intentional — these are expected, not bugs.
     let output = docker
-        .exec_capture(container_name, &["sh", "-c", GH_PR_CMD])
+        .exec_capture_by_id(container, &["sh", "-c", GH_PR_CMD])
         .await
         .ok()?;
     let value: serde_json::Value = serde_json::from_str(output.trim()).ok()?;

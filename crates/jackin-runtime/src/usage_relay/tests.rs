@@ -659,6 +659,15 @@ fn apple_usage_tunnel_executes_the_guest_proxy_as_the_supervisor() {
 }
 
 #[test]
+fn docker_usage_tunnel_binds_the_immutable_container_id() {
+    let container = ContainerHandle::new("role-name", "immutable-id").unwrap();
+    let args = docker_tunnel_args(&container, &["usage-relay-proxy".to_owned()]);
+
+    assert_eq!(args[2], "immutable-id");
+    assert_ne!(args[2], container.name());
+}
+
+#[test]
 fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
     use crate::instance::{
         AgentRuntimeState, AuthProvisionOutcome, GithubProvisionOutcome, ProvisionedAuth, RoleState,

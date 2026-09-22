@@ -9,8 +9,8 @@ use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use jackin_core::MountIsolation;
 use jackin_docker::{CommandRunner, RunOptions};
 use jackin_runtime::isolation::finalize::{
-    AttachOutcome, ExitDialogChoice, FinalizeDecision, FinalizerPrompt, PreservedReason,
-    finalize_foreground_session,
+    AttachOutcome, ExitDialogChoice, FinalizeContext, FinalizeDecision, FinalizerPrompt,
+    PreservedReason, finalize_foreground_session,
 };
 use jackin_runtime::isolation::materialize::{PreflightContext, materialize_workspace};
 use jackin_runtime::isolation::state::IsolationRecord;
@@ -52,6 +52,7 @@ impl CommandRunner for ScriptedRunner {
         _cwd: Option<&Path>,
         _opts: &RunOptions,
     ) -> anyhow::Result<()> {
+        std::future::ready(()).await;
         self.run_recorded
             .push(format!("{program} {}", args.join(" ")));
         Ok(())
@@ -63,6 +64,7 @@ impl CommandRunner for ScriptedRunner {
         _args: &[&str],
         _cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
+        std::future::ready(()).await;
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 
@@ -192,17 +194,19 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     let branches = "jackin/scratch/jackin-the-architect\tdeadbeef\t\t\n";
     let mut finalize_runner = ScriptedRunner::new(&["", branches]);
     let mut prompt = NoPrompt;
-    let docker = common::NoOpDocker;
-    let dec = finalize_foreground_session(
-        "jackin-the-architect",
-        &cdir,
-        AttachOutcome::stopped(0),
-        false,
-        jackin::workspace::DirtyExitPolicy::Ask,
-        &mut prompt,
-        &docker,
-        &mut finalize_runner,
-    )
+    let docker = common::FakeDockerClient::default();
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-the-architect",
+        container_state_dir: &cdir,
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: jackin::workspace::DirtyExitPolicy::Ask,
+        prompt: &mut prompt,
+        docker: &docker,
+        runner: &mut finalize_runner,
+        container: jackin_core::ContainerHandle::new("jackin-the-architect", "test-finalizer-id")
+            .unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);

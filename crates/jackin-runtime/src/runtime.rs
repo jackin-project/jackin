@@ -52,9 +52,9 @@ pub use self::launch::{
     CLAUDE_EFFORT_ENV, CLAUDE_MODEL_ENV, CODEX_LANE_EFFORT_ENV, CODEX_LANE_MODEL_ENV, DIND_IMAGE,
     DindSidecarPrewarm, DryRunIdentity, IdentitySink, LaunchImagePlan, LaunchedInstance,
     LoadOptions, LoadOptionsError, account_admission_matches, account_configuration_fingerprint,
-    account_configuration_matches, lane_agent_env, load_role, prewarm_dind_sidecar_container,
-    resolve_dry_run_identity, resolve_launch_image_plan, with_account_selection,
-    write_prewarmed_dind_state,
+    account_configuration_matches, lane_agent_env, load_role,
+    prewarm_dind_sidecar_container_with_paths, resolve_dry_run_identity, resolve_launch_image_plan,
+    with_account_selection, write_prewarmed_dind_state,
 };
 pub use self::naming::matching_family;
 pub use self::prewarm_trigger::{
