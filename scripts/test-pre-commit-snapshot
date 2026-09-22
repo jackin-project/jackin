@@ -52,8 +52,8 @@ before_staged=$(git -C "$fixture" hash-object "$fixture/staged.txt")
 (cd "$fixture" && PATH="$fake_bin:$PATH" FIXTURE_MODE=success "$hook")
 
 test "$(git -C "$fixture" status --porcelain=v1 --untracked-files=all)" = "$before_status"
-test "$(git -C "$fixture" hash-object "$fixture/partial.txt")" != "$before_partial"
-test "$(git -C "$fixture" hash-object "$fixture/unstaged.txt")" != "$before_unstaged"
+test "$(git -C "$fixture" hash-object "$fixture/partial.txt")" = "$before_partial"
+test "$(git -C "$fixture" hash-object "$fixture/unstaged.txt")" = "$before_unstaged"
 test "$(git -C "$fixture" hash-object "$fixture/staged.txt")" = "$before_staged"
 test -f "$fixture/untracked.txt"
 
