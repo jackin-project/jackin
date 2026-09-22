@@ -68,12 +68,27 @@ The first-parent sequence covered by this report is:
 
 ## Repair verification
 
-The final PR verification records these checks; all passed in the isolated
-worktree:
+The provenance and generated-state checks passed in an isolated worktree. The
+exact pinned Velnor generator computes and accepts scan input
+`ee4d10ecde1b6a03` for this PR tree; the policy result is 11 rules, 0 failed.
+The repository link audit remains a carried pre-existing limitation; this
+report does not claim that all gates passed:
 
 - JSON parse: `jq empty plans/repository-consolidation/20260923-jackin/PROVENANCE.json` — passed.
-- Documentation gates: `cargo xtask roadmap audit`, `cargo xtask docs repo-links`,
-  and `cargo xtask research check` — passed.
+- Provenance gates: `cargo xtask roadmap audit` and `cargo xtask research check` — passed.
+- Documentation link audit: `cargo xtask docs repo-links` — failed with exit 1 on
+  exact PR head `3b65588dad6c976e0a8fa1eca344908373f746ae` and base
+  `55e21f05bdee37a1424464ce69b86fc5e550307a`, producing the same six
+  pre-existing references:
+  - `docs/content/reference/getting-oriented/xtasks.mdx:45` — missing `.github/PULL_REQUEST_TEMPLATE.md`.
+  - `docs/content/research/context/techniques/02-baseline-audit.mdx:114` — `.github/AGENTS.md` reference is not a verifiable `RepoFile` link.
+  - `docs/content/research/context/techniques/06-context-architecture.mdx:52` — `.github/AGENTS.md` reference is not a verifiable `RepoFile` link.
+  - `docs/content/research/engineering/ci/performance/ci-performance-analysis.mdx:27` — `.github/AGENTS.md` reference is not a verifiable `RepoFile` link.
+  - `docs/content/research/engineering/ci/rust-tooling/index.mdx:171` — `.github/AGENTS.md` reference is not a verifiable `RepoFile` link.
+  - `docs/content/research/engineering/ci/rust-tooling/index.mdx:23` — `.github/AGENTS.md` reference is not a verifiable `RepoFile` link.
+  These references are unchanged by this PR and are deliberately carried;
+  repairing them is outside this generated-state/provenance correction.
 - Format sanity: `cargo fmt --all -- --check` — passed.
-- Diff sanity: `git diff --check` and a changed-path audit proving this patch
-  adds only the two files in this dated directory — passed.
+- Diff sanity: `git diff --check` and a changed-path audit proving the PR is
+  limited to the two provenance files and this generated-state file, with no
+  source-code changes — passed.
