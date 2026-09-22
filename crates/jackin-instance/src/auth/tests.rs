@@ -2449,6 +2449,25 @@ fn sync_copies_host_auth_json_when_present() {
     assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
 }
 
+#[test]
+fn sync_treats_empty_host_auth_json_as_host_missing() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(host_home.join(".codex")).unwrap();
+    std::fs::write(host_home.join(".codex/auth.json"), " \n\t").unwrap();
+
+    let (outcome, mounted) =
+        RoleState::provision_codex_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    assert!(mounted.is_none());
+    assert!(
+        !auth_json.exists(),
+        "empty Codex credentials must not create a role-state mount"
+    );
+}
+
 /// Re-syncing identical host content must NOT rewrite the role-state
 /// file. `write_private_file` replaces the inode (temp + rename); on
 /// macOS that invalidates a live single-file bind mount into the running
