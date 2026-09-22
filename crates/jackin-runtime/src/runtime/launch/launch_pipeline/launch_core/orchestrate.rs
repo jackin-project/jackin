@@ -493,7 +493,7 @@ async fn handle_launch_failure<D: DockerApi>(
             ),
         );
     }
-    cleanup.run(docker).await;
+    cleanup.run_preserving_evidence(docker).await;
 }
 
 struct MaterializeWorkspace<'a, D, R> {

@@ -3,6 +3,7 @@ use super::*;
 use crate::instance::{DockerResources, InstanceManifest, NewInstanceManifest};
 use jackin_config::AppConfig;
 use jackin_core::Agent;
+use jackin_core::ContainerState;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_test_support::FakeDockerClient;
@@ -147,6 +148,86 @@ async fn mid_pipeline_failed_setup_still_runs_cleanup() {
             .iter()
             .any(|c| c == &format!("docker rm -f {container}-dind")),
         "FailedSetup path must still tear down DinD; recorded: {recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn post_start_failure_preserves_terminal_role_evidence_but_cleans_sidecars() {
+    let temp = tempdir().unwrap();
+    let socket_dir = temp.path().join("socket");
+    std::fs::create_dir(&socket_dir).unwrap();
+    std::fs::write(socket_dir.join("agent.toml"), "bounded evidence").unwrap();
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 1,
+            oom_killed: false,
+        }])),
+        ..Default::default()
+    };
+    let cleanup = LoadCleanup::new(
+        "jk-failed-start".into(),
+        "jk-failed-start-dind".into(),
+        "jk-failed-start-certs".into(),
+        "jk-failed-start-net".into(),
+        socket_dir.clone(),
+    );
+
+    cleanup.run_preserving_evidence(&docker).await;
+
+    let recorded = docker.recorded.borrow();
+    assert!(
+        !recorded
+            .iter()
+            .any(|call| call == "docker rm -f jk-failed-start"),
+        "terminal role evidence must remain inspectable: {recorded:?}"
+    );
+    assert!(socket_dir.exists(), "terminal launch evidence must remain");
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker rm -f jk-failed-start-dind")
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker volume rm jk-failed-start-certs")
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker network rm jk-failed-start-net")
+    );
+}
+
+#[tokio::test]
+async fn post_start_failure_cleans_live_role_and_private_socket() {
+    let temp = tempdir().unwrap();
+    let socket_dir = temp.path().join("socket");
+    std::fs::create_dir(&socket_dir).unwrap();
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        ..Default::default()
+    };
+    let cleanup = LoadCleanup::new(
+        "jk-live-start".into(),
+        "jk-live-start-dind".into(),
+        "jk-live-start-certs".into(),
+        "jk-live-start-net".into(),
+        socket_dir.clone(),
+    );
+
+    cleanup.run_preserving_evidence(&docker).await;
+
+    let recorded = docker.recorded.borrow();
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker rm -f jk-live-start"),
+        "live role must be force-removed: {recorded:?}"
+    );
+    assert!(
+        !socket_dir.exists(),
+        "live role private socket directory must be removed"
     );
 }
 
