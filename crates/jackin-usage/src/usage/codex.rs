@@ -266,10 +266,20 @@ pub(crate) fn codex_profile_snapshot_with_rate_limit(
     codex_home: &Path,
     now: i64,
 ) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    codex_profile_snapshot_with_rate_limit_at(agent, credentials, codex_home, now, now_epoch)
+}
+
+pub(crate) fn codex_profile_snapshot_with_rate_limit_at<C: FnOnce() -> i64>(
+    agent: &str,
+    credentials: &CodexOAuthCredentials,
+    codex_home: &Path,
+    now: i64,
+    response_clock: C,
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
     // Same reset-credits merge as the ambient lane: the read-only GET must not
     // gate the quota — a failure degrades to no "Limit Reset Credits" row.
     let (quota, error) = split_provider_fetch(Some(
-        fetch_codex_oauth_usage(credentials, codex_home)
+        fetch_codex_oauth_usage_with_response_clock(credentials, codex_home, response_clock)
             .map_err(ProviderError::from)
             .map(|mut usage| {
                 usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, codex_home)
@@ -289,7 +299,7 @@ pub(crate) fn codex_profile_snapshot_with_rate_limit(
     let rate_limit = (quota.is_none())
         .then_some(error.as_ref())
         .flatten()
-        .and_then(|error| error.rate_limit(now));
+        .and_then(ProviderError::rate_limit);
     let buckets = quota
         .as_ref()
         .map(|usage| usage.buckets(now))
@@ -1184,6 +1194,14 @@ pub(crate) fn fetch_codex_oauth_usage(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
 ) -> Result<CodexUsageResponse, ProviderHttpError> {
+    fetch_codex_oauth_usage_with_response_clock(credentials, codex_home, now_epoch)
+}
+
+pub(crate) fn fetch_codex_oauth_usage_with_response_clock<C: FnOnce() -> i64>(
+    credentials: &CodexOAuthCredentials,
+    codex_home: &Path,
+    response_clock: C,
+) -> Result<CodexUsageResponse, ProviderHttpError> {
     let mut headers = vec![(reqwest::header::USER_AGENT, "jackin-capsule/usage")];
     if let Some(account_id) = &credentials.account_id {
         headers.push((
@@ -1191,13 +1209,14 @@ pub(crate) fn fetch_codex_oauth_usage(
             account_id.as_str(),
         ));
     }
-    get_json_bearer(
+    get_json_bearer_with_response_clock(
         jackin_telemetry::schema::enums::ProviderName::Openai,
         "/backend-api/wham/usage",
         "Codex OAuth usage",
         &resolve_codex_usage_url(codex_home),
         &credentials.access_token,
         &headers,
+        response_clock,
     )
 }
 
@@ -1245,7 +1264,8 @@ pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, 
                 return Err(ProviderHttpError::HttpStatus {
                     status: status.as_u16(),
                     message: format!("Codex token refresh HTTP {status}"),
-                    retry_after_seconds: retry_after_header_seconds(response.headers()),
+                    retry_after: retry_after_header(response.headers()),
+                    response_received_at_epoch: now_epoch(),
                 });
             }
             let value: serde_json::Value = response.json().map_err(|err| {

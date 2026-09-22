@@ -197,7 +197,9 @@ pub(crate) use self::openrouter::{
     OpenRouterModelCheck, check_openrouter_model_in_catalog, fetch_openrouter_credits,
     fetch_openrouter_key_usage, fetch_openrouter_model_check, openrouter_base_url,
     openrouter_base_url_from, openrouter_credits_bucket, openrouter_snapshot,
-    openrouter_snapshot_with_base, parse_openrouter_credits, parse_openrouter_key_usage,
+    openrouter_snapshot_with_base, openrouter_snapshot_with_base_with_rate_limit,
+    openrouter_snapshot_with_base_with_rate_limit_at, parse_openrouter_credits,
+    parse_openrouter_key_usage,
 };
 #[cfg(test)]
 pub(crate) use self::refresh::MaterializedUsageAccounts;
@@ -883,7 +885,12 @@ pub(crate) fn provider_credential_snapshot_with_rate_limit(
             ),
             None,
         ),
-        "openrouter" => (openrouter_snapshot("opencode", Some(secret), now), None),
+        "openrouter" => openrouter_snapshot_with_base_with_rate_limit(
+            "opencode",
+            Some(secret),
+            &openrouter_base_url(),
+            now,
+        ),
         // Explicitly blocked (no production dispatch): `meta` (Muse has no
         // pollable usage fetch by design), `antigravity` (grant lives in the
         // host Keychain, which the file reader cannot probe), `omp`/`hermes`
@@ -1436,13 +1443,33 @@ pub(crate) fn provider_request<T, E>(
 /// Provider snapshots may map an HTTP auth status to `NeedsLogin`, but a
 /// transport or decode failure must remain an ordinary provider error even if
 /// its rendered message happens to contain the same digits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProviderRetryAfter {
+    /// Delay-seconds form from the `Retry-After` header.
+    Seconds(u64),
+    /// Absolute HTTP-date form, normalized to Unix seconds.
+    HttpDate(i64),
+}
+
+impl ProviderRetryAfter {
+    pub(crate) fn retry_at_epoch(self, response_received_at_epoch: i64) -> i64 {
+        match self {
+            Self::Seconds(seconds) => response_received_at_epoch.saturating_add(
+                i64::try_from(seconds).unwrap_or(i64::MAX),
+            ),
+            Self::HttpDate(epoch) => epoch,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProviderHttpError {
     Transport(String),
     HttpStatus {
         status: u16,
         message: String,
-        retry_after_seconds: Option<u64>,
+        retry_after: Option<ProviderRetryAfter>,
+        response_received_at_epoch: i64,
     },
     Decode(String),
 }
@@ -1457,11 +1484,29 @@ impl std::fmt::Display for ProviderHttpError {
     }
 }
 
-pub(crate) fn retry_after_header_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+pub(crate) fn retry_after_header(
+    headers: &reqwest::header::HeaderMap,
+) -> Option<ProviderRetryAfter> {
     headers
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.trim().parse::<u64>().ok())
+        .and_then(retry_after_header_value)
+}
+
+pub(crate) fn retry_after_header_value(value: &str) -> Option<ProviderRetryAfter> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(ProviderRetryAfter::Seconds(seconds));
+    }
+    let epoch = httpdate::parse_http_date(value)
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_secs()).ok())?;
+    Some(ProviderRetryAfter::HttpDate(epoch))
 }
 
 /// Shared GET → bearer-auth → JSON skeleton for provider quota endpoints. The
@@ -1477,6 +1522,29 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
     token: &str,
     extra_headers: &[(reqwest::header::HeaderName, &str)],
 ) -> Result<T, ProviderHttpError> {
+    get_json_bearer_with_response_clock(
+        provider,
+        template,
+        label,
+        url,
+        token,
+        extra_headers,
+        now_epoch,
+    )
+}
+
+pub(crate) fn get_json_bearer_with_response_clock<
+    T: serde::de::DeserializeOwned,
+    C: FnOnce() -> i64,
+>(
+    provider: jackin_telemetry::schema::enums::ProviderName,
+    template: &'static str,
+    label: &str,
+    url: &str,
+    token: &str,
+    extra_headers: &[(reqwest::header::HeaderName, &str)],
+    response_clock: C,
+) -> Result<T, ProviderHttpError> {
     provider_request(provider, "GET", template, || {
         let client = provider_http_client().map_err(ProviderHttpError::Transport)?;
         let mut request = client
@@ -1490,12 +1558,14 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
             ProviderHttpError::Transport(format!("{label} request failed: {err}"))
         })?;
         let status = response.status();
-        let retry_after_seconds = retry_after_header_seconds(response.headers());
+        let response_received_at_epoch = response_clock();
+        let retry_after = retry_after_header(response.headers());
         if !status.is_success() {
             return Err(ProviderHttpError::HttpStatus {
                 status: status.as_u16(),
                 message: format!("{label} HTTP {status}"),
-                retry_after_seconds,
+                retry_after,
+                response_received_at_epoch,
             });
         }
         response

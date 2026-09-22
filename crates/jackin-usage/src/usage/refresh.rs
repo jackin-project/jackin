@@ -3,7 +3,10 @@
 
 //! Materialized-account writes and provider error classification.
 
-use super::{AtomicU64, FocusedUsageView, Ordering, Path, ProviderHttpError, Serialize, Write, fs};
+use super::{
+    AtomicU64, FocusedUsageView, Ordering, Path, ProviderHttpError, ProviderRetryAfter, Serialize,
+    Write, fs,
+};
 #[cfg(test)]
 use serde::Deserialize;
 
@@ -18,7 +21,8 @@ pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub(crate) struct ProviderError {
     message: String,
     http_status: Option<u16>,
-    retry_after_seconds: Option<u64>,
+    retry_after: Option<ProviderRetryAfter>,
+    response_received_at_epoch: Option<i64>,
 }
 
 /// Typed rate-limit metadata carried from a provider snapshot to the host
@@ -35,15 +39,22 @@ impl ProviderError {
         Self {
             message,
             http_status: None,
-            retry_after_seconds: None,
+            retry_after: None,
+            response_received_at_epoch: None,
         }
     }
 
-    fn http_status(message: String, status: u16, retry_after_seconds: Option<u64>) -> Self {
+    fn http_status(
+        message: String,
+        status: u16,
+        retry_after: Option<ProviderRetryAfter>,
+        response_received_at_epoch: i64,
+    ) -> Self {
         Self {
             message,
             http_status: Some(status),
-            retry_after_seconds,
+            retry_after,
+            response_received_at_epoch: Some(response_received_at_epoch),
         }
     }
 
@@ -56,14 +67,21 @@ impl ProviderError {
     }
 
     pub(crate) fn retry_after_seconds(&self) -> Option<u64> {
-        self.retry_after_seconds
+        match self.retry_after {
+            Some(ProviderRetryAfter::Seconds(seconds)) => Some(seconds),
+            Some(ProviderRetryAfter::HttpDate(_)) | None => None,
+        }
     }
 
-    pub(crate) fn rate_limit(&self, now: i64) -> Option<ProviderRateLimit> {
-        (self.status() == Some(429)).then(|| ProviderRateLimit {
-            retry_at_epoch: self
-                .retry_after_seconds
-                .map(|seconds| now.saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX))),
+    pub(crate) fn rate_limit(&self) -> Option<ProviderRateLimit> {
+        if self.status() != Some(429) {
+            return None;
+        }
+        Some(ProviderRateLimit {
+            retry_at_epoch: self.retry_after.and_then(|retry_after| {
+                self.response_received_at_epoch
+                    .map(|reference| retry_after.retry_at_epoch(reference))
+            }),
         })
     }
 }
@@ -83,8 +101,14 @@ impl From<ProviderHttpError> for ProviderError {
             ProviderHttpError::HttpStatus {
                 status,
                 message,
-                retry_after_seconds,
-            } => Self::http_status(message, status, retry_after_seconds),
+                retry_after,
+                response_received_at_epoch,
+            } => Self::http_status(
+                message,
+                status,
+                retry_after,
+                response_received_at_epoch,
+            ),
         }
     }
 }

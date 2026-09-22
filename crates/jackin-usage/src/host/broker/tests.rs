@@ -346,9 +346,9 @@ impl ProviderCredentialEnvResolver for TypedRateLimitResolver {
 }
 
 #[test]
-fn refresh_binding_outcome_carries_typed_rate_limit_into_broker() {
+fn refresh_openrouter_binding_outcome_carries_typed_rate_limit_into_broker() {
     let binding = ValidatedCredentialBinding {
-        surface: HostSurfaceId::Claude,
+        surface: HostSurfaceId::OpenRouter,
         identity: None,
         source_id: "source-typed-rate-limit".to_owned(),
         capability_id: "capability-typed-rate-limit".to_owned(),
@@ -356,8 +356,8 @@ fn refresh_binding_outcome_carries_typed_rate_limit_into_broker() {
         provenance: BTreeSet::new(),
         source: ValidatedCredentialSource::Env {
             handle: OpaqueCredentialHandle::new("typed-rate-limit-handle"),
-            key: "CLAUDE_API_KEY".to_owned(),
-            material: Some(env_material("CLAUDE_API_KEY", "fixture-secret")),
+            key: "OPENROUTER_API_KEY".to_owned(),
+            material: Some(env_material("OPENROUTER_API_KEY", "fixture-secret")),
         },
     };
 

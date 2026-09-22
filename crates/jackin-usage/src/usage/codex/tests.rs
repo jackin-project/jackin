@@ -24,7 +24,8 @@ fn auth_and_rate_limit_classification_requires_typed_http_status() {
             ProviderHttpError::HttpStatus {
                 status,
                 message: message.to_owned(),
-                retry_after_seconds: None,
+                retry_after: None,
+                response_received_at_epoch: 1_700_000_000,
             },
         )));
     }
@@ -32,7 +33,8 @@ fn auth_and_rate_limit_classification_requires_typed_http_status() {
         ProviderHttpError::HttpStatus {
             status: 429,
             message: "message mentions 401".to_owned(),
-            retry_after_seconds: None,
+            retry_after: None,
+            response_received_at_epoch: 1_700_000_000,
         },
     )));
 }
@@ -192,7 +194,13 @@ fn profile_snapshot_carries_typed_429_retry_after_to_broker_boundary() {
     };
     let now = 1_781_728_000;
     let (view, rate_limit) =
-        codex_profile_snapshot_with_rate_limit("codex", &credentials, home.path(), now);
+        codex_profile_snapshot_with_rate_limit_at(
+            "codex",
+            &credentials,
+            home.path(),
+            now,
+            || now,
+        );
     server.join().expect("429 fixture server");
 
     assert_eq!(view.status, UsageSnapshotStatus::Stale);

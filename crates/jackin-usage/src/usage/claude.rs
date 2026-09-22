@@ -138,11 +138,40 @@ pub(crate) fn claude_view_from_wave_with_rate_limit(
     now: i64,
     resolution: ClaudeWaveResolution,
 ) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    claude_view_from_wave_with_rate_limit_using(
+        agent,
+        provider,
+        now,
+        resolution,
+        fetch_claude_oauth_usage,
+        fetch_claude_cli_usage,
+    )
+}
+
+pub(crate) fn claude_view_from_wave_with_rate_limit_using<O, C>(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    resolution: ClaudeWaveResolution,
+    fetch_oauth: O,
+    fetch_cli: C,
+) -> (FocusedUsageView, Option<ProviderRateLimit>)
+where
+    O: FnOnce(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
+    C: FnOnce() -> Result<ClaudeCliUsage, ProviderError>,
+{
     match resolution {
         ClaudeWaveResolution::Denied => (claude_denied_view(agent, provider, now), None),
         ClaudeWaveResolution::Missing => (claude_missing_view(agent, provider, now), None),
         ClaudeWaveResolution::Resolved(resolved) => {
-            claude_resolved_view(agent, provider, now, *resolved)
+            claude_resolved_view_with_fetch(
+                agent,
+                provider,
+                now,
+                *resolved,
+                fetch_oauth,
+                fetch_cli,
+            )
         }
     }
 }
@@ -237,11 +266,34 @@ fn claude_resolved_view(
     now: i64,
     resolved: ClaudeResolved,
 ) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    let fetch_oauth = |access_token: &str| fetch_claude_oauth_usage(access_token);
+    claude_resolved_view_with_fetch(
+        agent,
+        provider,
+        now,
+        resolved,
+        fetch_oauth,
+        fetch_claude_cli_usage,
+    )
+}
+
+fn claude_resolved_view_with_fetch<O, C>(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    resolved: ClaudeResolved,
+    fetch_oauth: O,
+    fetch_cli: C,
+) -> (FocusedUsageView, Option<ProviderRateLimit>)
+where
+    O: FnOnce(&str) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError>,
+    C: FnOnce() -> Result<ClaudeCliUsage, ProviderError>,
+{
     let (oauth_quota, oauth_error) = split_provider_fetch(Some(
-        fetch_claude_oauth_usage(&resolved.access_token).map_err(ProviderError::from),
+        fetch_oauth(&resolved.access_token).map_err(ProviderError::from),
     ));
     let (cli_usage, cli_error) =
-        split_provider_fetch(oauth_quota.is_none().then(fetch_claude_cli_usage));
+        split_provider_fetch(oauth_quota.is_none().then(fetch_cli));
     let provider_error = claude_provider_error_label(oauth_error.as_ref(), cli_error.as_ref());
     let status = if oauth_quota.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
@@ -251,7 +303,7 @@ fn claude_resolved_view(
     let rate_limit = (status != UsageSnapshotStatus::Fresh)
         .then_some(oauth_error.as_ref().or(cli_error.as_ref()))
         .flatten()
-        .and_then(|error| error.rate_limit(now));
+        .and_then(ProviderError::rate_limit);
     let buckets = oauth_quota
         .map(|usage| usage.into_buckets(now))
         .or_else(|| cli_usage.as_ref().map(ClaudeCliUsage::buckets))
@@ -1247,12 +1299,24 @@ pub(crate) fn normalize_claude_spend(
 pub(crate) fn fetch_claude_oauth_usage(
     access_token: &str,
 ) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError> {
+    fetch_claude_oauth_usage_with_response_clock(
+        access_token,
+        "https://api.anthropic.com/api/oauth/usage",
+        now_epoch,
+    )
+}
+
+pub(crate) fn fetch_claude_oauth_usage_with_response_clock<C: FnOnce() -> i64>(
+    access_token: &str,
+    url: &str,
+    response_clock: C,
+) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError> {
     let user_agent = claude_code_user_agent();
-    get_json_bearer(
+    get_json_bearer_with_response_clock(
         jackin_telemetry::schema::enums::ProviderName::Anthropic,
         "/api/oauth/usage",
         "Claude OAuth usage",
-        "https://api.anthropic.com/api/oauth/usage",
+        url,
         access_token,
         &[
             (reqwest::header::CONTENT_TYPE, "application/json"),
@@ -1264,6 +1328,7 @@ pub(crate) fn fetch_claude_oauth_usage(
             // a generic UA is rejected.
             (reqwest::header::USER_AGENT, &user_agent),
         ],
+        response_clock,
     )
 }
 
