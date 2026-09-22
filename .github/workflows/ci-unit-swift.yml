@@ -335,7 +335,7 @@ jobs:
             target/xcframework/JackinUsage.xcframework/Info.plist
             target/xcframework/JackinUsage.xcframework/macos-arm64/Headers/module.modulemap
             target/xcframework/JackinUsage.xcframework/macos-arm64/libjackin_usage_ffi.a
-        run: velnor-workflow verify-product --producer 'rust-jackin-usage-ffi' --product 'xcframework-jackinusage' --digest 'dcb0e176c007dec0c16205fd4de933cf4f304f860ac585230fbb251727e8bb79' --stage "$RUNNER_TEMP/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage" --marker VELNOR_PRODUCT_RUST_JACKIN_USAGE_FFI__XCFRAMEWORK_JACKINUSAGE_READY
+        run: velnor-workflow verify-product --producer 'rust-jackin-usage-ffi' --product 'xcframework-jackinusage' --digest '82cbae4389af71418bc2d01895ab4ffabd83a7baa2af37559bb0e8c14cc80c45' --stage "$RUNNER_TEMP/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage" --marker VELNOR_PRODUCT_RUST_JACKIN_USAGE_FFI__XCFRAMEWORK_JACKINUSAGE_READY
       - name: Run unit checks
         env:
           CI_SCOPE: ${{ inputs.scope }}
