@@ -6,6 +6,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fmt;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -22,6 +23,7 @@ use opentelemetry_proto::tonic::collector::trace::v1::{
     trace_service_server::{TraceService, TraceServiceServer},
 };
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tonic::transport::{Server, server::TcpIncoming};
 use tonic::{Request, Response, Status};
 
@@ -52,7 +54,22 @@ struct State {
     logs: Mutex<Vec<ExportLogsServiceRequest>>,
     metrics: Mutex<Vec<ExportMetricsServiceRequest>>,
     behavior: Mutex<Behavior>,
-    received: tokio::sync::Notify,
+    progress: tokio::sync::Notify,
+    acknowledged: Mutex<Acknowledged>,
+}
+
+#[derive(Debug, Default)]
+struct Acknowledged {
+    traces: usize,
+    logs: usize,
+    metrics: usize,
+}
+
+#[derive(Clone, Copy)]
+enum Signal {
+    Traces,
+    Logs,
+    Metrics,
 }
 
 impl State {
@@ -61,6 +78,61 @@ impl State {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+
+    fn acknowledge(&self, signal: Signal) {
+        let mut acknowledged = self
+            .acknowledged
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match signal {
+            Signal::Traces => acknowledged.traces += 1,
+            Signal::Logs => acknowledged.logs += 1,
+            Signal::Metrics => acknowledged.metrics += 1,
+        }
+        drop(acknowledged);
+        self.progress.notify_waiters();
+    }
+
+    fn all_signals_acknowledged(&self) -> bool {
+        let acknowledged = self
+            .acknowledged
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let traces = self
+            .traces
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
+        let logs = self
+            .logs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
+        let metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
+        traces > 0
+            && logs > 0
+            && metrics > 0
+            && acknowledged.traces == traces
+            && acknowledged.logs == logs
+            && acknowledged.metrics == metrics
+    }
+
+    fn all_trace_requests_acknowledged(&self) -> bool {
+        let acknowledged = self
+            .acknowledged
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let traces = self
+            .traces
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
+        traces > 0 && acknowledged.traces == traces
     }
 
     async fn apply(behavior: &Behavior) -> Result<(), Status> {
@@ -107,8 +179,8 @@ impl TraceService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
-        self.0.received.notify_one();
         State::apply(&behavior).await?;
+        self.0.acknowledge(Signal::Traces);
         let partial_success =
             matches!(behavior, Behavior::PartialSuccess).then(|| ExportTracePartialSuccess {
                 rejected_spans: 1,
@@ -133,8 +205,8 @@ impl LogsService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
-        self.0.received.notify_one();
         State::apply(&behavior).await?;
+        self.0.acknowledge(Signal::Logs);
         let partial_success =
             matches!(behavior, Behavior::PartialSuccess).then(|| ExportLogsPartialSuccess {
                 rejected_log_records: 1,
@@ -157,8 +229,8 @@ impl MetricsService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
-        self.0.received.notify_one();
         State::apply(&behavior).await?;
+        self.0.acknowledge(Signal::Metrics);
         let partial_success =
             matches!(behavior, Behavior::PartialSuccess).then(|| ExportMetricsPartialSuccess {
                 rejected_data_points: 1,
@@ -176,6 +248,36 @@ pub struct Testbed {
     addr: SocketAddr,
     state: Arc<State>,
     shutdown: Option<oneshot::Sender<()>>,
+    receiver_task: Option<JoinHandle<Result<(), tonic::transport::Error>>>,
+}
+
+/// Failure while joining the receiver after requesting graceful shutdown.
+#[derive(Debug)]
+pub enum ShutdownError {
+    /// The gRPC server returned an error while shutting down.
+    Server(tonic::transport::Error),
+    /// The receiver task was cancelled or panicked before it could finish.
+    Join(tokio::task::JoinError),
+}
+
+impl fmt::Display for ShutdownError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Server(error) => {
+                write!(formatter, "OTLP testbed server shutdown failed: {error}")
+            }
+            Self::Join(error) => write!(formatter, "OTLP testbed receiver task failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for ShutdownError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Server(error) => Some(error),
+            Self::Join(error) => Some(error),
+        }
+    }
 }
 
 impl Testbed {
@@ -186,28 +288,29 @@ impl Testbed {
         let state = Arc::new(State::default());
         let services = Services(Arc::clone(&state));
         let (shutdown, shutdown_rx) = oneshot::channel();
-        jackin_telemetry::spawn::spawn_stream("otlp-testbed.receiver", async move {
-            let result = Server::builder()
-                .add_service(
-                    TraceServiceServer::new(services.clone())
-                        .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
-                )
-                .add_service(
-                    LogsServiceServer::new(services.clone())
-                        .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
-                )
-                .add_service(
-                    MetricsServiceServer::new(services)
-                        .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
-                )
-                .serve_with_incoming_shutdown(incoming, async { drop(shutdown_rx.await) })
-                .await;
-            assert!(result.is_ok(), "OTLP testbed server failed: {result:?}");
-        });
+        let receiver_task =
+            jackin_telemetry::spawn::spawn_stream("otlp-testbed.receiver", async move {
+                Server::builder()
+                    .add_service(
+                        TraceServiceServer::new(services.clone())
+                            .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
+                    )
+                    .add_service(
+                        LogsServiceServer::new(services.clone())
+                            .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
+                    )
+                    .add_service(
+                        MetricsServiceServer::new(services)
+                            .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
+                    )
+                    .serve_with_incoming_shutdown(incoming, async { drop(shutdown_rx.await) })
+                    .await
+            });
         Ok(Self {
             addr,
             state,
             shutdown: Some(shutdown),
+            receiver_task: Some(receiver_task),
         })
     }
 
@@ -485,25 +588,33 @@ impl Testbed {
         violations
     }
 
-    /// Stop the receiver while retaining captured requests for assertions.
-    pub fn stop(&mut self) {
+    /// Gracefully stop the receiver and join its task.
+    pub async fn shutdown(&mut self) -> Result<(), ShutdownError> {
         if let Some(shutdown) = self.shutdown.take()
             && shutdown.send(()).is_err()
         {}
+        let result = if let Some(receiver_task) = self.receiver_task.as_mut() {
+            receiver_task.await
+        } else {
+            Ok(Ok(()))
+        };
+        self.receiver_task.take();
+        match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(ShutdownError::Server(error)),
+            Err(error) => Err(ShutdownError::Join(error)),
+        }
     }
 
-    /// Wait until at least one request for every signal has arrived.
+    /// Wait until at least one request for every signal has been acknowledged.
     pub async fn wait_for_all_signals(&self, timeout: std::time::Duration) -> bool {
         tokio::time::timeout(timeout, async {
             loop {
-                let received = self.state.received.notified();
-                if !self.traces().is_empty()
-                    && !self.logs().is_empty()
-                    && !self.metrics().is_empty()
-                {
+                let progress = self.state.progress.notified();
+                if self.state.all_signals_acknowledged() {
                     return;
                 }
-                received.await;
+                progress.await;
             }
         })
         .await
@@ -514,7 +625,7 @@ impl Testbed {
     ///
     /// Signal-level readiness is insufficient when one flush produces multiple
     /// trace export requests: an earlier child-span batch can arrive before the
-    /// later root-span batch.
+    /// later root-span batch. This also waits for every captured request's ACK.
     pub async fn wait_for_span_count(
         &self,
         name: &str,
@@ -523,11 +634,13 @@ impl Testbed {
     ) -> bool {
         tokio::time::timeout(timeout, async {
             loop {
-                let received = self.state.received.notified();
-                if self.spans().iter().filter(|span| span.name == name).count() >= count {
+                let progress = self.state.progress.notified();
+                if self.state.all_trace_requests_acknowledged()
+                    && self.spans().iter().filter(|span| span.name == name).count() >= count
+                {
                     return;
                 }
-                received.await;
+                progress.await;
             }
         })
         .await
@@ -714,7 +827,12 @@ fn visit_metric_points(
 
 impl Drop for Testbed {
     fn drop(&mut self) {
-        self.stop();
+        if let Some(shutdown) = self.shutdown.take()
+            && shutdown.send(()).is_err()
+        {}
+        if let Some(receiver_task) = self.receiver_task.take() {
+            receiver_task.abort();
+        }
     }
 }
 

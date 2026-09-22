@@ -83,6 +83,46 @@ async fn serves_all_three_otlp_services() {
         .expect("authenticated metric export");
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn waits_for_export_ack_before_reporting_a_trace() {
+    let mut testbed = Testbed::start().expect("start testbed");
+    testbed.set_behavior(Behavior::Delay(std::time::Duration::from_millis(100)));
+    let mut traces = opentelemetry_proto::tonic::collector::trace::v1::
+        trace_service_client::TraceServiceClient::connect(testbed.endpoint())
+        .await
+        .expect("connect trace client");
+    let export = tokio::spawn(async move {
+        traces
+            .export(ExportTraceServiceRequest {
+                resource_spans: vec![opentelemetry_proto::tonic::trace::v1::ResourceSpans {
+                    scope_spans: vec![opentelemetry_proto::tonic::trace::v1::ScopeSpans {
+                        spans: vec![opentelemetry_proto::tonic::trace::v1::Span {
+                            name: "delayed.trace".to_owned(),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+            })
+            .await
+            .expect("delayed trace export");
+    });
+
+    assert!(
+        !testbed
+            .wait_for_span_count("delayed.trace", 1, std::time::Duration::from_millis(20))
+            .await
+    );
+    assert!(
+        testbed
+            .wait_for_span_count("delayed.trace", 1, std::time::Duration::from_secs(1))
+            .await
+    );
+    export.await.expect("export task");
+    testbed.shutdown().await.expect("join testbed receiver");
+}
+
 #[test]
 fn namespace_detector_rejects_synthetic_legacy_attribute() {
     let attributes = [opentelemetry_proto::tonic::common::v1::KeyValue {
