@@ -89,9 +89,7 @@ pub(crate) fn validate_sync_source_dir_for_selection(
         let source = source.ok_or_else(|| {
             SyncSourceValidationError::new(format!("{} is not a directory.", source_dir.display()))
         })?;
-        return validate_locked_sync_source_dir(
-            agent, provider, selector, source_dir, host_home, &source,
-        );
+        validate_locked_sync_source_dir(agent, provider, selector, source_dir, host_home, &source)
     }
 
     #[cfg(not(unix))]
@@ -707,7 +705,7 @@ enum HostGhResolution {
 fn wipe_file_if_present(path: &Path) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
-        return auth_directory::remove_file(path);
+        auth_directory::remove_file(path)
     }
     #[cfg(not(unix))]
     match std::fs::remove_file(path) {
@@ -3019,10 +3017,8 @@ pub(crate) fn admit_auth_mounts(
         let directory = matches!(slot.agent, Agent::Kimi | Agent::Hermes);
         for path in &slot.credential_paths {
             requests.push((path.clone(), directory, slot.agent));
-            if !directory {
-                if let Some(parent) = path.parent() {
-                    requests.push((parent.to_path_buf(), true, slot.agent));
-                }
+            if !directory && let Some(parent) = path.parent() {
+                requests.push((parent.to_path_buf(), true, slot.agent));
             }
         }
     }
@@ -4111,7 +4107,7 @@ fn write_private_file(path: &Path, content: &str) -> anyhow::Result<()> {
 fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
-        return auth_directory::replace_private_file(path, content);
+        auth_directory::replace_private_file(path, content)
     }
 
     #[cfg(not(unix))]
@@ -4132,7 +4128,7 @@ fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
 pub(super) fn create_private_file_if_absent(path: &Path, content: &[u8]) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
-        return auth_directory::create_private_file_if_absent(path, content);
+        auth_directory::create_private_file_if_absent(path, content)
     }
 
     #[cfg(not(unix))]
@@ -4214,7 +4210,7 @@ fn maybe_inject_permission_repair_failure(stage: PermissionRepairFailure) -> any
 fn repair_permissions(path: &Path) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
-        return auth_directory::repair_file_permissions(path);
+        auth_directory::repair_file_permissions(path)
     }
 
     #[cfg(not(unix))]
