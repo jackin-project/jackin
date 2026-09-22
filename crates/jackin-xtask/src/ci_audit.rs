@@ -22,8 +22,8 @@ type JobLogs = Arc<Mutex<BTreeMap<u64, Vec<u8>>>>;
 
 #[derive(Args, Debug)]
 pub(crate) struct CiAuditArgs {
-    /// Fail when a warm run emits dependency, build, tool, or cache-miss markers.
-    #[arg(long, action = clap::ArgAction::Set, default_value_t = false)]
+    /// Fail when a warm run emits dependency, build, tool, cache, compiler, product, or report markers.
+    #[arg(long)]
     expect_clean: bool,
     /// Human-readable workflow label used in the step summary.
     #[arg(long, default_value = "CI")]
@@ -77,7 +77,7 @@ struct VelnorReport {
 #[derive(Deserialize)]
 struct CacheOutcomes {
     #[serde(flatten)]
-    layers: BTreeMap<String, String>,
+    layers: BTreeMap<String, Option<String>>,
 }
 
 #[derive(Deserialize)]
@@ -114,6 +114,8 @@ struct Markers {
     cache_exact_hits: usize,
     cache_partial_restores: usize,
     report_count: usize,
+    report_missing: usize,
+    report_fallbacks: usize,
     report_parse_errors: usize,
     reported_cache_exact: usize,
     reported_cache_non_exact: usize,
@@ -177,8 +179,16 @@ pub(crate) fn run(args: CiAuditArgs) -> Result<()> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&job.id)
-            .map(|bytes| scan_log(&String::from_utf8_lossy(&bytes)))
-            .unwrap_or_default();
+            .map_or_else(
+                || {
+                    let mut markers = Markers::default();
+                    if job.status == "completed" && job.conclusion.as_deref() != Some("skipped") {
+                        markers.report_missing = 1;
+                    }
+                    markers
+                },
+                |bytes| scan_log(&String::from_utf8_lossy(&bytes)),
+            );
         let mut longest_step = String::from("-");
         let mut longest_step_seconds = 0;
         for step in job.steps {
@@ -219,7 +229,7 @@ pub(crate) fn run(args: CiAuditArgs) -> Result<()> {
         &totals,
     )?;
     if args.expect_clean && totals.total() != 0 {
-        bail!("warm run emitted forbidden cache/dependency/tool markers");
+        bail!("warm run emitted forbidden dependency/cache/compiler/product/report markers");
     }
     Ok(())
 }
@@ -354,6 +364,7 @@ fn scan_log(log: &str) -> Markers {
         let line = strip_ansi(raw);
         scan_velnor_report(&line, &mut markers);
         let cache_hit = marker_value(&line, "Cache hit for:");
+        let cache_partial_hit = marker_value(&line, "Cache hit for restore-key:");
         let cache_restore = marker_value(&line, "Cache restored from key:");
         let download = line.contains("crates.io index")
             || line.contains("Downloading crates")
@@ -375,6 +386,9 @@ fn scan_log(log: &str) -> Markers {
         if let Some(key) = cache_hit.as_deref() {
             markers.cache_exact_hits += 1;
             pending_exact_cache_key = Some(key.to_owned());
+        } else if cache_partial_hit.is_some() {
+            markers.cache_partial_restores += 1;
+            pending_exact_cache_key = None;
         } else if let Some(key) = cache_restore.as_deref() {
             if pending_exact_cache_key.as_deref() != Some(key) {
                 markers.cache_partial_restores += 1;
@@ -392,27 +406,40 @@ fn scan_log(log: &str) -> Markers {
             || source_tool
             || cache_miss
             || cache_hit.is_some()
+            || cache_partial_hit.is_some()
             || cache_restore.is_some())
             && markers.examples.len() < 10
         {
             markers.examples.push(line);
         }
     }
+    if markers.report_count == 0
+        && markers.report_fallbacks == 0
+        && markers.report_parse_errors == 0
+    {
+        markers.report_missing = 1;
+    }
     markers
 }
 
 fn scan_velnor_report(line: &str, markers: &mut Markers) {
     const PREFIX: &str = "VELNOR_CI_REPORT ";
-    let Some(start) = line.find(PREFIX) else {
-        return;
-    };
-    let payload = line[start + PREFIX.len()..].trim();
-    if !payload.starts_with('{') {
+    const FALLBACK: &str = "VELNOR_CI_REPORT_FALLBACK";
+    if let Some(payload) = report_marker_value(line, PREFIX) {
+        if payload.starts_with(FALLBACK) {
+            markers.report_fallbacks += 1;
+        } else if payload.starts_with('{') {
+            match serde_json::from_str::<VelnorReport>(payload) {
+                Ok(report) => record_velnor_report(report, markers),
+                Err(_) => markers.report_parse_errors += 1,
+            }
+        } else {
+            markers.report_parse_errors += 1;
+        }
         return;
     }
-    match serde_json::from_str::<VelnorReport>(payload) {
-        Ok(report) => record_velnor_report(report, markers),
-        Err(_) => markers.report_parse_errors += 1,
+    if report_marker_value(line, FALLBACK).is_some() {
+        markers.report_fallbacks += 1;
     }
 }
 
@@ -423,12 +450,13 @@ fn record_velnor_report(report: VelnorReport, markers: &mut Markers) {
             if layer == "lane" {
                 continue;
             }
+            let outcome = outcome.unwrap_or_else(|| String::from("null"));
             match outcome.to_ascii_lowercase().as_str() {
                 "exact" => markers.reported_cache_exact += 1,
                 "cold" | "miss" | "partial" | "compatible_seed" | "warm" => {
                     markers.reported_cache_non_exact += 1;
                 }
-                "disabled" | "not_run" => markers.reported_cache_inactive += 1,
+                "disabled" | "not_run" | "null" => markers.reported_cache_inactive += 1,
                 _ => markers.reported_cache_unknown += 1,
             }
             markers.reported_cache_layers.insert(layer, outcome);
@@ -461,6 +489,14 @@ fn marker_value(line: &str, marker: &str) -> Option<String> {
     Some(line[start + marker.len()..].trim().to_owned())
 }
 
+fn report_marker_value<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
+    let start = line.find(marker)?;
+    if start > 0 && !line.as_bytes()[start - 1].is_ascii_whitespace() {
+        return None;
+    }
+    Some(line[start + marker.len()..].trim())
+}
+
 fn strip_ansi(line: &str) -> String {
     let mut output = String::with_capacity(line.len());
     let mut chars = line.chars().peekable();
@@ -488,6 +524,8 @@ fn totals(rows: &[Row]) -> Markers {
         total.cache_exact_hits += row.markers.cache_exact_hits;
         total.cache_partial_restores += row.markers.cache_partial_restores;
         total.report_count += row.markers.report_count;
+        total.report_missing += row.markers.report_missing;
+        total.report_fallbacks += row.markers.report_fallbacks;
         total.report_parse_errors += row.markers.report_parse_errors;
         total.reported_cache_exact += row.markers.reported_cache_exact;
         total.reported_cache_non_exact += row.markers.reported_cache_non_exact;
@@ -511,10 +549,15 @@ impl Markers {
             + self.builds
             + self.source_tools
             + self.cache_misses
+            + self.cache_partial_restores
+            + self.report_missing
+            + self.report_fallbacks
             + self.report_parse_errors
             + self.reported_cache_non_exact
             + self.reported_cache_unknown
+            + self.reported_compiler_lines
             + self.mbx_object_misses
+            + self.product.non_success
     }
 }
 
@@ -551,7 +594,7 @@ fn append_summary(
     let mut text = String::new();
     text.push_str(&format!("### {label} performance audit\n\n"));
     text.push_str(&format!(
-        "- Dependency/toolchain download markers: {}\n- Third-party compile/check/build markers: {}\n- Source-tool compile markers: {}\n- Cache log outcomes: {} exact hits, {} partial restores, {} misses\n- Structured Velnor reports: {} ({} parse errors)\n- Reported cache layers: {} exact, {} non-exact, {} inactive, {} unknown\n- Reported compiler lines: {}\n- Mr. Boxington object cache: {} hits, {} misses\n- Product transport steps: {} staged, {} uploaded, {} downloaded, {} verified, {} non-success\n\n",
+        "- Dependency/toolchain download markers: {}\n- Third-party compile/check/build markers: {}\n- Source-tool compile markers: {}\n- Cache log outcomes: {} exact hits, {} partial restores, {} misses\n- Structured Velnor reports: {} valid, {} missing, {} fallback, {} parse errors\n- Reported cache layers: {} exact, {} non-exact, {} inactive, {} unknown\n- Reported compiler lines: {}\n- Mr. Boxington object cache: {} hits, {} misses\n- Product transport steps: {} staged, {} uploaded, {} downloaded, {} verified, {} non-success\n\n",
         totals.downloads,
         totals.builds,
         totals.source_tools,
@@ -559,6 +602,8 @@ fn append_summary(
         totals.cache_partial_restores,
         totals.cache_misses,
         totals.report_count,
+        totals.report_missing,
+        totals.report_fallbacks,
         totals.report_parse_errors,
         totals.reported_cache_exact,
         totals.reported_cache_non_exact,
