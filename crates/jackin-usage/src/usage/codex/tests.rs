@@ -4,6 +4,38 @@
 use super::*;
 
 #[test]
+fn auth_and_rate_limit_classification_requires_typed_http_status() {
+    let misleading = [
+        ProviderError::from(ProviderHttpError::Transport(
+            "Codex OAuth usage request failed for port 401".to_owned(),
+        )),
+        ProviderError::from(ProviderHttpError::Decode(
+            "Codex OAuth usage decode failed: payload mentions 403".to_owned(),
+        )),
+        ProviderError::from("Codex app-server response contains HTTP 429".to_owned()),
+    ];
+    for error in &misleading {
+        assert!(!usage_error_is_unauthorized(error));
+        assert!(!usage_error_is_rate_limited(error));
+    }
+
+    for (status, message) in [(401, "message mentions 403"), (403, "message mentions 429")] {
+        assert!(usage_error_is_unauthorized(&ProviderError::from(
+            ProviderHttpError::HttpStatus {
+                status,
+                message: message.to_owned(),
+            },
+        )));
+    }
+    assert!(usage_error_is_rate_limited(&ProviderError::from(
+        ProviderHttpError::HttpStatus {
+            status: 429,
+            message: "message mentions 401".to_owned(),
+        },
+    )));
+}
+
+#[test]
 fn codex_over_cap_keeps_raw_label_with_clamped_bar() {
     let window: CodexWindowSnapshot =
         serde_json::from_value(serde_json::json!({"used_percent": 142}))

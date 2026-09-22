@@ -268,26 +268,29 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
 }
 
 #[test]
-fn discovery_provider_rate_limit_preserves_retry_after() {
-    let before = chrono::Utc::now().timestamp();
-    let mut view = quota_view();
-    view.status = UsageSnapshotStatus::Stale;
-    view.last_error = Some("provider HTTP 429; Retry-After: 97".to_owned());
+fn discovery_provider_error_text_cannot_set_rate_limit_or_retry_deadline() {
+    for text in [
+        "provider HTTP 401 Unauthorized",
+        "provider HTTP 403 Forbidden",
+        "provider HTTP 429; Retry-After: 97",
+        "transport failed while contacting port 429",
+    ] {
+        let mut view = quota_view();
+        view.status = UsageSnapshotStatus::Stale;
+        view.last_error = Some(text.to_owned());
 
-    let ProviderProbeOutcome::Failure {
-        kind,
-        message,
-        retry_at_epoch,
-    } = provider_probe_outcome(view)
-    else {
-        panic!("rate-limited view must not publish as success");
-    };
-    let after = chrono::Utc::now().timestamp();
-    assert_eq!(kind, UsageCoordinationErrorKind::RateLimited);
-    assert_eq!(message, "usage provider rate limit is active");
-    assert!(
-        retry_at_epoch.is_some_and(|deadline| { (before + 97..=after + 97).contains(&deadline) })
-    );
+        let ProviderProbeOutcome::Failure {
+            kind,
+            message,
+            retry_at_epoch,
+        } = provider_probe_outcome(view)
+        else {
+            panic!("provider view must not publish as success");
+        };
+        assert_eq!(kind, UsageCoordinationErrorKind::ProviderUnavailable);
+        assert_eq!(message, text);
+        assert_eq!(retry_at_epoch, None);
+    }
 }
 
 #[test]

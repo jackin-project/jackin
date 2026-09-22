@@ -1359,23 +1359,6 @@ fn refresh_binding_outcome(
 fn provider_probe_outcome(
     view: jackin_protocol::control::FocusedUsageView,
 ) -> ProviderProbeOutcome {
-    if let Some(error) = view
-        .last_error
-        .as_deref()
-        .filter(|error| crate::usage::usage_error_is_rate_limited(error))
-    {
-        let retry_at_epoch = crate::usage::parse_retry_after_seconds(&error.to_ascii_lowercase())
-            .map(|seconds| {
-                chrono::Utc::now()
-                    .timestamp()
-                    .saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX))
-            });
-        return ProviderProbeOutcome::Failure {
-            kind: UsageCoordinationErrorKind::RateLimited,
-            message: "usage provider rate limit is active".to_owned(),
-            retry_at_epoch,
-        };
-    }
     match view.status {
         UsageSnapshotStatus::NeedsSecret | UsageSnapshotStatus::NeedsLogin => {
             ProviderProbeOutcome::Failure {

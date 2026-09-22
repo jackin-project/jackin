@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::usage::refresh::ProviderError;
 use std::thread;
 
 #[test]
@@ -2039,16 +2040,27 @@ fn codex_oauth_credentials_carry_refresh_token() {
 
 #[test]
 fn unauthorized_errors_are_distinguished_from_transient() {
-    assert!(usage_error_is_unauthorized(
-        "Codex OAuth usage HTTP 401 Unauthorized"
-    ));
-    assert!(usage_error_is_unauthorized(
-        "Claude OAuth usage HTTP 403 Forbidden"
-    ));
-    assert!(!usage_error_is_unauthorized("Codex OAuth usage HTTP 500"));
-    assert!(!usage_error_is_unauthorized("request failed: timed out"));
+    for status in [401, 403] {
+        assert!(usage_error_is_unauthorized(&ProviderError::from(
+            ProviderHttpError::HttpStatus {
+                status,
+                message: format!("HTTP {status}"),
+            },
+        )));
+    }
+    assert!(!usage_error_is_unauthorized(&ProviderError::from(
+        ProviderHttpError::Transport("request failed: HTTP 401".to_owned()),
+    )));
+    assert!(!usage_error_is_unauthorized(&ProviderError::from(
+        ProviderHttpError::Decode("payload mentions 403".to_owned()),
+    )));
     // A rate-limit is transient, not an auth failure.
-    assert!(!usage_error_is_unauthorized("usage HTTP 429 rate limit"));
+    assert!(!usage_error_is_unauthorized(&ProviderError::from(
+        ProviderHttpError::HttpStatus {
+            status: 429,
+            message: "usage HTTP 429 rate limit".to_owned(),
+        },
+    )));
 }
 
 /// Rotating-codename dollar-budget windows (enterprise contractual
@@ -5128,33 +5140,43 @@ fn claude_limits_inactive_flag_does_not_gate_rendering() {
 
 #[test]
 fn claude_scope_restriction_error_is_explicit() {
-    assert!(claude_error_is_scope_restriction(
-        "Claude OAuth usage HTTP 403 Forbidden"
-    ));
-    assert!(claude_error_is_scope_restriction(
-        "HTTP 403 insufficient_scope"
-    ));
-    assert!(!claude_error_is_scope_restriction(
-        "Claude OAuth usage HTTP 401 Unauthorized"
-    ));
-    assert!(!claude_error_is_scope_restriction(
-        "Claude OAuth usage request failed: connection reset"
-    ));
+    let forbidden = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 403,
+        message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
+    });
+    assert!(claude_error_is_scope_restriction(&forbidden));
+    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
+        ProviderHttpError::Transport("HTTP 403 insufficient_scope".to_owned()),
+    )));
+    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
+        ProviderHttpError::HttpStatus {
+            status: 401,
+            message: "Claude OAuth usage HTTP 401 Unauthorized".to_owned(),
+        },
+    )));
+    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
+        "Claude OAuth usage request failed: connection reset".to_owned(),
+    )));
     assert_eq!(
         claude_provider_error_label(
-            Some("Claude OAuth usage HTTP 403 Forbidden"),
-            Some("cli boom")
+            Some(&forbidden),
+            Some(&ProviderError::from("cli boom".to_owned()))
         )
         .as_deref(),
         Some("Claude token lacks usage scope (inference-only); quota unavailable")
     );
     // Non-scope errors pass through verbatim, OAuth first.
     assert_eq!(
-        claude_provider_error_label(Some("oauth boom"), Some("cli boom")).as_deref(),
+        claude_provider_error_label(
+            Some(&ProviderError::from("oauth boom".to_owned())),
+            Some(&ProviderError::from("cli boom".to_owned())),
+        )
+        .as_deref(),
         Some("oauth boom")
     );
     assert_eq!(
-        claude_provider_error_label(None, Some("cli boom")).as_deref(),
+        claude_provider_error_label(None, Some(&ProviderError::from("cli boom".to_owned())))
+            .as_deref(),
         Some("cli boom")
     );
     assert_eq!(claude_provider_error_label(None, None), None);
