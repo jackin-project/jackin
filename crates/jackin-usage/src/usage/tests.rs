@@ -2045,7 +2045,8 @@ fn unauthorized_errors_are_distinguished_from_transient() {
             ProviderHttpError::HttpStatus {
                 status,
                 message: format!("HTTP {status}"),
-                retry_after_seconds: None,
+                retry_after: None,
+                response_received_at_epoch: 1_700_000_000,
             },
         )));
     }
@@ -2060,7 +2061,8 @@ fn unauthorized_errors_are_distinguished_from_transient() {
         ProviderHttpError::HttpStatus {
             status: 429,
             message: "usage HTTP 429 rate limit".to_owned(),
-            retry_after_seconds: None,
+            retry_after: None,
+            response_received_at_epoch: 1_700_000_000,
         },
     )));
 }
@@ -2070,14 +2072,15 @@ fn typed_rate_limit_preserves_retry_after_but_rendered_429_text_does_not() {
     let typed = ProviderError::from(ProviderHttpError::HttpStatus {
         status: 429,
         message: "provider response body mentions 429".to_owned(),
-        retry_after_seconds: Some(37),
+        retry_after: Some(ProviderRetryAfter::Seconds(37)),
+        response_received_at_epoch: 1_700_000_100,
     });
     assert!(usage_error_is_rate_limited(&typed));
     assert_eq!(typed.retry_after_seconds(), Some(37));
     assert_eq!(
-        typed.rate_limit(1_700_000_000),
+        typed.rate_limit(),
         Some(ProviderRateLimit {
-            retry_at_epoch: Some(1_700_000_037),
+            retry_at_epoch: Some(1_700_000_137),
         })
     );
 
@@ -2091,8 +2094,88 @@ fn typed_rate_limit_preserves_retry_after_but_rendered_429_text_does_not() {
     ] {
         assert!(!usage_error_is_rate_limited(&error));
         assert_eq!(error.retry_after_seconds(), None);
-        assert_eq!(error.rate_limit(1_700_000_000), None);
+        assert_eq!(error.rate_limit(), None);
     }
+}
+
+#[test]
+fn retry_after_supports_seconds_http_date_and_invalid_headers() {
+    assert_eq!(
+        retry_after_header_value(" 37 "),
+        Some(ProviderRetryAfter::Seconds(37))
+    );
+    assert_eq!(
+        retry_after_header_value("Wed, 21 Oct 2015 07:28:00 GMT"),
+        Some(ProviderRetryAfter::HttpDate(1_445_412_480))
+    );
+    for value in ["", "not-a-delay", "37.5", "-1"] {
+        assert_eq!(retry_after_header_value(value), None, "invalid header: {value}");
+    }
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::RETRY_AFTER,
+        reqwest::header::HeaderValue::from_static("Wed, 21 Oct 2015 07:28:00 GMT"),
+    );
+    assert_eq!(
+        retry_after_header(&headers),
+        Some(ProviderRetryAfter::HttpDate(1_445_412_480))
+    );
+}
+
+#[test]
+fn retry_after_deadline_uses_response_reference_and_saturates() {
+    let delayed = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "typed response".to_owned(),
+        retry_after: Some(ProviderRetryAfter::Seconds(37)),
+        response_received_at_epoch: 2_000,
+    });
+    assert_eq!(
+        delayed.rate_limit(),
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(2_037),
+        })
+    );
+
+    let saturated = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "typed response".to_owned(),
+        retry_after: Some(ProviderRetryAfter::Seconds(u64::MAX)),
+        response_received_at_epoch: i64::MAX,
+    });
+    assert_eq!(
+        saturated.rate_limit(),
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(i64::MAX),
+        })
+    );
+
+    let date = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "typed response".to_owned(),
+        retry_after: Some(ProviderRetryAfter::HttpDate(3_000)),
+        response_received_at_epoch: 2_000,
+    });
+    assert_eq!(
+        date.rate_limit(),
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(3_000),
+        })
+    );
+
+    let invalid = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "typed response".to_owned(),
+        retry_after: None,
+        response_received_at_epoch: 2_000,
+    });
+    assert_eq!(
+        invalid.rate_limit(),
+        Some(ProviderRateLimit {
+            retry_at_epoch: None,
+        })
+    );
 }
 
 /// Rotating-codename dollar-budget windows (enterprise contractual
@@ -5175,7 +5258,8 @@ fn claude_scope_restriction_error_is_explicit() {
     let forbidden = ProviderError::from(ProviderHttpError::HttpStatus {
         status: 403,
         message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
-        retry_after_seconds: None,
+        retry_after: None,
+        response_received_at_epoch: 1_700_000_000,
     });
     assert!(claude_error_is_scope_restriction(&forbidden));
     assert!(!claude_error_is_scope_restriction(&ProviderError::from(
@@ -5185,7 +5269,8 @@ fn claude_scope_restriction_error_is_explicit() {
         ProviderHttpError::HttpStatus {
             status: 401,
             message: "Claude OAuth usage HTTP 401 Unauthorized".to_owned(),
-            retry_after_seconds: None,
+            retry_after: None,
+            response_received_at_epoch: 1_700_000_000,
         },
     )));
     assert!(!claude_error_is_scope_restriction(&ProviderError::from(
