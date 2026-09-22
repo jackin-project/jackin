@@ -54,6 +54,8 @@ ruleset_external_status_checks = ["DCO"]
 # scheduled tier runs the merge graph + dead-code scan (task desktop-scheduled).
 # Toolchain env (DEVELOPER_DIR, MACOSX_DEPLOYMENT_TARGET) is job-level in the
 # copy, so it travels as profile env; every tool id equals a mise.lock key.
+# Cargo wrapper env stays in the repository-owned tasks below: profile and unit
+# env are job-level in the pinned renderer and would poison the installer.
 [[check_profile]]
 id = "desktop-merge"
 name = "Desktop merge cadence"
@@ -94,17 +96,18 @@ MACOSX_DEPLOYMENT_TARGET = "26.0"
 MISE_TASK_RUN_AUTO_INSTALL = "false"
 MISE_NOT_FOUND_AUTO_INSTALL = "false"
 
-# One file, one trigger set, faithful to the copy: the merge tier runs on
-# push-to-main + dispatch (copy desktop-cadence.yml push: branches: [main],
-# merge job gated on event != schedule); the scheduled tier keeps the
-# copy's Monday cron.
+# One file, one trigger set: the merge tier runs on main pushes and pull
+# requests, plus dispatch; the scheduled tier keeps its Monday cron. The
+# pinned 4dec renderer does not accept `merge_group` for this primitive and
+# emits ref-based concurrency, so those newer semantics remain a Velnor pin
+# upgrade blocker rather than hand-authored generated output.
 [[declare]]
 primitive = "scheduled-checks"
 file = "desktop-merge.yml"
 [declare.args]
 profiles = ["desktop-merge"]
 name = "Desktop merge cadence"
-events = ["push"]
+events = ["push", "pull_request"]
 branches = ["main"]
 
 [[declare]]
@@ -113,6 +116,46 @@ file = "desktop-scheduled.yml"
 [declare.args]
 profiles = ["desktop-scheduled"]
 name = "Desktop scheduled cadence"
+
+# Durable post-merge evidence. The collector is deliberately coupled to these
+# generated workflows and their uploaded artifacts; a missing producer is a
+# qualification failure, not an empty-data success.
+[[check_profile]]
+id = "ci-evidence"
+name = "CI first-attempt evidence"
+schedule = "47 4 * * *"
+runner = "github"
+tasks = ["ci-evidence"]
+timeout_minutes = 20
+status = "required"
+artifacts = ["target/ci-evidence/"]
+[check_profile.env]
+GH_TOKEN = "${{ github.token }}"
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "ci-evidence.yml"
+[declare.args]
+profiles = ["ci-evidence"]
+name = "CI first-attempt evidence"
+
+[[check_profile]]
+id = "ci-push-head-ledger"
+name = "CI push-head ledger"
+runner = "github"
+tasks = ["ci-push-head-ledger"]
+timeout_minutes = 10
+status = "required"
+artifacts = ["target/ci-push-head-ledger/"]
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "ci-push-head-ledger.yml"
+[declare.args]
+profiles = ["ci-push-head-ledger"]
+name = "CI push-head ledger"
+events = ["push"]
+branches = ["main"]
 
 # Renovate upstream liveness (D2): the #994 renovate-validate.yml job that
 # verifies the pinned mise release still ships both construct architectures.
