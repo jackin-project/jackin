@@ -145,7 +145,7 @@ if [ "${GITHUB_ACTIONS:-false}" = "true" ] && [ ! -s target/ci-evidence/attempts
     --status completed \
     --limit 100 \
     --json databaseId,event,headBranch,status,createdAt,workflowName \
-    --jq --arg current "${GITHUB_RUN_ID:-}" 'map(select(.event == "schedule" and .headBranch == "main" and .status == "completed" and .workflowName == "CI first-attempt evidence" and ((.databaseId | tostring) != $current))) | sort_by(.createdAt) | last.databaseId // empty')"
+    | jq -r --arg current "${GITHUB_RUN_ID:-}" 'map(select(.event == "schedule" and .headBranch == "main" and .status == "completed" and .workflowName == "CI first-attempt evidence" and ((.databaseId | tostring) != $current))) | sort_by(.createdAt) | last.databaseId // empty')"
   if [ -n "${previous_run}" ] && [ "${previous_run}" != "${GITHUB_RUN_ID:-}" ]; then
     gh run download "${previous_run}" \
       --repo "${GITHUB_REPOSITORY}" \

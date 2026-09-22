@@ -340,3 +340,22 @@ fn desktop_merge_candidates_preserve_main_schedule_concurrency_and_graph() {
         assert!(mise.contains(required), "desktop graph lost `{required}`");
     }
 }
+
+#[test]
+fn ci_evidence_rollover_pipes_gh_json_into_jq() {
+    let mise = workspace_file("mise.toml");
+    let start = mise
+        .find("[tasks.ci-evidence]\n")
+        .expect("ci-evidence task");
+    let task = &mise[start..];
+    let end = task.find("\n[tasks.").expect("next mise task");
+    let task = &task[..end];
+
+    let expected = [
+        "--json databaseId,event,headBranch,status,createdAt,workflowName \\",
+        "    | jq -r --arg current",
+    ]
+    .join("\n");
+    assert!(task.contains(&expected));
+    assert!(!task.contains("--jq --arg current"));
+}
