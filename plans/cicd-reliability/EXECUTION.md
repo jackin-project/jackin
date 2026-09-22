@@ -25,8 +25,9 @@ closure for the report findings.
 
 - Jackin commits `67f89e95`, `7c178a8a`, and `900d7b6f` close the fixed-clock
   render and OTLP testbed lifecycle defects with focused regression tests.
-- `762ea61e` converges the schema-2 Apple migration on published Velnor
-  `816046893ef55359ee2f41903d1f1f893d59303e`: generic Swift/XcodeGen/BoltFFI
+- `762ea61e` converges the schema-2 Apple migration; `2b814caa` promotes the
+  published Velnor selection runtime `aa2345bd` with closure
+  `1a7606d67bc1c474`: generic Swift/XcodeGen/BoltFFI
   discovery, typed XCFramework producer-consumer transport, Xcode 26.6 pin,
   Renovate writer/validator, and generated state all pass exact regeneration.
 - `63c8e8b1` wires sccache only where generated Apple profiles provision
@@ -43,8 +44,9 @@ closure for the report findings.
   Independent review found the scheduled 31-day event-cap, retired-workflow
   identity, inferred-obligation, artifact-retention, and mutable-derived-field
   gaps. Collector hardening is still active.
-- Velnor selection PR #1075 merged as `aa2345bd`; runtime publication/pin
-  promotion is pending. Phase-retention PR #1076 passed local Velnor tests but
+- Velnor selection PR #1075 merged as `aa2345bd`; its runtime product is
+  published and pinned by `2b814caa`. Phase-retention PR #1076 passed local
+  Velnor tests but
   its first live PR run failed before candidate publication because base
   runtime `37e7814` rejected generated `precondition` phases. A bootstrap fix
   is delegated; Jackin does not pin or claim the unproven phase change.

@@ -18,8 +18,8 @@ another owner or an earlier PR. Evidence record: [EXECUTION.md](EXECUTION.md).
   data-quality outcomes). Independent review found remaining denominator,
   identity, artifact-retention, and fail-closed gaps; it is not closed.
 - Velnor selection PR [#1075](https://github.com/tailrocks/velnor/pull/1075)
-  merged as `aa2345bd`; Jackin cannot use it until a runtime product is
-  published and pinned. Velnor phase-retention PR
+  merged as `aa2345bd`; Jackin now pins its published runtime product
+  (`1a7606d67bc1c474`). Velnor phase-retention PR
   [#1076](https://github.com/tailrocks/velnor/pull/1076) is blocked because
   the base runtime rejects the new `precondition` phase before candidate
   publication. This is an active bootstrap defect.
