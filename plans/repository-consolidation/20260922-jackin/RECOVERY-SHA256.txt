@@ -1,0 +1,35 @@
+# Recovery artifact SHA-256 values captured 2026-09-22.
+
+480624f22a6471030476c0957f38cf7a268118272648acbf375e7303796bbfbf  refs.bundle
+733b7d380a31dff8da022730c09d43fa1377c8d46207668c89c154d1f0505d24  refs-complete.bundle
+9461c2da3ab571ab15b86097b5ef00aa16880d37e7e7db44a629b0cc6e0c2f4a  git-admin.tar.gz
+bf39d1d72c12ac5cb54cddf5d7df0ed82166e0092902c1d5a730c9d2bb01ff4b  reflog-commits.txt
+8650bb22f53519719e3fc1a79eb1b7965e8aabbbe0b17fc0cc4bf14e70a04df2  all-refs-after-fetch.tsv
+
+# Landed-state snapshots after #1077 (`fd14ac6a7e0642842e66eeeb31d4b589d07148e1`):
+
+2e5650bb9a49090c8b665bb3a2d221a55e1d2d0a7c9d2e562183d738b441e9ee  refs-precleanup-landed-20260922.tsv
+3d8853be31aedd2a8a5ea230d826721f4447de5efc8cf995a8c32b5b38dcfb4d  worktrees-precleanup-landed-20260922.txt
+3abdfc71237c6348f19aee52dabe9e8cb44dc2b8568ced74817b82152456aa1d  worktree-state-precleanup-landed-20260922.tsv
+600789409b555f0630cdf5eaa98e75a7f14ecd6e88ba43526e3e86fff4919a16  worktree-path-state-precleanup-landed-20260922.tsv
+7d1e2db24421c122a31aa507f4b4d9cf94376f08b5fbf7a76c123cd54f4ebd13  remote-branches-precleanup-landed-20260922.tsv
+6ff7894cf49368dfa8a9d54c0c9640cd9ccce7a1c55f5f3a342bf48f3e972e38  pulls-precleanup-landed-20260922.json
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  stashes-precleanup-landed-20260922.txt
+
+# Standalone clone bundles (bundle-verified and isolated-fsck verified):
+
+ebd7be5dfe815ebc55aad0e5ace7d6c76825308b344a00cfb504a694b358cba7  standalone-clones/jackin-main-final.bundle
+167d2fa3a1537e5fb8224ebdf94d2f99fd5e9bd4ba5c12f80e89b890c3fb725d  standalone-clones/jackin-schema-fix-20260920-final.bundle
+
+Dirty-worktree unstaged patches:
+
+59053bffaa496994ba535ec4a9f50231d95c5059d1b21851b0c11ec4cc37167d  dirty-worktrees/apple-usage-relay-peer-isolation/unstaged.patch
+8859452e0471fc761bb35d60f6d65abebab0350246397e1af4b0706ae7bb1bf4  dirty-worktrees/auth-source-identity-repair/unstaged.patch
+2e45d56b6cf5e219bec48768f186fd3f694f9b867a79c9663fe94ebcdcb13a88  dirty-worktrees/console-identity/unstaged.patch
+873074b1c73ed61178318ad3da7a0eb01b43bfd0521e0be92e6262b04fe49d8f  dirty-worktrees/launch-security-repair/unstaged.patch
+34ee1f6fc6f80d3239a292071228cb0cfd8152d127b1a810766b161ab66a05b9  dirty-worktrees/restore-identity-expansion/unstaged.patch
+36b04879da868aff5427712b4b29a08e9af3b2809f2da263755e01fb6a93bc00  dirty-worktrees/usage-credential-routing/unstaged.patch
+71656fb76dcc8a842c4c3527f982514b550329fde6424f9d81d2d91c84703287  dirty-worktrees/usage-presentation-repair/unstaged.patch
+
+All staged patches were empty at capture and have the empty-file SHA-256:
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
