@@ -731,6 +731,46 @@ fn usage_account_snapshots_use_in_memory_cache() {
     assert_eq!(accounts[0].status, "fresh");
 }
 
+#[test]
+fn account_snapshot_rows_preserve_money_units_for_spend_buckets() {
+    let mut view = codex_cached_usage_view();
+    view.buckets = vec![QuotaBucketView {
+        label: "Extra usage".to_owned(),
+        used_label: Some("SGD 78.00 of SGD 260.00".to_owned()),
+        limit_label: Some("SGD 260.00".to_owned()),
+        remaining_percent: Some(70),
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(StatusSlot::Spend),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: Some(Money::new(7_800, "SGD", 2)),
+        limit_money: Some(Money::new(26_000, "SGD", 2)),
+        severity: UsageSeverity::Normal,
+    }];
+    let mut snapshots = HashMap::new();
+    snapshots.insert("codex".to_owned(), CachedUsage { view });
+
+    let rows = account_snapshot_views_from_cache(&snapshots);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].used_amount, Some(7_800));
+    assert_eq!(rows[0].used_unit.as_deref(), Some("SGD"));
+    assert_eq!(rows[0].limit_amount, Some(26_000));
+    assert_eq!(rows[0].limit_unit.as_deref(), Some("SGD"));
+}
+
+#[test]
+fn account_snapshot_rows_propagate_view_failure_to_retained_buckets() {
+    let mut view = codex_cached_usage_view();
+    view.status = UsageSnapshotStatus::Stale;
+    view.buckets[0].status = UsageSnapshotStatus::Fresh;
+    let mut snapshots = HashMap::new();
+    snapshots.insert("codex".to_owned(), CachedUsage { view });
+
+    let rows = account_snapshot_views_from_cache(&snapshots);
+    assert_eq!(rows[0].status, "stale");
+}
+
 fn codex_cached_usage_view() -> FocusedUsageView {
     usage_view(UsageViewInput {
         agent: "codex",
@@ -1539,9 +1579,22 @@ fn broker_client_failure_preserves_last_good_quota() {
         },
     );
 
-    let adopted = cache.focused_snapshot(Some("claude"), Some("Claude"));
+    let adopted = cache.focused_snapshot_for_capability(
+        Some("claude"),
+        Some("Claude"),
+        Some(&target.capability),
+    );
     assert_eq!(adopted.status, UsageSnapshotStatus::Stale);
     assert_eq!(adopted.buckets[0].remaining_percent, Some(64));
+    assert_eq!(adopted.buckets[0].status, UsageSnapshotStatus::Stale);
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .next()
+            .map(|cached| cached.view.updated_label.as_str()),
+        Some("Stale")
+    );
     assert_eq!(
         adopted.last_error.as_deref(),
         Some("usage broker is unavailable")
