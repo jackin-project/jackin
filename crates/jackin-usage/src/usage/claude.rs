@@ -6,7 +6,7 @@
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
-use super::refresh::{ProviderError, split_provider_fetch};
+use super::refresh::{ProviderError, ProviderRateLimit, split_provider_fetch};
 #[cfg_attr(
     not(test),
     expect(clippy::wildcard_imports, reason = "target-dependent")
@@ -129,9 +129,18 @@ pub(crate) fn claude_view_from_wave(
     now: i64,
     resolution: ClaudeWaveResolution,
 ) -> FocusedUsageView {
+    claude_view_from_wave_with_rate_limit(agent, provider, now, resolution).0
+}
+
+pub(crate) fn claude_view_from_wave_with_rate_limit(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    resolution: ClaudeWaveResolution,
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
     match resolution {
-        ClaudeWaveResolution::Denied => claude_denied_view(agent, provider, now),
-        ClaudeWaveResolution::Missing => claude_missing_view(agent, provider, now),
+        ClaudeWaveResolution::Denied => (claude_denied_view(agent, provider, now), None),
+        ClaudeWaveResolution::Missing => (claude_missing_view(agent, provider, now), None),
         ClaudeWaveResolution::Resolved(resolved) => {
             claude_resolved_view(agent, provider, now, *resolved)
         }
@@ -227,7 +236,7 @@ fn claude_resolved_view(
     provider: Option<&str>,
     now: i64,
     resolved: ClaudeResolved,
-) -> FocusedUsageView {
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
     let (oauth_quota, oauth_error) = split_provider_fetch(Some(
         fetch_claude_oauth_usage(&resolved.access_token).map_err(ProviderError::from),
     ));
@@ -239,12 +248,16 @@ fn claude_resolved_view(
     } else {
         UsageSnapshotStatus::Stale
     };
+    let rate_limit = (status != UsageSnapshotStatus::Fresh)
+        .then_some(oauth_error.as_ref().or(cli_error.as_ref()))
+        .flatten()
+        .and_then(|error| error.rate_limit(now));
     let buckets = oauth_quota
         .map(|usage| usage.into_buckets(now))
         .or_else(|| cli_usage.as_ref().map(ClaudeCliUsage::buckets))
         .filter(|buckets| !buckets.is_empty())
         .unwrap_or_else(|| claude_pending_buckets(status, provider_error.as_deref()));
-    usage_view(UsageViewInput {
+    let view = usage_view(UsageViewInput {
         agent,
         provider,
         surface: UsageSurface::Claude,
@@ -274,7 +287,8 @@ fn claude_resolved_view(
         },
         now,
         last_error: claude_resolved_last_error(status, provider_error, cli_usage.is_some()),
-    })
+    });
+    (view, rate_limit)
 }
 
 /// `last_error` for a resolved view: the normalized provider error when stale,

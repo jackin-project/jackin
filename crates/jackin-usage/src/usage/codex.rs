@@ -6,7 +6,7 @@
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
-use super::refresh::{ProviderError, split_provider_fetch};
+use super::refresh::{ProviderError, ProviderRateLimit, split_provider_fetch};
 use super::*;
 use serde::Deserialize;
 
@@ -257,6 +257,15 @@ pub(crate) fn codex_profile_snapshot(
     codex_home: &Path,
     now: i64,
 ) -> FocusedUsageView {
+    codex_profile_snapshot_with_rate_limit(agent, credentials, codex_home, now).0
+}
+
+pub(crate) fn codex_profile_snapshot_with_rate_limit(
+    agent: &str,
+    credentials: &CodexOAuthCredentials,
+    codex_home: &Path,
+    now: i64,
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
     // Same reset-credits merge as the ambient lane: the read-only GET must not
     // gate the quota — a failure degrades to no "Limit Reset Credits" row.
     let (quota, error) = split_provider_fetch(Some(
@@ -277,6 +286,10 @@ pub(crate) fn codex_profile_snapshot(
     } else {
         UsageSnapshotStatus::Stale
     };
+    let rate_limit = (quota.is_none())
+        .then_some(error.as_ref())
+        .flatten()
+        .and_then(|error| error.rate_limit(now));
     let buckets = quota
         .as_ref()
         .map(|usage| usage.buckets(now))
@@ -303,7 +316,7 @@ pub(crate) fn codex_profile_snapshot(
                 ),
             ]
         });
-    usage_view(UsageViewInput {
+    let view = usage_view(UsageViewInput {
         agent,
         provider: Some("OpenAI"),
         surface: UsageSurface::Codex,
@@ -328,7 +341,8 @@ pub(crate) fn codex_profile_snapshot(
         },
         now,
         last_error: error_message,
-    })
+    });
+    (view, rate_limit)
 }
 
 #[derive(Clone)]
@@ -1231,6 +1245,7 @@ pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, 
                 return Err(ProviderHttpError::HttpStatus {
                     status: status.as_u16(),
                     message: format!("Codex token refresh HTTP {status}"),
+                    retry_after_seconds: retry_after_header_seconds(response.headers()),
                 });
             }
             let value: serde_json::Value = response.json().map_err(|err| {

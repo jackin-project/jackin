@@ -2045,6 +2045,7 @@ fn unauthorized_errors_are_distinguished_from_transient() {
             ProviderHttpError::HttpStatus {
                 status,
                 message: format!("HTTP {status}"),
+                retry_after_seconds: None,
             },
         )));
     }
@@ -2059,8 +2060,39 @@ fn unauthorized_errors_are_distinguished_from_transient() {
         ProviderHttpError::HttpStatus {
             status: 429,
             message: "usage HTTP 429 rate limit".to_owned(),
+            retry_after_seconds: None,
         },
     )));
+}
+
+#[test]
+fn typed_rate_limit_preserves_retry_after_but_rendered_429_text_does_not() {
+    let typed = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "provider response body mentions 429".to_owned(),
+        retry_after_seconds: Some(37),
+    });
+    assert!(usage_error_is_rate_limited(&typed));
+    assert_eq!(typed.retry_after_seconds(), Some(37));
+    assert_eq!(
+        typed.rate_limit(1_700_000_000),
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(1_700_000_037),
+        })
+    );
+
+    for error in [
+        ProviderError::from(ProviderHttpError::Transport(
+            "transport failed after HTTP 429".to_owned(),
+        )),
+        ProviderError::from(ProviderHttpError::Decode(
+            "decode failed: payload mentions 429 and Retry-After: 37".to_owned(),
+        )),
+    ] {
+        assert!(!usage_error_is_rate_limited(&error));
+        assert_eq!(error.retry_after_seconds(), None);
+        assert_eq!(error.rate_limit(1_700_000_000), None);
+    }
 }
 
 /// Rotating-codename dollar-budget windows (enterprise contractual
@@ -5143,6 +5175,7 @@ fn claude_scope_restriction_error_is_explicit() {
     let forbidden = ProviderError::from(ProviderHttpError::HttpStatus {
         status: 403,
         message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
+        retry_after_seconds: None,
     });
     assert!(claude_error_is_scope_restriction(&forbidden));
     assert!(!claude_error_is_scope_restriction(&ProviderError::from(
@@ -5152,6 +5185,7 @@ fn claude_scope_restriction_error_is_explicit() {
         ProviderHttpError::HttpStatus {
             status: 401,
             message: "Claude OAuth usage HTTP 401 Unauthorized".to_owned(),
+            retry_after_seconds: None,
         },
     )));
     assert!(!claude_error_is_scope_restriction(&ProviderError::from(
