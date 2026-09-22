@@ -10,11 +10,11 @@ default_dispatch_providers = ["github-hosted"]
 
 [analysis]
 method = "static-filesystem-and-manifest-inspection"
-detected = ["boltffi-producer:crates/jackin-usage-ffi", "cargo-audit-policy", "cargo-deny-policy", "cargo-lockfile", "cargo-nextest-policy", "mise-present", "package-manager:bun:docs", "package-script:docs:build", "package-script:docs:test", "renovate-configuration", "rust-binaries:jackin-capsule:1", "rust-binaries:jackin-config-fuzz:2", "rust-binaries:jackin-dev:1", "rust-binaries:jackin-env-fuzz:1", "rust-binaries:jackin-manifest-fuzz:2", "rust-binaries:jackin-protocol-fuzz:1", "rust-binaries:jackin-runtime:1", "rust-binaries:jackin-xtask:1", "rust-binaries:jackin:3", "rust-build-script:jackin", "rust-build-script:jackin-capsule", "rust-build-script:jackin-diagnostics", "rust-build-script:jackin-docker", "rust-build-script:jackin-image", "rust-build-script:jackin-launch", "rust-build-script:jackin-runtime", "rust-features:jackin-agent-status:2", "rust-features:jackin-capsule:3", "rust-features:jackin-config:1", "rust-features:jackin-console:1", "rust-features:jackin-diagnostics:2", "rust-features:jackin-instance:1", "rust-features:jackin-isolation:1", "rust-features:jackin-runtime:1", "rust-features:jackin-usage:1", "rust-features:jackin:2", "rust-ffi:jackin-usage-ffi", "rust-test-targets:jackin-capsule:1", "rust-test-targets:jackin-config:1", "rust-test-targets:jackin-diagnostics:17", "rust-test-targets:jackin-manifest:1", "rust-test-targets:jackin-protocol:1", "rust-test-targets:jackin-runtime:1", "rust-test-targets:jackin-telemetry:1", "rust-test-targets:jackin-usage:1", "rust-test-targets:jackin:1", "rust-workspace-members:35", "swift-package:native/Design/Prototypes/UnifiedAgentUsage", "xcodegen:native/project.yml"]
-limitations = ["Manifests nested under tests/ or benches/ directories are treated as test fixtures and ignored.", "Project code, build scripts, task runners, and commands are never executed during analysis.", "Release, signing, registry, deployment, branch-protection, and runner-capability contracts remain explicit manual inputs.", "Renovate credentials, runner placement, and write permissions cannot be inferred from repository files.", "Rust build scripts are watched but their system dependencies and generated outputs are not inferred."]
+detected = ["boltffi-producer:crates/jackin-usage-ffi", "cargo-audit-policy", "cargo-deny-policy", "cargo-lockfile", "cargo-nextest-policy", "mise-present", "package-manager:bun:docs", "package-script:docs:build", "package-script:docs:test", "renovate-configuration", "rust-binaries:jackin-capsule:1", "rust-binaries:jackin-config-fuzz:2", "rust-binaries:jackin-dev:1", "rust-binaries:jackin-env-fuzz:1", "rust-binaries:jackin-manifest-fuzz:2", "rust-binaries:jackin-protocol-fuzz:1", "rust-binaries:jackin-runtime:1", "rust-binaries:jackin-xtask:1", "rust-binaries:jackin:3", "rust-build-script:jackin", "rust-build-script:jackin-capsule", "rust-build-script:jackin-diagnostics", "rust-build-script:jackin-docker", "rust-build-script:jackin-image", "rust-build-script:jackin-launch", "rust-build-script:jackin-runtime", "rust-features:jackin-agent-status:2", "rust-features:jackin-capsule:3", "rust-features:jackin-config:1", "rust-features:jackin-console:1", "rust-features:jackin-diagnostics:2", "rust-features:jackin-instance:1", "rust-features:jackin-isolation:1", "rust-features:jackin-runtime:1", "rust-features:jackin-usage:1", "rust-features:jackin:2", "rust-ffi:jackin-usage-ffi", "rust-test-targets:jackin-capsule:1", "rust-test-targets:jackin-config:1", "rust-test-targets:jackin-diagnostics:17", "rust-test-targets:jackin-manifest:1", "rust-test-targets:jackin-protocol:1", "rust-test-targets:jackin-runtime:1", "rust-test-targets:jackin-telemetry:1", "rust-test-targets:jackin-usage:1", "rust-test-targets:jackin:1", "rust-workspace-members:35", "swift-package:native", "swift-package:native/Design/Prototypes/UnifiedAgentUsage", "xcodegen:native/project.yml"]
+limitations = ["Manifests nested under tests/ or benches/ directories are treated as test fixtures and ignored.", "Project code, build scripts, task runners, and commands are never executed during analysis.", "Release, signing, registry, deployment, branch-protection, and runner-capability contracts remain explicit manual inputs.", "Rust build scripts are watched but their system dependencies and generated outputs are not inferred.", "Swift package native/Package.swift consumes binary target `JackinUsageFFI` from BoltFFI manifest crates/jackin-usage-ffi/boltffi.toml (crate `jackin-usage-ffi`); the producer step must materialize `target/xcframework/JackinUsage.xcframework` before `swift build` consumes the package.", "XcodeGen spec native/project.yml consumes linked framework `JackinUsage` from BoltFFI manifest crates/jackin-usage-ffi/boltffi.toml (crate `jackin-usage-ffi`); the producer step must materialize `target/xcframework/JackinUsage.xcframework` before `xcodebuild` consumes the generated project."]
 
 [workflow]
-files = ["ci-main.yml", "ci-policy.yml", "ci-pr.yml", "ci-unit-bun.yml", "ci-unit-docker.yml", "ci-unit-rust.yml", "ci-unit-swift.yml", "desktop-merge.yml", "desktop-scheduled.yml", "maintenance.yml", "nightly.yml", "release.yml", "renovate-upstream-sources.yml"]
+files = ["ci-evidence.yml", "ci-main.yml", "ci-policy.yml", "ci-pr.yml", "ci-unit-bun.yml", "ci-unit-docker.yml", "ci-unit-rust.yml", "ci-unit-swift.yml", "desktop-merge.yml", "desktop-scheduled.yml", "maintenance.yml", "nightly.yml", "release.yml", "renovate-upstream-sources.yml", "renovate-validate.yml", "renovate.yml"]
 notes = ["Rust verification uses Mr. Boxington 1.12.0 on providers [github-hosted]. GitHub-hosted jobs use its GitHub cache backend with bounded snapshot keys (a key names the toolchain/image/linker compatibility class and the hashed source state, so a new source state saves a new snapshot and retention keeps generations bounded). Local-provider jobs use an explicit local-backend setup step against the image/runner-provided local store."]
 
 [release]
@@ -889,13 +889,11 @@ id = "rust-jackin-usage-ffi"
 label = "Rust crate (jackin-usage-ffi)"
 kind = "rust"
 root = "crates/jackin-usage-ffi"
-watch = [".cargo/**", "Cargo.lock", "Cargo.toml", "crates/jackin-usage-ffi/**/*.rs", "crates/jackin-usage-ffi/Cargo.toml", "crates/jackin-usage-ffi/benches/**", "crates/jackin-usage-ffi/examples/**", "crates/jackin-usage-ffi/src/**", "crates/jackin-usage-ffi/tests/**", "mise.lock", "mise.toml", "rust-toolchain", "rust-toolchain.toml"]
-pr_commands = ["cd -- 'crates/jackin-usage-ffi' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-usage-ffi' && mbx clippy --locked --profile test --all-targets --all-features --package 'jackin-usage-ffi' -- -D warnings", "cd -- 'crates/jackin-usage-ffi' && mbx nextest run --locked --all-features --package 'jackin-usage-ffi' --no-tests pass", "cd -- 'crates/jackin-usage-ffi' && mbx test --locked --doc --all-features --package 'jackin-usage-ffi'"]
-full_commands = ["cd -- 'crates/jackin-usage-ffi' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-usage-ffi' && mbx clippy --locked --profile test --all-targets --all-features --package 'jackin-usage-ffi' -- -D warnings", "cd -- 'crates/jackin-usage-ffi' && mbx nextest run --locked --all-features --package 'jackin-usage-ffi' --no-tests pass", "cd -- 'crates/jackin-usage-ffi' && mbx test --locked --doc --all-features --package 'jackin-usage-ffi'"]
-phases = ["fmt", "clippy", "test", "doctest"]
-check_commands = ["cd -- 'crates/jackin-usage-ffi' && mbx check --locked --profile test --all-targets --all-features --package 'jackin-usage-ffi'"]
+watch = [".cargo/**", "Cargo.lock", "Cargo.toml", "crates/jackin-usage-ffi/**/*.rs", "crates/jackin-usage-ffi/Cargo.toml", "crates/jackin-usage-ffi/benches/**", "crates/jackin-usage-ffi/boltffi.toml", "crates/jackin-usage-ffi/examples/**", "crates/jackin-usage-ffi/src/**", "crates/jackin-usage-ffi/tests/**", "mise.lock", "mise.toml", "native/Sources/JackinUsageBindings/BoltFFI/**", "rust-toolchain", "rust-toolchain.toml"]
+pr_commands = ["cd -- 'crates/jackin-usage-ffi' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-usage-ffi' && mbx clippy --locked --profile test --all-targets --all-features --package 'jackin-usage-ffi' -- -D warnings", "cd -- 'crates/jackin-usage-ffi' && mbx nextest run --locked --all-features --package 'jackin-usage-ffi' --no-tests pass", "cd -- 'crates/jackin-usage-ffi' && mbx test --locked --doc --all-features --package 'jackin-usage-ffi'", "rm -rf 'target/xcframework/JackinUsage.xcframework'", "test -d 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings `native/Sources/JackinUsageBindings/BoltFFI` are missing from the checkout; the native pack needs them to compare against' >&2; exit 1; } && rm -rf 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && mkdir -p 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && cp -R 'native/Sources/JackinUsageBindings/BoltFFI' 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings'", "cd -- 'crates/jackin-usage-ffi' && MACOSX_DEPLOYMENT_TARGET='26.0' boltffi -v --cargo-arg=--locked --cargo-arg=--profile --cargo-arg='desktop-release' pack apple", "diff -r 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings in `native/Sources/JackinUsageBindings/BoltFFI` drifted from regeneration; rerun the native pack locally and commit the result' >&2; exit 1; }"]
+full_commands = ["cd -- 'crates/jackin-usage-ffi' && mbx fmt --manifest-path 'Cargo.toml' -- --check", "cd -- 'crates/jackin-usage-ffi' && mbx clippy --locked --profile test --all-targets --all-features --package 'jackin-usage-ffi' -- -D warnings", "cd -- 'crates/jackin-usage-ffi' && mbx nextest run --locked --all-features --package 'jackin-usage-ffi' --no-tests pass", "cd -- 'crates/jackin-usage-ffi' && mbx test --locked --doc --all-features --package 'jackin-usage-ffi'", "rm -rf 'target/xcframework/JackinUsage.xcframework'", "test -d 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings `native/Sources/JackinUsageBindings/BoltFFI` are missing from the checkout; the native pack needs them to compare against' >&2; exit 1; } && rm -rf 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && mkdir -p 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && cp -R 'native/Sources/JackinUsageBindings/BoltFFI' 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings'", "cd -- 'crates/jackin-usage-ffi' && MACOSX_DEPLOYMENT_TARGET='26.0' boltffi -v --cargo-arg=--locked --cargo-arg=--profile --cargo-arg='desktop-release' pack apple", "diff -r 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings in `native/Sources/JackinUsageBindings/BoltFFI` drifted from regeneration; rerun the native pack locally and commit the result' >&2; exit 1; }"]
 depends_on = ["rust-jackin-config", "rust-jackin-core", "rust-jackin-env", "rust-jackin-protocol", "rust-jackin-telemetry", "rust-jackin-usage"]
-platform = "linux-x64"
+platform = "macos-arm64"
 trust = "untrusted-ok"
 [unit.capabilities]
 docker = true
@@ -904,7 +902,7 @@ buildx_compose = false
 testcontainers = true
 services_with_readiness = false
 browser_binaries = false
-native_macos_arm64 = false
+native_macos_arm64 = true
 [unit.cache]
 key_files = [".cargo/**", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
@@ -957,6 +955,30 @@ key_files = [".cargo/**", "Cargo.lock", "deny.toml"]
 paths = ["~/.cargo/registry", "~/.cargo/git"]
 
 [[unit]]
+id = "swift-package-native"
+label = "Swift package (native)"
+kind = "swift"
+root = "native"
+watch = ["native/**/*.swift", "native/.swiftpm/Package.resolved", "native/Package.resolved", "native/Package.swift", "native/Sources/**", "native/Tests/**"]
+pr_commands = ["if [[ -z \"${VELNOR_PRODUCT_RUST_JACKIN_USAGE_FFI__XCFRAMEWORK_JACKINUSAGE_READY:-}\" ]]; then\n  rm -rf 'target/xcframework/JackinUsage.xcframework' &&\n  test -d 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings `native/Sources/JackinUsageBindings/BoltFFI` are missing from the checkout; the native pack needs them to compare against' >&2; exit 1; } && rm -rf 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && mkdir -p 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && cp -R 'native/Sources/JackinUsageBindings/BoltFFI' 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' &&\n  cd -- 'crates/jackin-usage-ffi' && MACOSX_DEPLOYMENT_TARGET='26.0' boltffi -v --cargo-arg=--locked --cargo-arg=--profile --cargo-arg='desktop-release' pack apple &&\n  diff -r 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings in `native/Sources/JackinUsageBindings/BoltFFI` drifted from regeneration; rerun the native pack locally and commit the result' >&2; exit 1; }\nfi", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+full_commands = ["if [[ -z \"${VELNOR_PRODUCT_RUST_JACKIN_USAGE_FFI__XCFRAMEWORK_JACKINUSAGE_READY:-}\" ]]; then\n  rm -rf 'target/xcframework/JackinUsage.xcframework' &&\n  test -d 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings `native/Sources/JackinUsageBindings/BoltFFI` are missing from the checkout; the native pack needs them to compare against' >&2; exit 1; } && rm -rf 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && mkdir -p 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && cp -R 'native/Sources/JackinUsageBindings/BoltFFI' 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' &&\n  cd -- 'crates/jackin-usage-ffi' && MACOSX_DEPLOYMENT_TARGET='26.0' boltffi -v --cargo-arg=--locked --cargo-arg=--profile --cargo-arg='desktop-release' pack apple &&\n  diff -r 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings in `native/Sources/JackinUsageBindings/BoltFFI` drifted from regeneration; rerun the native pack locally and commit the result' >&2; exit 1; }\nfi", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+depends_on = ["rust-jackin-usage-ffi"]
+tool_version = "6.2"
+platform = "macos-arm64"
+trust = "untrusted-ok"
+[unit.capabilities]
+docker = false
+nested_privileged_docker = false
+buildx_compose = false
+testcontainers = false
+services_with_readiness = false
+browser_binaries = false
+native_macos_arm64 = true
+[unit.cache]
+key_files = [".swift-version", ".xcode-version", "mise.lock", "native/.swiftpm/Package.resolved", "native/Package.resolved", "native/Package.swift"]
+paths = ["~/.swiftpm"]
+
+[[unit]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
 label = "Swift package (native/Design/Prototypes/UnifiedAgentUsage)"
 kind = "swift"
@@ -985,8 +1007,8 @@ label = "Apple app (JackinDesktop, XcodeGen)"
 kind = "swift"
 root = "native"
 watch = ["*.xcconfig", "native/**", "native/project.yml"]
-pr_commands = ["mise run desktop-xcframework", "cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
-full_commands = ["mise run desktop-xcframework", "cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
+pr_commands = ["if [[ -z \"${VELNOR_PRODUCT_RUST_JACKIN_USAGE_FFI__XCFRAMEWORK_JACKINUSAGE_READY:-}\" ]]; then\n  rm -rf 'target/xcframework/JackinUsage.xcframework' &&\n  test -d 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings `native/Sources/JackinUsageBindings/BoltFFI` are missing from the checkout; the native pack needs them to compare against' >&2; exit 1; } && rm -rf 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && mkdir -p 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && cp -R 'native/Sources/JackinUsageBindings/BoltFFI' 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' &&\n  cd -- 'crates/jackin-usage-ffi' && MACOSX_DEPLOYMENT_TARGET='26.0' boltffi -v --cargo-arg=--locked --cargo-arg=--profile --cargo-arg='desktop-release' pack apple &&\n  diff -r 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings in `native/Sources/JackinUsageBindings/BoltFFI` drifted from regeneration; rerun the native pack locally and commit the result' >&2; exit 1; }\nfi", "cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
+full_commands = ["if [[ -z \"${VELNOR_PRODUCT_RUST_JACKIN_USAGE_FFI__XCFRAMEWORK_JACKINUSAGE_READY:-}\" ]]; then\n  rm -rf 'target/xcframework/JackinUsage.xcframework' &&\n  test -d 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings `native/Sources/JackinUsageBindings/BoltFFI` are missing from the checkout; the native pack needs them to compare against' >&2; exit 1; } && rm -rf 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && mkdir -p 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage' && cp -R 'native/Sources/JackinUsageBindings/BoltFFI' 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' &&\n  cd -- 'crates/jackin-usage-ffi' && MACOSX_DEPLOYMENT_TARGET='26.0' boltffi -v --cargo-arg=--locked --cargo-arg=--profile --cargo-arg='desktop-release' pack apple &&\n  diff -r 'crates/jackin-usage-ffi/target/velnor-boltffi-staging/JackinUsage/bindings' 'native/Sources/JackinUsageBindings/BoltFFI' || { echo 'error: committed Swift bindings in `native/Sources/JackinUsageBindings/BoltFFI` drifted from regeneration; rerun the native pack locally and commit the result' >&2; exit 1; }\nfi", "cd -- 'native' && xcodegen generate --spec 'project.yml'", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native' && xcodebuild -project 'JackinDesktop.xcodeproj' -scheme 'JackinDesktop' CODE_SIGNING_ALLOWED=NO test"]
 depends_on = ["rust-jackin-usage-ffi"]
 tool_version = "2.46.0"
 platform = "macos-arm64"
@@ -1002,23 +1024,3 @@ native_macos_arm64 = true
 [unit.cache]
 key_files = [".swift-version", ".xcode-version", "mise.lock", "native/project.yml"]
 paths = ["~/Library/Developer/Xcode/DerivedData"]
-
-[[unit]]
-id = "swift-package-native"
-label = ""
-kind = "swift"
-root = "native"
-watch = ["crates/jackin-xtask/**", "native/**/*.swift", "native/.swiftpm/Package.resolved", "native/Package.resolved", "native/Package.swift"]
-pr_commands = ["mise run swift-package-native-ci"]
-full_commands = ["mise run swift-package-native-ci"]
-depends_on = ["rust-jackin-usage-ffi"]
-platform = "macos-arm64"
-trust = "untrusted-ok"
-[unit.capabilities]
-docker = false
-nested_privileged_docker = false
-buildx_compose = false
-testcontainers = false
-services_with_readiness = false
-browser_binaries = false
-native_macos_arm64 = false
