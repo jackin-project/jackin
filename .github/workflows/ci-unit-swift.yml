@@ -136,7 +136,10 @@ on:
         default: ""
 
 env:
+  CARGO_INCREMENTAL: "0"
   MACOSX_DEPLOYMENT_TARGET: "26.0"
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
 
 jobs:
   verify-github-hosted:
@@ -233,8 +236,39 @@ jobs:
               chmod 0444 "$marker" 2>/dev/null || true
             fi
           fi
+      - name: Select Xcode 26.6
+        run: |
+          set -euo pipefail
+          want="26.6"
+          dir=""
+          if [ -d "/Applications/Xcode_${want}.app" ]; then
+            dir="/Applications/Xcode_${want}.app"
+          else
+            for candidate in "/Applications/Xcode_${want}"*.app; do
+              [ -d "$candidate" ] || continue
+              dir="$candidate"
+            done
+          fi
+          if [ -z "$dir" ] && [ -d /Applications/Xcode.app ]; then
+            found="$(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -version 2>/dev/null | head -n 1 | awk '{print $2}' || true)"
+            case "$found" in
+              "$want"|"$want".*) dir=/Applications/Xcode.app ;;
+            esac
+          fi
+          if [ -z "$dir" ]; then
+            echo "::error::no installed Xcode matches pin $want" >&2
+            for candidate in /Applications/*; do
+              case "$candidate" in
+                *[Xx][Cc][Oo][Dd][Ee]*) echo "${candidate##*/}" ;;
+              esac
+            done || true
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$dir/Contents/Developer" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$dir/Contents/Developer"
+          xcodebuild -version
+          swift --version
       - name: Set up Mise tools
-        if: ${{ inputs.mise_tools != '' }}
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install_args: ${{ inputs.mise_tools }}
