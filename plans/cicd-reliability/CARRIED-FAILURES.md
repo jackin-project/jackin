@@ -6,10 +6,10 @@ Evidence record: [EXECUTION.md](EXECUTION.md).
 
 ## Current authoritative carried state — 2026-09-23
 
-Parent HEAD before this docs correction: `b997bb3`; current PR #1089 base
-`main` is `55e21f05`. Repairs are integrated, but the overall goal is not
-complete. The parent rebase regenerated workflows. The old checks from heads
-`f3f7522` and `45149fe` were discarded; fresh PR CI is pending.
+Parent HEAD before this docs correction: `b5011fd`; current PR #1089 head is
+`b5011fdffa8d5390c77b7833c5555a757ec2de4c`, based on `main`
+`55e21f05`. Repairs are integrated, but the overall goal is not complete.
+Fresh PR CI is pending.
 
 | Area | Evidence | Verdict |
 |---|---|---|
@@ -33,16 +33,17 @@ interchangeable with the other.
   candidate product within 15 minutes because no same-head `ci-pr` workflow run
   existed. DCO passed. Rawls recorded the head as 9 commits behind Velnor main
   `d4443aa` and returned **NO-GO** for preview/release and Apple/fork gaps. The
-  live API reports current Velnor main `61b6edd`; no newer behind-count claim
+  live API reports current Velnor main `52dc35b`; no current behind-count claim
   is made. GitHub reports `CONFLICTING`/`DIRTY`. The repair is neither live-proven nor
   published/adopted by Jackin. The Jackin pin remains unchanged.
 - Jackin [#1089](https://github.com/jackin-project/jackin/pull/1089) is the
   current carrier at head
-  `b997bb3ea28461351f9dd44f07737da4094d566e`, based on `main`
-  `55e21f05bdee37a1424464ce69b86fc5e550307a`. Checks from heads `f3f7522` and
-  `45149fe` were discarded; fresh CI is pending and GitHub reports merge state
-  `BLOCKED`. No merge claim is made. PR #1083 is not the current carrier and
-  was not reused.
+  `b5011fdffa8d5390c77b7833c5555a757ec2de4c`, based on `main`
+  `55e21f05bdee37a1424464ce69b86fc5e550307a`. GitHub reports the PR as
+  mergeable but `BLOCKED`; DCO and Policy pass, while `ci-required` is absent
+  because the Apple FFI check remains queued. Desktop merge cadence is advisory
+  and in progress. No merge claim is made. PR #1083 is not the current carrier
+  and was not reused.
 
 ### Carried blockers
 
