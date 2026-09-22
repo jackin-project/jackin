@@ -1,4 +1,26 @@
-# Failure ledger — jackin-project/jackin (READ-ONLY inventory, fix nothing)
+# Failure ledger — jackin-project/jackin (READ-ONLY inventory; documentation only)
+
+## Current sidecar evidence — 2026-09-22
+
+This section is the current authority for the mandatory evidence. The bounded
+inventory and older classifications below remain historical; they do not imply
+that the reliability goal is complete.
+
+| Evidence | Exact result | Disposition |
+|---|---|---|
+| [Run 35521080097 attempt 1](https://github.com/jackin-project/jackin/actions/runs/35521080097), [job 106105226160](https://github.com/jackin-project/jackin/actions/runs/35521080097/job/106105226160) | Main `fce94cea8a15de0c2db3bb4ff880d741baf5c00a`; diagnostics `conformance_partial_success_is_not_retried` failed at `mod.rs:51`, left `7`, right `1`; `108/122` run, `107` passed, `1` failed, `1` skipped, `14` not run. | Retained first attempt. |
+| [Run 35521080097 attempt 2](https://github.com/jackin-project/jackin/actions/runs/35521080097), [job 106150119934](https://github.com/jackin-project/jackin/actions/runs/35521080097/job/106150119934) | Same head/job; `21:11:07–21:12:58Z`; success. | Rerun recorded separately; does not recolor attempt 1. |
+| [Desktop run 35515575859](https://github.com/jackin-project/jackin/actions/runs/35515575859), [job 106090835001](https://github.com/jackin-project/jackin/actions/runs/35515575859/job/106090835001) | Head `0163d1b7c654753f23d9ee7334866569c24615d0`; cancelled after `26` missing Mise tools triggered installation. `Run desktop-merge` ran `34m57s`; cargo-audit, cargo-dylint, codebook-lsp, and dylint-link used source fallback. | Cancellation/bootstrap class retained. |
+| [Current main run 35722770593](https://github.com/jackin-project/jackin/actions/runs/35722770593), [job 106729665225](https://github.com/jackin-project/jackin/actions/runs/35722770593/job/106729665225) | Head `de046d3345bb2ec44f9749655cd29164b6e4e4c9`; `jackin-usage` render test failed because output had `expires in 29d`, not `expires in 30d`; `148/577` run, `147` passed, `1` failed, `429` not run. | Current main red; aggregate failures are consequences. |
+| [PR #1079](https://github.com/jackin-project/jackin/pull/1079) | Commit `7090d8c45c6cd72644dc66f0732a6b50c7167403`; [CI / PR run 35738453565](https://github.com/jackin-project/jackin/actions/runs/35738453565) green. | Candidate-only correctness evidence; not goal closure. |
+
+Current open blocker classes: Velnor phase preservation, fail-closed empty
+selection, typed release-tool provisioning, result provenance, and generic
+`merge_group` parity. The performance target remains FAIL: measured classes
+are minutes rather than `120s`, and reuse remains unproven under cache pressure
+and repeated native/bootstrap work. See [EXECUTION.md](EXECUTION.md) for the
+acceptance matrix and blocker definitions.
+
 Watermark: 2026-09-20T21:04:52Z (run 35537570310). Accessible window: 2026-05-31T21:25:10Z..2026-09-20T21:04:52Z.
 Coverage: 40000 unique runs (list-API ceiling; see GAP-1). Day spot-checks 09-19 (121/121), 08-20 (746/746), 09-20 incl 6 head-gap rows merged.
 Conclusions (unique): success 24989, failure 8657, cancelled 6289, skipped 62, in_progress/queued 3.
