@@ -29,7 +29,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::release_verify::{expected_package_file_names, verify_preview_package};
+use crate::{
+    fs_util::read_dir_sorted,
+    release_verify::{expected_package_file_names, verify_preview_package},
+};
 
 #[cfg(test)]
 mod tests;
@@ -1250,8 +1253,7 @@ fn ensure_remote_archive_contents(snapshot: &RollingReleaseSnapshot, root: &Path
     );
     let expected_names = archive_expected_names(snapshot);
     let mut actual_names = BTreeSet::new();
-    for entry in fs::read_dir(root).context("reading downloaded durable archive")? {
-        let entry = entry.context("reading downloaded durable archive entry")?;
+    for entry in read_dir_sorted(root).context("reading downloaded durable archive")? {
         ensure!(
             entry.file_type()?.is_file(),
             "downloaded durable archive contains a non-file entry"
@@ -1287,10 +1289,9 @@ fn ensure_verified_legacy_archive(
         assets.is_dir(),
         "legacy archive assets directory is missing"
     );
-    let entries = fs::read_dir(archive_root).context("reading legacy archive root")?;
+    let entries = read_dir_sorted(archive_root).context("reading legacy archive root")?;
     let mut names = BTreeSet::new();
     for entry in entries {
-        let entry = entry.context("reading legacy archive root entry")?;
         let name = entry
             .file_name()
             .to_str()
@@ -1332,10 +1333,10 @@ fn ensure_archive_files(
         "legacy archive manifest identity is not verified"
     );
     let expected_names = snapshot.assets.keys().cloned().collect::<BTreeSet<_>>();
-    let actual_names = fs::read_dir(assets_dir)
+    let actual_names = read_dir_sorted(assets_dir)
         .with_context(|| format!("reading legacy archive assets {}", assets_dir.display()))?
+        .into_iter()
         .map(|entry| {
-            let entry = entry.context("reading legacy archive asset entry")?;
             ensure!(
                 entry.file_type()?.is_file(),
                 "legacy archive asset is not a file"
@@ -1424,13 +1425,12 @@ pub(crate) fn archive_known_legacy_rolling_release(
         archive_root.display()
     );
 
-    for entry in fs::read_dir(downloaded_assets).with_context(|| {
+    for entry in read_dir_sorted(downloaded_assets).with_context(|| {
         format!(
             "reading legacy preview assets {}",
             downloaded_assets.display()
         )
     })? {
-        let entry = entry.context("reading legacy preview asset entry")?;
         let file_type = entry
             .file_type()
             .context("reading legacy preview asset file type")?;
