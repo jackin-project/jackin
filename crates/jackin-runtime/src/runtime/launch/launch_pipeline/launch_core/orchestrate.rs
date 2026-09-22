@@ -636,6 +636,94 @@ struct PrepareEnvironment<'a, D> {
     opts: &'a super::super::super::LoadOptions,
 }
 
+async fn prewarm_sibling_auth_before_admission(
+    paths: &jackin_core::JackinPaths,
+    container_name: &str,
+    manifest: &jackin_manifest::RoleManifest,
+    config: &jackin_config::AppConfig,
+    workspace_name: &str,
+    role_key: &str,
+    agent: jackin_core::Agent,
+) -> anyhow::Result<()> {
+    let prewarm = super::super::super::SiblingAuthPrewarm {
+        manifest,
+        config,
+        workspace_name,
+        role_key,
+    };
+    let prewarm =
+        super::super::super::spawn_sibling_auth_prewarm(paths, container_name, &prewarm, agent);
+    super::super::super::await_sibling_auth_prewarm(prewarm).await
+}
+
+struct RoleStatePreparation {
+    paths: jackin_core::JackinPaths,
+    container_name: String,
+    manifest: jackin_manifest::RoleManifest,
+    config: jackin_config::AppConfig,
+    github: crate::instance::GithubAuthContext,
+    instances: Vec<jackin_config::ResolvedInstance>,
+    credentials: jackin_protocol::AgentCredentialEnv,
+    agent: jackin_core::Agent,
+    model_override: Option<String>,
+    effort: Option<jackin_core::ReasoningEffort>,
+}
+
+async fn prepare_role_state(
+    input: RoleStatePreparation,
+) -> anyhow::Result<(RoleState, crate::instance::AuthProvisionOutcome)> {
+    let RoleStatePreparation {
+        paths,
+        container_name,
+        manifest,
+        config,
+        github,
+        instances,
+        credentials,
+        agent,
+        model_override,
+        effort,
+    } = input;
+    jackin_telemetry::spawn::joined_blocking(move || {
+        let bindings =
+            super::super::super::capsule_setup::instance_auth_bindings(&config, &instances)?;
+        let prepared = RoleState::prepare_for_bindings(
+            &paths,
+            &container_name,
+            &manifest,
+            &bindings,
+            &github,
+            &paths.home_dir,
+            agent,
+        )?;
+        super::super::super::account_identity::write_account_credentials(
+            &prepared.0.root,
+            &credentials,
+        )?;
+        let models = super::super::super::capsule_setup::resolved_instance_models(
+            &config,
+            &manifest,
+            &instances,
+            agent,
+            model_override.as_deref(),
+        )?;
+        let efforts = super::super::super::capsule_setup::resolved_instance_efforts(
+            &instances, agent, effort,
+        );
+        super::super::super::account_config::configure_accounts(
+            &prepared.0.root,
+            &config,
+            &instances,
+            &prepared.0.auth.slots,
+            &models,
+            &efforts,
+        )?;
+        Ok(prepared)
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!("RoleState::prepare task panicked: {error}"))?
+}
+
 async fn prepare_environment<D, S>(
     input: PrepareEnvironment<'_, D>,
     mut sidecar: Pin<&mut S>,
@@ -686,53 +774,34 @@ where
         &instances,
         &credentials,
     )?;
-    let role_state_future = async move {
-        jackin_telemetry::spawn::joined_blocking(move || {
-            // One binding per admitted instance, keyed by config ID in
-            // launch order: same-agent instances provision independent
-            // slots instead of collapsing onto the first match.
-            let bindings = super::super::super::capsule_setup::instance_auth_bindings(
-                &config_owned,
-                &instances,
-            )?;
-            let prepared = RoleState::prepare_for_bindings(
-                &paths_owned,
-                &container_name_owned,
-                &manifest_owned,
-                &bindings,
-                &github_ctx_owned,
-                &paths_owned.home_dir,
-                agent,
-            )?;
-            super::super::super::account_identity::write_account_credentials(
-                &prepared.0.root,
-                &credentials,
-            )?;
-            let models = super::super::super::capsule_setup::resolved_instance_models(
-                &config_owned,
-                &manifest_owned,
-                &instances,
-                agent,
-                model_override_owned.as_deref(),
-            )?;
-            let efforts = super::super::super::capsule_setup::resolved_instance_efforts(
-                &instances,
-                agent,
-                effort_owned,
-            );
-            super::super::super::account_config::configure_accounts(
-                &prepared.0.root,
-                &config_owned,
-                &instances,
-                &prepared.0.auth.slots,
-                &models,
-                &efforts,
-            )?;
-            Ok(prepared)
-        })
-        .await
-        .map_err(|error| anyhow::anyhow!("RoleState::prepare task panicked: {error}"))?
-    };
+    // Auth prewarm mutates paths that the foreground launch may mount.
+    // Complete it before RoleState acquires mount leases.
+    if let Err(error) = prewarm_sibling_auth_before_admission(
+        paths,
+        container_name,
+        &validated_repo.manifest,
+        config,
+        &configured.workspace_name_str,
+        role_key,
+        agent,
+    )
+    .await
+    {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
+    let role_state_future = prepare_role_state(RoleStatePreparation {
+        paths: paths_owned,
+        container_name: container_name_owned,
+        manifest: manifest_owned,
+        config: config_owned,
+        github: github_ctx_owned,
+        instances,
+        credentials,
+        agent,
+        model_override: model_override_owned,
+        effort: effort_owned,
+    });
     let mut role_state_future = std::pin::pin!(role_state_future);
     let select_role_state = async {
         if early_sidecar_result.is_some() {

@@ -742,7 +742,7 @@ plugins = []
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/jackin/state")),
         "jackin state mount missing: {mounts:?}"
@@ -777,10 +777,12 @@ fn github_config_mount_skips_absent_ignored_state() {
         },
         auth: crate::instance::ProvisionedAuth::default(),
         auth_outcomes: std::collections::BTreeMap::new(),
+        auth_mount_paths: std::collections::BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
 
     assert!(
-        github_config_mount(&state).is_none(),
+        github_config_mount(&state).unwrap().is_none(),
         "ignored GitHub auth with no state should not make docker create an empty gh config dir"
     );
 }
@@ -801,10 +803,13 @@ fn github_config_mount_keeps_existing_ignored_state() {
         },
         auth: crate::instance::ProvisionedAuth::default(),
         auth_outcomes: std::collections::BTreeMap::new(),
+        auth_mount_paths: std::collections::BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
 
     assert!(
         github_config_mount(&state)
+            .unwrap()
             .as_deref()
             .is_some_and(|mount| mount.ends_with(":/home/agent/.config/gh")),
         "existing jackin-owned GitHub state should still mount"
@@ -944,7 +949,7 @@ plugins = []
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts
             .iter()
@@ -1004,7 +1009,7 @@ plugins = []
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts
             .iter()
@@ -1060,7 +1065,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/jackin/state")),
         "jackin state mount missing: {mounts:?}"
@@ -1124,7 +1129,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
         "durable Codex home mount missing: {mounts:?}"
@@ -1200,7 +1205,7 @@ async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     // Primary keeps legacy destinations; the secondary gets suffixed
     // home + handoff dirs.
     for expected in [
@@ -1295,7 +1300,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
         "durable Codex home mount missing: {mounts:?}"
@@ -1303,6 +1308,164 @@ agents = ["codex"]
     assert!(
         !mounts.iter().any(|m| m.contains("/jackin/codex/auth.json")),
         "no auth.json handoff when host has no ~/.codex/auth.json: {mounts:?}"
+    );
+}
+
+#[test]
+fn codex_source_auth_rerun_and_prewarm_fail_closed_after_persisted_state() {
+    use crate::instance::{AuthProvisionOutcome, PrepareResolvers, RoleState};
+    use jackin_core::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(host_home.join(".codex")).unwrap();
+    let resolvers = PrepareResolvers {
+        auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+        sync_source_dirs: &|_| None,
+    };
+    let host_auth = host_home.join(".codex/auth.json");
+
+    for invalid_source in ["", " \n\t"] {
+        std::fs::write(&host_auth, "{\"token\":\"valid\"}").unwrap();
+        let (state, outcome) = RoleState::prepare(
+            &paths,
+            "jk-agent-smith",
+            &manifest,
+            &resolvers,
+            &crate::instance::GithubAuthContext::default(),
+            &host_home,
+            Agent::Codex,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        let target = state.root.join("codex/auth.json");
+        assert!(
+            agent_mounts(&state)
+                .unwrap()
+                .iter()
+                .any(|mount| mount.contains("/jackin/codex/auth.json")),
+            "valid persisted Codex auth must be mounted"
+        );
+        drop(state);
+
+        std::fs::write(&host_auth, invalid_source).unwrap();
+        assert_eq!(
+            RoleState::prewarm_auth_for_agents(
+                &paths,
+                "jk-agent-smith",
+                &manifest,
+                &resolvers,
+                &host_home,
+                &[Agent::Codex],
+            )
+            .unwrap(),
+            1
+        );
+        assert!(
+            !target.exists(),
+            "invalid source must invalidate persisted Codex auth during prewarm"
+        );
+
+        let (state, outcome) = RoleState::prepare(
+            &paths,
+            "jk-agent-smith",
+            &manifest,
+            &resolvers,
+            &crate::instance::GithubAuthContext::default(),
+            &host_home,
+            Agent::Codex,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        let mounts = agent_mounts(&state).unwrap();
+        assert!(
+            !mounts
+                .iter()
+                .any(|mount| mount.contains("/jackin/codex/auth.json")),
+            "invalid Codex source must not regain a stale auth mount: {mounts:?}"
+        );
+        assert!(
+            state.auth_mount_paths.is_empty(),
+            "invalid Codex source must not acquire an auth mount lease"
+        );
+    }
+}
+
+#[tokio::test]
+async fn codex_launch_preflight_rejects_empty_host_auth_without_mounting_it() {
+    use crate::instance::{AuthProvisionOutcome, PrepareResolvers, RoleState};
+    use jackin_core::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(host_home.join(".codex")).unwrap();
+    std::fs::write(host_home.join(".codex/auth.json"), "\n \t").unwrap();
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+            sync_source_dirs: &|_| None,
+        },
+        &crate::instance::GithubAuthContext::default(),
+        &host_home,
+        Agent::Codex,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    let mounts = agent_mounts(&state).unwrap();
+    assert!(
+        !mounts
+            .iter()
+            .any(|mount| mount.contains("/jackin/codex/auth.json")),
+        "empty Codex credentials must fail closed before launch mount admission: {mounts:?}"
+    );
+    assert!(
+        state.auth_mount_paths.is_empty(),
+        "empty Codex credentials must not acquire an auth mount lease"
     );
 }
 
@@ -1354,7 +1517,7 @@ agents = ["amp"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts
             .iter()
@@ -1409,7 +1572,7 @@ agents = ["amp"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/jackin/state")),
         "jackin state mount missing: {mounts:?}"
@@ -1680,7 +1843,7 @@ fn home_mounts_for(agent_slug: &str, agent: jackin_core::Agent) -> Vec<String> {
         agent,
     )
     .unwrap();
-    agent_mounts(&state)
+    agent_mounts(&state).unwrap()
 }
 
 #[tokio::test]
@@ -2147,6 +2310,8 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
             )]),
         },
         auth_outcomes: std::collections::BTreeMap::new(),
+        auth_mount_paths: std::collections::BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
     let workspace = jackin_config::ResolvedWorkspace {
         name: String::new(),
