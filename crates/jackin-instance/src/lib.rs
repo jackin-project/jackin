@@ -7,12 +7,12 @@ use anyhow::Context;
 use jackin_config::{AuthForwardMode, GithubAuthMode, ProfileSelector};
 use jackin_core::JackinPaths;
 use jackin_manifest::RoleManifest;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
 mod auth;
-pub use auth::validate_sync_source_dir;
+pub use auth::{AuthMountLease, validate_sync_source_dir};
 mod error;
 pub use error::{InstanceError, SyncSourceValidationError};
 pub mod manifest;
@@ -612,7 +612,7 @@ fn emit_agent_auth_provision(
 
 fn validate_selected_account_sources(
     bindings: &[InstanceAuthBinding],
-    host_home: &Path,
+    _host_home: &Path,
 ) -> anyhow::Result<()> {
     let mut configured_cache_roots = BTreeMap::<PathBuf, String>::new();
     for binding in bindings {
@@ -635,33 +635,6 @@ fn validate_selected_account_sources(
                 );
             }
             configured_cache_roots.insert(cache_root, binding.key.clone());
-        }
-        let xdg_data_dir = xdg_root_agent(binding.agent)
-            .then(|| {
-                binding
-                    .xdg_roots
-                    .as_ref()
-                    .map(|roots| roots.data.join(binding.agent.slug()))
-            })
-            .flatten();
-        let source = xdg_data_dir
-            .as_deref()
-            .or(binding.sync_source_dir.as_deref());
-        // Hermes validates its provider/profile identity from a descriptor-
-        // locked immutable snapshot inside auth provisioning. Do not perform
-        // a separate live-source preflight here: it would create a validation
-        // result that is no longer coupled to the bytes copied into role state.
-        if binding.mode == AuthForwardMode::Sync
-            && binding.agent != jackin_core::Agent::Hermes
-            && let Some(source) = source
-        {
-            auth::validate_sync_source_dir_for_selection(
-                binding.agent,
-                binding.source_provider,
-                binding.source_selector.as_ref(),
-                source,
-                host_home,
-            )?;
         }
     }
     Ok(())
@@ -724,9 +697,35 @@ pub struct RoleState {
     pub agent_runtime: AgentRuntimeState,
     pub auth: ProvisionedAuth,
     pub auth_outcomes: BTreeMap<jackin_core::Agent, AuthProvisionOutcome>,
+    /// Auth paths admitted with descriptor checks before runtime mount
+    /// construction. Leases stay held until launch state is dropped.
+    pub auth_mount_paths: BTreeSet<PathBuf>,
+    pub auth_mount_leases: Vec<AuthMountLease>,
 }
 
 impl RoleState {
+    pub fn auth_mount_file_allowed(&self, path: &Path) -> anyhow::Result<bool> {
+        if !self.auth_mount_paths.contains(path) {
+            return Ok(false);
+        }
+        auth::mount_file_present(path)
+    }
+
+    pub fn auth_mount_directory_allowed(&self, path: &Path) -> anyhow::Result<bool> {
+        if !self.auth_mount_paths.contains(path) {
+            return Ok(false);
+        }
+        auth::mount_directory_present(path)
+    }
+
+    pub fn mount_directory_allowed(&self, path: &Path) -> anyhow::Result<bool> {
+        auth::mount_directory_present(path)
+    }
+
+    pub fn mount_file_allowed(&self, path: &Path) -> anyhow::Result<bool> {
+        auth::mount_file_present(path)
+    }
+
     /// Host path to Claude's account-metadata file. `None` when Claude is
     /// not in `supported_agents()`. Pair with [`Self::claude_forwards_auth`]
     /// when filtering for runtime reachability.
@@ -1056,6 +1055,8 @@ impl RoleState {
             auth.slots.insert(provision.key, provision.auth);
         }
 
+        let (auth_mount_paths, auth_mount_leases) = auth::admit_auth_mounts(&auth)?;
+
         // Single struct construction — no per-variant dispatch needed.
         let agent_runtime = AgentRuntimeState {
             agent,
@@ -1070,6 +1071,8 @@ impl RoleState {
                 agent_runtime,
                 auth,
                 auth_outcomes,
+                auth_mount_paths,
+                auth_mount_leases,
             },
             selected_outcome,
         ))
