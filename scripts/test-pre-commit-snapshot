@@ -1,0 +1,71 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+hook="$repo_root/scripts/pre-commit-snapshot"
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-fixture.XXXXXX")
+fake_bin=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-bin.XXXXXX")
+trap 'rm -rf "$fixture" "$fake_bin"' EXIT
+
+git -C "$fixture" init -q
+git -C "$fixture" config user.name "Jackin hook fixture"
+git -C "$fixture" config user.email "jackin-hook-fixture@example.invalid"
+
+printf '%s\n' base > "$fixture/partial.txt"
+printf '%s\n' base > "$fixture/unstaged.txt"
+printf '%s\n' base > "$fixture/staged.txt"
+git -C "$fixture" add partial.txt unstaged.txt staged.txt
+git -C "$fixture" commit -q -m baseline
+
+printf '%s\n' staged > "$fixture/partial.txt"
+git -C "$fixture" add partial.txt
+printf '%s\n' staged unstaged > "$fixture/partial.txt"
+printf '%s\n' worktree > "$fixture/unstaged.txt"
+printf '%s\n' staged-change > "$fixture/staged.txt"
+git -C "$fixture" add staged.txt
+printf '%s\n' untracked > "$fixture/untracked.txt"
+
+cat > "$fake_bin/mise" <<'EOF'
+#!/bin/sh
+set -eu
+
+[ "$1" = x ]
+[ "$2" = -- ]
+[ "$3" = hk ]
+
+test "$(cat partial.txt)" = "staged"
+test "$(cat unstaged.txt)" = "base"
+test "$(cat staged.txt)" = "staged-change"
+test ! -e untracked.txt
+
+if [ "${FIXTURE_MODE:-success}" = fail ]; then
+    exit 23
+fi
+EOF
+chmod +x "$fake_bin/mise"
+
+before_status=$(git -C "$fixture" status --porcelain=v1 --untracked-files=all)
+before_partial=$(git -C "$fixture" hash-object "$fixture/partial.txt")
+before_unstaged=$(git -C "$fixture" hash-object "$fixture/unstaged.txt")
+before_staged=$(git -C "$fixture" hash-object "$fixture/staged.txt")
+
+(cd "$fixture" && PATH="$fake_bin:$PATH" FIXTURE_MODE=success "$hook")
+
+test "$(git -C "$fixture" status --porcelain=v1 --untracked-files=all)" = "$before_status"
+test "$(git -C "$fixture" hash-object "$fixture/partial.txt")" != "$before_partial"
+test "$(git -C "$fixture" hash-object "$fixture/unstaged.txt")" != "$before_unstaged"
+test "$(git -C "$fixture" hash-object "$fixture/staged.txt")" = "$before_staged"
+test -f "$fixture/untracked.txt"
+
+if (cd "$fixture" && PATH="$fake_bin:$PATH" FIXTURE_MODE=fail "$hook"); then
+    printf '%s\n' 'expected failing hook to return nonzero' >&2
+    exit 1
+else
+    status=$?
+    test "$status" -eq 23
+fi
+
+test "$(git -C "$fixture" status --porcelain=v1 --untracked-files=all)" = "$before_status"
+test -f "$fixture/untracked.txt"
+
+printf '%s\n' 'pre-commit snapshot fixture passed'
