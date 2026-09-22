@@ -55,34 +55,27 @@ fn expected_from_push_head_ledger(
             window.until
         );
     }
+    let predecessor_run = list_push_head_predecessor_runs(
+        repository,
+        branch,
+        &window.since,
+        ledger_workflow_ids,
+    )?
+    .pop()
+    .context("no durable push-head ledger predecessor before the collection window")?;
+    let predecessor_workflow_id =
+        validate_push_head_run(&predecessor_run, branch, ledger_workflow_ids)?;
+    let boundary_predecessor = validate_push_head_artifact(
+        root,
+        repository,
+        branch,
+        &predecessor_run,
+        predecessor_workflow_id,
+        download_push_head_artifact(repository, predecessor_run.id)?,
+    )?;
     let mut observations = Vec::with_capacity(runs.len());
     for run in runs {
-        let workflow_id = run
-            .workflow_id
-            .context("push-head ledger run has no workflow identity")?;
-        if !ledger_workflow_ids.contains(&workflow_id) {
-            bail!(
-                "push-head ledger run {} has an unconfigured workflow ID",
-                run.id
-            );
-        }
-        if run.event.as_deref() != Some("push")
-            || run.head_branch.as_deref() != Some(branch)
-            || run.path.as_deref().is_some_and(|path| {
-                !workflow_path_matches(path, &[DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()])
-            })
-            || !run.status.eq_ignore_ascii_case("completed")
-            || run.conclusion.as_deref() != Some("success")
-        {
-            bail!(
-                "push-head ledger run {} is not a successful main push: event={:?}, branch={:?}, status={}, conclusion={:?}",
-                run.id,
-                run.event,
-                run.head_branch,
-                run.status,
-                run.conclusion
-            );
-        }
+        let workflow_id = validate_push_head_run(&run, branch, ledger_workflow_ids)?;
         let artifact = download_push_head_artifact(repository, run.id)?;
         observations.push(validate_push_head_artifact(
             root,
@@ -94,7 +87,7 @@ fn expected_from_push_head_ledger(
         )?);
     }
     observations.sort_by_key(|observation| (observation.created_at.clone(), observation.run_id));
-    validate_push_head_chain(root, branch, &observations)?;
+    validate_push_head_chain(root, branch, &observations, &boundary_predecessor)?;
     let history = observations
         .iter()
         .map(|observation| HistoryCommitObservation {
@@ -115,6 +108,9 @@ fn expected_from_push_head_ledger(
             commit_count: history.len(),
             source_workflow: Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()),
             source_run_count: observations.len(),
+            boundary: DenominatorBoundary::PushHead {
+                predecessor: Box::new(boundary_predecessor),
+            },
         },
         history,
         push_heads: observations,
@@ -153,6 +149,69 @@ fn list_push_head_runs(
     Ok(runs)
 }
 
+fn list_push_head_predecessor_runs(
+    repository: &str,
+    branch: &str,
+    since: &str,
+    workflow_ids: &BTreeSet<u64>,
+) -> Result<Vec<ApiRun>> {
+    let mut runs: Vec<ApiRun> = Vec::new();
+    for workflow_id in workflow_ids {
+        let endpoint = format!(
+            "repos/{repository}/actions/workflows/{workflow_id}/runs?branch={branch}&event=push&per_page=100&created=1970-01-01T00:00:00Z..{since}",
+            since = api_timestamp(since)
+        );
+        runs.extend(decode_pages(&api_pages(&endpoint)?, "workflow_runs")?);
+    }
+    let since = parse_timestamp(since)?;
+    runs.sort_by_key(|run: &ApiRun| (run.created_at.clone(), run.id));
+    runs.dedup_by_key(|run| run.id);
+    let mut predecessors = Vec::new();
+    for run in runs {
+        let created_at = parse_timestamp(&run.created_at).with_context(|| {
+            format!("parsing push-head predecessor run {} creation time", run.id)
+        })?;
+        if created_at < since {
+            predecessors.push(run);
+        }
+    }
+    Ok(predecessors)
+}
+
+fn validate_push_head_run(
+    run: &ApiRun,
+    branch: &str,
+    ledger_workflow_ids: &BTreeSet<u64>,
+) -> Result<u64> {
+    let workflow_id = run
+        .workflow_id
+        .context("push-head ledger run has no workflow identity")?;
+    if !ledger_workflow_ids.contains(&workflow_id) {
+        bail!(
+            "push-head ledger run {} has an unconfigured workflow ID",
+            run.id
+        );
+    }
+    if run.event.as_deref() != Some("push")
+        || run.head_branch.as_deref() != Some(branch)
+        || !run.path.as_deref().is_some_and(|path| {
+            workflow_path_matches(path, &[DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()])
+        })
+        || !run.status.eq_ignore_ascii_case("completed")
+        || run.conclusion.as_deref() != Some("success")
+    {
+        bail!(
+            "push-head ledger run {} is not a successful main push: event={:?}, branch={:?}, status={}, conclusion={:?}",
+            run.id,
+            run.event,
+            run.head_branch,
+            run.status,
+            run.conclusion
+        );
+    }
+    Ok(workflow_id)
+}
+
 fn download_push_head_artifact(repository: &str, run_id: u64) -> Result<(Vec<u8>, Vec<u8>)> {
     let temp = tempfile::tempdir().context("creating push-head artifact staging directory")?;
     cmd::run(Command::new("gh").args([
@@ -172,8 +231,9 @@ fn download_push_head_artifact(repository: &str, run_id: u64) -> Result<(Vec<u8>
 
 fn read_push_head_artifact(directory: &Path, run_id: u64) -> Result<(Vec<u8>, Vec<u8>)> {
     let mut names = BTreeSet::new();
-    for entry in fs::read_dir(directory).context("reading push-head artifact contents")? {
-        let entry = entry.context("reading push-head artifact entry")?;
+    for entry in crate::fs_util::read_dir_sorted(directory)
+        .context("reading push-head artifact contents")?
+    {
         if !entry.file_type()?.is_file() {
             bail!("push-head ledger artifact contains a non-file entry");
         }
@@ -201,6 +261,10 @@ fn validate_push_head_artifact(
     artifact: (Vec<u8>, Vec<u8>),
 ) -> Result<PushHeadObservation> {
     let (manifest_bytes, raw_event_bytes) = artifact;
+    let manifest_text = String::from_utf8(manifest_bytes.clone())
+        .with_context(|| format!("push-head ledger manifest for run {} is not UTF-8", run.id))?;
+    let event_text = String::from_utf8(raw_event_bytes.clone())
+        .with_context(|| format!("raw push event for run {} is not UTF-8", run.id))?;
     let manifest: PushHeadLedgerArtifact = serde_json::from_slice(&manifest_bytes)
         .with_context(|| format!("parsing push-head ledger manifest for run {}", run.id))?;
     if manifest.schema != PUSH_HEAD_LEDGER_SCHEMA {
@@ -301,6 +365,11 @@ fn validate_push_head_artifact(
         created_at: run.created_at.clone(),
         pushed_commits: manifest.pushed_commits,
         raw_event_sha256: manifest.raw_event_sha256,
+        artifact: PushHeadArtifactProof {
+            manifest: manifest_text,
+            event: event_text,
+            manifest_sha256: sha256_hex(&manifest_bytes),
+        },
     })
 }
 
@@ -342,9 +411,25 @@ fn validate_push_head_chain(
     root: &Path,
     branch: &str,
     observations: &[PushHeadObservation],
+    boundary_predecessor: &PushHeadObservation,
 ) -> Result<()> {
     let mut seen_runs = BTreeSet::new();
     let mut seen_heads = BTreeSet::new();
+    let first = observations
+        .first()
+        .context("push-head ledger has no in-window first entry")?;
+    if boundary_predecessor.head_sha != first.before_sha {
+        bail!(
+            "push-head ledger boundary predecessor {} does not match first before SHA {}",
+            boundary_predecessor.head_sha,
+            first.before_sha
+        );
+    }
+    if boundary_predecessor.run_id == first.run_id
+        || parse_timestamp(&boundary_predecessor.created_at)? >= parse_timestamp(&first.created_at)?
+    {
+        bail!("push-head ledger boundary predecessor is not strictly earlier");
+    }
     for (index, observation) in observations.iter().enumerate() {
         if !seen_runs.insert(observation.run_id) || !seen_heads.insert(observation.head_sha.clone())
         {

@@ -16,6 +16,10 @@ fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
         &evidence.push_heads,
         &evidence.window,
     )?;
+    if evidence.denominator.source == DenominatorSource::PushHeadLedger {
+        let root = docs::repo_root().context("resolving Git state for push-head evidence")?;
+        validate_git_state(&root, evidence)?;
+    }
     let derived_expected = expected_from_history(&evidence.history, evidence.denominator.source)?;
     if evidence.expected != derived_expected {
         bail!("expected obligations are not derived from raw denominator history");
@@ -225,6 +229,101 @@ fn validate_collection_provenance(
     Ok(())
 }
 
+fn validate_push_head_observation(
+    repository: &str,
+    branch: &str,
+    observation: &PushHeadObservation,
+) -> Result<()> {
+    if observation.repository != repository
+        || observation.branch != branch
+        || observation.event != "push"
+        || observation.workflow_path != DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW
+        || observation.workflow_id == 0
+        || observation.run_id == 0
+        || !is_git_sha(&observation.head_sha)
+        || !is_git_sha(&observation.before_sha)
+        || is_zero_sha(&observation.before_sha)
+        || !is_git_sha(&observation.tree_sha)
+        || !valid_commit_list(&observation.pushed_commits)
+        || !is_hex_digest(&observation.raw_event_sha256)
+        || !observation
+            .pushed_commits
+            .iter()
+            .any(|commit| commit == &observation.head_sha)
+        || observation
+            .pushed_commits
+            .iter()
+            .collect::<BTreeSet<_>>()
+            .len()
+            != observation.pushed_commits.len()
+    {
+        bail!("push-head denominator contains invalid or duplicate provenance");
+    }
+    if observation.artifact.manifest.is_empty() || observation.artifact.event.is_empty() {
+        bail!("push-head denominator is missing retained artifact bytes");
+    }
+    if !is_hex_digest(&observation.artifact.manifest_sha256)
+        || sha256_hex(observation.artifact.manifest.as_bytes())
+            != observation.artifact.manifest_sha256
+    {
+        bail!("push-head denominator manifest artifact digest mismatch");
+    }
+    let manifest: PushHeadLedgerArtifact = serde_json::from_str(&observation.artifact.manifest)
+        .context("parsing retained push-head ledger manifest")?;
+    if manifest.schema != PUSH_HEAD_LEDGER_SCHEMA
+        || manifest.repository != observation.repository
+        || manifest.branch != observation.branch
+        || manifest.event != observation.event
+        || manifest.workflow_path != observation.workflow_path
+        || manifest.run_id != observation.run_id
+        || manifest.head_sha != observation.head_sha
+        || manifest.before_sha != observation.before_sha
+        || manifest.tree_sha != observation.tree_sha
+        || manifest.committed_at != observation.committed_at
+        || manifest.pushed_commits != observation.pushed_commits
+        || manifest.raw_event_sha256 != observation.raw_event_sha256
+    {
+        bail!("retained push-head manifest does not match its observation");
+    }
+    if sha256_hex(observation.artifact.event.as_bytes()) != observation.raw_event_sha256 {
+        bail!("retained push-head event artifact digest mismatch");
+    }
+    let raw_event: serde_json::Value = serde_json::from_str(&observation.artifact.event)
+        .context("parsing retained raw push event")?;
+    let raw_repository = raw_event
+        .get("repository")
+        .and_then(|value| value.get("full_name"))
+        .and_then(serde_json::Value::as_str);
+    let raw_ref = raw_event.get("ref").and_then(serde_json::Value::as_str);
+    let raw_before = raw_event.get("before").and_then(serde_json::Value::as_str);
+    let raw_after = raw_event.get("after").and_then(serde_json::Value::as_str);
+    let raw_commits = raw_event
+        .get("commits")
+        .and_then(serde_json::Value::as_array)
+        .context("retained raw push event has no commits array")?
+        .iter()
+        .map(|commit| {
+            commit
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .context("retained raw push event contains a commit without an ID")
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let expected_ref = format!("refs/heads/{branch}");
+    if raw_repository != Some(repository)
+        || raw_ref != Some(expected_ref.as_str())
+        || raw_before != Some(observation.before_sha.as_str())
+        || raw_after != Some(observation.head_sha.as_str())
+        || raw_commits != observation.pushed_commits
+    {
+        bail!("retained raw push event does not match its observation");
+    }
+    parse_timestamp(&observation.committed_at)?;
+    parse_timestamp(&observation.created_at)?;
+    Ok(())
+}
+
 fn validate_denominator(
     repository: &str,
     proof: &DenominatorProof,
@@ -248,38 +347,32 @@ fn validate_denominator(
             {
                 bail!("push-head denominator is missing durable source proof");
             }
+            let boundary_predecessor = match &proof.boundary {
+                DenominatorBoundary::PushHead { predecessor } => predecessor,
+                DenominatorBoundary::Fixture => {
+                    bail!("push-head denominator is missing its boundary predecessor proof")
+                }
+            };
+            validate_push_head_observation(repository, &proof.branch, boundary_predecessor)?;
             let mut seen_heads = BTreeSet::new();
             let mut seen_runs = BTreeSet::new();
             for observation in push_heads {
-                if observation.repository != repository
-                    || observation.branch != proof.branch
-                    || observation.event != "push"
-                    || observation.workflow_path != DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW
-                    || observation.workflow_id == 0
-                    || observation.run_id == 0
-                    || !is_git_sha(&observation.head_sha)
-                    || !is_git_sha(&observation.before_sha)
-                    || is_zero_sha(&observation.before_sha)
-                    || !is_git_sha(&observation.tree_sha)
-                    || !valid_commit_list(&observation.pushed_commits)
-                    || !is_hex_digest(&observation.raw_event_sha256)
-                    || !observation
-                        .pushed_commits
-                        .iter()
-                        .any(|commit| commit == &observation.head_sha)
-                    || observation
-                        .pushed_commits
-                        .iter()
-                        .collect::<BTreeSet<_>>()
-                        .len()
-                        != observation.pushed_commits.len()
-                    || !seen_heads.insert(observation.head_sha.clone())
+                validate_push_head_observation(repository, &proof.branch, observation)?;
+                if !seen_heads.insert(observation.head_sha.clone())
                     || !seen_runs.insert(observation.run_id)
                 {
-                    bail!("push-head denominator contains invalid or duplicate provenance");
+                    bail!("push-head denominator contains duplicate provenance");
                 }
-                parse_timestamp(&observation.committed_at)?;
-                parse_timestamp(&observation.created_at)?;
+            }
+            let first = push_heads
+                .first()
+                .context("push-head denominator has no first in-window entry")?;
+            if boundary_predecessor.head_sha != first.before_sha
+                || boundary_predecessor.run_id == first.run_id
+                || parse_timestamp(&boundary_predecessor.created_at)?
+                    >= parse_timestamp(&first.created_at)?
+            {
+                bail!("push-head denominator boundary predecessor is not adjacent");
             }
             if history.iter().zip(push_heads).any(|(commit, observation)| {
                 commit.sha != observation.head_sha
@@ -301,6 +394,7 @@ fn validate_denominator(
                 || proof.source_workflow.is_some()
                 || proof.source_run_count != 0
                 || !push_heads.is_empty()
+                || !matches!(proof.boundary, DenominatorBoundary::Fixture)
             {
                 bail!("fixture denominator contains durable-source provenance");
             }
@@ -311,6 +405,224 @@ fn validate_denominator(
             bail!("denominator commit is missing SHA/tree identity");
         }
         parse_timestamp(&commit.committed_at)?;
+    }
+    Ok(())
+}
+
+fn validate_git_commit_identity(
+    root: &Path,
+    sha: &str,
+    tree_sha: &str,
+    committed_at: &str,
+) -> Result<()> {
+    if !is_git_sha(sha) || !is_git_sha(tree_sha) {
+        bail!("Git evidence contains a malformed commit or tree identity");
+    }
+    cmd::run(Command::new("git").current_dir(root).args([
+        "cat-file",
+        "-e",
+        &format!("{sha}^{{commit}}"),
+    ]))
+    .with_context(|| format!("verifying Git commit object {sha}"))?;
+    let actual_tree = required_tree_sha(root, sha)?;
+    if actual_tree != tree_sha {
+        bail!("Git tree identity mismatch for commit {sha}");
+    }
+    let actual_time = required_commit_time(root, sha)?;
+    if api_timestamp(&actual_time) != api_timestamp(committed_at) {
+        bail!("Git commit timestamp mismatch for commit {sha}");
+    }
+    Ok(())
+}
+
+fn validate_git_state(root: &Path, evidence: &EvidenceFile) -> Result<()> {
+    if evidence.denominator.source != DenominatorSource::PushHeadLedger {
+        bail!("Git state binding requires the durable push-head denominator");
+    }
+    validate_git_remote_identity(root, &evidence.repository)?;
+    let status = cmd::output_string(
+        Command::new("git")
+            .current_dir(root)
+            .args(["status", "--porcelain", "--untracked-files=all"]),
+    )?;
+    if !status.trim().is_empty() {
+        bail!("Git state is dirty; refusing qualification");
+    }
+    let head = cmd::output_string(
+        Command::new("git")
+            .current_dir(root)
+            .args(["rev-parse", "HEAD"]),
+    )?;
+    let main_tip = cmd::output_string(
+        Command::new("git")
+            .current_dir(root)
+            .args(["rev-parse", "refs/remotes/origin/main"]),
+    )?;
+    let main_tip = main_tip.trim();
+    if head.trim() != main_tip {
+        bail!("checked-out Git head does not match origin/main");
+    }
+    let boundary_predecessor = match &evidence.denominator.boundary {
+        DenominatorBoundary::PushHead { predecessor } => predecessor,
+        DenominatorBoundary::Fixture => {
+            bail!("Git state is missing the push-head boundary predecessor")
+        }
+    };
+    validate_git_commit_identity(
+        root,
+        &boundary_predecessor.head_sha,
+        &boundary_predecessor.tree_sha,
+        &boundary_predecessor.committed_at,
+    )?;
+    for observation in &evidence.push_heads {
+        validate_git_commit_identity(
+            root,
+            &observation.head_sha,
+            &observation.tree_sha,
+            &observation.committed_at,
+        )?;
+        cmd::run(Command::new("git").current_dir(root).args([
+            "cat-file",
+            "-e",
+            &format!("{}^{{commit}}", observation.before_sha),
+        ]))
+        .with_context(|| format!("verifying Git predecessor {}", observation.before_sha))?;
+        for pushed_commit in &observation.pushed_commits {
+            cmd::run(Command::new("git").current_dir(root).args([
+                "cat-file",
+                "-e",
+                &format!("{pushed_commit}^{{commit}}"),
+            ]))
+            .with_context(|| format!("verifying Git pushed commit {pushed_commit}"))?;
+        }
+    }
+    for history in &evidence.history {
+        validate_git_commit_identity(root, &history.sha, &history.tree_sha, &history.committed_at)?;
+    }
+    validate_push_head_chain(
+        root,
+        &evidence.denominator.branch,
+        &evidence.push_heads,
+        boundary_predecessor,
+    )?;
+    Ok(())
+}
+
+fn validate_workflow_contract(root: &Path) -> Result<()> {
+    let contract_path = root.join(WORKFLOW_CONTRACT_PATH);
+    let contract_bytes = fs::read(&contract_path)
+        .with_context(|| format!("reading workflow contract {}", contract_path.display()))?;
+    let contract_text = std::str::from_utf8(&contract_bytes)
+        .context("workflow contract is not UTF-8")?;
+    let contract: toml::Value = toml::from_str(contract_text)
+        .with_context(|| format!("parsing workflow contract {}", contract_path.display()))?;
+    let profiles = contract
+        .get("check_profile")
+        .and_then(toml::Value::as_array)
+        .context("workflow contract has no check profiles")?;
+    for (profile_id, task, artifact) in [
+        (
+            "ci-evidence",
+            "ci-evidence",
+            DEFAULT_CI_EVIDENCE_ARTIFACT,
+        ),
+        (
+            "ci-push-head-ledger",
+            "ci-push-head-ledger",
+            "target/ci-push-head-ledger/",
+        ),
+    ] {
+        let profile = profiles
+            .iter()
+            .find(|profile| profile.get("id").and_then(toml::Value::as_str) == Some(profile_id))
+            .with_context(|| format!("workflow contract is missing profile {profile_id}"))?;
+        let has_task = profile
+            .get("tasks")
+            .and_then(toml::Value::as_array)
+            .is_some_and(|tasks| {
+                tasks
+                    .iter()
+                    .any(|value| value.as_str() == Some(task))
+            });
+        let has_artifact = profile
+            .get("artifacts")
+            .and_then(toml::Value::as_array)
+            .is_some_and(|artifacts| {
+                artifacts
+                    .iter()
+                    .any(|value| value.as_str() == Some(artifact))
+            });
+        if !has_task || !has_artifact {
+            bail!("workflow contract profile {profile_id} is not artifact-backed");
+        }
+    }
+    let state_path = root.join(WORKFLOW_STATE_PATH);
+    let state = fs::read_to_string(&state_path)
+        .with_context(|| format!("reading generated workflow state {}", state_path.display()))?;
+    let mise_path = root.join(MISE_PATH);
+    let mise = fs::read_to_string(&mise_path)
+        .with_context(|| format!("reading task contract {}", mise_path.display()))?;
+    for (workflow, artifact, task) in [
+        (
+            DEFAULT_CI_EVIDENCE_WORKFLOW,
+            "target/ci-evidence/",
+            "ci-evidence",
+        ),
+        (
+            DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW,
+            "target/ci-push-head-ledger/",
+            "ci-push-head-ledger",
+        ),
+    ] {
+        let workflow_rel = format!(".github/workflows/{workflow}");
+        let workflow_path = root.join(&workflow_rel);
+        let workflow_bytes = fs::read(&workflow_path)
+            .with_context(|| format!("reading workflow {}", workflow_path.display()))?;
+        let workflow_text = std::str::from_utf8(&workflow_bytes)
+            .with_context(|| format!("workflow {} is not UTF-8", workflow_path.display()))?;
+        if workflow_text.is_empty()
+            || !workflow_text.starts_with("# Generated by velnor-workflow.")
+            || !workflow_text.contains(artifact)
+            || !workflow_text.contains(task)
+        {
+            bail!("workflow {workflow} is not the trusted generated artifact contract");
+        }
+        if !state.lines().any(|line| line.starts_with(&format!("{workflow_rel}\t"))) {
+            bail!("generated workflow state does not cover {workflow_rel}");
+        }
+        if !mise.contains(&format!("[tasks.{task}]")) || !mise.contains(artifact) {
+            bail!("task contract is missing artifact-backed task {task}");
+        }
+    }
+    if !contract_text.contains("ci-evidence.yml")
+        || !contract_text.contains("ci-push-head-ledger.yml")
+    {
+        bail!("workflow contract does not declare the evidence workflows");
+    }
+    Ok(())
+}
+
+fn validate_qualification_binding(root: &Path, evidence: &EvidenceFile) -> Result<()> {
+    if evidence.provenance.repository != evidence.repository
+        || evidence.provenance.event != "schedule"
+        || evidence.provenance.branch != "main"
+        || evidence.provenance.workflow_path != DEFAULT_CI_EVIDENCE_WORKFLOW
+        || evidence.provenance.run_id.is_none()
+    {
+        bail!("collection provenance is not the actual scheduled evidence workflow");
+    }
+    validate_workflow_contract(root)?;
+    let runtime = runtime_identity(root, evidence.runtime.clone())?;
+    if runtime != evidence.runtime {
+        bail!("evidence runtime identity is not bound to the workflow contract");
+    }
+    validate_git_state(root, evidence)?;
+    for observation in &evidence.push_heads {
+        validate_push_head_observation(
+            &evidence.repository,
+            &evidence.denominator.branch,
+            observation,
+        )?;
     }
     Ok(())
 }

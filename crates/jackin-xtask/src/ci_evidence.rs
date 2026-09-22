@@ -29,12 +29,17 @@ use crate::{cmd, docs};
 #[cfg(test)]
 mod tests;
 
-const SCHEMA: u32 = 4;
+const SCHEMA: u32 = 5;
 const DEFAULT_WINDOW_DAYS: i64 = 31;
 const DEFAULT_CI_WORKFLOW: &str = "ci-main.yml";
 const DEFAULT_DESKTOP_WORKFLOW: &str = "desktop-merge.yml";
+const DEFAULT_CI_EVIDENCE_WORKFLOW: &str = "ci-evidence.yml";
+const DEFAULT_CI_EVIDENCE_ARTIFACT: &str = "target/ci-evidence/";
 const DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW: &str = "ci-push-head-ledger.yml";
 const DEFAULT_PUSH_HEAD_LEDGER_ARTIFACT: &str = "ci-push-head-ledger";
+const WORKFLOW_CONTRACT_PATH: &str = ".github-gen/velnor-workflow.toml";
+const WORKFLOW_STATE_PATH: &str = ".github/ci/.github-actions-generator-state";
+const MISE_PATH: &str = "mise.toml";
 
 /// Independently counted post-merge obligations.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
@@ -144,6 +149,7 @@ pub(crate) struct DenominatorProof {
     pub(crate) commit_count: usize,
     pub(crate) source_workflow: Option<String>,
     pub(crate) source_run_count: usize,
+    pub(crate) boundary: DenominatorBoundary,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -170,6 +176,28 @@ pub(crate) struct PushHeadObservation {
     pub(crate) created_at: String,
     pub(crate) pushed_commits: Vec<String>,
     pub(crate) raw_event_sha256: String,
+    pub(crate) artifact: PushHeadArtifactProof,
+}
+
+/// The exact artifact bytes validated at collection time.
+///
+/// Retaining the bytes makes the digest a check over an actual artifact, not
+/// merely an unchecked 64-character marker in the evidence JSON.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PushHeadArtifactProof {
+    pub(crate) manifest: String,
+    pub(crate) event: String,
+    pub(crate) manifest_sha256: String,
+}
+
+/// Proof that the first in-window push is attached to the immediately prior
+/// durable ledger entry. A missing predecessor is a missing denominator proof.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum DenominatorBoundary {
+    PushHead {
+        predecessor: Box<PushHeadObservation>,
+    },
+    Fixture,
 }
 
 /// Provenance of the collector invocation that wrote an evidence file.
@@ -758,6 +786,7 @@ fn denominator_from_fixture(
             commit_count: history.len(),
             source_workflow: None,
             source_run_count: 0,
+            boundary: DenominatorBoundary::Fixture,
         },
         history: history.into_values().collect(),
         push_heads: Vec::new(),

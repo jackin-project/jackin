@@ -173,6 +173,7 @@ fn evidence(expected: Vec<ExpectedObligation>, attempts: Vec<AttemptEvidence>) -
             commit_count: history.len(),
             source_workflow: None,
             source_run_count: 0,
+            boundary: DenominatorBoundary::Fixture,
         },
         history,
         push_heads: Vec::new(),
@@ -211,6 +212,7 @@ fn update_denominator(
             commit_count: history.len(),
             source_workflow: None,
             source_run_count: 0,
+            boundary: DenominatorBoundary::Fixture,
         },
         history,
     )
@@ -219,21 +221,66 @@ fn update_denominator(
 fn push_head_observation(head_sha: &str, before_sha: &str, run_id: u64) -> PushHeadObservation {
     let head_sha = fixture_sha(head_sha);
     let before_sha = fixture_sha(before_sha);
-    PushHeadObservation {
+    let tree_sha = fixture_sha(&format!("tree-{head_sha}"));
+    let mut observation = PushHeadObservation {
         repository: "example/repo".to_owned(),
         branch: "main".to_owned(),
         event: "push".to_owned(),
         workflow_id: 7,
         workflow_path: DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned(),
         run_id,
-        head_sha: head_sha.clone(),
+        head_sha,
         before_sha,
-        tree_sha: fixture_sha(&format!("tree-{head_sha}")),
+        tree_sha,
         committed_at: "2026-09-22T00:00:00Z".to_owned(),
         created_at: "2026-09-22T00:01:00Z".to_owned(),
-        pushed_commits: vec![head_sha],
-        raw_event_sha256: "a".repeat(64),
-    }
+        pushed_commits: Vec::new(),
+        raw_event_sha256: String::new(),
+        artifact: PushHeadArtifactProof {
+            manifest: String::new(),
+            event: String::new(),
+            manifest_sha256: String::new(),
+        },
+    };
+    observation.pushed_commits = vec![observation.head_sha.clone()];
+    refresh_push_head_artifact(&mut observation);
+    observation
+}
+
+fn refresh_push_head_artifact(observation: &mut PushHeadObservation) {
+    let raw_event = serde_json::json!({
+        "repository": {"full_name": observation.repository},
+        "ref": format!("refs/heads/{}", observation.branch),
+        "before": observation.before_sha,
+        "after": observation.head_sha,
+        "commits": observation
+            .pushed_commits
+            .iter()
+            .map(|id| serde_json::json!({"id": id}))
+            .collect::<Vec<_>>(),
+    });
+    let raw_event_bytes = serde_json::to_vec(&raw_event).unwrap();
+    observation.raw_event_sha256 = sha256_hex(&raw_event_bytes);
+    let manifest = serde_json::json!({
+        "schema": PUSH_HEAD_LEDGER_SCHEMA,
+        "repository": observation.repository,
+        "branch": observation.branch,
+        "event": observation.event,
+        "workflow_path": observation.workflow_path,
+        "run_id": observation.run_id,
+        "head_sha": observation.head_sha,
+        "before_sha": observation.before_sha,
+        "tree_sha": observation.tree_sha,
+        "committed_at": observation.committed_at,
+        "pushed_commits": observation.pushed_commits,
+        "raw_event_sha256": observation.raw_event_sha256,
+    });
+    let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+    observation.artifact = PushHeadArtifactProof {
+        manifest: String::from_utf8(manifest_bytes.clone()).unwrap(),
+        event: String::from_utf8(raw_event_bytes).unwrap(),
+        manifest_sha256: sha256_hex(&manifest_bytes),
+    };
 }
 
 fn fixture_sha(label: &str) -> String {
@@ -408,6 +455,18 @@ fn push_head_denominator(
         commit_count: history.len(),
         source_workflow: Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()),
         source_run_count: push_heads.len(),
+        boundary: push_heads
+            .first()
+            .map_or(DenominatorBoundary::Fixture, |first| {
+                let mut predecessor = push_head_observation("boundary", "boundary-before", 99);
+                predecessor.head_sha = first.before_sha.clone();
+                predecessor.created_at = "2026-09-21T23:59:00Z".to_owned();
+                predecessor.pushed_commits = vec![predecessor.head_sha.clone()];
+                refresh_push_head_artifact(&mut predecessor);
+                DenominatorBoundary::PushHead {
+                    predecessor: Box::new(predecessor),
+                }
+            }),
     }
 }
 
@@ -843,6 +902,16 @@ fn outcome_classes_keep_platform_failures_separate() {
         classify_outcome("in_progress", None, &[], &[]),
         OutcomeClass::DataQuality
     );
+    let jobs = completed_jobs(Cohort::CiMain);
+    let expected_work = Cohort::CiMain
+        .expected_work()
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        classify_outcome("in_progress", Some("success"), &jobs, &expected_work),
+        OutcomeClass::DataQuality
+    );
     assert_eq!(
         classify_outcome("completed", Some("timed_out"), &[], &[]),
         OutcomeClass::Infrastructure
@@ -863,7 +932,6 @@ fn outcome_classes_keep_platform_failures_separate() {
         classify_outcome("completed", Some("failure"), &[JobEvidence::default()], &[]),
         OutcomeClass::Product
     );
-    let jobs = completed_jobs(Cohort::CiMain);
     assert_eq!(
         classify_outcome(
             "completed",
@@ -980,6 +1048,7 @@ fn missing_push_head_ledger_proof_is_rejected() {
         commit_count: 0,
         source_workflow: Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned()),
         source_run_count: 0,
+        boundary: DenominatorBoundary::Fixture,
     };
     let error = validate_denominator("example/repo", &proof, &[], &[], &window).unwrap_err();
     assert!(error.to_string().contains("durable source proof"));
@@ -1008,6 +1077,23 @@ fn push_head_chain_gap_is_rejected_without_observed_head_fallback() {
     let error = validate_denominator("example/repo", &proof, &history, &push_heads, &proof.window)
         .unwrap_err();
     assert!(error.to_string().contains("coverage gap"));
+}
+
+#[test]
+fn push_head_window_requires_a_verified_boundary_predecessor() {
+    let first = push_head_observation("head-a", "missing-predecessor", 1);
+    let history = vec![HistoryCommitObservation {
+        sha: first.head_sha.clone(),
+        base_sha: Some(first.before_sha.clone()),
+        tree_sha: first.tree_sha.clone(),
+        committed_at: first.committed_at.clone(),
+    }];
+    let push_heads = vec![first];
+    let mut proof = push_head_denominator(history.clone(), push_heads.clone());
+    proof.boundary = DenominatorBoundary::Fixture;
+    let error = validate_denominator("example/repo", &proof, &history, &push_heads, &proof.window)
+        .unwrap_err();
+    assert!(error.to_string().contains("boundary predecessor"));
 }
 
 #[test]
@@ -1107,6 +1193,76 @@ fn local_collection_cannot_qualify_green() {
     let rollup = build_rollup(&evidence);
     assert!(!rollup.green_claim_qualified);
     assert!(require_qualified(&rollup).is_err());
+}
+
+#[test]
+fn scheduled_provenance_without_current_workflow_contract_cannot_qualify_green() {
+    let expected = Cohort::ALL
+        .into_iter()
+        .map(|cohort| {
+            obligation_from_source(
+                "fake-scheduled-head",
+                cohort,
+                DenominatorSource::PushHeadLedger,
+            )
+        })
+        .collect::<Vec<_>>();
+    let attempts = Cohort::ALL
+        .into_iter()
+        .enumerate()
+        .map(|(index, cohort)| {
+            let mut row = attempt(
+                index as u64 + 1,
+                1,
+                cohort,
+                "fake-scheduled-head",
+                OutcomeClass::Success,
+                "2026-09-22T00:02:00Z",
+            );
+            row.denominator_source = DenominatorSource::PushHeadLedger;
+            row
+        })
+        .collect();
+    let mut evidence = evidence(expected, attempts);
+    evidence.provenance.event = "schedule".to_owned();
+    evidence.provenance.workflow_path = DEFAULT_CI_EVIDENCE_WORKFLOW.to_owned();
+    evidence.provenance.run_id = Some(7);
+    evidence.denominator.source = DenominatorSource::PushHeadLedger;
+    evidence.denominator.fetch_succeeded = true;
+    evidence.denominator.source_workflow = Some(DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW.to_owned());
+    evidence.denominator.source_run_count = 1;
+
+    let rollup = build_rollup(&evidence);
+    assert!(!rollup.green_claim_qualified);
+    assert!(require_qualified(&rollup).is_err());
+}
+
+#[test]
+fn retained_push_head_artifact_bytes_are_digest_bound() {
+    let mut observation = push_head_observation("artifact-head", "artifact-before", 1);
+    observation.artifact.event.push(' ');
+    let error = validate_push_head_observation("example/repo", "main", &observation).unwrap_err();
+    assert!(error.to_string().contains("event artifact digest"));
+}
+
+#[test]
+fn fake_git_commit_identity_is_rejected() {
+    let root = docs::repo_root().unwrap();
+    let error = validate_git_commit_identity(
+        &root,
+        &fixture_sha("fake-commit"),
+        &fixture_sha("fake-tree"),
+        "2026-09-22T00:00:00Z",
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("Git commit object"));
+}
+
+#[test]
+fn absent_evidence_workflows_fail_closed() {
+    let root = docs::repo_root().unwrap();
+    let error = validate_workflow_contract(&root).unwrap_err();
+    assert!(error.to_string().contains("workflow contract"));
 }
 
 #[test]

@@ -383,7 +383,7 @@ fn classify_outcome(
 ) -> OutcomeClass {
     let status = status.to_ascii_lowercase();
     let conclusion = conclusion.unwrap_or_default().to_ascii_lowercase();
-    if conclusion.is_empty() && status != "completed" {
+    if status != "completed" {
         return OutcomeClass::DataQuality;
     }
     if matches!(conclusion.as_str(), "cancelled" | "canceled")

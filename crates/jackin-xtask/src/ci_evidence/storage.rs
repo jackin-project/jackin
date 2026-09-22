@@ -11,7 +11,7 @@ fn read_evidence(
     let raw: serde_json::Value = read_json(path)?;
     let stored_schema = raw.get("schema").and_then(serde_json::Value::as_u64);
     if stored_schema != Some(u64::from(SCHEMA)) {
-        // Schema 4 is a hard migration boundary: discard stale ledgers before
+        // Schema 5 is a hard migration boundary: discard stale ledgers before
         // deserialization so old rows can never enter the hardened merge.
         return Ok(empty_evidence(repository, window, runtime));
     }
@@ -59,6 +59,7 @@ fn empty_evidence(repository: &str, window: &TimeWindow, runtime: RuntimeIdentit
             commit_count: 0,
             source_workflow: None,
             source_run_count: 0,
+            boundary: DenominatorBoundary::Fixture,
         },
         history: Vec::new(),
         push_heads: Vec::new(),
