@@ -59,6 +59,15 @@ impl ProviderError {
         &self.message
     }
 
+    pub(crate) fn with_message(&self, message: String) -> Self {
+        Self {
+            message,
+            http_status: self.http_status,
+            retry_after_seconds: self.retry_after_seconds,
+            response_received_at_epoch: self.response_received_at_epoch,
+        }
+    }
+
     pub(crate) fn status(&self) -> Option<u16> {
         self.http_status
     }
