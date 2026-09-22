@@ -127,20 +127,53 @@ description = "Collect first-attempt CI/Main and Desktop evidence and write the 
 run = '''
 set -euo pipefail
 mkdir -p target/ci-evidence
+if [ "${GITHUB_ACTIONS:-false}" = "true" ]; then
+  test "${GITHUB_EVENT_NAME:-}" = "schedule"
+  test "${GITHUB_REF_NAME:-}" = "main"
+  case "${GITHUB_WORKFLOW_REF:-}" in
+    */.github/workflows/ci-evidence.yml@*) ;;
+    *) echo "ci-evidence must run from the scheduled main workflow" >&2; exit 1 ;;
+  esac
+fi
 if [ "${GITHUB_ACTIONS:-false}" = "true" ] && [ ! -s target/ci-evidence/attempts.json ]; then
+  previous_dir="${RUNNER_TEMP:?RUNNER_TEMP must be set}/ci-evidence-previous"
+  rm -rf "$previous_dir"
+  mkdir -p "$previous_dir"
   previous_run="$(gh run list \
     --repo "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}" \
     --workflow ci-evidence.yml \
     --status completed \
-    --limit 20 \
-    --json databaseId \
-    --jq '.[0].databaseId // empty')"
+    --limit 100 \
+    --json databaseId,event,headBranch,status,createdAt,workflowName \
+    --jq --arg current "${GITHUB_RUN_ID:-}" 'map(select(.event == "schedule" and .headBranch == "main" and .status == "completed" and .workflowName == "CI first-attempt evidence" and ((.databaseId | tostring) != $current))) | sort_by(.createdAt) | last.databaseId // empty')"
   if [ -n "${previous_run}" ] && [ "${previous_run}" != "${GITHUB_RUN_ID:-}" ]; then
     gh run download "${previous_run}" \
       --repo "${GITHUB_REPOSITORY}" \
       --name ci-evidence \
-      --dir target/ci-evidence
-    test -s target/ci-evidence/attempts.json
+      --dir "$previous_dir"
+    test -s "$previous_dir/attempts.json"
+    jq -e \
+      --arg repository "${GITHUB_REPOSITORY}" \
+      --arg run_id "${previous_run}" \
+      '.schema == 4
+       and .repository == $repository
+       and .provenance.repository == $repository
+       and .provenance.event == "schedule"
+       and .provenance.branch == "main"
+       and .provenance.workflow_path == "ci-evidence.yml"
+       and (.provenance.run_id | tostring) == $run_id
+       and (.window.since | type) == "string"
+       and (.window.until | type) == "string"
+       and .denominator.window == .window
+       and .runtime.runtime_revision != null
+       and .runtime.contract_digest != null
+       and .denominator.source == "push_head_ledger"
+       and .denominator.branch == "main"
+       and .denominator.fetch_succeeded == true
+       and .denominator.source_workflow == "ci-push-head-ledger.yml"
+       and (.denominator.source_run_count | numbers) > 0' \
+      "$previous_dir/attempts.json" >/dev/null
+    cp "$previous_dir/attempts.json" target/ci-evidence/attempts.json
   fi
 fi
 cargo xtask ci-evidence collect \
@@ -153,6 +186,65 @@ cargo xtask ci-evidence rollup \
 test -s target/ci-evidence/attempts.json
 test -s target/ci-evidence/rollup.json
 test -s target/ci-evidence/rollup.md
+'''
+
+# One immutable artifact per main push. Git history cannot identify the push
+# head when several commits arrive in one push; this event-backed artifact is
+# the denominator source for ci-evidence. The collector verifies the raw
+# payload, run identity, before/after chain, tree, and first-parent range
+# before it creates obligations. Velnor always adds workflow_dispatch to this
+# primitive; the task rejects manual dispatch because only push events can
+# create ledger evidence.
+[tasks.ci-push-head-ledger]
+description = "Record the durable main push head and raw push event"
+run = '''
+set -euo pipefail
+test "${GITHUB_ACTIONS:-false}" = "true"
+test "${GITHUB_EVENT_NAME:-}" = "push"
+test "${GITHUB_REF:-}" = "refs/heads/main"
+test -n "${GITHUB_REPOSITORY:-}"
+test -n "${GITHUB_SHA:-}"
+test -n "${GITHUB_RUN_ID:-}"
+event_path="${GITHUB_EVENT_PATH:?GITHUB_EVENT_PATH must be set}"
+mkdir -p target/ci-push-head-ledger
+before_sha="$(jq -er '.before | strings' "$event_path")"
+jq -e \
+  --arg repository "$GITHUB_REPOSITORY" \
+  --arg ref "refs/heads/main" \
+  --arg head "$GITHUB_SHA" \
+  --arg before "$before_sha" \
+  '.repository.full_name == $repository
+   and .ref == $ref
+   and .after == $head
+   and .before == $before
+   and (.commits | type) == "array"
+   and any(.commits[]; .id == $head)' \
+  "$event_path" >/dev/null
+tree_sha="$(git rev-parse "${GITHUB_SHA}^{tree}")"
+committed_at="$(git show -s --format=%cI "$GITHUB_SHA")"
+raw_event_sha256="$(sha256sum "$event_path" | awk '{print $1}')"
+jq -n \
+  --slurpfile event "$event_path" \
+  --arg repository "$GITHUB_REPOSITORY" \
+  --arg branch "main" \
+  --arg event "push" \
+  --arg workflow_path "ci-push-head-ledger.yml" \
+  --arg run_id "$GITHUB_RUN_ID" \
+  --arg head_sha "$GITHUB_SHA" \
+  --arg before_sha "$before_sha" \
+  --arg tree_sha "$tree_sha" \
+  --arg committed_at "$committed_at" \
+  --arg raw_event_sha256 "$raw_event_sha256" \
+  '{schema: 1, repository: $repository, branch: $branch, event: $event,
+    workflow_path: $workflow_path, run_id: ($run_id | tonumber),
+    head_sha: $head_sha, before_sha: $before_sha, tree_sha: $tree_sha,
+    committed_at: $committed_at,
+    pushed_commits: ($event[0].commits | map(.id)),
+    raw_event_sha256: $raw_event_sha256}' \
+  > target/ci-push-head-ledger/push-head.json
+cp "$event_path" target/ci-push-head-ledger/event.json
+test -s target/ci-push-head-ledger/push-head.json
+test -s target/ci-push-head-ledger/event.json
 '''
 
 [tasks.clippy-affected]
