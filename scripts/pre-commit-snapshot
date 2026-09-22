@@ -5,41 +5,59 @@ repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
 stash_ref=
+stash_oid=
 patch_file=
 archive_file=
+
+verify_stash() {
+    current_stash=$(git rev-parse --verify --quiet refs/stash 2>/dev/null || true)
+    if [ "$current_stash" != "$stash_oid" ]; then
+        printf '%s\n' "error: pre-commit snapshot ref changed; stash retained at $stash_oid" >&2
+        return 1
+    fi
+}
 
 restore_worktree() {
     hook_status=$?
     trap - EXIT HUP INT TERM
 
-    if [ -n "$stash_ref" ]; then
+    if [ -n "$stash_oid" ]; then
+        if ! verify_stash; then
+            rm -f "$patch_file" "$archive_file"
+            exit 1
+        fi
+
         patch_file=$(mktemp "/tmp/jackin-pre-commit.XXXXXX")
-        if ! git diff --binary "$stash_ref^2" "$stash_ref" > "$patch_file"; then
-            printf '%s\n' "error: failed to read the pre-commit snapshot; stash retained at $stash_ref" >&2
+        if ! git diff --binary "$stash_oid^2" "$stash_oid" > "$patch_file"; then
+            printf '%s\n' "error: failed to read the pre-commit snapshot; stash retained at $stash_oid" >&2
             exit 1
         fi
         if [ -s "$patch_file" ]; then
             if ! git apply --binary --whitespace=nowarn "$patch_file"; then
-                printf '%s\n' "error: failed to restore unstaged tracked work; stash retained at $stash_ref" >&2
+                printf '%s\n' "error: failed to restore unstaged tracked work; stash retained at $stash_oid" >&2
                 exit 1
             fi
         fi
 
-        untracked_tree=$(git rev-parse --verify --quiet "$stash_ref^3" 2>/dev/null || true)
+        untracked_tree=$(git rev-parse --verify --quiet "$stash_oid^3" 2>/dev/null || true)
         if [ -n "$untracked_tree" ]; then
             archive_file=$(mktemp "/tmp/jackin-pre-commit.XXXXXX")
             if ! git archive --format=tar "$untracked_tree" > "$archive_file"; then
-                printf '%s\n' "error: failed to read untracked snapshot; stash retained at $stash_ref" >&2
+                printf '%s\n' "error: failed to read untracked snapshot; stash retained at $stash_oid" >&2
                 exit 1
             fi
             if ! tar -xf "$archive_file"; then
-                printf '%s\n' "error: failed to restore untracked work; stash retained at $stash_ref" >&2
+                printf '%s\n' "error: failed to restore untracked work; stash retained at $stash_oid" >&2
                 exit 1
             fi
         fi
 
+        if ! verify_stash; then
+            rm -f "$patch_file" "$archive_file"
+            exit 1
+        fi
         if ! git stash drop "$stash_ref"; then
-            printf '%s\n' "error: restored the pre-commit snapshot but could not drop $stash_ref" >&2
+            printf '%s\n' "error: restored the pre-commit snapshot but could not drop $stash_oid" >&2
             exit 1
         fi
     fi
@@ -51,16 +69,17 @@ restore_worktree() {
 trap restore_worktree EXIT HUP INT TERM
 
 # hk 2.0.1's path-limited stash drops untracked paths before invoking Git.
-# Snapshot every non-index path once, leaving the index/worktree staged view.
+# Snapshot every non-index path, including ignored files, leaving the index/worktree staged view.
 before_stash=$(git rev-parse --verify --quiet refs/stash 2>/dev/null || true)
 set +e
-git stash push --include-untracked --keep-index --message "jackin pre-commit"
+git stash push --all --keep-index --message "jackin pre-commit"
 stash_status=$?
 set -e
 after_stash=$(git rev-parse --verify --quiet refs/stash 2>/dev/null || true)
 
 if [ "$after_stash" != "$before_stash" ]; then
     stash_ref='stash@{0}'
+    stash_oid=$after_stash
 fi
 
 if [ "$stash_status" -ne 0 ]; then

@@ -199,7 +199,7 @@ watch = [
     "mise.toml",
 ]
 ci_tasks = ["desktop-xcframework"]
-mise_tools = ["rust", "cargo:sccache", "cargo:boltffi_cli"]
+mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
 platform = "macos-arm64"
 
 [[units.products]]
