@@ -403,6 +403,10 @@ if [ -n "${usage_build:-}" ]; then set -- "$@" --build "$usage_build"; fi
 cargo xtask desktop sign-notarize "$@"
 '''
 
+[tasks.desktop-release-tools]
+description = "Install the locked tool closure required by desktop release jobs"
+run = "mise install --locked rust cargo:boltffi_cli xcodegen"
+
 [tasks.desktop-release-state]
 description = "Print independent Desktop release/cask state KEY=value lines"
 usage = '''

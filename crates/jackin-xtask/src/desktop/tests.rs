@@ -223,6 +223,20 @@ fn cadence_tasks_define_the_canonical_graph() {
 #[test]
 fn release_workflow_invokes_canonical_mise_tasks() {
     let release = repo_text(".github/workflows/release.yml");
+    let mise = repo_text("mise.toml");
+    let release_tools = task_block(&mise, "desktop-release-tools");
+    assert!(
+        release_tools.contains("mise install --locked rust cargo:boltffi_cli xcodegen"),
+        "release tool task must explicitly install its locked closure"
+    );
+    assert_subsequence(
+        &release,
+        &[
+            "mise run desktop-release-tools",
+            "mise run desktop-release-env",
+        ],
+        "release tool setup",
+    );
     for task in [
         "mise run desktop-build",
         "mise run desktop-verify",
