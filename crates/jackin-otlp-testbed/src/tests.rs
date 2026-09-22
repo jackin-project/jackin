@@ -110,6 +110,11 @@ async fn waits_for_export_ack_before_reporting_a_trace() {
     });
 
     assert!(
+        testbed
+            .wait_for_trace_request(std::time::Duration::from_secs(1))
+            .await
+    );
+    assert!(
         !testbed
             .wait_for_span_count("delayed.trace", 1, std::time::Duration::from_millis(20))
             .await
@@ -121,6 +126,47 @@ async fn waits_for_export_ack_before_reporting_a_trace() {
     );
     export.await.expect("export task");
     testbed.shutdown().await.expect("join testbed receiver");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn zero_span_wait_is_immediate() {
+    let testbed = Testbed::start().expect("start testbed");
+    assert!(
+        testbed
+            .wait_for_span_count("unused.trace", 0, std::time::Duration::ZERO)
+            .await
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn shutdown_forces_an_open_delayed_client_after_grace_timeout() {
+    let mut testbed = Testbed::start().expect("start testbed");
+    testbed.set_behavior(Behavior::Delay(std::time::Duration::from_secs(30)));
+    let mut traces = opentelemetry_proto::tonic::collector::trace::v1::
+        trace_service_client::TraceServiceClient::connect(testbed.endpoint())
+        .await
+        .expect("connect trace client");
+    let export =
+        tokio::spawn(async move { traces.export(ExportTraceServiceRequest::default()).await });
+
+    assert!(
+        testbed
+            .wait_for_trace_request(std::time::Duration::from_secs(1))
+            .await
+    );
+    let shutdown = tokio::time::timeout(std::time::Duration::from_secs(2), testbed.shutdown())
+        .await
+        .expect("forced shutdown must be bounded");
+    assert!(matches!(shutdown, Err(ShutdownError::Timeout)));
+
+    let export = tokio::time::timeout(std::time::Duration::from_secs(1), export)
+        .await
+        .expect("forced shutdown must release the delayed client")
+        .expect("delayed export task");
+    assert!(
+        export.is_err(),
+        "forced shutdown must cancel the delayed export"
+    );
 }
 
 #[test]

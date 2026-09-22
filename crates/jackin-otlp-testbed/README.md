@@ -23,7 +23,7 @@ T3 test infrastructure. Product crates must never depend on it outside dev/test 
 
 ## Public API
 
-`Testbed::start`, `Testbed::shutdown`, endpoint and signal accessors, `Behavior`, ACK-aware wait helpers, and detector results for acceptance tests. Dropping a testbed aborts its receiver task as a cancellation-safe fallback.
+`Testbed::start`, `Testbed::shutdown`, endpoint and signal accessors, `Behavior`, ACK-aware wait helpers, and detector results for acceptance tests. `Testbed::shutdown` attempts graceful cleanup for one second, then aborts the receiver and returns `ShutdownError::Timeout`; dropping a testbed requests forced cleanup as a cancellation-safe fallback.
 
 ## How to verify
 

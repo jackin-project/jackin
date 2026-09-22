@@ -8,6 +8,7 @@
 
 use std::fmt;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use opentelemetry_proto::tonic::collector::logs::v1::{
@@ -54,8 +55,11 @@ struct State {
     logs: Mutex<Vec<ExportLogsServiceRequest>>,
     metrics: Mutex<Vec<ExportMetricsServiceRequest>>,
     behavior: Mutex<Behavior>,
+    received: tokio::sync::Notify,
     progress: tokio::sync::Notify,
     acknowledged: Mutex<Acknowledged>,
+    force_requested: AtomicBool,
+    force_shutdown: tokio::sync::Notify,
 }
 
 #[derive(Debug, Default)]
@@ -135,12 +139,28 @@ impl State {
         traces > 0 && acknowledged.traces == traces
     }
 
-    async fn apply(behavior: &Behavior) -> Result<(), Status> {
+    fn request_forced_shutdown(&self) {
+        self.force_requested.store(true, Ordering::Release);
+        self.force_shutdown.notify_waiters();
+    }
+
+    async fn apply(&self, behavior: &Behavior) -> Result<(), Status> {
+        if self.force_requested.load(Ordering::Acquire) {
+            return Err(Status::cancelled("OTLP testbed forced shutdown"));
+        }
         match behavior {
             Behavior::Reject(code) => Err(Status::new(*code, "scripted OTLP testbed response")),
             Behavior::Delay(duration) => {
-                tokio::time::sleep(*duration).await;
-                Ok(())
+                let forced = self.force_shutdown.notified();
+                tokio::pin!(forced);
+                forced.as_mut().enable();
+                if self.force_requested.load(Ordering::Acquire) {
+                    return Err(Status::cancelled("OTLP testbed forced shutdown"));
+                }
+                tokio::select! {
+                    () = tokio::time::sleep(*duration) => Ok(()),
+                    () = &mut forced => Err(Status::cancelled("OTLP testbed forced shutdown")),
+                }
             }
             Behavior::Ok | Behavior::PartialSuccess | Behavior::RequireHeader { .. } => Ok(()),
         }
@@ -179,7 +199,8 @@ impl TraceService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
-        State::apply(&behavior).await?;
+        self.0.received.notify_waiters();
+        self.0.apply(&behavior).await?;
         self.0.acknowledge(Signal::Traces);
         let partial_success =
             matches!(behavior, Behavior::PartialSuccess).then(|| ExportTracePartialSuccess {
@@ -205,7 +226,8 @@ impl LogsService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
-        State::apply(&behavior).await?;
+        self.0.received.notify_waiters();
+        self.0.apply(&behavior).await?;
         self.0.acknowledge(Signal::Logs);
         let partial_success =
             matches!(behavior, Behavior::PartialSuccess).then(|| ExportLogsPartialSuccess {
@@ -229,7 +251,8 @@ impl MetricsService for Services {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(request.into_inner());
-        State::apply(&behavior).await?;
+        self.0.received.notify_waiters();
+        self.0.apply(&behavior).await?;
         self.0.acknowledge(Signal::Metrics);
         let partial_success =
             matches!(behavior, Behavior::PartialSuccess).then(|| ExportMetricsPartialSuccess {
@@ -251,13 +274,15 @@ pub struct Testbed {
     receiver_task: Option<JoinHandle<Result<(), tonic::transport::Error>>>,
 }
 
-/// Failure while joining the receiver after requesting graceful shutdown.
+/// Failure while stopping the receiver after requesting graceful shutdown.
 #[derive(Debug)]
 pub enum ShutdownError {
     /// The gRPC server returned an error while shutting down.
     Server(tonic::transport::Error),
     /// The receiver task was cancelled or panicked before it could finish.
     Join(tokio::task::JoinError),
+    /// Graceful shutdown exceeded its bounded wait and the receiver was aborted.
+    Timeout,
 }
 
 impl fmt::Display for ShutdownError {
@@ -267,6 +292,10 @@ impl fmt::Display for ShutdownError {
                 write!(formatter, "OTLP testbed server shutdown failed: {error}")
             }
             Self::Join(error) => write!(formatter, "OTLP testbed receiver task failed: {error}"),
+            Self::Timeout => write!(
+                formatter,
+                "OTLP testbed graceful shutdown timed out; receiver task aborted"
+            ),
         }
     }
 }
@@ -276,9 +305,12 @@ impl std::error::Error for ShutdownError {
         match self {
             Self::Server(error) => Some(error),
             Self::Join(error) => Some(error),
+            Self::Timeout => None,
         }
     }
 }
+
+const RECEIVER_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl Testbed {
     /// Start all three OTLP services on a random localhost port.
@@ -594,16 +626,40 @@ impl Testbed {
             && shutdown.send(()).is_err()
         {}
         let result = if let Some(receiver_task) = self.receiver_task.as_mut() {
-            receiver_task.await
+            tokio::time::timeout(RECEIVER_SHUTDOWN_TIMEOUT, receiver_task).await
         } else {
-            Ok(Ok(()))
+            return Ok(());
         };
+
+        if result.is_err() {
+            self.state.request_forced_shutdown();
+            self.abort_receiver_task();
+            return Err(ShutdownError::Timeout);
+        }
         self.receiver_task.take();
         match result {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(ShutdownError::Server(error)),
-            Err(error) => Err(ShutdownError::Join(error)),
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(error))) => Err(ShutdownError::Server(error)),
+            Ok(Err(error)) => Err(ShutdownError::Join(error)),
+            Err(_) => unreachable!("timed-out receiver task handled above"),
         }
+    }
+
+    #[cfg(test)]
+    async fn wait_for_trace_request(&self, timeout: std::time::Duration) -> bool {
+        tokio::time::timeout(timeout, async {
+            loop {
+                let received = self.state.received.notified();
+                tokio::pin!(received);
+                received.as_mut().enable();
+                if !self.traces().is_empty() {
+                    return;
+                }
+                received.await;
+            }
+        })
+        .await
+        .is_ok()
     }
 
     /// Wait until at least one request for every signal has been acknowledged.
@@ -611,6 +667,8 @@ impl Testbed {
         tokio::time::timeout(timeout, async {
             loop {
                 let progress = self.state.progress.notified();
+                tokio::pin!(progress);
+                progress.as_mut().enable();
                 if self.state.all_signals_acknowledged() {
                     return;
                 }
@@ -632,9 +690,14 @@ impl Testbed {
         count: usize,
         timeout: std::time::Duration,
     ) -> bool {
+        if count == 0 {
+            return true;
+        }
         tokio::time::timeout(timeout, async {
             loop {
                 let progress = self.state.progress.notified();
+                tokio::pin!(progress);
+                progress.as_mut().enable();
                 if self.state.all_trace_requests_acknowledged()
                     && self.spans().iter().filter(|span| span.name == name).count() >= count
                 {
@@ -645,6 +708,12 @@ impl Testbed {
         })
         .await
         .is_ok()
+    }
+
+    fn abort_receiver_task(&mut self) {
+        if let Some(receiver_task) = self.receiver_task.take() {
+            receiver_task.abort();
+        }
     }
 }
 
@@ -827,12 +896,11 @@ fn visit_metric_points(
 
 impl Drop for Testbed {
     fn drop(&mut self) {
+        self.state.request_forced_shutdown();
         if let Some(shutdown) = self.shutdown.take()
             && shutdown.send(()).is_err()
         {}
-        if let Some(receiver_task) = self.receiver_task.take() {
-            receiver_task.abort();
-        }
+        self.abort_receiver_task();
     }
 }
 
