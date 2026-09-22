@@ -29,6 +29,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::release_verify::expected_package_file_names;
+
 #[cfg(test)]
 mod tests;
 
@@ -561,7 +563,11 @@ fn classify_release(
         return Ok(LegacyReleaseState::Absent);
     };
     let names = release_asset_names(release)?;
-    if names.contains("release-manifest.json") && names.contains("identity.json") {
+    if names == expected_package_file_names()
+        && release
+            .snapshot(repository, tag_target.unwrap_or_default().to_owned())
+            .is_ok()
+    {
         return Ok(LegacyReleaseState::CurrentContract);
     }
     let Some(tag_target) = tag_target else {
@@ -778,7 +784,6 @@ fn github_repository_from_remote(remote: &str) -> Option<String> {
     let remote = remote.trim().trim_end_matches('/');
     let path = remote
         .strip_prefix("https://github.com/")
-        .or_else(|| remote.strip_prefix("http://github.com/"))
         .or_else(|| remote.strip_prefix("ssh://git@github.com/"))
         .or_else(|| remote.strip_prefix("git@github.com:"))?;
     let path = path.strip_suffix(".git").unwrap_or(path);
@@ -1540,12 +1545,13 @@ fn extract_release_mise(source: &str) -> Vec<String> {
             section = "";
             continue;
         }
-        let key = line
+        let raw_key = line
             .split('=')
             .next()
             .unwrap_or("")
             .trim()
             .trim_matches('"');
+        let key = raw_key.strip_prefix("cargo:").unwrap_or(raw_key);
         if keep_release_mise_key(section, key) {
             lines.push(format!("{section}.{key}={line}"));
         }

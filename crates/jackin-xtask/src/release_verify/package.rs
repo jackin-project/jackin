@@ -262,7 +262,7 @@ fn verify_exact_package_files(package_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn expected_file_names() -> BTreeSet<String> {
+pub(crate) fn expected_file_names() -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     names.insert("release-manifest.json".to_owned());
     names.insert("identity.json".to_owned());
@@ -329,6 +329,23 @@ fn verify_source_checkout(source_checkout: &Path, manifest: &PackageManifest) ->
         actual_commit == manifest.source_commit,
         "package manifest source_commit does not match source checkout HEAD"
     );
+    let status = git_output(
+        source_checkout,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    )?;
+    ensure!(
+        status.is_empty(),
+        "source checkout is not clean; refusing to verify a package from mutable source"
+    );
+    let remote_main = git_output(
+        source_checkout,
+        &["rev-parse", "refs/remotes/origin/main^{commit}"],
+    )?;
+    validate_commit(&remote_main, "origin/main")?;
+    ensure!(
+        remote_main == manifest.source_commit,
+        "package manifest source_commit does not match origin/main"
+    );
     for name in ["EXPECTED_SOURCE_COMMIT", "VELNOR_SOURCE_COMMIT"] {
         if let Some(expected) = env::var_os(name) {
             let expected = expected
@@ -362,7 +379,6 @@ fn git_output(source_checkout: &Path, args: &[&str]) -> Result<String> {
 fn github_repository(remote: &str) -> Result<String> {
     let repository = remote
         .strip_prefix("https://github.com/")
-        .or_else(|| remote.strip_prefix("http://github.com/"))
         .or_else(|| remote.strip_prefix("ssh://git@github.com/"))
         .or_else(|| remote.strip_prefix("git@github.com:"))
         .context("source checkout origin is not a GitHub repository URL")?;

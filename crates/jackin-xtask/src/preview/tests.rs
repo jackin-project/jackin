@@ -43,6 +43,13 @@ fn mise_release_tool_pin_change_requires_preview() {
 }
 
 #[test]
+fn mise_release_tool_aliases_include_cargo_prefixed_tools() {
+    let base = "[tools]\n\"cargo:cargo-zigbuild\" = \"0.22.0\"\n\"cargo:sccache\" = \"0.15.0\"\n";
+    let head = "[tools]\n\"cargo:cargo-zigbuild\" = \"0.23.0\"\n\"cargo:sccache\" = \"0.16.0\"\n";
+    assert!(mise_release_tools_changed(base, head));
+}
+
+#[test]
 fn unrelated_mise_tool_change_does_not_require_preview() {
     let base = "[tools]\nbun = \"1.3.14\"\n";
     let head = "[tools]\nbun = \"1.3.15\"\n";
@@ -236,6 +243,19 @@ fn source_remote_parser_accepts_only_expected_github_shapes() {
         github_repository_from_remote("https://evil.example/jackin-project/jackin"),
         None
     );
+    assert_eq!(
+        github_repository_from_remote("http://github.com/jackin-project/jackin.git"),
+        None
+    );
+}
+
+#[test]
+fn current_contract_requires_the_complete_package_asset_set() {
+    let expected = expected_package_file_names();
+    assert_eq!(expected.len(), 29);
+    let mut incomplete = expected.clone();
+    incomplete.remove("identity.json");
+    assert_ne!(incomplete, expected);
 }
 
 #[test]
