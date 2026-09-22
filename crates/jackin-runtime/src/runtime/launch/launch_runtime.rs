@@ -313,6 +313,21 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     }))
 }
 
+/// Keep the launch-owned auth leases alive until sibling prewarm has finished.
+/// Dropping a Tokio join handle detaches its task; doing that on a detached
+/// launch would let the `RoleState` (and its mount leases) drop while the task
+/// can still replace role-state files used by the live container.
+async fn await_sibling_auth_prewarm(
+    prewarm: Option<tokio::task::JoinHandle<()>>,
+) -> anyhow::Result<()> {
+    if let Some(prewarm) = prewarm {
+        prewarm
+            .await
+            .context("sibling auth prewarm task panicked")?;
+    }
+    Ok(())
+}
+
 /// Whether launch returned from a foreground session or handed off a live daemon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LaunchOutcome {
@@ -1287,8 +1302,12 @@ pub(crate) async fn launch_role_runtime(
         *agent,
         sibling_prewarm.selected_image_reused,
     );
-    let _sibling_auth_prewarm =
+    let sibling_auth_prewarm =
         spawn_sibling_auth_prewarm(paths, container_name, sibling_auth_prewarm, *agent);
+    // Join before either detached or foreground launch returns. The returned
+    // `RoleState` owns the auth mount leases that protect these paths; a
+    // dropped handle would let sibling prewarm outlive those leases.
+    await_sibling_auth_prewarm(sibling_auth_prewarm).await?;
     if *non_interactive {
         // The container passed the premature-exit check. A programmatic caller
         // reconnects later with `jackin hardline`, whose reconnect path waits
