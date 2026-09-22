@@ -13,6 +13,7 @@ mod ci_audit;
 mod ci_build_times;
 mod ci_cargo_audit;
 mod ci_doc_examples;
+mod ci_evidence;
 mod ci_fuzz;
 mod ci_junit;
 mod ci_result;
@@ -84,6 +85,9 @@ enum Command {
     /// Require documentation examples to have nextest-discoverable regression coverage.
     #[command(name = "ci-doc-examples")]
     CiDocExamples(ci_doc_examples::CiDocExamplesArgs),
+    /// Collect and roll up durable first-attempt CI evidence.
+    #[command(name = "ci-evidence", subcommand)]
+    CiEvidence(ci_evidence::CiEvidenceCommand),
     /// Run every bounded fuzz target owned by one crate.
     #[command(name = "ci-fuzz")]
     CiFuzz(ci_fuzz::CiFuzzArgs),
@@ -327,6 +331,7 @@ fn main() -> ExitCode {
         Command::CiBuildTimes(args) => ci_build_times::run(args),
         Command::CiCargoAudit(args) => ci_cargo_audit::run(args),
         Command::CiDocExamples(args) => ci_doc_examples::run(args),
+        Command::CiEvidence(command) => ci_evidence::run(command),
         Command::CiFuzz(args) => ci_fuzz::run(args),
         Command::CiJunit(args) => ci_junit::run(args),
         Command::CiResult(command) => ci_result::run(command),
