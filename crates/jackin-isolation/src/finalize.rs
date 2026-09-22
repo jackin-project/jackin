@@ -288,6 +288,10 @@ pub async fn finalize_foreground_session(
 /// Finalize a foreground session using the already inspected immutable
 /// container identity for the status query that decides whether cleanup is
 /// safe.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The by-id entry point mirrors finalize_foreground_session while adding the already inspected container handle; a shared context struct is a separate API refactor."
+)]
 pub async fn finalize_foreground_session_by_id(
     container_name: &str,
     container_state_dir: &Path,
@@ -313,6 +317,10 @@ pub async fn finalize_foreground_session_by_id(
     .await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The inner helper keeps the legacy and by-id finalization entry points behaviorally aligned; bundling these cleanup inputs is a separate API refactor."
+)]
 async fn finalize_foreground_session_inner(
     container_name: &str,
     container_state_dir: &Path,
