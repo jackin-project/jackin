@@ -43,6 +43,8 @@ jobs:
         with:
           install: false
 
+      - name: Run desktop-release-tools
+        run: mise run desktop-release-tools
       - name: Run desktop-release-env
         run: mise run desktop-release-env
       - name: Run desktop-build
@@ -83,6 +85,8 @@ jobs:
         with:
           install: false
 
+      - name: Run desktop-release-tools
+        run: mise run desktop-release-tools
       - name: Run desktop-release-env
         run: mise run desktop-release-env
       - name: Run desktop-build

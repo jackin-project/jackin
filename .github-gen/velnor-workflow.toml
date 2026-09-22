@@ -222,7 +222,7 @@ tag_pattern = "v[0-9]*"
 
 [[release.job]]
 id = "build"
-tasks = ["desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state"]
+tasks = ["desktop-release-tools", "desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state"]
 runner = "macos"
 modes = ["validate"]
 timeout_minutes = 90
@@ -239,7 +239,7 @@ MISE_NOT_FOUND_AUTO_INSTALL = "false"
 [[release.job]]
 id = "sign"
 name = "Sign release"
-tasks = ["desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state", "desktop-sign-notarize"]
+tasks = ["desktop-release-tools", "desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state", "desktop-sign-notarize"]
 runner = "macos"
 modes = ["publish"]
 timeout_minutes = 90
