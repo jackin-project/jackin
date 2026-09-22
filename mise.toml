@@ -127,6 +127,22 @@ description = "Collect first-attempt CI/Main and Desktop evidence and write the 
 run = '''
 set -euo pipefail
 mkdir -p target/ci-evidence
+if [ "${GITHUB_ACTIONS:-false}" = "true" ] && [ ! -s target/ci-evidence/attempts.json ]; then
+  previous_run="$(gh run list \
+    --repo "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}" \
+    --workflow ci-evidence.yml \
+    --status completed \
+    --limit 20 \
+    --json databaseId \
+    --jq '.[0].databaseId // empty')"
+  if [ -n "${previous_run}" ] && [ "${previous_run}" != "${GITHUB_RUN_ID:-}" ]; then
+    gh run download "${previous_run}" \
+      --repo "${GITHUB_REPOSITORY}" \
+      --name ci-evidence \
+      --dir target/ci-evidence
+    test -s target/ci-evidence/attempts.json
+  fi
+fi
 cargo xtask ci-evidence collect \
   --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}" \
   --output target/ci-evidence/attempts.json

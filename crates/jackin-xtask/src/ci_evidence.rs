@@ -24,7 +24,7 @@ use crate::{cmd, docs};
 #[cfg(test)]
 mod tests;
 
-const SCHEMA: u32 = 3;
+const SCHEMA: u32 = 4;
 const DEFAULT_WINDOW_DAYS: i64 = 31;
 const DEFAULT_CI_WORKFLOW: &str = "ci-main.yml";
 const DEFAULT_DESKTOP_WORKFLOW: &str = "desktop-merge.yml";
@@ -88,7 +88,7 @@ impl OutcomeClass {
     }
 
     const fn is_failure(self) -> bool {
-        !matches!(self, Self::Success | Self::Inapplicable)
+        !matches!(self, Self::Success)
     }
 }
 
@@ -117,14 +117,44 @@ pub(crate) struct ExpectedCommit {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DenominatorSource {
-    PushEvent,
-    ObservedRunFallback,
+    FirstParentHistory,
+    Fixture,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ObligationProvenance {
+    FirstParentHistory,
+    Fixture,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct DenominatorProof {
+    pub(crate) source: DenominatorSource,
+    pub(crate) branch: String,
+    pub(crate) window: TimeWindow,
+    pub(crate) fetch_succeeded: bool,
+    pub(crate) commit_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct HistoryCommitObservation {
+    pub(crate) sha: String,
+    pub(crate) base_sha: Option<String>,
+    pub(crate) tree_sha: Option<String>,
+    pub(crate) committed_at: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum DataQualityReason {
+    ConflictingTerminalObservation,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct ExpectedObligation {
     pub(crate) commit: ExpectedCommit,
     pub(crate) cohort: Cohort,
+    pub(crate) provenance: ObligationProvenance,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -136,6 +166,13 @@ pub(crate) struct JobEvidence {
     pub(crate) started_at: Option<String>,
     pub(crate) completed_at: Option<String>,
     pub(crate) evidence_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct RawAttemptObservation {
+    pub(crate) status: String,
+    pub(crate) conclusion: Option<String>,
+    pub(crate) jobs: Vec<JobEvidence>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -163,7 +200,8 @@ pub(crate) struct AttemptEvidence {
     pub(crate) observed_work: Vec<String>,
     pub(crate) jobs: Vec<JobEvidence>,
     pub(crate) classification: OutcomeClass,
-    pub(crate) data_quality_reason: Option<String>,
+    pub(crate) data_quality_reason: Option<DataQualityReason>,
+    pub(crate) conflicting_observations: Vec<RawAttemptObservation>,
     pub(crate) runtime: RuntimeIdentity,
     pub(crate) evidence_urls: Vec<String>,
     /// Retained when a later collection turns a nonterminal row terminal.
@@ -180,14 +218,14 @@ pub(crate) struct UnclassifiedRun {
     pub(crate) head_sha: String,
     pub(crate) created_at: String,
     pub(crate) evidence_url: Option<String>,
+    pub(crate) reason: UnclassifiedRunReason,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct EventSourceGap {
-    pub(crate) head_sha: String,
-    pub(crate) observed_run_ids: Vec<u64>,
-    pub(crate) observed_cohorts: Vec<Cohort>,
-    pub(crate) reason: String,
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum UnclassifiedRunReason {
+    UnknownWorkflowId,
+    OutsideDenominator,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -197,10 +235,11 @@ pub(crate) struct EvidenceFile {
     pub(crate) window: TimeWindow,
     pub(crate) generated_at: String,
     pub(crate) runtime: RuntimeIdentity,
+    pub(crate) denominator: DenominatorProof,
+    pub(crate) history: Vec<HistoryCommitObservation>,
     pub(crate) expected: Vec<ExpectedObligation>,
     pub(crate) attempts: Vec<AttemptEvidence>,
     pub(crate) unclassified_runs: Vec<UnclassifiedRun>,
-    pub(crate) event_source_gaps: Vec<EventSourceGap>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -237,7 +276,7 @@ pub(crate) struct RollupFile {
     pub(crate) total_first_attempt_successes: usize,
     pub(crate) total_first_attempt_failures: usize,
     pub(crate) unclassified_runs: usize,
-    pub(crate) event_source_gaps: Vec<EventSourceGap>,
+    pub(crate) denominator: DenominatorProof,
     pub(crate) green_claim_qualified: bool,
     pub(crate) six_nines_claimed: bool,
 }
@@ -262,8 +301,8 @@ pub(crate) struct CollectArgs {
     branch: String,
     #[arg(long, default_value = "target/ci-evidence/attempts.json")]
     output: PathBuf,
-    /// Optional expected-obligation fixture. Without it, main push-event heads
-    /// are fetched from GitHub and expanded into CI/Main and Desktop rows.
+    /// Optional expected-obligation fixture. Without it, first-parent main
+    /// commits are derived from the checkout after a shallow-since fetch.
     #[arg(long)]
     expected: Option<PathBuf>,
     #[arg(long, value_name = "PATH", action = clap::ArgAction::Append)]
@@ -320,32 +359,32 @@ fn collect(args: CollectArgs) -> Result<()> {
     let desktop_workflows = names_or_default(args.desktop_workflow, DEFAULT_DESKTOP_WORKFLOW);
     let (ci_workflow_ids, desktop_workflow_ids) =
         list_workflow_ids(&repository, &ci_workflows, &desktop_workflows)?;
+    let denominator = match args.expected {
+        Some(path) => denominator_from_fixture(read_expected(&path)?, &args.branch, &window),
+        None => expected_from_first_parent(&root, &args.branch, &window)?,
+    };
+    let expected = denominator.expected.clone();
     let runs = list_runs(&repository, &args.branch, &window)?;
-    let mut classified_runs = Vec::new();
     let mut attempts = Vec::new();
     let mut unclassified_runs = Vec::new();
     for run in runs {
-        let Some(cohort) = classify_workflow(
-            &run,
-            &ci_workflow_ids,
-            &desktop_workflow_ids,
-            &ci_workflows,
-            &desktop_workflows,
-        ) else {
-            unclassified_runs.push(unclassified_run(&run));
+        let Some(cohort) = classify_workflow(&run, &ci_workflow_ids, &desktop_workflow_ids) else {
+            unclassified_runs.push(unclassified_run(
+                &run,
+                UnclassifiedRunReason::UnknownWorkflowId,
+            ));
             continue;
         };
-        classified_runs.push((run, cohort));
-    }
-    let denominator = match args.expected {
-        Some(path) => ExpectedDenominator {
-            expected: read_expected(&path)?,
-            event_source_gaps: Vec::new(),
-        },
-        None => expected_from_push_events(&repository, &args.branch, &window, &classified_runs)?,
-    };
-    let expected = denominator.expected;
-    for (run, cohort) in classified_runs {
+        if !expected
+            .iter()
+            .any(|obligation| obligation.commit.sha == run.head_sha && obligation.cohort == cohort)
+        {
+            unclassified_runs.push(unclassified_run(
+                &run,
+                UnclassifiedRunReason::OutsideDenominator,
+            ));
+            continue;
+        }
         let run_attempts = list_attempts(&repository, &run)?;
         if run_attempts.is_empty() {
             bail!(
@@ -354,7 +393,7 @@ fn collect(args: CollectArgs) -> Result<()> {
             );
         }
         for attempt in run_attempts {
-            let jobs = list_jobs(&repository, run.id, attempt.run_attempt.max(1))?;
+            let jobs = list_jobs(&repository, run.id, attempt.run_attempt)?;
             attempts.push(normalize_attempt(
                 &run,
                 &attempt,
@@ -372,7 +411,8 @@ fn collect(args: CollectArgs) -> Result<()> {
             expected,
             attempts,
             unclassified_runs,
-            event_source_gaps: denominator.event_source_gaps,
+            denominator: denominator.denominator,
+            history: denominator.history,
             repository,
             window,
             runtime,
@@ -390,7 +430,7 @@ fn rollup(args: RollupArgs) -> Result<()> {
     write_json(&args.json, &summary)?;
     write_markdown(&args.markdown, &summary, &evidence)?;
     print_rollup_summary(&summary)?;
-    Ok(())
+    require_qualified(&summary)
 }
 
 fn now_rfc3339() -> String {
@@ -491,6 +531,50 @@ fn read_expected(path: &Path) -> Result<Vec<ExpectedObligation>> {
     Ok(obligations)
 }
 
+fn denominator_from_fixture(
+    expected: Vec<ExpectedObligation>,
+    branch: &str,
+    window: &TimeWindow,
+) -> ExpectedDenominator {
+    let expected = expected
+        .into_iter()
+        .map(|obligation| ExpectedObligation {
+            commit: ExpectedCommit {
+                source: DenominatorSource::Fixture,
+                ..obligation.commit
+            },
+            cohort: obligation.cohort,
+            provenance: ObligationProvenance::Fixture,
+        })
+        .collect::<Vec<_>>();
+    let mut history = BTreeMap::<String, HistoryCommitObservation>::new();
+    for obligation in &expected {
+        history
+            .entry(obligation.commit.sha.clone())
+            .or_insert_with(|| HistoryCommitObservation {
+                sha: obligation.commit.sha.clone(),
+                base_sha: obligation.commit.base_sha.clone(),
+                tree_sha: obligation.commit.tree_sha.clone(),
+                committed_at: obligation
+                    .commit
+                    .committed_at
+                    .clone()
+                    .unwrap_or_else(now_rfc3339),
+            });
+    }
+    ExpectedDenominator {
+        expected,
+        denominator: DenominatorProof {
+            source: DenominatorSource::Fixture,
+            branch: branch.to_owned(),
+            window: window.clone(),
+            fetch_succeeded: false,
+            commit_count: history.len(),
+        },
+        history: history.into_values().collect(),
+    }
+}
+
 fn validate_expected(expected: &[ExpectedObligation]) -> Result<()> {
     let mut seen = BTreeSet::new();
     for obligation in expected {
@@ -504,152 +588,153 @@ fn validate_expected(expected: &[ExpectedObligation]) -> Result<()> {
                 obligation.cohort.label()
             );
         }
+        let expected_source = match obligation.provenance {
+            ObligationProvenance::FirstParentHistory => DenominatorSource::FirstParentHistory,
+            ObligationProvenance::Fixture => DenominatorSource::Fixture,
+        };
+        if obligation.commit.source != expected_source {
+            bail!(
+                "{} / {} has inconsistent denominator and obligation provenance",
+                obligation.commit.sha,
+                obligation.cohort.label()
+            );
+        }
     }
     Ok(())
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct ObservedHead {
-    run_ids: BTreeSet<u64>,
-    cohorts: BTreeSet<Cohort>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ExpectedDenominator {
     expected: Vec<ExpectedObligation>,
-    event_source_gaps: Vec<EventSourceGap>,
+    denominator: DenominatorProof,
+    history: Vec<HistoryCommitObservation>,
 }
 
-fn expected_from_push_events(
-    repository: &str,
+fn expected_from_first_parent(
+    root: &Path,
     branch: &str,
     window: &TimeWindow,
-    observed_runs: &[(ApiRun, Cohort)],
 ) -> Result<ExpectedDenominator> {
-    // A push event's head is the exact tree for which GitHub creates the
-    // post-merge workflow. Git history alone cannot prove this mapping when a
-    // single push contains multiple commits, so the event feed is the
-    // denominator source. Refuse an API response truncated before the window.
-    let pages = api_pages(&format!("repos/{repository}/events?per_page=100"))?;
-    let events: Vec<ApiEvent> = decode_pages(&pages, "events")?;
-    let since = parse_timestamp(&window.since)?;
-    let until = parse_timestamp(&window.until)?;
-    let oldest_event = events
-        .iter()
-        .filter_map(|event| parse_timestamp(&event.created_at).ok())
-        .min();
-    if events.len() >= 300 && oldest_event.is_some_and(|created| created > since) {
-        bail!(
-            "cannot derive expected obligations: GitHub event history is truncated before the evidence window"
-        );
+    // A shallow checkout is not an expected-work source. Extend it by the
+    // requested window, then enumerate only the default branch's first-parent
+    // history. The fetch result is part of the proof retained in the artifact.
+    let fetch_succeeded = cmd::run(Command::new("git").current_dir(root).args([
+        "fetch",
+        "--no-tags",
+        "--shallow-since",
+        &window.since,
+        "origin",
+        branch,
+    ]))
+    .is_ok();
+    if !fetch_succeeded {
+        let shallow = cmd::output_string(
+            Command::new("git")
+                .current_dir(root)
+                .args(["rev-parse", "--is-shallow-repository"]),
+        )
+        .map_or(true, |value| value.trim() == "true");
+        if shallow {
+            bail!(
+                "cannot derive expected main obligations: history fetch failed for shallow checkout"
+            );
+        }
     }
-    let branch_ref = format!("refs/heads/{branch}");
-    let mut commits = BTreeMap::<String, ExpectedCommit>::new();
-    for event in events {
-        if event.event_type != "PushEvent"
-            || event.payload.ref_name.as_deref() != Some(branch_ref.as_str())
-        {
+    let remote = format!("refs/remotes/origin/{branch}");
+    let output = cmd::output(Command::new("git").current_dir(root).args([
+        "log",
+        "--first-parent",
+        "--since",
+        &window.since,
+        "--until",
+        &window.until,
+        "--format=%H%x00%P%x00%cI",
+        &remote,
+    ]))?;
+    let text = String::from_utf8(output).context("git log returned non-UTF-8")?;
+    let mut history = Vec::new();
+    for row in text.lines() {
+        let mut fields = row.split('\0');
+        let sha = fields.next().unwrap_or_default().to_owned();
+        let parents = fields.next().unwrap_or_default();
+        let committed_at = fields.next().unwrap_or_default().to_owned();
+        if sha.is_empty() {
             continue;
         }
-        let created_at = parse_timestamp(&event.created_at)?;
-        if created_at < since || created_at > until {
-            continue;
-        }
-        let Some(head_sha) = event.payload.head else {
-            bail!("main push event {} has no head SHA", event.id);
-        };
-        if head_sha.is_empty() {
-            bail!("main push event {} has an empty head SHA", event.id);
-        }
-        let base_sha = event
-            .payload
-            .before
-            .filter(|sha| !sha.is_empty() && !sha.chars().all(|character| character == '0'));
-        commits.entry(head_sha.clone()).or_insert(ExpectedCommit {
-            sha: head_sha,
-            base_sha,
-            tree_sha: None,
-            committed_at: Some(event.created_at),
-            source: DenominatorSource::PushEvent,
+        let tree_sha = cmd::output_string(
+            Command::new("git")
+                .current_dir(root)
+                .args(["rev-parse", &format!("{sha}^{{tree}}")]),
+        )
+        .ok()
+        .map(|value| value.trim().to_owned());
+        history.push(HistoryCommitObservation {
+            sha,
+            base_sha: parents.split_whitespace().next().map(str::to_owned),
+            tree_sha,
+            committed_at,
         });
     }
-    let mut observed_heads = BTreeMap::<String, ObservedHead>::new();
-    for (run, cohort) in observed_runs {
-        let observed = observed_heads.entry(run.head_sha.clone()).or_default();
-        observed.run_ids.insert(run.id);
-        observed.cohorts.insert(*cohort);
-    }
-    let (commits, event_source_gaps) = merge_observed_heads(commits, observed_heads);
-    let mut expected = Vec::with_capacity(commits.len() * Cohort::ALL.len());
-    for commit in commits.into_values() {
+    let denominator = DenominatorProof {
+        source: DenominatorSource::FirstParentHistory,
+        branch: branch.to_owned(),
+        window: window.clone(),
+        fetch_succeeded,
+        commit_count: history.len(),
+    };
+    let expected = expected_from_history(&history, DenominatorSource::FirstParentHistory)?;
+    Ok(ExpectedDenominator {
+        expected,
+        denominator,
+        history,
+    })
+}
+
+fn expected_from_history(
+    history: &[HistoryCommitObservation],
+    source: DenominatorSource,
+) -> Result<Vec<ExpectedObligation>> {
+    let mut seen = BTreeSet::new();
+    let mut expected = Vec::with_capacity(history.len() * Cohort::ALL.len());
+    for history_commit in history {
+        if history_commit.sha.is_empty() || history_commit.committed_at.is_empty() {
+            bail!("history commit observation has incomplete identity");
+        }
+        if !seen.insert(history_commit.sha.clone()) {
+            bail!(
+                "duplicate first-parent history commit {}",
+                history_commit.sha
+            );
+        }
+        let commit = ExpectedCommit {
+            sha: history_commit.sha.clone(),
+            base_sha: history_commit.base_sha.clone(),
+            tree_sha: history_commit.tree_sha.clone(),
+            committed_at: Some(history_commit.committed_at.clone()),
+            source,
+        };
         for cohort in Cohort::ALL {
             expected.push(ExpectedObligation {
                 commit: commit.clone(),
                 cohort,
+                provenance: match source {
+                    DenominatorSource::FirstParentHistory => {
+                        ObligationProvenance::FirstParentHistory
+                    }
+                    DenominatorSource::Fixture => ObligationProvenance::Fixture,
+                },
             });
         }
     }
     validate_expected(&expected)?;
-    Ok(ExpectedDenominator {
-        expected,
-        event_source_gaps,
-    })
-}
-
-fn merge_observed_heads(
-    mut commits: BTreeMap<String, ExpectedCommit>,
-    observed_heads: BTreeMap<String, ObservedHead>,
-) -> (BTreeMap<String, ExpectedCommit>, Vec<EventSourceGap>) {
-    let mut event_source_gaps = Vec::new();
-    for (head_sha, observed) in observed_heads {
-        if commits.contains_key(&head_sha) {
-            continue;
-        }
-        commits.insert(
-            head_sha.clone(),
-            ExpectedCommit {
-                sha: head_sha.clone(),
-                base_sha: None,
-                tree_sha: None,
-                committed_at: None,
-                source: DenominatorSource::ObservedRunFallback,
-            },
-        );
-        event_source_gaps.push(EventSourceGap {
-            head_sha,
-            observed_run_ids: observed.run_ids.into_iter().collect(),
-            observed_cohorts: observed.cohorts.into_iter().collect(),
-            reason: "observed main-branch workflow run head was absent from the GitHub push-event feed; both cohort obligations were reconstructed from observed runs".to_owned(),
-        });
-    }
-    (commits, event_source_gaps)
+    Ok(expected)
 }
 
 #[derive(Clone, Debug, Deserialize)]
 struct ApiWorkflow {
     id: u64,
     #[serde(default)]
-    name: String,
-    #[serde(default)]
     path: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct ApiEvent {
-    id: String,
-    #[serde(rename = "type")]
-    event_type: String,
-    created_at: String,
-    #[serde(default)]
-    payload: ApiPushPayload,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-struct ApiPushPayload {
-    #[serde(rename = "ref")]
-    ref_name: Option<String>,
-    head: Option<String>,
-    before: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -683,8 +768,6 @@ struct ApiAttempt {
     created_at: String,
     #[serde(default)]
     run_started_at: Option<String>,
-    #[serde(default)]
-    updated_at: Option<String>,
     #[serde(default)]
     html_url: Option<String>,
 }
@@ -733,26 +816,12 @@ fn list_workflow_ids(
     let workflows: Vec<ApiWorkflow> = decode_pages(&pages, "workflows")?;
     let ci_ids = workflows
         .iter()
-        .filter(|workflow| {
-            matches_workflow_definition(
-                Some(&workflow.path),
-                Some(&workflow.name),
-                ci_workflows,
-                &["ci-main", "ci/main", "ci main"],
-            )
-        })
+        .filter(|workflow| workflow_path_matches(&workflow.path, ci_workflows))
         .map(|workflow| workflow.id)
         .collect::<BTreeSet<_>>();
     let desktop_ids = workflows
         .iter()
-        .filter(|workflow| {
-            matches_workflow_definition(
-                Some(&workflow.path),
-                Some(&workflow.name),
-                desktop_workflows,
-                &["desktop-merge", "desktop merge", "desktop cadence"],
-            )
-        })
+        .filter(|workflow| workflow_path_matches(&workflow.path, desktop_workflows))
         .map(|workflow| workflow.id)
         .collect::<BTreeSet<_>>();
     if ci_ids.is_empty() {
@@ -775,7 +844,7 @@ fn api_timestamp(value: &str) -> String {
 }
 
 fn list_attempts(repository: &str, run: &ApiRun) -> Result<Vec<ApiAttempt>> {
-    let latest = run.run_attempt.max(1);
+    let latest = checked_attempt_count(run.id, run.run_attempt)?;
     let mut attempts = Vec::with_capacity(latest as usize);
     for number in 1..=latest {
         let endpoint = format!(
@@ -796,6 +865,13 @@ fn list_attempts(repository: &str, run: &ApiRun) -> Result<Vec<ApiAttempt>> {
         attempts.push(attempt);
     }
     Ok(attempts)
+}
+
+fn checked_attempt_count(run_id: u64, run_attempt: u32) -> Result<u32> {
+    if run_attempt == 0 {
+        bail!("GitHub returned no run attempt number for run {run_id}");
+    }
+    Ok(run_attempt)
 }
 
 fn list_jobs(repository: &str, run_id: u64, attempt: u32) -> Result<Vec<ApiJob>> {
@@ -832,23 +908,15 @@ fn classify_workflow(
     run: &ApiRun,
     ci_workflow_ids: &BTreeSet<u64>,
     desktop_workflow_ids: &BTreeSet<u64>,
-    ci_workflows: &[String],
-    desktop_workflows: &[String],
 ) -> Option<Cohort> {
     if run
         .workflow_id
         .is_some_and(|id| ci_workflow_ids.contains(&id))
-        || matches_workflow(run, ci_workflows, &["ci-main", "ci/main", "ci main"])
     {
         Some(Cohort::CiMain)
     } else if run
         .workflow_id
         .is_some_and(|id| desktop_workflow_ids.contains(&id))
-        || matches_workflow(
-            run,
-            desktop_workflows,
-            &["desktop-merge", "desktop merge", "desktop cadence"],
-        )
     {
         Some(Cohort::Desktop)
     } else {
@@ -856,30 +924,12 @@ fn classify_workflow(
     }
 }
 
-fn matches_workflow(run: &ApiRun, configured: &[String], semantic_names: &[&str]) -> bool {
-    matches_workflow_definition(
-        run.path.as_deref(),
-        run.workflow_name.as_deref(),
-        configured,
-        semantic_names,
-    )
-}
-
-fn matches_workflow_definition(
-    path: Option<&str>,
-    name: Option<&str>,
-    configured: &[String],
-    semantic_names: &[&str],
-) -> bool {
-    let path = path.map(normalize_name);
-    let name = name.map(normalize_name);
-    configured.iter().any(|candidate| {
-        let candidate = normalize_name(candidate);
-        path.as_deref() == Some(candidate.as_str()) || name.as_deref() == Some(candidate.as_str())
-    }) || semantic_names.iter().any(|candidate| {
-        let candidate = normalize_name(candidate);
-        path.as_deref() == Some(candidate.as_str()) || name.as_deref() == Some(candidate.as_str())
-    })
+fn workflow_path_matches(path: &str, configured: &[String]) -> bool {
+    let path = normalize_name(path);
+    configured
+        .iter()
+        .map(|candidate| normalize_name(candidate))
+        .any(|candidate| path == candidate)
 }
 
 fn normalize_name(value: &str) -> String {
@@ -893,7 +943,7 @@ fn normalize_name(value: &str) -> String {
         .join("-")
 }
 
-fn unclassified_run(run: &ApiRun) -> UnclassifiedRun {
+fn unclassified_run(run: &ApiRun, reason: UnclassifiedRunReason) -> UnclassifiedRun {
     UnclassifiedRun {
         run_id: run.id,
         workflow_id: run.workflow_id,
@@ -903,6 +953,7 @@ fn unclassified_run(run: &ApiRun) -> UnclassifiedRun {
         head_sha: run.head_sha.clone(),
         created_at: run.created_at.clone(),
         evidence_url: run.html_url.clone(),
+        reason,
     }
 }
 
@@ -973,11 +1024,17 @@ fn normalize_attempt(
     evidence_urls.sort();
     evidence_urls.dedup();
     let created_at = attempt.created_at.clone();
-    let completed_at = attempt.updated_at.clone();
-    let duration_seconds = completed_at
+    let started_at = attempt.run_started_at.clone();
+    let completed_at = (is_terminal(status, conclusion)
+        && !jobs.is_empty()
+        && jobs.iter().all(|job| job.completed_at.is_some()))
+    .then(|| jobs.iter().filter_map(|job| job.completed_at.clone()).max())
+    .flatten();
+    let duration_seconds = started_at
         .as_deref()
-        .map(|completed| {
-            let started = parse_timestamp(&created_at)?;
+        .zip(completed_at.as_deref())
+        .map(|(started, completed)| {
+            let started = parse_timestamp(started)?;
             let ended = parse_timestamp(completed)?;
             let seconds = (ended - started).num_seconds();
             if seconds < 0 {
@@ -1005,7 +1062,7 @@ fn normalize_attempt(
         base_sha,
         tree_sha,
         created_at,
-        started_at: attempt.run_started_at.clone(),
+        started_at,
         completed_at,
         within_120_seconds: duration_seconds.map(|seconds| seconds <= 120),
         duration_seconds,
@@ -1016,6 +1073,7 @@ fn normalize_attempt(
         jobs,
         classification,
         data_quality_reason: None,
+        conflicting_observations: Vec::new(),
         runtime,
         evidence_urls,
         first_observed_at: now_rfc3339(),
@@ -1085,19 +1143,16 @@ fn read_evidence(
     runtime: RuntimeIdentity,
 ) -> Result<EvidenceFile> {
     if !path.is_file() {
-        return Ok(EvidenceFile {
-            schema: SCHEMA,
-            repository: repository.to_owned(),
-            window: window.clone(),
-            generated_at: now_rfc3339(),
-            runtime,
-            expected: Vec::new(),
-            attempts: Vec::new(),
-            unclassified_runs: Vec::new(),
-            event_source_gaps: Vec::new(),
-        });
+        return Ok(empty_evidence(repository, window, runtime));
     }
-    let existing: EvidenceFile = read_json(path)?;
+    let raw: serde_json::Value = read_json(path)?;
+    let stored_schema = raw.get("schema").and_then(serde_json::Value::as_u64);
+    if stored_schema != Some(u64::from(SCHEMA)) {
+        // Schema 4 is a hard migration boundary: discard stale ledgers before
+        // deserialization so old rows can never enter the hardened merge.
+        return Ok(empty_evidence(repository, window, runtime));
+    }
+    let existing: EvidenceFile = serde_json::from_value(raw).context("parsing CI evidence")?;
     validate_evidence(&existing)?;
     if existing.repository != repository {
         bail!("evidence repository differs from requested repository");
@@ -1105,11 +1160,33 @@ fn read_evidence(
     Ok(existing)
 }
 
+fn empty_evidence(repository: &str, window: &TimeWindow, runtime: RuntimeIdentity) -> EvidenceFile {
+    EvidenceFile {
+        schema: SCHEMA,
+        repository: repository.to_owned(),
+        window: window.clone(),
+        generated_at: now_rfc3339(),
+        runtime,
+        denominator: DenominatorProof {
+            source: DenominatorSource::Fixture,
+            branch: String::new(),
+            window: window.clone(),
+            fetch_succeeded: false,
+            commit_count: 0,
+        },
+        history: Vec::new(),
+        expected: Vec::new(),
+        attempts: Vec::new(),
+        unclassified_runs: Vec::new(),
+    }
+}
+
 struct EvidenceUpdate {
     expected: Vec<ExpectedObligation>,
     attempts: Vec<AttemptEvidence>,
     unclassified_runs: Vec<UnclassifiedRun>,
-    event_source_gaps: Vec<EventSourceGap>,
+    denominator: DenominatorProof,
+    history: Vec<HistoryCommitObservation>,
     repository: String,
     window: TimeWindow,
     runtime: RuntimeIdentity,
@@ -1119,20 +1196,21 @@ fn merge_evidence(mut existing: EvidenceFile, update: EvidenceUpdate) -> Result<
     let EvidenceUpdate {
         expected,
         attempts,
-        unclassified_runs,
-        event_source_gaps,
+        mut unclassified_runs,
+        denominator,
+        history,
         repository,
         window,
         runtime,
     } = update;
+    let derived_expected = expected_from_history(&history, denominator.source)?;
+    if expected != derived_expected {
+        bail!("expected obligations do not match raw first-parent history");
+    }
     validate_expected(&expected)?;
     let expected_keys = expected
         .iter()
         .map(|obligation| (obligation.commit.sha.clone(), obligation.cohort))
-        .collect::<BTreeSet<_>>();
-    let expected_heads = expected
-        .iter()
-        .map(|obligation| obligation.commit.sha.clone())
         .collect::<BTreeSet<_>>();
     let mut by_key = existing
         .attempts
@@ -1153,12 +1231,18 @@ fn merge_evidence(mut existing: EvidenceFile, update: EvidenceUpdate) -> Result<
             }
             if is_terminal(&previous.status, previous.conclusion.as_deref())
                 && is_terminal(&attempt.status, attempt.conclusion.as_deref())
-                && (previous.classification != attempt.classification
-                    || previous.conclusion != attempt.conclusion)
+                && raw_attempt_observation(previous) != raw_attempt_observation(&attempt)
             {
+                if previous.conflicting_observations.is_empty() {
+                    let previous_observation = raw_attempt_observation(previous);
+                    previous.conflicting_observations.push(previous_observation);
+                }
+                previous
+                    .conflicting_observations
+                    .push(raw_attempt_observation(&attempt));
                 previous.classification = OutcomeClass::DataQuality;
                 previous.data_quality_reason =
-                    Some("conflicting terminal observations for one run attempt".to_owned());
+                    Some(DataQualityReason::ConflictingTerminalObservation);
                 continue;
             }
             let first_observed_at = previous.first_observed_at.clone();
@@ -1179,69 +1263,27 @@ fn merge_evidence(mut existing: EvidenceFile, update: EvidenceUpdate) -> Result<
     existing.window = window;
     existing.generated_at = now_rfc3339();
     existing.runtime = runtime;
+    existing.denominator = denominator;
+    existing.history = history;
     existing.expected = expected;
     existing.attempts = attempts;
-    let mut gaps_by_head = existing
-        .event_source_gaps
-        .drain(..)
-        .map(|gap| (gap.head_sha.clone(), gap))
-        .collect::<BTreeMap<_, _>>();
-    for gap in event_source_gaps {
-        if let Some(previous) = gaps_by_head.get_mut(&gap.head_sha) {
-            previous.observed_run_ids.extend(gap.observed_run_ids);
-            previous.observed_run_ids.sort_unstable();
-            previous.observed_run_ids.dedup();
-            previous.observed_cohorts.extend(gap.observed_cohorts);
-            previous.observed_cohorts.sort_unstable();
-            previous.observed_cohorts.dedup();
-            previous.reason = gap.reason;
-        } else {
-            gaps_by_head.insert(gap.head_sha.clone(), gap);
-        }
-    }
-    gaps_by_head.retain(|head_sha, _| expected_heads.contains(head_sha));
-    existing.event_source_gaps = gaps_by_head.into_values().collect();
-    let mut by_run = existing
-        .unclassified_runs
-        .drain(..)
-        .map(|run| (run.run_id, run))
-        .collect::<BTreeMap<_, _>>();
-    for run in unclassified_runs {
-        by_run.insert(run.run_id, run);
-    }
-    by_run.retain(|_, run| {
-        parse_timestamp(&run.created_at).is_ok_and(|created| {
-            let since = parse_timestamp(&existing.window.since).ok();
-            let until = parse_timestamp(&existing.window.until).ok();
-            since.is_none_or(|since| created >= since) && until.is_none_or(|until| created <= until)
-        })
-    });
-    existing.unclassified_runs = by_run.into_values().collect();
-    rebind_attempt_sources(&mut existing);
+    unclassified_runs.sort_by_key(|run| (run.created_at.clone(), run.run_id));
+    unclassified_runs.dedup_by_key(|run| run.run_id);
+    existing.unclassified_runs = unclassified_runs;
     validate_evidence(&existing)?;
     Ok(existing)
 }
 
-fn rebind_attempt_sources(evidence: &mut EvidenceFile) {
-    let sources = evidence
-        .expected
-        .iter()
-        .map(|obligation| {
-            (
-                (obligation.commit.sha.as_str(), obligation.cohort),
-                obligation.commit.source,
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    for attempt in &mut evidence.attempts {
-        if let Some(source) = sources.get(&(attempt.head_sha.as_str(), attempt.cohort)) {
-            attempt.denominator_source = *source;
-        }
+fn raw_attempt_observation(attempt: &AttemptEvidence) -> RawAttemptObservation {
+    RawAttemptObservation {
+        status: attempt.status.clone(),
+        conclusion: attempt.conclusion.clone(),
+        jobs: attempt.jobs.clone(),
     }
 }
 
-fn is_terminal(status: &str, conclusion: Option<&str>) -> bool {
-    conclusion.is_some() || status.eq_ignore_ascii_case("completed")
+fn is_terminal(status: &str, _conclusion: Option<&str>) -> bool {
+    status.eq_ignore_ascii_case("completed")
 }
 
 #[expect(
@@ -1251,6 +1293,12 @@ fn is_terminal(status: &str, conclusion: Option<&str>) -> bool {
 fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
     if evidence.schema != SCHEMA {
         bail!("unsupported evidence schema {}", evidence.schema);
+    }
+    validate_window(&evidence.window)?;
+    validate_denominator(&evidence.denominator, &evidence.history, &evidence.window)?;
+    let derived_expected = expected_from_history(&evidence.history, evidence.denominator.source)?;
+    if evidence.expected != derived_expected {
+        bail!("expected obligations are not derived from raw first-parent history");
     }
     validate_expected(&evidence.expected)?;
     let expected = evidence
@@ -1268,57 +1316,6 @@ fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let mut gap_heads = BTreeSet::new();
-    for gap in &evidence.event_source_gaps {
-        if !gap_heads.insert(gap.head_sha.as_str()) {
-            bail!("duplicate event-source gap for {}", gap.head_sha);
-        }
-        if gap.head_sha.is_empty()
-            || gap.observed_run_ids.is_empty()
-            || gap.observed_cohorts.is_empty()
-            || gap.reason.trim().is_empty()
-        {
-            bail!(
-                "event-source gap for {} has incomplete provenance",
-                gap.head_sha
-            );
-        }
-        if !evidence
-            .expected
-            .iter()
-            .any(|obligation| obligation.commit.sha == gap.head_sha)
-        {
-            bail!(
-                "event-source gap {} is not bound to an expected head",
-                gap.head_sha
-            );
-        }
-        let mut cohorts = BTreeSet::new();
-        for cohort in &gap.observed_cohorts {
-            if !cohorts.insert(*cohort) {
-                bail!("event-source gap {} repeats a cohort", gap.head_sha);
-            }
-            if !expected.contains(&(gap.head_sha.as_str(), *cohort)) {
-                bail!(
-                    "event-source gap {} names an unexpected {} cohort",
-                    gap.head_sha,
-                    cohort.label()
-                );
-            }
-        }
-        // A later event-feed read may resolve a previously recorded gap;
-        // retaining that warning is valid historical provenance.
-    }
-    for obligation in &evidence.expected {
-        if obligation.commit.source == DenominatorSource::ObservedRunFallback
-            && !gap_heads.contains(obligation.commit.sha.as_str())
-        {
-            bail!(
-                "fallback denominator head {} has no event-source gap provenance",
-                obligation.commit.sha
-            );
-        }
-    }
     let mut keys = BTreeSet::new();
     for attempt in &evidence.attempts {
         if !keys.insert((attempt.run_id, attempt.attempt)) {
@@ -1379,27 +1376,48 @@ fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
             &attempt.jobs,
             &attempt.expected_work,
         );
-        if attempt.data_quality_reason.is_none() && attempt.classification != recomputed {
+        if let Some(reason) = attempt.data_quality_reason {
+            if reason != DataQualityReason::ConflictingTerminalObservation
+                || attempt.classification != OutcomeClass::DataQuality
+                || attempt.conflicting_observations.len() < 2
+            {
+                bail!(
+                    "attempt {} has an unproven data-quality conflict",
+                    attempt.run_id
+                );
+            }
+            let first = &attempt.conflicting_observations[0];
+            if !attempt
+                .conflicting_observations
+                .iter()
+                .skip(1)
+                .any(|observation| {
+                    observation.status != first.status
+                        || observation.conclusion != first.conclusion
+                        || observation.jobs != first.jobs
+                })
+            {
+                bail!(
+                    "attempt {} conflict marker has no distinct raw observations",
+                    attempt.run_id
+                );
+            }
+            if !attempt.conflicting_observations.iter().any(|observation| {
+                classify_outcome(
+                    &observation.status,
+                    observation.conclusion.as_deref(),
+                    &observation.jobs,
+                    &attempt.expected_work,
+                ) != recomputed
+            }) {
+                bail!(
+                    "attempt {} conflict marker does not change derived classification",
+                    attempt.run_id
+                );
+            }
+        } else if attempt.classification != recomputed {
             bail!(
                 "attempt {} classification does not match its raw status, conclusion, and jobs",
-                attempt.run_id
-            );
-        }
-        if attempt
-            .data_quality_reason
-            .as_deref()
-            .is_some_and(str::is_empty)
-        {
-            bail!(
-                "attempt {} has an empty data-quality reason",
-                attempt.run_id
-            );
-        }
-        if attempt.data_quality_reason.is_some()
-            && attempt.classification != OutcomeClass::DataQuality
-        {
-            bail!(
-                "attempt {} has a reason without a data-quality classification",
                 attempt.run_id
             );
         }
@@ -1416,6 +1434,16 @@ fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
                 attempt.run_id
             );
         }
+        if !is_terminal(&attempt.status, attempt.conclusion.as_deref())
+            && (attempt.completed_at.is_some()
+                || attempt.duration_seconds.is_some()
+                || attempt.within_120_seconds.is_some())
+        {
+            bail!(
+                "active attempt {} has terminal timing evidence",
+                attempt.run_id
+            );
+        }
     }
     let mut unclassified = BTreeSet::new();
     for run in &evidence.unclassified_runs {
@@ -1426,6 +1454,26 @@ fn validate_evidence(evidence: &EvidenceFile) -> Result<()> {
             bail!("unclassified run {} has incomplete identity", run.run_id);
         }
         parse_timestamp(&run.created_at)?;
+    }
+    Ok(())
+}
+
+fn validate_denominator(
+    proof: &DenominatorProof,
+    history: &[HistoryCommitObservation],
+    window: &TimeWindow,
+) -> Result<()> {
+    if proof.branch.is_empty() || proof.window != *window {
+        bail!("denominator proof does not match the evidence window or branch");
+    }
+    if proof.commit_count != history.len() {
+        bail!("denominator proof commit count does not match history");
+    }
+    if proof.source == DenominatorSource::FirstParentHistory && !proof.fetch_succeeded {
+        bail!("first-parent denominator is missing a successful history fetch proof");
+    }
+    for commit in history {
+        parse_timestamp(&commit.committed_at)?;
     }
     Ok(())
 }
@@ -1474,8 +1522,9 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
             if status != OutcomeClass::Missing {
                 summary.observed_first_attempts += 1;
             }
-            if let Some(attempts) =
-                first_by_obligation.get(&(obligation.commit.sha.clone(), cohort))
+            if let Some(attempts) = first_by_obligation
+                .get(&(obligation.commit.sha.clone(), cohort))
+                .filter(|attempts| attempts.len() == 1)
             {
                 let (within, over) = timing_counts(attempts);
                 summary.within_120_seconds += within;
@@ -1541,12 +1590,14 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
                 + cohort.infrastructure
                 + cohort.cancellation
                 + cohort.missing
+                + cohort.inapplicable
                 + cohort.data_quality
         })
         .sum();
     let green_claim_qualified = total_first_attempt_failures == 0
         && !evidence.expected.is_empty()
-        && evidence.event_source_gaps.is_empty()
+        && evidence.denominator.source == DenominatorSource::FirstParentHistory
+        && evidence.denominator.fetch_succeeded
         && evidence.unclassified_runs.is_empty();
     RollupFile {
         schema: SCHEMA,
@@ -1558,7 +1609,7 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
         total_first_attempt_successes,
         total_first_attempt_failures,
         unclassified_runs: evidence.unclassified_runs.len(),
-        event_source_gaps: evidence.event_source_gaps.clone(),
+        denominator: evidence.denominator.clone(),
         green_claim_qualified,
         six_nines_claimed: false,
     }
@@ -1572,6 +1623,30 @@ fn timing_counts(attempts: &[&AttemptEvidence]) -> (usize, usize) {
             None => (within, over),
         }
     })
+}
+
+fn require_qualified(rollup: &RollupFile) -> Result<()> {
+    let mut reasons = Vec::new();
+    if rollup.denominator.source != DenominatorSource::FirstParentHistory {
+        reasons.push("denominator is not first-parent main history");
+    }
+    if !rollup.denominator.fetch_succeeded {
+        reasons.push("denominator fetch proof is incomplete");
+    }
+    if rollup.unclassified_runs != 0 {
+        reasons.push("unclassified workflow runs are present");
+    }
+    if rollup.total_first_attempt_failures != 0 {
+        reasons.push("first-attempt failures or missing obligations are present");
+    }
+    if !rollup.green_claim_qualified {
+        reasons.push("green claim is not qualified");
+    }
+    if reasons.is_empty() {
+        Ok(())
+    } else {
+        bail!("CI evidence rollup is unqualified: {}", reasons.join(", "))
+    }
 }
 
 fn write_markdown(path: &Path, rollup: &RollupFile, evidence: &EvidenceFile) -> Result<()> {
@@ -1606,22 +1681,14 @@ fn write_markdown(path: &Path, rollup: &RollupFile, evidence: &EvidenceFile) -> 
         ));
     }
     text.push_str(&format!(
-        "\nUnclassified workflow runs: {}\nEvent-source gaps: {}\nQualified green claim: {}\n",
+        "\nDenominator: {:?}, branch `{}`, commits {}, fetch proof {}\nUnclassified workflow runs: {}\nQualified green claim: {}\n",
+        rollup.denominator.source,
+        rollup.denominator.branch,
+        rollup.denominator.commit_count,
+        rollup.denominator.fetch_succeeded,
         rollup.unclassified_runs,
-        rollup.event_source_gaps.len(),
         rollup.green_claim_qualified
     ));
-    if !rollup.event_source_gaps.is_empty() {
-        text.push_str(
-            "\nEvent-source warnings: observed main-branch heads absent from the push-event feed were added as fallback denominator heads. This blocks a qualified green claim and any six-nines interpretation.\n\n",
-        );
-        for gap in &rollup.event_source_gaps {
-            text.push_str(&format!(
-                "- `{}`: observed runs {:?}; cohorts {:?}; {}\n",
-                gap.head_sha, gap.observed_run_ids, gap.observed_cohorts, gap.reason
-            ));
-        }
-    }
     text.push_str("\n## End-to-end per commit\n\n| Commit | CI/Main | Desktop | End-to-end |\n| --- | --- | --- | --- |\n");
     for commit in &rollup.commits {
         let short_sha = &commit.sha[..commit.sha.len().min(12)];
@@ -1651,10 +1718,10 @@ fn print_collection_summary(evidence: &EvidenceFile, path: &Path) -> Result<()> 
     let mut output = io::stdout().lock();
     writeln!(
         output,
-        "collected {} expected obligations, {} unique attempts, and {} event-source gaps into {}",
+        "collected {} expected obligations and {} unique attempts from {:?} into {}",
         evidence.expected.len(),
         evidence.attempts.len(),
-        evidence.event_source_gaps.len(),
+        evidence.denominator.source,
         path.display()
     )?;
     Ok(())
@@ -1664,8 +1731,11 @@ fn print_rollup_summary(rollup: &RollupFile) -> Result<()> {
     let mut output = io::stdout().lock();
     writeln!(
         output,
-        "rollup: {} successes, {} failures/missing; six-nines claim: false",
-        rollup.total_first_attempt_successes, rollup.total_first_attempt_failures
+        "rollup: {} successes, {} failures/missing; denominator: {:?}; qualified: {}; six-nines claim: false",
+        rollup.total_first_attempt_successes,
+        rollup.total_first_attempt_failures,
+        rollup.denominator.source,
+        rollup.green_claim_qualified
     )?;
     Ok(())
 }
