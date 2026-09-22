@@ -294,6 +294,87 @@ fn discovery_provider_error_text_cannot_set_rate_limit_or_retry_deadline() {
 }
 
 #[test]
+fn discovery_typed_rate_limit_reaches_broker_without_text_parsing() {
+    let mut view = quota_view();
+    view.status = UsageSnapshotStatus::Stale;
+    view.last_error = Some("transport message mentions HTTP 429".to_owned());
+
+    let ProviderProbeOutcome::Failure {
+        kind,
+        message,
+        retry_at_epoch,
+    } = provider_probe_outcome_with_rate_limit(
+        view,
+        Some(crate::usage::ProviderRateLimit {
+            retry_at_epoch: Some(1_700_000_037),
+        }),
+    )
+    else {
+        panic!("typed rate limit must be a broker failure");
+    };
+    assert_eq!(kind, UsageCoordinationErrorKind::RateLimited);
+    assert_eq!(message, "usage provider rate limit is active");
+    assert_eq!(retry_at_epoch, Some(1_700_000_037));
+}
+
+struct TypedRateLimitResolver;
+
+impl ProviderCredentialEnvResolver for TypedRateLimitResolver {
+    fn resolve_provider_credentials(
+        &self,
+        _config: &AppConfig,
+        _workspace: Option<&WorkspaceName>,
+        _role: Option<&str>,
+        _keys: &[UsageCredentialEnvName],
+    ) -> Vec<ProviderCredentialEnvResolution> {
+        Vec::new()
+    }
+
+    fn refresh_provider_credential(
+        &self,
+        _surface: HostSurfaceId,
+        _key: &str,
+        _handle: &OpaqueCredentialHandle,
+    ) -> ProviderCredentialRefreshOutcome {
+        ProviderCredentialRefreshOutcome::Snapshot {
+            view: Box::new(quota_view()),
+            rate_limit: Some(crate::usage::ProviderRateLimit {
+                retry_at_epoch: Some(1_700_000_037),
+            }),
+        }
+    }
+}
+
+#[test]
+fn refresh_binding_outcome_carries_typed_rate_limit_into_broker() {
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Claude,
+        identity: None,
+        source_id: "source-typed-rate-limit".to_owned(),
+        capability_id: "capability-typed-rate-limit".to_owned(),
+        credential_revision: "credential-revision-typed-rate-limit".to_owned(),
+        provenance: BTreeSet::new(),
+        source: ValidatedCredentialSource::Env {
+            handle: OpaqueCredentialHandle::new("typed-rate-limit-handle"),
+            key: "CLAUDE_API_KEY".to_owned(),
+            material: Some(env_material("CLAUDE_API_KEY", "fixture-secret")),
+        },
+    };
+
+    let outcome = refresh_binding_outcome(&binding, &TypedRateLimitResolver);
+    let ProviderProbeOutcome::Failure {
+        kind,
+        retry_at_epoch,
+        ..
+    } = outcome
+    else {
+        panic!("typed rate limit must remain a broker failure");
+    };
+    assert_eq!(kind, UsageCoordinationErrorKind::RateLimited);
+    assert_eq!(retry_at_epoch, Some(1_700_000_037));
+}
+
+#[test]
 fn discovery_provider_stale_and_error_views_are_retryable_failures() {
     for status in [UsageSnapshotStatus::Stale, UsageSnapshotStatus::Error] {
         let mut view = quota_view();

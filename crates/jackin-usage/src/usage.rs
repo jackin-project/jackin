@@ -88,10 +88,10 @@ pub(crate) use self::claude::{
     claude_code_user_agent, claude_code_user_agent_with, claude_code_version_from_text,
     claude_email_from_value, claude_error_is_scope_restriction, claude_oauth_candidates,
     claude_oauth_from_value, claude_organization_type_from_value, claude_provider_error_label,
-    claude_snapshot, claude_spend_bucket, claude_view_from_wave, claude_wave_policy,
-    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
-    normalize_claude_spend, push_claude_dollar_windows, read_claude_keychain_item,
-    resolve_claude_wave,
+    claude_snapshot, claude_spend_bucket, claude_view_from_wave,
+    claude_view_from_wave_with_rate_limit, claude_wave_policy, fetch_claude_cli_usage,
+    fetch_claude_oauth_usage, load_claude_account_email, normalize_claude_spend,
+    push_claude_dollar_windows, read_claude_keychain_item, resolve_claude_wave,
 };
 #[cfg(test)]
 pub(crate) use self::claude::{
@@ -112,11 +112,12 @@ pub(crate) use self::codex::{
     CodexSpendControl, CodexUsageResponse, CodexWindowSnapshot, codex_access_token_from_response,
     codex_account_identity, codex_account_label_from_id_token, codex_auth_candidates,
     codex_oauth_from_value, codex_plan_display_name, codex_plan_exact_display,
-    codex_plan_word_display, codex_profile_snapshot, codex_refresh_request_body,
-    codex_rpc_notification, codex_rpc_request, codex_snapshot, decode_codex_rpc_usage,
-    fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage, fetch_codex_oauth_usage_refreshing,
-    fetch_codex_rpc_usage, push_codex_window, refresh_codex_access_token, resolve_codex_base_url,
-    resolve_codex_reset_credits_url, resolve_codex_usage_url,
+    codex_plan_word_display, codex_profile_snapshot, codex_profile_snapshot_with_rate_limit,
+    codex_refresh_request_body, codex_rpc_notification, codex_rpc_request, codex_snapshot,
+    decode_codex_rpc_usage, fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage,
+    fetch_codex_oauth_usage_refreshing, fetch_codex_rpc_usage, push_codex_window,
+    refresh_codex_access_token, resolve_codex_base_url, resolve_codex_reset_credits_url,
+    resolve_codex_usage_url,
 };
 #[expect(
     unused_imports,
@@ -200,13 +201,15 @@ pub(crate) use self::openrouter::{
 };
 #[cfg(test)]
 pub(crate) use self::refresh::MaterializedUsageAccounts;
+pub use self::refresh::ProviderRateLimit;
+
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::refresh::{
-    MATERIALIZED_TMP_COUNTER, atomic_write_usage_json, parse_retry_after_seconds,
-    usage_error_is_rate_limited, usage_error_is_unauthorized, write_materialized_usage_accounts,
+    MATERIALIZED_TMP_COUNTER, atomic_write_usage_json, usage_error_is_rate_limited,
+    usage_error_is_unauthorized, write_materialized_usage_accounts,
 };
 #[expect(
     unused_imports,
@@ -788,9 +791,17 @@ pub fn provider_credential_snapshot(
     key_name: &str,
     secret: &str,
 ) -> FocusedUsageView {
+    provider_credential_snapshot_with_rate_limit(surface_id, key_name, secret).0
+}
+
+pub(crate) fn provider_credential_snapshot_with_rate_limit(
+    surface_id: &str,
+    key_name: &str,
+    secret: &str,
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
     let now = now_epoch();
     match surface_id {
-        "claude" => claude_view_from_wave(
+        "claude" => claude_view_from_wave_with_rate_limit(
             "claude",
             Some("Claude"),
             now,
@@ -803,67 +814,82 @@ pub fn provider_credential_snapshot(
                 is_anonymous: true,
             })),
         ),
-        "amp" => amp_api_key_snapshot("amp", secret, now),
-        "zai" => provider_key_snapshot("codex", UsageSurface::Zai, key_name, Some(secret), now),
-        "kimi" => kimi_snapshot("kimi", Some(secret), now),
-        "minimax" => minimax_snapshot("codex", Some(secret), now),
-        "grok" => grok_snapshot_from_rpc_result(
-            "grok",
-            now,
-            Path::new(GROK_HANDOFF_AUTH_PATH),
-            false,
-            key_name == jackin_core::XAI_API_KEY_ENV_NAME,
-            key_name == jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
-            Err("Grok billing requires an authenticated profile".to_owned()),
+        "amp" => (amp_api_key_snapshot("amp", secret, now), None),
+        "zai" => (
+            provider_key_snapshot("codex", UsageSurface::Zai, key_name, Some(secret), now),
+            None,
         ),
-        "codex" => usage_view(UsageViewInput {
-            agent: "codex",
-            provider: Some("OpenAI"),
-            surface: UsageSurface::Codex,
-            account_label: String::new(),
-            username: None,
-            plan_label: None,
-            credential_origin: Some("API key · configured source".to_owned()),
-            buckets: Vec::new(),
-            status: UsageSnapshotStatus::Unsupported,
-            source: UsageSource::None,
-            confidence: UsageConfidence::None,
-            now,
-            last_error: Some("OpenAI API-key subscription quota is unavailable".to_owned()),
-        }),
+        "kimi" => (kimi_snapshot("kimi", Some(secret), now), None),
+        "minimax" => (minimax_snapshot("codex", Some(secret), now), None),
+        "grok" => (
+            grok_snapshot_from_rpc_result(
+                "grok",
+                now,
+                Path::new(GROK_HANDOFF_AUTH_PATH),
+                false,
+                key_name == jackin_core::XAI_API_KEY_ENV_NAME,
+                key_name == jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
+                Err("Grok billing requires an authenticated profile".to_owned()),
+            ),
+            None,
+        ),
+        "codex" => (
+            usage_view(UsageViewInput {
+                agent: "codex",
+                provider: Some("OpenAI"),
+                surface: UsageSurface::Codex,
+                account_label: String::new(),
+                username: None,
+                plan_label: None,
+                credential_origin: Some("API key · configured source".to_owned()),
+                buckets: Vec::new(),
+                status: UsageSnapshotStatus::Unsupported,
+                source: UsageSource::None,
+                confidence: UsageConfidence::None,
+                now,
+                last_error: Some("OpenAI API-key subscription quota is unavailable".to_owned()),
+            }),
+            None,
+        ),
         // A Cursor API key cannot drive the personal dashboard RPC (that
         // needs the OAuth JWT from `auth.json`); the key route stays an
         // explicit gap like the OpenAI arm above, never a speculative fetch.
-        "cursor" => usage_view(UsageViewInput {
-            agent: "cursor",
-            provider: Some("Cursor"),
-            surface: UsageSurface::Cursor,
-            account_label: String::new(),
-            username: None,
-            plan_label: None,
-            credential_origin: Some("API key · configured source".to_owned()),
-            buckets: Vec::new(),
-            status: UsageSnapshotStatus::Unsupported,
-            source: UsageSource::None,
-            confidence: UsageConfidence::None,
-            now,
-            last_error: Some("Cursor API-key subscription quota is unavailable".to_owned()),
-        }),
-        "google" => gemini_snapshot_with_presence(
-            "gemini",
-            Some("Google"),
-            false,
-            true,
-            &format!("API key · env {key_name}"),
-            now,
+        "cursor" => (
+            usage_view(UsageViewInput {
+                agent: "cursor",
+                provider: Some("Cursor"),
+                surface: UsageSurface::Cursor,
+                account_label: String::new(),
+                username: None,
+                plan_label: None,
+                credential_origin: Some("API key · configured source".to_owned()),
+                buckets: Vec::new(),
+                status: UsageSnapshotStatus::Unsupported,
+                source: UsageSource::None,
+                confidence: UsageConfidence::None,
+                now,
+                last_error: Some("Cursor API-key subscription quota is unavailable".to_owned()),
+            }),
+            None,
         ),
-        "openrouter" => openrouter_snapshot("opencode", Some(secret), now),
+        "google" => (
+            gemini_snapshot_with_presence(
+                "gemini",
+                Some("Google"),
+                false,
+                true,
+                &format!("API key · env {key_name}"),
+                now,
+            ),
+            None,
+        ),
+        "openrouter" => (openrouter_snapshot("opencode", Some(secret), now), None),
         // Explicitly blocked (no production dispatch): `meta` (Muse has no
         // pollable usage fetch by design), `antigravity` (grant lives in the
         // host Keychain, which the file reader cannot probe), `omp`/`hermes`
         // (attribution-only adapters with no native endpoint), `copilot` (no
         // collector, registry, or discovery entry exists at all).
-        _ => unsupported_snapshot(surface_id, None, now),
+        _ => (unsupported_snapshot(surface_id, None, now), None),
     }
 }
 
@@ -1413,7 +1439,11 @@ pub(crate) fn provider_request<T, E>(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProviderHttpError {
     Transport(String),
-    HttpStatus { status: u16, message: String },
+    HttpStatus {
+        status: u16,
+        message: String,
+        retry_after_seconds: Option<u64>,
+    },
     Decode(String),
 }
 
@@ -1425,6 +1455,13 @@ impl std::fmt::Display for ProviderHttpError {
             }
         }
     }
+}
+
+pub(crate) fn retry_after_header_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
 }
 
 /// Shared GET → bearer-auth → JSON skeleton for provider quota endpoints. The
@@ -1453,10 +1490,12 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
             ProviderHttpError::Transport(format!("{label} request failed: {err}"))
         })?;
         let status = response.status();
+        let retry_after_seconds = retry_after_header_seconds(response.headers());
         if !status.is_success() {
             return Err(ProviderHttpError::HttpStatus {
                 status: status.as_u16(),
                 message: format!("{label} HTTP {status}"),
+                retry_after_seconds,
             });
         }
         response
