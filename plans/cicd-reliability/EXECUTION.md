@@ -5,7 +5,7 @@ Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, se
 ## Current authoritative sidecar — 2026-09-23
 
 Status: **NOT COMPLETE**. Parent HEAD before this documentation commit is
-`3ad2ab0e`. Repairs are locally integrated and independently checked; live
+`cb439e3`. Repairs are locally integrated and independently checked; live
 qualification and upstream adoption remain open.
 
 ### Repair and evidence status
@@ -20,12 +20,14 @@ qualification and upstream adoption remain open.
 ### Upstream and PR status
 
 - Velnor [#1076](https://github.com/tailrocks/velnor/pull/1076) is at
-  `36f0d4f4981e125dacec96eaf82f24369d38251b`. DCO is successful; Policy is
-  `IN_PROGRESS`; the PR is not merged. The exact prior blocker was the old
-  pinned runtime being selected for phase invocation and rejecting `--phase`.
-  The current repair invokes the candidate explicitly, but it has not passed
-  live Policy, been merged, published as a runtime, or been adopted by Jackin.
-  The Jackin pin is therefore not recorded as updated.
+  `36f0d4f4981e125dacec96eaf82f24369d38251b`. [Policy run
+  35767882457](https://github.com/tailrocks/velnor/actions/runs/35767882457)
+  completed **FAILURE**: `Acquire candidate generator product` found no
+  candidate product within 15 minutes because no same-head `ci-pr` workflow run
+  existed. DCO passed. GitHub reports `CONFLICTING`/`DIRTY`; locally the head is
+  based directly on current `origin/main` `1e094e97`. The repair has not been
+  live-proven, merged, published as a runtime, or adopted by Jackin. The Jackin
+  pin remains unchanged.
 - Jackin [#1083](https://github.com/jackin-project/jackin/pull/1083) is stale at
   `4b2d244c93ce3edbba4ff91e685ded6875b5647c`, `CONFLICTING`/`DIRTY`; only
   Policy and DCO are shown green. Its generated files and hook work were not
