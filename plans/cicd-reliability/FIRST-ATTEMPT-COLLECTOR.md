@@ -14,6 +14,12 @@ unclassified. A record is keyed by `(run_id, attempt)`; repeated scheduled
 deliveries update the same key instead of duplicating it, while reruns remain
 separate records.
 
+The first in-window ledger entry is anchored to a separately fetched and
+validated successful ledger artifact immediately before the window. Its head
+must equal the first entry's `before` SHA. Missing, failed, malformed, or
+non-adjacent boundary proof hard-fails; the collector never assumes an absent
+predecessor had no CI/Main or Desktop obligation.
+
 The collector joins runs to expected obligations before the rollup is built:
 each expected push head has one CI/Main and one Desktop obligation. A missing
 workflow is therefore an explicit `missing` result; it cannot disappear by
@@ -63,6 +69,10 @@ without rewriting terminal verdicts, preserves every raw observation, and
 prunes attempts outside the new denominator window. Missing artifacts and
 API/rollup failures are red. Six-nines remains unclaimed until an independent
 archival sink and sufficient sample are available.
+
+`green_claim_qualified` is true only for a validated scheduled `main`
+`ci-evidence.yml` collection. Local and test provenance may exercise the
+rollup, but can never produce a qualified green claim.
 
 Schema 4 is a hard migration boundary. A restored artifact with any other
 schema (including schema 3) is discarded before deserialization; a schema-4
