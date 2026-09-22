@@ -4343,7 +4343,7 @@ fn classify_claude_keychain_status_maps_denial_and_absence() {
     ));
     assert!(matches!(
         classify_claude_keychain_status(-25308),
-        ClaudeKeychainRead::Missing
+        ClaudeKeychainRead::ConsentRequired
     ));
     assert!(matches!(
         classify_claude_keychain_status(-1),
@@ -4452,6 +4452,33 @@ fn claude_keychain_missing_falls_back_to_file_then_env() {
         claude_wave_policy(&with_env),
         ClaudeWavePolicy::LocalAnonymous
     );
+}
+
+#[test]
+fn claude_keychain_consent_required_falls_back_like_missing() {
+    let scope = keychain_test_scope(true);
+    let state = ClaudeKeychainState::default();
+    let resolution = resolve_claude_refresh_wave_with(
+        &scope,
+        &state,
+        |_| ClaudeKeychainRead::ConsentRequired,
+        || ClaudeFileProbe {
+            credential: claude_oauth_from_value(
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token"}}),
+            ),
+            origin: Some("OAuth · file".to_owned()),
+            account_email: None,
+            organization_type: None,
+        },
+        || None,
+    );
+    match resolution {
+        ClaudeWaveResolution::Resolved(resolved) => {
+            assert_eq!(resolved.access_token, "file-token");
+        }
+        _ => panic!("consent-gated Keychain must preserve file fallback"),
+    }
+    assert_eq!(state.read_count(), 1);
 }
 
 #[test]
