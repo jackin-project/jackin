@@ -60,11 +60,14 @@ git add -p && git commit -m "..."
 ```
 
 `hk fix` applies the same fixes outside a commit; `hk check` runs checks
-on modified files. Partial commits are safe: the repo-owned launcher uses
-`git stash push --all --keep-index`, validates the staged snapshot only, then
-restores — byte-identical when green. If restoration fails or the stash ref
-changes, the snapshot is retained; inspect `git status` / `git stash list` and
-recover it before changing the worktree. Bypass with `HK=0 git commit`
+on modified files. Partial commits are safe: the repo-owned launcher creates
+an isolated `git stash push --all --keep-index` snapshot, validates
+the staged snapshot only, then restores — byte-identical when green. The user
+stash stack is not used for the hook snapshot. If restoration fails or the
+snapshot/stash identity changes, the snapshot is retained under
+`refs/jackin/pre-commit-snapshot/*`; inspect `git status` and
+`git show-ref refs/jackin/pre-commit-snapshot/` and recover it before changing
+the worktree. Bypass with `HK=0 git commit`
 (emergencies only).
 
 Two intentional divergences from CI: hook Clippy is closure-scoped while
