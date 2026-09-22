@@ -1454,9 +1454,8 @@ pub(crate) enum ProviderRetryAfter {
 impl ProviderRetryAfter {
     pub(crate) fn retry_at_epoch(self, response_received_at_epoch: i64) -> i64 {
         match self {
-            Self::Seconds(seconds) => response_received_at_epoch.saturating_add(
-                i64::try_from(seconds).unwrap_or(i64::MAX),
-            ),
+            Self::Seconds(seconds) => response_received_at_epoch
+                .saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX)),
             Self::HttpDate(epoch) => epoch,
         }
     }
