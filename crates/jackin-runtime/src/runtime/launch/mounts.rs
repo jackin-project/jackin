@@ -55,45 +55,50 @@ fn push_slot_home_mounts(
 /// container store dir (`/jackin/<agent>` for primary slots,
 /// `/jackin/<agent>-<suffix>` for secondary same-agent slots).
 ///
-/// File-credential agents mount each provisioned file by file name;
-/// Kimi/Hermes mount their credential directory. Claude keeps its
-/// per-file `exists()` guards: `forward_auth = true` covers `Sync`
-/// (host-derived credentials) and `OAuthToken` (the onboarding
-/// skeleton), while `ApiKey` and `Ignore` wipe the role-state files —
-/// and the guard keeps the `OAuthToken` arm from mounting a stale
-/// `credentials.json` if the provision-step removal failed silently.
+/// File-credential agents mount each admitted file by file name;
+/// Kimi/Hermes mount their admitted credential directory. Claude keeps
+/// its optional per-file behavior: a missing admitted file is omitted,
+/// while every other forwarded path fails closed.
 fn push_slot_auth_mounts(
     mounts: &mut Vec<String>,
     root: &Path,
+    state: &crate::instance::RoleState,
     slot: &crate::instance::ProvisionedInstanceAuth,
-) {
+) -> anyhow::Result<()> {
     use jackin_core::Agent;
     if !slot.forward_auth {
-        return;
+        return Ok(());
     }
     if matches!(slot.agent, Agent::Kimi | Agent::Hermes) {
         let store = root.join(&slot.container_store_rel);
+        anyhow::ensure!(
+            state.auth_mount_directory_allowed(&store)?,
+            "private auth store is not admitted for mount: {}",
+            store.display()
+        );
         mounts.push(format!(
             "{}:/jackin/{}:ro",
             store.display(),
             slot.container_store_rel
         ));
-        return;
+        return Ok(());
     }
     for path in &slot.credential_paths {
         let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
+            anyhow::bail!("auth mount path has no valid file name: {}", path.display());
         };
-        let guarded = matches!(slot.agent, Agent::Claude) && !path.exists();
-        if !guarded {
+        if state.auth_mount_file_allowed(path)? {
             mounts.push(format!(
                 "{}:/jackin/{}/{}:ro",
                 path.display(),
                 slot.container_store_rel,
                 file_name
             ));
+        } else if slot.agent != Agent::Claude {
+            anyhow::bail!("auth mount path is no longer admitted: {}", path.display());
         }
     }
+    Ok(())
 }
 
 /// Returns the per-slot mount strings in jackin❯'s `src:dst[:ro]` idiom for
@@ -105,12 +110,14 @@ fn push_slot_auth_mounts(
 /// instances so sibling tabs find their homes bind-mounted from the
 /// start. Agents keep a fixed order; each agent's primary slot (legacy
 /// destinations) mounts before its secondary slots in key order.
-pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
+pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> anyhow::Result<Vec<String>> {
     use jackin_core::Agent;
-    let mut mounts = vec![format!(
-        "{}:/jackin/state",
-        state.root.join("state").display()
-    )];
+    let state_dir = state.root.join("state");
+    anyhow::ensure!(
+        state.mount_directory_allowed(&state_dir)?,
+        "per-instance state directory is missing before docker launch"
+    );
+    let mut mounts = vec![format!("{}:/jackin/state", state_dir.display())];
 
     for agent in Agent::ALL {
         let mut slots: Vec<(&String, &crate::instance::ProvisionedInstanceAuth)> = state
@@ -127,7 +134,7 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
                 .root
                 .join("credentials")
                 .join(jackin_protocol::account_credentials_filename(instance));
-            if credential.is_file() {
+            if state.mount_file_allowed(&credential)? {
                 mounts.push(format!(
                     "{}:{}:ro",
                     credential.display(),
@@ -135,11 +142,11 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
                 ));
             }
             push_slot_home_mounts(&mut mounts, &state.root, *agent, slot);
-            push_slot_auth_mounts(&mut mounts, &state.root, slot);
+            push_slot_auth_mounts(&mut mounts, &state.root, state, slot)?;
         }
     }
 
-    mounts
+    Ok(mounts)
 }
 
 /// Build the directory-only equivalent of [`agent_mounts`] for
@@ -154,11 +161,16 @@ pub(crate) fn apple_agent_mounts(
 
     let credentials = state.root.join("credentials");
     anyhow::ensure!(
-        credentials.is_dir(),
+        state.mount_directory_allowed(&credentials)?,
         "per-instance credential directory is missing before apple/container launch"
     );
+    let state_dir = state.root.join("state");
+    anyhow::ensure!(
+        state.mount_directory_allowed(&state_dir)?,
+        "per-instance state directory is missing before apple/container launch"
+    );
     let mut mounts = vec![
-        AppleContainerMount::new(state.root.join("state"), "/jackin/state", false),
+        AppleContainerMount::new(state_dir, "/jackin/state", false),
         AppleContainerMount::new(credentials, jackin_protocol::ACCOUNT_CREDENTIALS_DIR, true),
     ];
 
@@ -201,7 +213,7 @@ pub(crate) fn apple_agent_mounts(
             if slot.forward_auth {
                 let store = state.root.join(&slot.container_store_rel);
                 anyhow::ensure!(
-                    store.is_dir(),
+                    state.auth_mount_directory_allowed(&store)?,
                     "private auth store is missing before apple/container launch: {}",
                     store.display()
                 );
@@ -216,18 +228,24 @@ pub(crate) fn apple_agent_mounts(
     Ok(mounts)
 }
 
-pub(crate) fn github_config_mount(state: &crate::instance::RoleState) -> Option<String> {
+pub(crate) fn github_config_mount(
+    state: &crate::instance::RoleState,
+) -> anyhow::Result<Option<String>> {
     if matches!(
         state.gh_provision_outcome,
         crate::instance::GithubProvisionOutcome::Skipped
-    ) && !state.gh_config_dir.exists()
+    ) && !state.mount_directory_allowed(&state.gh_config_dir)?
     {
-        None
+        Ok(None)
     } else {
-        Some(format!(
+        anyhow::ensure!(
+            state.mount_directory_allowed(&state.gh_config_dir)?,
+            "GitHub config directory is missing before container launch"
+        );
+        Ok(Some(format!(
             "{}:/home/agent/.config/gh",
             state.gh_config_dir.display()
-        ))
+        )))
     }
 }
 

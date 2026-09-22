@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_core::{Agent, AuthForwardMode, MountIsolation};
 use jackin_isolation::materialize::{MaterializedMount, MaterializedWorkspace, WorktreeAuxMounts};
@@ -12,6 +12,22 @@ use crate::instance::{
 };
 
 fn role_state(root: &Path, slots: Vec<(&str, ProvisionedInstanceAuth)>) -> RoleState {
+    std::fs::create_dir_all(root.join("state")).unwrap();
+    let slots: BTreeMap<_, _> = slots
+        .into_iter()
+        .map(|(key, slot)| (key.to_owned(), slot))
+        .collect();
+    let mut auth_mount_paths = BTreeSet::new();
+    for slot in slots.values().filter(|slot| slot.forward_auth) {
+        for path in &slot.credential_paths {
+            auth_mount_paths.insert(path.clone());
+            if !matches!(slot.agent, Agent::Kimi | Agent::Hermes)
+                && let Some(parent) = path.parent()
+            {
+                auth_mount_paths.insert(parent.to_path_buf());
+            }
+        }
+    }
     RoleState {
         root: root.to_owned(),
         gh_config_dir: root.join("gh"),
@@ -20,13 +36,10 @@ fn role_state(root: &Path, slots: Vec<(&str, ProvisionedInstanceAuth)>) -> RoleS
             agent: Agent::Claude,
             model: None,
         },
-        auth: ProvisionedAuth {
-            slots: slots
-                .into_iter()
-                .map(|(key, slot)| (key.to_owned(), slot))
-                .collect(),
-        },
+        auth: ProvisionedAuth { slots },
         auth_outcomes: BTreeMap::new(),
+        auth_mount_paths,
+        auth_mount_leases: Vec::new(),
     }
 }
 
@@ -199,7 +212,7 @@ fn agent_mounts_starts_with_state_and_mounts_auth_readonly() {
     claude.credential_paths = vec![credential.clone()];
     let state = role_state(&root, vec![("acct@claude", claude)]);
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert_eq!(
         mounts[0],
         format!("{}:/jackin/state", root.join("state").display())
@@ -239,7 +252,7 @@ fn agent_mounts_skips_auth_without_forwarding_or_missing_claude_file() {
         vec![("a@claude", unforwarded), ("b@claude", missing)],
     );
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         !mounts.iter().any(|mount| mount.contains("/jackin/claude")),
         "no auth mounts expected: {mounts:?}"
@@ -256,7 +269,9 @@ fn agent_mounts_skips_auth_without_forwarding_or_missing_claude_file() {
 fn apple_agent_mounts_requires_dirs_and_keeps_auth_readonly() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("role");
-    let state = role_state(&root, vec![("acct@claude", slot(Agent::Claude, "claude"))]);
+    let mut claude = slot(Agent::Claude, "claude");
+    claude.credential_paths = vec![root.join("claude/credentials.json")];
+    let state = role_state(&root, vec![("acct@claude", claude)]);
     apple_agent_mounts(&state).expect_err("missing credentials dir must fail");
 
     std::fs::create_dir_all(root.join("credentials")).unwrap();
@@ -279,9 +294,11 @@ fn github_config_mount_is_absent_only_when_skipped_and_missing() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("role");
     let state = role_state(&root, vec![]);
-    assert_eq!(github_config_mount(&state), None);
+    assert_eq!(github_config_mount(&state).unwrap(), None);
 
     std::fs::create_dir_all(root.join("gh")).unwrap();
-    let mounted = github_config_mount(&state).expect("existing dir must mount");
+    let mounted = github_config_mount(&state)
+        .unwrap()
+        .expect("existing dir must mount");
     assert!(mounted.ends_with(":/home/agent/.config/gh"), "{mounted}");
 }
