@@ -257,6 +257,43 @@ fn remove_with_debug_log(path: &Path) {
     }
 }
 
+/// Explain a signed capsule manifest fetch or verification failure without
+/// changing the fail-closed behavior. Preview uses the rolling release tag;
+/// stable releases use their versioned tag.
+fn capsule_manifest_failure_message(version: &str, base_url: &str, is_preview: bool) -> String {
+    let manifest_url = format!("{base_url}/capsule-manifest.json");
+    let bundle_url = format!("{base_url}/capsule-manifest.json.bundle");
+    if is_preview {
+        format!(
+            "fetching or verifying the signed jackin-capsule manifest failed for {version} \
+             (preview channel).\n\
+             \n\
+             Attempted manifest: {manifest_url}\n\
+             Attempted signature bundle: {bundle_url}\n\
+             \n\
+             The signed manifest is required; refusing to use an unverified capsule binary.\n\
+             Preview builds use the rolling `preview` release. Wait for the preview build to\n\
+             complete and retry, or build and cache it locally:\n\
+               cargo run --bin build-jackin-capsule\n\
+             Then retry `jackin load`."
+        )
+    } else {
+        format!(
+            "fetching or verifying the signed jackin-capsule manifest failed for {version} \
+             (stable channel).\n\
+             \n\
+             Attempted manifest: {manifest_url}\n\
+             Attempted signature bundle: {bundle_url}\n\
+             \n\
+             The signed manifest is required; refusing to use an unverified capsule binary.\n\
+             Check the versioned release tag `v{version}`, or build and cache it locally:\n\
+               cargo run --bin build-jackin-capsule\n\
+             or point JACKIN_CAPSULE_BIN at a local binary.\n\
+             Then retry `jackin load`."
+        )
+    }
+}
+
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let base_url = base_download_url(version);
@@ -299,11 +336,8 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         Ok(sha) => sha,
         Err(e) => {
             remove_with_debug_log(&tmp_archive);
-            return Err(e).with_context(|| {
-                format!(
-                    "fetching or verifying signed capsule manifest for jackin-capsule {version}"
-                )
-            });
+            return Err(e)
+                .with_context(|| capsule_manifest_failure_message(version, &base_url, is_preview));
         }
     };
 

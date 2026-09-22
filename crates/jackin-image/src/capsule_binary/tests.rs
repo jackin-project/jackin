@@ -153,6 +153,40 @@ fn base_download_url_stable_uses_version_tag() {
 }
 
 #[test]
+fn capsule_manifest_failure_message_stable_names_versioned_channel_and_urls() {
+    let base_url = base_download_url("0.6.0");
+    let message = capsule_manifest_failure_message("0.6.0", &base_url, false);
+    assert!(message.contains("stable channel"), "{message}");
+    assert!(message.contains("`v0.6.0`"), "{message}");
+    assert!(
+        message.contains("/releases/download/v0.6.0/capsule-manifest.json"),
+        "{message}"
+    );
+    assert!(
+        message.contains("/releases/download/v0.6.0/capsule-manifest.json.bundle"),
+        "{message}"
+    );
+    assert!(!message.contains("rolling `preview`"), "{message}");
+}
+
+#[test]
+fn capsule_manifest_failure_message_preview_names_rolling_channel_and_urls() {
+    let base_url = base_download_url("0.6.0-dev+bf7df07");
+    let message = capsule_manifest_failure_message("0.6.0-dev+bf7df07", &base_url, true);
+    assert!(message.contains("preview channel"), "{message}");
+    assert!(message.contains("rolling `preview`"), "{message}");
+    assert!(
+        message.contains("/releases/download/preview/capsule-manifest.json"),
+        "{message}"
+    );
+    assert!(
+        message.contains("/releases/download/preview/capsule-manifest.json.bundle"),
+        "{message}"
+    );
+    assert!(!message.contains("stable channel"), "{message}");
+}
+
+#[test]
 fn rekor_keys_decode_and_contain_expected_id() {
     let keys = rekor_verification_keys();
     assert_eq!(keys.len(), 2, "expected base64 and hex Rekor key IDs");
