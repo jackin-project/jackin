@@ -1,5 +1,5 @@
 #!/bin/sh
-# shellcheck disable=SC2329 # Functions are invoked through signal/exit traps.
+# shellcheck disable=SC2016,SC2329 # Child shells expand positional arguments; traps invoke functions.
 set -eu
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -11,34 +11,58 @@ patch_file=
 archive_file=
 mode_file=
 
-record_mode() {
-    relative_path=$1
-    path="./$relative_path"
-    if [ -L "$path" ]; then
-        return 0
-    fi
-    if [ ! -e "$path" ]; then
-        return 0
-    fi
-    mode=$(stat -f '%Lp' "$path" 2>/dev/null || stat -c '%a' "$path") || return 1
-    printf '%s\t%s\n' "$mode" "$path" >> "$mode_file"
-}
-
 restore_modes() {
     if [ -n "$mode_file" ] && [ -s "$mode_file" ]; then
-        while IFS="	" read -r mode path; do
+        if ! xargs -0 -n 2 sh -c '
+            set -eu
+            stash_oid=$0
+            if [ "$#" -eq 0 ]; then
+                exit 0
+            fi
+            if [ "$#" -ne 2 ]; then
+                printf "%s\n" "error: malformed mode snapshot; stash retained at $stash_oid" >&2
+                exit 1
+            fi
+            mode=$1
+            path=$2
             if [ ! -e "$path" ] && [ ! -L "$path" ]; then
-                printf '%s\n' "error: failed to restore mode for missing $path; stash retained at $stash_oid" >&2
-                return 1
+                printf "%s\n" "error: failed to restore mode for missing $path; stash retained at $stash_oid" >&2
+                exit 1
             fi
             if [ -L "$path" ]; then
-                continue
+                exit 0
             fi
             if ! chmod "$mode" "$path"; then
-                printf '%s\n' "error: failed to restore mode for $path; stash retained at $stash_oid" >&2
-                return 1
+                printf "%s\n" "error: failed to restore mode for $path; stash retained at $stash_oid" >&2
+                exit 1
             fi
-        done < "$mode_file"
+        ' "$stash_oid" < "$mode_file"; then
+            return 1
+        fi
+    fi
+}
+
+record_modes() {
+    paths_file=$1
+    if ! xargs -0 -n 1 sh -c '
+        set -eu
+        mode_file=$0
+        if [ "$#" -eq 0 ]; then
+            exit 0
+        fi
+        if [ "$#" -ne 1 ]; then
+            printf "%s\n" "error: malformed path snapshot" >&2
+            exit 1
+        fi
+        relative_path=$1
+        path="./$relative_path"
+        if [ -L "$path" ] || [ ! -e "$path" ]; then
+            exit 0
+        fi
+        mode=$(stat -f "%Lp" "$path" 2>/dev/null || stat -c "%a" "$path") || exit 1
+        printf "%s\000%s\000" "$mode" "$path" >> "$mode_file"
+    ' "$mode_file" < "$paths_file"; then
+        return 1
     fi
 }
 
@@ -108,15 +132,15 @@ trap restore_worktree EXIT HUP INT TERM
 mode_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
 path_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
 {
-    git diff --name-only
-    git ls-files --others --exclude-standard
-    git ls-files --others --ignored --exclude-standard
+    git diff --name-only -z
+    git ls-files --others --exclude-standard -z
+    git ls-files --others --ignored --exclude-standard -z
 } > "$path_file"
-while IFS= read -r relative_path; do
-    if [ -n "$relative_path" ]; then
-        record_mode "$relative_path"
-    fi
-done < "$path_file"
+if ! record_modes "$path_file"; then
+    printf '%s\n' 'error: failed to record pre-commit snapshot modes' >&2
+    rm -f "$path_file"
+    exit 1
+fi
 rm -f "$path_file"
 
 before_stash=$(git rev-parse --verify --quiet refs/stash 2>/dev/null || true)
