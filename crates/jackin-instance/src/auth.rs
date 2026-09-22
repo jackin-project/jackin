@@ -570,14 +570,16 @@ impl RoleState {
         host_auth_json: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         // OAuthToken is parser-rejected for Codex (unreachable in production),
-        // so no warning is needed. Codex has no empty/whitespace content guard.
+        // so no warning is needed. Empty/whitespace auth is not a usable
+        // credential and must agree with source-folder validation by staying
+        // out of the role-state mount surface.
         provision_single_file_credential(
             auth_json,
             host_auth_json,
             mode,
             "Codex auth.json",
             "Codex",
-            false,
+            true,
             false,
             false,
         )

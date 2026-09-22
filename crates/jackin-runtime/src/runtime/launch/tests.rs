@@ -1312,6 +1312,64 @@ agents = ["codex"]
 }
 
 #[tokio::test]
+async fn codex_launch_preflight_rejects_empty_host_auth_without_mounting_it() {
+    use crate::instance::{AuthProvisionOutcome, PrepareResolvers, RoleState};
+    use jackin_core::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(host_home.join(".codex")).unwrap();
+    std::fs::write(host_home.join(".codex/auth.json"), "\n \t").unwrap();
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+            sync_source_dirs: &|_| None,
+        },
+        &crate::instance::GithubAuthContext::default(),
+        &host_home,
+        Agent::Codex,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    let mounts = agent_mounts(&state).unwrap();
+    assert!(
+        !mounts
+            .iter()
+            .any(|mount| mount.contains("/jackin/codex/auth.json")),
+        "empty Codex credentials must fail closed before launch mount admission: {mounts:?}"
+    );
+    assert!(
+        state.auth_mount_paths.is_empty(),
+        "empty Codex credentials must not acquire an auth mount lease"
+    );
+}
+
+#[tokio::test]
 async fn agent_mounts_for_amp_synced_includes_secrets_json() {
     use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::Agent;
