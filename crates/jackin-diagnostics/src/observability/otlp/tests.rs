@@ -1713,6 +1713,9 @@ fn assert_raw_metric_batch_rejected(
 
 #[test]
 fn governed_raw_meter_rejects_every_metric_contract_class() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     use opentelemetry::{Array, KeyValue, Value};
 
     assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::UnknownName, |meter| {
