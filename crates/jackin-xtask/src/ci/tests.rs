@@ -227,3 +227,116 @@ fn sccache_env_is_bound_only_to_provisioned_cargo_profiles() {
     assert!(!release.contains("RUSTC_WRAPPER: sccache"));
     assert!(!release.contains("SCCACHE_GHA_ENABLED: \"true\""));
 }
+
+#[test]
+fn desktop_merge_declaration_covers_push_pull_request_and_merge_group() {
+    let config: Value = toml::from_str(&workspace_file(".github-gen/velnor-workflow.toml"))
+        .expect("parse Velnor workflow config");
+    let declarations = config
+        .get("declare")
+        .and_then(Value::as_array)
+        .expect("declarations");
+    let desktop_merge = declarations
+        .iter()
+        .filter(|declaration| {
+            declaration.get("primitive").and_then(Value::as_str) == Some("scheduled-checks")
+                && declaration.get("file").and_then(Value::as_str) == Some("desktop-merge.yml")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        desktop_merge.len(),
+        1,
+        "desktop merge must have one declaration"
+    );
+
+    let args = desktop_merge[0]
+        .get("args")
+        .and_then(Value::as_table)
+        .expect("desktop merge declaration args");
+    let events = args
+        .get("events")
+        .and_then(Value::as_array)
+        .expect("desktop merge events")
+        .iter()
+        .map(|event| event.as_str().expect("event name"))
+        .collect::<Vec<_>>();
+    assert_eq!(events, ["push", "pull_request", "merge_group"]);
+    assert_eq!(
+        args.get("branches")
+            .and_then(Value::as_array)
+            .expect("desktop merge push branches")
+            .iter()
+            .map(|branch| branch.as_str().expect("branch name"))
+            .collect::<Vec<_>>(),
+        ["main"]
+    );
+    assert_eq!(
+        args.get("profiles")
+            .and_then(Value::as_array)
+            .expect("desktop merge profiles")
+            .iter()
+            .map(|profile| profile.as_str().expect("profile id"))
+            .collect::<Vec<_>>(),
+        ["desktop-merge"]
+    );
+}
+
+#[test]
+fn desktop_merge_candidates_preserve_main_schedule_concurrency_and_graph() {
+    let merge = workspace_file(".github/workflows/desktop-merge.yml");
+    assert!(merge.contains(
+        "on:\n  push:\n    branches: [main]\n  pull_request:\n  merge_group:\n  workflow_dispatch:"
+    ));
+    assert!(
+        !merge.contains("  schedule:"),
+        "merge cadence must not become cron-driven"
+    );
+    assert!(merge.contains(
+        "group: desktop-merge-${{ github.repository }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}"
+    ));
+    assert!(merge.contains("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
+    assert_eq!(
+        merge.matches("run: mise run desktop-merge").count(),
+        1,
+        "desktop merge must have one generated task caller"
+    );
+    let generated_workflow_dir = workspace_root().join(".github/workflows");
+    let direct_callers = fs::read_dir(generated_workflow_dir)
+        .expect("generated workflow directory")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("yml"))
+        .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+        .filter(|workflow| workflow.contains("run: mise run desktop-merge"))
+        .count();
+    assert_eq!(
+        direct_callers, 1,
+        "desktop merge must have one generated workflow caller"
+    );
+
+    let scheduled = workspace_file(".github/workflows/desktop-scheduled.yml");
+    assert!(scheduled.contains("  schedule:\n    - cron: \"41 4 * * 1\""));
+    assert!(
+        scheduled.contains("group: desktop-scheduled-${{ github.repository }}-${{ github.ref }}")
+    );
+    assert!(scheduled.contains("cancel-in-progress: true"));
+    assert!(!scheduled.contains("  pull_request:"));
+    assert!(!scheduled.contains("  merge_group:"));
+
+    let mise = workspace_file("mise.toml");
+    for required in [
+        "[tasks.desktop-ci]",
+        "mise run desktop-bindings-check",
+        "mise run desktop-generate",
+        "mise run desktop-format-check",
+        "mise run desktop-lint",
+        "mise run desktop-test",
+        "mise run desktop-build",
+        "cargo xtask desktop test-swift",
+        "mise run desktop-verify",
+        "[tasks.desktop-merge]",
+        "mise run desktop-ci",
+        "mise run desktop-test-ui",
+    ] {
+        assert!(mise.contains(required), "desktop graph lost `{required}`");
+    }
+}
