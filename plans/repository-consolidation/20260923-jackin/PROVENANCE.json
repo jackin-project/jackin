@@ -1,0 +1,420 @@
+{
+  "format": "jackin.repository-consolidation.provenance",
+  "format_version": 1,
+  "repository": "jackin-project/jackin",
+  "recorded_on": "2026-09-23",
+  "baseline": {
+    "ref": "main",
+    "commit": "55e21f05bdee37a1424464ce69b86fc5e550307a",
+    "parent": "7e5624322d2cfb9ad9cdf0772b8f48418721cc98"
+  },
+  "published_history_rewritten": false,
+  "purpose": "Restore auditable source attribution, trailers, pull requests, scope, and verification for landed squash merges without rewriting published history.",
+  "required_checks": ["DCO", "Policy", "ci-required"],
+  "mappings": [
+    {
+      "pull_request": 1077,
+      "pull_request_url": "https://github.com/jackin-project/jackin/pull/1077",
+      "title": "fix(xtask): make preview directory checks deterministic",
+      "source_branch": "fix/preview-sorted-iteration-20260922",
+      "source_base_commit": "866dd90ae316604078b14f9e547f1deee39bdd0b",
+      "source_commit": "d19b0602e0b2e6145720d2d06b54758c01fe5429",
+      "source_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "source_commits": [
+        {
+          "oid": "d19b0602e0b2e6145720d2d06b54758c01fe5429",
+          "subject": "fix(xtask): make preview directory checks deterministic",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        }
+      ],
+      "squash_merge_commit": "fd14ac6a7e0642842e66eeeb31d4b589d07148e1",
+      "squash_merge_parent": "866dd90ae316604078b14f9e547f1deee39bdd0b",
+      "squash_merge_subject": "fix(xtask): make preview directory checks deterministic (#1077)",
+      "squash_merge_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "squash_merge_committer": "GitHub <noreply@github.com>",
+      "scope": {
+        "diff_base": "866dd90ae316604078b14f9e547f1deee39bdd0b",
+        "diff_head": "d19b0602e0b2e6145720d2d06b54758c01fe5429",
+        "files_changed": 2,
+        "insertions": 11,
+        "deletions": 12,
+        "paths": [
+          {"status": "M", "path": "crates/jackin-xtask/src/preview.rs"},
+          {"status": "M", "path": "crates/jackin-xtask/src/release_verify/package.rs"}
+        ]
+      },
+      "verification": {
+        "github_state": "MERGED",
+        "merged_at": "2026-09-22T13:17:56Z",
+        "github_head_oid_matches_source": true,
+        "github_merge_oid_matches_repository": true,
+        "required_checks_passed": true,
+        "repository_merge_has_one_parent": true,
+        "repository_parent_matches_record": true
+      }
+    },
+    {
+      "pull_request": 1078,
+      "pull_request_url": "https://github.com/jackin-project/jackin/pull/1078",
+      "title": "docs: record Jackin repository consolidation audit",
+      "source_branch": "chore/repository-consolidation-20260922",
+      "source_base_commit": "fd14ac6a7e0642842e66eeeb31d4b589d07148e1",
+      "source_commit": "69087d5aaa99d8b10d401ea3896fd2321a544d18",
+      "source_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "source_commits": [
+        {
+          "oid": "c11eae39d90a6e3998dd9f79ef4fd8fc9ab63626",
+          "subject": "docs: record jackin repository consolidation audit",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        },
+        {
+          "oid": "69087d5aaa99d8b10d401ea3896fd2321a544d18",
+          "subject": "chore(ci): refresh generated input state for audit records",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        }
+      ],
+      "squash_merge_commit": "d6ab0f90af5a1e744ae845b8c7172cac5180a09f",
+      "squash_merge_parent": "fd14ac6a7e0642842e66eeeb31d4b589d07148e1",
+      "squash_merge_subject": "docs: record Jackin repository consolidation audit (#1078)",
+      "squash_merge_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "squash_merge_committer": "GitHub <noreply@github.com>",
+      "scope": {
+        "diff_base": "fd14ac6a7e0642842e66eeeb31d4b589d07148e1",
+        "diff_head": "69087d5aaa99d8b10d401ea3896fd2321a544d18",
+        "files_changed": 13,
+        "insertions": 33876,
+        "deletions": 1,
+        "paths": [
+          {"status": "M", "path": ".github/ci/.github-actions-generator-state"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/CLEANUP-MANIFEST.md"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/DECISIONS.md"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/INVENTORY.json"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/README.md"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/RECOVERY-SHA256.txt"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/RECOVERY.md"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/VERIFICATION.md"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/create-complete-bundle.zsh"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/generate-inventory.jq"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/preserve-dirty-worktrees.zsh"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/scan-worktree-paths.zsh"},
+          {"status": "A", "path": "plans/repository-consolidation/20260922-jackin/scan-worktrees.zsh"}
+        ]
+      },
+      "verification": {
+        "github_state": "MERGED",
+        "merged_at": "2026-09-22T14:34:20Z",
+        "github_head_oid_matches_source": true,
+        "github_merge_oid_matches_repository": true,
+        "required_checks_passed": true,
+        "repository_merge_has_one_parent": true,
+        "repository_parent_matches_record": true
+      }
+    },
+    {
+      "pull_request": 1080,
+      "pull_request_url": "https://github.com/jackin-project/jackin/pull/1080",
+      "title": "ci: port release mise auto-install guard onto current main",
+      "source_branch": "fix/release-mise-auto-install-adapted-20260922",
+      "source_base_commit": "d6ab0f90af5a1e744ae845b8c7172cac5180a09f",
+      "source_commit": "b516991d914d23f6de170c8fb6bb3111d2e9315e",
+      "source_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "source_commits": [
+        {
+          "oid": "0e089acd5d0974b3b04b7983e0200da07da24ad6",
+          "subject": "ci: disable release mise auto-install",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ],
+          "cherry_picked_from": "7090d8c45c6cd72644dc66f0732a6b50c7167403"
+        },
+        {
+          "oid": "ae142400397fa4df0a1f9d6252c81680e930fd44",
+          "subject": "docs: record current CI reliability evidence",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ],
+          "cherry_picked_from": "d2ba0fc666961c691cc35ee4a58b1c671bce3d6e"
+        },
+        {
+          "oid": "b516991d914d23f6de170c8fb6bb3111d2e9315e",
+          "subject": "chore(ci): regenerate release policy state on current main",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        }
+      ],
+      "squash_merge_commit": "b44205ed39b1e40069f79fb9262d8c1647931766",
+      "squash_merge_parent": "d6ab0f90af5a1e744ae845b8c7172cac5180a09f",
+      "squash_merge_subject": "fix(release): prevent mise auto-install in release jobs",
+      "squash_merge_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "squash_merge_committer": "GitHub <noreply@github.com>",
+      "scope": {
+        "diff_base": "d6ab0f90af5a1e744ae845b8c7172cac5180a09f",
+        "diff_head": "b516991d914d23f6de170c8fb6bb3111d2e9315e",
+        "files_changed": 6,
+        "insertions": 121,
+        "deletions": 6,
+        "paths": [
+          {"status": "M", "path": ".github-gen/velnor-workflow.toml"},
+          {"status": "M", "path": ".github/ci/.github-actions-generator-state"},
+          {"status": "M", "path": ".github/workflows/release.yml"},
+          {"status": "M", "path": "plans/cicd-reliability/CARRIED-FAILURES.md"},
+          {"status": "M", "path": "plans/cicd-reliability/EXECUTION.md"},
+          {"status": "M", "path": "plans/cicd-reliability/FAILURE_LEDGER.md"}
+        ]
+      },
+      "verification": {
+        "github_state": "MERGED",
+        "merged_at": "2026-09-22T15:21:40Z",
+        "github_head_oid_matches_source": true,
+        "github_merge_oid_matches_repository": true,
+        "required_checks_passed": true,
+        "repository_merge_has_one_parent": true,
+        "repository_parent_matches_record": true
+      }
+    },
+    {
+      "pull_request": 1081,
+      "pull_request_url": "https://github.com/jackin-project/jackin/pull/1081",
+      "title": "fix(release): install the locked desktop tool closure",
+      "source_branch": "fix/release-mise-explicit-tool-closure-20260922",
+      "source_base_commit": "b44205ed39b1e40069f79fb9262d8c1647931766",
+      "source_commit": "d976e16be5f5402d55215baab3a9b47a047f0c54",
+      "source_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "source_commits": [
+        {
+          "oid": "d976e16be5f5402d55215baab3a9b47a047f0c54",
+          "subject": "fix(release): install the locked desktop tool closure",
+          "trailers": [
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>",
+            "Co-authored-by: Codex <codex@openai.com>"
+          ]
+        }
+      ],
+      "squash_merge_commit": "acad03ea1de2c3120a5b11f065f158376df82294",
+      "squash_merge_parent": "b44205ed39b1e40069f79fb9262d8c1647931766",
+      "squash_merge_subject": "fix(release): install the locked desktop tool closure (#1081)",
+      "squash_merge_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "squash_merge_committer": "GitHub <noreply@github.com>",
+      "scope": {
+        "diff_base": "b44205ed39b1e40069f79fb9262d8c1647931766",
+        "diff_head": "d976e16be5f5402d55215baab3a9b47a047f0c54",
+        "files_changed": 5,
+        "insertions": 26,
+        "deletions": 4,
+        "paths": [
+          {"status": "M", "path": ".github-gen/velnor-workflow.toml"},
+          {"status": "M", "path": ".github/ci/.github-actions-generator-state"},
+          {"status": "M", "path": ".github/workflows/release.yml"},
+          {"status": "M", "path": "crates/jackin-xtask/src/desktop/tests.rs"},
+          {"status": "M", "path": "mise.toml"}
+        ]
+      },
+      "verification": {
+        "github_state": "MERGED",
+        "merged_at": "2026-09-22T16:10:03Z",
+        "github_head_oid_matches_source": true,
+        "github_merge_oid_matches_repository": true,
+        "required_checks_passed": true,
+        "repository_merge_has_one_parent": true,
+        "repository_parent_matches_record": true
+      }
+    },
+    {
+      "pull_request": 1085,
+      "pull_request_url": "https://github.com/jackin-project/jackin/pull/1085",
+      "title": "test(usage): make parity renders deterministic",
+      "source_branch": "fix/usage-parity-fixed-clock-20260923",
+      "source_base_commit": "acad03ea1de2c3120a5b11f065f158376df82294",
+      "source_commit": "98a63809922696454a816f9a36b83a00518ac22c",
+      "source_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "source_commits": [
+        {
+          "oid": "98a63809922696454a816f9a36b83a00518ac22c",
+          "subject": "test(usage): inject fixed clock into parity renders",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        }
+      ],
+      "squash_merge_commit": "5ba333ee04b8545fbafb08ac658f281f7b94547f",
+      "squash_merge_parent": "acad03ea1de2c3120a5b11f065f158376df82294",
+      "squash_merge_subject": "test(usage): make parity renders deterministic (#1085)",
+      "squash_merge_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "squash_merge_committer": "GitHub <noreply@github.com>",
+      "scope": {
+        "diff_base": "acad03ea1de2c3120a5b11f065f158376df82294",
+        "diff_head": "98a63809922696454a816f9a36b83a00518ac22c",
+        "files_changed": 1,
+        "insertions": 43,
+        "deletions": 107,
+        "paths": [
+          {"status": "M", "path": "crates/jackin-usage/src/host/projection/tests.rs"}
+        ]
+      },
+      "verification": {
+        "github_state": "MERGED",
+        "merged_at": "2026-09-22T18:04:15Z",
+        "github_head_oid_matches_source": true,
+        "github_merge_oid_matches_repository": true,
+        "required_checks_passed": true,
+        "repository_merge_has_one_parent": true,
+        "repository_parent_matches_record": true
+      }
+    },
+    {
+      "pull_request": 1087,
+      "pull_request_url": "https://github.com/jackin-project/jackin/pull/1087",
+      "title": "fix(usage): preserve typed provider retry outcomes",
+      "source_branch": "fix/typed-provider-retry-metadata-20260923",
+      "source_base_commit": "acad03ea1de2c3120a5b11f065f158376df82294",
+      "source_commit": "15df337ef1e16ca1415df950587b6a34ebf9804a",
+      "source_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "source_commits": [
+        {
+          "oid": "f4a3385c63637b92880c188a8c692e45de68e029",
+          "subject": "fix(usage): carry typed provider retry metadata",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        },
+        {
+          "oid": "15df337ef1e16ca1415df950587b6a34ebf9804a",
+          "subject": "fix(usage): preserve typed provider retry metadata",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        }
+      ],
+      "squash_merge_commit": "7e5624322d2cfb9ad9cdf0772b8f48418721cc98",
+      "squash_merge_parent": "5ba333ee04b8545fbafb08ac658f281f7b94547f",
+      "squash_merge_subject": "fix(usage): preserve typed provider retry metadata (#1087)",
+      "squash_merge_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "squash_merge_committer": "GitHub <noreply@github.com>",
+      "scope": {
+        "diff_base": "acad03ea1de2c3120a5b11f065f158376df82294",
+        "diff_head": "15df337ef1e16ca1415df950587b6a34ebf9804a",
+        "files_changed": 16,
+        "insertions": 848,
+        "deletions": 280,
+        "paths": [
+          {"status": "M", "path": "crates/jackin-usage/src/host/broker.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/host/broker/tests.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/host/credential_resolver.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/host/credential_resolver/tests.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/host/discovery.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/host/discovery/tests.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/usage.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/usage/claude.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/usage/claude/tests.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/usage/codex.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/usage/codex/tests.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/usage/openrouter.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/usage/openrouter/tests.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/usage/refresh.rs"},
+          {"status": "M", "path": "crates/jackin-usage/src/usage/tests.rs"},
+          {"status": "M", "path": "crates/jackin-usage/tests/fixtures/contracts/provider-call-allowlist.json"}
+        ]
+      },
+      "verification": {
+        "github_state": "MERGED",
+        "merged_at": "2026-09-22T19:08:12Z",
+        "github_head_oid_matches_source": true,
+        "github_merge_oid_matches_repository": true,
+        "required_checks_passed": true,
+        "repository_merge_has_one_parent": true,
+        "repository_parent_matches_record": true
+      }
+    },
+    {
+      "pull_request": 1086,
+      "pull_request_url": "https://github.com/jackin-project/jackin/pull/1086",
+      "title": "test(otlp): wait for acknowledged exports and join testbed",
+      "source_branch": "fix/otlp-testbed-ack-lifecycle-20260923",
+      "source_base_commit": "acad03ea1de2c3120a5b11f065f158376df82294",
+      "source_commit": "f51c68d8bff51dd9a778bc4f4416af7dce71d14a",
+      "source_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "source_commits": [
+        {
+          "oid": "25e634319bcabc890ec314ea4b4a6982a59ff5d9",
+          "subject": "test(otlp): own testbed lifecycle and acknowledgements",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        },
+        {
+          "oid": "4f9ed4c77b32f8dc074adabd44e67e8a32c4e544",
+          "subject": "fix(otlp): bound testbed shutdown and wait barriers",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        },
+        {
+          "oid": "86cf3f4b22655c41f5d1c439c4a7e817dec715d3",
+          "subject": "fix(otlp): close detached testbed connections",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        },
+        {
+          "oid": "f51c68d8bff51dd9a778bc4f4416af7dce71d14a",
+          "subject": "docs(otlp): describe detached connection cleanup",
+          "trailers": [
+            "Co-authored-by: Codex <codex@openai.com>",
+            "Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>"
+          ]
+        }
+      ],
+      "squash_merge_commit": "55e21f05bdee37a1424464ce69b86fc5e550307a",
+      "squash_merge_parent": "7e5624322d2cfb9ad9cdf0772b8f48418721cc98",
+      "squash_merge_subject": "fix(otlp): make testbed shutdown bounded and complete",
+      "squash_merge_author": "Alexey Zhokhov <alexey@zhokhov.com>",
+      "squash_merge_committer": "GitHub <noreply@github.com>",
+      "scope": {
+        "diff_base": "acad03ea1de2c3120a5b11f065f158376df82294",
+        "diff_head": "f51c68d8bff51dd9a778bc4f4416af7dce71d14a",
+        "files_changed": 7,
+        "insertions": 573,
+        "deletions": 47,
+        "paths": [
+          {"status": "M", "path": "Cargo.lock"},
+          {"status": "M", "path": "crates/jackin-diagnostics/tests/wire_failure_endpoint_loss.rs"},
+          {"status": "M", "path": "crates/jackin-otlp-testbed/Cargo.toml"},
+          {"status": "M", "path": "crates/jackin-otlp-testbed/README.md"},
+          {"status": "M", "path": "crates/jackin-otlp-testbed/src/lib.rs"},
+          {"status": "M", "path": "crates/jackin-otlp-testbed/src/tests.rs"},
+          {"status": "M", "path": "crates/jackin/tests/diagnostics_validate.rs"}
+        ]
+      },
+      "verification": {
+        "github_state": "MERGED",
+        "merged_at": "2026-09-22T19:41:32Z",
+        "github_head_oid_matches_source": true,
+        "github_merge_oid_matches_repository": true,
+        "required_checks_passed": true,
+        "repository_merge_has_one_parent": true,
+        "repository_parent_matches_record": true
+      }
+    }
+  ]
+}
