@@ -3574,6 +3574,7 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "clap",
+ "flate2",
  "fs4",
  "hex",
  "jackin-process",
@@ -3585,6 +3586,7 @@ dependencies = [
  "serde_yaml_ng",
  "sha2 0.11.0",
  "syn 2.0.119",
+ "tar",
  "tempfile",
  "toml",
 ]

@@ -39,6 +39,7 @@ mod pty_fixture;
 mod ratchet;
 mod readme_freshness;
 mod release_archive;
+mod release_sbom;
 mod release_verify;
 mod report;
 mod schema;
@@ -112,7 +113,7 @@ enum Command {
     /// Validate and activate the prepared Rust toolchain used by CI.
     #[command(name = "ci-toolchain", subcommand)]
     CiToolchain(ci_toolchain::CiToolchainCommand),
-    /// Perform resilient GitHub API and release operations for CI.
+    /// Perform resilient GitHub API operations for CI.
     #[command(name = "github", subcommand)]
     Github(github::GithubCommand),
     /// Construct base-image build and publish tasks.
@@ -199,6 +200,15 @@ enum Command {
     /// Use as `cargo xtask release-verify <archive>.tar.gz` or `.zip` (usage menu-bar).
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
+    /// Verify the complete six-payload preview package handoff.
+    ///
+    /// Use as `cargo xtask release-verify-package` with
+    /// `VELNOR_VERIFIED_PACKAGE_DIR` set.
+    #[command(name = "release-verify-package")]
+    ReleaseVerifyPackage(release_verify::ReleaseVerifyPackageArgs),
+    /// Preview-package migration operations.
+    #[command(subcommand)]
+    Preview(preview::PreviewCommand),
     /// Build, package, sign, and describe every release target for one crate.
     #[command(name = "release-archives")]
     ReleaseArchives(release_archive::ReleaseArchivesArgs),
@@ -336,7 +346,9 @@ fn main() -> ExitCode {
         Command::TelemetryRegistry(args) => telemetry_registry::run(args),
         Command::TelemetryBench(args) => telemetry_bench::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
+        Command::Preview(command) => preview::run(command),
         Command::ReleaseVerify(args) => release_verify::run(args),
+        Command::ReleaseVerifyPackage(args) => release_verify::run_package(args),
         Command::ReleaseArchives(args) => release_archive::run(args),
         Command::Health(args) => health::run(args),
         Command::Lint { command, strict } => run_lint(command, strict),

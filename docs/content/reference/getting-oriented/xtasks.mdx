@@ -73,3 +73,15 @@ The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates
 ## Adding a new xtask
 
 Repo-internal automation belongs in this binary, not in shell scripts or one-off `justfile` recipes: add a module under <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, register the subcommand in the `Command` enum, and — when CI or contributors will invoke it routinely — add a delegating mise task. Host-side developer workflows that must be available before a checkout exists belong in `jackin-dev` instead. Update this page in the same PR.
+
+## Preview package publication
+
+Preview publication is owned by the typed package-release workflow:
+
+1. `mise run release-preview-package` builds the source-bound six-payload package.
+2. `mise run verify-preview-package` verifies the handoff and its provenance.
+3. The generated preview workflow stages and publishes the verified package, then
+   creates the Homebrew consumer update PR.
+
+A malformed rolling release is handled only by the Jackin-specific,
+fingerprint-guarded migration path before the typed publisher runs.
