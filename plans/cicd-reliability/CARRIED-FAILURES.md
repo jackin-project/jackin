@@ -4,6 +4,36 @@ Jackin CI/CD goal, refreshed 2026-09-22. Everything below remains FAIL,
 unproven, or actively being repaired; no entry is closed merely because it has
 another owner or an earlier PR. Evidence record: [EXECUTION.md](EXECUTION.md).
 
+## Current authoritative carried state — 2026-09-22
+
+The mandatory evidence is preserved exactly here so a rerun cannot overwrite a
+first attempt:
+
+- [Run 35521080097 attempt 1 / job 106105226160](https://github.com/jackin-project/jackin/actions/runs/35521080097/job/106105226160), main `fce94cea8a15de0c2db3bb4ff880d741baf5c00a`: diagnostics failed `conformance_partial_success_is_not_retried` at `mod.rs:51`, left `7` versus right `1`; `108/122` ran, `107` passed, `1` failed, `1` skipped, and `14` were not run.
+- [Run 35521080097 attempt 2 / job 106150119934](https://github.com/jackin-project/jackin/actions/runs/35521080097/job/106150119934): same diagnostics path succeeded at `21:11:07–21:12:58Z`. This is a separate successful attempt, not a closure of the first-attempt failure.
+- [Run 35515575859 / job 106090835001](https://github.com/jackin-project/jackin/actions/runs/35515575859/job/106090835001), head `0163d1b7c654753f23d9ee7334866569c24615d0`: Desktop was cancelled after Mise found and installed `26` tools; `Run desktop-merge` lasted `34m57s`, with source-fallback installs for cargo-audit, cargo-dylint, codebook-lsp, and dylint-link.
+- [Current main run 35722770593 / job 106729665225](https://github.com/jackin-project/jackin/actions/runs/35722770593/job/106729665225), head `de046d3345bb2ec44f9749655cd29164b6e4e4c9`: `jackin-usage` render failed because the output said `expires in 29d` while the test required `expires in 30d`; `148/577` ran, `147` passed, `1` failed, and `429` did not run.
+- PR [#1079](https://github.com/jackin-project/jackin/pull/1079), commit `7090d8c45c6cd72644dc66f0732a6b50c7167403`, has green candidate checks in [run 35738453565](https://github.com/jackin-project/jackin/actions/runs/35738453565). This is not completion evidence.
+
+### Carried blockers
+
+1. Velnor phase identity can be lost during regeneration/preparation; the
+   generic phase fix is not yet published and adopted by Jackin.
+2. Empty selection lacks the upstream proof contract required for a fail-closed
+   aggregate.
+3. Release auto-install is disabled by #1079, but exact locked release tools
+   are not yet provisioned; release coverage remains open.
+4. Required result artifacts do not yet carry the complete candidate/base/plan/
+   generator/phase/lane provenance contract.
+5. `merge_group` is absent from the generated admission path; no merge-group
+   run proves PR-to-queue parity. Desktop and release are also not full PR
+   obligations.
+6. Measured PR/main/Desktop classes exceed `120s`; cache pressure, MBX churn,
+   repeated bootstrap, and unproven cross-workflow native reuse remain.
+
+The acceptance matrix is maintained in [EXECUTION.md](EXECUTION.md). No
+completion, six-nines, full-inventory, or reuse claim is made.
+
 ---
 
 ## Post-#1053 live result — correctness green; performance and no-work remain FAIL
