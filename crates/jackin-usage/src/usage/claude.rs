@@ -164,14 +164,7 @@ where
         ClaudeWaveResolution::Denied => (claude_denied_view(agent, provider, now), None),
         ClaudeWaveResolution::Missing => (claude_missing_view(agent, provider, now), None),
         ClaudeWaveResolution::Resolved(resolved) => {
-            claude_resolved_view_with_fetch(
-                agent,
-                provider,
-                now,
-                *resolved,
-                fetch_oauth,
-                fetch_cli,
-            )
+            claude_resolved_view_with_fetch(agent, provider, now, *resolved, fetch_oauth, fetch_cli)
         }
     }
 }
@@ -292,8 +285,7 @@ where
     let (oauth_quota, oauth_error) = split_provider_fetch(Some(
         fetch_oauth(&resolved.access_token).map_err(ProviderError::from),
     ));
-    let (cli_usage, cli_error) =
-        split_provider_fetch(oauth_quota.is_none().then(fetch_cli));
+    let (cli_usage, cli_error) = split_provider_fetch(oauth_quota.is_none().then(fetch_cli));
     let provider_error = claude_provider_error_label(oauth_error.as_ref(), cli_error.as_ref());
     let status = if oauth_quota.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh

@@ -194,13 +194,7 @@ fn profile_snapshot_carries_typed_429_retry_after_to_broker_boundary() {
     };
     let now = 1_781_728_000;
     let (view, rate_limit) =
-        codex_profile_snapshot_with_rate_limit_at(
-            "codex",
-            &credentials,
-            home.path(),
-            now,
-            || now,
-        );
+        codex_profile_snapshot_with_rate_limit_at("codex", &credentials, home.path(), now, || now);
     server.join().expect("429 fixture server");
 
     assert_eq!(view.status, UsageSnapshotStatus::Stale);

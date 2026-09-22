@@ -103,12 +103,7 @@ impl From<ProviderHttpError> for ProviderError {
                 message,
                 retry_after,
                 response_received_at_epoch,
-            } => Self::http_status(
-                message,
-                status,
-                retry_after,
-                response_received_at_epoch,
-            ),
+            } => Self::http_status(message, status, retry_after, response_received_at_epoch),
         }
     }
 }
