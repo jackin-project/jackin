@@ -42,3 +42,29 @@ fn initial_argv_falls_back_to_first_instance_then_slug() {
         "claude"
     );
 }
+
+#[tokio::test]
+async fn sibling_auth_prewarm_join_barrier_waits_for_detached_work() {
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let (finished_tx, mut finished_rx) = tokio::sync::oneshot::channel();
+    let prewarm = tokio::spawn(async move {
+        started_tx.send(()).unwrap();
+        release_rx.await.unwrap();
+        finished_tx.send(()).unwrap();
+    });
+
+    let mut wait = Box::pin(await_sibling_auth_prewarm(Some(prewarm)));
+    tokio::select! {
+        result = &mut wait => panic!("prewarm join returned before detached work finished: {result:?}"),
+        _ = started_rx => {}
+    }
+    assert!(
+        finished_rx.try_recv().is_err(),
+        "detached prewarm must still be running before its release gate"
+    );
+
+    release_tx.send(()).unwrap();
+    wait.await.unwrap();
+    finished_rx.await.unwrap();
+}
