@@ -18,6 +18,16 @@ pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub(crate) struct ProviderError {
     message: String,
     http_status: Option<u16>,
+    retry_after_seconds: Option<u64>,
+}
+
+/// Typed rate-limit metadata carried from a provider snapshot to the host
+/// broker. The deadline is absent when the provider returned HTTP 429 without
+/// a valid numeric `Retry-After` header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderRateLimit {
+    /// Absolute epoch deadline derived from the provider's `Retry-After` header.
+    pub retry_at_epoch: Option<i64>,
 }
 
 impl ProviderError {
@@ -25,13 +35,15 @@ impl ProviderError {
         Self {
             message,
             http_status: None,
+            retry_after_seconds: None,
         }
     }
 
-    fn http_status(message: String, status: u16) -> Self {
+    fn http_status(message: String, status: u16, retry_after_seconds: Option<u64>) -> Self {
         Self {
             message,
             http_status: Some(status),
+            retry_after_seconds,
         }
     }
 
@@ -41,6 +53,18 @@ impl ProviderError {
 
     pub(crate) fn status(&self) -> Option<u16> {
         self.http_status
+    }
+
+    pub(crate) fn retry_after_seconds(&self) -> Option<u64> {
+        self.retry_after_seconds
+    }
+
+    pub(crate) fn rate_limit(&self, now: i64) -> Option<ProviderRateLimit> {
+        (self.status() == Some(429)).then(|| ProviderRateLimit {
+            retry_at_epoch: self
+                .retry_after_seconds
+                .map(|seconds| now.saturating_add(i64::try_from(seconds).unwrap_or(i64::MAX))),
+        })
     }
 }
 
@@ -56,7 +80,11 @@ impl From<ProviderHttpError> for ProviderError {
             ProviderHttpError::Transport(message) | ProviderHttpError::Decode(message) => {
                 Self::new(message)
             }
-            ProviderHttpError::HttpStatus { status, message } => Self::http_status(message, status),
+            ProviderHttpError::HttpStatus {
+                status,
+                message,
+                retry_after_seconds,
+            } => Self::http_status(message, status, retry_after_seconds),
         }
     }
 }
@@ -86,12 +114,6 @@ pub(crate) fn usage_error_is_unauthorized(error: &ProviderError) -> bool {
 
 pub(crate) fn usage_error_is_rate_limited(error: &ProviderError) -> bool {
     error.status() == Some(429)
-}
-
-/// Retry-After is not part of the typed provider error source. Never recover
-/// a retry deadline from a rendered error message.
-pub(crate) fn parse_retry_after_seconds(_error: &ProviderError) -> Option<u64> {
-    None
 }
 
 /// Owned document shape for reading materialized accounts JSON (tests + any
