@@ -2,7 +2,7 @@
 schema = 2
 [inputs]
 config	e6ba9a1a0a80710e
-scan	ff79d2fc7fb3e333
+scan	f95f8716e4382e34
 generator	70
 [outputs]
 .github/AGENTS.md	02ebb7198c435e9b
@@ -15,8 +15,8 @@ generator	70
 .github/workflows/ci-push-head-ledger.yml	deede0704c173bb0
 .github/workflows/ci-unit-bun.yml	df7435b9e88d442e
 .github/workflows/ci-unit-docker.yml	34fdd5d5a56aada3
-.github/workflows/ci-unit-rust.yml	620bfe84959a2018
-.github/workflows/ci-unit-swift.yml	6b81bc55aace7e7a
+.github/workflows/ci-unit-rust.yml	2aaa65103ad3dd65
+.github/workflows/ci-unit-swift.yml	306d5f683cb9fb23
 .github/workflows/desktop-merge.yml	d91555bcbd2034bf
 .github/workflows/desktop-scheduled.yml	3e36cd485707f58f
 .github/workflows/maintenance.yml	716562c6547040f2
