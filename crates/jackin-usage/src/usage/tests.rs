@@ -4391,7 +4391,7 @@ fn claude_keychain_credential_wins_over_file_paths() {
             account_email: Some("user@example.com".to_owned()),
             organization_type: Some("Max".to_owned()),
         },
-        || Some("env-token".to_owned()),
+        || Some(ClaudeOAuthEnvToken::new("env-token".to_owned())),
     );
     match resolution {
         ClaudeWaveResolution::Resolved(resolved) => {
@@ -4461,7 +4461,7 @@ fn claude_keychain_missing_falls_back_to_file_then_env() {
         &state2,
         |_| ClaudeKeychainRead::Missing,
         empty_file_probe,
-        || Some("env-token".to_owned()),
+        || Some(ClaudeOAuthEnvToken::new("env-token".to_owned())),
     );
     match &with_env {
         ClaudeWaveResolution::Resolved(r) => {
@@ -4473,6 +4473,28 @@ fn claude_keychain_missing_falls_back_to_file_then_env() {
     assert_eq!(
         claude_wave_policy(&with_env),
         ClaudeWavePolicy::LocalAnonymous
+    );
+}
+
+#[test]
+fn claude_oauth_env_reader_never_reads_api_key_variables() {
+    let mut requested = None;
+    let token = read_claude_oauth_env_token(|name| {
+        requested = Some(name.to_owned());
+        match name {
+            jackin_core::ANTHROPIC_API_KEY_ENV_NAME
+            | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME => {
+                Ok("api-key-must-not-be-read".to_owned())
+            }
+            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME => Ok("oauth-token".to_owned()),
+            _ => panic!("unexpected environment variable: {name}"),
+        }
+    });
+
+    assert_eq!(requested.as_deref(), Some("CLAUDE_CODE_OAUTH_TOKEN"));
+    assert_eq!(
+        token,
+        Some(ClaudeOAuthEnvToken::new("oauth-token".to_owned()))
     );
 }
 
