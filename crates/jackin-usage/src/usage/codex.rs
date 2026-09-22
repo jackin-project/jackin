@@ -6,6 +6,7 @@
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
+use super::refresh::{ProviderError, split_provider_fetch};
 use super::*;
 use serde::Deserialize;
 
@@ -124,15 +125,20 @@ pub(crate) fn codex_snapshot(
         Err(error) => (None, Some(error)),
     };
     let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
-    let (oauth_quota, oauth_error) = split_fetch(credentials.as_ref().map(|credentials| {
-        fetch_codex_oauth_usage_refreshing(credentials, &codex_home).map(|mut usage| {
-            usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
-                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::HttpError)
-                .ok();
-            usage
-        })
-    }));
+    let (oauth_quota, oauth_error) =
+        split_provider_fetch(credentials.as_ref().map(|credentials| {
+            fetch_codex_oauth_usage_refreshing(credentials, &codex_home).map(|mut usage| {
+                usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::HttpError)
+                    .ok();
+                usage
+            })
+        }));
     let provider_error = rpc_error.as_ref().or(oauth_error.as_ref()).cloned();
+    let auth_error = oauth_error.as_ref().or(rpc_error.as_ref());
+    let provider_error_message = provider_error
+        .as_ref()
+        .map(|error| error.message().to_owned());
     let quota = rpc_quota.or(oauth_quota.as_ref());
     let account = rpc_usage
         .as_ref()
@@ -143,10 +149,7 @@ pub(crate) fn codex_snapshot(
         UsageSnapshotStatus::NeedsLogin
     } else if quota.is_some() {
         UsageSnapshotStatus::Fresh
-    } else if provider_error
-        .as_deref()
-        .is_some_and(usage_error_is_unauthorized)
-    {
+    } else if auth_error.is_some_and(usage_error_is_unauthorized) {
         // The on-disk token is present but rejected (expired/revoked). Codex
         // refreshes its own token on launch; jackin reads the token as-is, so a
         // stale `auth.json` 401s here. Surface an honest "login" rather than a
@@ -167,7 +170,7 @@ pub(crate) fn codex_snapshot(
                     None,
                     None,
                     None,
-                    provider_error
+                    provider_error_message
                         .as_deref()
                         .or(Some("app-server/OAuth quota pending")),
                     UsageSnapshotStatus::Unsupported,
@@ -178,7 +181,7 @@ pub(crate) fn codex_snapshot(
                     None,
                     None,
                     None,
-                    provider_error
+                    provider_error_message
                         .as_deref()
                         .or(Some("app-server/OAuth quota pending")),
                     UsageSnapshotStatus::Unsupported,
@@ -189,7 +192,9 @@ pub(crate) fn codex_snapshot(
                     None,
                     None,
                     None,
-                    provider_error.as_deref().or(Some("provider API pending")),
+                    provider_error_message
+                        .as_deref()
+                        .or(Some("provider API pending")),
                     UsageSnapshotStatus::Unsupported,
                 ),
                 bucket(
@@ -198,7 +203,9 @@ pub(crate) fn codex_snapshot(
                     None,
                     None,
                     None,
-                    provider_error.as_deref().or(Some("provider API pending")),
+                    provider_error_message
+                        .as_deref()
+                        .or(Some("provider API pending")),
                     UsageSnapshotStatus::Unsupported,
                 ),
             ]
@@ -234,7 +241,7 @@ pub(crate) fn codex_snapshot(
             UsageSnapshotStatus::NeedsLogin => {
                 Some("Codex auth not available to Capsule".to_owned())
             }
-            UsageSnapshotStatus::Stale => Some(provider_error.unwrap_or_else(|| {
+            UsageSnapshotStatus::Stale => Some(provider_error_message.unwrap_or_else(|| {
                 "Codex provider usage unavailable; cached quota is stale".to_owned()
             })),
             _ => None,
@@ -252,17 +259,20 @@ pub(crate) fn codex_profile_snapshot(
 ) -> FocusedUsageView {
     // Same reset-credits merge as the ambient lane: the read-only GET must not
     // gate the quota — a failure degrades to no "Limit Reset Credits" row.
-    let (quota, error) = split_fetch(Some(fetch_codex_oauth_usage(credentials, codex_home).map(
-        |mut usage| {
-            usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, codex_home)
-                .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::HttpError)
-                .ok();
-            usage
-        },
-    )));
+    let (quota, error) = split_provider_fetch(Some(
+        fetch_codex_oauth_usage(credentials, codex_home)
+            .map_err(ProviderError::from)
+            .map(|mut usage| {
+                usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, codex_home)
+                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::HttpError)
+                    .ok();
+                usage
+            }),
+    ));
+    let error_message = error.as_ref().map(|error| error.message().to_owned());
     let status = if quota.is_some() {
         UsageSnapshotStatus::Fresh
-    } else if error.as_deref().is_some_and(usage_error_is_unauthorized) {
+    } else if error.as_ref().is_some_and(usage_error_is_unauthorized) {
         UsageSnapshotStatus::NeedsLogin
     } else {
         UsageSnapshotStatus::Stale
@@ -279,7 +289,7 @@ pub(crate) fn codex_profile_snapshot(
                     None,
                     None,
                     None,
-                    error.as_deref().or(Some("provider quota pending")),
+                    error_message.as_deref().or(Some("provider quota pending")),
                     status,
                 ),
                 bucket(
@@ -288,7 +298,7 @@ pub(crate) fn codex_profile_snapshot(
                     None,
                     None,
                     None,
-                    error.as_deref().or(Some("provider quota pending")),
+                    error_message.as_deref().or(Some("provider quota pending")),
                     status,
                 ),
             ]
@@ -317,7 +327,7 @@ pub(crate) fn codex_profile_snapshot(
             UsageConfidence::None
         },
         now,
-        last_error: error,
+        last_error: error_message,
     })
 }
 
@@ -975,9 +985,11 @@ fn codex_used_label(used_percent: f64) -> String {
 pub(crate) fn decode_codex_rpc_usage(
     limits_value: serde_json::Value,
     account_value: Option<serde_json::Value>,
-) -> Result<CodexRpcUsage, String> {
-    let limits = serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value)
-        .map_err(|err| format!("Codex app-server rate limit decode failed: {err}"))?;
+) -> Result<CodexRpcUsage, ProviderError> {
+    let limits =
+        serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value).map_err(|err| {
+            ProviderError::from(format!("Codex app-server rate limit decode failed: {err}"))
+        })?;
     // The account label is non-essential, so a decode mismatch (unknown
     // tag, shape drift) degrades to no label rather than failing
     // rate-limit collection.
@@ -988,7 +1000,7 @@ pub(crate) fn decode_codex_rpc_usage(
 
 pub(crate) fn fetch_codex_rpc_usage(
     gate: &mut ManagedCliLaunchGate,
-) -> Result<CodexRpcUsage, String> {
+) -> Result<CodexRpcUsage, ProviderError> {
     gate.can_launch("Codex app-server", Instant::now())?;
     let process = process_telemetry::ChildOperation::begin("codex");
     let mut child = match Command::new("codex")
@@ -1003,17 +1015,21 @@ pub(crate) fn fetch_codex_rpc_usage(
             process.spawn_failed();
             let message = format!("codex app-server failed to start: {err}");
             gate.record_launch_failure(message.clone());
-            return Err(message);
+            return Err(ProviderError::from(message));
         }
     };
 
     let Some(mut stdin) = child.stdin.take() else {
         process.fail_managed_io(&mut child);
-        return Err("codex app-server stdin unavailable".to_owned());
+        return Err(ProviderError::from(
+            "codex app-server stdin unavailable".to_owned(),
+        ));
     };
     let Some(stdout) = child.stdout.take() else {
         process.fail_managed_io(&mut child);
-        return Err("codex app-server stdout unavailable".to_owned());
+        return Err(ProviderError::from(
+            "codex app-server stdout unavailable".to_owned(),
+        ));
     };
     let (tx, rx) = mpsc::channel();
     let reader = jackin_telemetry::spawn::thread_stream("codex.stdout", move || {
@@ -1024,7 +1040,7 @@ pub(crate) fn fetch_codex_rpc_usage(
         }
     });
 
-    let result: Result<CodexRpcUsage, String> = (|| {
+    let result: Result<CodexRpcUsage, ProviderError> = (|| {
         drop(codex_rpc_request(
             &mut stdin,
             &rx,
@@ -1068,8 +1084,8 @@ pub(crate) fn fetch_codex_rpc_usage(
 
     if result.is_ok() {
         gate.record_success();
-    } else if let Err(message) = &result {
-        gate.record_launch_failure(message.clone());
+    } else if let Err(error) = &result {
+        gate.record_launch_failure(error.message().to_owned());
     }
     result
 }
@@ -1153,7 +1169,7 @@ pub(crate) fn codex_rpc_notification(stdin: &mut impl Write, method: &str) -> Re
 pub(crate) fn fetch_codex_oauth_usage(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
-) -> Result<CodexUsageResponse, String> {
+) -> Result<CodexUsageResponse, ProviderHttpError> {
     let mut headers = vec![(reqwest::header::USER_AGENT, "jackin-capsule/usage")];
     if let Some(account_id) = &credentials.account_id {
         headers.push((
@@ -1169,7 +1185,6 @@ pub(crate) fn fetch_codex_oauth_usage(
         &credentials.access_token,
         &headers,
     )
-    .map_err(|error| error.to_string())
 }
 
 /// Body for the `refresh_token` grant. Pure so the request shape is unit-tested
@@ -1193,29 +1208,39 @@ pub(crate) fn codex_access_token_from_response(value: &serde_json::Value) -> Opt
         .map(str::to_owned)
 }
 
-pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, String> {
+pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, ProviderHttpError> {
     provider_request(
         jackin_telemetry::schema::enums::ProviderName::Openai,
         "POST",
         "/oauth/token",
         || {
-            let client = provider_http_client()?;
+            let client = provider_http_client().map_err(ProviderHttpError::Transport)?;
             let response = client
                 .post(CODEX_OAUTH_TOKEN_URL)
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .header(reqwest::header::ACCEPT, "application/json")
                 .json(&codex_refresh_request_body(refresh_token))
                 .send()
-                .map_err(|err| format!("Codex token refresh request failed: {err}"))?;
+                .map_err(|err| {
+                    ProviderHttpError::Transport(format!(
+                        "Codex token refresh request failed: {err}"
+                    ))
+                })?;
             let status = response.status();
             if !status.is_success() {
-                return Err(format!("Codex token refresh HTTP {status}"));
+                return Err(ProviderHttpError::HttpStatus {
+                    status: status.as_u16(),
+                    message: format!("Codex token refresh HTTP {status}"),
+                });
             }
-            let value: serde_json::Value = response
-                .json()
-                .map_err(|err| format!("Codex token refresh decode failed: {err}"))?;
-            codex_access_token_from_response(&value)
-                .ok_or_else(|| "Codex token refresh response missing access_token".to_owned())
+            let value: serde_json::Value = response.json().map_err(|err| {
+                ProviderHttpError::Decode(format!("Codex token refresh decode failed: {err}"))
+            })?;
+            codex_access_token_from_response(&value).ok_or_else(|| {
+                ProviderHttpError::Decode(
+                    "Codex token refresh response missing access_token".to_owned(),
+                )
+            })
         },
     )
 }
@@ -1232,29 +1257,34 @@ pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, 
 pub(crate) fn fetch_codex_oauth_usage_refreshing(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
-) -> Result<CodexUsageResponse, String> {
+) -> Result<CodexUsageResponse, ProviderError> {
     match fetch_codex_oauth_usage(credentials, codex_home) {
-        Err(error) if usage_error_is_unauthorized(&error) => {
+        Ok(usage) => Ok(usage),
+        Err(error) => {
+            let error = ProviderError::from(error);
+            if !usage_error_is_unauthorized(&error) {
+                return Err(error);
+            }
             let Some(refresh_token) = credentials.refresh_token.as_deref() else {
                 return Err(error);
             };
-            let access_token = refresh_codex_access_token(refresh_token)?;
+            let access_token =
+                refresh_codex_access_token(refresh_token).map_err(ProviderError::from)?;
             let refreshed = CodexOAuthCredentials {
                 access_token,
                 account_id: credentials.account_id.clone(),
                 account_label: credentials.account_label.clone(),
                 refresh_token: credentials.refresh_token.clone(),
             };
-            fetch_codex_oauth_usage(&refreshed, codex_home)
+            fetch_codex_oauth_usage(&refreshed, codex_home).map_err(ProviderError::from)
         }
-        other => other,
     }
 }
 
 pub(crate) fn fetch_codex_oauth_reset_credits(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
-) -> Result<CodexResetCredits, String> {
+) -> Result<CodexResetCredits, ProviderHttpError> {
     let mut headers = vec![
         (reqwest::header::USER_AGENT, "jackin-capsule/usage"),
         (
@@ -1279,10 +1309,11 @@ pub(crate) fn fetch_codex_oauth_reset_credits(
         &resolve_codex_reset_credits_url(codex_home),
         &credentials.access_token,
         &headers,
-    )
-    .map_err(|error| error.to_string())?;
+    )?;
     if credits.available_count < 0 {
-        return Err("Codex reset credits invalid available count".to_owned());
+        return Err(ProviderHttpError::Decode(
+            "Codex reset credits invalid available count".to_owned(),
+        ));
     }
     Ok(credits)
 }

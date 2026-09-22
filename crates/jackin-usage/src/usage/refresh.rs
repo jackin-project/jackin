@@ -3,42 +3,94 @@
 
 //! Materialized-account writes and provider error classification.
 
-use super::{AtomicU64, FocusedUsageView, Ordering, Path, Serialize, Write, fs};
+use super::{AtomicU64, FocusedUsageView, Ordering, Path, ProviderHttpError, Serialize, Write, fs};
 #[cfg(test)]
 use serde::Deserialize;
 
 pub(crate) static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-pub(crate) fn usage_error_is_rate_limited(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    lower.contains("429")
-        || lower.contains("rate limit")
-        || lower.contains("retry-after")
-        || lower.contains("retry after")
+/// Error carrier used after provider fetches leave the shared HTTP boundary.
+///
+/// Only `ProviderHttpError::HttpStatus` contributes a status. Transport,
+/// decode, CLI, and RPC messages remain statusless even when their rendered
+/// text contains status-looking digits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProviderError {
+    message: String,
+    http_status: Option<u16>,
+}
+
+impl ProviderError {
+    fn new(message: String) -> Self {
+        Self {
+            message,
+            http_status: None,
+        }
+    }
+
+    fn http_status(message: String, status: u16) -> Self {
+        Self {
+            message,
+            http_status: Some(status),
+        }
+    }
+
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub(crate) fn status(&self) -> Option<u16> {
+        self.http_status
+    }
+}
+
+impl std::fmt::Display for ProviderError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl From<ProviderHttpError> for ProviderError {
+    fn from(error: ProviderHttpError) -> Self {
+        match error {
+            ProviderHttpError::Transport(message) | ProviderHttpError::Decode(message) => {
+                Self::new(message)
+            }
+            ProviderHttpError::HttpStatus { status, message } => Self::http_status(message, status),
+        }
+    }
+}
+
+impl From<String> for ProviderError {
+    fn from(message: String) -> Self {
+        Self::new(message)
+    }
+}
+
+pub(crate) fn split_provider_fetch<U>(
+    result: Option<Result<U, ProviderError>>,
+) -> (Option<U>, Option<ProviderError>) {
+    match result {
+        Some(Ok(value)) => (Some(value), None),
+        Some(Err(error)) => (None, Some(error)),
+        None => (None, None),
+    }
 }
 
 /// True when a provider fetch failed because the token was rejected (expired or
 /// revoked), as opposed to a transient/network error. Drives the honest
 /// `NeedsLogin` status so a stale on-disk token reads as "login", not "stale".
-pub(crate) fn usage_error_is_unauthorized(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    lower.contains("http 401") || lower.contains("http 403") || lower.contains("unauthorized")
+pub(crate) fn usage_error_is_unauthorized(error: &ProviderError) -> bool {
+    matches!(error.status(), Some(401 | 403))
 }
 
-pub(crate) fn parse_retry_after_seconds(error: &str) -> Option<u64> {
-    for marker in ["retry-after", "retry after"] {
-        let Some((_, tail)) = error.split_once(marker) else {
-            continue;
-        };
-        let digits = tail
-            .chars()
-            .skip_while(|ch| !ch.is_ascii_digit())
-            .take_while(char::is_ascii_digit)
-            .collect::<String>();
-        if let Ok(seconds) = digits.parse::<u64>() {
-            return Some(seconds);
-        }
-    }
+pub(crate) fn usage_error_is_rate_limited(error: &ProviderError) -> bool {
+    error.status() == Some(429)
+}
+
+/// Retry-After is not part of the typed provider error source. Never recover
+/// a retry deadline from a rendered error message.
+pub(crate) fn parse_retry_after_seconds(_error: &ProviderError) -> Option<u64> {
     None
 }
 
