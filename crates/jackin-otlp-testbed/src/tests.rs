@@ -83,6 +83,130 @@ async fn serves_all_three_otlp_services() {
         .expect("authenticated metric export");
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn waits_for_export_ack_before_reporting_a_trace() {
+    let mut testbed = Testbed::start().expect("start testbed");
+    testbed.set_behavior(Behavior::Delay(std::time::Duration::from_millis(100)));
+    let mut traces = opentelemetry_proto::tonic::collector::trace::v1::
+        trace_service_client::TraceServiceClient::connect(testbed.endpoint())
+        .await
+        .expect("connect trace client");
+    let export = tokio::spawn(async move {
+        traces
+            .export(ExportTraceServiceRequest {
+                resource_spans: vec![opentelemetry_proto::tonic::trace::v1::ResourceSpans {
+                    scope_spans: vec![opentelemetry_proto::tonic::trace::v1::ScopeSpans {
+                        spans: vec![opentelemetry_proto::tonic::trace::v1::Span {
+                            name: "delayed.trace".to_owned(),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+            })
+            .await
+            .expect("delayed trace export");
+    });
+
+    assert!(
+        testbed
+            .wait_for_trace_request(std::time::Duration::from_secs(1))
+            .await
+    );
+    assert!(
+        !testbed
+            .wait_for_span_count("delayed.trace", 1, std::time::Duration::from_millis(20))
+            .await
+    );
+    assert!(
+        testbed
+            .wait_for_span_count("delayed.trace", 1, std::time::Duration::from_secs(1))
+            .await
+    );
+    export.await.expect("export task");
+    testbed.shutdown().await.expect("join testbed receiver");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn zero_span_wait_is_immediate() {
+    let testbed = Testbed::start().expect("start testbed");
+    assert!(
+        testbed
+            .wait_for_span_count("unused.trace", 0, std::time::Duration::ZERO)
+            .await
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn shutdown_forces_an_open_delayed_client_after_grace_timeout() {
+    let mut testbed = Testbed::start().expect("start testbed");
+    testbed.set_behavior(Behavior::Delay(std::time::Duration::from_secs(30)));
+    let mut traces = opentelemetry_proto::tonic::collector::trace::v1::
+        trace_service_client::TraceServiceClient::connect(testbed.endpoint())
+        .await
+        .expect("connect trace client");
+    let export =
+        tokio::spawn(async move { traces.export(ExportTraceServiceRequest::default()).await });
+
+    assert!(
+        testbed
+            .wait_for_trace_request(std::time::Duration::from_secs(1))
+            .await
+    );
+    let shutdown = tokio::time::timeout(std::time::Duration::from_secs(2), testbed.shutdown())
+        .await
+        .expect("forced shutdown must be bounded");
+    assert!(matches!(shutdown, Err(ShutdownError::Timeout)));
+
+    let export = tokio::time::timeout(std::time::Duration::from_secs(1), export)
+        .await
+        .expect("forced shutdown must release the delayed client")
+        .expect("delayed export task");
+    assert!(
+        export.is_err(),
+        "forced shutdown must cancel the delayed export"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn shutdown_closes_a_half_open_connection_task() {
+    let mut testbed = Testbed::start().expect("start testbed");
+    let client = TcpStream::connect(testbed.addr)
+        .await
+        .expect("connect half-open client");
+
+    assert!(
+        testbed
+            .connections
+            .wait_for_connection(std::time::Duration::from_secs(1))
+            .await,
+        "testbed must register the accepted connection before shutdown"
+    );
+    assert!(
+        testbed
+            .connections
+            .wait_for_io_poll(std::time::Duration::from_secs(1))
+            .await,
+        "Tonic must poll the detached connection before shutdown"
+    );
+
+    let shutdown = tokio::time::timeout(std::time::Duration::from_secs(2), testbed.shutdown())
+        .await
+        .expect("half-open connection shutdown must be bounded");
+    assert!(matches!(shutdown, Err(ShutdownError::Timeout)));
+    assert_eq!(
+        testbed.connections.active_count(),
+        0,
+        "forced shutdown must release every detached Tonic connection"
+    );
+    assert!(
+        testbed.traces().is_empty(),
+        "an incomplete stream must not reach the export service"
+    );
+    drop(client);
+}
+
 #[test]
 fn namespace_detector_rejects_synthetic_legacy_attribute() {
     let attributes = [opentelemetry_proto::tonic::common::v1::KeyValue {

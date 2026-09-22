@@ -3404,6 +3404,7 @@ dependencies = [
 name = "jackin-otlp-testbed"
 version = "0.6.4"
 dependencies = [
+ "futures-util",
  "jackin-telemetry",
  "opentelemetry-proto",
  "tokio",
