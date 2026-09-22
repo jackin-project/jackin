@@ -17,8 +17,8 @@ use jackin_core::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 
-use crate::instance::RoleState;
 use crate::instance::naming::dind_certs_volume;
+use crate::instance::{AuthMountLease, RoleState};
 use crate::runtime::identity::GitIdentity;
 
 use super::progress_helpers::StepCounter;
@@ -178,6 +178,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     container_name: &str,
     prewarm: &SiblingAuthPrewarm<'_>,
     selected_agent: jackin_core::Agent,
+    auth_mount_leases: Vec<AuthMountLease>,
 ) -> Option<tokio::task::JoinHandle<()>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
     let sibling_agents = prewarm
@@ -238,7 +239,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         );
     }
 
-    Some(jackin_telemetry::spawn::joined_blocking(move || {
+    Some(spawn_auth_prewarm_worker(auth_mount_leases, move || {
         let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
         let instances: Vec<jackin_config::ResolvedInstance> =
             match jackin_config::resolve_launch(&config, ws.as_ref(), &role_key, None, None) {
@@ -311,6 +312,24 @@ pub(crate) fn spawn_sibling_auth_prewarm(
             }
         }
     }))
+}
+
+/// Keep mount leases owned by the blocking worker itself. A running
+/// `spawn_blocking` task cannot be aborted; if launch cancellation drops its
+/// join handle, the worker must still hold the leases until its writes finish.
+fn spawn_auth_prewarm_worker<F, R>(
+    auth_mount_leases: Vec<AuthMountLease>,
+    work: F,
+) -> tokio::task::JoinHandle<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    jackin_telemetry::spawn::joined_blocking(move || {
+        let result = work();
+        drop(auth_mount_leases);
+        result
+    })
 }
 
 /// Keep the launch-owned auth leases alive until sibling prewarm has finished.
@@ -1302,11 +1321,16 @@ pub(crate) async fn launch_role_runtime(
         *agent,
         sibling_prewarm.selected_image_reused,
     );
-    let sibling_auth_prewarm =
-        spawn_sibling_auth_prewarm(paths, container_name, sibling_auth_prewarm, *agent);
+    let sibling_auth_prewarm = spawn_sibling_auth_prewarm(
+        paths,
+        container_name,
+        sibling_auth_prewarm,
+        *agent,
+        state.auth_mount_leases.clone(),
+    );
     // Join before either detached or foreground launch returns. The returned
-    // `RoleState` owns the auth mount leases that protect these paths; a
-    // dropped handle would let sibling prewarm outlive those leases.
+    // `RoleState` owns the primary leases, and the prewarm worker owns clones
+    // so cancellation cannot let its blocking writes outlive mount protection.
     await_sibling_auth_prewarm(sibling_auth_prewarm).await?;
     if *non_interactive {
         // The container passed the premature-exit check. A programmatic caller
