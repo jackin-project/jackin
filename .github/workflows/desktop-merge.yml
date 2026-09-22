@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: desktop-merge-${{ github.repository }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: desktop-merge-${{ github.repository }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   desktop-merge:
