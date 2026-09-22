@@ -2,10 +2,7 @@ schema = 2
 
 [generator]
 repository = "jackin-project/jackin"
-revision = "4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0"
-
-[scan]
-exclude = ["native/Package.swift", "native/.swiftpm/**"]
+revision = "45ba3841fe9fbbfa0cbdfcfd81d1667a9ab3e7b2"
 
 # Public repo: GitHub-hosted singleton (no velnor lanes). Automatic events
 # stay GitHub-only so ci-required is not blocked by queued self-hosted jobs
@@ -22,32 +19,32 @@ runs_on = ["ubuntu-26.04"]
 ruleset_required_status_checks = ["ci-required", "Policy"]
 ruleset_external_status_checks = ["DCO"]
 
-# [renovate] ON HOLD for wave pin 3 (W4 precedent): s2 `validate_renovate`
-# requires the velnor provider + [workflow.selectors.velnor], but
-# `enforce_visibility_policy` requires public repos to be exactly
-# [github-hosted] and rejects a velnor selector — so [renovate] is
-# unsatisfiable on public repos at this pin. The renderer itself is
-# provider-agnostic (`control_plane_runner`), so the fix is validation-only
-# (G12, generator side). Uncomment below + the two [[declare]] rows at pin 3
-# to restore renovate.yml/renovate-validate.yml; until then both files are
-# absent from the tree (root renovate.json stays for the writer's return).
-# [renovate]
-# enabled = true
-# reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
-# schedule = "0 6 * * *"
-# token = "RENOVATE_TOKEN"
-# config = "renovate.json"
-# validate = true
-# author = "Renovate Bot <renovate@whitesourcesoftware.com>"
-# signoff = true
-#
-# [[declare]]
-# primitive = "renovate"
-# file = "renovate.yml"
-#
-# [[declare]]
-# primitive = "renovate-validate"
-# file = "renovate-validate.yml"
+# Keep the desktop producer and its Swift consumers on the same explicit
+# native contract. Velnor applies this profile/floor to the scanned BoltFFI
+# producer and carries the product edge to the scanned Swift consumers.
+[native.apple]
+cargo_profile = "desktop-release"
+deployment_floor = "26.0"
+
+# Renovate writer and strict config validation are rendered by the current
+# Velnor runtime for this hosted public-repository contract.
+[renovate]
+enabled = true
+reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
+schedule = "0 6 * * *"
+token = "RENOVATE_TOKEN"
+config = "renovate.json"
+validate = true
+author = "Renovate Bot <renovate@whitesourcesoftware.com>"
+signoff = true
+
+[[declare]]
+primitive = "renovate"
+file = "renovate.yml"
+
+[[declare]]
+primitive = "renovate-validate"
+file = "renovate-validate.yml"
 
 # Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
 # Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
@@ -63,9 +60,15 @@ tasks = ["desktop-merge"]
 timeout_minutes = 90
 status = "required"
 [check_profile.env]
+CARGO_INCREMENTAL = "0"
 CARGO_TERM_COLOR = "always"
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+RUSTC_WRAPPER = "sccache"
+# S2: the profile installs cargo:sccache before cargo:boltffi_cli. The
+# wrapper therefore exists before any task Cargo command runs, and the GHA
+# backend uses the runner-scoped Actions cache service.
+SCCACHE_GHA_ENABLED = "true"
 # S1: `mise run` auto-installs every missing toolset entry before the task
 # (26 tools, 576s on run 35542103447 despite a mise-cache HIT on the 9
 # install_args tools). The desktop graph only invokes the 9 installed tools
@@ -85,26 +88,31 @@ tasks = ["desktop-scheduled"]
 timeout_minutes = 90
 status = "required"
 [check_profile.env]
+CARGO_INCREMENTAL = "0"
 CARGO_TERM_COLOR = "always"
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+RUSTC_WRAPPER = "sccache"
+# S2: keep the wrapper tied to this profile's installed cargo:sccache tool.
+SCCACHE_GHA_ENABLED = "true"
 # S1: same as desktop-merge — skip the whole-toolset auto-install
 # (scheduled tier additionally needs periphery for desktop-deadcode, already
 # in this profile's tool list). Audit: plans/cicd-reliability/s1-result.md.
 MISE_TASK_RUN_AUTO_INSTALL = "false"
 MISE_NOT_FOUND_AUTO_INSTALL = "false"
 
-# One file, one trigger set, faithful to the copy: the merge tier runs on
-# push-to-main + dispatch (copy desktop-cadence.yml push: branches: [main],
-# merge job gated on event != schedule); the scheduled tier keeps the
-# copy's Monday cron.
+# One file, one trigger set: the merge tier runs the same desktop graph on
+# main pushes and pull-request/merge-queue candidates, plus dispatch. The
+# `branches` filter scopes only push; the published scheduled-checks renderer
+# preserves candidate coverage and uses non-canceling SHA groups for committed
+# and merge-group events. The scheduled tier keeps its Monday cron.
 [[declare]]
 primitive = "scheduled-checks"
 file = "desktop-merge.yml"
 [declare.args]
 profiles = ["desktop-merge"]
 name = "Desktop merge cadence"
-events = ["push"]
+events = ["push", "pull_request", "merge_group"]
 branches = ["main"]
 
 [[declare]]
@@ -113,6 +121,56 @@ file = "desktop-scheduled.yml"
 [declare.args]
 profiles = ["desktop-scheduled"]
 name = "Desktop scheduled cadence"
+
+# Durable post-merge evidence: one scheduled job records all first attempts
+# and reruns for the CI/Main and Desktop obligations, then uploads the
+# fail-closed JSON/Markdown rollup. The push-head ledger is the denominator
+# source; the rollup task exits nonzero for any unqualified result. Observed
+# failures remain red in the report and are never recoded as success.
+[[check_profile]]
+id = "ci-evidence"
+name = "CI first-attempt evidence"
+schedule = "47 4 * * *"
+runner = "github"
+tasks = ["ci-evidence"]
+timeout_minutes = 20
+status = "required"
+artifacts = ["target/ci-evidence/"]
+[check_profile.permissions]
+actions = "read"
+[check_profile.env]
+GH_TOKEN = "${{ github.token }}"
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "ci-evidence.yml"
+[declare.args]
+profiles = ["ci-evidence"]
+name = "CI first-attempt evidence"
+
+# Git history does not record where a multi-commit push ends. This producer
+# runs once per main push and retains the exact push payload as a durable
+# artifact. ci-evidence treats missing, stale, or contaminated artifacts as a
+# source-proof failure; it never reconstructs push heads from observed runs.
+[[check_profile]]
+id = "ci-push-head-ledger"
+name = "CI push-head ledger"
+runner = "github"
+tasks = ["ci-push-head-ledger"]
+timeout_minutes = 10
+status = "required"
+artifacts = ["target/ci-push-head-ledger/"]
+[check_profile.permissions]
+actions = "read"
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "ci-push-head-ledger.yml"
+[declare.args]
+profiles = ["ci-push-head-ledger"]
+name = "CI push-head ledger"
+events = ["push"]
+branches = ["main"]
 
 # Renovate upstream liveness (D2): the #994 renovate-validate.yml job that
 # verifies the pinned mise release still ships both construct architectures.
@@ -151,52 +209,15 @@ branches = ["main"]
 id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
-# XCFramework must exist before `swift build` resolves the binary target.
-# The ci task rebuilds it in-job on one macOS runner (separate jobs do not
-# share target/xcframework).
-# platform = "macos-arm64": s2 spelling of the s1 capabilities=["xcframework"]
-# Q4 obligation — without it this Apple-bound unit renders ubuntu + Linux
-# plan-artifact runtime.
-# depends_on (F2): FFI touches select this Swift consumer; selection coupling
-# only, no forced serialization (the unit rebuilds the XCFramework in-job).
-[[units]]
-id = "swift-package-native"
-kind = "swift"
-root = "native"
-watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
-ci_tasks = ["swift-package-native-ci"]
-mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-platform = "macos-arm64"
-depends_on = ["rust-jackin-usage-ffi"]
+# Native Swift, XcodeGen, and BoltFFI units are discovered from the scanned
+# manifests below. Their typed product edge is derived from the literal
+# `JackinUsage.xcframework` paths; no duplicate synthetic unit is needed.
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
 # dylint-link must be on PATH (rust + cargo-binstall).
 [[units]]
 id = "rust-jackin-lints"
 mise_tools = ["rust", "cargo-binstall"]
-
-# The Xcode project links the FFI XCFramework (xcodebuild resolves it from
-# target/xcframework), so the bare scan-derived generate/build/test sequence
-# fails without it. The FFI unit declares the framework as a product with no
-# transportable outputs, so the consumer rebuilds it in-job: the prerequisite
-# edge prepends `mise run desktop-xcframework` to these commands (tablerock
-# pattern). mise_tools replaces the scanned set, so xcodegen rides along
-# with the rust chain the framework build needs.
-[[units]]
-id = "rust-jackin-usage-ffi"
-
-[[units.products]]
-name = "xcframework"
-task = "desktop-xcframework"
-
-[[units]]
-id = "swift-xcodegen-native-project-yml-jackindesktop"
-mise_tools = ["xcodegen", "cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-depends_on = ["rust-jackin-usage-ffi"]
-
-[[units.prerequisites]]
-producer = "rust-jackin-usage-ffi"
-product = "xcframework"
 
 # Q4 obligation, second Swift unit (scanned): AppKit prototype, genuinely
 # Apple-bound, but scan evidence cannot prove it. Row-over-scan merge keeps
@@ -205,6 +226,25 @@ product = "xcframework"
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
 platform = "macos-arm64"
+# Velnor 816 collapses all Swift members into one reusable workflow, so its
+# shared job env includes the S2 wrapper. Keep that binary available for this
+# non-Cargo member as well; otherwise the generated job would name a missing
+# wrapper even though this member does not invoke Cargo.
+mise_tools = ["cargo:sccache"]
+
+[[units]]
+id = "swift-package-native"
+[units.env]
+CARGO_INCREMENTAL = "0"
+RUSTC_WRAPPER = "sccache"
+SCCACHE_GHA_ENABLED = "true"
+
+[[units]]
+id = "swift-xcodegen-native-project-yml-jackindesktop"
+[units.env]
+CARGO_INCREMENTAL = "0"
+RUSTC_WRAPPER = "sccache"
+SCCACHE_GHA_ENABLED = "true"
 
 # Desktop release (L10): tag-triggered tasks release over the canonical
 # desktop mise tasks. Each event runs exactly one self-contained job

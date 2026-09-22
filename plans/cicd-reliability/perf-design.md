@@ -1,6 +1,8 @@
-# Perf slice design (agent 15, 2026-09-21, read-only)
+# Perf slice design (agent 15, 2026-09-21; S2 status updated 2026-09-22)
 
-All evidence gathered. No repo writes made (scratch only under `/tmp/perf-design-1`: downloaded job logs + notes).
+Baseline evidence is from the downloaded job logs and notes under
+`/tmp/perf-design-1`. The S2 change in this fork is static/config-only: no
+hosted post-change run has been executed, so no speedup is measured or claimed.
 
 # Perf slice design — Jackin CI/CD 120s budget
 
@@ -36,7 +38,7 @@ All links `https://github.com/jackin-project/jackin/actions/runs/<id>`, jobs `/j
 
 - Actions cache: **30 entries / 11.14 GB = 111% of the 10GB cap** → LRU eviction churn. mbx blobs dominate (rust-jackin 2.15GB, capsule 1.13GB×2, …); ~15 mbx entries fit, rest evicted. Registry caches healthy (5×238MB, exact hits).
 - Eviction proven: desktop mise key `d76f…` HIT 14:44 → **MISS 15:55** (same key) → re-saved 15:59.
-- sccache: **installed but unwired, mechanism confirmed** — zero `SCCACHE_*/RUSTC_WRAPPER` in the generated tree. Generator emits sccache env only when `tools_for_unit` yields `Sccache` (`ir.rs:6153`), which happens for Rust **iff not mbx** (Jackin rust = all mbx → excluded) and **never for Swift** (`UnitKind::Swift` arm has no transport). Check-profiles path emits no sccache env at all.
+- sccache: before S2, **installed but unwired, mechanism confirmed** — zero `SCCACHE_*/RUSTC_WRAPPER` in the generated tree. S2 now enables the supported GHA backend on the two desktop check profiles and the Apple units that provision `cargo:sccache`; Rust MBX jobs and release jobs remain wrapper-free.
 - Phase summary: **test execution is trivial everywhere** (nextest 3s, swift ~1min); cost = cold compile (macOS release+LTO 7–16min ×2–3 per push; Linux test-profile ×2 nextest+clippy) + tool installs (3.5–13min) + mbx post-export (~2min/job) + queue (normally <10s; 6.5min contention observed).
 
 ## 2. Ranked slice plan
@@ -49,13 +51,14 @@ All links `https://github.com/jackin-project/jackin/actions/runs/<id>`, jobs `/j
 - **Saving**: 448–573s → ~0 (both desktop logs). Same ~8min on release drill.
 - **Verification**: next desktop-merge run green; log lacks `installing 26 tools`; `Run desktop-merge` reaches `[desktop-ci]` in <60s; step-time delta in job API.
 
-### S2 — Wire sccache (GHA backend) on all cargo-invoking macOS jobs — 5–15min warm, Jackin env + Velnor gap
+### S2 — Wire sccache (GHA backend) on cargo-invoking macOS jobs that already provision it — implemented, unmeasured
 
-- **Mechanism**: `CARGO_INCREMENTAL=0`, `RUSTC_WRAPPER=sccache`, `SCCACHE_GHA_ENABLED=true` as job env on `swift-package-native` unit + desktop/release profiles. `cargo:sccache` is already in all three tool lists; only env is missing. First run populates; subsequent runs share across swift-unit/desktop/release (same OS/arch/lock).
-- **Owned files**: Jackin `.github-gen/velnor-workflow.toml` (`[check_profile.env]`, `[release.job.env]`, and `[[units]]` env for `swift-package-native` if schema-1 supports unit env — verify, else declare via Velnor); Velnor `ir.rs` (`tools_for_unit` Swift arm + scheduled-checks renderer) for the structural fix. Bonus: `RUSTC_WRAPPER` also accelerates mise `cargo:` source builds (boltffi).
-- **Correctness/invalidation**: sccache content-hashes compiler inputs — automatic, profile/flag-sensitive; `CARGO_INCREMENTAL=0` required for hits (generator already pairs them, `ir.rs:1833-1844`). No manual key management, no staleness class.
-- **Saving**: cold desktop-release FFI compiles (bindings 7m09s, pack 8m22s/16m16s, overlapping dep graphs) → warm ~1–2min. Basis: measured cold times; sccache shares what per-job caches cannot.
-- **Verification**: two consecutive desktop runs on same lock: `Compiling` lines → ~0, `checks_wall_seconds` delta in VELNOR_CI_REPORT; `sccache --show-stats` (or `SCCACHE_LOG`) shows hits>0; tree-identical output (bindings byte-compare still gates).
+- **Status**: implemented in Jackin config and regenerated with exact Velnor 816. `desktop-merge`, `desktop-scheduled`, `swift-package-native`, and `swift-xcodegen-native-project-yml-jackindesktop` receive the supported trio: `CARGO_INCREMENTAL=0`, `RUSTC_WRAPPER=sccache`, and `SCCACHE_GHA_ENABLED=true`.
+- **Mechanism**: the sccache GHA backend uses GitHub's runner-provided cache service; no hand-authored cache key or unsupported cache field was added. The shared Swift reusable workflow therefore provisions `cargo:sccache` for its non-Cargo design member too, so its shared wrapper env never names an unavailable binary.
+- **Scope boundary**: Rust jobs remain wrapper-free because every Jackin Rust unit uses MBX in Velnor 816; release jobs remain wrapper-free because their generated task jobs do not install `cargo:sccache`. No Velnor source was changed.
+- **Correctness/invalidation**: sccache content-hashes compiler inputs; `CARGO_INCREMENTAL=0` is paired with the wrapper. Tool setup precedes Cargo task execution in generated Apple jobs. Existing fail-closed product/output checks remain unchanged.
+- **Performance status**: **unmeasured**. The cold desktop-release timings above are baseline evidence only; this fork has no hosted A/B or warm-cache run and makes no speedup claim.
+- **Verification**: the static regression test checks source provisioning, generated env placement, Rust/Release wrapper absence, and setup ordering. Required follow-up evidence is two same-lock hosted runs with `sccache --show-stats`/logs, `VELNOR_CI_REPORT`, and existing byte/output gates.
 
 ### S3 — Fix Rust compile-cache economics: switch mbx→sccache transport (or bound mbx) — ~5min/job + budget recovery, Velnor-owned
 

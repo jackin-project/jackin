@@ -2,7 +2,67 @@
 
 Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, separate fmt/clippy/test steps, 120s pipelines, no repeated setup.
 
-## Current authoritative sidecar — 2026-09-22
+## Current authoritative sidecar — 2026-09-23
+
+Status: **NOT COMPLETE**. Parent HEAD before this docs correction is
+`b5011fd`; current PR #1089 head is
+`b5011fdffa8d5390c77b7833c5555a757ec2de4c`, based on `main`
+`55e21f05bdee37a1424464ce69b86fc5e550307a`. Repairs are integrated; live
+qualification and upstream adoption remain open. Fresh PR CI is pending.
+
+### Repair and evidence status
+
+| Area | Evidence | Current verdict |
+|---|---|---|
+| Collector | Evidence rollup schema `4` consumes the durable push-head `push-head.json` artifact schema `1`; predecessor-boundary, chain, provenance, remote-tip, and wrong-workflow checks pass. Post-rebase xtask full serialized `402`, evidence-focused `30`, xtask clippy, generator `--plain --check`, actionlint, fmt, and diff pass. | Structurally fail-closed. **Not production-qualified**: no default-branch `ci-evidence` ledger run/artifact exists. |
+| Performance audit | Post-rebase xtask full serialized `402` and evidence-focused `30` pass; failure markers exclude legitimate skipped/neutral/success jobs and missing reports count only completed report-producing jobs. Warm evidence had 40/40 report producers valid and zero missing/fallback/parse failures. | Semantics fixed. No 120-second or cross-workflow reuse claim. |
+| Provider retries | Post-rebase `jackin-usage` lib `588` passed and usage clippy passed; typed status/retry-after handling covers OpenRouter, Claude, and Codex. | Local coverage PASS. Real-provider behavior is unverified; no live credentials or provider fixture run is claimed. |
+| FFI | Post-rebase FFI `16` tests passed and FFI clippy passed. | Local PASS. |
+| Desktop | Generated candidate and merge-cadence trigger/parity workflows were rerun after rebase. | Advisory only. Desktop is not a required ruleset context and has no claimed live pre-merge proof. |
+
+Schema boundary: evidence/rollup schema `4` and push-head artifact schema `1`
+are separate contracts. Schema `1` is the durable `ci-push-head-ledger`
+artifact input; it is not an evidence schema `4` artifact and neither is
+interchangeable with the other.
+
+### Upstream and PR status
+
+- Velnor [#1076](https://github.com/tailrocks/velnor/pull/1076) is at
+  `36f0d4f4981e125dacec96eaf82f24369d38251b`. [Policy run
+  35767882457](https://github.com/tailrocks/velnor/actions/runs/35767882457)
+  completed **FAILURE**: `Acquire candidate generator product` found no
+  candidate product within 15 minutes because no same-head `ci-pr` workflow run
+  existed. DCO passed. Rawls recorded the head as 9 commits behind Velnor main
+  `d4443aa` and returned **NO-GO** for preview/release and Apple/fork gaps. The
+  live API reports current Velnor main `52dc35b`; no current behind-count claim
+  is made. GitHub reports `CONFLICTING`/`DIRTY`. The repair has not been live-proven, merged,
+  published as a runtime, or adopted by Jackin. The Jackin pin remains
+  unchanged.
+- Jackin [#1089](https://github.com/jackin-project/jackin/pull/1089) is the
+  current carrier at head
+  `b5011fdffa8d5390c77b7833c5555a757ec2de4c`, based on `main`
+  `55e21f05bdee37a1424464ce69b86fc5e550307a`. GitHub reports the PR as
+  mergeable but `BLOCKED`; DCO and Policy pass, while `ci-required` is absent
+  because the Apple FFI check remains queued. Desktop merge cadence is advisory
+  and in progress. No merge claim is made. PR #1083 is not the current carrier
+  and was not reused.
+
+### Open acceptance rows
+
+1. Complete the pending CI for Jackin #1089; do not claim merge while its
+   queued checks remain.
+2. Merge and publish Velnor #1076, then adopt/regenerate its runtime in Jackin.
+3. Obtain a default-branch ledger run/artifact before claiming collector
+   qualification.
+4. Close empty-selection, release-tool, result-provenance, merge-group, and
+   Desktop obligation gaps.
+5. Keep the 120-second and cross-workflow reuse rows FAIL/UNPROVEN until
+   representative live measurements pass.
+
+No completion, six-nines, or reuse claim is made. This sidecar is
+documentation-only; it does not change workflows or source.
+
+## Historical snapshot — 2026-09-22 (superseded)
 
 Status: **NOT COMPLETE**. This sidecar records the exact evidence used for the
 current continuation. Earlier sections are retained historical records; they
