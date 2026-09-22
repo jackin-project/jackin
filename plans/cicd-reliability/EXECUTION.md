@@ -2,7 +2,49 @@
 
 Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, separate fmt/clippy/test steps, 120s pipelines, no repeated setup.
 
-## Current authoritative sidecar — 2026-09-22
+## Current authoritative sidecar — 2026-09-23
+
+Status: **NOT COMPLETE**. Parent HEAD before this documentation commit is
+`3ad2ab0e`. Repairs are locally integrated and independently checked; live
+qualification and upstream adoption remain open.
+
+### Repair and evidence status
+
+| Area | Evidence | Current verdict |
+|---|---|---|
+| Collector | Schema-4 durable push-head ledger with predecessor-boundary, chain, provenance, remote-tip, and wrong-workflow checks. `cargo test -p jackin-xtask --locked`: 402 passed; clippy, formatter, actionlint, and diff checks pass. | Structurally fail-closed. **Not production-qualified**: no default-branch `ci-evidence` ledger run/artifact exists for this parent. |
+| Performance audit | Failure markers exclude legitimate skipped/neutral/success jobs and missing reports count only completed report-producing jobs. Local warm evidence: 40/40 report producers valid; zero missing/fallback/parse failures. | Semantics fixed; 402 xtask tests pass. No 120-second or cross-workflow reuse claim. |
+| Provider retries | Typed status/retry-after handling for OpenRouter, Claude, and Codex; local `jackin-usage` coverage is 592 library tests. | Local PASS. Real-provider behavior is unverified; no live credentials or provider fixture run is claimed. |
+| Desktop | Candidate and merge-cadence trigger/parity generation is checked locally. | Advisory only. Desktop is not a required ruleset context and has no claimed live pre-merge proof. |
+
+### Upstream and PR status
+
+- Velnor [#1076](https://github.com/tailrocks/velnor/pull/1076) is at
+  `36f0d4f4981e125dacec96eaf82f24369d38251b`. DCO is successful; Policy is
+  `IN_PROGRESS`; the PR is not merged. The exact prior blocker was the old
+  pinned runtime being selected for phase invocation and rejecting `--phase`.
+  The current repair invokes the candidate explicitly, but it has not passed
+  live Policy, been merged, published as a runtime, or been adopted by Jackin.
+  The Jackin pin is therefore not recorded as updated.
+- Jackin [#1083](https://github.com/jackin-project/jackin/pull/1083) is stale at
+  `4b2d244c93ce3edbba4ff91e685ded6875b5647c`, `CONFLICTING`/`DIRTY`; only
+  Policy and DCO are shown green. Its generated files and hook work were not
+  reused.
+
+### Open acceptance rows
+
+1. Merge and publish Velnor #1076, then adopt/regenerate its runtime in Jackin.
+2. Obtain a default-branch ledger run/artifact before claiming collector
+   qualification.
+3. Close empty-selection, release-tool, result-provenance, merge-group, and
+   Desktop obligation gaps.
+4. Keep the 120-second and cross-workflow reuse rows FAIL/UNPROVEN until
+   representative live measurements pass.
+
+No completion, six-nines, or reuse claim is made. This sidecar is
+documentation-only; it does not change workflows or source.
+
+## Historical snapshot — 2026-09-22 (superseded)
 
 Status: **NOT COMPLETE**. This sidecar records the exact evidence used for the
 current continuation. Earlier sections are retained historical records; they
