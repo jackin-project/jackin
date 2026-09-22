@@ -482,8 +482,8 @@ pub(crate) async fn launch_role_runtime(
     );
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
-    let agent_specific_mounts = super::agent_mounts(state);
-    let gh_config_mount = super::github_config_mount(state);
+    let agent_specific_mounts = super::agent_mounts(state)?;
+    let gh_config_mount = super::github_config_mount(state)?;
     let certs_agent_mount = format!(
         "{certs_volume}:{}:ro",
         jackin_core::container_paths::DIND_CERTS_CLIENT_DIR
