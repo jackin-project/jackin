@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Markers, duration, scan_log, strip_ansi};
+use super::{Markers, Step, duration, job_report_expected, scan_log, strip_ansi};
 
 #[test]
 fn scanner_counts_dependency_and_cache_markers() {
@@ -34,6 +34,37 @@ fn scanner_distinguishes_cache_reuse_and_reads_velnor_report() {
     assert_eq!(markers.mbx_object_misses, 1);
     assert_eq!(markers.reported_cache_layers["cargo"], "exact");
 }
+
+#[test]
+fn control_jobs_do_not_require_velnor_reports() {
+    let report_step = Step {
+        name: String::from("Report phase timings and cache outcomes"),
+        status: String::from("completed"),
+        conclusion: Some(String::from("success")),
+        started_at: None,
+        completed_at: None,
+    };
+    let control_step = Step {
+        name: String::from("Complete job"),
+        status: String::from("completed"),
+        conclusion: Some(String::from("success")),
+        started_at: None,
+        completed_at: None,
+    };
+
+    assert!(job_report_expected(
+        "completed",
+        Some("success"),
+        &[report_step]
+    ));
+    assert!(!job_report_expected(
+        "completed",
+        Some("success"),
+        &[control_step]
+    ));
+    assert!(!job_report_expected("completed", Some("skipped"), &[]));
+}
+
 #[test]
 fn real_velnor_report_accepts_nullable_cache_layer() {
     let markers = scan_log(
@@ -80,18 +111,18 @@ fn report_failures_are_visible_to_clean_gate() {
 fn product_steps_are_counted_and_non_success_is_visible() {
     let mut markers = Markers::default();
     markers.product.observe("Stage product example", "success");
-    markers.product.observe("Upload product example", "success");
+    markers.product.observe("Upload product example", "failure");
     markers
         .product
         .observe("Download product example", "skipped");
-    markers.product.observe("Verify product example", "failure");
+    markers.product.observe("Verify product example", "neutral");
 
     assert_eq!(markers.product.staged, 1);
     assert_eq!(markers.product.uploaded, 1);
     assert_eq!(markers.product.downloaded, 1);
     assert_eq!(markers.product.verified, 1);
-    assert_eq!(markers.product.non_success, 2);
-    assert_eq!(markers.total(), 2);
+    assert_eq!(markers.product.non_success, 1);
+    assert_eq!(markers.total(), 1);
 }
 
 #[test]
