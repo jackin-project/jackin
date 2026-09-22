@@ -1,10 +1,48 @@
 # Carried failures — details and recommendations
 
-Jackin CI/CD goal, refreshed 2026-09-22. Everything below remains FAIL,
-unproven, or actively being repaired; no entry is closed merely because it has
-another owner or an earlier PR. Evidence record: [EXECUTION.md](EXECUTION.md).
+Jackin CI/CD goal, refreshed 2026-09-23. Current state is recorded first;
+older measurements and recommendations remain as historical evidence.
+Evidence record: [EXECUTION.md](EXECUTION.md).
 
-## Current authoritative carried state — 2026-09-22
+## Current authoritative carried state — 2026-09-23
+
+Parent HEAD before this documentation commit: `3ad2ab0e`. Repairs are locally
+integrated and independently checked, but the overall goal is not complete.
+
+| Area | Evidence | Verdict |
+|---|---|---|
+| Collector | Schema-4 durable push-head ledger with predecessor-boundary, chain, provenance, remote-tip, and wrong-workflow checks. `cargo test -p jackin-xtask --locked`: 402 passed; clippy, formatter, actionlint, and diff checks pass. | Structurally repaired and fail-closed. **Not production-qualified**: no default-branch `ci-evidence` ledger run/artifact exists for this parent. |
+| Performance audit | Failure classification excludes legitimate skipped/neutral/success jobs and counts missing reports only for completed report-producing jobs. Local warm evidence: 40/40 report producers valid; zero missing/fallback/parse failures. | Semantics fixed; 402 xtask tests pass. No 120-second or cross-workflow reuse claim. |
+| Provider retries | Typed status/retry-after handling for OpenRouter, Claude, and Codex; local `jackin-usage` coverage is 592 library tests. | Local PASS. Real-provider behavior remains unverified; no live credentials or provider fixture run is claimed. |
+| Desktop | Candidate and merge-cadence trigger/parity generation is locally checked. | Advisory only. Desktop is not a required ruleset context and has no claimed live pre-merge proof. |
+
+### Upstream and PR status
+
+- Velnor [#1076](https://github.com/tailrocks/velnor/pull/1076) is at
+  `36f0d4f4981e125dacec96eaf82f24369d38251b`. DCO is successful; Policy is
+  `IN_PROGRESS`; the PR is not merged. The exact prior blocker was the old
+  pinned runtime being selected for phase invocation and rejecting `--phase`.
+  The current repair invokes the candidate explicitly, but it is not yet live-
+  proven, published, or adopted by Jackin. The Jackin pin is not recorded as
+  updated.
+- Jackin [#1083](https://github.com/jackin-project/jackin/pull/1083) is stale
+  at `4b2d244c93ce3edbba4ff91e685ded6875b5647c`, `CONFLICTING`/`DIRTY`; only
+  Policy and DCO are shown green. Its generated files and hook work were not
+  reused.
+
+### Carried blockers
+
+1. Merge and publish Velnor #1076, then adopt/regenerate its runtime in Jackin.
+2. Obtain a default-branch ledger run/artifact before claiming collector
+   qualification.
+3. Close empty-selection, release-tool, result-provenance, merge-group, and
+   Desktop obligation gaps.
+4. Keep the 120-second and cross-workflow reuse rows FAIL/UNPROVEN until
+   representative live measurements pass.
+
+No completion, six-nines, full-inventory, or reuse claim is made.
+
+## Historical snapshot — 2026-09-22 (superseded)
 
 The mandatory evidence is preserved exactly here so a rerun cannot overwrite a
 first attempt:
