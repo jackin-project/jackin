@@ -1287,6 +1287,51 @@ fn sync_source_dir_copies_direct_opencode_auth_json() {
 }
 
 #[test]
+fn ambient_opencode_whitespace_invalidates_persisted_role_auth() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    std::fs::write(
+        &auth_json,
+        r#"{"opencode-go":{"type":"api","key":"stale"}}"#,
+    )
+    .unwrap();
+    let host_home = temp.path().join("host-home");
+    let source = host_home.join(".local/share/opencode/auth.json");
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    std::fs::write(source, " \n\t").unwrap();
+
+    let (outcome, mounted) =
+        RoleState::provision_opencode_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    assert!(mounted.is_none());
+    assert!(!auth_json.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn opencode_valid_credentials_keep_private_file_inode() {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let host_home = temp.path().join("host-home");
+    let source = host_home.join(".local/share/opencode/auth.json");
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    std::fs::write(&source, r#"{"opencode-go":{"type":"api","key":"valid"}}"#).unwrap();
+
+    let (_, mounted) =
+        RoleState::provision_opencode_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+    assert_eq!(mounted, Some(auth_json.clone()));
+    let first_inode = std::fs::metadata(&auth_json).unwrap().ino();
+
+    let (_, mounted) =
+        RoleState::provision_opencode_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+    assert_eq!(mounted, Some(auth_json.clone()));
+    assert_eq!(std::fs::metadata(auth_json).unwrap().ino(), first_inode);
+}
+
+#[test]
 fn sync_source_dir_rejects_multi_entry_without_writing() {
     let temp = tempdir().unwrap();
     let auth_json = temp.path().join("auth.json");

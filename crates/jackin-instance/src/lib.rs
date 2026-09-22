@@ -684,7 +684,7 @@ fn canonical_xdg_cache_root(path: &Path) -> anyhow::Result<PathBuf> {
     Ok(resolved)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RoleState {
     pub root: PathBuf,
     pub gh_config_dir: PathBuf,
@@ -698,7 +698,8 @@ pub struct RoleState {
     pub auth: ProvisionedAuth,
     pub auth_outcomes: BTreeMap<jackin_core::Agent, AuthProvisionOutcome>,
     /// Auth paths admitted with descriptor checks before runtime mount
-    /// construction. Leases stay held until launch state is dropped.
+    /// construction. These leases are uniquely owned by launch state and
+    /// stay held until that state is dropped.
     pub auth_mount_paths: BTreeSet<PathBuf>,
     pub auth_mount_leases: Vec<AuthMountLease>,
 }
