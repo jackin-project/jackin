@@ -2109,7 +2109,11 @@ fn retry_after_supports_seconds_http_date_and_invalid_headers() {
         Some(ProviderRetryAfter::HttpDate(1_445_412_480))
     );
     for value in ["", "not-a-delay", "37.5", "-1"] {
-        assert_eq!(retry_after_header_value(value), None, "invalid header: {value}");
+        assert_eq!(
+            retry_after_header_value(value),
+            None,
+            "invalid header: {value}"
+        );
     }
 
     let mut headers = reqwest::header::HeaderMap::new();

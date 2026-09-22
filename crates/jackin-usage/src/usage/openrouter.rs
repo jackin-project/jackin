@@ -16,12 +16,12 @@
 //! separate Management key, so history remains explicitly unavailable rather
 //! than being fetched with the wrong scope or inferred from live key usage.
 
+use super::refresh::{ProviderError, ProviderRateLimit};
 #[cfg_attr(
     not(test),
     expect(clippy::wildcard_imports, reason = "target-dependent")
 )]
 use super::*;
-use super::refresh::{ProviderError, ProviderRateLimit};
 use serde::Deserialize;
 
 pub(crate) const OPENROUTER_DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
@@ -548,32 +548,40 @@ where
     F: FnOnce(&str, &str) -> Result<serde_json::Value, ProviderHttpError>,
 {
     let Some(key) = key.filter(|key| !key.trim().is_empty()) else {
-        return (usage_view(UsageViewInput {
-            agent,
-            provider: Some("OpenRouter"),
-            surface: UsageSurface::OpenRouter,
-            account_label: "OpenRouter key missing".to_owned(),
-            username: None,
-            plan_label: None,
-            credential_origin: None,
-            buckets: vec![bucket(
-                "Usage",
-                None,
-                None,
-                None,
-                None,
-                Some("OpenRouter API key missing"),
-                UsageSnapshotStatus::NeedsLogin,
-            )],
-            status: UsageSnapshotStatus::NeedsLogin,
-            source: UsageSource::None,
-            confidence: UsageConfidence::None,
-            now,
-            last_error: Some("OpenRouter API key missing".to_owned()),
-        }), None);
+        return (
+            usage_view(UsageViewInput {
+                agent,
+                provider: Some("OpenRouter"),
+                surface: UsageSurface::OpenRouter,
+                account_label: "OpenRouter key missing".to_owned(),
+                username: None,
+                plan_label: None,
+                credential_origin: None,
+                buckets: vec![bucket(
+                    "Usage",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("OpenRouter API key missing"),
+                    UsageSnapshotStatus::NeedsLogin,
+                )],
+                status: UsageSnapshotStatus::NeedsLogin,
+                source: UsageSource::None,
+                confidence: UsageConfidence::None,
+                now,
+                last_error: Some("OpenRouter API key missing".to_owned()),
+            }),
+            None,
+        );
     };
     let key_result = fetch_key(base_url, key)
-        .map_err(|error| (openrouter_key_error_status(&error), ProviderError::from(error)))
+        .map_err(|error| {
+            (
+                openrouter_key_error_status(&error),
+                ProviderError::from(error),
+            )
+        })
         .and_then(|value| {
             parse_openrouter_key_usage(value, now)
                 .map_err(|error| (UsageSnapshotStatus::Error, ProviderError::from(error)))
@@ -582,9 +590,7 @@ where
         Ok(quota) => (Some(quota), UsageSnapshotStatus::Fresh, None),
         Err((status, error)) => (None, status, Some(error)),
     };
-    let rate_limit = key_error
-        .as_ref()
-        .and_then(ProviderError::rate_limit);
+    let rate_limit = key_error.as_ref().and_then(ProviderError::rate_limit);
     let key_error_message = key_error.as_ref().map(|error| error.message().to_owned());
     let mut buckets = quota.as_ref().map_or_else(
         || {
