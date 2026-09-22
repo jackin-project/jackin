@@ -25,6 +25,25 @@ impl ProviderCredentialEnvResolver for NoEnvResolver {
     }
 }
 
+struct ConsentKeychainReader;
+
+impl ProfileCredentialReader for ConsentKeychainReader {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+
+    fn exists(&self, _path: &Path) -> bool {
+        false
+    }
+
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        ProfileReadOutcome::ConsentRequired
+    }
+}
+
 #[derive(Default)]
 struct RecordingProfileReader {
     reads: Mutex<BTreeMap<PathBuf, usize>>,
@@ -164,6 +183,42 @@ fn opencode_profile_database_only_uses_reader_abstraction() {
         opencode_profile_identity(&reader, auth),
         ProfileValidation::Malformed
     ));
+}
+
+#[test]
+fn disc_claude_keychain_consent_is_not_reported_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let root = home.join(".claude");
+    let catalog = UsageDiscoveryCatalog {
+        config_generation: None,
+        candidates: Vec::new(),
+        diagnostics: Vec::new(),
+        sources: vec![DiscoveredCredentialSource::Profile {
+            surface: HostSurfaceId::Claude,
+            agent: Agent::Claude,
+            root,
+            operator_home: home,
+            account_label: Some("work".to_owned()),
+            source_id: "source-0001".to_owned(),
+            capability_id: "capability-1".to_owned(),
+            provenance: BTreeSet::from(["account work".to_owned()]),
+        }],
+    };
+
+    let validated =
+        validate_usage_sources_with_reader(catalog, &NoEnvResolver, &ConsentKeychainReader);
+
+    assert!(validated.accounts.is_empty());
+    assert_eq!(validated.diagnostics.len(), 1);
+    assert_eq!(
+        validated.diagnostics[0].issue,
+        UsageDiscoveryIssue::KeychainConsentRequired
+    );
+    assert_eq!(
+        validated.diagnostics[0].issue.id(),
+        "keychain_consent_required"
+    );
 }
 
 fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {

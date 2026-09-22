@@ -319,6 +319,8 @@ pub enum UsageDiscoveryIssue {
     CredentialMissing,
     /// Protected credential access was denied/unavailable.
     CredentialDenied,
+    /// A Keychain item exists but the operator has not approved access.
+    KeychainConsentRequired,
     /// Credential source is malformed.
     CredentialMalformed,
     /// Credential source requires explicit interaction.
@@ -336,6 +338,7 @@ impl UsageDiscoveryIssue {
             Self::ConfigTransientConflict => "config_transient_conflict",
             Self::CredentialMissing => "credential_missing",
             Self::CredentialDenied => "credential_denied",
+            Self::KeychainConsentRequired => "keychain_consent_required",
             Self::CredentialMalformed => "credential_malformed",
             Self::InteractionRequired => "interaction_required",
         }
@@ -351,6 +354,9 @@ impl UsageDiscoveryIssue {
             Self::ConfigTransientConflict => "Configuration changed while it was being read",
             Self::CredentialMissing => "Credentials are missing",
             Self::CredentialDenied => "Credential access was denied",
+            Self::KeychainConsentRequired => {
+                "Keychain consent required; approve jackin in Keychain Access"
+            }
             Self::CredentialMalformed => "Credentials are malformed",
             Self::InteractionRequired => "Credential access requires interaction",
         }
@@ -1007,6 +1013,7 @@ enum ProfileReadOutcome {
     Bytes(Vec<u8>),
     Missing,
     Denied,
+    ConsentRequired,
 }
 
 trait ProfileCredentialReader {
@@ -1094,6 +1101,9 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
             }
             crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
             crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
+            crate::usage::ClaudeKeychainRead::ConsentRequired => {
+                ProfileReadOutcome::ConsentRequired
+            }
         }
     }
 }
@@ -1107,6 +1117,7 @@ enum ProfileValidation {
     Anonymous(Option<Box<ProfileCredentialMaterial>>),
     Missing,
     Denied,
+    ConsentRequired,
     Malformed,
 }
 
@@ -1223,9 +1234,10 @@ fn is_attachable_env_source(
             provider_id.as_deref().is_none_or(|id| id.trim().is_empty())
         }
         ProfileValidation::Anonymous(_) => true,
-        ProfileValidation::Missing | ProfileValidation::Denied | ProfileValidation::Malformed => {
-            false
-        }
+        ProfileValidation::Missing
+        | ProfileValidation::Denied
+        | ProfileValidation::ConsentRequired
+        | ProfileValidation::Malformed => false,
     }
 }
 
@@ -1354,6 +1366,11 @@ fn accumulate_validated_source(
             surface,
             &provenance,
             UsageDiscoveryIssue::CredentialDenied,
+        )),
+        ProfileValidation::ConsentRequired => diagnostics.push(source_diagnostic(
+            surface,
+            &provenance,
+            UsageDiscoveryIssue::KeychainConsentRequired,
         )),
         ProfileValidation::Malformed => diagnostics.push(source_diagnostic(
             surface,
@@ -1592,6 +1609,9 @@ fn append_profile_read(evidence: &mut Vec<String>, label: &str, outcome: Profile
         }
         ProfileReadOutcome::Missing => evidence.push(format!("{label}:missing")),
         ProfileReadOutcome::Denied => evidence.push(format!("{label}:denied")),
+        ProfileReadOutcome::ConsentRequired => {
+            evidence.push(format!("{label}:consent-required"));
+        }
     }
 }
 
@@ -1773,6 +1793,7 @@ fn opencode_profile_identity(
             }
         }
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
+        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
         ProfileReadOutcome::Bytes(bytes) => {
             let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
                 return ProfileValidation::Malformed;
@@ -1830,6 +1851,7 @@ fn claude_profile_identity(
             }
             Ok(None) => {}
             Err(ProfileValidation::Denied) => return ProfileValidation::Denied,
+            Err(ProfileValidation::ConsentRequired) => return ProfileValidation::ConsentRequired,
             Err(_) => return ProfileValidation::Malformed,
         }
     }
@@ -1887,6 +1909,7 @@ fn claude_profile_identity(
         }
         ProfileReadOutcome::Missing => ProfileValidation::Missing,
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
+        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
     }
 }
 
@@ -1982,6 +2005,7 @@ fn read_json(
             .map_err(|_| ProfileValidation::Malformed),
         ProfileReadOutcome::Missing => Ok(None),
         ProfileReadOutcome::Denied => Err(ProfileValidation::Denied),
+        ProfileReadOutcome::ConsentRequired => Err(ProfileValidation::ConsentRequired),
     }
 }
 

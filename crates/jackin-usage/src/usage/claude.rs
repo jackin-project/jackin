@@ -410,18 +410,21 @@ pub(crate) enum ClaudeKeychainRead {
     },
     Denied,
     Missing,
+    /// A matching item requires operator consent before its payload can be read.
+    ConsentRequired,
 }
 
 /// Classify a macOS `OSStatus` from a Keychain lookup. Only an explicit user
 /// cancel (`errSecUserCanceled` = -128) or auth failure (`errSecAuthFailed` =
-/// -25293) is a terminal `Denied`; item-not-found (-25300), headless
-/// interaction-not-allowed (-25308), and any other failure are `Missing`
-/// (absence), so file/env fallback stays available. Pure and cross-platform so
-/// tests never touch the real Keychain.
+/// -25293) is a terminal `Denied`; headless interaction-not-allowed (-25308)
+/// is `ConsentRequired`; item-not-found (-25300) and any other failure are
+/// `Missing` (absence). Pure and cross-platform so tests never touch the real
+/// Keychain.
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     match code {
         -128 | -25293 => ClaudeKeychainRead::Denied,
+        -25308 => ClaudeKeychainRead::ConsentRequired,
         _ => ClaudeKeychainRead::Missing,
     }
 }
@@ -436,6 +439,10 @@ pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
         .service(service)
         .load_data(true)
         .limit(1);
+    // Keep authentication UI enabled: `errSecInteractionNotAllowed` tells us
+    // that the matching item exists but needs consent, while
+    // `errSecItemNotFound` means it is absent. A skip-auth query would erase
+    // that distinction by hiding consent-gated items.
     match options.search() {
         Ok(results) => {
             for result in results {
@@ -600,7 +607,9 @@ where
                 None => resolve_claude_fallback(scope, file_probe(), env_reader()),
             }
         }
-        ClaudeKeychainRead::Missing => resolve_claude_fallback(scope, file_probe(), env_reader()),
+        ClaudeKeychainRead::Missing | ClaudeKeychainRead::ConsentRequired => {
+            resolve_claude_fallback(scope, file_probe(), env_reader())
+        }
     }
 }
 
