@@ -2,7 +2,22 @@
 
 Goal: Jackin + upstream Velnor CI/CD — green pre-merge predicts green main, separate fmt/clippy/test steps, 120s pipelines, no repeated setup.
 
-## Current continuation — 2026-09-22
+## Current continuation — 2026-09-23
+
+| Agent ID | Assignment | Current result |
+|---|---|---|
+| `01a0c9b8-95ba-7f42-a60c-5beb137891ad` | Schema-4 evidence collector | `12dea6c5` implemented; live rollup is fail-closed; independent review found four blockers; repair delegated |
+| `01a0c9ed-9d74-7373-943a-c639c75641ee` | Collector challenger | NO-GO: push-head denominator, remote/tree proof, sticky conflicts, artifact provenance |
+| `01a0c9c5-e61e-7dd2-934f-1823dde590ca` | Typed provider retry metadata | `7974082d` implemented; independent review reopened OpenRouter and deadline gaps |
+| `01a0c9e5-40e4-7a53-ad24-e66b6970a05c` | Provider challenger | NO-GO: OpenRouter propagation, post-response clock, coverage gaps |
+| `01a0c9b6-4251-7b90-9c4b-8732a03fe56c` | Velnor phase bootstrap | implementation active; independent review rejected current platform/base/identity path |
+| `01a0c9db-5b2a-7330-8120-ffb4e663c9f0` | Velnor challenger | NO-GO: Apple artifact platform, dispatch base, candidate identity |
+| `01a0c9fb-6da3-7612-a6bf-a3003a1780c0` | Desktop pre-merge parity | implementation active |
+| `01a0c9fb-a693-75c1-9e5f-d378af1b05a4` | Performance S3/S5 slice | investigation/implementation active |
+| `01a0ca00-c6f8-7781-a05e-319e4dc36491` | Collector blocker repair | implementation active |
+
+Parent integration branch: `codex/ci-reliability-20260922`, current head
+`e3c3e0bb`. Independent review remains required before merge or closure.
 
 | Agent | Assignment | Result | Independent status |
 |---|---|---|---|
@@ -33,23 +48,26 @@ closure for the report findings.
 - `63c8e8b1` wires sccache only where generated Apple profiles provision
   `cargo:sccache`; Rust MBX and release jobs remain wrapper-free. This is
   static/configuration evidence only. No hosted speedup claim is made.
-- `b6b3744d` preserves typed HTTP status across Codex/Claude provider fetches;
-  transport/decode text cannot synthesize auth or rate-limit classes. Usage,
-  broker, FFI, diagnostics, OTLP, projection, xtask tests, clippy, format,
-  actionlint, and exact generator checks pass locally.
-- Collector `7c57de6c` live probe (window `2026-09-22T10:00:00Z` →
-  `15:10:54Z`) collected `18` obligations/attempts and recorded `2` missing
-  push-event gaps. Rollup: `11` successes, `7` non-success outcomes; Desktop
-  had cancellations/data-quality; qualified green and six-nines remain false.
-  Independent review found the scheduled 31-day event-cap, retired-workflow
-  identity, inferred-obligation, artifact-retention, and mutable-derived-field
-  gaps. Collector hardening is still active.
+- `b6b3744d` and `fa335ede` preserve typed HTTP status and carry numeric
+  retry metadata through Codex/Claude broker refreshes; transport/decode text
+  cannot synthesize auth or rate-limit classes. `587` usage tests and clippy
+  pass, but independent review found OpenRouter propagation and pre-response
+  clock gaps; provider repair remains active.
+- `3c390a9c` hardens the collector to schema 4, first-parent history, stable
+  workflow IDs, raw conflict observations, terminal timing, schema reset, and
+  nonzero unqualified rollups. The live window `2026-09-22T10:00:00Z` →
+  `16:23:18Z` collected `22` obligations/attempts across `11` commits:
+  `14` successes and `8` non-green outcomes; `11` runs were unclassified,
+  qualified green and six-nines remained false. Independent review found
+  push-head denominator, remote/tree identity, sticky-conflict, and artifact
+  provenance blockers. Repair is active.
 - Velnor selection PR #1075 merged as `aa2345bd`; its runtime product is
   published and pinned by `2b814caa`. Phase-retention PR #1076 passed local
-  Velnor tests but
-  its first live PR run failed before candidate publication because base
-  runtime `37e7814` rejected generated `precondition` phases. A bootstrap fix
-  is delegated; Jackin does not pin or claim the unproven phase change.
+  Velnor tests but its first live PR run failed before candidate publication
+  because base runtime `37e7814` rejected generated `precondition` phases.
+  The bootstrap implementation is still active; independent review rejected
+  its current Apple-platform, dispatch-base, and candidate-identity contracts.
+  Jackin does not pin or claim the unproven phase change.
 
 ## Post-#1053 live verification — 2026-09-22
 

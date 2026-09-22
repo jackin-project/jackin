@@ -1,31 +1,36 @@
 # Carried failures — details and recommendations
 
-Jackin CI/CD goal, refreshed 2026-09-22. Everything below remains FAIL,
+Jackin CI/CD goal, refreshed 2026-09-23. Everything below remains FAIL,
 unproven, or actively being repaired; no entry is closed merely because it has
 another owner or an earlier PR. Evidence record: [EXECUTION.md](EXECUTION.md).
 
-## Current session status — 2026-09-22
+## Current session status — 2026-09-23
 
 - Jackin branch `codex/ci-reliability-20260922` carries typed provider errors
-  (`b6b3744d`), deterministic render time (`67f89e95`), OTLP lifecycle fixes
+  (`b6b3744d`, `fa335ede`), deterministic render time (`67f89e95`), OTLP lifecycle fixes
   (`7c178a8a`, `900d7b6f`), schema-2 Apple discovery/product transport and
   Renovate regeneration (`762ea61e`), and static Apple sccache wiring
   (`63c8e8b1`). No hosted performance gain is claimed.
-- The collector is implemented and live-tested: `381` xtask tests, clippy,
-  format, and actionlint pass. A live window collected `18` attempts across
-  `18` obligations, but recorded `2` missing-push-event gaps and produced a
-  deliberately unqualified rollup (`11` successes; `7` failure, missing, or
-  data-quality outcomes). Independent review found remaining denominator,
-  identity, artifact-retention, and fail-closed gaps; it is not closed.
+- The schema-4 collector (`3c390a9c`, generated state `e3c3e0bb`) has `385`
+  xtask tests, clippy, format, actionlint, and exact generation passing. A live
+  first-parent window collected `22` obligations/attempts across `11` commits:
+  `14` successes and `8` non-green outcomes; the rollup exited nonzero with
+  `11` unclassified runs and `green_claim_qualified=false`. Independent review
+  found push-head denominator, remote-binding, sticky-conflict, and artifact
+  provenance defects; collector repair is active.
+- Provider 429 typing is integrated and locally green (`587` usage tests), but
+  independent review found OpenRouter propagation and response-time deadline
+  gaps. Provider repair is active; no rate-limit closure is claimed.
 - Velnor selection PR [#1075](https://github.com/tailrocks/velnor/pull/1075)
   merged as `aa2345bd`; Jackin now pins its published runtime product
   (`1a7606d67bc1c474`). Velnor phase-retention PR
   [#1076](https://github.com/tailrocks/velnor/pull/1076) is blocked because
   the base runtime rejects the new `precondition` phase before candidate
-  publication. This is an active bootstrap defect.
-- Product defects are structurally fixed and locally verified. The 120-second
-  target, six-nines claim, Desktop candidate coverage, and cross-workflow
-  reuse remain FAIL or unproven.
+  publication. The proposed bootstrap path is under review and currently
+  fails platform/base/identity checks; this remains open.
+- Desktop pre-merge parity and performance S3/S5 work are delegated and open.
+  Product defects are structurally fixed and locally verified. The 120-second
+  target, six-nines claim, and cross-workflow reuse remain FAIL or unproven.
 
 ---
 
