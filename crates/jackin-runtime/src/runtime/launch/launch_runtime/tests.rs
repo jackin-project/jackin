@@ -71,8 +71,8 @@ async fn sibling_auth_prewarm_join_barrier_waits_for_detached_work() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes() {
-    use std::fmt::Write as _;
     use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
     use std::sync::mpsc::sync_channel;
 
     let temp = tempfile::tempdir().unwrap();
@@ -170,11 +170,9 @@ async fn canceled_sibling_auth_prewarm_keeps_mount_leases_until_worker_finishes(
         .unwrap()
         .into_std()
         .await;
-    let still_held = tokio::task::spawn_blocking(move || {
-        probe_file.try_lock().is_err()
-    })
-    .await
-    .unwrap();
+    let still_held = tokio::task::spawn_blocking(move || probe_file.try_lock().is_err())
+        .await
+        .unwrap();
     assert!(
         still_held,
         "cancellation released the mount lease too early"
