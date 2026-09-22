@@ -1,23 +1,22 @@
 # Generated ownership state; do not edit.
 schema = 2
 [inputs]
-config	62a80c119d1ddcff
-scan	e5762381491b1c64
+config	fcfec8a2a511c5ed
+scan	d6e22b2fee84fa23
 generator	70
 [outputs]
 .github/AGENTS.md	02ebb7198c435e9b
 .github/actionlint.yaml	331b031e45db5d31
-.github/ci/project.toml	00ba04cba01229ef
+.github/ci/project.toml	f6336b6ecd238d63
 .github/workflows/ci-evidence.yml	5a13ecb2b32750a2
 .github/workflows/ci-main.yml	9e5a2ed90355025e
 .github/workflows/ci-policy.yml	377400568dc2e958
 .github/workflows/ci-pr.yml	6b8fb70b379e0351
-.github/workflows/ci-push-head-ledger.yml	deede0704c173bb0
 .github/workflows/ci-unit-bun.yml	df7435b9e88d442e
 .github/workflows/ci-unit-docker.yml	34fdd5d5a56aada3
-.github/workflows/ci-unit-rust.yml	749c26a7dec65b14
-.github/workflows/ci-unit-swift.yml	7af24219a7f150ce
-.github/workflows/desktop-merge.yml	0c2d5d31b621ca49
+.github/workflows/ci-unit-rust.yml	a5ae4f9d84228579
+.github/workflows/ci-unit-swift.yml	9c9f3e12392f81af
+.github/workflows/desktop-merge.yml	d91555bcbd2034bf
 .github/workflows/desktop-scheduled.yml	3e36cd485707f58f
 .github/workflows/maintenance.yml	716562c6547040f2
 .github/workflows/nightly.yml	4478cd4ea5ab5dd7
