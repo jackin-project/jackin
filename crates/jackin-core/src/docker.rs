@@ -77,13 +77,66 @@ impl ContainerState {
     }
 }
 
+/// Immutable Docker identity captured from one daemon inspection or create.
+///
+/// Container names are mutable namespace entries. Lifecycle operations must
+/// use this daemon-assigned ID after the name lookup so a replacement with
+/// the same name cannot receive an operation intended for the original.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContainerHandle {
+    name: String,
+    id: String,
+}
+
+impl ContainerHandle {
+    /// Validate and build a handle from a daemon-assigned ID and its lookup
+    /// name.
+    pub fn new(name: impl Into<String>, id: impl Into<String>) -> anyhow::Result<Self> {
+        let name = name.into();
+        let id = id.into();
+        anyhow::ensure!(!name.is_empty(), "Docker container name is empty");
+        anyhow::ensure!(!id.is_empty(), "Docker container ID is empty");
+        Ok(Self { name, id })
+    }
+
+    /// The name captured when this handle was resolved.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The immutable daemon-assigned container ID.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+/// Result of resolving a container name before a lifecycle operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContainerInspection {
+    /// Immutable handle when the named container exists.
+    pub handle: Option<ContainerHandle>,
+    /// State observed during the same daemon inspection.
+    pub state: ContainerState,
+}
+
 /// One container row from a list/filter query.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerRow {
     /// Docker container name (without leading `/` when normalized).
     pub name: String,
+    /// Immutable daemon-assigned container ID.
+    pub id: String,
     /// Container labels as returned by the daemon.
     pub labels: HashMap<String, String>,
+}
+
+impl ContainerRow {
+    /// Return the immutable handle represented by this daemon list row.
+    pub fn handle(&self) -> anyhow::Result<ContainerHandle> {
+        ContainerHandle::new(self.name.clone(), self.id.clone())
+    }
 }
 
 /// One network row from a list/filter query.
@@ -134,21 +187,44 @@ pub struct ContainerSpec {
 pub trait DockerApi {
     /// Ping the daemon (`/_ping`).
     async fn ping(&self) -> anyhow::Result<()>;
-    /// Inspect a container by name into a [`ContainerState`].
+    /// Resolve a container name and capture its immutable daemon ID.
     #[must_use]
-    async fn inspect_container_state(&self, name: &str) -> ContainerState;
-    /// Force-remove a container by name.
-    async fn remove_container(&self, name: &str) -> anyhow::Result<()>;
+    async fn inspect_container_by_name(&self, name: &str) -> ContainerInspection;
+    /// Inspect a container by immutable daemon ID.
+    #[must_use]
+    async fn inspect_container_by_id(&self, container: &ContainerHandle) -> ContainerState;
+    /// Inspect a container by name when only state is needed.
+    #[must_use]
+    async fn inspect_container_state(&self, name: &str) -> ContainerState {
+        self.inspect_container_by_name(name).await.state
+    }
+    /// Resolve a name into a handle for a subsequent ID-bound operation.
+    async fn resolve_container_by_name(&self, name: &str) -> anyhow::Result<ContainerHandle> {
+        let inspection = self.inspect_container_by_name(name).await;
+        inspection.handle.ok_or_else(|| {
+            anyhow::anyhow!(
+                "cannot resolve container {name}: {}",
+                inspection.state.inspect_label()
+            )
+        })
+    }
+    /// Force-remove a container by immutable daemon ID.
+    async fn remove_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()>;
     /// List containers matching label filters; `all` includes stopped ones.
     async fn list_containers(
         &self,
         label_filters: &[&str],
         all: bool,
     ) -> anyhow::Result<Vec<ContainerRow>>;
-    /// Create a container with `name` from `spec` (does not start it).
-    async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()>;
-    /// Start a previously created container.
-    async fn start_container(&self, name: &str) -> anyhow::Result<()>;
+    /// Create a container with `name` from `spec` (does not start it) and
+    /// return its immutable daemon ID.
+    async fn create_container(
+        &self,
+        name: &str,
+        spec: ContainerSpec,
+    ) -> anyhow::Result<ContainerHandle>;
+    /// Start a previously created container by immutable daemon ID.
+    async fn start_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()>;
     /// Remove a named volume.
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()>;
     /// Create a network with optional labels; `internal` isolates it from the host.
@@ -180,6 +256,11 @@ pub trait DockerApi {
     }
     /// Pull an image reference from a registry.
     async fn pull_image(&self, image: &str) -> anyhow::Result<()>;
-    /// Exec `cmd` in `container` and capture combined stdout/stderr.
-    async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String>;
+    /// Exec `cmd` in a container selected by immutable daemon ID and capture
+    /// combined stdout/stderr.
+    async fn exec_capture_by_id(
+        &self,
+        container: &ContainerHandle,
+        cmd: &[&str],
+    ) -> anyhow::Result<String>;
 }

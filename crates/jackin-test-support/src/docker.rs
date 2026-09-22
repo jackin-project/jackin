@@ -8,7 +8,8 @@
 use std::collections::HashMap;
 
 use jackin_core::{
-    ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
+    ContainerHandle, ContainerInspection, ContainerRow, ContainerSpec, ContainerState, DockerApi,
+    NetworkRow, RemoveImageOutcome,
 };
 
 #[derive(Debug)]
@@ -19,6 +20,12 @@ pub struct FakeDockerClient {
     /// Lets a test pin one container's state by name regardless of how many
     /// other (queue-order-dependent) inspects run first.
     pub inspect_state_by_name: std::cell::RefCell<HashMap<String, ContainerState>>,
+    /// Current daemon IDs returned when a name is resolved or a container is
+    /// created. Tests can change this map to model same-name replacement.
+    pub container_id_by_name: std::cell::RefCell<HashMap<String, String>>,
+    /// ID-bound lifecycle operations, retained separately from the historical
+    /// human-readable operation log.
+    pub bound_operations: std::cell::RefCell<Vec<String>>,
     pub list_containers_queue: std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
     pub list_networks_queue: std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
     pub list_image_tags_queue: std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
@@ -45,6 +52,8 @@ impl Default for FakeDockerClient {
             recorded: std::cell::RefCell::new(Vec::new()),
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             inspect_state_by_name: std::cell::RefCell::new(HashMap::new()),
+            container_id_by_name: std::cell::RefCell::new(HashMap::new()),
+            bound_operations: std::cell::RefCell::new(Vec::new()),
             list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             list_networks_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             list_image_tags_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
@@ -77,6 +86,29 @@ impl FakeDockerClient {
         if let Some(hook) = self.operation_hook {
             hook(entry);
         }
+    }
+
+    fn handle_for(&self, name: &str) -> ContainerHandle {
+        let id = self
+            .container_id_by_name
+            .borrow()
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| name.to_owned());
+        ContainerHandle::new(name, id).expect("fake container handle must be non-empty")
+    }
+
+    fn record_bound(&self, operation: &str, container: &ContainerHandle) {
+        self.bound_operations
+            .borrow_mut()
+            .push(format!("{operation}:{}", container.id()));
+    }
+
+    fn owns_current_name(&self, container: &ContainerHandle) -> bool {
+        self.container_id_by_name
+            .borrow()
+            .get(container.name())
+            .is_none_or(|id| id == container.id())
     }
 
     fn ignore_if_missing(result: anyhow::Result<()>) -> anyhow::Result<()> {
@@ -152,10 +184,10 @@ impl DockerApi for FakeDockerClient {
         self.check_fail("docker ping")
     }
 
-    async fn inspect_container_state(&self, name: &str) -> ContainerState {
+    async fn inspect_container_by_name(&self, name: &str) -> ContainerInspection {
         let op = format!("docker inspect {name}");
         self.record(&op);
-        if let Some((_, msg)) = self
+        let state = if let Some((_, msg)) = self
             .fail_with
             .iter()
             .find(|(pat, _)| op.contains(pat.as_str()))
@@ -166,20 +198,64 @@ impl DockerApi for FakeDockerClient {
                 || lower.contains("no such container")
                 || lower.contains("no such image")
             {
-                return ContainerState::NotFound;
+                ContainerState::NotFound
+            } else {
+                ContainerState::InspectUnavailable(msg)
             }
-            return ContainerState::InspectUnavailable(msg);
-        }
-        if let Some(state) = self.inspect_state_by_name.borrow().get(name) {
-            return state.clone();
-        }
-        self.pop_inspect()
+        } else if let Some(state) = self.inspect_state_by_name.borrow().get(name) {
+            state.clone()
+        } else {
+            self.pop_inspect()
+        };
+        let handle = (!matches!(
+            state,
+            ContainerState::NotFound | ContainerState::InspectUnavailable(_)
+        ))
+        .then(|| self.handle_for(name));
+        ContainerInspection { handle, state }
     }
 
-    async fn remove_container(&self, name: &str) -> anyhow::Result<()> {
+    async fn inspect_container_by_id(&self, container: &ContainerHandle) -> ContainerState {
+        self.record_bound("inspect", container);
+        if !self.owns_current_name(container) {
+            ContainerState::NotFound
+        } else if let Some(state) = self.inspect_state_by_name.borrow().get(container.name()) {
+            state.clone()
+        } else {
+            self.pop_inspect()
+        }
+    }
+
+    async fn resolve_container_by_name(&self, name: &str) -> anyhow::Result<ContainerHandle> {
+        let inspection = self.inspect_container_by_name(name).await;
+        if let Some(handle) = inspection.handle {
+            return Ok(handle);
+        }
+        // CLI-driven role launches use `docker run` rather than
+        // `DockerApi::create_container`; the injected FakeRunner cannot
+        // mutate this fake daemon when that command succeeds. Treat a
+        // missing default-queue result as that just-created role for tests,
+        // while explicit inspect failures still fail closed.
+        if matches!(inspection.state, ContainerState::NotFound) {
+            return Ok(self.handle_for(name));
+        }
+        anyhow::bail!(
+            "cannot resolve container {name}: {}",
+            inspection.state.inspect_label()
+        )
+    }
+
+    async fn remove_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
+        self.record_bound("remove", container);
+        let name = container.name();
         let op = format!("docker rm -f {name}");
         self.record(&op);
-        Self::ignore_if_missing(self.check_fail(&op))
+        Self::ignore_if_missing(self.check_fail(&op))?;
+        if self.owns_current_name(container) {
+            self.container_id_by_name.borrow_mut().remove(name);
+            self.inspect_state_by_name.borrow_mut().remove(name);
+        }
+        Ok(())
     }
 
     async fn list_containers(
@@ -198,20 +274,42 @@ impl DockerApi for FakeDockerClient {
         Ok(self.pop_list_containers())
     }
 
-    async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
+    async fn create_container(
+        &self,
+        name: &str,
+        spec: ContainerSpec,
+    ) -> anyhow::Result<ContainerHandle> {
         let op = format!("create_container:{name}");
         self.record(&op);
         self.check_fail(&op)?;
         self.created_containers
             .borrow_mut()
             .push((name.to_owned(), spec));
-        Ok(())
+        let handle = self.handle_for(name);
+        self.container_id_by_name
+            .borrow_mut()
+            .insert(name.to_owned(), handle.id().to_owned());
+        self.inspect_state_by_name
+            .borrow_mut()
+            .insert(name.to_owned(), ContainerState::Created);
+        Ok(handle)
     }
 
-    async fn start_container(&self, name: &str) -> anyhow::Result<()> {
+    async fn start_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
+        self.record_bound("start", container);
+        let name = container.name();
         let op = format!("start_container:{name}");
         self.record(&op);
-        self.check_fail(&op)
+        self.check_fail(&op)?;
+        if self.owns_current_name(container) {
+            self.container_id_by_name
+                .borrow_mut()
+                .insert(name.to_owned(), container.id().to_owned());
+            self.inspect_state_by_name
+                .borrow_mut()
+                .insert(name.to_owned(), ContainerState::Running);
+        }
+        Ok(())
     }
 
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
@@ -282,8 +380,13 @@ impl DockerApi for FakeDockerClient {
         self.check_fail(&op)
     }
 
-    async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String> {
-        let op = format!("docker exec {} {}", container, cmd.join(" "));
+    async fn exec_capture_by_id(
+        &self,
+        container: &ContainerHandle,
+        cmd: &[&str],
+    ) -> anyhow::Result<String> {
+        self.record_bound("exec", container);
+        let op = format!("docker exec {} {}", container.name(), cmd.join(" "));
         self.record(&op);
         self.check_fail(&op)?;
         Ok(self.pop_exec_capture())

@@ -18,7 +18,8 @@ use bollard::Docker;
 use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
-    ContainerCreateBody, ContainerStateStatusEnum, HostConfig, NetworkCreateRequest,
+    ContainerCreateBody, ContainerInspectResponse, ContainerStateStatusEnum, HostConfig,
+    NetworkCreateRequest,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, InspectContainerOptions, ListContainersOptions, ListImagesOptions,
@@ -28,7 +29,8 @@ use bollard::query_parameters::{
 use futures_util::StreamExt;
 
 pub use jackin_core::{
-    ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
+    ContainerHandle, ContainerInspection, ContainerRow, ContainerSpec, ContainerState, DockerApi,
+    NetworkRow, RemoveImageOutcome,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -375,6 +377,34 @@ fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<Stri
     Some(map)
 }
 
+fn container_state_from_inspect(info: &ContainerInspectResponse) -> ContainerState {
+    let Some(state) = info.state.as_ref() else {
+        return ContainerState::InspectUnavailable("no state field".to_owned());
+    };
+    match state.status {
+        Some(ContainerStateStatusEnum::RUNNING) => ContainerState::Running,
+        Some(ContainerStateStatusEnum::PAUSED) => ContainerState::Paused,
+        Some(ContainerStateStatusEnum::RESTARTING) => ContainerState::Restarting,
+        Some(ContainerStateStatusEnum::REMOVING) => ContainerState::Removing,
+        Some(ContainerStateStatusEnum::CREATED) => ContainerState::Created,
+        Some(ContainerStateStatusEnum::DEAD) => ContainerState::Dead,
+        Some(ContainerStateStatusEnum::EXITED) | None => {
+            let exit_code = state.exit_code.unwrap_or(0) as i32;
+            let oom_killed = state.oom_killed.unwrap_or(false);
+            ContainerState::Stopped {
+                exit_code,
+                oom_killed,
+            }
+        }
+        Some(ContainerStateStatusEnum::EMPTY | ContainerStateStatusEnum::STOPPING) => {
+            ContainerState::InspectUnavailable(format!(
+                "unexpected container status: {:?}",
+                state.status
+            ))
+        }
+    }
+}
+
 impl DockerApi for BollardDockerClient {
     async fn ping(&self) -> anyhow::Result<()> {
         let connection_attrs = [jackin_telemetry::Attr {
@@ -409,47 +439,58 @@ impl DockerApi for BollardDockerClient {
         result
     }
 
-    async fn inspect_container_state(&self, name: &str) -> ContainerState {
+    async fn inspect_container_by_name(&self, name: &str) -> ContainerInspection {
         let operation = begin_docker_http(CONTAINER_INSPECT);
         let result = self
             .inner
             .inspect_container(name, None::<InspectContainerOptions>)
             .await;
 
+        let inspection = match result {
+            Err(ref e) if is_http_status(e, 404) => ContainerInspection {
+                handle: None,
+                state: ContainerState::NotFound,
+            },
+            Err(e) => ContainerInspection {
+                handle: None,
+                state: ContainerState::InspectUnavailable(e.to_string()),
+            },
+            Ok(info) => {
+                let state = container_state_from_inspect(&info);
+                let handle = info
+                    .id
+                    .filter(|id| !id.is_empty())
+                    .and_then(|id| ContainerHandle::new(name, id).ok());
+                let state = if handle.is_none() {
+                    ContainerState::InspectUnavailable("no container ID field".to_owned())
+                } else {
+                    state
+                };
+                ContainerInspection { handle, state }
+            }
+        };
+        let failed = matches!(inspection.state, ContainerState::InspectUnavailable(_));
+        operation.complete(
+            if failed {
+                jackin_telemetry::schema::enums::OutcomeValue::Failure
+            } else {
+                jackin_telemetry::schema::enums::OutcomeValue::Success
+            },
+            failed.then_some(jackin_telemetry::schema::enums::ErrorType::HttpError),
+        );
+        inspection
+    }
+
+    async fn inspect_container_by_id(&self, container: &ContainerHandle) -> ContainerState {
+        let operation = begin_docker_http(CONTAINER_INSPECT);
+        let result = self
+            .inner
+            .inspect_container(container.id(), None::<InspectContainerOptions>)
+            .await;
         let state = match result {
             Err(ref e) if is_http_status(e, 404) => ContainerState::NotFound,
             Err(e) => ContainerState::InspectUnavailable(e.to_string()),
-            Ok(info) => {
-                let Some(state) = info.state else {
-                    operation.complete(
-                        jackin_telemetry::schema::enums::OutcomeValue::Failure,
-                        Some(jackin_telemetry::schema::enums::ErrorType::HttpError),
-                    );
-                    return ContainerState::InspectUnavailable("no state field".to_owned());
-                };
-                match state.status {
-                    Some(ContainerStateStatusEnum::RUNNING) => ContainerState::Running,
-                    Some(ContainerStateStatusEnum::PAUSED) => ContainerState::Paused,
-                    Some(ContainerStateStatusEnum::RESTARTING) => ContainerState::Restarting,
-                    Some(ContainerStateStatusEnum::REMOVING) => ContainerState::Removing,
-                    Some(ContainerStateStatusEnum::CREATED) => ContainerState::Created,
-                    Some(ContainerStateStatusEnum::DEAD) => ContainerState::Dead,
-                    Some(ContainerStateStatusEnum::EXITED) | None => {
-                        let exit_code = state.exit_code.unwrap_or(0) as i32;
-                        let oom_killed = state.oom_killed.unwrap_or(false);
-                        ContainerState::Stopped {
-                            exit_code,
-                            oom_killed,
-                        }
-                    }
-                    Some(ContainerStateStatusEnum::EMPTY | ContainerStateStatusEnum::STOPPING) => {
-                        ContainerState::InspectUnavailable(format!(
-                            "unexpected container status: {:?}",
-                            state.status
-                        ))
-                    }
-                }
-            }
+            Ok(info) => container_state_from_inspect(&info),
         };
         let failed = matches!(state, ContainerState::InspectUnavailable(_));
         operation.complete(
@@ -463,12 +504,12 @@ impl DockerApi for BollardDockerClient {
         state
     }
 
-    async fn remove_container(&self, name: &str) -> anyhow::Result<()> {
+    async fn remove_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
         docker_http(CONTAINER_REMOVE, async {
             match self
                 .inner
                 .remove_container(
-                    name,
+                    container.id(),
                     Some(RemoveContainerOptions {
                         force: true,
                         ..Default::default()
@@ -478,7 +519,11 @@ impl DockerApi for BollardDockerClient {
             {
                 Ok(()) => Ok(()),
                 Err(e) if is_http_status(&e, 404) => Ok(()),
-                Err(e) => Err(anyhow::Error::from(e).context(format!("removing container {name}"))),
+                Err(e) => Err(anyhow::Error::from(e).context(format!(
+                    "removing container {} ({})",
+                    container.name(),
+                    container.id()
+                ))),
             }
         })
         .await
@@ -501,7 +546,7 @@ impl DockerApi for BollardDockerClient {
                 .await
                 .context("listing containers")?;
 
-            Ok(summaries
+            summaries
                 .into_iter()
                 .map(|s| {
                     let raw_name = s
@@ -511,17 +556,25 @@ impl DockerApi for BollardDockerClient {
                         .next()
                         .unwrap_or_default();
                     let name = raw_name.trim_start_matches('/').to_owned();
+                    let id = s.id.filter(|id| !id.is_empty()).ok_or_else(|| {
+                        anyhow::anyhow!("Docker returned a container without an ID")
+                    })?;
                     let labels = s.labels.unwrap_or_default();
-                    ContainerRow { name, labels }
+                    Ok(ContainerRow { name, id, labels })
                 })
-                .collect())
+                .collect()
         })
         .await
     }
 
-    async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
+    async fn create_container(
+        &self,
+        name: &str,
+        spec: ContainerSpec,
+    ) -> anyhow::Result<ContainerHandle> {
         docker_http(CONTAINER_CREATE, async {
-            self.inner
+            let response = self
+                .inner
                 .create_container(
                     Some(CreateContainerOptions {
                         name: Some(name.to_owned()),
@@ -545,17 +598,23 @@ impl DockerApi for BollardDockerClient {
                 )
                 .await
                 .with_context(|| format!("creating container {name}"))?;
-            Ok(())
+            ContainerHandle::new(name, response.id)
         })
         .await
     }
 
-    async fn start_container(&self, name: &str) -> anyhow::Result<()> {
+    async fn start_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
         docker_http(CONTAINER_START, async {
             self.inner
-                .start_container(name, None::<StartContainerOptions>)
+                .start_container(container.id(), None::<StartContainerOptions>)
                 .await
-                .with_context(|| format!("starting container {name}"))
+                .with_context(|| {
+                    format!(
+                        "starting container {} ({})",
+                        container.name(),
+                        container.id()
+                    )
+                })
         })
         .await
     }
@@ -718,11 +777,15 @@ impl DockerApi for BollardDockerClient {
         .await
     }
 
-    async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String> {
+    async fn exec_capture_by_id(
+        &self,
+        container: &ContainerHandle,
+        cmd: &[&str],
+    ) -> anyhow::Result<String> {
         let exec = docker_http(EXEC_CREATE, async {
             self.inner
                 .create_exec(
-                    container,
+                    container.id(),
                     CreateExecOptions {
                         cmd: Some(cmd.iter().map(ToString::to_string).collect()),
                         attach_stdout: Some(true),
@@ -731,7 +794,9 @@ impl DockerApi for BollardDockerClient {
                     },
                 )
                 .await
-                .with_context(|| format!("creating exec in {container}"))
+                .with_context(|| {
+                    format!("creating exec in {} ({})", container.name(), container.id())
+                })
         })
         .await?;
 
@@ -740,22 +805,27 @@ impl DockerApi for BollardDockerClient {
                 .inner
                 .start_exec(&exec.id, None::<StartExecOptions>)
                 .await
-                .with_context(|| format!("starting exec in {container}"))?;
-            consume_exec_start(container, start).await
+                .with_context(|| {
+                    format!("starting exec in {} ({})", container.name(), container.id())
+                })?;
+            consume_exec_start(container.name(), start).await
         })
         .await?;
 
         let inspect = docker_http(EXEC_INSPECT, async {
-            self.inner
-                .inspect_exec(&exec.id)
-                .await
-                .with_context(|| format!("inspecting exec result in {container}"))
+            self.inner.inspect_exec(&exec.id).await.with_context(|| {
+                format!(
+                    "inspecting exec result in {} ({})",
+                    container.name(),
+                    container.id()
+                )
+            })
         })
         .await?;
         let exit_code = inspect.exit_code.unwrap_or(-1);
         if exit_code != 0 {
             return Err(DockerError::ExecNonZero {
-                container: container.to_owned(),
+                container: container.name().to_owned(),
                 exit_code,
                 output: output_buf.trim().to_owned(),
             }

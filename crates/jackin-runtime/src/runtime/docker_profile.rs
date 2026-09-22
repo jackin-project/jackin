@@ -1043,12 +1043,12 @@ pub const CAPSULE_BIN_PATH: &str = container_paths::CAPSULE_BIN;
 ///
 /// Root via `exec` needs no setuid, so it composes with `no-new-privileges`.
 /// Shared by the post-run privileged capsule steps (firewall, sudo).
-fn capsule_root_exec_argv<'a>(container_name: &'a str, subcommand: &'a str) -> [&'a str; 6] {
+fn capsule_root_exec_argv<'a>(container_ref: &'a str, subcommand: &'a str) -> [&'a str; 6] {
     [
         "exec",
         "--user",
         "root",
-        container_name,
+        container_ref,
         CAPSULE_BIN_PATH,
         subcommand,
     ]
@@ -1059,17 +1059,17 @@ fn capsule_root_exec_argv<'a>(container_name: &'a str, subcommand: &'a str) -> [
 /// firewall). Fail-closed at the call site.
 pub fn firewall_post_run_argv<'a>(
     grants: &EffectiveGrants,
-    container_name: &'a str,
+    container_ref: &'a str,
 ) -> Option<[&'a str; 6]> {
     (grants.network == NetworkGrant::Allowlist)
-        .then(|| capsule_root_exec_argv(container_name, "firewall-apply"))
+        .then(|| capsule_root_exec_argv(container_ref, "firewall-apply"))
 }
 
 /// WP-SUDO: the post-run `docker exec` argv that provisions sudo. Only run when
 /// the profile grants sudo (`compat`, or an explicit `sudo = true`); the base
 /// image bakes no sudoers, so non-sudo profiles have nothing to provision.
-pub fn sudo_provision_post_run_argv(container_name: &str) -> [&str; 6] {
-    capsule_root_exec_argv(container_name, "sudo-provision")
+pub fn sudo_provision_post_run_argv(container_ref: &str) -> [&str; 6] {
+    capsule_root_exec_argv(container_ref, "sudo-provision")
 }
 
 /// WP2: whether the role's Docker network must be created `internal`.

@@ -10,7 +10,7 @@
 use crate::instance::{AdmittedInstance, InstanceManifest};
 use anyhow::Context as _;
 use jackin_config::{AppConfig, ConfigGeneration, ConfigReadGuard, ReadOnlyConfigSnapshot};
-use jackin_core::WorkspaceName;
+use jackin_core::{ContainerHandle, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 use sha2::{Digest as _, Sha256};
 use std::fmt::Write as _;
@@ -109,16 +109,43 @@ impl AccountConfigRevision {
 pub(crate) async fn ensure_current_or_remove_stale_container(
     revision: &AccountConfigRevision,
     paths: &jackin_core::JackinPaths,
+    container: &ContainerHandle,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
+    let Err(error) = revision.ensure_current(paths) else {
+        return Ok(());
+    };
+    if let Err(cleanup_error) = docker.remove_container_by_id(container).await {
+        return Err(error.context(format!(
+            "stale-generation container {} ({}) cleanup failed: {cleanup_error:#}",
+            container.name(),
+            container.id()
+        )));
+    }
+    Err(error)
+}
+
+/// Validate a generation after a name-based Docker run. The run command does
+/// not return through [`DockerApi::create_container`], so resolve the daemon
+/// ID exactly once before any stale-generation removal.
+pub(crate) async fn ensure_current_or_remove_stale_container_by_name(
+    revision: &AccountConfigRevision,
+    paths: &jackin_core::JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     let Err(error) = revision.ensure_current(paths) else {
         return Ok(());
     };
-    if let Err(cleanup_error) = docker.remove_container(container_name).await {
-        return Err(error.context(format!(
-            "stale-generation container {container_name} cleanup failed: {cleanup_error:#}"
-        )));
+    let inspection = docker.inspect_container_by_name(container_name).await;
+    if let Some(container) = inspection.handle {
+        if let Err(cleanup_error) = docker.remove_container_by_id(&container).await {
+            return Err(error.context(format!(
+                "stale-generation container {} ({}) cleanup failed: {cleanup_error:#}",
+                container.name(),
+                container.id()
+            )));
+        }
     }
     Err(error)
 }

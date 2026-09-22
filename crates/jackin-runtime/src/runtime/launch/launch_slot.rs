@@ -36,17 +36,23 @@ pub(crate) async fn claim_container_name(
     for _ in 0..CLAIM_MAX_ATTEMPTS {
         let name = crate::instance::new_container_name(workspace_name, selector);
 
-        let slot_free = match docker.inspect_container_state(&name).await {
+        let inspection = docker.inspect_container_by_name(&name).await;
+        let slot_free = match inspection.state {
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
-            } => match docker.remove_container(&name).await {
-                Ok(()) => true,
-                Err(error) => {
-                    return Err(error.context(format!(
-                        "removing stale container `{name}` before reclaiming its name"
-                    )));
-                }
+            } => match inspection.handle {
+                Some(handle) => match docker.remove_container_by_id(&handle).await {
+                    Ok(()) => true,
+                    Err(error) => {
+                        return Err(error.context(format!(
+                            "removing stale container `{name}` before reclaiming its name"
+                        )));
+                    }
+                },
+                None => anyhow::bail!(
+                    "cannot reclaim stale container `{name}` because Docker returned no immutable ID"
+                ),
             },
             ContainerState::Running
             | ContainerState::Paused

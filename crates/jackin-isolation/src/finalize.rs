@@ -30,11 +30,11 @@
 use crate::cleanup::force_cleanup_isolated;
 use crate::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use jackin_config::DirtyExitPolicy;
-use jackin_core::CommandRunner;
 use jackin_core::JACKIN_STATUS_CMD;
 use jackin_core::PromptContextLine;
 use jackin_core::error_popup;
 use jackin_core::exit_dialog_with_inspect;
+use jackin_core::{CommandRunner, ContainerHandle};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,15 +271,70 @@ pub async fn finalize_foreground_session(
     docker: &impl jackin_docker::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
+    finalize_foreground_session_inner(
+        container_name,
+        container_state_dir,
+        outcome,
+        is_interactive,
+        dirty_exit_policy,
+        prompt,
+        docker,
+        runner,
+        None,
+    )
+    .await
+}
+
+/// Finalize a foreground session using the already inspected immutable
+/// container identity for the status query that decides whether cleanup is
+/// safe.
+pub async fn finalize_foreground_session_by_id(
+    container_name: &str,
+    container_state_dir: &Path,
+    outcome: AttachOutcome,
+    is_interactive: bool,
+    dirty_exit_policy: DirtyExitPolicy,
+    prompt: &mut impl FinalizerPrompt,
+    docker: &impl jackin_docker::docker_client::DockerApi,
+    runner: &mut impl CommandRunner,
+    container: &ContainerHandle,
+) -> anyhow::Result<FinalizeDecision> {
+    finalize_foreground_session_inner(
+        container_name,
+        container_state_dir,
+        outcome,
+        is_interactive,
+        dirty_exit_policy,
+        prompt,
+        docker,
+        runner,
+        Some(container),
+    )
+    .await
+}
+
+async fn finalize_foreground_session_inner(
+    container_name: &str,
+    container_state_dir: &Path,
+    outcome: AttachOutcome,
+    is_interactive: bool,
+    dirty_exit_policy: DirtyExitPolicy,
+    prompt: &mut impl FinalizerPrompt,
+    docker: &impl jackin_docker::docker_client::DockerApi,
+    runner: &mut impl CommandRunner,
+    container: Option<&ContainerHandle>,
+) -> anyhow::Result<FinalizeDecision> {
     if !matches!(outcome, AttachOutcome::Stopped(0)) {
         // Non-zero exit, OOM-kill, or still-running → preserve by default.
         // Exception: StillRunning with no active jackin sessions means the
         // Capsule has not exited yet after the foreground client returned.
         // Fall through to finalize_clean_exit so isolation worktrees are
         // swept normally.
-        if matches!(outcome, AttachOutcome::StillRunning)
-            && !has_jackin_sessions(docker, container_name).await
-        {
+        let no_sessions = match container {
+            Some(container) => !has_jackin_sessions_by_id(docker, container).await,
+            None => !has_jackin_sessions(docker, container_name).await,
+        };
+        if matches!(outcome, AttachOutcome::StillRunning) && no_sessions {
             return finalize_clean_exit(
                 container_name,
                 container_state_dir,
@@ -313,8 +368,18 @@ async fn has_jackin_sessions(
     // Header parser is shared with `runtime::attach::inspect_agent_sessions`
     // so a future drift in the header shape touches one definition,
     // not two parsers that can silently disagree on edge cases.
+    let Ok(container) = docker.resolve_container_by_name(container_name).await else {
+        return true;
+    };
+    has_jackin_sessions_by_id(docker, &container).await
+}
+
+async fn has_jackin_sessions_by_id(
+    docker: &impl jackin_docker::docker_client::DockerApi,
+    container: &ContainerHandle,
+) -> bool {
     match docker
-        .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
+        .exec_capture_by_id(container, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
         Ok(output) => match jackin_core::parse_session_count(&output) {
@@ -322,9 +387,11 @@ async fn has_jackin_sessions(
             Some(_) => true,
             None => {
                 eprintln!(
-                    "[jackin] warning: could not parse jackin session status in {container_name}; \
-                     treating as sessions-present — run `jackin purge {container_name}` to clean \
-                     up isolation worktrees if this was a clean exit"
+                    "[jackin] warning: could not parse jackin session status in {}; \
+                     treating as sessions-present — run `jackin purge {}` to clean \
+                     up isolation worktrees if this was a clean exit",
+                    container.name(),
+                    container.name()
                 );
                 true
             }
@@ -335,9 +402,11 @@ async fn has_jackin_sessions(
             // finalize path must not auto-clean records for a container that may
             // still have active sessions.
             eprintln!(
-                "[jackin] warning: could not check jackin sessions in {container_name} ({e}); \
-                 treating as sessions-present — run `jackin purge {container_name}` to clean \
-                 up isolation worktrees if this was a clean exit"
+                "[jackin] warning: could not check jackin sessions in {} ({e}); \
+                 treating as sessions-present — run `jackin purge {}` to clean \
+                 up isolation worktrees if this was a clean exit",
+                container.name(),
+                container.name()
             );
             true
         }

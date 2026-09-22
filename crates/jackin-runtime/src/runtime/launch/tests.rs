@@ -4342,7 +4342,14 @@ plugins = []
     )
     .unwrap();
 
-    let docker = jackin_test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
     let error = load_role(
         &paths,
         &mut config,
@@ -4757,7 +4764,14 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
         None,
         "0",
     );
-    let mut docker = jackin_test_support::FakeDockerClient::default();
+    let mut docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
     docker
         .list_image_tags_queue
         .borrow_mut()
@@ -6391,7 +6405,15 @@ plugins = ["code-review@claude-plugins-official"]
     .unwrap();
 
     let workspace = repo_workspace(&repo_dir);
-    let docker = jackin_test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+            ContainerState::Created,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
     let error = load_role(
         &paths,
         &mut config,
@@ -7492,6 +7514,7 @@ async fn render_exit_preserves_universe_marker_when_instances_remain() {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-still-running".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::new(),
             },
         ]])),

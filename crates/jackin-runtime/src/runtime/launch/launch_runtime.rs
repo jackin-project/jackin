@@ -28,8 +28,7 @@ use super::auth_error::{
     NO_PROXY_LOWER, NO_PROXY_UPPER, append_no_proxy_host, is_proxy_env_name, push_env_if_present,
 };
 use super::build_workspace_mount_strings;
-use super::diagnose_with_state;
-use super::exit_diagnosis::{ExitPhase, diagnose_premature_exit};
+use super::exit_diagnosis::{ExitPhase, diagnose_premature_exit_by_id};
 use crate::runtime::progress::launch_output;
 
 #[expect(
@@ -38,6 +37,7 @@ use crate::runtime::progress::launch_output;
 )]
 pub(crate) struct LaunchContext<'a> {
     pub(crate) container_name: &'a str,
+    pub(crate) container_handle: &'a std::cell::RefCell<Option<jackin_core::ContainerHandle>>,
     pub(crate) image: &'a str,
     pub(crate) network: &'a str,
     pub(crate) dind: &'a str,
@@ -314,10 +314,10 @@ pub(crate) fn spawn_sibling_auth_prewarm(
 }
 
 /// Whether launch returned from a foreground session or handed off a live daemon.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LaunchOutcome {
-    Detached,
-    ForegroundSessionEnded,
+    Detached(jackin_core::ContainerHandle),
+    ForegroundSessionEnded(jackin_core::ContainerHandle),
 }
 
 /// Launch the role container after the caller has prepared the private network
@@ -349,6 +349,7 @@ pub(crate) async fn launch_role_runtime(
 ) -> anyhow::Result<LaunchOutcome> {
     let LaunchContext {
         container_name,
+        container_handle,
         image,
         network,
         dind,
@@ -438,7 +439,7 @@ pub(crate) async fn launch_role_runtime(
     };
 
     let docker_run_opts = RunOptions {
-        quiet: !debug,
+        quiet: !*debug,
         ..RunOptions::default()
     };
 
@@ -1121,7 +1122,7 @@ pub(crate) async fn launch_role_runtime(
         jackin_diagnostics::emit_operator_notice("role container start failed");
     }
     if let Err(error) = run_role_result {
-        super::ensure_current_or_remove_stale_container(
+        super::ensure_current_or_remove_stale_container_by_name(
             account_revision,
             paths,
             container_name,
@@ -1130,10 +1131,19 @@ pub(crate) async fn launch_role_runtime(
         .await?;
         return Err(error);
     }
+    let role_container = docker
+        .resolve_container_by_name(container_name)
+        .await
+        .with_context(|| {
+            format!("resolving immutable identity for role container {container_name}")
+        })?;
+    container_handle
+        .borrow_mut()
+        .replace(role_container.clone());
     super::ensure_current_or_remove_stale_container(
         account_revision,
         paths,
-        container_name,
+        &role_container,
         docker,
     )
     .await?;
@@ -1149,7 +1159,7 @@ pub(crate) async fn launch_role_runtime(
     //     sudoers, so non-sudo profiles have nothing to provision and skip it.
     let mut post_run_steps: Vec<(String, [&str; 6], String, bool)> = Vec::new();
     if let Some(argv) =
-        crate::runtime::docker_profile::firewall_post_run_argv(grants, container_name)
+        crate::runtime::docker_profile::firewall_post_run_argv(grants, role_container.id())
     {
         post_run_steps.push((
             format!("firewall_apply profile={profile}"),
@@ -1161,7 +1171,7 @@ pub(crate) async fn launch_role_runtime(
     if grants.sudo {
         post_run_steps.push((
             format!("sudo_provision profile={profile}"),
-            crate::runtime::docker_profile::sudo_provision_post_run_argv(container_name),
+            crate::runtime::docker_profile::sudo_provision_post_run_argv(role_container.id()),
             format!("sudo provisioning failed for `{profile}` profile; container torn down (fail-closed)."),
             false,
         ));
@@ -1179,7 +1189,7 @@ pub(crate) async fn launch_role_runtime(
         }
         if let Err(err) = result {
             emit_post_run_failure(is_firewall);
-            if let Err(remove_err) = docker.remove_container(container_name).await {
+            if let Err(remove_err) = docker.remove_container_by_id(&role_container).await {
                 jackin_diagnostics::emit_compact_line(
                     "warning",
                     &format!(
@@ -1215,7 +1225,7 @@ pub(crate) async fn launch_role_runtime(
         Some(container_name),
     );
     if let Some(err) =
-        diagnose_premature_exit(docker, runner, container_name, ExitPhase::PreAttach).await
+        diagnose_premature_exit_by_id(docker, runner, &role_container, ExitPhase::PreAttach).await
     {
         jackin_diagnostics::active_timing_done(
             jackin_diagnostics::DiagnosticStage::Capsule,
@@ -1232,7 +1242,7 @@ pub(crate) async fn launch_role_runtime(
     super::ensure_current_or_remove_stale_container(
         account_revision,
         paths,
-        container_name,
+        &role_container,
         docker,
     )
     .await?;
@@ -1307,21 +1317,23 @@ pub(crate) async fn launch_role_runtime(
         super::ensure_current_or_remove_stale_container(
             account_revision,
             paths,
-            container_name,
+            &role_container,
             docker,
         )
         .await?;
-        return Ok(LaunchOutcome::Detached);
+        return Ok(LaunchOutcome::Detached(role_container));
     }
-    let session_result = crate::runtime::attach::reconnect_or_create_session_with_focus_with_lease(
-        paths,
-        container_name,
-        None,
-        account_revision,
-        docker,
-        runner,
-    )
-    .await;
+    let session_result =
+        crate::runtime::attach::reconnect_or_create_session_with_container_handle_with_lease(
+            paths,
+            container_name,
+            None,
+            account_revision,
+            docker,
+            runner,
+            &role_container,
+        )
+        .await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
     if let Err(err) = session_result {
@@ -1336,9 +1348,14 @@ pub(crate) async fn launch_role_runtime(
         // itself returned Err, propagate it even when PID 1 exited cleanly:
         // the capsule attach protocol uses that path to report failed final
         // sessions while the daemon still shuts down as init with exit 0.
-        let inspect = docker.inspect_container_state(container_name).await;
-        if let Some(diag) =
-            diagnose_with_state(runner, container_name, &inspect, ExitPhase::PostAttach).await
+        let inspect = docker.inspect_container_by_id(&role_container).await;
+        if let Some(diag) = super::diagnose_with_state_by_id(
+            runner,
+            &role_container,
+            &inspect,
+            ExitPhase::PostAttach,
+        )
+        .await
         {
             return Err(diag);
         }
@@ -1377,7 +1394,7 @@ pub(crate) async fn launch_role_runtime(
         crate::runtime::prewarm_trigger::spawn_background_sidecar_prewarm(paths, *debug);
     }
 
-    Ok(LaunchOutcome::ForegroundSessionEnded)
+    Ok(LaunchOutcome::ForegroundSessionEnded(role_container))
 }
 
 pub(crate) fn host_runtime_passthrough_env(

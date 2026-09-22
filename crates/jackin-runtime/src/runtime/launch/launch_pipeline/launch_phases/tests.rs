@@ -7,7 +7,7 @@ use jackin_core::ContainerState;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_test_support::FakeDockerClient;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use tempfile::tempdir;
 
 fn test_manifest(container: &str) -> InstanceManifest {
@@ -74,7 +74,13 @@ fn grant_phase_rejects_root_sudo_without_docker_io() {
 
 #[tokio::test]
 async fn grant_failure_cleanup_removes_adopted_sidecar_resources() {
-    let docker = FakeDockerClient::default();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            "jk-role-dind".to_owned(),
+            ContainerState::Running,
+        )])),
+        ..Default::default()
+    };
     let cleanup = LoadCleanup::new(
         "jk-role".into(),
         "jk-role-dind".into(),
@@ -114,6 +120,10 @@ async fn mid_pipeline_failed_setup_still_runs_cleanup() {
     manifest.write(&container_state).unwrap();
 
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            format!("{container}-dind"),
+            ContainerState::Running,
+        )])),
         inspect_queue: std::cell::RefCell::new(VecDeque::new()),
         ..Default::default()
     };
@@ -158,6 +168,10 @@ async fn post_start_failure_preserves_terminal_role_evidence_but_cleans_sidecars
     std::fs::create_dir(&socket_dir).unwrap();
     std::fs::write(socket_dir.join("agent.toml"), "bounded evidence").unwrap();
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            "jk-failed-start-dind".to_owned(),
+            ContainerState::Running,
+        )])),
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 1,
             oom_killed: false,
@@ -205,6 +219,10 @@ async fn post_start_failure_cleans_live_role_and_private_socket() {
     let socket_dir = temp.path().join("socket");
     std::fs::create_dir(&socket_dir).unwrap();
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            "jk-live-start".to_owned(),
+            ContainerState::Running,
+        )])),
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
     };
@@ -285,7 +303,13 @@ async fn grant_failure_then_cleanup_matches_run_launch_core_order() {
     });
     assert!(err.is_err(), "bad grants must fail before Docker ops");
     drop(err.unwrap_err());
-    let docker = FakeDockerClient::default();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            "jk-order-dind".to_owned(),
+            ContainerState::Running,
+        )])),
+        ..Default::default()
+    };
     let cleanup = LoadCleanup::new(
         "jk-order".into(),
         "jk-order-dind".into(),
