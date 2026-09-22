@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: renovate-upstream-sources-${{ github.repository }}-${{ github.ref }}
+  group: renovate-upstream-sources-${{ github.repository }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

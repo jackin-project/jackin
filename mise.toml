@@ -120,6 +120,25 @@ run = "cargo fmt --check"
 description = "Apply workspace formatting (fix side of the fmt gate; staged by hand after hook review)"
 run = "cargo fmt"
 
+# Scheduled evidence task. The collector owns API pagination and first-attempt
+# joins; the generated check-profile workflow owns cadence and artifact upload.
+[tasks.ci-evidence]
+description = "Collect first-attempt CI/Main and Desktop evidence and write the rollup"
+run = '''
+set -euo pipefail
+mkdir -p target/ci-evidence
+cargo xtask ci-evidence collect \
+  --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}" \
+  --output target/ci-evidence/attempts.json
+cargo xtask ci-evidence rollup \
+  --input target/ci-evidence/attempts.json \
+  --json target/ci-evidence/rollup.json \
+  --markdown target/ci-evidence/rollup.md
+test -s target/ci-evidence/attempts.json
+test -s target/ci-evidence/rollup.json
+test -s target/ci-evidence/rollup.md
+'''
+
 [tasks.clippy-affected]
 description = "Run Clippy with CI flags over crates affected by worktree changes (pre-commit hook)"
 run = "cargo xtask clippy-affected"

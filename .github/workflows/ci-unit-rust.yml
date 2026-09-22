@@ -130,6 +130,10 @@ on:
         required: false
         type: string
         default: ""
+      product_provides:
+        required: false
+        type: string
+        default: ""
       validation_phases:
         required: false
         type: string
@@ -138,7 +142,7 @@ on:
 jobs:
   verify-github-hosted:
     name: "GitHub · hosted"
-    if: ${{ inputs.provider == 'github-hosted' && contains(inputs.selected_units, format('"unit_id":"{0}"', inputs.unit)) && (true) }}
+    if: ${{ inputs.provider == 'github-hosted' && contains(inputs.selected_units, format('"unit_id":"{0}"', inputs.unit)) && (true) && inputs.apple_executor != true }}
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
@@ -181,12 +185,12 @@ jobs:
       - name: Download Velnor workflow runtime
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: velnor-workflow-runtime-4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-816046893ef55359ee2f41903d1f1f893d59303e-${{ runner.os }}-${{ runner.arch }}
           path: .velnor-workflow-runtime
       - name: Verify Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+          EXPECTED_REVISION: 816046893ef55359ee2f41903d1f1f893d59303e
         run: |
           set -euo pipefail
           manifest=.velnor-workflow-runtime/manifest.json
@@ -200,7 +204,7 @@ jobs:
       - name: Add Velnor workflow runtime to PATH
         shell: bash
         env:
-          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+          EXPECTED_REVISION: 816046893ef55359ee2f41903d1f1f893d59303e
         run: |
           set -euo pipefail
           home="$RUNNER_TEMP/velnor-workflow-runtime-artifact"
@@ -263,7 +267,38 @@ jobs:
           path: |
             ~/.rustup
           key: velnor-rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
+      - name: Verify Rust toolchain cache
+        id: rustup-toolchain-verify
+        if: steps.rustup-toolchain.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          valid=true
+          if ! command -v rustup >/dev/null 2>&1; then
+            valid=false
+          else
+            expected_channel='1.97.1'
+            installed="$(rustup toolchain list 2>/dev/null | awk -v expected="$expected_channel" '$1 == expected || index($1, expected "-") == 1 { print $1; exit }')" || installed=""
+            if [[ -z "$installed" ]]; then
+              valid=false
+            else
+              :
+              if ! rustup component list --installed --toolchain "$installed" 2>/dev/null | awk -v wanted='clippy' '$1 == wanted || index($1, wanted "-") == 1 { found=1 } END { exit found ? 0 : 1 }'; then
+                valid=false
+              fi
+              if ! rustup component list --installed --toolchain "$installed" 2>/dev/null | awk -v wanted='rustfmt' '$1 == wanted || index($1, wanted "-") == 1 { found=1 } END { exit found ? 0 : 1 }'; then
+                valid=false
+              fi
+              if ! rustup target list --installed --toolchain "$installed" 2>/dev/null | awk -v wanted='aarch64-unknown-linux-gnu' '$1 == wanted { found=1 } END { exit found ? 0 : 1 }'; then
+                valid=false
+              fi
+              if ! rustup target list --installed --toolchain "$installed" 2>/dev/null | awk -v wanted='x86_64-unknown-linux-gnu' '$1 == wanted { found=1 } END { exit found ? 0 : 1 }'; then
+                valid=false
+              fi
+            fi
+          fi
+          echo "valid=$valid" >> "$GITHUB_OUTPUT"
       - name: Provision Rust toolchain
+        if: steps.rustup-toolchain.outputs.cache-hit != 'true' || steps.rustup-toolchain-verify.outputs.valid != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -313,24 +348,24 @@ jobs:
           CARGO_BIN_TOOLS: ${{ inputs.cargo_bin_tools }}
         run: |
           set -euo pipefail
-          missing=0
+          missing=false
           IFS=',' read -ra tools <<< "$CARGO_BIN_TOOLS"
           for tool in "${tools[@]}"; do
             tool="${tool#"${tool%%[![:space:]]*}"}"
             tool="${tool%"${tool##*[![:space:]]}"}"
             [[ -z "$tool" ]] && continue
             if ! command -v "$tool" >/dev/null; then
-              missing=1
+              missing=true
               break
             fi
             if ! "$tool" --version >/dev/null 2>&1; then
-              missing=1
+              missing=true
               break
             fi
             if [[ "$tool" == cargo-* ]]; then
               subcommand="${tool#cargo-}"
               if ! cargo "$subcommand" --version >/dev/null 2>&1; then
-                missing=1
+                missing=true
                 break
               fi
             fi
@@ -338,7 +373,7 @@ jobs:
           echo "missing=$missing" >> "$GITHUB_OUTPUT"
       - name: Set up cargo bin tools
         if: ${{ inputs.cargo_bin_tools != '' && (steps.cargo-bin-toolchain.outputs.cache-hit != 'true' || steps.cargo-bin-verify.outputs.missing == 'true') }}
-        uses: taiki-e/install-action@0758d235715de2f3551eacc980d9ae8fce9342c3 # v2.87.3
+        uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: ${{ inputs.cargo_bin_tools }}
           fallback: none
@@ -405,6 +440,7 @@ jobs:
             fi
           fi
       - name: Restore unit cache
+        if: ${{ inputs.cache_key_files != '' }}
         id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -578,7 +614,7 @@ jobs:
           fi
           exit $rc
       - name: Save unit cache
-        if: always() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.cache.outputs.cache-hit != 'true'
+        if: ${{ inputs.cache_key_files != '' && (always() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.cache.outputs.cache-hit != 'true') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -598,7 +634,7 @@ jobs:
           fi
       - name: Report phase timings and cache outcomes
         if: always()
-        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@816046893ef55359ee2f41903d1f1f893d59303e
         with:
           job_label: ${{ inputs.unit }}
           ci_lane: github
@@ -616,7 +652,7 @@ jobs:
           cache_cargo_primary: ${{ steps.cache.outputs.cache-primary-key }}
           cache_cargo_matched: ${{ steps.cache.outputs.cache-matched-key }}
       - name: Record unit result
-        if: ${{ always() }}
+        if: ${{ always() && inputs.apple_executor != true }}
         env:
           VELNOR_RESULT_UNIT: ${{ inputs.unit }}
           VELNOR_RESULT_LANE: github-hosted
@@ -632,7 +668,388 @@ jobs:
           mkdir -p .velnor-ci-results
           jq -n --arg unit "$VELNOR_RESULT_UNIT" --arg lane "$VELNOR_RESULT_LANE" --arg outcome "$outcome" '{results: [{unit: $unit, lane: $lane, outcome: $outcome}]}' > ".velnor-ci-results/result-$VELNOR_RESULT_UNIT-$VELNOR_RESULT_LANE.json"
       - name: Upload unit result
-        if: ${{ always() }}
+        if: ${{ always() && inputs.apple_executor != true }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: velnor-result-${{ inputs.unit }}-github-hosted
+          path: .velnor-ci-results/result-${{ inputs.unit }}-github-hosted.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  verify-github-hosted-apple:
+    name: "GitHub · hosted · Apple"
+    if: ${{ inputs.provider == 'github-hosted' && contains(inputs.selected_units, format('"unit_id":"{0}"', inputs.unit)) && (true) && inputs.apple_executor }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Mark CI job start
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/JOB_STARTED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.head_sha }}
+      - name: Record unit dependencies
+        env:
+          UNIT_ID: ${{ inputs.unit }}
+          UNIT_DEPENDENCIES: ${{ inputs.unit_dependencies }}
+          UNIT_ADMISSION: ${{ inputs.unit_admission }}
+          UNIT_PROVIDER: ${{ inputs.provider }}
+        run: |
+          {
+            echo '## Unit dependencies'
+            echo
+            echo "- Unit: $UNIT_ID"
+            echo "- Provider: $UNIT_PROVIDER"
+            echo "- Admission: $UNIT_ADMISSION"
+            if [[ -z "$UNIT_DEPENDENCIES" ]]; then
+              echo '- Dependencies: none'
+            else
+              echo "- Dependencies: $UNIT_DEPENDENCIES"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Set up Velnor workflow runtime
+        id: runtime
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@816046893ef55359ee2f41903d1f1f893d59303e
+        with:
+          rev: 816046893ef55359ee2f41903d1f1f893d59303e
+      - name: Set trusted workflow policy revision
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=816046893ef55359ee2f41903d1f1f893d59303e" >> "$GITHUB_ENV"
+      - name: Mark runner setup end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/RUNNER_SETUP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Materialize Velnor CI selection
+        shell: bash
+        env:
+          SELECTION_BASE_SHA: ${{ inputs.base_sha }}
+          SELECTION_HEAD_SHA: ${{ inputs.head_sha }}
+          SELECTION_SCOPE: ${{ inputs.scope }}
+          SELECTION_UNITS: ${{ inputs.selected_unit_ids }}
+          SELECTION_FULL_UNITS: ${{ inputs.full_units }}
+          SELECTION_PLAN_DIGEST: ${{ inputs.plan_digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p .velnor-ci-selection
+          {
+            printf 'version=2\n'
+            printf 'base_sha=%s\n' "$SELECTION_BASE_SHA"
+            printf 'head_sha=%s\n' "$SELECTION_HEAD_SHA"
+            printf 'scope=%s\n' "$SELECTION_SCOPE"
+            printf 'units=%s\n' "$SELECTION_UNITS"
+            printf 'full_units=%s\n' "$SELECTION_FULL_UNITS"
+            printf 'plan_digest=%s\n' "$SELECTION_PLAN_DIGEST"
+          } > .velnor-ci-selection/velnor-ci-selection
+      - name: Mark selection transport end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/SELECTION_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Restore Rust toolchain
+        id: rustup-toolchain
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup
+          key: velnor-rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
+      - name: Verify Rust toolchain cache
+        id: rustup-toolchain-verify
+        if: steps.rustup-toolchain.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          valid=true
+          if ! command -v rustup >/dev/null 2>&1; then
+            valid=false
+          else
+            expected_channel='1.97.1'
+            installed="$(rustup toolchain list 2>/dev/null | awk -v expected="$expected_channel" '$1 == expected || index($1, expected "-") == 1 { print $1; exit }')" || installed=""
+            if [[ -z "$installed" ]]; then
+              valid=false
+            else
+              :
+              if ! rustup component list --installed --toolchain "$installed" 2>/dev/null | awk -v wanted='clippy' '$1 == wanted || index($1, wanted "-") == 1 { found=1 } END { exit found ? 0 : 1 }'; then
+                valid=false
+              fi
+              if ! rustup component list --installed --toolchain "$installed" 2>/dev/null | awk -v wanted='rustfmt' '$1 == wanted || index($1, wanted "-") == 1 { found=1 } END { exit found ? 0 : 1 }'; then
+                valid=false
+              fi
+              if ! rustup target list --installed --toolchain "$installed" 2>/dev/null | awk -v wanted='aarch64-unknown-linux-gnu' '$1 == wanted { found=1 } END { exit found ? 0 : 1 }'; then
+                valid=false
+              fi
+              if ! rustup target list --installed --toolchain "$installed" 2>/dev/null | awk -v wanted='x86_64-unknown-linux-gnu' '$1 == wanted { found=1 } END { exit found ? 0 : 1 }'; then
+                valid=false
+              fi
+            fi
+          fi
+          echo "valid=$valid" >> "$GITHUB_OUTPUT"
+      - name: Provision Rust toolchain
+        if: steps.rustup-toolchain.outputs.cache-hit != 'true' || steps.rustup-toolchain-verify.outputs.valid != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustup target add 'aarch64-unknown-linux-gnu' 'x86_64-unknown-linux-gnu'
+      - name: Save Rust toolchain
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.rustup-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup
+          key: velnor-rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') }}
+      - name: Set up Mise tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: ${{ inputs.mise_tools }}
+          cache: true
+          cache_save: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+      - name: Bound the Mr. Boxington store
+        shell: bash
+        run: echo "MBX_GC_MAX_SIZE=12GiB" >> "$GITHUB_ENV"
+      - name: Set up Mr. Boxington
+        id: mbx-cache
+        uses: jdx/mr-boxington-action@867fc530102eec5b756075d70d850dc8330d2272 # v1.4.0
+        with:
+          backend: github
+          github-cache-mode: objects
+          version: 1.12.0
+          cache-key: velnor-mbx-v3-${{ inputs.mbx_compat }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-${{ inputs.unit }}-${{ hashFiles(inputs.mbx_dependency_files) }}-${{ hashFiles(inputs.mbx_freshness_files) }}
+          restore-keys: |
+            velnor-mbx-v3-${{ inputs.mbx_compat }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-${{ inputs.unit }}-${{ hashFiles(inputs.mbx_dependency_files) }}-
+            velnor-mbx-v3-${{ inputs.mbx_compat }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-${{ inputs.unit }}-
+          save-on-workflow-dispatch: true
+      - name: Restore mold 2.42.0 cache
+        id: mold-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/velnor/mold/2.42.0
+          key: velnor-mold-2.42.0-${{ runner.os }}-${{ runner.arch }}
+      - name: Set up mold 2.42.0
+        shell: bash
+        env:
+          MOLD_VERSION: 2.42.0
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) mold_arch=x86_64; expected='f5ed2f6e31d1ada4f07fe766fe0de7a73104d1c5cdc59086fcecc16a43720b6d' ;;
+            aarch64) mold_arch=aarch64; expected='3c9a0a3624aac8a2007569ae50c33b3129a0f0ae8bcc974aeee2f8939d295190' ;;
+            *) echo "unsupported mold architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          cache_dir="$HOME/.cache/velnor/mold/$MOLD_VERSION"
+          archive="$cache_dir/mold-$MOLD_VERSION-$mold_arch-linux.tar.gz"
+          mkdir -p "$cache_dir"
+          if [[ ! -s "$archive" ]]; then
+            temporary="$archive.download"
+            trap 'rm -f "$temporary"' EXIT
+            curl --fail --show-error --silent --location --http1.1 --continue-at - --retry 20 --retry-all-errors --retry-delay 5 --retry-max-time 1800 --connect-timeout 30 --max-time 900 \
+              --output "$temporary" \
+              "https://github.com/rui314/mold/releases/download/v$MOLD_VERSION/mold-$MOLD_VERSION-$mold_arch-linux.tar.gz"
+            printf '%s  %s\n' "$expected" "$temporary" | sha256sum --check --strict
+            mv "$temporary" "$archive"
+            trap - EXIT
+          fi
+          printf '%s  %s\n' "$expected" "$archive" | sha256sum --check --strict
+          if [[ "$(id -u)" -eq 0 ]]; then
+            tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
+          else
+            sudo tar --directory /usr/local --strip-components=1 --no-overwrite-dir -xzf "$archive"
+          fi
+          command -v mold >/dev/null
+          mold --version | grep -F "$MOLD_VERSION"
+      - name: Save mold 2.42.0 cache
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.mold-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/velnor/mold/2.42.0
+          key: velnor-mold-2.42.0-${{ runner.os }}-${{ runner.arch }}
+      - name: Mark tool bootstrap end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/TOOL_BOOTSTRAP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Restore unit cache
+        if: ${{ inputs.cache_key_files != '' }}
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ inputs.cache_paths }}
+          key: ci-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-rust-${{ hashFiles(inputs.cache_key_files) }}
+          restore-keys: |
+            ci-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-rust-
+      - name: Mark cache prep end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CACHE_PREP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Prepare Cargo sources
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        env:
+          CARGO_FETCH_ROOT: ${{ inputs.cargo_root }}
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -euo pipefail
+          root="$CARGO_FETCH_ROOT"
+          if [[ "$root" != "." ]]; then
+            cd -- "$root"
+          fi
+          cargo fetch --locked
+      - name: Mark cargo fetch end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CARGO_FETCH_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Run unit checks
+        env:
+          CI_SCOPE: ${{ inputs.scope }}
+          CI_UNIT_ID: ${{ inputs.unit }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          VELNOR_SELECTION_FILE: .velnor-ci-selection/velnor-ci-selection
+          CARGO_NET_OFFLINE: "true"
+          MISE_AUTO_INSTALL: "false"
+          MISE_EXEC_AUTO_INSTALL: "false"
+          MISE_NOT_FOUND_AUTO_INSTALL: "false"
+        run: |
+          set -o pipefail
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CHECKS_STARTED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+          rc=0
+          velnor-workflow run --config .github/ci/project.toml --scope "$CI_SCOPE" --unit "$CI_UNIT_ID" 2>&1 | tee "$RUNNER_TEMP/velnor-unit-log.txt" || rc=$?
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CHECKS_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+          exit $rc
+      - name: Stage product velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage
+        env:
+          VELNOR_TRANSPORT_OUTPUTS: |
+            target/xcframework/JackinUsage.xcframework
+        run: velnor-workflow stage-product --producer 'rust-jackin-usage-ffi' --product 'xcframework-jackinusage' --digest '4b5f8e77878d8e43decdcd8fa3dde3e03430ef86f9c78aa1a2a62fa562aaab9e' --stage "$RUNNER_TEMP/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage"
+      - name: Upload product velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage
+          path: ${{ runner.temp }}/velnor-products/velnor-product-rust-jackin-usage-ffi--xcframework-jackinusage
+          if-no-files-found: error
+          retention-days: 1
+      - name: Save unit cache
+        if: ${{ inputs.cache_key_files != '' && (always() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.cache.outputs.cache-hit != 'true') }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ inputs.cache_paths }}
+          key: ci-${{ runner.os }}-${{ runner.arch }}-${{ inputs.provider }}-${{ inputs.unit_platform }}-${{ inputs.unit_trust }}-rust-${{ hashFiles(inputs.cache_key_files) }}
+      - name: Mark cleanup end
+        if: always()
+        run: |
+          timing_dir="$RUNNER_TEMP/velnor-ci-timing-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-unknown}"
+          umask 077
+          mkdir -p "$timing_dir"
+          marker="$timing_dir/CLEANUP_ENDED"
+          if [[ ! -e "$marker" ]]; then
+            if (set -C; printf '%s\n' "$(date +%s)" > "$marker") 2>/dev/null; then
+              chmod 0444 "$marker" 2>/dev/null || true
+            fi
+          fi
+      - name: Report phase timings and cache outcomes
+        if: always()
+        uses: tailrocks/velnor/.github/actions/report-velnor-ci-outcomes@816046893ef55359ee2f41903d1f1f893d59303e
+        with:
+          job_label: ${{ inputs.unit }}
+          ci_lane: github
+          cache_declared_layers: rustup,mold,mbx,cargo
+          cache_rustup_outcome: ${{ steps.rustup-toolchain.outcome }}
+          cache_rustup_primary: ${{ steps.rustup-toolchain.outputs.cache-primary-key }}
+          cache_rustup_matched: ${{ steps.rustup-toolchain.outputs.cache-matched-key }}
+          cache_mold_outcome: ${{ steps.mold-cache.outcome }}
+          cache_mold_primary: ${{ steps.mold-cache.outputs.cache-primary-key }}
+          cache_mold_matched: ${{ steps.mold-cache.outputs.cache-matched-key }}
+          cache_mbx_outcome: ${{ steps.mbx-cache.outcome }}
+          cache_mbx_hit: ${{ steps.mbx-cache.outputs.cache-hit }}
+          cache_mbx_primary: ${{ steps.mbx-cache.outputs.cache-primary-key }}
+          cache_cargo_outcome: ${{ steps.cache.outcome }}
+          cache_cargo_primary: ${{ steps.cache.outputs.cache-primary-key }}
+          cache_cargo_matched: ${{ steps.cache.outputs.cache-matched-key }}
+      - name: Record unit result
+        if: ${{ always() && inputs.apple_executor }}
+        env:
+          VELNOR_RESULT_UNIT: ${{ inputs.unit }}
+          VELNOR_RESULT_LANE: github-hosted
+          VELNOR_RESULT_OUTCOME: ${{ job.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$VELNOR_RESULT_OUTCOME" in
+            success) outcome=success ;;
+            cancelled) outcome=cancelled ;;
+            *) outcome=failure ;;
+          esac
+          mkdir -p .velnor-ci-results
+          jq -n --arg unit "$VELNOR_RESULT_UNIT" --arg lane "$VELNOR_RESULT_LANE" --arg outcome "$outcome" '{results: [{unit: $unit, lane: $lane, outcome: $outcome}]}' > ".velnor-ci-results/result-$VELNOR_RESULT_UNIT-$VELNOR_RESULT_LANE.json"
+      - name: Upload unit result
+        if: ${{ always() && inputs.apple_executor }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: velnor-result-${{ inputs.unit }}-github-hosted
