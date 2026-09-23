@@ -1,154 +1,76 @@
 ---
-title: "05 — Current objective comparison"
-description: "Objective comparison of Caveman, Headroom, RTK, and lean-ctx by reach, workload, safety, evidence, and composition."
+title: "05 — Six-tool comparison"
+description: "Boundary-based comparison and build, embed, adapt, or bundle decisions for the six current optimizers."
 ---
 
 ## Summary
 
-No current tool dominates every boundary: Caveman best addresses visible output, RTK shell observations, Headroom broad reversible compression, and lean-ctx integrated retrieval and memory.
-Cutoff: **2026-08-12**. This comparison uses only the current stable releases: Caveman v2.0.0, Headroom v0.34.0, RTK v0.45.0, and lean-ctx v3.9.18. It does not carry benchmark outcomes from superseded versions into current verdicts.
+Cutoff: **2026-09-23 UTC**. There is no defensible universal winner. Headroom offers the most directly useful Rust transform surface; LeanCTX offers a preview Rust retrieval facade; LemonCrow offers an integrated runtime worth evaluating; RTK specializes in commands; Caveman and Ponytail offer different instruction-level interventions. Release identity is fixed in [08 — Register](/research/context/tools/08-current-release-register/).
 
 ## Question and scope
 
-Which current tool best fits each interception boundary, and where does no tool have adequate outcome evidence?
+Which component solves each part of Jackin's token problem, and which integration form preserves ownership and correctness?
 
 ## Method
 
-The comparison holds releases to the shared cutoff and scores interception boundary, reversibility, recovery, evidence quality, self-cost, and operational ownership without importing older benchmark results.
+Compare interception reach, effect on behavior, recovery, cache risk, dependencies, licensing, and available APIs. Require exact treatment matching before transferring any outcome claim. A preference for Rust is relevant to packaging and maintenance, not a substitute for task evidence.
 
 ## Findings
 
-### One-screen matrix
+### Capability matrix
 
-| Axis | Caveman v2.0.0 | Headroom v0.34.0 | RTK v0.45.0 | lean-ctx v3.9.18 |
-|---|---|---|---|---|
-| Product class | Output skill + input stack | Broad compression pipeline | Shell-output command proxy | Integrated context runtime |
-| Output brevity | **Yes, first-class skill** | Optional verbosity steering | No | Learned verbosity inside runtime; not a general response-style skill |
-| Input compression | Type-routed engine/proxy/MCP | Type-routed + Kompress model | Supported shell commands only | Reads, shell, search, history proxy |
-| Prevents broad reads | Partial through MCP/search paths | Partial | No | **Yes: maps, signatures, graph, search, cached handles** |
-| Deterministic core | Yes | Typed paths yes; Kompress path no | **Yes, entirely** | Yes by default; optional adaptive/model surfaces |
-| Exact recovery | CCR reference | CCR reference / lossless seam | Raw rerun; no general content store | Archive expansion / raw or bounded read |
-| Cache posture | Skill neutral; input mode dependent | Library/MCP narrower risk; proxy mode dependent | **Write-time safe by construction** | MCP/hook safer; proxy mode dependent |
-| Native agent file tools | Only when routed through its surfaces | Visible on wire/MCP | **Built-in Read/Grep/Glob bypass hook** | Central use case |
-| History | Proxy path | Yes | No | Proxy + memory |
-| Model in hot compression path | No | Kompress path yes | No | No by default |
-| Operational footprint | Skill small; full v2 stack adds proxy/MCP/store | Python/Rust/model/proxy/MCP/wrappers | **Smallest: binary + hook** | **Largest: daemon, DBs, MCP, hooks, proxy, dashboard** |
-| License today | MIT interfaces; BSL-1.1 engine-side | Apache-2.0 | Apache-2.0 | Apache-2.0 |
-| Current independent release-specific A/B | None found | None found | None found | None found |
-| Strongest current evidence | First-party v2 fixture benchmark | Current mechanism/release evidence | Current mechanism/release evidence | Observational field report, exact version undisclosed |
+| Axis | Caveman | RTK | LeanCTX | Ponytail | Headroom | LemonCrow |
+|---|---|---|---|---|---|---|
+| Primary intervention | Narration skill plus separate input stack | Command output | Retrieval/context runtime | Implementation choices | Typed input transforms/proxy | Integrated retrieval/tools/runtime |
+| Prevent unnecessary work | Policy-dependent | No | Retrieval/reuse | Direct objective | Not its primary scope | Search/read cycle reduction |
+| Reduce shell observations | Engine/integration-dependent | Main scope | Shell path | Indirect only | At a routed result/request seam | Own Bash tool / integration |
+| Progressive source retrieval | Separate input surfaces | Not automatic native-tool coverage | Core capability | No | Optional source shaping | Core capability |
+| Provider interception required | No for skill; input path varies | No | No for MCP | No | No for library; yes for proxy | No for local tool integration |
+| Recovery | Engine-specific references | Current recall/tee modes | Archive / exact reads | Not applicable | CCR / selected originals | Spill / targeted reads |
+| Rust embedding | No verified Rust engine API | CLI, no verified library target | Preview lean-ctx-embed | Not a Rust runtime | Public headroom-core source APIs | Python, use process boundary |
+| Initial Jackin role | Optional narration | Qualified command arm | Read-only backend | Adapted policy | Selected transform worker | Read-only comparator |
 
-### Reach determines benefit
+Sources: the current [Caveman](/research/context/tools/01-caveman-design/), [RTK](/research/context/tools/03-rtk-design/), [LeanCTX](/research/context/tools/04-leanctx-design/), [Ponytail](/research/context/tools/09-ponytail-design/), [Headroom](/research/context/tools/02-headroom-design/), and [LemonCrow](/research/context/tools/10-lemoncrow-design/) source reviews.
 
-A tool can remove 90% of a payload and still save almost nothing if that payload is a small share of task tokens.
+### Build, embed, adapt, or bundle
 
-```text
-net accepted-task effect
-  = reachable token share
-  × compression on that share
-  − fixed prompt/schema/runtime overhead
-  − extra turns, retries, raw recoveries, and cache loss
-  ± quality-driven downstream work
-```
-
-This equation explains the objective ranking: there is no defensible tool order without a workload trace.
-
-### Best tool by measured bottleneck
-
-### Visible narration dominates
-
-Start with the **Caveman skill**, not the full v2 stack. It directly changes the output register and adds the least machinery. Success means visible output falls while clarity, task acceptance, and user correction rate remain unchanged.
-
-### Large JSON, logs, RAG, or history dominate
-
-Start with **Headroom** when content-aware transforms and exact recovery matter. Its mature typed routing and CCR are better matched than RTK's shell boundary. Prefer selected library/MCP calls before a whole-request proxy.
-
-### Supported shell output dominates fresh input
-
-Start with **RTK**. It has the smallest trusted base and no model/schema overhead. First prove the agent actually uses eligible shell calls; native agent reads/search are outside current automatic reach.
-
-### Repository traversal and repeated reads dominate
-
-Start with **lean-ctx** or a narrower retrieval tool. Its maps, signatures, graph, search, and cached handles can prevent the broad read. This is a stronger architectural match than compressing a full file after reading it.
-
-### Mixed tool output needs a new local deterministic engine
-
-Trial **Caveman v2** against Headroom on the local payload mix. Caveman is newer, deterministic, and recoverable; Headroom is more mature and has wider deployment history. The current public evidence cannot choose for every workload.
-
-### Safety comparison
-
-| Risk | Caveman | Headroom | RTK | lean-ctx |
-|---|---|---|---|---|
-| Omitted exact identifier | Skill prose guards; v2 CCR | CCR retrieval | Raw rerun | Expand/raw read |
-| Silent parse/transform failure | v2 passes through | Multiple policy/shorter checks | Per-filter isolation; command remains real | Raw/error escalation and mode controls |
-| Cache disruption | Input proxy path must be tested | Proxy path must be tested | Low: write-time observation | Proxy path must be tested |
-| Hook conflict | Current wrappers/hooks | Current wrappers and adjacent installs | Core installation surface | Many integrations and policies |
-| Supply-chain/runtime breadth | Split-license monorepo | Python/Rust/model artifacts | Smallest | Broadest |
-| Security-sensitive exact work | Disable brevity/compression or recover raw | Recover raw | Rerun raw | Full/bounded read + normal verification |
-
-No lossy summary is authoritative. Tests prove system behavior; raw source proves exact text; compression counters prove neither.
-
-### Objective strengths
-
-### Caveman
-
-- Best output-control surface.
-- New deterministic, type-aware input engine.
-- Current shorter-only and recovery design is strong.
-- Weakest point: v2 maturity and split BSL licensing.
-
-### Headroom
-
-- Best mature broad reversible input pipeline.
-- Strongest deployment flexibility and typed payload coverage.
-- Weakest point: runtime/installation complexity and absent current independent A/B.
-
-### RTK
-
-- Best minimal deterministic shell filter.
-- Lowest machinery and clearest cache behavior.
-- Weakest point: strict reach ceiling; current task-level benefit unproven.
-
-### lean-ctx
-
-- Best integrated repository-context and read-prevention system.
-- Unique combination of graph, memory, recovery, policy, and ledger.
-- Weakest point: largest operational surface and difficult attribution.
-
-### What “good” means for each
-
-| Tool | Keep it only if… | Reject it if… |
+| Capability | Preferred first move | When to build or extract |
 |---|---|---|
-| Caveman skill | Output drops and human clarity stays intact | Corrections/re-explanations erase the saving |
-| Caveman v2 | Fresh input per accepted task falls and CCR recovery works | Wrapper/proxy overhead or recovery turns erase benefit |
-| Headroom | Structured/history input falls after cache effects at unchanged quality | Latency, model/store overhead, or extra retrieval dominates |
-| RTK | Eligible shell output is material and turns/rereads do not rise | Native tools or quiet commands dominate |
-| lean-ctx | Raw reads fall and edit correctness stays unchanged | Setup/runtime overhead exceeds avoided context |
+| Configuration, compatibility, evidence, isolation | Build in Jackin, extending existing components | These contracts depend on Jackin's host and capsule model |
+| Structured transforms | Source-pin selected headroom-core APIs in an isolated worker | Upstream cannot meet a demonstrated feature, fidelity, or deployment boundary |
+| Shell filters | Evaluate RTK executable and request a pure-filter upstream API | Only selected licensed kernels, with copied regression fixtures and provenance |
+| Repository retrieval | Native exact tools versus restricted LeanCTX and LemonCrow arms | A backend fails measured recall, freshness, isolation, or host integration requirements |
+| Narration and reuse policy | Small role-specific assets or adapted instructions | Native delivery is simpler than installing another runtime |
+| Provider proxy | Optional independent experiment | Only when tool-boundary reach is insufficient and cache/auth conformance passes |
+
+Embedding all three Rust-capable packages is not automatically viable. RTK depends on bundled `rusqlite` 0.31 and Headroom on 0.40 in their reviewed manifests; packages linking incompatible native SQLite bindings may conflict in one dependency graph. Run a resolver/build spike rather than assuming different Rust packages always coexist. Process separation avoids that link boundary but introduces lifecycle costs. [RTK manifest](https://github.com/rtk-ai/rtk/blob/v0.49.0/Cargo.toml), [Headroom manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml).
+
+### Best fit by actual waste
+
+If routine narration dominates, compare a minimal native brevity policy with Caveman's skill. If redundant implementation dominates, compare a restrained reuse-first policy with Ponytail. Do not optimize line count instead of requirement coverage.
+
+If large structured command results dominate, test qualified RTK families or selected Headroom transforms. If repeated repository exploration dominates, prioritize exact selection and compare LeanCTX with LemonCrow. If already-selected observations remain too large, evaluate compression next. Broad provider compression is a different boundary and should not be the starting assumption.
+
+### Evidence is not additive
+
+A full LemonCrow result includes its tools and persona; it cannot qualify a read-only Jackin backend. A Ponytail result cannot qualify a rewritten policy. A Headroom proxy result cannot qualify a direct Rust transform. Percentages from these configurations must never be added together to forecast a combined stack.
 
 ## Implications for jackin❯
 
-### Composition verdict
+The recommended target is **automatic, compatibility-qualified selection**, not an empty abstraction and not unconditional compression. Package reviewed components with Jackin; enable only transformations that satisfy a recorded host/version/content contract. Keep raw operation available and explain every bypass or disabled component.
 
-Use **one output layer plus, at most, one measured input/retrieval layer**. Caveman's skill is orthogonal to input tools. Caveman v2, Headroom, RTK, and lean-ctx overlap on observations. Blindly stacking them makes failures harder to recover and savings impossible to attribute.
-
-Current recommendation:
-
-1. retrieval or precise reads before lossy compression;
-2. deterministic write-time compression before a global proxy;
-3. reversible broad compression when the payload demands it;
-4. output brevity as a separate, independently measured choice.
-
-Next: [06 — Current rising tools and composition](/research/context/tools/06-combining/).
+Retain native agent execution, editing, approvals, and authentication by default. Use replaceable backends rather than rebuilding entire products. The [implementation plan](/research/context/tools/11-jackin-integration/) gives concrete responsibilities and gates.
 
 ## Limitations and unknowns
 
-Tool behavior, releases, licenses, and outcome evidence can change; reverify the current version and integration boundary before adoption.
+The comparison does not establish that any candidate is fastest, cheapest, or safe for every task. API presence was inspected, not compiled. Independent current-release accepted-task evidence remains missing; [07 — Evidence](/research/context/tools/07-evidence-and-claims/) defines how to close that gap.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Per-tool pages contain tagged source and release evidence. The matrix's recommendations are deductions from those boundaries, not measurements.
 
 ## Related work
 
-- [Token-optimization tools dossier](/research/context/tools/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Context engine](/research/context/engine/)
+- [Composition](/research/context/tools/06-combining/)
+- [Release register](/research/context/tools/08-current-release-register/)
+- [Engine reuse matrix](/research/context/engine/09-reuse-decision-matrix/)
