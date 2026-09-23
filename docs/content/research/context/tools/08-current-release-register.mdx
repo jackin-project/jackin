@@ -1,79 +1,56 @@
 ---
 title: "08 — Current release register"
-description: "Verification cutoff, stable versions, release dates, source links, and freshness defects for tracked context tools."
+description: "The September 23, 2026 six-tool release baseline, component identities, and source-verification boundaries."
 ---
 
 ## Summary
 
-The release register fixes every comparison to a 2026-08-12 snapshot so superseded versions and stale benchmark claims cannot silently enter current verdicts.
-Authoritative dossier snapshot: **2026-08-12 UTC**. “Latest” means the newest stable GitHub release visible at the cutoff, or newest tag when a project does not publish release objects. Adoption and activity fields come from GitHub's repository API. Stars are not an outcome metric.
+Authoritative research cutoff: **2026-09-23 UTC**. The comparison fixes six products to the stable GitHub releases below. Release metadata was retrieved through the live repository API; cached search and release-page results were not used to select versions.
 
 ## Question and scope
 
-Which exact stable releases and maintenance signals define the dossier’s current comparison set?
+Which exact releases define the comparison, and what does verification establish?
 
 ## Method
 
-The register queries release or tag metadata at the stated UTC cutoff, records the newest stable artifact and maintenance signals, and excludes stars from outcome judgments.
+Check release objects, publication dates, and selected tagged source. Keep product, binary, crate, SDK, and host versions separate. This is a research baseline, not an automatically updating dependency lockfile. Unreviewed adjacent products are outside this refresh; no stale adoption leaderboard is retained.
 
 ## Findings
 
-### Core tools
+| Tool | Reviewed stable release | Published, UTC | Component distinction |
+|---|---|---|---|
+| Caveman | [v2.7.0](https://github.com/JuliusBrussee/caveman/releases/tag/v2.7.0) | 2026-09-15 | Release names bin-v1.1.7; some npm publications are marked pending |
+| RTK | [v0.49.0](https://github.com/rtk-ai/rtk/releases/tag/v0.49.0) | 2026-09-11 | CLI package, not a verified library target |
+| LeanCTX | [v3.10.2](https://github.com/yvgude/lean-ctx/releases/tag/v3.10.2) | 2026-09-16 | Engine 3.10.2; unpublished lean-ctx-embed facade 0.1.0 |
+| Ponytail | [v4.10.0](https://github.com/DietrichGebert/ponytail/releases/tag/v4.10.0) | 2026-09-14 | Skill/plugin assets and host adapters, not a Rust engine |
+| Headroom | [v0.38.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.38.0) | 2026-09-21 | Product 0.38.0; source headroom-core crate 0.1.0 |
+| LemonCrow | [v0.7.4](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.7.4) | 2026-09-14 | Python runtime with source engine and packaged distributions |
 
-| Tool | Current release | Published | Current adoption | Last repository push at cutoff | License today |
-|---|---:|---:|---:|---:|---|
-| [Caveman](https://github.com/JuliusBrussee/caveman) | [v2.0.0](https://github.com/JuliusBrussee/caveman/releases/tag/v2.0.0) | 2026-08-11 | 97,512★ / 240 subscribers / 5,622 forks | 2026-08-11 | MIT interfaces; BSL-1.1 engine-side components—see [current licensing map](https://github.com/JuliusBrussee/caveman/blob/v2.0.0/LICENSING.md) |
-| [Headroom](https://github.com/headroomlabs-ai/headroom) | [v0.34.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.34.0) | 2026-08-05 | 65,972★ / 193 / 5,038 | 2026-08-11 | Apache-2.0 |
-| [RTK](https://github.com/rtk-ai/rtk) | [v0.45.0](https://github.com/rtk-ai/rtk/releases/tag/v0.45.0) | 2026-08-07 | 75,756★ / 203 / 4,758 | 2026-08-10 | Apache-2.0 |
-| [lean-ctx](https://github.com/yvgude/lean-ctx) | [v3.9.18](https://github.com/yvgude/lean-ctx/releases/tag/v3.9.18) | 2026-08-08 | 3,568★ / 22 / 323 | 2026-08-11 | Apache-2.0 |
+Release API entry points: [Caveman](https://api.github.com/repos/JuliusBrussee/caveman/releases), [RTK](https://api.github.com/repos/rtk-ai/rtk/releases/latest), [LeanCTX](https://api.github.com/repos/yvgude/lean-ctx/releases/latest), [Ponytail](https://api.github.com/repos/DietrichGebert/ponytail/releases/latest), [Headroom](https://api.github.com/repos/headroomlabs-ai/headroom/releases/latest), and [LemonCrow](https://api.github.com/repos/lemoncrow-lab/lemoncrow/releases/latest). These discovery URLs are mutable; the per-row release and design-page source links identify the reviewed snapshot.
 
-API sources: [Caveman](https://api.github.com/repos/JuliusBrussee/caveman), [Headroom](https://api.github.com/repos/headroomlabs-ai/headroom), [RTK](https://api.github.com/repos/rtk-ai/rtk), [lean-ctx](https://api.github.com/repos/yvgude/lean-ctx).
+### Current implementation facts that matter
 
-### Rising and adjacent tools
-
-| Tool | Current release/tag | Current adoption | Created / active at cutoff | License/current boundary |
-|---|---:|---:|---:|---|
-| [pxpipe](https://github.com/teamchong/pxpipe) | [v0.13.1](https://github.com/teamchong/pxpipe/releases/tag/v0.13.1), 2026-08-11 | 7,055★ / 25 subscribers / 610 forks | 2026-05-20 / 2026-08-11 | MIT |
-| [Context Mode](https://github.com/mksglu/context-mode) | [v1.0.169](https://github.com/mksglu/context-mode/releases/tag/v1.0.169), 2026-06-29 | 19,802★ / 86 / 1,422 | 2026-02-23 / 2026-08-11 | Elastic License 2.0; source-available, not OSI open source |
-| [Paritok](https://github.com/Paritok-official/paritok-4b-v1) | tag [v1.3.3](https://github.com/Paritok-official/paritok-4b-v1/tree/v1.3.3); no GitHub release object | 1,031★ / 78 / 118 | 2026-07-15 / 2026-08-11 | Apache-2.0 repository; base model has its own license |
-| [jCodeMunch MCP](https://github.com/jgravelle/jcodemunch-mcp) | [v1.108.271](https://github.com/jgravelle/jcodemunch-mcp/releases/tag/v1.108.271), 2026-08-10 | 2,542★ / 19 / 349 | 2026-02-09 / 2026-08-11 | GitHub API reports no SPDX identifier; inspect repository terms before embedding |
-| [Serena](https://github.com/oraios/serena) | [v1.7.0](https://github.com/oraios/serena/releases/tag/v1.7.0), 2026-08-09 | 27,874★ / 86 / 1,851 | 2025-03-23 / 2026-08-10 | MIT |
-| [fff](https://github.com/dmtrKovalenko/fff) | [v0.10.3](https://github.com/dmtrKovalenko/fff/releases/tag/v0.10.3), 2026-08-07 | 9,949★ / 20 / 412 | 2025-07-31 / 2026-08-11 | MIT |
-| [codedb](https://github.com/justrach/codedb) | [v0.2.5838](https://github.com/justrach/codedb/releases/tag/v0.2.5838), 2026-08-05 | 1,357★ / 9 / 79 | 2026-03-03 / 2026-08-05 | BSD-3-Clause |
-| [sem](https://github.com/Ataraxy-Labs/sem) | [v0.21.0](https://github.com/Ataraxy-Labs/sem/releases/tag/v0.21.0), 2026-07-10 | 3,294★ / 6 / 98 | 2026-02-05 / 2026-07-18 | Apache-2.0 API metadata; repository also documents dual-license surfaces |
-| [mq](https://github.com/harehare/mq) | [v0.8.2](https://github.com/harehare/mq/releases/tag/v0.8.2), 2026-08-10 | 1,005★ / 2 / 21 | 2025-02-24 / 2026-08-11 | MIT |
-| [Entroly](https://github.com/juyterman1000/entroly) | no tagged stable release | 435★ / 6 / 69 | 2026-03-07 / 2026-08-11 | Apache-2.0 |
-| [claude-context](https://github.com/zilliztech/claude-context) | no tagged release | 12,384★ / 57 / 910 | 2025-06-06 / 2026-07-14 | MIT |
-| [Repomix](https://github.com/yamadashy/repomix) | [v1.18.0](https://github.com/yamadashy/repomix/releases/tag/v1.18.0), 2026-08-08 | 27,776★ / 70 / 1,483 | 2024-07-13 / 2026-08-11 | MIT |
-
-API sources: [pxpipe](https://api.github.com/repos/teamchong/pxpipe), [Context Mode](https://api.github.com/repos/mksglu/context-mode), [Paritok](https://api.github.com/repos/Paritok-official/paritok-4b-v1), [jCodeMunch](https://api.github.com/repos/jgravelle/jcodemunch-mcp), [Serena](https://api.github.com/repos/oraios/serena), [fff](https://api.github.com/repos/dmtrKovalenko/fff), [codedb](https://api.github.com/repos/justrach/codedb), [sem](https://api.github.com/repos/Ataraxy-Labs/sem), [mq](https://api.github.com/repos/harehare/mq), [Entroly](https://api.github.com/repos/juyterman1000/entroly), [claude-context](https://api.github.com/repos/zilliztech/claude-context), [Repomix](https://api.github.com/repos/yamadashy/repomix).
-
-### Update rule
-
-Future edits replace this snapshot; they do not append a release history. A changed stable version requires re-reading the release, current architecture, license, install/telemetry behavior, and evidence before carrying any verdict forward.
+- RTK's release contains content-addressed recall and structural diff-parser corrections. Do not describe it as raw-rerun-only or apply the superseded prefix-parser verdict to it. [Tagged changelog](https://github.com/rtk-ai/rtk/blob/v0.49.0/CHANGELOG.md).
+- LeanCTX's current embedding facade is `lean-ctx-embed`, preview and unpublished. [Tagged manifest](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/Cargo.toml).
+- Headroom has public Rust transform exports. Source reuse is a real option; published stable SDK support and build portability remain separate checks. [Tagged exports](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/src/transforms/mod.rs).
+- LemonCrow's tagged tree includes its engine source and bounded advisory-state lock. [Engine package](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/pro/__init__.py), [lock implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/gateway/adapters/mcp/smart_state.py).
+- Caveman's skill/client and engine licenses differ. [License map](https://github.com/JuliusBrussee/caveman/blob/v2.7.0/LICENSING.md).
+- Ponytail's full policy includes testing/minimal-diff preferences that must not override Jackin's requirements. [Current policy](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/AGENTS.md).
 
 ## Implications for jackin❯
 
-For jackin❯, the current release register evidence determines whether the mechanism is suitable for reuse, comparison, or rejection.
+Pin the selected repository commit, binary digest, dependency lock, configuration hash, agent version, and provider/auth path during qualification. Resolve a tag to its commit before building; do not use an unchecked moving branch or `/latest` during capsule startup. A changed component invalidates only the affected qualification records, but never inherits a prior performance percentage automatically.
 
 ## Limitations and unknowns
 
-### Freshness defects found in current upstream docs
-
-- RTK's current README verification example names an older version than v0.45.0.
-- RTK's current privacy and disclaimer documents disagree about telemetry default.
-- Headroom's current `SECURITY.md` labels an older release as latest.
-- lean-ctx v3.9.18 release notes contain a self-comparison changelog link.
-- Paritok publishes current tags but no GitHub release objects.
-
-These defects do not change the release metadata above. They lower confidence in unaudited prose and justify linking exact release artifacts.
+This review establishes release identity and selected source behavior, not complete builds, signatures, network behavior, or task outcomes. No six-way paid benchmark was executed. All six currently lack a release-matched independent accepted-task result established by this review. GitHub stars and download counts are deliberately excluded from ranking.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Release records and tagged source references are inline. [07 — Evidence](/research/context/tools/07-evidence-and-claims/) records why plausible-looking studies may not qualify.
 
 ## Related work
 
-- [Token-optimization tools dossier](/research/context/tools/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Context engine](/research/context/engine/)
+- [Tools dossier](/research/context/tools/)
+- [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)
