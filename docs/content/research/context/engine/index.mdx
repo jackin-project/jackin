@@ -1,96 +1,77 @@
 ---
 title: "jackin❯ Context Engine — design spec"
-description: "Design for a jackin❯ context engine that combines measured observation, retrieval, output, routing, memory, and verification mechanisms."
+description: "A measured, reuse-first context-engine design with explicit host, recovery, isolation, and outcome boundaries."
 ---
 
 **Research state:** Incomplete
 
-This folder is the **product specification** distilled from the [token-optimization-techniques dossier](/research/context/techniques/) and the [current token-optimization tools hub](/research/context/tools/). External-tool state was refreshed on 2026-08-12 against Caveman v2.0.0, Headroom v0.34.0, RTK v0.45.0, lean-ctx v3.9.18, sem v0.21.0, mq v0.8.2, fff v0.10.3, codedb v0.2.5838, and pxpipe v0.13.1. The current [objective comparison](/research/context/tools/05-head-to-head/), [rising-tools scan](/research/context/tools/06-combining/), [evidence ledger](/research/context/tools/07-evidence-and-claims/), and [release register](/research/context/tools/08-current-release-register/) supersede dated tool snapshots. This specification still requires implementation-time source revalidation; a design donor is not a permanent dependency decision.
+External-tool research cutoff: **2026-09-23 UTC**. The [six-tool dossier](/research/context/tools/) and [current release register](/research/context/tools/08-current-release-register/) cover Caveman, RTK, LeanCTX, Ponytail, Headroom, and LemonCrow. The [Jackin integration strategy](/research/context/tools/11-jackin-integration/) and [reuse matrix](/research/context/engine/09-reuse-decision-matrix/) govern current dependency choices. This is still a design, not implemented or benchmark-qualified behavior.
 
 ## Research question
 
-What context-engine architecture can reduce tokens and quota per accepted task without weakening quality, recovery, cache behavior, or capsule isolation?
+What should Jackin own, reuse, and automatically activate to reduce resource consumption per accepted task without weakening correctness, recovery, cache behavior, or capsule isolation?
 
 ## Headline findings
 
 ### Thesis
 
-Every external token-optimization tool fights the same three battles: it must **install itself into an agent environment it does not own**, **infer what the agent is doing from an incomplete interception boundary**, and **measure savings without owning provider billing or the counterfactual task path**. jackin❯ owns the capsule, generates agent configuration, supervises the process, and parses per-session usage records. An embedded engine can therefore adopt reviewed mechanisms without global user-scope installers, overlapping hooks, a provider proxy, or self-reported gross counters.
+Build the narrow Jackin-specific control and evidence contracts. Reuse appropriate upstream implementations behind replaceable boundaries. Do not adopt six global installers, make a complete external runtime mandatory, or rewrite a usable Rust library merely because its product also has a Python wrapper.
 
-### Design targets
+The current recommendation is a selected `headroom-core` transform spike, restricted LeanCTX and LemonCrow retrieval comparisons, qualified RTK command filtering, and restrained instruction assets inspired by Ponytail and Caveman. These are architecture candidates, not a performance ranking. [Current comparison](/research/context/tools/05-head-to-head/).
 
-The dossier's measured invariants bound the design (all sourced in [01 — economics](/research/context/techniques/01-economics-and-measurement/), [02 — baseline audit](/research/context/techniques/02-baseline-audit/), [current evaluation protocol](/research/context/tools/07-evidence-and-claims/)):
+### What capsule ownership actually provides
 
-- **Dollar split (measured heavy session)**: cache reads 32% / cache writes 29% / thinking ~20% / visible output ~17% / uncached 2%. Token *volume* is 94% cache reads. 1 output token = 5 uncached input = 50 cache-read tokens.
-- **The defaults already bank ~4–5×** (prompt caching −86.3% input-side, MCP schema deferral, Edit-diffs). The engine's job is the residual: protect the banked wins, then compress the write-time observation stream, then route.
-- **Honest ceiling**: ≈2.5× defensible at zero quality loss; ≈5–6.2× if the model-routing flip passes the harness (Claude Sonnet 5 uses the new Opus-4.7+ tokenizer, so the compounding tokenizer discount in the downtier arithmetic applies only when pinning legacy Sonnet 4.6 / Haiku 4.5); **no honest 10×** — thinking (20% of dollars) is reachable only by effort/routing, and the cache-read floor of genuinely-used context is real.
-- **Workload split decides the lever**: on this repo's docs-heavy transcripts, 76.2% of observation tokens came through native `Read` (RTK-blind) and only 16.5% through Bash. A code-heavy session inverts this. The engine must cover *both* interception points and measure its own split per capsule.
-- **For subscribers the metric flips to tasks-per-cap** (cache reads ≈0.1× against the cap, T3): prefix stability and request volume outrank everything; style compression is demoted. The engine meters both objectives.
+Jackin can generate capsule-local configuration, package immutable artifacts, supervise workers, scope state, and connect observations to usage records. It cannot infer complete model-bound traffic merely from a PTY or container. A native agent tool that does not pass through a proven hook or MCP route remains outside the optimization boundary.
 
-### Six layers
+Therefore every capability needs an explicit activation probe. Changing terminal display is not changing model input. Adding MCP tools does not make native tools disappear. An installed hook is not proof that its output replacement was accepted. [Host-specific implementation plan](/research/context/tools/11-jackin-integration/).
 
-```text
-        L5  MEMORY & STATE          one reversible store; handoff files; net-accounted injection
-        L4  ROUTING & FLEET         effort tiers, model pinning, advisor, stagger/pre-warm,
-                                    batch lane, quota/cap metering, auth-mode policy
-        L3  OUTPUT & PROMPT         register pack, guard lines, report registers, codebook
-        L2  OBSERVATION PIPELINE    write-time compression at the tool boundary:
-                                    shims + filters + crushers + outlines + handles + CCR archive
-        L1  RETRIEVAL               resident search (fff), entity/structure (sem-core, tree-sitter),
-                                    markdown sections (mq), fused query verbs (codedb-shaped)
-        L0  MEASUREMENT             usage ledger, cache-bust detector, thinking estimator,
-                                    harness runner, canaries, CI token-budget linter
-```
+### Layers and responsibilities
 
-L0 is the foundation, not an afterthought: the 2026-08-12 refresh found **no independent accepted-task A/B for any of the four current stable releases**. Caveman v2.0.0 has a current first-party fixture benchmark; lean-ctx has a current observational report without an exact version; Headroom v0.34.0 and RTK v0.45.0 have current mechanism and vendor evidence only. The engine therefore ships measurement first and treats every compression feature as unproven until its own bounce-netted ledger, quality gates, and current-version task harness say otherwise.
+| Layer | Responsibility | Boundary rule |
+|---|---|---|
+| Measurement | Usage receipts, estimates, accepted outcomes, activation and recovery evidence | Keep actual provider fields separate from counterfactual estimates |
+| Retrieval | Exact search, symbols, outlines, bounded source ranges | Preserve source freshness and native edit prerequisites |
+| Observations | Selected typed reductions and recovery handles | Execute once; preserve observed original; do not blindly rewrite commands |
+| Instructions | Role-aware narration and reuse-first policy | Never reduce requirement coverage or repository testing standards |
+| State | Scoped artifacts, context epochs, index and exposure identity | Shared source data is not shared model memory |
+| Optional provider path | Protocol-specific request compression | Separate auth/cache/streaming qualification; disabled by default |
+
+The detailed feature-layer pages below remain design sketches. Their proposed defaults, economic examples, and candidate dependencies are not automatically approved by this refresh. Use the current integration plan and reuse matrix for implementation decisions; no universal token multiplier, quota conversion, or whole-boundary coverage claim follows from a single session's measurements.
 
 ## Method and evidence
 
-The design combines measured session invariants from the techniques dossier with a mechanism-level review of current tools. Each donor is classified as a dependency, port, reimplementation, or method reference; no vendor claim is treated as accepted-task evidence without the proposed harness.
+The current dossier inspected live releases and selected tagged implementation files, checked independent-study eligibility, and reconciled source/API changes. It did not run a six-way paid benchmark or build the upstream packages. No independent current-release accepted-task proof was established for a universal default.
 
-### Mechanism provenance
+Current RTK includes recall and structural diff-parser corrections. LemonCrow publishes its engine source and bounds advisory-state locking. LeanCTX's current preview facade is `lean-ctx-embed`. Headroom exposes Rust transforms. These facts update integration feasibility, not outcome qualification. [Evidence ledger](/research/context/tools/07-evidence-and-claims/).
 
-| Tool | What we take | What we drop | Form |
-|---|---|---|---|
-| **RTK v0.45.0** | Current filter corpus and classifier design, `never_worse` guard, degradation contracts, raw recovery, exit-code preservation | Hook installer, approximate gross ledger, telemetry, task-level savings assumptions | vendor/port (Apache-2.0) |
-| **Headroom v0.34.0** | Typed router, CCR recovery, lossless seam, cache-aware request policy, holdout measurement design | Kompress/model dependency, global proxy, Python runtime | reimplement to documented spec |
-| **lean-ctx v3.9.18** | Read modes, cached handles, deterministic crushers, tree-sitter views, graph scoring, recovery-first doctrine, self-overhead gates | Daemon/dashboard/global installers, proxy, default cognitive orchestration | port selected kernels |
-| **sem v0.21.0** | Current `sem-core` entity graph/diff/context surfaces; attention-ledger idea generalized to all tool traffic | Cloud, telemetry, self-update, git/hook mutation | depend on current reviewed `sem-core` + native ledger |
-| **fff v0.10.3** | Current `fff-search`/query-parser surfaces for resident lexical search | MCP hop, update egress, optional native paths not needed by jackin❯ | depend after current API/supply-chain review |
-| **codedb v0.2.5838** | Query/output grammar, budget packing, warm-index economics | Zig implementation, broad MCP schema, installer policy | reimplement in Rust (design donor) |
-| **mq v0.8.2** | Current `mq-lang`/`mq-markdown` structural document retrieval | HTTP/process features and unrelated CLI satellites | depend after current API review (MIT) |
-| **Caveman v2.0.0** | MIT output skill's graduated registers and clarity/verbatim guards; deterministic engine patterns as design evidence | Engine/proxy/MCP code reuse under current BSL-1.1 boundary; global wrappers/store | native prompt pack + independent design review |
-| **pxpipe v0.13.1** | Counterfactual accounting and cache-alignment invariants; image representation remains harness-gated | Global proxy and image-only storage of exact text | method donor (MIT) |
+### Default enablement
 
-### Structural advantages of capsule integration
+Target an `auto` profile that installs reviewed assets and selects only host/version/content combinations with qualification records. Keep an `off` path and raw verifier lane. Initial measurement and restrained instruction delivery are followed by build, host, fidelity, accepted-task, and rollback gates before larger reductions activate.
 
-1. **No host writes, no installers, no drift.** The engine's hooks, shims, MCP registration, and instruction files are composed at capsule build/launch inside `/jackin/` — the entire installer/self-healing subsystem class disappears, and the host-write ban is satisfied by construction.
-2. **Enforcement instead of discipline.** The adoption roadmap's "automatic beats disciplined" split becomes total: effort tiers, subagent model pins, report registers, and session-boundary routing are generated into agent config per role, not remembered by operators.
-3. **Whole-boundary visibility.** The capsule supervisor sees every tool result (native reads via MCP tools it registers, shell via shims, web via its own fetchers), so the attention ledger, bounce netting, and reach measurement cover 100% of observation traffic — the number RTK/headroom/lean-ctx each only estimate for their slice.
-4. **Fleet-level economics.** Staggered spawn, pre-warm, `excludeDynamicSections`, workspace-pinned cache lanes, batch-lane scheduling, and per-capsule cap attribution are orchestrator features — none of the seven tools has an orchestrator.
-5. **Honest self-measurement built in.** `crates/jackin-usage` already parses per-agent session JSONL into token-class totals; the engine extends this into the harness the research defined but no tool ships.
+Keep the selected model, reasoning effort, native execution, editing, approvals, and provider authentication unchanged by default. Model routing is a separate intervention and must not masquerade as compression savings. A configured raw fallback may skip a failed optional transform, never an authorization or path-integrity check.
 
 ## Limitations and open questions
 
-No reviewed tool has an independent, current-release accepted-task A/B that proves its headline savings. The proposed engine is therefore still a design: implementation must revalidate dependency versions, licenses, interception reach, cache effects, recovery behavior, and quality on representative jackin❯ tasks.
+The remaining decisions require executable proof: dependency resolution on Jackin targets, real host result replacement, recovery after compaction/resume, concurrent worktree isolation, native read-before-edit behavior, and net benefit after schema, indexing, recovery, and extra-turn costs. Public APIs and released fixes are narrower evidence than those tests.
 
 ## How to read
 
 | Page | Contents |
 |---|---|
-| [01 — Goals and non-goals](/research/context/engine/01-goals-and-non-goals/) | Objectives, the graveyard-derived non-goals list, and the evidence bars every feature must clear. |
-| [02 — Architecture](/research/context/engine/02-architecture/) | Crate layout, integration points in the existing workspace, storage, kill switches, and the cache-safety invariant table. |
-| [03 — Observation pipeline](/research/context/engine/03-observation-pipeline/) | L2: shims, classifier, filter engine, crushers, outlines, read-stubs, the CCR archive, media policy. |
-| [04 — Retrieval layer](/research/context/engine/04-retrieval-layer/) | L1: fff/sem/mq embedding, the query-verb surface, output-shaping idioms, routing doctrine. |
-| [05 — Output and prompt layer](/research/context/engine/05-output-and-prompt-layer/) | L3: the register pack, guard lines, subagent report registers, codebook, quality carve-outs. |
-| [06 — Routing and fleet economics](/research/context/engine/06-routing-and-fleet-economics/) | L4: effort/model/advisor policy, spawn choreography, batch lane, quota metering, budget governance. |
-| [07 — Memory and state](/research/context/engine/07-memory-and-state/) | L5: the single reversible store, handoff files, compaction-survival placement, net accounting. |
-| [08 — Measurement and verification](/research/context/engine/08-measurement-and-verification/) | L0: the ledger, thinking estimator, cache-bust detection, harness, canaries, CI linter. |
-| [09 — Reuse decision matrix](/research/context/engine/09-reuse-decision-matrix/) | Per-tool depend/vendor/port/skip decisions with exact crate names, versions, licenses, pins. |
-| [10 — Rollout and validation](/research/context/engine/10-rollout-and-validation/) | Phasing, role-manifest surface, acceptance bars, A/B arms, risks. |
+| [Goals and non-goals](/research/context/engine/01-goals-and-non-goals/) | Objectives and evidence bars. |
+| [Architecture](/research/context/engine/02-architecture/) | Proposed structure and integration boundaries. |
+| [Observation pipeline](/research/context/engine/03-observation-pipeline/) | Reduction and recovery mechanisms to qualify. |
+| [Retrieval](/research/context/engine/04-retrieval-layer/) | Source-selection design alternatives. |
+| [Output and prompt](/research/context/engine/05-output-and-prompt-layer/) | Instruction-policy design. |
+| [Routing and fleet](/research/context/engine/06-routing-and-fleet-economics/) | Separate model/fleet experiments, not default compression. |
+| [Memory and state](/research/context/engine/07-memory-and-state/) | Artifact and handoff design. |
+| [Measurement](/research/context/engine/08-measurement-and-verification/) | Usage and harness requirements. |
+| [Current reuse matrix](/research/context/engine/09-reuse-decision-matrix/) | Current build/embed/adapt/bundle choices. |
+| [Rollout](/research/context/engine/10-rollout-and-validation/) | Rollout sketch; apply current qualification requirements. |
+| [Current integration plan](/research/context/tools/11-jackin-integration/) | Concrete host adapters, reuse choices, and completion gates. |
 
 ## Related work
 
-- [Token-optimization techniques](/research/context/techniques/) supplies the cost model, mechanism inventory, and validation requirements.
-- [Current token-optimization tools](/research/context/tools/) supplies the release register, tool comparisons, and evidence ledger.
-- [Context research](/research/context/) places this specification in the broader research area.
+- [Token-optimization tools](/research/context/tools/)
+- [Current evidence protocol](/research/context/tools/07-evidence-and-claims/)
+- [Token-optimization techniques](/research/context/techniques/)

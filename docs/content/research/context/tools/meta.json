@@ -7,9 +7,12 @@
     "02-headroom-design",
     "03-rtk-design",
     "04-leanctx-design",
+    "09-ponytail-design",
+    "10-lemoncrow-design",
     "05-head-to-head",
     "06-combining",
     "07-evidence-and-claims",
-    "08-current-release-register"
+    "08-current-release-register",
+    "11-jackin-integration"
   ]
 }

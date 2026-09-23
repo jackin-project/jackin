@@ -1,111 +1,60 @@
 ---
-title: "04 — lean-ctx v3.9.18: current design"
-description: "Current lean-ctx design for repository search, retrieval, memory, compression, recovery, evidence, risks, and best fit."
+title: "04 — LeanCTX: current design"
+description: "LeanCTX 3.10.2: retrieval and recovery, the current lean-ctx-embed facade, dependency boundaries, and evidence."
 ---
 
 ## Summary
 
-lean-ctx is an integrated context runtime rather than a single compressor, giving it broad reach but also the largest behavioral and ownership surface.
-Cutoff: **2026-08-12**. Current stable: [v3.9.18](https://github.com/yvgude/lean-ctx/releases/tag/v3.9.18), released 2026-08-08.
-
-lean-ctx—branded LeanCTX upstream—is an integrated **context runtime**, not one compressor. It controls file views, shell observations, search, code structure, memory, retrieval, policy, recovery, and measurement through one local system. Current v3.9.18 enables a broader cognitive orchestration layer by default.
+Cutoff: **2026-09-23 UTC**. Reviewed release: [LeanCTX v3.10.2](https://github.com/yvgude/lean-ctx/releases/tag/v3.10.2). LeanCTX is the closest Rust-based integrated retrieval/runtime candidate in this set. The current experimental embedding crate is **lean-ctx-embed**, not the previous facade path. Its availability does not imply a stable SDK or proven task savings.
 
 ## Question and scope
 
-How does lean-ctx v3.9.18 coordinate retrieval, compression, memory, and policy, and what ownership risks follow?
+Should Jackin adopt the complete runtime, use restricted MCP retrieval, or call the Rust engine in process?
 
 ## Method
 
-The review fixes lean-ctx to v3.9.18, maps its retrieval, compression, memory, policy, and recovery surfaces from upstream evidence, and records where outcome attribution remains weak.
+Inspect the tagged workspace, embedding manifest and README, and benchmark-status file. Separate the published engine crate, unpublished embedding facade, host integration, and outcome evidence.
 
 ## Findings
 
-### Current facts
+### Retrieval before compression
 
-| Field | Current value |
-|---|---|
-| Repository | [yvgude/lean-ctx](https://github.com/yvgude/lean-ctx) |
-| Stable release | [v3.9.18](https://github.com/yvgude/lean-ctx/releases/tag/v3.9.18) |
-| Adoption snapshot | 3,568 stars / 22 subscribers / 323 forks / 8 open issues and PRs |
-| Current scope | 83 MCP tools, 30+ agent integrations, 95+ shell patterns, 10 read modes |
-| Core mechanisms | Tree-sitter views, BM25/property graph, cached handles, archive/recovery, memory, proxy, policy, signed ledger |
-| Form factor | Rust release artifacts, daemon, SQLite state, MCP/hook/proxy/dashboard surfaces |
-| License | Apache-2.0 |
+LeanCTX combines structural reads, search, symbols, outlines, session reuse, shell shaping, recovery, and optional proxy paths. Its [embedding surface](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/README.md) offers read, search, symbol, outline, and tree operations. These can avoid broad reads; their failure mode is retrieval incompleteness or stale reuse, not only lossy compression.
 
-Metadata source: [GitHub API](https://api.github.com/repos/yvgude/lean-ctx). Current capability counts: [README](https://github.com/yvgude/lean-ctx).
+A short unchanged-read response is correct only when the recipient still has the referenced content. A shared source cache and a model's current conversational memory are different things. Compaction, resume, a new subagent, and another worktree must be represented in the reuse contract.
 
-### Current architecture
+### Actual Rust boundary
 
-```text
-repository reads ── map/signatures/lines/full/cache handles ─┐
-shell commands ─── deterministic output patterns ───────────┤
-search/code ────── BM25 + graph + symbols/LSP ──────────────┤
-history ────────── optional proxy + memory ─────────────────┤→ agent context
-recovery ───────── archive + ctx_expand/raw reads ──────────┤
-policy/ledger ─── permissions, budgets, signed events ──────┘
-```
+The [workspace](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/Cargo.toml) declares an engine library and the `lean-ctx-embed` workspace member. The [facade manifest](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/Cargo.toml) declares version 0.1.0, Apache-2.0, and `publish = false`. Its README explicitly marks the API preview rather than a stable public Rust SDK.
 
-The key benefit is read prevention. A map, signature view, graph query, or cached stub can avoid sending an entire source file. That is architecturally different from compressing bytes after a broad read. Full and bounded modes remain necessary before exact edits.
+The facade disables engine defaults to avoid imposing the engine's global allocator, but explicitly enables tree-sitter, embeddings, HTTP-server, and secure-update features. It is not a minimal no-ML kernel just because default features are disabled at one dependency edge.
 
-### What v3.9.18 currently adds
+Methods are synchronous and own a multithreaded Tokio runtime. The README directs async callers through a blocking boundary. Jackin must measure contention and cancellation rather than invoking this API indiscriminately on runtime workers.
 
-- Full cognitive mode enabled by default.
-- `ctx_cognitive`, bringing the current MCP count to 83.
-- FSRS-style spaced repetition, graph expansion, token allocation, learned verbosity, prefetch, anti-interrupt behavior, and stigmergy features.
-- Enterprise initialization, policy/sidecar gates, protocol work, and architecture decision records.
-- Fixes for zsh `nomatch`, rerooting, atomic patch batches, unknown MCP methods, file URIs, PowerShell injection, and a shadow-mode permission bypass.
+### Evidence status
 
-Release source: [v3.9.18 notes](https://github.com/yvgude/lean-ctx/releases/tag/v3.9.18).
-
-### Current evidence
-
-The latest independent field report found is [Wavect's 2026-07-27 report](https://wavect.io/blog/lean-ctx-agency-experience/): 64.1% less tracked context, 92.7% MCP compression, and most savings attributed to MCP file-read traffic. The report explicitly labels itself observational, not a controlled productivity study, and does not identify an exact lean-ctx version. It therefore supports the current workflow pattern—compressed discovery, raw verification—but does **not** prove v3.9.18's task-level effect.
-
-No controlled independent accepted-task benchmark explicitly testing **v3.9.18** was found at the cutoff. Current vendor percentages remain first-party.
+The current [BENCHMARKS.md](https://github.com/yvgude/lean-ctx/blob/v3.10.2/BENCHMARKS.md) withdraws historical numbers from technical decisions. No independent accepted-task result for this exact release and restricted profile was established. Installation matrices and generated command counts are not execution or outcome guarantees.
 
 ## Implications for jackin❯
 
-### Benefits
+**Best part:** a replaceable read-only retrieval backend, especially for repeated exploration of large repositories.
 
-- Broadest integrated reach of the named set.
-- Selective structural reads can prevent large observations instead of summarizing them.
-- Deterministic core; optional embeddings/proxy surfaces can remain disabled.
-- Exact recovery through archive expansion and raw/bounded reads.
-- Persistent graph and memory support long or multi-agent sessions.
-- Explicit policy, savings, and verification machinery.
-- Current release closes several correctness and security defects.
+**Integration choice:** begin with a per-worktree stdio MCP process restricted to the required read/search/symbol/outline functions. Enforce read-only behavior at the dispatcher and filesystem boundary; hiding a tool in a prompt is not an authorization check. Preserve the native exact-read/edit workflow until edit prerequisites are verified.
 
-### Best fit
+A second arm can embed the commit-pinned facade behind an internal adapter. Ask upstream for granular feature gates and a caller-owned runtime before committing Jackin's stable architecture to it. Do not conflate the Python SDK, HTTP clients, published engine, and unpublished Rust facade.
 
-Test lean-ctx on large repositories and long sessions with repeated navigation, source rereads, graph questions, handoffs, or persistent context. Use maps/signatures/search for discovery, then require full or bounded reads, real diffs, tests, and review before exact or high-risk changes.
-
-Avoid it when the task is small, operational minimalism matters, or policy cannot accept broad user-scope integration and persistent local state.
-
-### Current verdict
-
-lean-ctx v3.9.18 is the most capable context-management system here and the least comparable to a small filter. It may provide the largest benefit when repeated repository reads are the bottleneck, but that claim needs a current controlled A/B. Status: **best broad runtime for measured repository-context problems; excessive for narrow token waste**.
-
-Next: [05 — Current objective comparison](/research/context/tools/05-head-to-head/).
+**Default decision:** do not activate the complete tool registry, memory policies, shell rewriting, or proxy automatically. Promote only a measured profile, including schema and indexing overhead.
 
 ## Limitations and unknowns
 
-### Costs and risks
-
-- Widest trusted and operational surface: daemon, databases, dashboard, MCP schema, hooks, proxy, agent integrations, and policies.
-- Current release archives are roughly 22–24 MB compressed; installed/runtime state is larger and persistent.
-- The README states a fixed session overhead around 2.1k tokens; savings must exceed it.
-- Compressed maps/signatures are discovery views, not authoritative source for exact edits.
-- Full cognitive mode adds adaptive behavior by default, increasing causal complexity and making A/B attribution harder.
-- Setup touches many agent configurations; inspect dry-run/current installer behavior before user-scope writes.
-- Proxy mode expands the integrity and cache-risk boundary.
-- Current release notes contain a self-comparison “Full Changelog” link, a documentation-quality defect.
+The embedding build was not run in this review. Public documentation describes different source, installed-runtime, and SDK baselines; [current CLI guidance](https://leanctx.com/docs/cli-reference/) explicitly identifies stale generated help. Pin source and artifact independently. Structural graphs and embeddings are navigation aids, not proof of complete semantic impact.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Tagged workspace, facade documentation, manifest, and benchmark policy are linked inline.
 
 ## Related work
 
-- [Token-optimization tools dossier](/research/context/tools/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Context engine](/research/context/engine/)
+- [LemonCrow](/research/context/tools/10-lemoncrow-design/)
+- [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)

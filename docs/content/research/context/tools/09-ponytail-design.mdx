@@ -1,0 +1,60 @@
+---
+title: "09 — Ponytail: current design"
+description: "Ponytail 4.10.0: implementation-selection policy, host activation, quality conflicts, and native Jackin adaptation."
+---
+
+## Summary
+
+Cutoff: **2026-09-23 UTC**. Reviewed release: [Ponytail v4.10.0](https://github.com/DietrichGebert/ponytail/releases/tag/v4.10.0). Ponytail is primarily a behavioral intervention: it changes what the agent chooses to build. It is not a byte compressor or a Rust dependency. Its reuse-first principle is valuable; its complete minimal-code policy is not an appropriate universal Jackin default.
+
+## Question and scope
+
+Which policy should Jackin borrow without reducing necessary architectural work, testing, or requirement coverage?
+
+## Method
+
+Read the current policy and release, and distinguish installed skills from active instructions. Treat an adapted Jackin policy as a new treatment rather than inheriting upstream benchmark results.
+
+## Findings
+
+### The actual intervention
+
+The current [AGENTS.md](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/AGENTS.md) prioritizes avoiding unnecessary work, reusing project code, standard-library and platform functionality, and existing dependencies before implementing new code. This can reduce the entire sequence of agent actions rather than merely shortening a final explanation.
+
+The same file biases toward minimal diffs, few files, and one-line solutions. It prescribes a very small testing obligation and exempts trivial one-liners. These are product choices, not general proofs of maintainability or correctness. Jackin's root-cause fixes, architecture changes, performance requirements, and repository testing standards must outrank them.
+
+### Activation and footprint
+
+The [release](https://github.com/DietrichGebert/ponytail/releases/tag/v4.10.0) adds native Cursor hooks and a Grok Build adapter, alongside host-detection corrections. Agent adapters, hooks, and instruction assets are distinct installation paths. A discoverable skill may never activate; repeatedly injected instructions create overhead. Grok Build support does not prove every Grok CLI/version combination works.
+
+The [package metadata](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/package.json) describes a JavaScript/plugin package under MIT. Jackin can deliver a reviewed instruction asset without making the upstream installer or hook process mandatory. Preserve license notices when copying material.
+
+### Evidence
+
+JetBrains supplies an independent policy experiment, but not a release-matched evaluation of 4.10.0 or a rewritten Jackin policy. An observed lack of significant quality difference is not proof of security equivalence or universal safety. See the [eligibility ledger](/research/context/tools/07-evidence-and-claims/); superseded-version percentages are not carried into this current comparison.
+
+## Implications for jackin❯
+
+**Best part:** discourage speculative scope and unnecessary reimplementation after understanding the real execution path.
+
+**Integration choice:** a short, role-aware Jackin instruction block, with an independently evaluated option to use the actual upstream skill. Do not install a runtime merely to deliver text.
+
+Proposed Jackin policy, not a quotation or benchmarked upstream treatment:
+
+> Understand the affected behavior before changing it. Reuse existing mechanisms when they satisfy the requirements. Choose the simplest maintainable implementation that meets all correctness, performance, security, and testing obligations. Do not minimize line count or patch size at the expense of the right architecture. Keep routine narration brief without hiding failures or uncertainty.
+
+**Default decision:** this restrained policy is a candidate for implementer roles, not permission to skip tests or refuse a necessary refactor. Keep reviewer and verifier evidence complete. Activation should be explicit in generated configuration and inspectable by the operator.
+
+## Limitations and unknowns
+
+Policy effects depend on the model, reasoning setting, task, and repository instructions. Fewer changed lines can be either a better design or an incomplete solution. Do not treat line count as the primary quality metric. No current six-way paired trial was performed here.
+
+## Sources
+
+Current release, policy, and package metadata are linked inline; independent-study admissibility is documented separately.
+
+## Related work
+
+- [Caveman](/research/context/tools/01-caveman-design/)
+- [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)
