@@ -1,107 +1,63 @@
 ---
-title: "03 — RTK v0.45.0: current design"
-description: "Current RTK design, deterministic shell-output filtering, command coverage, measured evidence, risks, and best fit."
+title: "03 — RTK: current design"
+description: "RTK 0.49.0: command filtering, content-addressed recall, parser corrections, and selective Jackin integration."
 ---
 
 ## Summary
 
-RTK is a narrow, deterministic shell-observation reducer with strong command coverage, but it cannot reduce native reads or conversation history.
-Cutoff: **2026-08-12**. Current stable: [v0.45.0](https://github.com/rtk-ai/rtk/releases/tag/v0.45.0), released 2026-08-07.
-
-RTK is a deterministic command proxy. An agent hook rewrites eligible shell commands through one Rust binary; RTK runs the real command, preserves its behavior, and emits a smaller observation using command-specific rules. It does not compress the model's native file/search tools or the conversation history.
+Cutoff: **2026-09-23 UTC**. Reviewed release: [RTK v0.49.0](https://github.com/rtk-ai/rtk/releases/tag/v0.49.0), release commit `b1c0dc00649c50fbe8930f849c800d4d6ca12091`. RTK is a Rust command-output optimizer with a current recall facility. It is neither a universal input proxy nor an established embeddable filter SDK.
 
 ## Question and scope
 
-Which shell observations can RTK v0.45.0 reduce deterministically, and which context sources remain outside its reach?
+Where can command-specific filtering help Jackin without changing shell semantics, approval behavior, or the meaning of diagnostic evidence?
 
 ## Method
 
-The review fixes RTK to v0.45.0, inspects its command coverage and deterministic transforms, and distinguishes payload counters from independent task-level evidence.
+Inspect the tagged manifest and changelog; explicitly distinguish released fixes from independently reproduced behavior. Assess shell reach separately from native file tools and provider history.
 
 ## Findings
 
-### Current facts
+### Current capabilities
 
-| Field | Current value |
-|---|---|
-| Repository | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) |
-| Stable release | [v0.45.0](https://github.com/rtk-ai/rtk/releases/tag/v0.45.0) |
-| Adoption snapshot | 75,756 stars / 203 subscribers / 4,758 forks / 1,950 open issues and PRs |
-| Current scope | 100+ recognized development commands plus custom filters |
-| Form factor | Small Rust binary + per-agent shell hook; no compression model |
-| Current headline | Up to 90% reduction in Bash output; current README explicitly says this is not bill reduction |
-| License | Apache-2.0 |
+The [0.49.0 changelog](https://github.com/rtk-ai/rtk/blob/v0.49.0/CHANGELOG.md) records a content-addressed SQLite recall store, selectable retriever behavior, recall-efficiency counters, signal-handling work, and command-routing corrections. The description that RTK can recover only by rerunning the original command is no longer adequate.
 
-Metadata source: [GitHub API](https://api.github.com/repos/rtk-ai/rtk). Current scope and caveats: [README](https://github.com/rtk-ai/rtk).
+The same release records a structural region parser for unified diffs, budget-owned hunks, raw fallback, and subsequent filename and no-newline handling corrections. The prior prefix-classifier failure is not a valid blanket rejection of the current parser. These are **upstream released corrections**; this review did not execute the regression corpus.
 
-### Current interception
+### Recovery is scoped, not universal
+
+The release differentiates tee and SQLite modes and failure/truncation-driven recovery. Do not infer that every successful command's full original is stored, that all entries survive indefinitely, or that recall has zero context overhead. Qualification must record the exact retriever mode, retention, capacity, and which bytes were actually captured.
+
+### Integration boundary
 
 ```text
-agent asks shell tool to run command
-       ↓
-hook classifies and rewrites eligible command
-       ↓
-rtk runs the real command
-       ↓
-command-specific deterministic filter
-       ↓
-exit status + compact observation enter context
+agent shell request -> optional rewrite/wrapper -> real command
+                   -> filter + optional recall -> agent observation
 ```
 
-Because compression occurs before the new observation enters history, it is cache-safe by construction. No learned model can hallucinate the summary. The trade is reach: the current README states built-in Read, Grep, and Glob tools bypass the hook. RTK only helps when the agent invokes shell commands RTK recognizes or the user explicitly calls RTK wrappers.
+Native agent reads and searches outside that route are not automatically covered. Reducing a newly produced result avoids rewriting an existing prompt prefix, but does not prove favorable provider cache accounting or unchanged agent behavior. Deterministic filtering can still omit a crucial detail.
 
-### Current release evidence
+### Rust packaging
 
-v0.45.0 adds Mistral Vibe hook support and multiline command rewriting. It also hardens GitHub Copilot hook installation/healing while preserving user configuration. These are integration improvements; the fundamental shell-only boundary remains.
-
-Release source: [v0.45.0 notes](https://github.com/rtk-ai/rtk/releases/tag/v0.45.0).
-
-### Current evidence
-
-RTK provides current per-command examples and a local gain ledger. These establish mechanics, not end-to-end efficiency. No independent accepted-task benchmark explicitly testing **v0.45.0** was found at the cutoff. Results from superseded versions are excluded.
+The [manifest](https://github.com/rtk-ai/rtk/blob/v0.49.0/Cargo.toml) identifies an Apache-2.0 CLI with Rust minimum 1.91. No library target is declared, and `src/lib.rs` was absent in the inspected tag. Do not propose `use rtk::...` as a supported integration. A command-line package on a Rust registry is not automatically a reusable library.
 
 ## Implications for jackin❯
 
-### Benefits
+**Best part:** its command-specific catalog and now-explicit recall design. Start with measured noisy command families, not all shell traffic.
 
-- Deterministic, inspectable rules; no ML model or inference latency.
-- Small single artifact and low per-command overhead.
-- Zero MCP tool-schema rent.
-- Write-time cache safety.
-- Broad current command catalog and custom filter support.
-- Explicit raw command remains available.
-- Current README correctly scopes headline percentages to Bash output.
+**Integration choice:** package a pinned executable for a controlled arm, or seek an upstream pure-filter API. Extract a small reviewed Apache-2.0 kernel only if the executable boundary cannot preserve Jackin's contract. Keep attribution and regression fixtures. A permanent full fork is not the default choice.
 
-### Best fit
-
-RTK is a good candidate when traces show supported shell output is a large fraction of **fresh** input: verbose tests, builds, Git status/diff, package managers, containers, or infrastructure CLIs. It is also the simplest option when deterministic behavior, minimal runtime, and zero model dependency dominate.
-
-Do not install it as a generic token remedy when the agent mainly uses native reads/search, commands are already quiet, or prompt-cache reads—not new shell output—dominate consumption.
-
-### Current verdict
-
-RTK v0.45.0 is the narrowest and easiest-to-reason-about input tool. That is both strength and limit. It is objectively good for large supported shell observations; there is no current evidence that it reduces every coding task. Status: **use after a reach audit, not by headline**.
-
-Next: [04 — lean-ctx v3.9.18](/research/context/tools/04-leanctx-design/).
+**Default decision:** avoid blanket command rewriting. Prefer a host-supported post-execution seam when available; otherwise qualify exact commands, arguments, consumers, exits, and signals. Keep mutation output, security findings, and review diffs raw until their individual fidelity gates pass. Do not disable all current RTK features solely because a superseded parser was wrong.
 
 ## Limitations and unknowns
 
-### Costs and risks
-
-- Structural reach ceiling: native agent file/search tools bypass it.
-- Command rewriting can conflict with other PreToolUse hooks or shell wrappers.
-- A successful command may still contain a detail removed by the filter; raw rerun is the recovery path.
-- Filtering can cause the agent to issue follow-up commands, erasing gross savings.
-- `rtk gain` estimates removed output using approximate token arithmetic; it cannot observe counterfactual turns, cache changes, or task quality.
-- Current documentation conflicts on telemetry default: privacy copy says anonymous telemetry is opt-in and disabled by default, while `DISCLAIMER.md` says telemetry is enabled by default. Resolve from the exact installed build/config before deployment.
-- Current README's verification example still names an older version, a documentation freshness defect.
+No independent accepted-task evaluation of 0.49.0 was established. New recall changes the treatment, so older external studies do not measure this release. Permission matching, pipelines, quoted arguments, non-UTF-8 bytes, partial capture, and kill handling require real producer tests. Gross gain and recall counters are diagnostics, not provider-billed savings.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+The tagged manifest and changelog support current capabilities and release corrections; [07 — Evidence](/research/context/tools/07-evidence-and-claims/) records independent-study eligibility.
 
 ## Related work
 
-- [Token-optimization tools dossier](/research/context/tools/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Context engine](/research/context/engine/)
+- [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Composition](/research/context/tools/06-combining/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)

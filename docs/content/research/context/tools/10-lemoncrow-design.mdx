@@ -1,0 +1,62 @@
+---
+title: "10 — LemonCrow: current design"
+description: "LemonCrow 0.7.4: integrated retrieval, current source availability, bounded state, evidence limits, and Jackin evaluation."
+---
+
+## Summary
+
+Cutoff: **2026-09-23 UTC**. Reviewed release: [LemonCrow v0.7.4](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.7.4). LemonCrow is a serious integrated context-runtime candidate. Its current tagged tree includes `src/lemoncrow/pro`; rejecting it as missing that source would be incorrect. It is not, however, an independently proven winner for Jackin's workloads.
+
+## Question and scope
+
+Can its retrieval and bounded-observation architecture improve complete coding tasks while preserving worktree isolation, native editing, and reliable agent execution?
+
+## Method
+
+Inspect the release, source directory, engine package, license, benchmark document, state-lock implementation, and maintainer discussion of worktree handling. Separate source availability, upstream fix confirmation, executable conformance, and accepted-task evidence.
+
+## Findings
+
+### Integrated rather than additive in its full configuration
+
+The [runtime documentation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/README.md) describes ranked code search, targeted reads, edits, shell execution, and web fetching. The full host integration aims to replace overlapping native tools rather than simply add another catalog. This can reduce exploration cycles, but also changes the agent's tool contracts and behavior.
+
+A read-only Jackin experiment is a different treatment from the complete runtime. Neither positive full-runtime results nor negative additive-integration results can automatically qualify the other.
+
+### Current source and license
+
+The [tagged source directory](https://github.com/lemoncrow-lab/lemoncrow/tree/v0.7.4/src/lemoncrow/pro) and [engine package](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/pro/__init__.py) are present. The [license](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/LICENSE) declares Apache-2.0 across the source, including the engine. This resolves the specific source-directory availability concern, not every reproducibility question. This review did not reproduce the release build or audit every bundled dependency.
+
+The implementation is Python with optional native compilation, not a Rust crate. A packaged sidecar can still be appropriate: language alignment is an operational advantage, not a substitute for outcome quality.
+
+### Current state handling
+
+The tagged [smart-state implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/gateway/adapters/mcp/smart_state.py) uses nonblocking flock attempts and a deadline, with a five-second default. It still describes cumulative state shared across sibling processes. Bounded contention is better than an unbounded wait, but hot-path advisory counters and shared state still require load tests and capsule scoping.
+
+The maintainer [confirms the worktree fix landed](https://github.com/lemoncrow-lab/lemoncrow/pull/46#issuecomment-5570558170). The proposal's documented process-global working-directory inference is not a sufficient multi-session isolation contract for Jackin. Use an explicit per-session root, or a separate process per worktree; do not infer another session's root from its last shell command.
+
+### Evidence
+
+The current [benchmark document](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/BENCHMARKS.md) links author-produced runs, data, and a combined runtime/persona treatment. Those runs do not establish an independent 0.7.4 result. A benchmark copied into a new release does not become a benchmark of that release. A single repetition cannot distinguish a regression from noise reliably. JetBrains has not validated this runtime in the three cited policy/filter articles.
+
+## Implications for jackin❯
+
+**Best part:** ranked retrieval and bounded exact-range access that can remove unnecessary search/read cycles.
+
+**Integration choice:** evaluate a pinned per-worktree read-only sidecar against native tools and LeanCTX. Enforce the allowlist server-side and retain native reads required before native edits. Measure schema overhead, index freshness, cold indexing, recovery, and parallel-session contention. Test the full upstream configuration as a separate arm before considering replacement of editing or execution.
+
+**Default decision:** do not install the full runtime, public tunnel, telemetry, model downloads, or global configuration automatically. Privacy and launch behavior require artifact-level checks. Source publication now permits a stronger audit; it does not remove that audit requirement.
+
+## Limitations and unknowns
+
+No paid task benchmark, complete build reproduction, network trace, or multi-worktree runtime test was performed here. Source presence and maintainer closure are narrower claims than end-to-end conformance. Independent current-version accepted-task evidence remains unestablished.
+
+## Sources
+
+Tagged code, licensing, benchmark methodology, and the maintainer's fix confirmation are linked inline.
+
+## Related work
+
+- [LeanCTX](/research/context/tools/04-leanctx-design/)
+- [Evidence](/research/context/tools/07-evidence-and-claims/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)
