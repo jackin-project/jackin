@@ -324,6 +324,7 @@ impl FakeAppleContainerClient {
 #[cfg(test)]
 impl AppleContainerApi for FakeAppleContainerClient {
     async fn run_container(&self, name: &str, _spec: &AppleContainerSpec) -> Result<()> {
+        std::future::ready(()).await;
         self.containers.lock().unwrap().push(AppleContainerInfo {
             name: name.to_owned(),
             status: "running".to_owned(),
@@ -332,6 +333,7 @@ impl AppleContainerApi for FakeAppleContainerClient {
     }
 
     async fn stop_container(&self, name: &str) -> Result<()> {
+        std::future::ready(()).await;
         {
             let mut containers = self.containers.lock().unwrap();
             if let Some(c) = containers.iter_mut().find(|c| c.name == name) {
@@ -342,11 +344,13 @@ impl AppleContainerApi for FakeAppleContainerClient {
     }
 
     async fn remove_container(&self, name: &str) -> Result<()> {
+        std::future::ready(()).await;
         self.containers.lock().unwrap().retain(|c| c.name != name);
         Ok(())
     }
 
     async fn inspect_container(&self, name: &str) -> Result<Option<AppleContainerInfo>> {
+        std::future::ready(()).await;
         Ok(self
             .containers
             .lock()
@@ -357,6 +361,7 @@ impl AppleContainerApi for FakeAppleContainerClient {
     }
 
     async fn list_containers(&self, name_prefix: &str) -> Result<Vec<AppleContainerInfo>> {
+        std::future::ready(()).await;
         Ok(self
             .containers
             .lock()

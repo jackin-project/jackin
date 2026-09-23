@@ -36,7 +36,7 @@ use jackin_protocol::control::{
 };
 use serde::Deserialize;
 
-use jackin_core::JackinPaths;
+use jackin_core::{ContainerHandle, JackinPaths};
 
 // `InstanceSnapshot` lives in `jackin-protocol` so the console can use it
 // without depending on `jackin-runtime`.
@@ -86,16 +86,16 @@ pub fn socket_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
 /// back to the in-container client via `docker exec`.
 pub fn fetch_snapshot(
     paths: &JackinPaths,
-    container_name: &str,
+    container: &ContainerHandle,
 ) -> Result<Option<InstanceSnapshot>> {
-    fetch_snapshot_with_transport(paths, container_name).map(|(snapshot, _transport)| snapshot)
+    fetch_snapshot_with_transport(paths, container).map(|(snapshot, _transport)| snapshot)
 }
 
 pub fn fetch_snapshot_with_transport(
     paths: &JackinPaths,
-    container_name: &str,
+    container: &ContainerHandle,
 ) -> Result<(Option<InstanceSnapshot>, SnapshotTransport)> {
-    let path = socket_path(paths, container_name);
+    let path = socket_path(paths, container.name());
     let mut direct_error = None;
     if path.exists() {
         match request_control_inner(&path, &ClientMsg::Snapshot).and_then(snapshot_from_msg) {
@@ -104,7 +104,7 @@ pub fn fetch_snapshot_with_transport(
         }
     }
 
-    match fetch_snapshot_via_docker_exec(container_name) {
+    match fetch_snapshot_via_docker_exec(container) {
         Ok(snapshot) => Ok((snapshot, SnapshotTransport::DockerExecFallback)),
         Err(exec_error) => match direct_error {
             Some(error) => Err(exec_error.context(format!(
@@ -118,9 +118,9 @@ pub fn fetch_snapshot_with_transport(
 
 pub fn fetch_usage_accounts(
     paths: &JackinPaths,
-    container_name: &str,
+    container: &ContainerHandle,
 ) -> Result<Option<Vec<AccountUsageSnapshotView>>> {
-    let path = socket_path(paths, container_name);
+    let path = socket_path(paths, container.name());
     let mut direct_error = None;
     if path.exists() {
         match request_control_inner(&path, &ClientMsg::UsageAccountList).and_then(accounts_from_msg)
@@ -130,7 +130,7 @@ pub fn fetch_usage_accounts(
         }
     }
 
-    match fetch_usage_accounts_via_docker_exec(container_name) {
+    match fetch_usage_accounts_via_docker_exec(container) {
         Ok(accounts) => Ok(accounts),
         Err(exec_error) => match direct_error {
             Some(error) => Err(exec_error.context(format!(
@@ -200,8 +200,8 @@ fn accounts_from_msg(msg: ServerMsg) -> Result<Vec<AccountUsageSnapshotView>> {
     }
 }
 
-fn fetch_snapshot_via_docker_exec(container_name: &str) -> Result<Option<InstanceSnapshot>> {
-    let output = run_docker_exec_capsule(container_name, snapshot_exec_script())?;
+fn fetch_snapshot_via_docker_exec(container: &ContainerHandle) -> Result<Option<InstanceSnapshot>> {
+    let output = run_docker_exec_capsule(container, snapshot_exec_script())?;
     if !output.status.success() {
         bail!(
             "docker exec snapshot failed with status {}: {}",
@@ -217,13 +217,13 @@ fn fetch_snapshot_via_docker_exec(container_name: &str) -> Result<Option<Instanc
 }
 
 fn fetch_usage_accounts_via_docker_exec(
-    container_name: &str,
+    container: &ContainerHandle,
 ) -> Result<Option<Vec<AccountUsageSnapshotView>>> {
-    let output = run_docker_exec_capsule(container_name, usage_accounts_exec_script())?;
+    let output = run_docker_exec_capsule(container, usage_accounts_exec_script())?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();
-        if let Some(message) = stale_usage_subcommand_hint(container_name, stderr) {
+        if let Some(message) = stale_usage_subcommand_hint(container.name(), stderr) {
             bail!("{message}");
         }
         bail!(
@@ -249,16 +249,10 @@ fn stale_usage_subcommand_hint(container_name: &str, stderr: &str) -> Option<Str
 }
 
 pub(crate) fn run_docker_exec_capsule(
-    container_name: &str,
+    container: &ContainerHandle,
     script: &str,
 ) -> Result<std::process::Output> {
-    // Capsule state is root-supervisor-owned. Fallback exec must use the same
-    // identity as PID 1, not the image's baked agent UID.
-    let run_as_user = crate::runtime::identity::CAPSULE_SUPERVISOR_USER;
-    let mut args: Vec<&str> = vec!["exec"];
-    args.push("--user");
-    args.push(run_as_user);
-    args.extend_from_slice(&[container_name, "sh", "-lc", script]);
+    let args = docker_exec_capsule_args(container, script);
     let request = jackin_process::ExecRequest::new("docker", &args);
     let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)
         .context("starting docker snapshot process")?;
@@ -308,6 +302,21 @@ pub(crate) fn run_docker_exec_capsule(
         )]
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+fn docker_exec_capsule_args(container: &ContainerHandle, script: &str) -> Vec<String> {
+    // Capsule state is root-supervisor-owned. Fallback exec must use the same
+    // identity as PID 1, not the image's baked agent UID. The daemon ID is
+    // immutable; the display name is deliberately never placed in argv.
+    vec![
+        "exec".to_owned(),
+        "--user".to_owned(),
+        crate::runtime::identity::CAPSULE_SUPERVISOR_USER.to_owned(),
+        container.id().to_owned(),
+        "sh".to_owned(),
+        "-lc".to_owned(),
+        script.to_owned(),
+    ]
 }
 
 const fn snapshot_exec_script() -> &'static str {

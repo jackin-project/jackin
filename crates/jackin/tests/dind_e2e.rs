@@ -12,7 +12,6 @@
         clippy::unwrap_used,
         clippy::panic,
         clippy::disallowed_methods,
-        clippy::duration_suboptimal_units,
         reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
     )
 )]
@@ -537,7 +536,7 @@ fn chaos_kill_container_mid_session() {
     fault_applied.store(true, Ordering::Release);
 
     let _output = handle.join().expect("launch thread panicked");
-    chaos::wait_until_no_running(ROLE_KEY, Duration::from_secs(60));
+    chaos::wait_until_no_running(ROLE_KEY, Duration::from_mins(1));
     cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
     chaos::assert_no_orphaned_containers(ROLE_KEY);
     chaos::assert_no_stale_state_dirs(&home.join(".local/share/jackin"), &[]);

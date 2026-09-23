@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use jackin_core::JackinPaths;
+use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_runtime::runtime::snapshot::fetch_snapshot;
 use tempfile::tempdir;
 
@@ -350,7 +350,13 @@ fn completed_reconnect(home: &Path, container: &str, phase_ab: &PhaseAB) -> Arc<
 }
 
 fn snapshot_bindings(paths: &JackinPaths, container: &str) -> Option<Vec<(String, String)>> {
-    let snapshot = fetch_snapshot(paths, container).ok()??;
+    let output = Command::new("docker")
+        .args(["inspect", "--format", "{{.ID}}", container])
+        .output()
+        .ok()?;
+    let id = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    let handle = ContainerHandle::new(container, id).ok()?;
+    let snapshot = fetch_snapshot(paths, &handle).ok()??;
     let mut bindings = Vec::new();
     for tab in &snapshot.tabs {
         for pane in &tab.panes {

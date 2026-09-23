@@ -96,6 +96,7 @@ async fn exercise_private_container_create() -> anyhow::Result<Vec<String>> {
                 entrypoint: Some(vec![private[9].clone()]),
                 privileged: false,
                 workdir: Some(private[7].clone()),
+                ..Default::default()
             },
         )
         .await?;

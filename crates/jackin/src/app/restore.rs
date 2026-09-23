@@ -102,7 +102,7 @@ pub(crate) async fn mark_instance_restore_available_after_stop(
     }
 
     if matches!(
-        docker.inspect_container_state(container).await,
+        docker.inspect_container_by_name(container).await.state,
         runtime::ContainerState::NotFound
     ) {
         mark_instance_restore_available(paths, container);
@@ -219,7 +219,7 @@ pub(super) async fn restore_candidate_for_hardline(
         return Ok(None);
     }
 
-    match docker.inspect_container_state(container).await {
+    match docker.inspect_container_by_name(container).await.state {
         runtime::ContainerState::NotFound => {
             manifest.mark_restore_available(paths)?;
             Ok(Some(manifest))

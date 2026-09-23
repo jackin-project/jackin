@@ -6,12 +6,13 @@
 mod common;
 
 use common::{
-    FakeRunner, NoOpDocker, install_agent_binary_stubs, install_capsule_binary_stub,
-    observe_host_env_file,
+    FakeDockerClient, FakeRunner, install_agent_binary_stubs, install_capsule_binary_stub,
+    launched_role_container,
 };
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use jackin_config::AppConfig;
 use jackin_core::Agent;
+use jackin_core::ContainerSpec;
 use jackin_core::JackinPaths;
 use jackin_core::MountIsolation;
 use jackin_core::RoleSelector;
@@ -28,36 +29,14 @@ fn recorded_docker_build(runner: &FakeRunner) -> &str {
         .expect("docker build should run")
 }
 
-fn recorded_role_run(runner: &FakeRunner) -> &str {
-    runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
-        .map(String::as_str)
-        .expect("role docker run should run")
-}
-
-fn recorded_capsule_exec(runner: &FakeRunner) -> &str {
-    runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker exec") && call.contains("jackin-capsule"))
-        .map(String::as_str)
-        .expect("jackin-capsule exec session should start")
-}
-
-fn recorded_role_container_name(run_cmd: &str) -> &str {
-    run_cmd
-        .split_once(" --name ")
-        .and_then(|(_, rest)| rest.split_whitespace().next())
-        .expect("role docker run should include --name")
-}
-
-fn capsule_config_for_run(paths: &JackinPaths, run_cmd: &str) -> jackin_protocol::CapsuleConfig {
+fn capsule_config_for_container(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> jackin_protocol::CapsuleConfig {
     let capsule_config_path = paths
         .jackin_home
         .join("sockets")
-        .join(recorded_role_container_name(run_cmd))
+        .join(container_name)
         .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
     toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap()
 }
@@ -89,8 +68,81 @@ fn assert_cached_agent_install_blocks(dockerfile: &str) {
     );
 }
 
+fn assert_codex_container_spec(spec: &ContainerSpec) {
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("JACKIN_AGENT=")),
+        "JACKIN_AGENT must not be a container env var; got: {:?}",
+        spec.env
+    );
+    assert_eq!(spec.command, Some(vec!["codex-main".to_owned()]));
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("JACKIN_AGENT_MODEL_OVERRIDES="))
+    );
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("JACKIN_ROLE="))
+    );
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("JACKIN_WORKDIR="))
+    );
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.ends_with(":/home/agent/.local/bin/codex:ro")),
+        "codex binary is baked into the image and must not be bind-mounted at run time; got: {:?}",
+        spec.binds
+    );
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.contains("test-openai-key"))
+    );
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|entry| entry.starts_with("JACKIN_CODEX_MODEL="))
+    );
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.contains("/jackin/codex/config.toml"))
+    );
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.contains("/home/agent/.claude"))
+    );
+    assert!(
+        spec.binds
+            .iter()
+            .any(|bind| bind.contains("/home/agent/.codex"))
+    );
+    assert!(
+        !spec
+            .binds
+            .iter()
+            .any(|bind| bind.contains("/home/agent/.jackin"))
+    );
+}
+
 #[tokio::test]
-async fn codex_launch_invokes_docker_run_with_codex_agent() {
+async fn codex_launch_creates_container_with_codex_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -153,8 +205,7 @@ model = "gpt-5"
     // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
-    let observed_env = observe_host_env_file(&mut runner, &paths);
-    let docker = NoOpDocker;
+    let docker = FakeDockerClient::default();
 
     load_role(
         &paths,
@@ -172,36 +223,12 @@ model = "gpt-5"
     // No published_image and no --rebuild → workspace mode; --pull is omitted
     assert!(!build_cmd.contains("--pull"), "{build_cmd}");
 
-    let run_cmd = recorded_role_run(&runner);
-    assert!(
-        !run_cmd.contains("JACKIN_AGENT="),
-        "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
-    );
-    assert!(
-        run_cmd.ends_with(" codex-main"),
-        "initial instance must be passed as container argv; got: {run_cmd}"
-    );
-    assert!(
-        !run_cmd.contains("JACKIN_AGENT_MODEL_OVERRIDES"),
-        "{run_cmd}"
-    );
-    assert!(!run_cmd.contains("-e JACKIN_ROLE="), "{run_cmd}");
-    assert!(!run_cmd.contains("-e JACKIN_WORKDIR="), "{run_cmd}");
-    assert!(
-        !run_cmd.contains(":/home/agent/.local/bin/codex:ro"),
-        "codex binary is baked into the image and must not be bind-mounted at run time; got: {run_cmd}"
-    );
-    assert!(run_cmd.contains("--env-file"), "{run_cmd}");
-    assert!(!run_cmd.contains("test-openai-key"), "{run_cmd}");
-    let (env_path, env_contents) = observed_env.lock().unwrap().clone().unwrap();
-    assert!(!env_contents.contains("test-openai-key"), "{env_contents}");
-    let credentials_path = paths
-        .data_dir
-        .join(recorded_role_container_name(run_cmd))
-        .join(format!(
-            "credentials/{}",
-            jackin_protocol::account_credentials_filename("codex-main")
-        ));
+    let (container_name, spec) = launched_role_container(&docker);
+    assert_codex_container_spec(&spec);
+    let credentials_path = paths.data_dir.join(&container_name).join(format!(
+        "credentials/{}",
+        jackin_protocol::account_credentials_filename("codex-main")
+    ));
     let credentials: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&credentials_path).unwrap()).unwrap();
     assert_eq!(credentials["schema_version"], 1);
@@ -222,21 +249,21 @@ model = "gpt-5"
             0o600
         );
     }
-    assert!(
-        !env_path.exists(),
-        "host env file must be removed after run"
-    );
-    assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"), "{run_cmd}");
     // Model overrides are handed to Capsule PID 1 and applied when it spawns
-    // each PTY. Classic attach uses `docker exec … jackin-capsule`; when the
-    // ambient shell has host-attach enabled (`JACKIN_HOST_ATTACH`), the client
-    // path is socket-based and never records a docker exec.
+    // each PTY. Classic attach is bound to the created daemon ID; when the
+    // ambient shell has host-attach enabled, the client path is socket-based.
     if !jackin_runtime::runtime::host_attach::host_attach_enabled(&paths) {
-        let session_cmd = recorded_capsule_exec(&runner);
-        assert!(session_cmd.contains("jackin-capsule"), "{session_cmd}");
+        assert!(
+            docker
+                .bound_operations
+                .borrow()
+                .iter()
+                .any(|operation| operation.starts_with("exec:")),
+            "expected capsule exec bound to the created container ID: {:?}",
+            docker.bound_operations.borrow()
+        );
     }
-    assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
-    let capsule_config = capsule_config_for_run(&paths, run_cmd);
+    let capsule_config = capsule_config_for_container(&paths, &container_name);
     assert_eq!(capsule_config.role, "agent-smith");
     assert_eq!(capsule_config.workdir, "/workspace");
     assert_eq!(capsule_config.instances, vec!["codex-main"]);
@@ -246,13 +273,10 @@ model = "gpt-5"
     // Multi-agent role (`agents = ["claude", "codex"]`) admits only the
     // configured launch instance (Codex); unadmitted manifest agents get
     // neither credentials nor capsule config entries.
-    assert!(!run_cmd.contains("/home/agent/.claude"), "{run_cmd}");
-    assert!(run_cmd.contains("/home/agent/.codex"), "{run_cmd}");
-    assert!(!run_cmd.contains("/home/agent/.jackin"), "{run_cmd}");
     let codex_config = std::fs::read_to_string(
         paths
             .data_dir
-            .join(recorded_role_container_name(run_cmd))
+            .join(&container_name)
             .join("home/.codex/config.toml"),
     )
     .unwrap();
@@ -330,7 +354,7 @@ plugins = []
     // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
-    let docker = NoOpDocker;
+    let docker = FakeDockerClient::default();
     let opts = LoadOptions {
         agent: Some(Agent::Codex),
         ..LoadOptions::default()
@@ -348,17 +372,6 @@ plugins = []
     .await
     .unwrap();
 
-    let run_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
-        .expect("role docker run should run");
-    assert!(
-        !run_cmd.contains("JACKIN_AGENT="),
-        "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
-    );
-    assert!(
-        run_cmd.ends_with(" codex-main"),
-        "initial instance must be passed as container argv; got: {run_cmd}"
-    );
+    let (_, spec) = launched_role_container(&docker);
+    assert_codex_container_spec(&spec);
 }
