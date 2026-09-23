@@ -156,6 +156,10 @@ drop_snapshot() {
     fi
 }
 
+reset_worktree() {
+    git clean -dfx --quiet && git restore --worktree -- .
+}
+
 restore_worktree() {
     hook_status=$?
     trap - EXIT HUP INT TERM
@@ -167,7 +171,7 @@ restore_worktree() {
         fi
 
         if [ "$clear_started" -eq 1 ] && [ "$worktree_cleared" -eq 0 ]; then
-            if ! git clean -dfx --quiet || ! git restore --worktree -- .; then
+            if ! reset_worktree; then
                 printf '%s\n' "error: failed to reset the pre-commit worktree; snapshot retained at $stash_oid" >&2
                 cleanup_snapshot_files
                 exit 1
@@ -183,6 +187,12 @@ restore_worktree() {
             cleanup_snapshot_files
             cleanup_snapshot_storage
             exit "$hook_status"
+        fi
+
+        if ! reset_worktree; then
+            printf '%s\n' "error: failed to reset the post-hook worktree; snapshot retained at $stash_oid" >&2
+            cleanup_snapshot_files
+            exit 1
         fi
 
         patch_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
@@ -269,7 +279,16 @@ object_format=$(git rev-parse --show-object-format)
 git init --bare --quiet --object-format="$object_format" "$snapshot_git_dir"
 snapshot_git config core.bare false
 copy_snapshot_config
-head_oid=$(git rev-parse HEAD)
+head_oid=$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)
+if [ -n "$head_oid" ]; then
+    head_tree=$(snapshot_git rev-parse "$head_oid^{tree}")
+else
+    # Stash commits require a parent even before the first user commit. Keep
+    # this synthetic root inside the isolated snapshot object/ref boundary.
+    head_tree=$(snapshot_git mktree < /dev/null)
+    head_oid=$(printf '%s\n' 'empty repository on jackin-pre-commit' |
+        snapshot_git commit-tree "$head_tree")
+fi
 snapshot_git update-ref refs/heads/jackin-pre-commit "$head_oid"
 snapshot_git symbolic-ref HEAD refs/heads/jackin-pre-commit
 
@@ -293,7 +312,7 @@ else
     index_tree=$(snapshot_git write-tree)
     index_oid=$(printf '%s\n' 'index on jackin-pre-commit' |
         snapshot_git commit-tree "$index_tree" -p "$head_oid")
-    worktree_tree=$(snapshot_git rev-parse "$head_oid^{tree}")
+    worktree_tree=$head_tree
 fi
 
 untracked_path_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")

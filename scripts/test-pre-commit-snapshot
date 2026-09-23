@@ -11,7 +11,10 @@ mise_pid_file="$fixture/mise.pid"
 race_marker="$snapshot_tmp/race.marker"
 stash_marker="$snapshot_tmp/stash.marker"
 stash_pid_file="$fixture/stash.pid"
-trap 'rm -rf "$fixture" "$fake_bin" "$snapshot_tmp"' EXIT
+clear_marker="$snapshot_tmp/clear.marker"
+clear_pid_file="$fixture/clear.pid"
+unborn_fixture=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-unborn.XXXXXX")
+trap 'rm -rf "$fixture" "$fake_bin" "$snapshot_tmp" "$unborn_fixture"' EXIT
 
 mode_of() {
     stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
@@ -75,6 +78,11 @@ mode_of() {
     stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
 }
 
+if [ "${FIXTURE_MODE:-}" = unborn ]; then
+    test "$(cat staged.txt)" = staged
+    exit 0
+fi
+
 test "$(cat partial.txt)" = "staged"
 test "$(cat unstaged.txt)" = "base"
 test "$(cat staged.txt)" = "staged-change"
@@ -90,6 +98,10 @@ test ! -L ignored-link
 case "${FIXTURE_MODE:-success}" in
     success)
         ;;
+    generated)
+        printf '%s\n' generated > generated.txt
+        printf '%s\n' ignored-generated > ignored-generated.bin
+        ;;
     fail)
         exit 23
         ;;
@@ -98,6 +110,14 @@ case "${FIXTURE_MODE:-success}" in
         git stash push --all --keep-index --message fixture-tamper >/dev/null
         ;;
     interrupt)
+        : > "$FIXTURE_MARKER"
+        printf '%s\n' "$$" > "$FIXTURE_MISE_PID"
+        trap 'exit 143' HUP INT TERM
+        while :; do sleep 1; done
+        ;;
+    generated-interrupt)
+        printf '%s\n' generated > generated.txt
+        printf '%s\n' ignored-generated > ignored-generated.bin
         : > "$FIXTURE_MARKER"
         printf '%s\n' "$$" > "$FIXTURE_MISE_PID"
         trap 'exit 143' HUP INT TERM
@@ -138,6 +158,16 @@ if [ "${FIXTURE_MODE:-}" = stash-interrupt ] &&
     [ "${2:-}" = create ]; then
     : > "$STASH_MARKER"
     printf '%s\n' "$$" > "$STASH_PID_FILE"
+    trap 'exit 143' HUP INT TERM
+    while :; do sleep 1; done
+fi
+
+if [ "${FIXTURE_MODE:-}" = clear-interrupt ] &&
+    [ "${1:-}" = restore ] &&
+    [ "${2:-}" = --worktree ] &&
+    [ ! -e "$CLEAR_MARKER" ]; then
+    : > "$CLEAR_MARKER"
+    printf '%s\n' "$$" > "$CLEAR_PID_FILE"
     trap 'exit 143' HUP INT TERM
     while :; do sleep 1; done
 fi
@@ -214,6 +244,9 @@ assert_restored
 (cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=success REAL_GIT="$real_git" "$hook")
 assert_restored
 
+(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=generated REAL_GIT="$real_git" "$hook")
+assert_restored
+
 if (cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=fail REAL_GIT="$real_git" "$hook"); then
     printf '%s\n' 'expected failing hook to return nonzero' >&2
     exit 1
@@ -225,6 +258,44 @@ assert_restored
 
 rm -f "$marker" "$mise_pid_file"
 (cd "$fixture" && exec env TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=interrupt REAL_GIT="$real_git" FIXTURE_MARKER="$marker" FIXTURE_MISE_PID="$mise_pid_file" "$hook") &
+hook_pid=$!
+attempt=0
+while [ ! -f "$marker" ] && [ "$attempt" -lt 50 ]; do
+    sleep 0.1
+    attempt=$((attempt + 1))
+done
+test -f "$marker"
+mise_pid=$(cat "$mise_pid_file")
+kill -TERM "$mise_pid" 2>/dev/null || true
+set +e
+wait "$hook_pid"
+status=$?
+set -e
+test "$status" -ne 0
+rm -f "$marker" "$mise_pid_file"
+assert_restored
+
+rm -f "$clear_marker" "$clear_pid_file"
+(cd "$fixture" && exec env TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=clear-interrupt REAL_GIT="$real_git" CLEAR_MARKER="$clear_marker" CLEAR_PID_FILE="$clear_pid_file" "$hook") &
+hook_pid=$!
+attempt=0
+while [ ! -f "$clear_marker" ] && [ "$attempt" -lt 50 ]; do
+    sleep 0.1
+    attempt=$((attempt + 1))
+done
+test -f "$clear_marker"
+clear_pid=$(cat "$clear_pid_file")
+kill -TERM "$clear_pid" 2>/dev/null || true
+set +e
+wait "$hook_pid"
+status=$?
+set -e
+test "$status" -ne 0
+rm -f "$clear_marker" "$clear_pid_file"
+assert_restored
+
+rm -f "$marker" "$mise_pid_file"
+(cd "$fixture" && exec env TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=generated-interrupt REAL_GIT="$real_git" FIXTURE_MARKER="$marker" FIXTURE_MISE_PID="$mise_pid_file" "$hook") &
 hook_pid=$!
 attempt=0
 while [ ! -f "$marker" ] && [ "$attempt" -lt 50 ]; do
@@ -261,6 +332,22 @@ test -f "$race_marker"
 rm -f "$race_marker"
 git -C "$fixture" stash list --format='%gs' | grep -F 'fixture-race' >/dev/null
 test -n "$(git -C "$fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
+test -z "$(ls -A "$snapshot_tmp")"
+
+git -C "$unborn_fixture" init -q
+git -C "$unborn_fixture" config user.name "Jackin hook unborn fixture"
+git -C "$unborn_fixture" config user.email "jackin-hook-unborn@example.invalid"
+git -C "$unborn_fixture" config core.fileMode true
+printf '%s\n' staged > "$unborn_fixture/staged.txt"
+git -C "$unborn_fixture" add staged.txt
+(cd "$unborn_fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=unborn REAL_GIT="$real_git" "$hook")
+test "$(git -C "$unborn_fixture" status --porcelain=v1)" = 'A  staged.txt'
+test "$(cat "$unborn_fixture/staged.txt")" = staged
+if git -C "$unborn_fixture" rev-parse --verify HEAD >/dev/null 2>&1; then
+    printf '%s\n' 'unborn fixture unexpectedly acquired HEAD' >&2
+    exit 1
+fi
+test -z "$(git -C "$unborn_fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
 test -z "$(ls -A "$snapshot_tmp")"
 
 printf '%s\n' 'pre-commit snapshot fixture passed'

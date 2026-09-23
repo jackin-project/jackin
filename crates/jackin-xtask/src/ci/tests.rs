@@ -1,6 +1,6 @@
 use std::fs;
 
-use super::{CiArgs, e2e_selected, parse_capsule_export, validate_capsule_path};
+use super::{CiArgs, e2e_selected, parse_capsule_export, step_names, validate_capsule_path};
 
 #[test]
 fn e2e_partition_selects_the_complete_docker_suite() {
@@ -14,6 +14,23 @@ fn e2e_partition_selects_the_complete_docker_suite() {
     };
 
     assert!(e2e_selected(&args));
+}
+
+#[test]
+fn tests_partition_runs_the_pre_commit_snapshot_fixture() {
+    let args = CiArgs {
+        fast: true,
+        e2e: false,
+        e2e_capsule: None,
+        e2e_filter: None,
+        base: "origin/main".to_owned(),
+        only: vec!["tests".to_owned()],
+    };
+
+    assert_eq!(
+        step_names(&args).unwrap().first().map(String::as_str),
+        Some("pre-commit snapshot fixture")
+    );
 }
 
 #[test]
