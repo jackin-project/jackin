@@ -2077,17 +2077,14 @@ pub(super) fn refresh_credential_binding(
             let now = chrono::Utc::now().timestamp();
             let result = crate::usage::fetch_grok_rest_billing(auth_path, now)
                 .map(|response| crate::usage::GrokBillingSnapshot::Rest(Box::new(response)));
-            (
-                crate::usage::grok_snapshot_from_rpc_result(
-                    binding.surface.agent_slug(),
-                    now,
-                    auth_path,
-                    true,
-                    false,
-                    false,
-                    result,
-                ),
-                None,
+            crate::usage::grok_snapshot_from_rpc_result_with_rate_limit(
+                binding.surface.agent_slug(),
+                now,
+                auth_path,
+                true,
+                false,
+                false,
+                result,
             )
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Kimi { token }) => {
