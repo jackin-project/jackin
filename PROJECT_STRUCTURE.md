@@ -2,7 +2,7 @@
 
 Quick nav for AI agents and human contributors. **Canonical detailed module map lives in docs** ([`reference/getting-oriented/codebase-map`](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/), served from [docs/content/reference/getting-oriented/codebase-map.mdx](docs/content/reference/getting-oriented/codebase-map.mdx)). This file is the short pointer agents land on first; covers **multi-repo ecosystem** and per-PR **code ↔ docs contract**, sends you to docs for rest.
 
-**For what a specific crate is for, its tier/allowed dependencies, its `src/` structure, and its public API, read that crate's README and AGENTS rules file directly** — they are the authoritative, always-current per-crate record (every `crates/*/` member carries both, plus a `CLAUDE.md` symlink, enforced by `cargo xtask lint agents`). The Codebase Map is the ecosystem/tier overview; the per-crate detail lives in the crate that owns it.
+**For what a specific crate is for, its tier/allowed dependencies, its `src/` structure, and its public API, read that crate's README directly** — it is the authoritative per-crate record. Shared repository rules live in the root [AGENTS.md](AGENTS.md); `cargo xtask lint agents` checks the root agent-file pair. The Codebase Map is the ecosystem/tier overview; the per-crate detail lives in the crate that owns it.
 
 ## What this file is for
 
@@ -14,7 +14,7 @@ Deeper questions — module layout, what each `src/` subdir owns, where to start
 
 | Question | Page |
 |---|---|
-| "Where does the code for X live? / what does crate Y do?" | That crate's README + AGENTS file under `crates/<crate>/` (authoritative); [Behind jackin❯ — crates](https://jackin.tailrocks.com/reference/crates/) (generated from READMEs); [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/) for the tier overview |
+| "Where does the code for X live? / what does crate Y do?" | That crate's README (authoritative); shared rules in the root [AGENTS.md](AGENTS.md); [Behind jackin❯ — crates](https://jackin.tailrocks.com/reference/crates/) (generated from READMEs); [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/) for the tier overview |
 | "How does jackin❯ orchestrate containers?" | [Architecture](https://jackin.tailrocks.com/reference/getting-oriented/architecture/) |
 | "How do instance identity, restore, and parallel sessions work?" | [Runtime Instance Model](https://jackin.tailrocks.com/reference/runtime/runtime-instance-model/) |
 | "What does `~/.config/jackin/config.toml` look like?" | [Configuration File](https://jackin.tailrocks.com/reference/runtime/configuration/) |
@@ -50,7 +50,7 @@ Fumadocs site on TanStack Start and Vite. **Lives alongside source today** — u
 - Dev server: `cd docs && bun run dev`
 - Build: `cd docs && bun run build`
 - Package manager: **bun only** (not npm/pnpm/yarn)
-- Has own [docs/AGENTS.md](docs/AGENTS.md) and [docs/CLAUDE.md](docs/CLAUDE.md)
+- Contributor rules: root [AGENTS.md](AGENTS.md); docs commands and gates: [Workspace Automation](docs/content/reference/getting-oriented/xtasks.mdx)
 
 Sidebar split by **three audiences**:
 
@@ -75,16 +75,19 @@ For runtime behavior, see [The Construct Image](https://jackin.tailrocks.com/dev
 
 | Workflow | Triggers |
 |---|---|
-| `ci-pr.yml` | Runs fmt, clippy, Rust test suite on PRs |
-| `ci-main.yml` | Runs the same gates on pushes to `main` |
-| `desktop-cadence.yml` | jackin❯ desktop merge cadence on push to `main` (`desktop-merge`: UI tests + accessibility audit) and scheduled cadence weekly (`desktop-scheduled`: + dead-code scan) |
-| `construct.yml` | Builds and publishes `construct` base Docker image on push to `main`; PR rehearsal builds without publishing |
-| `docs.yml` | Builds and deploys documentation site on push to `main`; link and spell checks on PRs |
-| `preview.yml` | Publishes Homebrew preview formula (dispatch-from-main only) |
-| `release.yml` | Creates release artifacts |
-| `renovate.yml` | Self-hosted Renovate dependency update runner |
-| `renovate-validate.yml` | Verifies upstream sources Renovate's `customManagers` point at still resolve (push and PR) |
-| `reuse-compliance.yml` | REUSE license-compliance lint (push and PR) |
+| `ci-pr.yml` | Generated pull-request validation: policy plus affected Bun, Docker, Rust, and Swift units |
+| `ci-main.yml` | Generated `main`-push validation: policy plus affected/full Bun, Docker, Rust, and Swift units |
+| `ci-policy.yml` | Pull-request-target workflow-policy and actionlint validation |
+| `ci-unit-bun.yml` | Reusable Bun unit, including the `docs/` build and test surface |
+| `ci-unit-docker.yml` | Reusable Docker image unit |
+| `ci-unit-rust.yml` | Reusable Rust unit |
+| `ci-unit-swift.yml` | Reusable Swift/Xcode unit |
+| `desktop-merge.yml` | Desktop merge cadence on pushes to `main` and manual dispatch |
+| `desktop-scheduled.yml` | Weekly desktop cadence plus manual dispatch, including the dead-code scan |
+| `maintenance.yml` | Closed-PR cache cleanup and scheduled/manual maintenance |
+| `nightly.yml` | Scheduled nightly validation and manual dispatch |
+| `release.yml` | Tag/manual desktop release build, verification, signing, and publication |
+| `renovate-upstream-sources.yml` | Push, pull-request, and manual validation of Renovate upstream sources |
 
 ## Code ↔ docs cross-reference
 
@@ -92,21 +95,21 @@ Changing behaviour: update both sides in same PR. This table = **per-PR contract
 
 | Code change in | Update docs in |
 |---|---|
-| [crates/jackin/src/cli/](crates/jackin/src/cli/) (command flags or help text) | `docs/content/commands/<cmd>.mdx` |
-| [crates/jackin/src/workspace/](crates/jackin/src/workspace/) (mount logic) | `docs/.../guides/workspaces.mdx`, `docs/.../guides/mounts.mdx` |
-| [crates/jackin-config/src/](crates/jackin-config/src/) (config format) | `docs/.../reference/runtime/configuration.mdx` |
-| [crates/jackin-runtime/src/runtime/](crates/jackin-runtime/src/runtime/) (container lifecycle) | `docs/.../reference/getting-oriented/architecture.mdx`, `docs/.../reference/runtime/runtime-instance-model.mdx` |
-| [crates/jackin-host/src/caffeinate.rs](crates/jackin-host/src/caffeinate.rs) (keep_awake reconciler) | `docs/.../guides/workspaces.mdx` (keep_awake section) |
-| [crates/jackin-isolation/src/](crates/jackin-isolation/src/) (per-mount isolation, materialization, finalizer) | `docs/.../guides/workspaces.mdx` (per-mount isolation section), `docs/.../guides/mounts.mdx` (isolation field), `docs/.../reference/runtime/configuration.mdx` (`MountConfig.isolation`), `docs/.../reference/getting-oriented/architecture.mdx` (materialization + finalizer), `docs/.../commands/load.mdx` (`--force`), `docs/.../commands/workspace.mdx` (`--mount-isolation`, Isolation column), `docs/.../commands/purge.mdx` (running-agent guard + isolated cleanup) |
-| [crates/jackin-instance/src/](crates/jackin-instance/src/) (instance identity, manifests, auth state preparation) | `docs/.../reference/runtime/runtime-instance-model.mdx`; auth-forward changes also update `docs/.../guides/authentication.mdx` and `docs/.../guides/security-model.mdx` |
-| [crates/jackin-manifest/src/](crates/jackin-manifest/src/) (`jackin.role.toml` schema or validation) | `docs/.../developing/role-manifest.mdx` |
-| [crates/jackin-instance/src/auth.rs](crates/jackin-instance/src/auth.rs) (auth-forward, credential handling) | `docs/.../guides/authentication.mdx`, `docs/.../guides/security-model.mdx` |
-| [crates/jackin-core/src/env_model.rs](crates/jackin-core/src/env_model.rs), [crates/jackin-env/src/env_resolver.rs](crates/jackin-env/src/env_resolver.rs) (env policy) | `docs/.../developing/role-manifest.mdx` (env section), `docs/.../guides/environment-variables.mdx` (reserved-name list) |
-| [crates/jackin-image/src/image_recipe.rs](crates/jackin-image/src/image_recipe.rs) (Dockerfile gen) | `docs/.../developing/construct-image.mdx` |
-| [crates/jackin-manifest/src/repo.rs](crates/jackin-manifest/src/repo.rs) / role repo validation paths | `docs/.../guides/role-repos.mdx` |
-| [docker/construct/Dockerfile](docker/construct/Dockerfile) | `docs/.../developing/construct-image.mdx` |
-| Module structure in [crates/](crates/) (added/split/renamed module) | The affected `crates/<crate>/README.md` (see [`crates/AGENTS.md`](crates/AGENTS.md) "Per-crate README + AGENTS.md" rule); the docs build regenerates [Behind jackin❯ — crates](https://jackin.tailrocks.com/reference/crates/) from READMEs; update `docs/.../reference/getting-oriented/codebase-map.mdx` only for tier/DAG changes |
+| [crates/jackin/src/cli/](crates/jackin/src/cli/) (command flags or help text) | `docs/content/(public)/commands/<cmd>.mdx` |
+| [crates/jackin/src/workspace/](crates/jackin/src/workspace/) (mount logic) | [docs/content/(public)/guides/workspaces.mdx](docs/content/(public)/guides/workspaces.mdx), [docs/content/(public)/guides/mounts.mdx](docs/content/(public)/guides/mounts.mdx) |
+| [crates/jackin-config/src/](crates/jackin-config/src/) (config format) | [docs/content/reference/runtime/configuration.mdx](docs/content/reference/runtime/configuration.mdx) |
+| [crates/jackin-runtime/src/runtime/](crates/jackin-runtime/src/runtime/) (container lifecycle) | [docs/content/reference/getting-oriented/architecture.mdx](docs/content/reference/getting-oriented/architecture.mdx), [docs/content/reference/runtime/runtime-instance-model.mdx](docs/content/reference/runtime/runtime-instance-model.mdx) |
+| [crates/jackin-host/src/caffeinate.rs](crates/jackin-host/src/caffeinate.rs) (keep_awake reconciler) | [docs/content/(public)/guides/workspaces.mdx](docs/content/(public)/guides/workspaces.mdx) (keep_awake section) |
+| [crates/jackin-isolation/src/](crates/jackin-isolation/src/) (per-mount isolation, materialization, finalizer) | [docs/content/(public)/guides/workspaces.mdx](docs/content/(public)/guides/workspaces.mdx) (per-mount isolation section), [docs/content/(public)/guides/mounts.mdx](docs/content/(public)/guides/mounts.mdx) (isolation field), [docs/content/reference/runtime/configuration.mdx](docs/content/reference/runtime/configuration.mdx) (`MountConfig.isolation`), [docs/content/reference/getting-oriented/architecture.mdx](docs/content/reference/getting-oriented/architecture.mdx) (materialization + finalizer), [docs/content/(public)/commands/load.mdx](docs/content/(public)/commands/load.mdx) (`--force`), [docs/content/(public)/commands/workspace.mdx](docs/content/(public)/commands/workspace.mdx) (`--mount-isolation`, Isolation column), [docs/content/(public)/commands/purge.mdx](docs/content/(public)/commands/purge.mdx) (running-agent guard + isolated cleanup) |
+| [crates/jackin-instance/src/](crates/jackin-instance/src/) (instance identity, manifests, auth state preparation) | [docs/content/reference/runtime/runtime-instance-model.mdx](docs/content/reference/runtime/runtime-instance-model.mdx); auth-forward changes also update [docs/content/(public)/guides/authentication/index.mdx](docs/content/(public)/guides/authentication/index.mdx) and [docs/content/(public)/guides/security-model.mdx](docs/content/(public)/guides/security-model.mdx) |
+| [crates/jackin-manifest/src/](crates/jackin-manifest/src/) (`jackin.role.toml` schema or validation) | [docs/content/(public)/(role-authoring)/developing/role-manifest.mdx](docs/content/(public)/(role-authoring)/developing/role-manifest.mdx) |
+| [crates/jackin-instance/src/auth.rs](crates/jackin-instance/src/auth.rs) (auth-forward, credential handling) | [docs/content/(public)/guides/authentication/index.mdx](docs/content/(public)/guides/authentication/index.mdx), [docs/content/(public)/guides/security-model.mdx](docs/content/(public)/guides/security-model.mdx) |
+| [crates/jackin-core/src/env_model.rs](crates/jackin-core/src/env_model.rs), [crates/jackin-env/src/env_resolver.rs](crates/jackin-env/src/env_resolver.rs) (env policy) | [docs/content/(public)/(role-authoring)/developing/role-manifest.mdx](docs/content/(public)/(role-authoring)/developing/role-manifest.mdx) (env section), [docs/content/(public)/guides/environment-variables.mdx](docs/content/(public)/guides/environment-variables.mdx) (reserved-name list) |
+| [crates/jackin-image/src/image_recipe.rs](crates/jackin-image/src/image_recipe.rs) (Dockerfile gen) | [docs/content/(public)/(role-authoring)/developing/construct-image.mdx](docs/content/(public)/(role-authoring)/developing/construct-image.mdx) |
+| [crates/jackin-manifest/src/repo.rs](crates/jackin-manifest/src/repo.rs) / role repo validation paths | [docs/content/(public)/(role-authoring)/guides/role-repos.mdx](docs/content/(public)/(role-authoring)/guides/role-repos.mdx) |
+| [docker/construct/Dockerfile](docker/construct/Dockerfile) | [docs/content/(public)/(role-authoring)/developing/construct-image.mdx](docs/content/(public)/(role-authoring)/developing/construct-image.mdx) |
+| Module structure in [crates/](crates/) (added/split/renamed module) | The affected `crates/<crate>/README.md`; shared rules live in the root [AGENTS.md](AGENTS.md); the docs build regenerates [Behind jackin❯ — crates](https://jackin.tailrocks.com/reference/crates/) from READMEs; update [docs/content/reference/getting-oriented/codebase-map.mdx](docs/content/reference/getting-oriented/codebase-map.mdx) only for tier/DAG changes |
 
 ## Keeping the docs fresh
 
-Per-crate README (source of truth), the generated crates section, the Codebase Map tier overview, and the cross-reference table above = the places structural changes show up first. If your PR adds a new module directory, splits a file into a subdir, introduces a new cross-cutting helper, or renames a public surface — **update the affected crate README in the same PR** (the docs build regenerates the site pages). Touch the Codebase Map only for tier/DAG changes. See [`crates/AGENTS.md`](crates/AGENTS.md) for the README-update rule and [`TODO.md`](TODO.md) for the stale-docs check every structural PR runs.
+Per-crate README (source of truth), the generated crates section, the Codebase Map tier overview, and the cross-reference table above = the places structural changes show up first. If your PR adds a new module directory, splits a file into a subdir, introduces a new cross-cutting helper, or renames a public surface — **update the affected crate README in the same PR** (the docs build regenerates the site pages). Touch the Codebase Map only for tier/DAG changes. See the root [AGENTS.md](AGENTS.md) for shared rules and [`TODO.md`](TODO.md) for the stale-docs check every structural PR runs.

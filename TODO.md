@@ -46,28 +46,6 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
 - **Last verified:** 2026-08-21 — keyboard-only at `roadmap/termrock-migration`.
 - **Done when:** a mouse event over the open help overlay scrolls/selects entries via `KeyboardHelpState::handle_mouse`, covered by a `tui::input::mouse` test; remove this entry.
 
-#### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check
-
-- **What:** deploy job's `Check deployed docs links` step in [`.github/workflows/docs.yml`](.github/workflows/docs.yml) emits one-line `[WARN] [Full Github Actions output]: No files found for this input source` from lychee binary, then continues and reports `Total 4703 / Successful 4703 / Errors 0`. Identify which of 46 sitemap input URLs triggers warn; fix cause or filter warn so signal clean.
-- **Why:** warn means at least one of 46 deployed pages fed via `--files-from lychee/deployed-pages.txt` resolved to zero extractable links. Tolerated now since rest of run green, but if future regression makes 5 inputs silently skip, no notice — warn count only tells. Clean run = real signal every deployed page actually scanned.
-- **Tracking:**
-  - First observed in [run 24940918362](https://github.com/jackin-project/jackin/actions/runs/24940918362) on `main` after [`34bb396`](https://github.com/jackin-project/jackin/commit/34bb396) ([#176](https://github.com/jackin-project/jackin/pull/176) merge).
-  - Warn string emitted by lychee binary (`strings lychee | grep "No files found"` confirms in v0.24.1), not lychee-action wrapper.
-  - lychee source — search literal string in <https://github.com/lycheeverse/lychee> to find emitter and exact condition.
-- **Last verified:** 2026-04-25 — present on every `main` push since #176 merged.
-- **Hypotheses to check (in order):**
-  1. **Redirected page returns non-HTML.** Same run reports 9 redirects. One redirected URL might land on page lychee can't extract from (e.g., raw text, unusual content-type).
-  2. **Sitemap entry yielding zero anchors.** Some Starlight pages — landing-style or auto-generated — render with no `<a href>` in body. Identify by running `curl <url> | grep -c '<a href' ` for each of 46 URLs, find the zero.
-  3. **Spurious empty argument.** If shell `run:` command produces extra empty token on arg expansion, lychee treats as empty input source and warns.
-- **How to reproduce:**
-  ```sh
-  curl -fsSL https://jackin.tailrocks.com/sitemap-0.xml \
-    | grep -oE '<loc>[^<]+</loc>' | sed 's|<loc>||; s|</loc>||' > /tmp/pages.txt
-  lychee --verbose --files-from /tmp/pages.txt 2>&1 | grep -B1 -A1 "No files found"
-  ```
-  Verbose output names the input source triggering the warn.
-- **Done when:** either (a) warn no longer emitted on a clean main run, or (b) it is, but cause is documented as benign (e.g., one Starlight page renders without anchors by design) and warn is suppressed/filtered so it doesn't mask future genuine warnings. Case (a): remove this entry; case (b): replace with a one-line note in `docs.yml`.
-
 #### `launch-worktree-leak-on-sidecar-fail` — unstage the staged worktree when sidecar startup fails
 
 - **What:** in the `launch_pipeline.rs` module under the `crates/jackin-runtime` runtime launch tree, the `tokio::join!(sidecar_wait, materialize_wait)` runs workspace materialization to completion even when the DinD sidecar has already failed. On the sidecar-failure path the launch marks the instance `FailedSetup` and runs `LoadCleanup` (container/dind/volume/network/socket dir) but does **not** unstage the host-side `git worktree` that `materialize_workspace` may have just added, so a worktree-isolated mount leaves a staged worktree behind.
@@ -109,8 +87,8 @@ Docs rot silently. Every PR must include a one-pass verification structure-sensi
 
 ### When your PR touches `crates/**/src/**`
 
-- [ ] Did you add, rename, move, or delete a module / directory under `crates/**/src/`? If yes, update [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)'s "Module tree" and any affected row in "Code ↔ Docs Cross-Reference" in same PR.
-- [ ] Did you add a new `crates/*/src/bin/` binary? If yes, add it to "Crate root" table in [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md).
+- [ ] Did you add, rename, move, or delete a module / directory under `crates/**/src/`? If yes, update the affected crate README and any affected row in [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)'s "Code ↔ docs cross-reference" in the same PR; update the Codebase Map only for tier/DAG changes.
+- [ ] Did you add a new `crates/*/src/bin/` binary? If yes, update the affected crate README and generated crates docs; do not add a row to [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md), which is only the short ecosystem pointer.
 
 ### When your PR touches CLI behavior
 

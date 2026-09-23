@@ -9,7 +9,7 @@ Read before opening, updating, merging PR.
 PR rules split by audience, avoid duplication:
 
 - **This file** — **shared** PR flow: body-shape spec, Verify-locally policy, mandatory isolation env-var rule, docs-only PR requirements, review rules, roadmap-retirement procedure. Humans + agents start here.
-- [.github/AGENTS.md](.github/AGENTS.md) holds **agent-only extras** — per-PR merge auth, base-branch requirement, force-push policy, body-construction shell-quoting, iteration-vs-merge-readiness, CI-green-before-merge, title/description reconciliation, squash-merge format, `jackin-capsule` smoke-test mandate. Plus GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). Auto-loads when agent works under `.github/`.
+- The agent-only rules under `.github/` hold **agent-only extras** — per-PR merge auth, base-branch requirement, force-push policy, body-construction shell-quoting, iteration-vs-merge-readiness, CI-green-before-merge, title/description reconciliation, squash-merge format, `jackin-capsule` smoke-test mandate. Plus GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). They auto-load when an agent works under `.github/`.
 
 When agent-only + shared rules cover same topic (e.g. "include Verify-locally section"), shared rule states *what*, agent-only states agent-specific *how/when/who*.
 
@@ -183,7 +183,7 @@ Before marking any PR ready to land, and again whenever operator asks to merge P
 
 Do this check even when PR mostly code, tests, CI, or rule changes. Roadmap operator-facing source of truth, not retrospective cleanup task. Feature landing without moving its roadmap item leaves stale planning docs behind + should be treated as incomplete. If merge request reveals stale roadmap state, stop before merging, update roadmap + PR description, only then continue normal merge verification.
 
-Run sidebar, status-view, and research-tree audits documented in rules under `docs/` after any roadmap status or file movement. If a roadmap item partially shipped, keep it in **In progress** with remaining outcomes named; do not duplicate it under **Planned**.
+Run the sidebar, status-view, and research-tree audits with the commands in [Workspace Automation](docs/content/reference/getting-oriented/xtasks.mdx) after any roadmap status or file movement. If a roadmap item partially shipped, keep it in **In progress** with remaining outcomes named; do not duplicate it under **Planned**.
 
 Roadmap pages hold planned, partially implemented, deferred, or brainstormed implementation outcomes only. Evidence, comparisons, experiments, and design rationale live under `/research/`. Once behavior ships, move operator details to normal docs (`guides/`, `commands/`, `reference/`) and retire the finished roadmap page. No completed archive or long implementation walkthrough belongs in Roadmap.
 
@@ -216,14 +216,14 @@ When PR ships last remaining piece of roadmap item — every feature, sub-phase,
 3. **Audit every detail on page + place it in its long-term home.** Operator behaviour goes to `guides/` or `commands/` page so users learn feature without reading internals; design decisions, on-disk layout, struct/enum/function names, architecture trade-offs go to `reference/getting-oriented/architecture.mdx`, `reference/runtime/configuration.mdx`, `reference/getting-oriented/codebase-map.mdx`, or another internals page so next contributor reads accurate internals. Git history is long-term archive of design rationale; roadmap directory is not. Apply **Documentation as the source of truth** rule above for audience split — never inline TOML schemas, on-disk paths, struct names on user-facing pages, never put `jackin foo --bar` operator instructions on internals pages.
 4. **Remove the item from its status view.** Do not add a Completed bullet. Canonical user-facing or contributor-facing docs now describe shipped behavior; Research or Git history preserves durable rationale.
 5. **Repoint inbound references.** Update any open roadmap item, goal prompt, or contributor doc that linked deleted page; point at canonical home from step 3.
-6. **Run sidebar + overview audits** documented in [docs/AGENTS.md](docs/AGENTS.md). Update the relevant roadmap `meta.json` entry, then run `cargo xtask roadmap audit`; the audit must pass after the sidebar entry and roadmap page are removed. Overview audit must continue passing.
+6. **Run sidebar + overview audits** with `cargo xtask roadmap audit` and `cargo xtask research check`, as documented in [Workspace Automation](docs/content/reference/getting-oriented/xtasks.mdx). Update the relevant roadmap `meta.json` entry; both audits must pass after the sidebar entry and roadmap page are removed. Overview audit must continue passing.
 7. **Run docs verification gate.** Use template's Docs Checks block. Retirement that breaks build or repo-link references incomplete.
 
 A `Status: Resolved` roadmap page still sitting in directory is smell, not shipping target. Only legitimate reasons to keep one: (a) genuine remaining work tracked on same page, or (b) load-bearing inbound links from open roadmap items still treating page as internal contract. Anything else gets retired in PR that ships last piece — not deferred to later cleanup PR, because every later contributor reading resolved page treats it as authoritative until gone.
 
 ## Agent-only rules
 
-Following rules apply only to agents. Full text lives in [.github/AGENTS.md](.github/AGENTS.md), which loads automatically when agent works under that directory; summaries here keep shared flow self-contained:
+Following rules apply only to agents. Full text lives in the agent-only rules under `.github/`, which load automatically when an agent works under that directory; summaries here keep shared flow self-contained:
 
 - **Per-PR merge authorization** — agents never merge without explicit "merge it" confirmation; prior session authorizations don't carry forward. Exception: a session goal that explicitly authorizes autonomous merging constitutes that confirmation for its in-scope PRs.
 - **Base branch** — agent-created PRs target `main` unless operator explicitly names different target.
@@ -239,7 +239,7 @@ Following rules apply only to agents. Full text lives in [.github/AGENTS.md](.gi
 
 ## Workflow / CI changes
 
-All rules for authoring + modifying CI workflow files live in [.github/AGENTS.md](.github/AGENTS.md), which loads automatically when agent works on workflow files there. Covers:
+All rules for authoring + modifying CI workflow files live in the agent-only rules under `.github/`, which load automatically when an agent works on workflow files there. Covers:
 
 - **mise-only tool installation** — no language-specific setup actions; `jdx/mise-action` everywhere.
 - **Env-var scope** — third-party-CLI env vars at job level, never workflow level.

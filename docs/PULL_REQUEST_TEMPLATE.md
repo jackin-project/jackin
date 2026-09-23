@@ -187,6 +187,7 @@ per-page localhost render walk still goes in `### Documentation` below.>
   bun run build
   cargo xtask docs repo-links
   cargo xtask roadmap audit
+  cargo xtask research check
   bunx tsc --noEmit
   bun test
 )

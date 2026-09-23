@@ -20,7 +20,7 @@ jackin❯ CI runs the Rust baseline — `cargo fmt --check`, `cargo clippy --all
 
 This item records the current CI ownership boundaries plus release-tooling evidence that becomes relevant when tagged-release requirements exist. It also records tools rejected for this project profile: solo-maintainer, pre-release, `Apache-2.0`, and a binary CLI workspace shipping static binaries through a Homebrew tap and `cargo-zigbuild`.
 
-Per the solo-maintainer staffing model in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, there is no second human to notice a `RUSTSEC` advisory, a copyleft license sneaking in through a transitive bump, or a regression in an untested branch. Automated CI checks are the substitute, exactly as multi-agent review substitutes for the missing second reviewer elsewhere. Every tool below installs through `mise` (per the mise-only CI rule in `.github/AGENTS.md` (removed in #956; consolidated into root AGENTS.md)) and, where it gates, folds into the `ci-required` aggregator.
+Per the solo-maintainer staffing model in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, there is no second human to notice a `RUSTSEC` advisory, a copyleft license sneaking in through a transitive bump, or a regression in an untested branch. Automated CI checks are the substitute, exactly as multi-agent review substitutes for the missing second reviewer elsewhere. Every tool below installs through `mise` (per the mise-only CI rule in <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile>) and, where it gates, folds into the `ci-required` aggregator.
 
 ## Current dependency and quality gates
 
@@ -168,7 +168,7 @@ These verdicts are reasoned from ecosystem norms plus the verified facts below; 
 There are two integration paths for `cargo-deny`, and they pull in different directions:
 
 - **Upstream-canonical: `EmbarkStudios/cargo-deny-action@v2`** — the documented canonical CI integration, a single step after `actions/checkout` with the binary bundled by the action (`@v2` currently ships cargo-deny 0.19.x). Lowest friction, but installs a tool *outside* `mise`.
-- **Project-consistent: install via `mise`, run the binary directly** — jackin❯ mise-only CI tool-install rule in `.github/AGENTS.md` (removed in #956; consolidated into root AGENTS.md) requires every CI tool to come from <RepoFile path="mise.toml">mise.toml</RepoFile>, like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
+- **Project-consistent: install via `mise`, run the binary directly** — jackin❯ mise-only CI tool-install rule in <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile> requires every CI tool to come from <RepoFile path="mise.toml">mise.toml</RepoFile>, like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
 
 **Recommendation: the mise path**, to honour the project's hard rule and keep one tool-install mechanism. The `cargo-deny-action` is noted as the upstream-canonical alternative, explicitly *not* adopted because it bypasses `mise`. A new `deny` unit in <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile>, alongside the existing per-crate units:
 

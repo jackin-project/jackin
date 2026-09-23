@@ -24,7 +24,7 @@ The single fact that should drive prioritization: **the dominant CI cost is not 
 - The same cold full compile recurs in `clippy` (2m29), `check-default` (2m16), `msrv` (2m19), `bench-build`, `fuzz`, each of the five nextest shards, `docker-e2e`, and inside the construct image — and **none of these jobs share compiled objects**, because every Rust job sets `SCCACHE_GHA_ENABLED: "off"`.
 - The cache goes cold because `Swatinem/rust-cache`'s key includes the <RepoFile path="Cargo.lock" /> hash, and <RepoFile path="Cargo.lock" /> changed in ~48% of recent commits (PR #641 included). `docker/construct/**` changed in ~43% of recent commits, so the E2E serialization hits nearly half of all PRs.
 
-So the biggest levers either **compile fewer times** or **make the compiler cache survive <RepoFile path="Cargo.lock" /> churn**. Everything else is secondary. Do not pursue any of this by removing PR/main parity: the workflow-authoring rules in `.github/AGENTS.md` (removed in #956; consolidated into root AGENTS.md) require every push-to-main failure invariant to be evaluated at PR time against the same inputs.
+So the biggest levers either **compile fewer times** or **make the compiler cache survive <RepoFile path="Cargo.lock" /> churn**. Everything else is secondary. Do not pursue any of this by removing PR/main parity: the workflow-authoring rules in <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile> require every push-to-main failure invariant to be evaluated at PR time against the same inputs.
 
 ## Relationship to the CI/CD speed roadmap
 
