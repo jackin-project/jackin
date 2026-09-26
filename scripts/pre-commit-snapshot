@@ -17,6 +17,8 @@ untracked_index_file=
 patch_file=
 archive_file=
 mode_file=
+directory_mode_file=
+directory_path_file=
 path_file=
 untracked_path_file=
 
@@ -68,7 +70,9 @@ cleanup_snapshot_files() {
         "$untracked_path_file" \
         "$patch_file" \
         "$archive_file" \
-        "$mode_file"; do
+        "$mode_file" \
+        "$directory_mode_file" \
+        "$directory_path_file"; do
         if [ -n "$snapshot_file" ]; then
             rm -f "$snapshot_file"
         fi
@@ -108,6 +112,7 @@ restore_modes() {
 
 record_modes() {
     paths_file=$1
+    output_file=$2
     if ! xargs -0 -n 1 sh -c '
         set -eu
         mode_file=$0
@@ -119,14 +124,84 @@ record_modes() {
             exit 1
         fi
         relative_path=$1
-        path="./$relative_path"
+        case "$relative_path" in
+            ./*) path=$relative_path ;;
+            *) path="./$relative_path" ;;
+        esac
         if [ -L "$path" ] || [ ! -e "$path" ]; then
             exit 0
         fi
         mode=$(stat -f "%Lp" "$path" 2>/dev/null || stat -c "%a" "$path") || exit 1
         printf "%s\000%s\000" "$mode" "$path" >> "$mode_file"
-    ' "$mode_file" < "$paths_file"; then
+    ' "$output_file" < "$paths_file"; then
         return 1
+    fi
+}
+
+record_directory_modes() {
+    directory_path_file=$1
+    directory_mode_file=$2
+    : > "$directory_path_file"
+
+    # Capture every worktree directory, including ignored and empty ones.
+    # Walk each top-level directory separately to exclude the repository's
+    # own .git directory while retaining nested directory modes.
+    for entry in .[!.]* ..?* *; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        [ "$entry" = .git ] && continue
+        [ -d "$entry" ] || continue
+        find "./$entry" -depth -type d -print0 >> "$directory_path_file" || return 1
+    done
+    printf '.\000' >> "$directory_path_file"
+    record_modes "$directory_path_file" "$directory_mode_file"
+}
+
+restore_directories() {
+    if [ -n "$directory_mode_file" ] && [ -s "$directory_mode_file" ]; then
+        if ! xargs -0 -n 2 sh -c '
+            set -eu
+            stash_oid=$0
+            if [ "$#" -eq 0 ]; then
+                exit 0
+            fi
+            if [ "$#" -ne 2 ]; then
+                printf "%s\n" "error: malformed directory snapshot; stash retained at $stash_oid" >&2
+                exit 1
+            fi
+            path=$2
+            if [ ! -d "$path" ] && ! mkdir -p "$path"; then
+                printf "%s\n" "error: failed to restore directory $path; stash retained at $stash_oid" >&2
+                exit 1
+            fi
+        ' "$stash_oid" < "$directory_mode_file"; then
+            return 1
+        fi
+
+        # Paths are recorded deepest-first, so restore children before
+        # restrictive parent modes can block traversal.
+        if ! xargs -0 -n 2 sh -c '
+            set -eu
+            stash_oid=$0
+            if [ "$#" -eq 0 ]; then
+                exit 0
+            fi
+            if [ "$#" -ne 2 ]; then
+                printf "%s\n" "error: malformed directory snapshot; stash retained at $stash_oid" >&2
+                exit 1
+            fi
+            mode=$1
+            path=$2
+            if [ ! -d "$path" ]; then
+                printf "%s\n" "error: failed to restore directory mode for missing $path; stash retained at $stash_oid" >&2
+                exit 1
+            fi
+            if ! chmod "$mode" "$path"; then
+                printf "%s\n" "error: failed to restore directory mode for $path; stash retained at $stash_oid" >&2
+                exit 1
+            fi
+        ' "$stash_oid" < "$directory_mode_file"; then
+            return 1
+        fi
     fi
 }
 
@@ -227,6 +302,11 @@ restore_worktree() {
             exit 1
         fi
 
+        if ! restore_directories; then
+            cleanup_snapshot_files
+            exit 1
+        fi
+
         if ! verify_snapshot_ref; then
             cleanup_snapshot_files
             exit 1
@@ -252,14 +332,20 @@ trap restore_worktree EXIT HUP INT TERM
 # worktree. Remove that ref with a refs/stash baseline check in the same CAS
 # transaction.
 mode_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
+directory_mode_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
+directory_path_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
 path_file=$(mktemp "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
 {
     git diff --name-only -z
     git ls-files --others --exclude-standard -z
     git ls-files --others --ignored --exclude-standard -z
 } > "$path_file"
-if ! record_modes "$path_file"; then
+if ! record_modes "$path_file" "$mode_file"; then
     printf '%s\n' 'error: failed to record pre-commit snapshot modes' >&2
+    exit 1
+fi
+if ! record_directory_modes "$directory_path_file" "$directory_mode_file"; then
+    printf '%s\n' 'error: failed to record pre-commit snapshot directory modes' >&2
     exit 1
 fi
 

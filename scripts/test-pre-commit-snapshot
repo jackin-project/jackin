@@ -65,6 +65,11 @@ chmod 751 "$fixture/ignored.bin"
 printf '%s\n' ignored-target > "$fixture/ignored-target"
 ln -s ignored-target "$fixture/ignored-link"
 printf '%s\n' untracked > "$fixture/ignored-note.txt"
+mkdir -p "$fixture/ignored-empty/nested"
+chmod 700 "$fixture/ignored-empty"
+chmod 711 "$fixture/ignored-empty/nested"
+mkdir "$fixture/untracked-empty"
+chmod 750 "$fixture/untracked-empty"
 
 cat > "$fake_bin/mise" <<'EOF'
 #!/bin/sh
@@ -94,6 +99,8 @@ test "$(mode_of mode.sh)" = 644
 test ! -e untracked.bin
 test ! -e ignored.bin
 test ! -L ignored-link
+test ! -e ignored-empty
+test ! -e untracked-empty
 
 case "${FIXTURE_MODE:-success}" in
     success)
@@ -205,6 +212,11 @@ assert_restored() {
     test "$(mode_of "$fixture/untracked.bin")" = 640
     test "$(readlink "$fixture/ignored-link")" = ignored-target
     test "$(mode_of "$fixture/ignored.bin")" = 751
+    test -d "$fixture/ignored-empty/nested"
+    test "$(mode_of "$fixture/ignored-empty")" = 700
+    test "$(mode_of "$fixture/ignored-empty/nested")" = 711
+    test -d "$fixture/untracked-empty"
+    test "$(mode_of "$fixture/untracked-empty")" = 750
     test "$(git -C "$fixture" stash list --format='%H %gs')" = "$before_stashes"
     test -z "$(git -C "$fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
     test -z "$(ls -A "$snapshot_tmp")"
