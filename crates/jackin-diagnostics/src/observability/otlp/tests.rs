@@ -147,7 +147,10 @@ fn telemetry_shutdown_fences_provider_in_an_isolated_process() {
         "--nocapture",
     ])
     .env(CHILD, "1")
-    .output()
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::piped())
+    .spawn()
+    .and_then(std::process::Child::wait_with_output)
     .expect("launch isolated telemetry shutdown test");
     assert!(
         output.status.success(),
