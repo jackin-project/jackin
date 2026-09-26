@@ -238,7 +238,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         );
     }
 
-    Some(jackin_telemetry::spawn::joined_blocking(move || {
+    Some(spawn_auth_prewarm_worker(move || {
         let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
         let instances: Vec<jackin_config::ResolvedInstance> =
             match jackin_config::resolve_launch(&config, ws.as_ref(), &role_key, None, None) {
@@ -253,10 +253,9 @@ pub(crate) fn spawn_sibling_auth_prewarm(
                     return;
                 }
             };
-        // Sibling instances keep their config-ID keys so this
-        // concurrent prewarm lands in the same slots the foreground
-        // prepare owns; sibling agents without instances get a
-        // placeholder Ignore binding each.
+        // Sibling instances keep their config-ID keys so prewarm lands in
+        // the same slots the foreground prepare will own; sibling agents
+        // without instances get a placeholder Ignore binding each.
         let mut bindings = match super::capsule_setup::instance_auth_bindings(&config, &instances) {
             Ok(bindings) => bindings,
             Err(error) => {
@@ -311,6 +310,35 @@ pub(crate) fn spawn_sibling_auth_prewarm(
             }
         }
     }))
+}
+
+/// Run auth prewarm on the blocking pool. A running `spawn_blocking` task
+/// cannot be aborted; if launch cancellation drops its join handle, the
+/// worker still finishes its own writes before releasing their short-lived
+/// target locks.
+fn spawn_auth_prewarm_worker<F, R>(work: F) -> tokio::task::JoinHandle<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    jackin_telemetry::spawn::joined_blocking(work)
+}
+
+/// Wait for sibling auth writes before role-state mount admission.
+///
+/// This phase must run before `RoleState::prepare_for_bindings`: that method
+/// acquires the leases that protect paths mounted into the live container.
+/// Keeping prewarm before admission gives each phase one owner and makes a
+/// canceled blocking worker safe to detach without cloning those leases.
+pub(crate) async fn await_sibling_auth_prewarm(
+    prewarm: Option<tokio::task::JoinHandle<()>>,
+) -> anyhow::Result<()> {
+    if let Some(prewarm) = prewarm {
+        prewarm
+            .await
+            .context("sibling auth prewarm task panicked")?;
+    }
+    Ok(())
 }
 
 /// Whether launch returned from a foreground session or handed off a live daemon.
@@ -482,8 +510,8 @@ pub(crate) async fn launch_role_runtime(
     );
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
-    let agent_specific_mounts = super::agent_mounts(state);
-    let gh_config_mount = super::github_config_mount(state);
+    let agent_specific_mounts = super::agent_mounts(state)?;
+    let gh_config_mount = super::github_config_mount(state)?;
     let certs_agent_mount = format!(
         "{certs_volume}:{}:ro",
         jackin_core::container_paths::DIND_CERTS_CLIENT_DIR
@@ -1287,8 +1315,6 @@ pub(crate) async fn launch_role_runtime(
         *agent,
         sibling_prewarm.selected_image_reused,
     );
-    let _sibling_auth_prewarm =
-        spawn_sibling_auth_prewarm(paths, container_name, sibling_auth_prewarm, *agent);
     if *non_interactive {
         // The container passed the premature-exit check. A programmatic caller
         // reconnects later with `jackin hardline`, whose reconnect path waits

@@ -304,7 +304,8 @@ mod launch_runtime;
 )]
 pub(crate) use launch_runtime::{
     LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,
-    SidecarPrewarmReplenish, host_runtime_passthrough_env, launch_role_runtime,
+    SidecarPrewarmReplenish, await_sibling_auth_prewarm, host_runtime_passthrough_env,
+    launch_role_runtime, spawn_sibling_auth_prewarm,
 };
 
 /// Present the stale-instance decision. "Start fresh" is always the
