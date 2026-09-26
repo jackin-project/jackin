@@ -99,16 +99,74 @@ fn flush_timeout_returns_without_joining_hung_worker() {
     let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
     let completed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let worker_completed = std::sync::Arc::clone(&completed);
-    let task = super::FlushTask::spawn(move || {
-        release_rx.recv().expect("release flush worker");
-        worker_completed.store(true, std::sync::atomic::Ordering::Release);
-        Ok(())
-    });
+    let task = super::FlushTask::spawn(
+        move || {
+            release_rx.recv().expect("release flush worker");
+            worker_completed.store(true, std::sync::atomic::Ordering::Release);
+            Ok(())
+        },
+        None,
+    );
     let result = task.finish_before(started + std::time::Duration::from_millis(20));
     assert_eq!(result, Err("telemetry flush budget exhausted".to_owned()));
     assert!(!completed.load(std::sync::atomic::Ordering::Acquire));
     release_tx.send(()).expect("release flush worker");
     super::reap_flush_workers();
+}
+
+#[test]
+fn timed_out_flush_worker_keeps_meter_generation_until_reaped() {
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::SdkMeterProvider;
+
+    let _diagnostics_lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .expect("diagnostics test lock");
+    let first_provider = SdkMeterProvider::builder().build();
+    let first_installation = jackin_telemetry::install(&first_provider.meter("pending-lease"))
+        .expect("first provider-bound meter installation");
+    let meter_installation = std::sync::Arc::new(std::sync::Mutex::new(first_installation));
+    meter_installation
+        .lock()
+        .expect("meter installation lock")
+        .detach_before(std::time::Instant::now() + std::time::Duration::from_secs(1))
+        .expect("detach pending lease");
+
+    let second_provider = SdkMeterProvider::builder().build();
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+    let task = super::FlushTask::spawn(
+        move || {
+            release_rx.recv().expect("release pending worker");
+            Ok(())
+        },
+        Some(std::sync::Arc::clone(&meter_installation)),
+    );
+    assert_eq!(
+        task.finish_before(std::time::Instant::now() + std::time::Duration::from_millis(20)),
+        Err("telemetry flush budget exhausted".to_owned())
+    );
+    drop(meter_installation);
+    assert!(
+        jackin_telemetry::install(&second_provider.meter("blocked-by-pending-lease")).is_err(),
+        "timed-out worker released the meter generation"
+    );
+
+    release_tx.send(()).expect("release pending worker");
+    let reap_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    let second_installation = loop {
+        super::reap_flush_workers();
+        if let Ok(installation) =
+            jackin_telemetry::install(&second_provider.meter("after-pending-lease"))
+        {
+            break installation;
+        }
+        assert!(
+            std::time::Instant::now() < reap_deadline,
+            "pending worker did not release its meter lease"
+        );
+        std::thread::yield_now();
+    };
+    drop(second_installation);
 }
 
 #[test]
@@ -128,23 +186,32 @@ fn validation_distinguishes_timeout_from_signal_failure() {
 
 #[test]
 fn provider_shutdown_order_is_tracer_logger_meter() {
+    let _test_lock = super::super::health::TEST_STATE_LOCK
+        .lock()
+        .expect("health test lock");
     let (export, _subscriber) = super::test_layers(false, "unused");
+    use opentelemetry::metrics::MeterProvider as _;
     let meter = opentelemetry_sdk::metrics::SdkMeterProvider::builder().build();
+    let meter_installation = jackin_telemetry::install(&meter.meter("shutdown-order"))
+        .expect("provider-bound meter installation");
     let generation = super::super::health::set_active_signals();
-    let providers = super::OtlpProviders {
+    let mut providers = super::OtlpProviders {
         tracer: export.tracer_provider,
         logger: export.logger_provider,
         meter,
         generation,
-        _meter_installation: None,
+        meter_installation: std::sync::Arc::new(std::sync::Mutex::new(meter_installation)),
     };
     super::SHUTDOWN_ORDER.lock().expect("order lock").clear();
     assert!(
-        providers.flush_and_shutdown(std::time::Instant::now() + std::time::Duration::from_secs(1))
+        providers
+            .flush_and_shutdown(std::time::Instant::now() + std::time::Duration::from_secs(1))
+            .expect("meter reader fence")
     );
     assert_eq!(
         *super::SHUTDOWN_ORDER.lock().expect("order lock"),
         [
+            "detach.meter",
             "flush.tracer",
             "flush.logger",
             "flush.meter",
@@ -152,6 +219,82 @@ fn provider_shutdown_order_is_tracer_logger_meter() {
             "logger",
             "meter"
         ]
+    );
+}
+
+#[test]
+fn panic_hook_shutdown_fences_installed_meter_before_late_writer() {
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+
+    let _diagnostics_lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .expect("diagnostics test lock");
+    let _health_lock = super::super::health::TEST_STATE_LOCK
+        .lock()
+        .expect("health test lock");
+    let (export, _subscriber) = super::test_layers(false, "unused");
+    let meter_exporter = InMemoryMetricExporter::default();
+    let meter = SdkMeterProvider::builder()
+        .with_reader(PeriodicReader::builder(meter_exporter.clone()).build())
+        .build();
+    let meter_installation = jackin_telemetry::install(&meter.meter("panic-hook-shutdown"))
+        .expect("provider-bound meter installation");
+    let generation = super::super::health::set_active_signals();
+    *super::PROVIDERS.lock().expect("provider lock") = Some(super::OtlpProviders {
+        tracer: export.tracer_provider,
+        logger: export.logger_provider,
+        meter,
+        generation,
+        meter_installation: std::sync::Arc::new(std::sync::Mutex::new(meter_installation)),
+    });
+    super::SHUTDOWN_ORDER.lock().expect("order lock").clear();
+
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+    let late_writer = std::thread::spawn(move || {
+        release_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("late writer release");
+        jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
+            .add(1, &[])
+            .expect("late writer after detach is a no-op");
+    });
+    // `jackin_usage::logging` calls this exact public root from its panic hook.
+    let shutdown = std::thread::spawn(super::super::shutdown_capsule_tracing);
+
+    let order_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while super::SHUTDOWN_ORDER.lock().expect("order lock").first() != Some(&"detach.meter") {
+        assert!(
+            std::time::Instant::now() < order_deadline,
+            "panic-hook shutdown did not detach the meter before its deadline"
+        );
+        std::thread::yield_now();
+    }
+    release_tx.send(()).expect("release late writer");
+    late_writer.join().expect("late writer join");
+    shutdown.join().expect("panic-hook shutdown join");
+
+    assert_eq!(
+        *super::SHUTDOWN_ORDER.lock().expect("order lock"),
+        [
+            "detach.meter",
+            "flush.tracer",
+            "flush.logger",
+            "flush.meter",
+            "tracer",
+            "logger",
+            "meter"
+        ]
+    );
+    let exported = meter_exporter
+        .get_finished_metrics()
+        .expect("metric export");
+    assert!(
+        !exported
+            .iter()
+            .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
+            .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+            .any(|metric| metric.name() == jackin_telemetry::metric::TELEMETRY_VALIDATE.name())
     );
 }
 
@@ -356,9 +499,6 @@ fn empty_endpoint_disables_export() {
 
 #[test]
 fn disabled_configuration_creates_no_runtime_and_shutdown_is_idempotent() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = runtime_creation_count();
     let env = |_key: &str| None;
     assert_eq!(super::super::config::resolve_otlp_config(&env), Ok(None));
@@ -500,6 +640,9 @@ fn facade_event_exports_native_event_name_once() {
 fn crash_event_exports_complete_bounded_private_shape() {
     use opentelemetry::logs::AnyValue;
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     let session = jackin_telemetry::identity::SessionGuard::claim(
         jackin_telemetry::identity::SessionKind::Console,
@@ -551,6 +694,9 @@ fn crash_event_exports_complete_bounded_private_shape() {
 fn facade_redacts_then_utf8_truncates_body_and_exception_fields() {
     use opentelemetry::logs::AnyValue;
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     let sensitive = format!("token=supersecret {}", "🦀".repeat(2_000));
     let attrs = [
@@ -613,6 +759,9 @@ fn facade_redacts_then_utf8_truncates_body_and_exception_fields() {
 fn jank_event_exports_once_per_active_crossing() {
     use opentelemetry::logs::AnyValue;
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let mut monitor = jackin_telemetry::ui::JankMonitor::default();
@@ -808,6 +957,9 @@ fn widget_lifecycle_exports_exact_stable_identity_pair() {
 fn isolation_events_export_exact_private_shape() {
     use jackin_telemetry::schema::enums::{DindMode, NetworkMode, WorkspaceIsolationMode};
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         crate::operation::isolation_decision(
@@ -1130,6 +1282,7 @@ fn every_registered_event_round_trips_once_with_canonical_severity() {
 
 #[test]
 fn governed_operation_line_does_not_duplicate_active_run_log() {
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let directory = tempfile::tempdir().expect("temporary diagnostics directory");
@@ -1175,6 +1328,7 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
 
     impl std::error::Error for PrivateError {}
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         let ok: Result<(), PrivateError> = Ok(());
@@ -1220,6 +1374,7 @@ fn result_error_helper_exports_one_typed_error_without_raw_value() {
 fn recovered_error_helper_exports_one_typed_warning_without_raw_value() {
     use opentelemetry::logs::{AnyValue, Severity};
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         jackin_telemetry::record_recovered_degradation().expect("recovered warning");
@@ -1241,6 +1396,7 @@ fn recovered_error_helper_exports_one_typed_warning_without_raw_value() {
 fn detached_failure_automatically_exports_one_typed_error() {
     use opentelemetry::logs::AnyValue;
 
+    let _lock = crate::DIAGNOSTICS_TEST_LOCK.lock().expect("test lock");
     let (export, subscriber) = super::test_layers(false, "unused");
     let default = tracing::subscriber::set_default(subscriber);
     tokio::runtime::Builder::new_current_thread()
@@ -1354,8 +1510,8 @@ fn governed_event_level_gates_are_exact_and_do_not_infer_span_state() {
 
 #[test]
 fn governed_unknown_names_and_forged_severity_are_rejected() {
-    let (export, subscriber) = super::test_layers_at("trace", "unused");
     let before = jackin_telemetry::facade_health();
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
             name: "unknown.governed.event",
@@ -1398,8 +1554,8 @@ fn governed_unknown_names_and_forged_severity_are_rejected() {
 
 #[test]
 fn governed_unknown_attribute_is_dropped() {
-    let (export, subscriber) = super::test_layers(false, "unused");
     let before = jackin_telemetry::facade_health().unknown_attribute;
+    let (export, subscriber) = super::test_layers(false, "unused");
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
             name: "session.start",
@@ -1418,8 +1574,8 @@ fn governed_unknown_attribute_is_dropped() {
 
 #[test]
 fn governed_second_line_drops_private_and_oversized_raw_records() {
-    let (export, subscriber) = super::test_layers_at("trace", "unused");
     let before = jackin_telemetry::facade_health();
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
     let oversized = "x".repeat(jackin_telemetry::limits::MAX_STRING_ATTRIBUTE_BYTES + 1);
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
@@ -1713,9 +1869,6 @@ fn assert_raw_metric_batch_rejected(
 
 #[test]
 fn governed_raw_meter_rejects_every_metric_contract_class() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     use opentelemetry::{Array, KeyValue, Value};
 
     assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::UnknownName, |meter| {
@@ -1793,9 +1946,6 @@ fn governed_raw_meter_rejects_every_metric_contract_class() {
 
 #[test]
 fn rejected_metric_collection_is_not_reported_as_exported() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let facade_before = jackin_telemetry::facade_health();
     let export_before = crate::telemetry_health_snapshot();
     let result =
@@ -1827,26 +1977,4 @@ fn rejected_metric_collection_is_not_reported_as_exported() {
         export_after.metrics.failures,
         export_before.metrics.failures + 1
     );
-}
-
-#[test]
-fn in_memory_layers_hold_global_telemetry_lock_until_export_drop() {
-    let (export, _subscriber) = super::test_layers(false, "unused");
-    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
-    let worker = std::thread::spawn(move || {
-        let (_other_export, _other_subscriber) = super::test_layers(false, "unused");
-        ready_tx.send(()).expect("report second layer creation");
-    });
-
-    assert!(
-        ready_rx
-            .recv_timeout(std::time::Duration::from_millis(25))
-            .is_err(),
-        "parallel in-memory layers must wait for the first export scope"
-    );
-    drop(export);
-    ready_rx
-        .recv_timeout(std::time::Duration::from_secs(1))
-        .expect("second layer must start after the first export scope ends");
-    worker.join().expect("second layer thread");
 }
