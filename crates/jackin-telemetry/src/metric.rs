@@ -267,9 +267,11 @@ impl Drop for MeterInstallation {
         }
 
         if let Some(retired) = self.retired_instruments.take() {
-            state.active_generation = None;
-            drop(state);
+            // Keep generation ownership until the retired handles are gone.
+            // Otherwise a new provider can reserve between unlocking state
+            // and dropping the old instruments.
             drop(retired);
+            state.active_generation = None;
             return;
         }
 
