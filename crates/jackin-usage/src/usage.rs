@@ -68,14 +68,16 @@ pub(crate) use self::amp::{
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::antigravity::{
-    ANTIGRAVITY_MIN_JSON_VERSION, AntigravityCredits, AntigravityFamily, AntigravityPool,
-    AntigravityUsage, AntigravityWindow, agy_version_supports_json, antigravity_buckets,
-    antigravity_cli_version, antigravity_credits_bucket, antigravity_identity_from_value,
-    antigravity_plan_from_value, antigravity_snapshot, fetch_antigravity_cli_credits,
-    fetch_antigravity_cli_usage, parse_agy_version, parse_antigravity_credits_output,
-    parse_antigravity_usage_output,
+    ANTIGRAVITY_KEYCHAIN_SERVICE, ANTIGRAVITY_MIN_JSON_VERSION, AntigravityCredits,
+    AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityWindow,
+    agy_version_supports_json, antigravity_buckets, antigravity_cli_version,
+    antigravity_credits_bucket, antigravity_identity_from_value, antigravity_plan_from_value,
+    antigravity_snapshot, fetch_antigravity_cli_credits, fetch_antigravity_cli_usage,
+    parse_agy_version, parse_antigravity_credits_output, parse_antigravity_usage_output,
 };
 pub use self::claude::ClaudeUsageDiagnostic;
+#[cfg(any(target_os = "macos", test))]
+pub(crate) use self::claude::classify_claude_keychain_status;
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -96,9 +98,8 @@ pub(crate) use self::claude::{
 };
 #[cfg(test)]
 pub(crate) use self::claude::{
-    ClaudeFileProbe, ClaudeKeychainState, classify_claude_keychain_status,
-    load_claude_oauth_credentials, load_claude_organization_type, read_claude_oauth_env_token,
-    resolve_claude_refresh_wave_with,
+    ClaudeFileProbe, ClaudeKeychainState, load_claude_oauth_credentials,
+    load_claude_organization_type, read_claude_oauth_env_token, resolve_claude_refresh_wave_with,
 };
 #[cfg(test)]
 pub(crate) use self::codex::load_codex_oauth_credentials;
@@ -883,8 +884,7 @@ pub(crate) fn provider_credential_snapshot_with_rate_limit(
             now,
         ),
         // Explicitly blocked (no production dispatch): `meta` (Muse has no
-        // pollable usage fetch by design), `antigravity` (grant lives in the
-        // host Keychain, which the file reader cannot probe), `omp`/`hermes`
+        // pollable usage fetch by design), `omp`/`hermes`
         // (attribution-only adapters with no native endpoint), `copilot` (no
         // collector, registry, or discovery entry exists at all).
         _ => unsupported_snapshot(surface_id, None, now),
@@ -934,10 +934,10 @@ pub(crate) fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurfa
         "kimi" => UsageSurface::Kimi,
         "opencode" => UsageSurface::OpenCode,
         "cursor" => UsageSurface::Cursor,
-        // Only `gemini` maps here: `antigravity` shares the Google surface in
-        // `HostSurfaceId::from_agent` but stays explicitly unwired (Keychain
-        // grant, no file probe), as do `muse`, `omp`, and `hermes`.
-        "gemini" => UsageSurface::Google,
+        // `antigravity` shares the Google surface (`HostSurfaceId::from_agent`);
+        // `muse`, `omp`, and `hermes` stay explicitly unwired (no pollable
+        // fetch), as before.
+        "antigravity" | "gemini" => UsageSurface::Google,
         _ => UsageSurface::Unsupported,
     }
 }
@@ -1029,6 +1029,34 @@ pub(crate) fn opencode_snapshot(agent: &str, provider: Option<&str>, now: i64) -
         last_error: Some(
             "OpenCode account identity is provisional until the provider exposes a non-secret identifier".to_owned(),
         ),
+    })
+}
+
+/// Honest snapshot for a locally identified binding with no pollable usage
+/// fetch by design (Muse identity, omp/hermes attribution adapters). This is
+/// a deliberate no-poll, never a provider outage: `Unsupported` so the broker
+/// records it as a data-bearing success, outside retry/backoff paths.
+pub(crate) fn unpollable_snapshot(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+) -> FocusedUsageView {
+    usage_view(UsageViewInput {
+        agent,
+        provider,
+        surface: UsageSurface::Unsupported,
+        // Empty until the broker binds the discovery account label; never a
+        // fabricated identity.
+        account_label: String::new(),
+        username: None,
+        plan_label: None,
+        credential_origin: None,
+        buckets: Vec::new(),
+        status: UsageSnapshotStatus::Unsupported,
+        source: UsageSource::None,
+        confidence: UsageConfidence::None,
+        now,
+        last_error: Some("usage polling not supported for this provider".to_owned()),
     })
 }
 

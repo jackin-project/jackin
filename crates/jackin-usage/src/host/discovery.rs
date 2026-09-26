@@ -492,6 +492,12 @@ pub(super) enum ValidatedCredentialSource {
         material: Option<ProviderCredentialSourceMaterial>,
     },
     Capability,
+    /// Locally identified profile with no pollable usage fetch by design
+    /// (Muse identity, omp/hermes attribution adapters). Refresh yields an
+    /// honest `Unsupported` snapshot, never a probe failure — unlike
+    /// [`Self::Capability`], which is a forwarded trust-domain token whose
+    /// refresh attempt is genuinely malformed here.
+    Unpollable,
 }
 
 #[derive(Clone)]
@@ -519,6 +525,9 @@ pub(super) enum ProfileCredentialMaterial {
     Gemini {
         creds_path: PathBuf,
     },
+    /// Antigravity CLI grant (Keychain singleton): presence-only, no secret
+    /// material — refresh shells out to `agy`, which owns the grant.
+    Antigravity,
 }
 
 impl std::fmt::Debug for UsageDiscoveryCatalog {
@@ -1025,6 +1034,10 @@ trait ProfileCredentialReader {
     fn read(&self, path: &Path) -> ProfileReadOutcome;
     fn exists(&self, path: &Path) -> bool;
     fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome;
+    /// Presence-only probe for the Antigravity Keychain grant singleton.
+    /// `Bytes` is always empty and never carries the grant: the CLI owns the
+    /// secret, discovery only learns whether it exists.
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome;
 }
 
 struct CachingProfileCredentialReader<'a> {
@@ -1032,6 +1045,7 @@ struct CachingProfileCredentialReader<'a> {
     exists: std::cell::RefCell<BTreeMap<PathBuf, bool>>,
     files: std::cell::RefCell<BTreeMap<PathBuf, ProfileReadOutcome>>,
     keychain: std::cell::RefCell<BTreeMap<String, ProfileReadOutcome>>,
+    antigravity_grant: std::cell::RefCell<Option<ProfileReadOutcome>>,
 }
 
 impl<'a> CachingProfileCredentialReader<'a> {
@@ -1041,6 +1055,7 @@ impl<'a> CachingProfileCredentialReader<'a> {
             exists: std::cell::RefCell::new(BTreeMap::new()),
             files: std::cell::RefCell::new(BTreeMap::new()),
             keychain: std::cell::RefCell::new(BTreeMap::new()),
+            antigravity_grant: std::cell::RefCell::new(None),
         }
     }
 }
@@ -1076,6 +1091,15 @@ impl ProfileCredentialReader for CachingProfileCredentialReader<'_> {
             .insert(scope.service.clone(), outcome.clone());
         outcome
     }
+
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        if let Some(outcome) = self.antigravity_grant.borrow().clone() {
+            return outcome;
+        }
+        let outcome = self.inner.read_antigravity_keychain();
+        *self.antigravity_grant.borrow_mut() = Some(outcome.clone());
+        outcome
+    }
 }
 
 struct SystemProfileCredentialReader;
@@ -1109,6 +1133,39 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
             crate::usage::ClaudeKeychainRead::ConsentRequired => {
                 ProfileReadOutcome::ConsentRequired
             }
+        }
+    }
+
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        #[cfg(target_os = "macos")]
+        {
+            use security_framework::item::{ItemClass, ItemSearchOptions};
+
+            // Reference-only search: no `load_data`, so the grant payload is
+            // never read into this process — presence is the whole answer.
+            let mut options = ItemSearchOptions::new();
+            options
+                .class(ItemClass::generic_password())
+                .service(crate::usage::ANTIGRAVITY_KEYCHAIN_SERVICE)
+                .limit(1);
+            match options.search() {
+                Ok(results) if !results.is_empty() => ProfileReadOutcome::Bytes(Vec::new()),
+                Ok(_) => ProfileReadOutcome::Missing,
+                Err(error) => match crate::usage::classify_claude_keychain_status(error.code()) {
+                    // Unreachable: the classifier only emits Denied/Missing.
+                    // Fail closed to absence either way.
+                    crate::usage::ClaudeKeychainRead::Payload { .. } => ProfileReadOutcome::Missing,
+                    crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
+                    crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
+                    crate::usage::ClaudeKeychainRead::ConsentRequired => {
+                        ProfileReadOutcome::ConsentRequired
+                    }
+                },
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            ProfileReadOutcome::Missing
         }
     }
 }
@@ -1416,11 +1473,13 @@ fn validate_source(
                 profile_credential_revision(profile_reader, agent, &root, &operator_home);
             let source = match &outcome {
                 ProfileValidation::Authenticated { material, .. }
-                | ProfileValidation::Anonymous(material) => material
-                    .clone()
-                    .map_or(ValidatedCredentialSource::Capability, |material| {
-                        ValidatedCredentialSource::Profile(*material)
-                    }),
+                | ProfileValidation::Anonymous(material) => material.clone().map_or(
+                    // A material-less local profile (Muse identity, omp/hermes
+                    // attribution) is unpollable by design — never a forwarded
+                    // trust-domain token, so never `Capability`.
+                    ValidatedCredentialSource::Unpollable,
+                    |material| ValidatedCredentialSource::Profile(*material),
+                ),
                 _ => ValidatedCredentialSource::Capability,
             };
             let outcome = match outcome {
@@ -1590,7 +1649,11 @@ fn profile_credential_revision(
         Agent::Kimi => file("kimi.credentials", root.join("credentials/kimi-code.json")),
         Agent::Grok => file("grok.auth", root.join("auth.json")),
         Agent::Opencode => file("opencode.auth", root.join("auth.json")),
-        Agent::Antigravity => evidence.push("antigravity:keychain".to_owned()),
+        Agent::Antigravity => append_profile_read(
+            &mut evidence,
+            "antigravity.keychain",
+            reader.read_antigravity_keychain(),
+        ),
         Agent::Gemini => file("gemini.oauth", root.join("oauth_creds.json")),
         Agent::Cursor => {
             file("cursor.auth", root.join("auth.json"));
@@ -1658,11 +1721,10 @@ fn profile_identity(
         }
         Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
         Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),
-        // Antigravity stays explicitly unwired: its grant lives in the host
-        // Keychain singleton, which the file-based reader cannot probe, so no
-        // discovery material exists and refresh can never dispatch. A
-        // Keychain-backed probe belongs to the usage lane.
-        Agent::Antigravity => ProfileValidation::Missing,
+        // Antigravity wires through the host Keychain grant singleton: the
+        // CLI owns the secret, so grant presence alone mints refresh
+        // material and refresh shells out to `agy`.
+        Agent::Antigravity => antigravity_profile_identity(reader),
         Agent::Gemini => gemini_profile_identity(reader, &root.join("oauth_creds.json")),
         Agent::Cursor => cursor_profile_identity(reader, root),
         // Muse stays explicitly unwired: identity is verified locally but no
@@ -1751,6 +1813,21 @@ fn gemini_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) ->
             material,
         },
     )
+}
+
+/// Antigravity identity is the host Keychain grant singleton, probed for
+/// presence only: the CLI owns the secret, so any payload is ignored and no
+/// identity label is extracted. Grant present → anonymous binding with
+/// refresh material; absent/denied propagates truthfully.
+fn antigravity_profile_identity(reader: &dyn ProfileCredentialReader) -> ProfileValidation {
+    match reader.read_antigravity_keychain() {
+        ProfileReadOutcome::Bytes(_) => {
+            ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::Antigravity)))
+        }
+        ProfileReadOutcome::Missing => ProfileValidation::Missing,
+        ProfileReadOutcome::Denied => ProfileValidation::Denied,
+        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
+    }
 }
 
 /// Muse identity comes from `auth.json` (`providers.meta.user_email`),
@@ -2048,6 +2125,17 @@ pub(super) fn refresh_credential_binding(
         ValidatedCredentialSource::Capability => {
             return ProviderCredentialRefreshOutcome::Malformed;
         }
+        // Deliberate no-poll, never a provider outage: the honest
+        // `Unsupported` view flows through the success path, outside
+        // retry/backoff.
+        ValidatedCredentialSource::Unpollable => (
+            crate::usage::unpollable_snapshot(
+                binding.surface.agent_slug(),
+                binding.surface.provider_label(),
+                chrono::Utc::now().timestamp(),
+            ),
+            None,
+        ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Claude(resolved)) => {
             crate::usage::claude_view_from_wave_with_rate_limit(
                 binding.surface.agent_slug(),
@@ -2133,6 +2221,16 @@ pub(super) fn refresh_credential_binding(
                 None,
             )
         }
+        // The Keychain grant needs no secret material here: `agy` owns the
+        // grant and the collector shells out to it.
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity) => (
+            crate::usage::antigravity_snapshot(
+                binding.surface.agent_slug(),
+                binding.surface.provider_label(),
+                chrono::Utc::now().timestamp(),
+            ),
+            None,
+        ),
     };
     ProviderCredentialRefreshOutcome::Snapshot {
         view: Box::new(view),

@@ -99,11 +99,14 @@ fn flush_timeout_returns_without_joining_hung_worker() {
     let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
     let completed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let worker_completed = std::sync::Arc::clone(&completed);
-    let task = super::FlushTask::spawn(move || {
-        release_rx.recv().expect("release flush worker");
-        worker_completed.store(true, std::sync::atomic::Ordering::Release);
-        Ok(())
-    });
+    let task = super::FlushTask::spawn(
+        move || {
+            release_rx.recv().expect("release flush worker");
+            worker_completed.store(true, std::sync::atomic::Ordering::Release);
+            Ok(())
+        },
+        None,
+    );
     let result = task.finish_before(started + std::time::Duration::from_millis(20));
     assert_eq!(result, Err("telemetry flush budget exhausted".to_owned()));
     assert!(!completed.load(std::sync::atomic::Ordering::Acquire));
@@ -127,24 +130,134 @@ fn validation_distinguishes_timeout_from_signal_failure() {
 }
 
 #[test]
-fn provider_shutdown_order_is_tracer_logger_meter() {
-    let (export, _subscriber) = super::test_layers(false, "unused");
-    let meter = opentelemetry_sdk::metrics::SdkMeterProvider::builder().build();
+fn telemetry_shutdown_fences_provider_in_an_isolated_process() {
+    const CHILD: &str = "JACKIN_TELEMETRY_SHUTDOWN_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        run_telemetry_shutdown_scenario();
+        println!("isolated telemetry shutdown scenario complete");
+        return;
+    }
+
+    let output = std::process::Command::new(
+        std::env::current_exe().expect("diagnostics test executable"),
+    )
+    .args([
+        "--exact",
+        "observability::otlp::tests::telemetry_shutdown_fences_provider_in_an_isolated_process",
+        "--nocapture",
+    ])
+    .env(CHILD, "1")
+    .output()
+    .expect("launch isolated telemetry shutdown test");
+    assert!(
+        output.status.success(),
+        "isolated telemetry shutdown test failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("isolated telemetry shutdown scenario complete"),
+        "isolated test process did not run the shutdown scenario:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+fn run_telemetry_shutdown_scenario() {
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+
+    // The diagnostics conformance suite keeps a process-global meter installed.
+    // Exercise provider ownership in a fresh test process so this scenario can
+    // prove replacement behavior without racing that shared test rig.
+    let first_provider = SdkMeterProvider::builder().build();
+    let first_installation = jackin_telemetry::install(&first_provider.meter("pending-lease"))
+        .expect("first provider-bound meter installation");
+    let meter_installation = std::sync::Arc::new(std::sync::Mutex::new(first_installation));
+    meter_installation
+        .lock()
+        .expect("meter installation lock")
+        .detach_before(std::time::Instant::now() + std::time::Duration::from_secs(1))
+        .expect("detach pending lease");
+
+    let second_provider = SdkMeterProvider::builder().build();
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+    let task = super::FlushTask::spawn(
+        move || {
+            release_rx.recv().expect("release pending worker");
+            Ok(())
+        },
+        Some(std::sync::Arc::clone(&meter_installation)),
+    );
+    assert_eq!(
+        task.finish_before(std::time::Instant::now() + std::time::Duration::from_millis(20)),
+        Err("telemetry flush budget exhausted".to_owned())
+    );
+    drop(meter_installation);
+    assert!(
+        jackin_telemetry::install(&second_provider.meter("blocked-by-pending-lease")).is_err(),
+        "timed-out worker released the meter generation"
+    );
+    release_tx.send(()).expect("release pending worker");
+    let reap_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    let second_installation = loop {
+        super::reap_flush_workers();
+        if let Ok(installation) =
+            jackin_telemetry::install(&second_provider.meter("after-pending-lease"))
+        {
+            break installation;
+        }
+        assert!(
+            std::time::Instant::now() < reap_deadline,
+            "pending worker did not release its meter lease"
+        );
+        std::thread::yield_now();
+    };
+    drop(second_installation);
+
+    let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
+    let logger = opentelemetry_sdk::logs::SdkLoggerProvider::builder().build();
+    let meter_exporter = InMemoryMetricExporter::default();
+    let meter = SdkMeterProvider::builder()
+        .with_reader(PeriodicReader::builder(meter_exporter.clone()).build())
+        .build();
+    let meter_installation = jackin_telemetry::install(&meter.meter("shutdown-order"))
+        .expect("provider-bound meter installation");
     let generation = super::super::health::set_active_signals();
-    let providers = super::OtlpProviders {
-        tracer: export.tracer_provider,
-        logger: export.logger_provider,
+    *super::PROVIDERS.lock().expect("provider lock") = Some(super::OtlpProviders {
+        tracer,
+        logger,
         meter,
         generation,
-        _meter_installation: None,
-    };
+        meter_installation: std::sync::Arc::new(std::sync::Mutex::new(meter_installation)),
+    });
     super::SHUTDOWN_ORDER.lock().expect("order lock").clear();
-    assert!(
-        providers.flush_and_shutdown(std::time::Instant::now() + std::time::Duration::from_secs(1))
-    );
+
+    let (late_writer_tx, late_writer_rx) = std::sync::mpsc::sync_channel(0);
+    let late_writer = std::thread::spawn(move || {
+        late_writer_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("late writer release");
+        jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
+            .add(1, &[])
+            .expect("late write after detach is a no-op");
+    });
+    let shutdown = std::thread::spawn(super::super::shutdown_capsule_tracing);
+    let order_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while super::SHUTDOWN_ORDER.lock().expect("order lock").first() != Some(&"detach.meter") {
+        assert!(
+            std::time::Instant::now() < order_deadline,
+            "shutdown did not detach the meter before its deadline"
+        );
+        std::thread::yield_now();
+    }
+    late_writer_tx.send(()).expect("release late writer");
+    late_writer.join().expect("late writer join");
+    shutdown.join().expect("provider shutdown join");
     assert_eq!(
         *super::SHUTDOWN_ORDER.lock().expect("order lock"),
         [
+            "detach.meter",
             "flush.tracer",
             "flush.logger",
             "flush.meter",
@@ -152,6 +265,16 @@ fn provider_shutdown_order_is_tracer_logger_meter() {
             "logger",
             "meter"
         ]
+    );
+    let exported = meter_exporter
+        .get_finished_metrics()
+        .expect("metric export");
+    assert!(
+        !exported
+            .iter()
+            .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
+            .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+            .any(|metric| metric.name() == jackin_telemetry::metric::TELEMETRY_VALIDATE.name())
     );
 }
 
@@ -356,9 +479,6 @@ fn empty_endpoint_disables_export() {
 
 #[test]
 fn disabled_configuration_creates_no_runtime_and_shutdown_is_idempotent() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = runtime_creation_count();
     let env = |_key: &str| None;
     assert_eq!(super::super::config::resolve_otlp_config(&env), Ok(None));
@@ -1354,8 +1474,8 @@ fn governed_event_level_gates_are_exact_and_do_not_infer_span_state() {
 
 #[test]
 fn governed_unknown_names_and_forged_severity_are_rejected() {
-    let (export, subscriber) = super::test_layers_at("trace", "unused");
     let before = jackin_telemetry::facade_health();
+    let (export, subscriber) = super::test_layers_at("trace", "unused");
     tracing::subscriber::with_default(subscriber, || {
         tracing::event!(
             name: "unknown.governed.event",
@@ -1713,9 +1833,6 @@ fn assert_raw_metric_batch_rejected(
 
 #[test]
 fn governed_raw_meter_rejects_every_metric_contract_class() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     use opentelemetry::{Array, KeyValue, Value};
 
     assert_raw_metric_batch_rejected(jackin_telemetry::Rejection::UnknownName, |meter| {
@@ -1793,9 +1910,6 @@ fn governed_raw_meter_rejects_every_metric_contract_class() {
 
 #[test]
 fn rejected_metric_collection_is_not_reported_as_exported() {
-    let _lock = crate::DIAGNOSTICS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let facade_before = jackin_telemetry::facade_health();
     let export_before = crate::telemetry_health_snapshot();
     let result =
@@ -1827,26 +1941,4 @@ fn rejected_metric_collection_is_not_reported_as_exported() {
         export_after.metrics.failures,
         export_before.metrics.failures + 1
     );
-}
-
-#[test]
-fn in_memory_layers_hold_global_telemetry_lock_until_export_drop() {
-    let (export, _subscriber) = super::test_layers(false, "unused");
-    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
-    let worker = std::thread::spawn(move || {
-        let (_other_export, _other_subscriber) = super::test_layers(false, "unused");
-        ready_tx.send(()).expect("report second layer creation");
-    });
-
-    assert!(
-        ready_rx
-            .recv_timeout(std::time::Duration::from_millis(25))
-            .is_err(),
-        "parallel in-memory layers must wait for the first export scope"
-    );
-    drop(export);
-    ready_rx
-        .recv_timeout(std::time::Duration::from_secs(1))
-        .expect("second layer must start after the first export scope ends");
-    worker.join().expect("second layer thread");
 }
