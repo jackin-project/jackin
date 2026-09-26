@@ -162,17 +162,6 @@ pub(crate) fn gemini_migration_action(entitlement: Option<&GeminiEntitlement>) -
         .then(|| ACTION.to_owned())
 }
 
-/// True only for a 403-class error on a consumer-route credential past the
-/// retirement instant. Every other 403 (managed route, API key, pre-retirement)
-/// is an auth failure, never a migration — no blind mapping.
-pub(crate) fn gemini_error_needs_migration(error: &str, consumer_route: bool, now: i64) -> bool {
-    if !consumer_route || !gemini_consumer_oauth_retired(now) {
-        return false;
-    }
-    let lower = error.to_ascii_lowercase();
-    lower.contains("403") || lower.contains("forbidden")
-}
-
 /// One project-scoped quota entry (RPM/TPM/daily/model limit). Counts stay
 /// counts: `remaining` exists only when the response supplies a denominator.
 #[derive(Debug, Clone)]

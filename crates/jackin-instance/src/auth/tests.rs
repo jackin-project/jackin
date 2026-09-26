@@ -1287,6 +1287,51 @@ fn sync_source_dir_copies_direct_opencode_auth_json() {
 }
 
 #[test]
+fn ambient_opencode_whitespace_invalidates_persisted_role_auth() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    std::fs::write(
+        &auth_json,
+        r#"{"opencode-go":{"type":"api","key":"stale"}}"#,
+    )
+    .unwrap();
+    let host_home = temp.path().join("host-home");
+    let source = host_home.join(".local/share/opencode/auth.json");
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    std::fs::write(source, " \n\t").unwrap();
+
+    let (outcome, mounted) =
+        RoleState::provision_opencode_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    assert!(mounted.is_none());
+    assert!(!auth_json.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn opencode_valid_credentials_keep_private_file_inode() {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let host_home = temp.path().join("host-home");
+    let source = host_home.join(".local/share/opencode/auth.json");
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    std::fs::write(&source, r#"{"opencode-go":{"type":"api","key":"valid"}}"#).unwrap();
+
+    let (_, mounted) =
+        RoleState::provision_opencode_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+    assert_eq!(mounted, Some(auth_json.clone()));
+    let first_inode = std::fs::metadata(&auth_json).unwrap().ino();
+
+    let (_, mounted) =
+        RoleState::provision_opencode_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+    assert_eq!(mounted, Some(auth_json.clone()));
+    assert_eq!(std::fs::metadata(auth_json).unwrap().ino(), first_inode);
+}
+
+#[test]
 fn sync_source_dir_rejects_multi_entry_without_writing() {
     let temp = tempdir().unwrap();
     let auth_json = temp.path().join("auth.json");
@@ -1442,6 +1487,7 @@ fn sync_mode_overwrites_existing() {
     // Update host credentials
     let updated_creds = r#"{"claudeAiOauth":{"accessToken":"new","refreshToken":"new"}}"#;
     std::fs::write(temp.path().join(".claude/.credentials.json"), updated_creds).unwrap();
+    drop(state);
 
     // Second run: should overwrite with host content
     let (state2, outcome2) = RoleState::prepare(
@@ -1489,6 +1535,7 @@ fn switching_from_sync_to_ignore_revokes_forwarded_credentials() {
     )
     .unwrap();
     assert!(state.claude_credentials_json().unwrap().exists());
+    drop(state);
 
     // Operator switches to ignore — credentials must be wiped
     let (state2, _) = RoleState::prepare(
@@ -1580,6 +1627,7 @@ fn api_key_mode_wipes_credentials_and_writes_empty_json() {
         state.claude_credentials_json().unwrap().exists(),
         "precondition: sync seeded .credentials.json"
     );
+    drop(state);
 
     let (state2, outcome) = RoleState::prepare(
         &paths,
@@ -1629,6 +1677,7 @@ fn switching_from_sync_to_token_revokes_forwarded_credentials() {
     )
     .unwrap();
     assert!(state.claude_credentials_json().unwrap().exists());
+    drop(state);
 
     // Operator switches to token — credentials must be wiped and
     // .claude.json reset to skeleton so Claude Code skips the login
@@ -1679,6 +1728,7 @@ fn switching_from_token_to_sync_forwards_fresh_host_creds() {
         std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
         r#"{"hasCompletedOnboarding":true}"#
     );
+    drop(state);
 
     // Operator switches to sync — host auth must now be forwarded
     let (state2, outcome) = RoleState::prepare(
@@ -1779,6 +1829,7 @@ fn sync_mode_preserves_container_auth_when_host_file_missing() {
     // Container may have its own auth by now (from manual login inside)
     let container_auth = r#"{"oauthAccount":{"emailAddress":"container@example.com"}}"#;
     std::fs::write(state.claude_account_json().unwrap(), container_auth).unwrap();
+    drop(state);
 
     // Second run: host auth missing — container auth must be preserved
     let (state2, outcome) = RoleState::prepare(
@@ -1878,6 +1929,7 @@ fn sync_repairs_permissions_on_legacy_permissive_file() {
         .unwrap()
         .permissions();
     assert_eq!(perms.mode() & 0o777, 0o644, "precondition: file is 0644");
+    drop(state);
 
     // A subsequent sync must tighten permissions back to 0600.
     let (state2, _) = RoleState::prepare(
@@ -1941,6 +1993,7 @@ fn sync_repairs_permissions_when_host_auth_missing() {
     // Remove host auth so sync takes the preserve path
     std::fs::remove_file(temp.path().join(".claude.json")).unwrap();
     std::fs::remove_file(temp.path().join(".claude/.credentials.json")).unwrap();
+    drop(state);
 
     // Second run: host auth missing — files preserved but permissions repaired
     let (state2, outcome) = RoleState::prepare(
@@ -2006,6 +2059,7 @@ fn rejects_symlink_at_claude_json() {
     std::fs::write(&decoy, "original").unwrap();
     std::fs::remove_file(state.claude_account_json().unwrap()).unwrap();
     std::os::unix::fs::symlink(&decoy, state.claude_account_json().unwrap()).unwrap();
+    drop(state);
 
     // Sync should refuse to write through the symlink
     let err = RoleState::prepare(
@@ -2059,6 +2113,7 @@ fn rejects_symlink_at_credentials_json() {
     let creds_path = state.claude_credentials_json().unwrap();
     std::fs::remove_file(creds_path).unwrap();
     std::os::unix::fs::symlink(&decoy, creds_path).unwrap();
+    drop(state);
 
     // Sync should refuse to write through the symlink
     let err = RoleState::prepare(
@@ -2439,6 +2494,25 @@ fn sync_copies_host_auth_json_when_present() {
     assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
 }
 
+#[test]
+fn sync_treats_empty_host_auth_json_as_host_missing() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(host_home.join(".codex")).unwrap();
+    std::fs::write(host_home.join(".codex/auth.json"), " \n\t").unwrap();
+
+    let (outcome, mounted) =
+        RoleState::provision_codex_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    assert!(mounted.is_none());
+    assert!(
+        !auth_json.exists(),
+        "empty Codex credentials must not create a role-state mount"
+    );
+}
+
 /// Re-syncing identical host content must NOT rewrite the role-state
 /// file. `write_private_file` replaces the inode (temp + rename); on
 /// macOS that invalidates a live single-file bind mount into the running
@@ -2494,6 +2568,38 @@ fn sync_source_dir_copies_direct_auth_json() {
     assert_eq!(outcome, AuthProvisionOutcome::Synced);
     assert_eq!(mounted.as_deref(), Some(auth_json.as_path()));
     assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
+}
+
+#[cfg(unix)]
+#[test]
+fn single_file_source_replacement_between_validation_and_open_is_rejected() {
+    let temp = tempdir().unwrap();
+    let source_dir = temp.path().join("codex-work");
+    let target = temp.path().join("role/auth.json");
+    let source = source_dir.join("auth.json");
+    let replacement = source_dir.join("auth.json.replacement");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(&source, "old").unwrap();
+    std::fs::write(&replacement, "replacement").unwrap();
+    let source_for_hook = source.clone();
+    set_source_open_hook(Box::new(move || {
+        std::fs::rename(&replacement, &source_for_hook).unwrap();
+    }));
+
+    let error = RoleState::provision_codex_auth_from_source_dir(
+        &target,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("replaced during secure open"),
+        "unexpected error: {error:#}"
+    );
+    assert!(
+        !target.exists(),
+        "replaced source must not publish a credential"
+    );
 }
 
 #[test]
@@ -3939,6 +4045,7 @@ fn claude_metadata_persists_inside_directory_and_supports_atomic_replacement() {
         let replacement = directory.join(".claude.json.tmp");
         std::fs::write(&replacement, r#"{"onboarding":true}"#).unwrap();
         std::fs::rename(replacement, &metadata).unwrap();
+        drop(state);
         RoleState::prepare(
             &paths,
             "jk-metadata",
