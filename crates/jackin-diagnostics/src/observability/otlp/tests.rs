@@ -130,6 +130,155 @@ fn validation_distinguishes_timeout_from_signal_failure() {
 }
 
 #[test]
+fn telemetry_shutdown_fences_provider_in_an_isolated_process() {
+    const CHILD: &str = "JACKIN_TELEMETRY_SHUTDOWN_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        run_telemetry_shutdown_scenario();
+        println!("isolated telemetry shutdown scenario complete");
+        return;
+    }
+
+    let output = std::process::Command::new(
+        std::env::current_exe().expect("diagnostics test executable"),
+    )
+    .args([
+        "--exact",
+        "observability::otlp::tests::telemetry_shutdown_fences_provider_in_an_isolated_process",
+        "--nocapture",
+    ])
+    .env(CHILD, "1")
+    .output()
+    .expect("launch isolated telemetry shutdown test");
+    assert!(
+        output.status.success(),
+        "isolated telemetry shutdown test failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("isolated telemetry shutdown scenario complete"),
+        "isolated test process did not run the shutdown scenario:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+fn run_telemetry_shutdown_scenario() {
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+
+    // The diagnostics conformance suite keeps a process-global meter installed.
+    // Exercise provider ownership in a fresh test process so this scenario can
+    // prove replacement behavior without racing that shared test rig.
+    let first_provider = SdkMeterProvider::builder().build();
+    let first_installation = jackin_telemetry::install(&first_provider.meter("pending-lease"))
+        .expect("first provider-bound meter installation");
+    let meter_installation = std::sync::Arc::new(std::sync::Mutex::new(first_installation));
+    meter_installation
+        .lock()
+        .expect("meter installation lock")
+        .detach_before(std::time::Instant::now() + std::time::Duration::from_secs(1))
+        .expect("detach pending lease");
+
+    let second_provider = SdkMeterProvider::builder().build();
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+    let task = super::FlushTask::spawn(
+        move || {
+            release_rx.recv().expect("release pending worker");
+            Ok(())
+        },
+        Some(std::sync::Arc::clone(&meter_installation)),
+    );
+    assert_eq!(
+        task.finish_before(std::time::Instant::now() + std::time::Duration::from_millis(20)),
+        Err("telemetry flush budget exhausted".to_owned())
+    );
+    drop(meter_installation);
+    assert!(
+        jackin_telemetry::install(&second_provider.meter("blocked-by-pending-lease")).is_err(),
+        "timed-out worker released the meter generation"
+    );
+    release_tx.send(()).expect("release pending worker");
+    let reap_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    let second_installation = loop {
+        super::reap_flush_workers();
+        if let Ok(installation) =
+            jackin_telemetry::install(&second_provider.meter("after-pending-lease"))
+        {
+            break installation;
+        }
+        assert!(
+            std::time::Instant::now() < reap_deadline,
+            "pending worker did not release its meter lease"
+        );
+        std::thread::yield_now();
+    };
+    drop(second_installation);
+
+    let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
+    let logger = opentelemetry_sdk::logs::SdkLoggerProvider::builder().build();
+    let meter_exporter = InMemoryMetricExporter::default();
+    let meter = SdkMeterProvider::builder()
+        .with_reader(PeriodicReader::builder(meter_exporter.clone()).build())
+        .build();
+    let meter_installation = jackin_telemetry::install(&meter.meter("shutdown-order"))
+        .expect("provider-bound meter installation");
+    let generation = super::super::health::set_active_signals();
+    *super::PROVIDERS.lock().expect("provider lock") = Some(super::OtlpProviders {
+        tracer,
+        logger,
+        meter,
+        generation,
+        meter_installation: std::sync::Arc::new(std::sync::Mutex::new(meter_installation)),
+    });
+    super::SHUTDOWN_ORDER.lock().expect("order lock").clear();
+
+    let (late_writer_tx, late_writer_rx) = std::sync::mpsc::sync_channel(0);
+    let late_writer = std::thread::spawn(move || {
+        late_writer_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("late writer release");
+        jackin_telemetry::counter(&jackin_telemetry::metric::TELEMETRY_VALIDATE)
+            .add(1, &[])
+            .expect("late write after detach is a no-op");
+    });
+    let shutdown = std::thread::spawn(super::super::shutdown_capsule_tracing);
+    let order_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while super::SHUTDOWN_ORDER.lock().expect("order lock").first() != Some(&"detach.meter") {
+        assert!(
+            std::time::Instant::now() < order_deadline,
+            "shutdown did not detach the meter before its deadline"
+        );
+        std::thread::yield_now();
+    }
+    late_writer_tx.send(()).expect("release late writer");
+    late_writer.join().expect("late writer join");
+    shutdown.join().expect("provider shutdown join");
+    assert_eq!(
+        *super::SHUTDOWN_ORDER.lock().expect("order lock"),
+        [
+            "detach.meter",
+            "flush.tracer",
+            "flush.logger",
+            "flush.meter",
+            "tracer",
+            "logger",
+            "meter"
+        ]
+    );
+    let exported = meter_exporter
+        .get_finished_metrics()
+        .expect("metric export");
+    assert!(
+        !exported
+            .iter()
+            .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
+            .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+            .any(|metric| metric.name() == jackin_telemetry::metric::TELEMETRY_VALIDATE.name())
+    );
+}
+
+#[test]
 fn resource_matrix_has_exact_allowlist_and_ignores_secret_env_injection() {
     let values = |resource: &opentelemetry_sdk::Resource| {
         resource
