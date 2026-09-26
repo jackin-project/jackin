@@ -483,12 +483,13 @@ async fn load_prewarmed_dind_state_with_identity(
         );
     }
     let handle = row.handle().context("legacy retained DinD has no ID")?;
+    let state_by_id = docker.inspect_container_by_id(&handle).await;
     anyhow::ensure!(
-        matches!(
-            docker.inspect_container_by_id(&handle).await,
-            ContainerState::Running
+        !matches!(
+            state_by_id,
+            ContainerState::NotFound | ContainerState::InspectUnavailable(_)
         ),
-        "legacy retained DinD is not running; state preserved"
+        "legacy retained DinD identity cannot be inspected; state preserved"
     );
     state.schema_version = 2;
     state.dind_id = Some(handle.id().to_owned());
@@ -703,7 +704,6 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             Some(&format!("skip:{reason}")),
         );
         emit_prewarmed_dind_adoption("skipped", &prewarmed_dind_state_detail(&reason, &state));
-        remove_prewarmed_dind_state(paths);
         return None;
     };
     if inspected_handle != expected_handle {
@@ -723,7 +723,6 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             Some(&format!("skip:{reason}")),
         );
         emit_prewarmed_dind_adoption("skipped", &prewarmed_dind_state_detail(&reason, &state));
-        remove_prewarmed_dind_state(paths);
         return None;
     }
 

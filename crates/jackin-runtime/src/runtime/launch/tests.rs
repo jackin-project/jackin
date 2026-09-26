@@ -276,6 +276,69 @@ async fn legacy_kept_dind_state_is_preserved_when_ownership_cannot_be_verified()
     assert_eq!(std::fs::read_to_string(state_path).unwrap(), legacy_state);
 }
 
+#[tokio::test]
+async fn stopped_legacy_kept_dind_migrates_for_identity_bound_recovery() {
+    use jackin_core::ContainerRow;
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let dind = "jk-prewarm-dind-dind";
+    let state_path = paths.data_dir.join("prewarm-dind.json");
+    std::fs::write(
+        &state_path,
+        serde_json::json!({
+            "schema_version": 1,
+            "dind": dind,
+            "network": "jk-prewarm-dind-net",
+            "certs_volume": "jk-prewarm-dind-certs",
+            "ready_ms": 123,
+            "kept": true,
+            "created_at_ms": 456
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let labels = HashMap::from([
+        ("jackin.managed".to_owned(), "true".to_owned()),
+        ("jackin.kind".to_owned(), "prewarm-dind".to_owned()),
+        ("jackin.prewarm".to_owned(), "true".to_owned()),
+    ]);
+    let stopped = ContainerState::Stopped {
+        exit_code: 137,
+        oom_killed: false,
+    };
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
+            name: dind.to_owned(),
+            id: "daemon-id-stopped".to_owned(),
+            labels,
+        }]])),
+        inspect_by_id_queue: std::cell::RefCell::new(VecDeque::from([stopped.clone()])),
+        container_id_by_name: std::cell::RefCell::new(HashMap::from([(
+            dind.to_owned(),
+            "daemon-id-stopped".to_owned(),
+        )])),
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(dind.to_owned(), stopped)])),
+        ..Default::default()
+    };
+
+    let adopted = super::launch_dind::adopt_prewarmed_dind_sidecar(&paths, &docker).await;
+    assert!(adopted.is_none(), "stopped sidecar must not be adopted");
+    let state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+    assert_eq!(state["schema_version"], 2);
+    assert_eq!(state["dind_id"], "daemon-id-stopped");
+
+    let cleanup_handle = super::launch_dind::ensure_prewarm_state_identity(&paths, &docker)
+        .await
+        .unwrap()
+        .expect("stopped sidecar remains addressable for ID-bound cleanup");
+    assert_eq!(cleanup_handle.id(), "daemon-id-stopped");
+}
+
 #[test]
 fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
     let sensitive = vec![
