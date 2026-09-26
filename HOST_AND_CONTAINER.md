@@ -24,7 +24,7 @@ Host root for jackin-owned paths is `~/.jackin/`, with own subdirectory layout (
 
 ## Credential transport
 
-Forwarded credential values cross the runtime boundary through a temporary host-only env file with mode `0600`; only non-sensitive `JACKIN_*` launch metadata may appear in process arguments. On-demand literal values remain in the host-side allowlist, while the container-visible config carries only a fixed redacted marker. The runtime removes the env file immediately after the container launch command returns. Secrets must never appear in runtime argv or container-visible config.
+Forwarded credential values cross the runtime boundary through a temporary host-only env file with mode `0600`. Only this exact safe launch-metadata allowlist may appear in process arguments: `JACKIN_DIND_HOSTNAME`, `JACKIN_CONTAINER_NAME`, `JACKIN_INSTANCE_ID`, `JACKIN_ROLE`, `JACKIN_HOST_VERSION`, `JACKIN_GIT_COAUTHOR_TRAILER`, `JACKIN_GIT_DCO`, `JACKIN_TELEMETRY_LEVEL`, `JACKIN_INVOCATION_ID`, `JACKIN_NETWORK_MODE`, `JACKIN_ALLOWED_HOSTS`, `JACKIN_NETWORK_ENFORCEMENT`, `JACKIN_SUDO`, and `JACKIN_CAPSULE_OTLP_COVERAGE`. Unknown `JACKIN_*` names, including secrets, use the host-only env file. On-demand literal values remain in the host-side allowlist, while the container-visible config carries only a fixed redacted marker. The runtime removes the env file immediately after the container launch command returns. Secrets must never appear in runtime argv or container-visible config.
 
 Rotate any credential previously configured as an on-demand literal. Older launches exposed that value through the container filesystem even when exec approval was still required.
 
