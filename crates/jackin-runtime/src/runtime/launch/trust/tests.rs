@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_config::{MountConfig, MountHealReport, ResolvedWorkspace};
 use jackin_core::{Agent, AuthForwardMode, MountIsolation};
@@ -61,6 +61,8 @@ fn codex_state(root: &std::path::Path) -> RoleState {
             )]),
         },
         auth_outcomes: BTreeMap::new(),
+        auth_mount_paths: BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     }
 }
 
