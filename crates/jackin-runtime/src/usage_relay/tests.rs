@@ -680,6 +680,8 @@ fn forwarded_sources_include_only_provisioned_profiles_and_governed_env() {
             (Agent::Codex, AuthProvisionOutcome::HostMissing),
             (Agent::Amp, AuthProvisionOutcome::TokenMode),
         ]),
+        auth_mount_paths: BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
     let resolved_env = jackin_env::ResolvedEnv {
         vars: vec![
