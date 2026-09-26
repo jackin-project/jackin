@@ -114,8 +114,10 @@ fn provider_labels_resolve_all_account_refresh_surfaces() {
         broker_surface_id("opencode", Some("OpenRouter")),
         Some("openrouter")
     );
-    // Explicitly blocked agents never resolve to a refreshable surface.
-    for agent in ["antigravity", "muse", "omp", "hermes"] {
+    // Antigravity shares the Google surface; the remaining explicitly
+    // blocked agents never resolve to a refreshable surface.
+    assert_eq!(resolve_surface("antigravity", None), UsageSurface::Google);
+    for agent in ["muse", "omp", "hermes"] {
         assert_eq!(
             resolve_surface(agent, None),
             UsageSurface::Unsupported,
@@ -191,9 +193,10 @@ fn capability_matches_newly_wired_surfaces_only() {
         Some("Cursor"),
         &capability("google")
     ));
-    // Blocked agents with no provider label match nothing (their
-    // unwired-ness lives in discovery, which mints no binding for them).
-    assert!(!capability_matches_surface(
+    // Antigravity is wired to the Google surface; blocked agents with no
+    // provider label match nothing (their unwired-ness lives in discovery,
+    // which mints no binding for them).
+    assert!(capability_matches_surface(
         "antigravity",
         None,
         &capability("google")
@@ -203,6 +206,21 @@ fn capability_matches_newly_wired_surfaces_only() {
         Some("Muse"),
         &capability("meta")
     ));
+}
+
+#[test]
+fn unpollable_snapshot_is_honest_unsupported() {
+    let view = unpollable_snapshot("muse", Some("Meta"), 1_781_728_000);
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.source, UsageSource::None);
+    assert_eq!(view.confidence, UsageConfidence::None);
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("usage polling not supported for this provider")
+    );
+    assert!(view.buckets.is_empty());
+    assert!(view.account.account_label.is_empty());
+    assert_eq!(view.focused_agent.as_deref(), Some("muse"));
 }
 
 #[test]

@@ -42,6 +42,10 @@ impl ProfileCredentialReader for ConsentKeychainReader {
     ) -> ProfileReadOutcome {
         ProfileReadOutcome::ConsentRequired
     }
+
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        ProfileReadOutcome::ConsentRequired
+    }
 }
 
 #[derive(Default)]
@@ -76,6 +80,10 @@ impl ProfileCredentialReader for RecordingProfileReader {
     ) -> ProfileReadOutcome {
         panic!("Claude is ignored in source-validation fixtures")
     }
+
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
 }
 
 struct SyntheticDatabaseOnlyReader;
@@ -94,6 +102,10 @@ impl ProfileCredentialReader for SyntheticDatabaseOnlyReader {
         _scope: &jackin_core::ClaudeKeychainScope,
     ) -> ProfileReadOutcome {
         panic!("Claude is ignored in source-validation fixtures")
+    }
+
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
     }
 }
 
@@ -1239,11 +1251,6 @@ fn disc_gemini_profile_mints_material_with_or_without_label() {
 fn disc_blocked_providers_mint_no_refresh_material() {
     let temp = tempfile::tempdir().unwrap();
     let reader = RecordingProfileReader::default();
-    // Antigravity: Keychain grant the file reader cannot probe.
-    assert!(matches!(
-        profile_identity(&reader, Agent::Antigravity, temp.path(), temp.path()),
-        ProfileValidation::Missing
-    ));
     // omp/hermes: attribution-only adapters; presence never mints material.
     let omp = temp.path().join("omp");
     std::fs::create_dir_all(omp.join("agent")).unwrap();
@@ -1273,6 +1280,131 @@ fn disc_blocked_providers_mint_no_refresh_material() {
     else {
         panic!("muse profile must carry identity without material");
     };
+}
+
+/// File-blind reader with a configurable Antigravity Keychain grant outcome.
+struct AntigravityGrantReader {
+    grant: ProfileReadOutcome,
+}
+
+impl ProfileCredentialReader for AntigravityGrantReader {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+
+    fn exists(&self, _path: &Path) -> bool {
+        false
+    }
+
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        panic!("Claude is ignored in Antigravity fixtures")
+    }
+
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        self.grant.clone()
+    }
+}
+
+#[test]
+fn disc_antigravity_grant_mints_cli_refresh_material() {
+    let temp = tempfile::tempdir().unwrap();
+    // Grant present (payload always empty; presence is the whole answer) →
+    // anonymous binding with CLI refresh material.
+    for grant in [
+        ProfileReadOutcome::Bytes(Vec::new()),
+        ProfileReadOutcome::Bytes(vec![1, 2, 3]),
+    ] {
+        let reader = AntigravityGrantReader { grant };
+        let ProfileValidation::Anonymous(Some(material)) =
+            profile_identity(&reader, Agent::Antigravity, temp.path(), temp.path())
+        else {
+            panic!("antigravity grant must mint anonymous CLI material");
+        };
+        assert!(matches!(*material, ProfileCredentialMaterial::Antigravity));
+    }
+    // Grant absent/denied propagates truthfully, never a phantom binding.
+    for (grant, expected) in [
+        (ProfileReadOutcome::Missing, "missing"),
+        (ProfileReadOutcome::Denied, "denied"),
+    ] {
+        let reader = AntigravityGrantReader { grant };
+        let outcome = profile_identity(&reader, Agent::Antigravity, temp.path(), temp.path());
+        assert!(
+            matches!(
+                outcome,
+                ProfileValidation::Missing | ProfileValidation::Denied
+            ),
+            "antigravity without grant must be {expected}"
+        );
+    }
+}
+
+#[test]
+fn disc_material_less_profile_binding_is_unpollable() {
+    let temp = tempfile::tempdir().unwrap();
+    let reader = RecordingProfileReader::default();
+    // Muse: local identity, no material → Unpollable, never Capability.
+    let muse = temp.path().join("muse");
+    std::fs::create_dir_all(&muse).unwrap();
+    std::fs::write(
+        muse.join("auth.json"),
+        r#"{"providers":{"meta":{"user_email":"m@example.test"}}}"#,
+    )
+    .unwrap();
+    let parts = validate_source(
+        DiscoveredCredentialSource::Profile {
+            surface: HostSurfaceId::Meta,
+            agent: Agent::Muse,
+            root: muse,
+            operator_home: temp.path().to_path_buf(),
+            account_label: None,
+            source_id: "source-muse".to_owned(),
+            capability_id: "cap-muse".to_owned(),
+            provenance: BTreeSet::new(),
+        },
+        &NoEnvResolver,
+        &reader,
+    );
+    assert!(matches!(parts.5, ValidatedCredentialSource::Unpollable));
+    // omp: attribution-only presence, no material → Unpollable as well.
+    let omp = temp.path().join("omp");
+    std::fs::create_dir_all(omp.join("agent")).unwrap();
+    std::fs::write(omp.join("agent/agent.db"), b"sqlite fixture").unwrap();
+    let parts = validate_source(
+        DiscoveredCredentialSource::Profile {
+            surface: HostSurfaceId::OpenRouter,
+            agent: Agent::Omp,
+            root: omp,
+            operator_home: temp.path().to_path_buf(),
+            account_label: None,
+            source_id: "source-omp".to_owned(),
+            capability_id: "cap-omp".to_owned(),
+            provenance: BTreeSet::new(),
+        },
+        &NoEnvResolver,
+        &reader,
+    );
+    assert!(matches!(parts.5, ValidatedCredentialSource::Unpollable));
+}
+
+#[test]
+fn refresh_unpollable_binding_returns_honest_unsupported() {
+    let binding = test_binding(HostSurfaceId::Meta, ValidatedCredentialSource::Unpollable);
+    match refresh_credential_binding(&binding, &NoEnvResolver) {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
+            assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+            assert_eq!(
+                view.last_error.as_deref(),
+                Some("usage polling not supported for this provider")
+            );
+            assert!(view.buckets.is_empty());
+            assert!(view.account.account_label.is_empty());
+        }
+        other => panic!("unpollable refresh must return an honest snapshot: {other:?}"),
+    }
 }
 
 fn test_binding(
@@ -1311,6 +1443,25 @@ fn refresh_cursor_binding_dispatches_to_collector() {
             assert!(view.last_error.is_some());
         }
         other => panic!("cursor refresh must dispatch to the collector: {other:?}"),
+    }
+}
+
+#[test]
+fn refresh_antigravity_binding_dispatches_to_cli() {
+    // Live `agy` shell-out (cursor precedent above): any collector view —
+    // Fresh quota, Stale, or a version-gate NeedsSecret — proves dispatch.
+    // Only Malformed/Unsupported-by-discovery would mean the arm never ran.
+    let binding = test_binding(
+        HostSurfaceId::Google,
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity),
+    );
+    match refresh_credential_binding(&binding, &NoEnvResolver) {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
+            assert_eq!(view.account.provider_label, "Antigravity");
+            assert_eq!(view.focused_agent.as_deref(), Some("gemini"));
+            assert!(!view.is_refreshing_placeholder());
+        }
+        other => panic!("antigravity refresh must dispatch to the CLI collector: {other:?}"),
     }
 }
 
