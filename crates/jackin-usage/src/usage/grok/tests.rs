@@ -148,34 +148,66 @@ fn grok_settings_tier_prefers_display_form() {
 }
 
 #[test]
-fn grok_billing_error_taxonomy_covers_rest_and_rpc() {
-    assert_eq!(
-        classify_grok_billing_error("Grok billing HTTP 401"),
-        GrokBillingErrorKind::Auth
+fn grok_status_classification_requires_typed_http_status() {
+    let missing = Path::new("/tmp/nonexistent-grok-auth-for-test.json");
+    let ordinary = ProviderError::from(ProviderHttpError::Transport(
+        "transport failed while contacting port 429".to_owned(),
+    ));
+    let (_, ordinary_rate_limit) = grok_snapshot_from_rpc_result_with_rate_limit(
+        "grok",
+        1_780_315_200,
+        missing,
+        true,
+        false,
+        false,
+        Err(ordinary),
+    );
+    assert_eq!(ordinary_rate_limit, None);
+
+    let typed = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "Grok billing HTTP 429".to_owned(),
+        retry_after_seconds: Some(97),
+        response_received_at_epoch: Some(1_780_315_200),
+    });
+    let enriched = typed.with_message(
+        "Grok billing HTTP 429; Grok ACP billing failed: agent unavailable".to_owned(),
+    );
+    let (view, rate_limit) = grok_snapshot_from_rpc_result_with_rate_limit(
+        "grok",
+        1_780_315_200,
+        missing,
+        true,
+        false,
+        false,
+        Err(typed),
     );
     assert_eq!(
-        classify_grok_billing_error("Grok Bearer [REDACTED] is expired"),
-        GrokBillingErrorKind::Auth
+        rate_limit,
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(1_780_315_297),
+        })
+    );
+    assert_eq!(view.last_error.as_deref(), Some("Grok billing HTTP 429"));
+
+    let (view, rate_limit) = grok_snapshot_from_rpc_result_with_rate_limit(
+        "grok",
+        1_780_315_200,
+        missing,
+        true,
+        false,
+        false,
+        Err(enriched),
     );
     assert_eq!(
-        classify_grok_billing_error("Grok billing HTTP 429"),
-        GrokBillingErrorKind::RateLimited
+        rate_limit,
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(1_780_315_297),
+        })
     );
     assert_eq!(
-        classify_grok_billing_error("Grok RPC timed out waiting for x.ai/billing"),
-        GrokBillingErrorKind::Timeout
-    );
-    assert_eq!(
-        classify_grok_billing_error("Grok billing shape unsupported: foo"),
-        GrokBillingErrorKind::Decode
-    );
-    assert_eq!(
-        classify_grok_billing_error("Grok RPC x.ai/billing failed: boom"),
-        GrokBillingErrorKind::Rpc
-    );
-    assert_eq!(
-        classify_grok_billing_error("Grok billing request failed: reset"),
-        GrokBillingErrorKind::Transport
+        view.last_error.as_deref(),
+        Some("Grok billing HTTP 429; Grok ACP billing failed: agent unavailable")
     );
 }
 
