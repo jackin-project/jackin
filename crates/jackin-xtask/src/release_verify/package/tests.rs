@@ -3,7 +3,9 @@
 
 use std::{collections::BTreeMap, fs, path::Path};
 
+use flate2::{Compression, write::GzEncoder};
 use sha2::{Digest, Sha256};
+use tar::{Builder as TarBuilder, EntryType, Header};
 
 use super::*;
 
@@ -45,6 +47,103 @@ fn write_payloads(directory: &Path) -> BTreeMap<String, String> {
             (payload.name.to_owned(), digest(&bytes))
         })
         .collect()
+}
+
+fn release_archive(path: &Path, members: &[(&str, &[u8], u32, EntryType)]) {
+    let encoder = GzEncoder::new(fs::File::create(path).unwrap(), Compression::default());
+    let mut archive = TarBuilder::new(encoder);
+    for (name, bytes, mode, entry_type) in members {
+        let mut header = Header::new_gnu();
+        let path = name.as_bytes();
+        assert!(
+            path.len() < 100,
+            "test member path must fit the tar name field"
+        );
+        header.as_mut_bytes()[..path.len()].copy_from_slice(path);
+        header.set_size(bytes.len() as u64);
+        header.set_mode(*mode);
+        header.set_mtime(0);
+        header.set_entry_type(*entry_type);
+        header.set_cksum();
+        archive.append(&header, *bytes).unwrap();
+    }
+    archive.into_inner().unwrap().finish().unwrap();
+}
+
+/// Small static ELF64 that prints the matching package version on Linux.
+/// It carries real `x86_64` ELF metadata and cannot run on macOS.
+fn elf64_x86_64_version_binary(binary: &str, version: &str) -> Vec<u8> {
+    const ELF_HEADER_SIZE: usize = 64;
+    const PROGRAM_HEADER_SIZE: usize = 56;
+    const CODE_OFFSET: usize = ELF_HEADER_SIZE + PROGRAM_HEADER_SIZE;
+
+    let message = format!("{binary} {version}\n").into_bytes();
+    let message_len = u8::try_from(message.len()).expect("ELF fixture message fits in u8");
+    let code = [
+        0x48,
+        0x8d,
+        0x35,
+        0x1a,
+        0x00,
+        0x00,
+        0x00, // lea message(%rip), %rsi
+        0xba,
+        message_len,
+        0x00,
+        0x00,
+        0x00, // mov message length, %edx
+        0xbf,
+        0x01,
+        0x00,
+        0x00,
+        0x00, // mov 1, %edi
+        0xb8,
+        0x01,
+        0x00,
+        0x00,
+        0x00, // mov write syscall, %eax
+        0x0f,
+        0x05, // syscall
+        0xb8,
+        0x3c,
+        0x00,
+        0x00,
+        0x00, // mov exit syscall, %eax
+        0x31,
+        0xff, // xor %edi, %edi
+        0x0f,
+        0x05, // syscall
+    ];
+    let mut bytes = vec![0_u8; CODE_OFFSET];
+    bytes[..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2; // ELFCLASS64
+    bytes[5] = 1; // little-endian
+    bytes[6] = 1; // current ELF version
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes()); // ET_EXEC
+    bytes[18..20].copy_from_slice(&62_u16.to_le_bytes()); // EM_X86_64
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24..32].copy_from_slice(&(0x400000_u64 + CODE_OFFSET as u64).to_le_bytes());
+    bytes[32..40].copy_from_slice(&(ELF_HEADER_SIZE as u64).to_le_bytes());
+    bytes[52..54].copy_from_slice(&(ELF_HEADER_SIZE as u16).to_le_bytes());
+    bytes[54..56].copy_from_slice(&(PROGRAM_HEADER_SIZE as u16).to_le_bytes());
+    bytes[56..58].copy_from_slice(&1_u16.to_le_bytes());
+    bytes[58..60].copy_from_slice(&64_u16.to_le_bytes());
+
+    let program_header = ELF_HEADER_SIZE;
+    bytes[program_header..program_header + 4].copy_from_slice(&1_u32.to_le_bytes()); // PT_LOAD
+    bytes[program_header + 4..program_header + 8].copy_from_slice(&5_u32.to_le_bytes()); // R|X
+    bytes[program_header + 16..program_header + 24].copy_from_slice(&0x400000_u64.to_le_bytes());
+    bytes[program_header + 24..program_header + 32].copy_from_slice(&0x400000_u64.to_le_bytes());
+    let file_size = CODE_OFFSET + code.len() + message.len();
+    bytes[program_header + 32..program_header + 40]
+        .copy_from_slice(&(file_size as u64).to_le_bytes());
+    bytes[program_header + 40..program_header + 48]
+        .copy_from_slice(&(file_size as u64).to_le_bytes());
+    bytes[program_header + 48..program_header + 56].copy_from_slice(&0x1000_u64.to_le_bytes());
+
+    bytes.extend_from_slice(&code);
+    bytes.extend_from_slice(&message);
+    bytes
 }
 
 #[test]
@@ -237,6 +336,191 @@ fn checks_cross_arch_elf_metadata_without_running_it() {
 }
 
 #[test]
+fn accepts_release_archive_with_exact_executable_x86_64_elf_members() {
+    const VERSION: &str = "0.6.4-preview.1+0123456";
+    const TARGET: &str = "x86_64-unknown-linux-gnu";
+    let directory = tempfile::tempdir().unwrap();
+    let jackin = elf64_x86_64_version_binary("jackin", VERSION);
+    let role = elf64_x86_64_version_binary("jackin-role", VERSION);
+    let path = directory.path().join("release.tar.gz");
+    release_archive(
+        &path,
+        &[
+            ("jackin", &jackin, 0o755, EntryType::Regular),
+            ("jackin-role", &role, 0o755, EntryType::Regular),
+        ],
+    );
+
+    verify_release_archive_members(&path, TARGET, &["jackin", "jackin-role"], VERSION).unwrap();
+}
+
+#[test]
+fn rejects_release_archive_missing_a_binary_member() {
+    const VERSION: &str = "0.6.4-preview.1+0123456";
+    let directory = tempfile::tempdir().unwrap();
+    let jackin = elf64_x86_64_version_binary("jackin", VERSION);
+    let path = directory.path().join("release.tar.gz");
+    release_archive(&path, &[("jackin", &jackin, 0o755, EntryType::Regular)]);
+
+    let error = verify_release_archive_members(
+        &path,
+        "x86_64-unknown-linux-gnu",
+        &["jackin", "jackin-role"],
+        VERSION,
+    )
+    .expect_err("an archive missing jackin-role must fail closed");
+    assert!(error.to_string().contains("member set is incomplete"));
+}
+
+#[test]
+fn rejects_release_archive_with_duplicate_binary_member() {
+    const VERSION: &str = "0.6.4-preview.1+0123456";
+    let directory = tempfile::tempdir().unwrap();
+    let jackin = elf64_x86_64_version_binary("jackin", VERSION);
+    let role = elf64_x86_64_version_binary("jackin-role", VERSION);
+    let path = directory.path().join("release.tar.gz");
+    release_archive(
+        &path,
+        &[
+            ("jackin", &jackin, 0o755, EntryType::Regular),
+            ("jackin", &jackin, 0o755, EntryType::Regular),
+            ("jackin-role", &role, 0o755, EntryType::Regular),
+        ],
+    );
+
+    let error = verify_release_archive_members(
+        &path,
+        "x86_64-unknown-linux-gnu",
+        &["jackin", "jackin-role"],
+        VERSION,
+    )
+    .expect_err("duplicate archive members must fail closed");
+    assert!(error.to_string().contains("contains duplicate jackin"));
+}
+
+#[test]
+fn rejects_release_archive_with_unexpected_member() {
+    const VERSION: &str = "0.6.4-preview.1+0123456";
+    let directory = tempfile::tempdir().unwrap();
+    let jackin = elf64_x86_64_version_binary("jackin", VERSION);
+    let role = elf64_x86_64_version_binary("jackin-role", VERSION);
+    let path = directory.path().join("release.tar.gz");
+    release_archive(
+        &path,
+        &[
+            ("jackin", &jackin, 0o755, EntryType::Regular),
+            ("jackin-role", &role, 0o755, EntryType::Regular),
+            ("README", b"extra", 0o644, EntryType::Regular),
+        ],
+    );
+
+    let error = verify_release_archive_members(
+        &path,
+        "x86_64-unknown-linux-gnu",
+        &["jackin", "jackin-role"],
+        VERSION,
+    )
+    .expect_err("unexpected archive members must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("unexpected release archive member: README")
+    );
+}
+
+#[test]
+fn rejects_release_archive_path_traversal_member() {
+    const VERSION: &str = "0.6.4-preview.1+0123456";
+    let directory = tempfile::tempdir().unwrap();
+    let jackin = elf64_x86_64_version_binary("jackin", VERSION);
+    let role = elf64_x86_64_version_binary("jackin-role", VERSION);
+    let path = directory.path().join("release.tar.gz");
+    release_archive(
+        &path,
+        &[
+            ("jackin", &jackin, 0o755, EntryType::Regular),
+            ("jackin-role", &role, 0o755, EntryType::Regular),
+            ("../jackin-role", &role, 0o755, EntryType::Regular),
+        ],
+    );
+
+    let error = verify_release_archive_members(
+        &path,
+        "x86_64-unknown-linux-gnu",
+        &["jackin", "jackin-role"],
+        VERSION,
+    )
+    .expect_err("path traversal archive members must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("unexpected release archive member")
+    );
+}
+
+#[test]
+fn rejects_release_archive_directory_in_place_of_binary() {
+    const VERSION: &str = "0.6.4-preview.1+0123456";
+    let directory = tempfile::tempdir().unwrap();
+    let role = elf64_x86_64_version_binary("jackin-role", VERSION);
+    let path = directory.path().join("release.tar.gz");
+    release_archive(
+        &path,
+        &[
+            ("jackin", b"", 0o755, EntryType::Directory),
+            ("jackin-role", &role, 0o755, EntryType::Regular),
+        ],
+    );
+
+    let error = verify_release_archive_members(
+        &path,
+        "x86_64-unknown-linux-gnu",
+        &["jackin", "jackin-role"],
+        VERSION,
+    )
+    .expect_err("directories cannot satisfy binary members");
+    assert!(error.to_string().contains("is not a regular file: jackin"));
+}
+
+#[test]
+fn rejects_release_archive_non_executable_binary_member() {
+    const VERSION: &str = "0.6.4-preview.1+0123456";
+    let directory = tempfile::tempdir().unwrap();
+    let jackin = elf64_x86_64_version_binary("jackin", VERSION);
+    let role = elf64_x86_64_version_binary("jackin-role", VERSION);
+    let path = directory.path().join("release.tar.gz");
+    release_archive(
+        &path,
+        &[
+            ("jackin", &jackin, 0o644, EntryType::Regular),
+            ("jackin-role", &role, 0o755, EntryType::Regular),
+        ],
+    );
+
+    let error = verify_release_archive_members(
+        &path,
+        "x86_64-unknown-linux-gnu",
+        &["jackin", "jackin-role"],
+        VERSION,
+    )
+    .expect_err("non-executable binaries must fail closed");
+    assert!(error.to_string().contains("is not executable: jackin"));
+}
+
+#[cfg(unix)]
+#[test]
+fn verifies_native_version_probe_output_exactly() {
+    const VERSION: &str = "0.6.4-preview.1+0123456";
+    let matching = format!("#!/bin/sh\nprintf 'jackin {VERSION}\\n'\n").into_bytes();
+    verify_runnable_version(&matching, "jackin", VERSION).unwrap();
+
+    let mismatching = format!("#!/bin/sh\nprintf 'jackin {VERSION}-wrong\\n'\n").into_bytes();
+    let error = verify_runnable_version(&mismatching, "jackin", VERSION)
+        .expect_err("a binary with a wrong --version response must fail closed");
+    assert!(error.to_string().contains("output does not equal"));
+}
+
+#[test]
 fn rejects_cross_arch_binary_metadata_mismatch() {
     let mut bytes = vec![0_u8; 20];
     bytes[..4].copy_from_slice(b"\x7fELF");
@@ -266,7 +550,7 @@ fn validates_source_bound_preview_version() {
 }
 
 #[test]
-fn source_checkout_requires_clean_tree_and_fetched_main_identity() {
+fn source_checkout_accepts_admitted_old_sha_after_origin_main_advances() {
     let directory = tempfile::tempdir().unwrap();
     let remote = tempfile::tempdir().unwrap();
     git(remote.path(), &["init", "--bare", "--quiet"]);
@@ -300,6 +584,10 @@ fn source_checkout_requires_clean_tree_and_fetched_main_identity() {
     git(
         directory.path(),
         &["push", "--quiet", "origin", "HEAD:refs/heads/main"],
+    );
+    git(
+        directory.path(),
+        &["checkout", "--quiet", "--detach", &commit],
     );
 
     verify_source_checkout(directory.path(), &source_manifest(commit.clone())).unwrap();
@@ -343,12 +631,25 @@ fn source_checkout_requires_clean_tree_and_fetched_main_identity() {
         &["commit", "--quiet", "--allow-empty", "-m", "advance"],
     );
     let advanced = git(directory.path(), &["rev-parse", "HEAD"]);
-    let error = verify_source_checkout(directory.path(), &source_manifest(advanced.clone()))
-        .expect_err("source not equal to fetched origin/main must fail closed");
-    assert!(error.to_string().contains("origin/main"));
     git(
         directory.path(),
         &["push", "--quiet", "origin", "HEAD:refs/heads/main"],
+    );
+    git(
+        directory.path(),
+        &["checkout", "--quiet", "--detach", &commit],
+    );
+
+    // A queued preview remains bound to its admitted source commit after main
+    // advances. The producer's identity check must not substitute the latest
+    // branch tip for the event SHA.
+    verify_source_checkout(directory.path(), &source_manifest(commit.clone())).unwrap();
+    let error = verify_source_checkout(directory.path(), &source_manifest(advanced))
+        .expect_err("a manifest for another commit must still fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("does not match source checkout HEAD")
     );
 
     git(
@@ -360,7 +661,7 @@ fn source_checkout_requires_clean_tree_and_fetched_main_identity() {
             "http://github.com/jackin-project/jackin.git",
         ],
     );
-    let error = verify_source_checkout(directory.path(), &source_manifest(advanced))
+    let error = verify_source_checkout(directory.path(), &source_manifest(commit.clone()))
         .expect_err("HTTP GitHub remotes must fail closed");
     assert!(error.to_string().contains("GitHub repository URL"));
 }

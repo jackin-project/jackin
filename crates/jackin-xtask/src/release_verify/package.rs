@@ -33,39 +33,39 @@ const MANIFEST_SCHEMA: &str = "velnor.package-release.v1";
 struct PreviewPayload {
     name: &'static str,
     target: &'static str,
-    binary: &'static str,
+    binaries: &'static [&'static str],
 }
 
 const PAYLOADS: [PreviewPayload; 6] = [
     PreviewPayload {
         name: "jackin-aarch64-apple-darwin.tar.gz",
         target: "aarch64-apple-darwin",
-        binary: "jackin",
+        binaries: &["jackin", "jackin-role"],
     },
     PreviewPayload {
         name: "jackin-x86_64-apple-darwin.tar.gz",
         target: "x86_64-apple-darwin",
-        binary: "jackin",
+        binaries: &["jackin", "jackin-role"],
     },
     PreviewPayload {
         name: "jackin-aarch64-unknown-linux-gnu.tar.gz",
         target: "aarch64-unknown-linux-gnu",
-        binary: "jackin",
+        binaries: &["jackin", "jackin-role"],
     },
     PreviewPayload {
         name: "jackin-x86_64-unknown-linux-gnu.tar.gz",
         target: "x86_64-unknown-linux-gnu",
-        binary: "jackin",
+        binaries: &["jackin", "jackin-role"],
     },
     PreviewPayload {
         name: "jackin-capsule-aarch64-unknown-linux-gnu.tar.gz",
         target: "aarch64-unknown-linux-gnu",
-        binary: "jackin-capsule",
+        binaries: &["jackin-capsule"],
     },
     PreviewPayload {
         name: "jackin-capsule-x86_64-unknown-linux-gnu.tar.gz",
         target: "x86_64-unknown-linux-gnu",
-        binary: "jackin-capsule",
+        binaries: &["jackin-capsule"],
     },
 ];
 
@@ -343,12 +343,10 @@ fn verify_source_checkout(source_checkout: &Path, manifest: &PackageManifest) ->
         repository == SOURCE_REPOSITORY,
         "source checkout origin is not {SOURCE_REPOSITORY}: {remote}"
     );
-    let remote_main = git_remote_branch(source_checkout, &remote, "refs/heads/main")?;
-    validate_commit(&remote_main, "origin/main")?;
-    ensure!(
-        remote_main == manifest.source_commit,
-        "package manifest source_commit does not match the live origin/main"
-    );
+    // Admission is pinned to the push event's source SHA. `main` can advance
+    // while a queued producer waits; re-querying its current tip here would
+    // reject the admitted commit and destroy retry stability. The immutable
+    // checkout/manifest identity and repository origin are the authority.
     for name in ["EXPECTED_SOURCE_COMMIT", "VELNOR_SOURCE_COMMIT"] {
         if let Some(expected) = env::var_os(name) {
             let expected = expected
@@ -391,30 +389,6 @@ fn verify_source_index_state(source_checkout: &Path) -> Result<()> {
     Ok(())
 }
 
-fn git_remote_branch(source_checkout: &Path, remote: &str, reference: &str) -> Result<String> {
-    let output = git_output(source_checkout, &["ls-remote", remote, reference])?;
-    let mut lines = output.lines();
-    let line = lines
-        .next()
-        .with_context(|| format!("{remote} did not publish {reference}"))?;
-    ensure!(
-        lines.next().is_none(),
-        "{remote} published multiple results for {reference}"
-    );
-    let mut fields = line.split_whitespace();
-    let commit = fields
-        .next()
-        .with_context(|| format!("{remote} response omitted the object for {reference}"))?;
-    let actual_reference = fields
-        .next()
-        .with_context(|| format!("{remote} response omitted the ref for {reference}"))?;
-    ensure!(
-        fields.next().is_none() && actual_reference == reference,
-        "{remote} response did not identify {reference} exactly"
-    );
-    Ok(commit.to_owned())
-}
-
 fn git_output(source_checkout: &Path, args: &[&str]) -> Result<String> {
     let mut command = crate::cmd::command("git");
     command.arg("-C").arg(source_checkout).args(args);
@@ -446,7 +420,7 @@ fn validate_commit(value: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_preview_version(version: &str, source_commit: &str) -> Result<()> {
+pub(crate) fn validate_preview_version(version: &str, source_commit: &str) -> Result<()> {
     let (base_and_channel, commit_suffix) = version
         .split_once('+')
         .context("preview version is missing its source commit suffix")?;
@@ -686,7 +660,7 @@ fn expected_capsule_targets(
     let mut expected = BTreeMap::new();
     for payload in PAYLOADS
         .iter()
-        .filter(|payload| payload.binary == "jackin-capsule")
+        .filter(|payload| payload.binaries.contains(&"jackin-capsule"))
     {
         let digest = payload_digests
             .get(payload.name)
@@ -729,37 +703,63 @@ fn validate_capsule_manifest(
 }
 
 fn verify_binary(package_dir: &Path, payload: PreviewPayload, version: &str) -> Result<()> {
+    verify_release_archive_members(
+        &package_dir.join(payload.name),
+        payload.target,
+        payload.binaries,
+        version,
+    )
+}
+
+/// Validate all archive members against one target's executable contract.
+/// Exact-name matching rejects traversal paths, links, directories, duplicates,
+/// and unexpected files before any binary is trusted.
+pub(crate) fn verify_release_archive_members(
+    archive_path: &Path,
+    target: &str,
+    binaries: &[&str],
+    version: &str,
+) -> Result<()> {
+    ensure!(!binaries.is_empty(), "archive binary contract is empty");
+    let expected = binaries
+        .iter()
+        .map(|binary| (*binary).to_owned())
+        .collect::<BTreeSet<_>>();
+    ensure!(
+        expected.len() == binaries.len(),
+        "archive binary contract contains duplicates"
+    );
     #[expect(
         clippy::disallowed_methods,
         reason = "preview package verification is host CLI tooling, not a render/runtime thread"
     )]
-    let archive = fs::File::open(package_dir.join(payload.name))
-        .with_context(|| format!("opening {}", payload.name))?;
+    let archive = fs::File::open(archive_path)
+        .with_context(|| format!("opening {}", archive_path.display()))?;
     let decoder = GzDecoder::new(archive);
     let mut tar = Archive::new(decoder);
-    let mut binary = None;
+    let mut actual = BTreeSet::new();
     for entry in tar
         .entries()
-        .with_context(|| format!("reading archive entries from {}", payload.name))?
+        .with_context(|| format!("reading archive entries from {}", archive_path.display()))?
     {
-        let mut entry =
-            entry.with_context(|| format!("reading archive entry from {}", payload.name))?;
+        let mut entry = entry
+            .with_context(|| format!("reading archive entry from {}", archive_path.display()))?;
         let path = entry
             .path()
             .context("reading release archive entry path")?
             .into_owned();
-        if path != Path::new(payload.binary) {
-            continue;
-        }
+        let binary = path
+            .to_str()
+            .filter(|name| expected.contains(*name))
+            .with_context(|| format!("unexpected release archive member: {}", path.display()))?
+            .to_owned();
         ensure!(
-            binary.is_none(),
-            "release archive contains duplicate {}",
-            payload.binary
+            actual.insert(binary.clone()),
+            "release archive contains duplicate {binary}"
         );
         ensure!(
             entry.header().entry_type().is_file(),
-            "release archive member is not a regular file: {}",
-            payload.binary
+            "release archive member is not a regular file: {binary}"
         );
         let mode = entry
             .header()
@@ -767,21 +767,21 @@ fn verify_binary(package_dir: &Path, payload: PreviewPayload, version: &str) -> 
             .context("reading release archive mode")?;
         ensure!(
             mode & 0o111 != 0,
-            "release archive binary is not executable: {}",
-            payload.binary
+            "release archive binary is not executable: {binary}"
         );
         let mut bytes = Vec::new();
         entry
             .read_to_end(&mut bytes)
-            .with_context(|| format!("reading {} from {}", payload.binary, payload.name))?;
-        binary = Some(bytes);
+            .with_context(|| format!("reading {binary} from {}", archive_path.display()))?;
+        verify_binary_metadata(&bytes, target)?;
+        if target_is_runnable(target) {
+            verify_runnable_version(&bytes, &binary, version)?;
+        }
     }
-    let bytes =
-        binary.with_context(|| format!("{} is missing from {}", payload.binary, payload.name))?;
-    verify_binary_metadata(&bytes, payload.target)?;
-    if target_is_runnable(payload.target) {
-        verify_runnable_version(&bytes, payload.binary, version)?;
-    }
+    ensure!(
+        actual == expected,
+        "release archive binary member set is incomplete"
+    );
     Ok(())
 }
 
