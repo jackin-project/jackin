@@ -150,9 +150,8 @@ pub(crate) use self::cursor::{
 pub(crate) use self::gemini::{
     GEMINI_CONSUMER_OAUTH_END, GeminiEntitlement, GeminiProjectQuota,
     gemini_consumer_oauth_retired, gemini_credential_origin, gemini_credential_presence,
-    gemini_error_needs_migration, gemini_migration_action, gemini_oauth_creds_path,
-    gemini_quota_buckets, gemini_snapshot, gemini_snapshot_with_presence, parse_gemini_entitlement,
-    parse_gemini_project_quotas,
+    gemini_migration_action, gemini_oauth_creds_path, gemini_quota_buckets, gemini_snapshot,
+    gemini_snapshot_with_presence, parse_gemini_entitlement, parse_gemini_project_quotas,
 };
 #[expect(
     unused_imports,
@@ -164,8 +163,9 @@ pub(crate) use self::grok::{
     grok_account_label, grok_account_label_or_presence, grok_bearer_token,
     grok_bearer_token_from_entry, grok_binary_path, grok_cycle_label_from_minutes,
     grok_cycle_label_from_reset, grok_rpc_request, grok_rpc_request_payload, grok_snapshot,
-    grok_snapshot_from_rpc_result, grpc_web_data_frames, parse_grok_rest_billing_response,
-    parse_grok_web_billing_response, scan_protobuf,
+    grok_snapshot_from_rpc_result, grok_snapshot_from_rpc_result_with_rate_limit,
+    grpc_web_data_frames, parse_grok_rest_billing_response, parse_grok_web_billing_response,
+    scan_protobuf,
 };
 #[expect(
     unused_imports,
@@ -839,7 +839,9 @@ pub(crate) fn provider_credential_snapshot_with_rate_limit(
             false,
             key_name == jackin_core::XAI_API_KEY_ENV_NAME,
             key_name == jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
-            Err("Grok billing requires an authenticated profile".to_owned()),
+            Err(refresh::ProviderError::from(
+                "Grok billing requires an authenticated profile".to_owned(),
+            )),
         ),
         "codex" => usage_view(UsageViewInput {
             agent: "codex",

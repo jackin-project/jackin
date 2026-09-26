@@ -2939,7 +2939,9 @@ fn grok_snapshot_reports_probe_error_instead_of_presence_gate() {
         false,
         false,
         false,
-        Err("grok agent stdio failed to start: not found".to_owned()),
+        Err(ProviderError::from(
+            "grok agent stdio failed to start: not found".to_owned(),
+        )),
     );
 
     assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
