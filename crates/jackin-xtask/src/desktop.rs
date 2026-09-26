@@ -185,7 +185,6 @@ fn run_desktop_tests(root: &Path) -> Result<()> {
     let xcf = root.join(format!("target/xcframework/{FRAMEWORK_NAME}.xcframework"));
     if !xcf.is_dir() {
         progress("==> XCFramework missing — building");
-        bindings_check(root, DESKTOP_PROFILE)?;
         build_xcframework(root)?;
     }
 
@@ -713,6 +712,7 @@ fn normalize_generated_text(source: &str) -> String {
 }
 
 fn build_xcframework(root: &Path) -> Result<()> {
+    bindings_check(root, DESKTOP_PROFILE)?;
     require_macos("desktop xcframework")?;
 
     progress(format!(
@@ -770,7 +770,7 @@ fn build_xcframework(root: &Path) -> Result<()> {
             "--cargo-arg=--profile".to_owned(),
             format!("--cargo-arg={DESKTOP_PROFILE}"),
         ])
-        .args(["pack", "apple", "--regenerate=false", "--xcframework-only"]);
+        .args(boltffi_pack_apple_args());
     cmd::run_streaming(&mut pack)?;
 
     if !xcframework.is_dir() {
@@ -806,6 +806,10 @@ fn build_xcframework(root: &Path) -> Result<()> {
 
     progress(format!("==> XCFramework ready: {}", xcframework.display()));
     Ok(())
+}
+
+fn boltffi_pack_apple_args() -> [&'static str; 4] {
+    ["pack", "apple", "--regenerate=false", "--xcframework-only"]
 }
 
 fn build_app(root: &Path, version: &str, build: &str) -> Result<()> {
