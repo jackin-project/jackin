@@ -159,6 +159,123 @@ use jackin_core::WorkspaceName;
 use jackin_test_support::FakeRunner;
 use std::collections::HashMap;
 
+#[tokio::test]
+async fn legacy_kept_dind_state_migrates_only_after_identity_and_ownership_verification() {
+    use jackin_core::ContainerRow;
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let dind = "jk-prewarm-dind-dind";
+    let network = "jk-prewarm-dind-net";
+    let state_path = paths.data_dir.join("prewarm-dind.json");
+    std::fs::write(
+        &state_path,
+        serde_json::json!({
+            "schema_version": 1,
+            "dind": dind,
+            "network": network,
+            "certs_volume": "jk-prewarm-dind-certs",
+            "ready_ms": 123,
+            "kept": true,
+            "created_at_ms": 456
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let labels = HashMap::from([
+        ("jackin.managed".to_owned(), "true".to_owned()),
+        ("jackin.kind".to_owned(), "prewarm-dind".to_owned()),
+        ("jackin.prewarm".to_owned(), "true".to_owned()),
+    ]);
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
+            name: dind.to_owned(),
+            id: "daemon-id-legacy".to_owned(),
+            labels: labels.clone(),
+        }]])),
+        inspect_by_id_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        container_id_by_name: std::cell::RefCell::new(HashMap::from([(
+            dind.to_owned(),
+            "daemon-id-legacy".to_owned(),
+        )])),
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            dind.to_owned(),
+            ContainerState::Running,
+        )])),
+        ..Default::default()
+    };
+
+    let migrated = super::launch_dind::ensure_prewarm_state_identity(&paths, &docker)
+        .await
+        .unwrap()
+        .expect("legacy retained container should migrate");
+    assert_eq!(migrated.id(), "daemon-id-legacy");
+    let state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+    assert_eq!(state["schema_version"], 2);
+    assert_eq!(state["dind_id"], "daemon-id-legacy");
+    assert_eq!(state["ready_ms"], 123);
+    assert_eq!(state["certs_volume"], "jk-prewarm-dind-certs");
+
+    let reloaded = super::launch_dind::ensure_prewarm_state_identity(&paths, &docker)
+        .await
+        .unwrap()
+        .expect("migrated state should use the v2 identity path");
+    assert_eq!(reloaded.id(), "daemon-id-legacy");
+    assert_eq!(
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .filter(|operation| operation.starts_with("docker ps -a"))
+            .count(),
+        1,
+        "second load must not repeat schema migration"
+    );
+}
+
+#[tokio::test]
+async fn legacy_kept_dind_state_is_preserved_when_ownership_cannot_be_verified() {
+    use jackin_core::ContainerRow;
+    use jackin_test_support::FakeDockerClient;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let state_path = paths.data_dir.join("prewarm-dind.json");
+    let legacy_state = serde_json::json!({
+        "schema_version": 1,
+        "dind": "jk-prewarm-dind-dind",
+        "network": "jk-prewarm-dind-net",
+        "certs_volume": "jk-prewarm-dind-certs",
+        "ready_ms": 123,
+        "kept": true,
+        "created_at_ms": 456
+    })
+    .to_string();
+    std::fs::write(&state_path, &legacy_state).unwrap();
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
+            name: "jk-prewarm-dind-dind".to_owned(),
+            id: "unverified-id".to_owned(),
+            labels: HashMap::new(),
+        }]])),
+        ..Default::default()
+    };
+
+    let result = super::launch_dind::ensure_prewarm_state_identity(&paths, &docker).await;
+    if let Err(error) = result {
+        assert!(!error.to_string().is_empty());
+    } else {
+        panic!("legacy state without ownership evidence must not migrate");
+    }
+    assert_eq!(std::fs::read_to_string(state_path).unwrap(), legacy_state);
+}
+
 #[test]
 fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
     let sensitive = vec![

@@ -36,7 +36,8 @@ pub struct DindSidecarPrewarm {
 pub(super) struct DindSidecarPrewarmState {
     pub schema_version: u8,
     pub dind: String,
-    pub dind_id: String,
+    #[serde(default)]
+    pub dind_id: Option<String>,
     pub network: String,
     pub certs_volume: String,
     pub ready_ms: u128,
@@ -401,13 +402,11 @@ async fn prewarm_dind_sidecar_container_inner(
     })
 }
 
-async fn ensure_prewarm_state_identity(
+pub(super) async fn ensure_prewarm_state_identity(
     paths: &JackinPaths,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<ContainerHandle>> {
-    let Some(state) = read_prewarmed_dind_state(paths)
-        .map_err(|reason| anyhow::anyhow!("cannot validate retained DinD identity: {reason}"))?
-    else {
+    let Some(state) = load_prewarmed_dind_state_with_identity(paths, docker).await? else {
         let prewarm_dind = crate::instance::naming::dind_container_name(PREWARM_CONTAINER_BASE);
         let inspection = docker.inspect_container_by_name(&prewarm_dind).await;
         return match inspection.handle {
@@ -448,26 +447,84 @@ async fn ensure_prewarm_state_identity(
     }
 }
 
+async fn load_prewarmed_dind_state_with_identity(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<DindSidecarPrewarmState>> {
+    let Some(mut state) = read_prewarmed_dind_state(paths)
+        .map_err(|reason| anyhow::anyhow!("cannot validate retained DinD identity: {reason}"))?
+    else {
+        return Ok(None);
+    };
+    if state.schema_version != 1 || !state.kept {
+        return Ok(Some(state));
+    }
+
+    // Schema 1 stored only mutable names. Recover the daemon ID only when the
+    // exact named row still carries all three Jackin prewarm ownership labels.
+    let rows = docker
+        .list_containers(&[LABEL_MANAGED, LABEL_KIND_PREWARM_DIND], true)
+        .await
+        .context("listing legacy retained DinD containers")?;
+    let matching = rows
+        .iter()
+        .filter(|row| row.name == state.dind)
+        .collect::<Vec<_>>();
+    anyhow::ensure!(
+        matching.len() == 1,
+        "legacy retained DinD identity is ambiguous or missing; state preserved"
+    );
+    let row = matching[0];
+    for label in [LABEL_MANAGED, LABEL_KIND_PREWARM_DIND, LABEL_PREWARM] {
+        let (key, value) = label.split_once('=').unwrap_or((label, ""));
+        anyhow::ensure!(
+            row.labels.get(key).map(String::as_str) == Some(value),
+            "legacy retained DinD ownership labels do not match; state preserved"
+        );
+    }
+    let handle = row.handle().context("legacy retained DinD has no ID")?;
+    anyhow::ensure!(
+        matches!(
+            docker.inspect_container_by_id(&handle).await,
+            ContainerState::Running
+        ),
+        "legacy retained DinD is not running; state preserved"
+    );
+    state.schema_version = 2;
+    state.dind_id = Some(handle.id().to_owned());
+    persist_prewarmed_dind_state(paths, &state)?;
+    Ok(Some(state))
+}
+
 pub fn write_prewarmed_dind_state(
     paths: &JackinPaths,
     warmed: &DindSidecarPrewarm,
 ) -> anyhow::Result<()> {
-    std::fs::create_dir_all(&paths.data_dir)
-        .with_context(|| format!("creating {}", paths.data_dir.display()))?;
     let state = DindSidecarPrewarmState {
         schema_version: 2,
         dind: warmed.dind.clone(),
-        dind_id: warmed.dind_id.clone(),
+        dind_id: Some(warmed.dind_id.clone()),
         network: warmed.network.clone(),
         certs_volume: warmed.certs_volume.clone(),
         ready_ms: warmed.ready_ms,
         kept: warmed.kept,
         created_at_ms: current_time_ms(),
     };
+    persist_prewarmed_dind_state(paths, &state)
+}
+
+fn persist_prewarmed_dind_state(
+    paths: &JackinPaths,
+    state: &DindSidecarPrewarmState,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(&paths.data_dir)
+        .with_context(|| format!("creating {}", paths.data_dir.display()))?;
     let path = prewarmed_dind_state_path(paths);
-    let json = serde_json::to_vec_pretty(&state)?;
-    std::fs::write(&path, json).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
+    let temp = path.with_extension("json.migrating");
+    let json = serde_json::to_vec_pretty(state)?;
+    std::fs::write(&temp, json).with_context(|| format!("writing {}", temp.display()))?;
+    std::fs::rename(&temp, &path)
+        .with_context(|| format!("atomically replacing {}", path.display()))
 }
 
 fn read_prewarmed_dind_state(
@@ -521,7 +578,7 @@ fn prewarmed_dind_state_detail(reason: &str, state: &DindSidecarPrewarmState) ->
 }
 
 fn prewarmed_dind_expected_handle(state: &DindSidecarPrewarmState) -> Option<ContainerHandle> {
-    ContainerHandle::new(state.dind.clone(), state.dind_id.clone()).ok()
+    ContainerHandle::new(state.dind.clone(), state.dind_id.clone()?).ok()
 }
 
 #[cfg(not(test))]
@@ -566,7 +623,7 @@ pub(crate) fn prewarmed_dind_state_container_name(paths: &JackinPaths) -> Option
     let Ok(Some(state)) = read_prewarmed_dind_state(paths) else {
         return None;
     };
-    (state.schema_version == 2 && state.kept).then_some(state.dind)
+    ((state.schema_version == 1 || state.schema_version == 2) && state.kept).then_some(state.dind)
 }
 
 fn record_prewarm_adoption_skip(reason: &str) {
@@ -598,7 +655,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         record_prewarm_adoption_skip("locked");
         return None;
     };
-    let state = match read_prewarmed_dind_state(paths) {
+    let state = match load_prewarmed_dind_state_with_identity(paths, docker).await {
         Ok(Some(state)) if state.schema_version == 2 && state.kept => state,
         Ok(Some(_)) => {
             jackin_diagnostics::active_timing_done(
@@ -607,7 +664,6 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 Some("skip:state-invalid"),
             );
             emit_prewarmed_dind_adoption("skipped", "state-invalid");
-            remove_prewarmed_dind_state(paths);
             return None;
         }
         Ok(None) => {
@@ -619,14 +675,14 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             emit_prewarmed_dind_adoption("skipped", "state-missing");
             return None;
         }
-        Err(reason) => {
+        Err(error) => {
+            let reason = error.to_string();
             jackin_diagnostics::active_timing_done(
                 jackin_diagnostics::DiagnosticStage::Sidecar,
                 "adopt_prewarmed_dind",
                 Some(&format!("skip:{reason}")),
             );
-            emit_prewarmed_dind_adoption("skipped", reason);
-            remove_prewarmed_dind_state(paths);
+            emit_prewarmed_dind_adoption("skipped", &reason);
             return None;
         }
     };
