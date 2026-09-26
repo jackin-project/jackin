@@ -589,8 +589,48 @@ fn render_env_file(entries: &[(String, String)]) -> std::io::Result<String> {
     Ok(output)
 }
 
-/// Retain non-sensitive `JACKIN_*` metadata inline and remove every other env
-/// value from container-runtime argv for host-only env-file transport.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SafeMetadataEnv {
+    DindHostname,
+    ContainerName,
+    InstanceId,
+    Role,
+    HostVersion,
+    GitCoauthorTrailer,
+    GitDco,
+    TelemetryLevel,
+    InvocationId,
+    NetworkMode,
+    AllowedHosts,
+    NetworkEnforcement,
+    Sudo,
+    CapsuleOtlpCoverage,
+}
+
+impl SafeMetadataEnv {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            jackin_core::JACKIN_DIND_HOSTNAME_ENV_NAME => Some(Self::DindHostname),
+            jackin_core::JACKIN_CONTAINER_NAME_ENV_NAME => Some(Self::ContainerName),
+            jackin_core::JACKIN_INSTANCE_ID_ENV_NAME => Some(Self::InstanceId),
+            jackin_core::JACKIN_ROLE_ENV_NAME => Some(Self::Role),
+            "JACKIN_HOST_VERSION" => Some(Self::HostVersion),
+            jackin_core::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME => Some(Self::GitCoauthorTrailer),
+            jackin_core::JACKIN_GIT_DCO_ENV_NAME => Some(Self::GitDco),
+            "JACKIN_TELEMETRY_LEVEL" => Some(Self::TelemetryLevel),
+            "JACKIN_INVOCATION_ID" => Some(Self::InvocationId),
+            jackin_core::JACKIN_NETWORK_MODE_ENV_NAME => Some(Self::NetworkMode),
+            jackin_core::JACKIN_ALLOWED_HOSTS_ENV_NAME => Some(Self::AllowedHosts),
+            jackin_core::JACKIN_NETWORK_ENFORCEMENT_ENV_NAME => Some(Self::NetworkEnforcement),
+            jackin_core::JACKIN_SUDO_ENV_NAME => Some(Self::Sudo),
+            jackin_diagnostics::CapsuleExportCoverage::ENV_NAME => Some(Self::CapsuleOtlpCoverage),
+            _ => None,
+        }
+    }
+}
+
+/// Retain exact safe launch metadata inline and route every other env value
+/// through host-only env-file transport.
 pub(crate) fn extract_host_env_entries(
     args: &mut Vec<&str>,
 ) -> std::io::Result<Vec<(String, String)>> {
@@ -616,7 +656,7 @@ pub(crate) fn extract_host_env_entries(
                 "container env entry is not a name/value pair",
             ));
         };
-        if name.starts_with("JACKIN_") {
+        if SafeMetadataEnv::from_name(name).is_some() {
             inline.extend([argument, entry]);
         } else {
             host_only.push((name.to_owned(), value.to_owned()));
