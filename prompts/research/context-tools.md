@@ -1,43 +1,39 @@
-# Current token-optimization tools research brief
-
-> **Current-state rule:** Verify one current cutoff, publish only the latest value and state found at
-> that cutoff, and replace superseded findings instead of preserving them. Git history is the only
-> archive. If a current value cannot be verified, report it as unknown rather than using an older
-> value.
+# Current context-tool research
 
 ## Mission
 
-Re-research the latest versions of **Caveman**, **RTK**, **Headroom**, and **lean-ctx**. Find other fast-growing tools in the same token-optimization market. Produce a clean, current, objective comparison that explains what each tool changes, what benefit it can provide, where it is a poor fit, and how strong the supporting evidence is.
+Maintain the active comparison of Caveman, RTK, LeanCTX, Ponytail, Headroom, and LemonCrow, and a concrete Jackin build/embed/adapt/bundle decision. Update the existing dossier under `docs/content/research/context/tools/` and reconcile its implementation recommendation with the context-engine hub and reuse matrix.
 
-## Required questions
+## Current-state rule
 
-1. What exact layer does each tool affect: model output, shell observations, API-wire input, native file reads, retrieval, history, tool schemas, or prompt representation?
-2. Is the transform deterministic, lossy, reversible, cache-safe, and local?
-3. What is the latest stable release and current maintenance state?
-4. Which reported savings are payload ratios, which are end-to-end token changes, and which are accepted-task cost changes?
-5. Did an independent evaluator reproduce the claim while holding task quality constant?
-6. What fixed overhead, latency, compute, host writes, telemetry, licensing, and operational risks accompany the saving?
-7. Which rising tools add a genuinely different mechanism rather than another wrapper around the same one?
-8. Which workload is each tool good for, and what measurement should precede adoption?
+Use one explicit UTC cutoff. Resolve the latest stable release from live primary metadata, then inspect that tag's source, license, installation boundary, recovery behavior, and available APIs. Keep product, binary, crate, SDK, host, and model versions distinct. Unavailable current facts stay unknown; do not substitute an older release or assume an unpublished package is on a registry.
 
-## Evidence policy
+Replace superseded conclusions in active pages; git is the archive. Do not retain a historical release narrative or project old benchmark percentages into current performance tables. Original older studies may be linked for methodology and eligibility, with no transfer of their numerical results to current code. A benchmark file carried forward by a release is not new execution evidence.
 
-- **T1 — observed mechanism or metadata:** source, release artifacts, registries, reproducible local inspection.
-- **T2 — controlled independent evidence:** paired or randomized task runs on the current release with version, model, quality, and token classes reported.
-- **T3 — observational evidence:** replay or production field data without a randomized control.
-- **T4 — first-party claim:** vendor benchmark, README percentage, self-counter, or projection.
+## Questions
 
-Percentages are never moved between denominators. A reduction in one large JSON payload is not a session reduction; a session-token reduction is not automatically a bill or subscription-quota reduction; raw-token savings do not prove accepted-task efficiency when retries, extra turns, quality, and prompt-cache behavior differ. Results from superseded tool versions are excluded rather than projected onto current code.
+- Which boundary changes: instructions, implementation choices, native tool result, shell execution, retrieval, recovery, history, or provider request?
+- What is actually deterministic, lossy, byte-exact, recoverable, cache-sensitive, local, or model-dependent?
+- Which current code exposes reusable Rust APIs, which is only a CLI, and which facade is preview or unpublished?
+- Does direct reuse work before extracting or rewriting? What specific boundary prevents it, and could an upstream contribution fix it?
+- Which native agent guarantees must survive: approvals, execution identity, read-before-edit, worktree roots, streaming, auth, and resume?
+- Which independent current-release task evidence exists? Are raw tasks, usage receipts, trajectories, patches, and graders publicly available?
+- Does the experiment compare real alternative agent trajectories, or only a fixed request before/after reduction?
+- What are cold/warm startup, schema, recovery, extra-turn, cache, CPU/RAM, and parallel-state costs?
+- Which exact capabilities should be automatically installed and activated, and what conformance/outcome gates permit each default?
+
+## Evidence classes
+
+T1: inspected metadata/source/API; label executed conformance separately. T2: independent controlled current-release accepted-task evidence. T3: observational or replay evidence without a controlled alternative agent trajectory. T4: first-party or competitor-owned benchmarks and claims. Record independence, version match, raw-data availability, denominator, and quality gate separately.
+
+Neither stars, shorter output, parser determinism, a health check, a source license, nor reversible storage proves net benefit. No significant quality difference is not equivalence. Never credit a bounded native read as if it would have dumped a whole file. No speculative subscription-quota conversion.
 
 ## Deliverables
 
-- Current release/adoption register with one declared verification cutoff and direct sources.
-- Equal-depth comparison of the four named tools.
-- Independent-evidence table and explicit conflicts with vendor claims.
-- Rising-tools watchlist separated into direct compressors, retrieval/prevention tools, and adjacent packers.
-- Workload-based selection guide, composition rules, and a neutral benchmark protocol.
-- No historical release narrative, superseded architecture, or benchmark from an older tool version in the active dossier.
+- Current six-tool release register and equal-depth design pages with primary source links.
+- Boundary-based comparison, explicit licensing/reuse choices, and composition/ownership rules.
+- Evidence eligibility ledger and reproducible current-version accepted-task protocol, including negative cases and unavailable proof.
+- Jackin-specific implementation sequence tied to real repository anchors, automatic setup, raw bypass, recovery, concurrency, and rollout gates.
+- Updated sidebar and reconciled context-engine overview/reuse matrix; no duplicate disconnected report.
 
-## Stop condition
-
-The refresh is complete only when every active page describes the state at the declared current cutoff, superseded snapshots have been retired, every load-bearing external claim has a direct URL, the docs/research gates pass, and the result states uncertainty instead of manufacturing a universal winner.
+Keep adjacent tools outside the release ranking unless separately reverified. Read repository instructions and PR guidelines. Use available subagents for substantive independent workstreams, but never claim unavailable delegation occurred. Do not execute paid benchmark traffic without authorization. Report precisely which source reviews, builds, tests, and host probes actually ran.

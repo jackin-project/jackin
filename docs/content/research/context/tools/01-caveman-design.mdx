@@ -1,122 +1,62 @@
 ---
-title: "01 — Caveman v2: current design"
-description: "Current Caveman design, output-compression mechanism, installation boundary, evidence, risks, and best-fit workloads."
+title: "01 — Caveman: current design"
+description: "Caveman 2.7.0: separate narration and input interventions, licensing, evidence, and Jackin integration."
 ---
 
 ## Summary
 
-Caveman now combines an effective terse-output register with a broader input stack, but those mechanisms have different evidence, risks, and integration boundaries.
-Cutoff: **2026-08-12**. Current stable: [v2.0.0](https://github.com/JuliusBrussee/caveman/releases/tag/v2.0.0), released 2026-08-11.
-
-Caveman now contains **two distinct token interventions**:
-
-1. an output-register skill that instructs the model to write terse prose; and
-2. a local input-compression stack—engine, proxy, MCP server, CLI/SDK, recovery store, and optional representation transforms.
-
-Any current assessment must separate these mechanisms and their denominators.
+Cutoff: **2026-09-23 UTC**. Reviewed release: [Caveman v2.7.0](https://github.com/JuliusBrussee/caveman/releases/tag/v2.7.0), with the release's **bin-v1.1.7** runtime. Caveman is two interventions, not one: a response-style skill and an input-processing stack. Jackin should evaluate these separately. A useful narration policy does not justify installing a provider proxy.
 
 ## Question and scope
 
-What do Caveman v2’s output register and input-compression stack each change, and what evidence supports either mechanism?
+Which Caveman capabilities belong in an automatically configured coding-agent environment, and which require separate compatibility, quality, and distribution decisions?
 
 ## Method
 
-The review fixes Caveman to v2.0.0 at the dossier cutoff, inspects upstream release material and source, separates output and input mechanisms, and grades release-specific outcome evidence independently.
+Inspect the release and tagged licensing map; distinguish the skill, engine-linked binaries, wrappers, and client SDKs. Mechanism evidence is not a new task benchmark. Study eligibility is recorded in [07 — Evidence](/research/context/tools/07-evidence-and-claims/).
 
 ## Findings
 
-### Current facts
+### Mechanisms and boundaries
 
-| Field | Current value |
-|---|---|
-| Repository | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) |
-| Stable release | [v2.0.0](https://github.com/JuliusBrussee/caveman/releases/tag/v2.0.0) |
-| Adoption snapshot | 97,512 stars / 240 subscribers / 5,622 forks / 470 open issues and PRs |
-| Output layer | Caveman skill: lite/full/ultra and wenyan variants, with exact-content and clarity guards |
-| Input layer | Type-aware Go engine, proxy, MCP, SDK/CLI, CCR recovery, TOON and image/pixel options |
-| License | Skill, CLI, SDK, kit, evals, contracts, and catalog: MIT. Engine, proxy, MCP, shrink, cavemem-core, and platform: BSL-1.1 with delayed Apache-2.0 conversion |
-| Default safety posture | Parse/store/not-smaller failures pass through; exact originals recoverable by reference |
+| Surface | What it changes | Appropriate measurement |
+|---|---|---|
+| Skill / instruction asset | Visible narration and response style | Clarity, output tokens, entire task cost, correction turns |
+| Engine / MCP / proxy | Selected input representations and recovery references | Reach, fidelity, recovery, cache tiers, accepted-task outcomes |
+| Host wrapper | Installation, hooks, endpoint routing, local state | Configuration ownership, activation, credentials, rollback |
 
-Metadata source: [GitHub API](https://api.github.com/repos/JuliusBrussee/caveman). License boundaries: [LICENSING.md](https://github.com/JuliusBrussee/caveman/blob/v2.0.0/LICENSING.md).
+The [release notes](https://github.com/JuliusBrussee/caveman/releases/tag/v2.7.0) describe ownership-tracked native skill installation, config-home handling, endpoint validation before credential routing, per-request accounting, and recovery-store locking fixes. They also state that Codex shell rewriting was removed because it interfered with saved approvals. This is a concrete reason not to equate successful installation with preserved host semantics.
 
-### Current architecture
+The release distinguishes repository, binary, CLI, SDK, and middleware versions. Some npm publications are marked pending. Pin the artifact actually obtained; do not infer registry availability from a GitHub tag or assign the product version to every component.
 
-```text
-output path
-  model decoder ── current Caveman skill ── shorter visible narration
+### Reuse and licensing
 
-input path
-  agent/tool payload
-      ↓
-  local proxy / MCP / SDK
-      ↓
-  type detection and routing
-      ↓
-  JSON | logs | code | diff | search | HTML | tables | config |
-  terminal | tool schemas | TOON | accessibility | repetition
-      ↓
-  shorter-only check + CCR reference
-      ↓
-  model context
-```
+The tagged [licensing map](https://github.com/JuliusBrussee/caveman/blob/v2.7.0/LICENSING.md) assigns MIT to the skill and several adoption/client surfaces, and BSL-1.1 to the compression engine and engine-linked proxy, MCP, browser, and recovery components. Its additional grant distinguishes first-party use from third-party hosted, managed, or embedded services.
 
-The [engine documentation](https://github.com/JuliusBrussee/caveman/blob/v2.0.0/engine/README.md) describes fourteen routed compressor families. Compression is deterministic at this layer; the model does not summarize the payload. The store keeps exact originals behind compact references. An input cap and CCR capacity cap bound local resource use; parse errors, storage failures, and non-smaller outputs return the original content.
+An MIT client does not relicense the engine it invokes. A separate process does not by itself settle the distribution boundary. Review the exact Jackin distribution model before shipping engine-linked functionality; this dossier is not a legal clearance.
 
-The [proxy documentation](https://github.com/JuliusBrussee/caveman/blob/v2.0.0/proxy/README.md) describes a local base-URL swap and a record-only pass-through mode. A proxy remains an integrity boundary: it sees requests, may change cache geometry, and must preserve provider semantics.
+### Evidence
 
-### Current default stack
-
-The v2 README presents `caveman claude` as the full wrapper: structured compression, TOON when smaller, MCP integration, and output shrinking. `--off` provides a pass-through control. Pixel mode re-encodes text as images only for gated models; it inherits model-legibility and modality risks similar to pxpipe.
-
-The output skill and input engine can be enabled independently. That separation is necessary for attribution: otherwise a lower total could come from shorter narration, smaller observations, changed agent behavior, or all three.
-
-### Current evidence
-
-The current release ships a reproducible first-party [wrap benchmark](https://github.com/JuliusBrussee/caveman/blob/v2.0.0/docs/WRAP-BENCHMARK.md): six deterministic 60–95 KB tool-output fixtures, three repetitions per fixture, pinned agent/model, and exact-answer checks. The reported Caveman arm reduces provider-reported input 33.2% with 18/18 exact answers. This is useful fixture evidence, not an independent real-repository accepted-task benchmark.
-
-No independent end-to-end evaluation of **v2.0.0** was found by the cutoff. Results tied only to earlier skill releases are intentionally not carried into this current-only dossier.
+No independent, release-matched accepted-task evaluation of this combined release was established in this review. The JetBrains skill study is not a test of this input stack or this exact release. Current release test counts are upstream reports, not tests executed by this review. Retirement of unmeasured stats claims improves reporting but is not itself a savings result.
 
 ## Implications for jackin❯
 
-### Benefits
+**Best part:** optional concise narration with exact-content and task-completeness protections. Ship a reviewed instruction asset only to suitable roles, or adapt a short policy and treat that adaptation as a new experimental treatment. Preserve identifiers, commands, requirements, error details, and requested explanations.
 
-- Only named tool with a first-class output skill **and** a newly integrated input engine.
-- Deterministic, content-typed compression instead of one generic summarizer.
-- Exact-original recovery through CCR.
-- Shorter-only and fail-closed pass-through guards reduce silent corruption risk.
-- Local proxy/engine path; multiple agent wrappers.
-- `--off` and record-only controls support an honest local A/B.
+**Integration choice:** no Rust engine crate was established here. Native instruction delivery is preferable to adopting Caveman's global installer. Keep any full-engine/proxy experiment independently selectable, license-reviewed, and separate from the narration arm.
 
-### Best fit
-
-Use the **skill** when visible narration is the measured waste and terse language remains clear. Test the **v2 engine** when large JSON, logs, code/search output, terminal output, or tool schemas dominate fresh input and local recovery is required.
-
-Do not adopt the full stack merely because the two mechanisms share a repository. Enable one layer at a time, compare against `--off`, and require unchanged task acceptance plus successful raw recovery.
-
-### Current verdict
-
-Caveman v2 is the largest architectural change in the named set. It is no longer accurately described as “a prompt, not a program.” The output skill remains the lightest intervention; the input engine is a new, broad competitor to Headroom and lean-ctx. Its current mechanism is credible and well-guarded, but the latest release has only first-party fixture evidence. Status: **promising, test locally, not yet proven generally**.
-
-Next: [02 — Headroom v0.34.0](/research/context/tools/02-headroom-design/).
+**Default decision:** do not impose a stylized dialect, suppress reasoning effort, or route credentials through the engine automatically. The [integration plan](/research/context/tools/11-jackin-integration/) defines a compatibility-qualified automatic profile instead.
 
 ## Limitations and unknowns
 
-### Costs and risks
-
-- v2.0.0 is one day old at the cutoff; operational maturity is unproven.
-- Product name hides two interventions; combined counters can obscure causality.
-- Engine-side code is BSL-1.1, not MIT/Apache today. Hosted resale has a commercial boundary.
-- Proxy/MCP/wrapper installation expands the trusted path and may overlap existing hooks.
-- CCR is local state with finite capacity and no eviction in the documented current engine; operators must monitor growth/failure behavior.
-- TOON and pixel transforms can change model comprehension even when byte recovery exists outside the active prompt.
-- The current fixture benchmark is vendor-owned and narrow.
+Shorter narration can change the agent's next actions; it is not merely cosmetic. A recoverable representation may still hide the fact that recovery is needed. Provider streaming, cache behavior, host approvals, and component-specific package availability require executable conformance tests on the distributed build.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Primary release and tagged-license sources are linked inline. Older studies are eligibility checks, not current savings estimates.
 
 ## Related work
 
-- [Token-optimization tools dossier](/research/context/tools/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Context engine](/research/context/engine/)
+- [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Composition](/research/context/tools/06-combining/)
+- [Release register](/research/context/tools/08-current-release-register/)

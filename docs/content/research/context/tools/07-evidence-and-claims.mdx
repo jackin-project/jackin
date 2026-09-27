@@ -1,135 +1,116 @@
 ---
-title: "07 — Current evidence and evaluation"
-description: "Evidence ledger, claim-quality rules, counterfactual limits, and neutral evaluation protocol for token-optimization tools."
+title: "07 — Evidence and acceptance protocol"
+description: "Current-release evidence eligibility, independent-study limits, open-data requirements, and a reproducible six-tool Jackin evaluation."
 ---
 
 ## Summary
 
-Current tool claims support mechanism comparisons, not universal savings: accepted-task A/B evidence remains sparse and version-specific.
-Cutoff: **2026-08-12**. This ledger admits tool outcome evidence only when it tests the current stable release or clearly states that the exact version is undisclosed. Older-version outcomes are not treated as current tool evidence.
+Cutoff: **2026-09-23 UTC**. This review established current mechanisms, not a current six-way performance winner. No independent, release-matched accepted-task experiment for the six entries in the [register](/research/context/tools/08-current-release-register/) was established. A new release containing an old benchmark document does not make the experiment current.
 
 ## Question and scope
 
-What current outcome evidence supports each tool, and which claims remain mechanism demonstrations rather than accepted-task proof?
+What constitutes proof that an optimization helps Jackin, and which apparent validations fail that bar?
 
 ## Method
 
-The ledger accepts current-release outcome evidence or explicitly version-undisclosed field evidence, grades source independence and counterfactual quality, and rejects payload ratios as task savings.
+Prefer original studies, open task artifacts, tagged source, and release metadata. Require a matching tool version, configuration, host, model, reasoning level, workload, baseline, and grader before assigning a current performance claim. Older-release outcomes are excluded rather than projected forward. Their original sources can inform test design without entering the current ranking.
+
+This refresh used direct repository and public-source reads. No delegated research runtime was available; no independent subagent review, paid model benchmark, complete upstream compilation, or installed-host conformance run is claimed.
 
 ## Findings
 
 ### Current evidence ledger
 
-| Tool | Current stable | Current outcome evidence found | Tier | Objective conclusion |
-|---|---:|---|---|---|
-| Caveman | v2.0.0 | Current first-party six-fixture [wrap benchmark](https://github.com/JuliusBrussee/caveman/blob/v2.0.0/docs/WRAP-BENCHMARK.md): pinned setup, three reps, exact-answer checks, 33.2% reported input reduction | T4 outcome; T1 mechanism | Useful reproducible fixture evidence; no independent current accepted-task A/B |
-| Headroom | v0.34.0 | Current release tests, payload benchmarks, counters, and a competitor-owned arm in Caveman's current benchmark | T4 outcome; T1 mechanism | Broad mechanism established; no independent v0.34.0 end-to-end result found |
-| RTK | v0.45.0 | Current command examples and gross `gain` counter | T4 outcome; T1 mechanism | Filtering works; no independent v0.45.0 accepted-task result found |
-| lean-ctx | v3.9.18 | Current public [field report](https://wavect.io/blog/lean-ctx-agency-experience/) is observational and does not name exact version | T3, version-unspecified | Supports discovery/raw-verification workflow; does not prove v3.9.18 causality |
-| pxpipe | v0.13.1 | Current repository counters and vendor tests | T4 outcome; T1 mechanism | Modality mechanism is inspectable; current independent task proof absent |
-| Context Mode | v1.0.169 | Current repository claims/counters | T4 outcome; T1 mechanism | Sandbox/retrieval mechanism is clear; current independent release-specific proof absent |
-| Paritok | v1.3.3 tag | Current first-party model card/SWE-bench compression result | T4 | Reports both compression and quality loss; independent replication absent |
-| jCodeMunch | v1.108.271 | Current release's Codex net-token benchmark is negative/inconclusive | T4, negative | Do not convert payload-retrieval ratios into current task savings |
+| Current candidate | Established by this review | Not established |
+|---|---|---|
+| Caveman 2.7.0 | Release/component split, host changes, tagged license boundary | Current skill-only or full-stack accepted-task advantage |
+| RTK 0.49.0 | Released recall and parser corrections; CLI manifest | Current task savings or independent execution of its regression corpus |
+| LeanCTX 3.10.2 | Engine/facade source; preview API; withdrawn historical benchmarks | Current controlled outcome gain for selected reads or full runtime |
+| Ponytail 4.10.0 | Current policy and host adapter changes | Quality equivalence or savings for this release or Jackin's adaptation |
+| Headroom 0.38.0 | Real exported Rust transforms and feature boundary | Build portability, latency envelope, current library/proxy outcome benefit |
+| LemonCrow 0.7.4 | Engine-source presence, bounded lock, maintainer-confirmed worktree fix | Independent current runtime advantage or complete build reproduction |
 
-“No current independent benchmark found” is a research result. It is more accurate than borrowing a result from superseded code.
+Sources: each current design page; [LeanCTX benchmark policy](https://github.com/yvgude/lean-ctx/blob/v3.10.2/BENCHMARKS.md), [LemonCrow benchmark provenance](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/BENCHMARKS.md).
 
-### Current general evidence
+### External validation eligibility
 
-Two recent papers remain relevant because they test mechanisms, not old releases:
+| Original source | What makes it useful | Why it does not qualify today's default |
+|---|---|---|
+| [JetBrains: RTK](https://blog.jetbrains.com/ai/2026/07/rtk-claude-code-token-savings/) | Paired task costs, effort sensitivity, reach and native-truncation analysis | Superseded RTK release and different host/model treatment |
+| [JetBrains: Ponytail](https://blog.jetbrains.com/ai/2026/07/ponytail-skill-claude-tested/) | Explicit policy activation and paired task outcomes | Superseded release; emulated delivery differs from some full plugin behaviors; not a security-equivalence test |
+| [JetBrains: Caveman](https://blog.jetbrains.com/ai/2026/07/speak-to-ai-agents-like-cavemen-tosave-tokens/) | Distinguishes visible output, cost, and outlier sensitivity | Skill experiment, not the current full input runtime or a six-way test |
+| [Quesma: RTK cost study](https://quesma.com/blog/does-rtk-make-ai-coding-cheaper/) | Independent repeated terminal-heavy tasks, cache-aware costs, task-weighting analysis | Tests a superseded RTK release; trajectories offered on request, not verified as an openly downloadable complete dataset here |
+| [Dasein benchmark adapter](https://github.com/daseinlabs/code-compression-bench/blob/master/arms/headroom.py) | Inspectable actual launch configuration | Explicit token-mode proxy; cannot qualify current selected-transform or cache-preserving treatment |
+| [LemonCrow benchmark repository](https://github.com/lemoncrow-lab/benchmarks) | Public author-produced data and trajectory/patch artifacts | First-party, historical treatment; openness is not independent replication |
 
-- [CAVEWOMAN](https://arxiv.org/abs/2606.24083) separates linguistic input and output compression across eight models, five datasets, and five reduction levels. Output compression usually reduced realized cost; linguistic input compression increased mean net cost and damaged accuracy. This supports treating Caveman's output skill and v2 input engine as different interventions. It does not test tool-aware recoverable coding-agent compression.
-- [Notation Matters](https://arxiv.org/abs/2605.29676) tests TOON/TRON in four agentic benchmarks and five open models. Token reductions came with accuracy loss, and multi-turn parse failures could cascade. This is directly relevant to any current product enabling compact notation, but does not prove a specific implementation unsafe.
+The JetBrains articles do not evaluate LemonCrow. A positive result for a policy does not validate another product that combines related ideas. A competitor-published benchmark can be useful evidence, but its interests, version pins, actual adapter, exclusions, and raw data need inspection. No superseded performance percentage is reused as a current estimate.
 
-### Claim hygiene
+### Evidence classes
 
-Every percentage must name five things:
+**T1:** release/source/API evidence, with executed conformance explicitly separated from inspection. **T2:** independent controlled current-release task outcomes. **T3:** observational reports or fixed-trajectory replay without a real alternative agent run. **T4:** first-party or competitor-owned experiments and claims. Openness, release match, and experimental control are separate dimensions, not one score.
 
-1. **version** — exact tool build;
-2. **denominator** — payload, fresh input, total tokens, bill, quota, or accepted task;
-3. **coverage** — which traffic the tool could touch;
-4. **quality gate** — tests, correctness, human review, or non-inferiority bound;
-5. **counterfactual** — same task/model/cache/repository state without the tool.
-
-Without all five, the number is discovery evidence only.
-
-### Why tool counters are insufficient
-
-Local counters usually compute something like:
-
-```text
-raw payload estimate − emitted payload estimate = gross saved
-```
-
-They cannot see the alternative future. A shorter result may cause extra searches, raw reruns, longer reasoning, changed cache reads, or a wrong edit. A correct task may finish sooner. Only paired task runs measure that net path.
-
-### Current neutral bake-off
-
-Use the exact latest releases in the [current register](/research/context/tools/08-current-release-register/). Pin the agent, model, effort, repository commit, tool configuration, timeouts, and provider cache policy.
-
-### Arms
-
-```text
-A  no optimization tool
-B  Caveman skill only
-C  Caveman v2 input only
-D  Headroom selected-input mode
-E  RTK
-F  lean-ctx selected-read mode
-G  one rising tool justified by the traced bottleneck
-```
-
-Do not test stacked tools until individual arms establish benefit.
-
-### Workload
-
-- Real tasks sampled across small fixes, repository discovery, test/build failure, refactor, docs, structured-data inspection, and long-session continuation.
-- Same starting repository state per run.
-- Randomized arm order and multiple repetitions.
-- Network and tool permissions identical.
-- Predeclared acceptance tests plus review of exact diff behavior.
-
-### Measurements
-
-| Class | Required measurement |
-|---|---|
-| Quality | Accepted-task rate, tests, review, regression severity |
-| Tokens | Fresh input, cache write, cache read, reasoning, visible output |
-| Behavior | Turns, tool calls, raw recoveries, rereads, retries, compactions |
-| Runtime | Wall time, compressor latency, local CPU/GPU/RAM, store growth |
-| Self-cost | Skill prompt, MCP schema, injected metadata, daemon/proxy traffic |
-| Reliability | Bypass success, failure passthrough, exact recovery, hook conflicts |
-| Statistics | Paired median delta, dispersion/confidence interval, failure examples |
-
-### Decision metric
-
-Keep a tool only when:
-
-```text
-tokens or subscription quota per accepted task decreases
-AND quality is non-inferior
-AND failure recovery and operational policy pass
-```
-
-Payload ratios, GitHub stars, and gross self-counters are not substitutes.
+A replay can prove how many bytes a transform removes on that captured trajectory. It cannot prove what the agent would subsequently do. A health endpoint can prove a process responds, not that the intended transform ran. Source parity can prove agreement with an implementation, not semantic fidelity.
 
 ## Implications for jackin❯
 
-### Current evidence verdict
+### Reproducible arms
 
-The latest releases are moving faster than independent evaluation. Caveman v2 has the clearest current reproducible fixture benchmark; lean-ctx has the strongest current public field observation, but no exact version; Headroom and RTK have well-inspected current mechanisms without independent latest-release task evidence. Therefore the objective answer remains conditional: **trace, isolate one layer, run a current-version A/B, keep only measured net benefit**.
+Hold the model and reasoning level fixed. Keep the actual upstream configurations distinct from the proposed Jackin integrations:
 
-Next: [08 — Current release register](/research/context/tools/08-current-release-register/).
+| Arm | Treatment |
+|---|---|
+| A | Native agent, no optimizer |
+| B | Actual Caveman skill only |
+| C | Actual Ponytail policy/plugin with recorded activation |
+| D | Restrained Jackin-native narration/reuse policy |
+| E | RTK current executable with exact command/retriever configuration |
+| F | Headroom selected Rust transforms, ML disabled initially |
+| G | Headroom full proxy in an explicitly recorded cache-oriented configuration |
+| H | LeanCTX restricted read/search/symbol/outline backend |
+| I | LemonCrow restricted code-search/read backend |
+| J | LemonCrow full upstream runtime/persona |
+| K | Caveman input stack only, subject to license and protocol approval |
+
+Start with conformance and smoke runs; do not run expensive task trials on a treatment that never activates. Add a LeanCTX embedding arm only after the process backend is understood. Combined arms follow individual qualification, not the reverse.
+
+### Workloads and controls
+
+Use representative Jackin Rust tasks, build/test diagnosis, multi-crate refactors, TUI correctness, TypeScript/Java investigation, configuration and docs changes, long-session continuation, and simultaneous worktrees. Pair starting commits and working-tree contents. Randomize arm order and repeat tasks; repetitions are clustered within a task, not additional independent task diversity.
+
+Record agent and optimizer commit/digest, profile and instruction hashes, native tool/schema surface, provider/auth route, model, reasoning effort, timeouts, permissions, index state, cache conditions, and machine resources. Include a truly cold first-use path and a warm repeated-use path. Preserve host-native truncation as the baseline: a deliberately bounded read must not be compared with an imaginary whole-file dump.
+
+### Required measurements
+
+| Class | Required fields |
+|---|---|
+| Outcome | Hidden or predeclared acceptance tests, reviewer findings, requirement coverage, regressions |
+| Provider usage | Fresh input, cache reads, cache writes, output and reasoning where reported; retain raw receipts |
+| Local estimates | Tokenizer/version, measured bytes, estimate method, eligible share, actually transformed share |
+| Agent behavior | Turns, calls, retries, exact rereads, recovery requests, compactions, context-limit exits |
+| Self-cost | Instructions, tool schemas, discovery calls, recovery markers, auxiliary model calls |
+| Runtime | End-to-end time, transform p50/p95/p99, startup/index time, CPU/RAM/disk, parallel contention |
+| Reliability | Installation/activation failures, timeouts, cancellation, bypass correctness, retention and rollback |
+
+Do not double-count provider fields whose totals include reasoning or cached tokens. Unknown quota accounting remains unknown; do not derive subscription savings from a dollar-equivalent estimate.
+
+### Acceptance and open artifacts
+
+Primary metric: total spend across **all** attempts divided by accepted outcomes; alternatively accepted outcomes per observed subscription window, with separate token and latency reports. Include rejected patches and infrastructure failures. Publish exclusion reasons before aggregation and show both aggregate and task-weighted effects with confidence intervals.
+
+Predeclare the quality non-inferiority margin and statistical plan. A nonsignificant difference is not equivalence. The engine's proposed 20% improvement target is a design gate to test, not a fact about obtainable savings; do not lower a declared gate after seeing results. Correctness and isolation remain hard constraints regardless of the measured saving.
+
+Publish the harness revision, task list, sanitized inputs/configs, per-attempt usage, patches, grader outputs, traces needed to verify activation, and the aggregation code. Never publish credentials or unrestricted private source. A Rust-native harness can orchestrate existing official graders without rewriting those graders in Rust.
 
 ## Limitations and unknowns
 
-Tool behavior, releases, licenses, and outcome evidence can change; reverify the current version and integration boundary before adoption.
+The review stopped after current release/API, licensing, key contradiction, host-boundary, and study-eligibility questions were covered. Remaining uncertainties require executable conformance or current controlled runs, not more popularity comparisons. No universal savings number is justified.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Original studies, current tagged evidence, and method links are inline. The three JetBrains articles and Quesma were consulted as original experiment reports; secondary opinion summaries were not used as proof.
 
 ## Related work
 
-- [Token-optimization tools dossier](/research/context/tools/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Context engine](/research/context/engine/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)
+- [Composition](/research/context/tools/06-combining/)
+- [Engine measurement](/research/context/engine/08-measurement-and-verification/)
