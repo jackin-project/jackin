@@ -13,8 +13,9 @@
 //!
 //! Response families (see `ref-contracts-C.md` §1):
 //!
-//! * Quota summary (`groups[].buckets[]`, bare or `{response: {groups}}`
-//!   loopback-wrapped; `pools[]`/`buckets[]` aliases): exact `bucketId` match
+//! * Quota summary (`groups[].buckets[]`, bare, `{response: {groups}}`
+//!   loopback-wrapped, or `{command: {data: {groups}}}` as the live CLI
+//!   emits; `pools[]`/`buckets[]` aliases): exact `bucketId` match
 //!   `gemini-5h` / `gemini-weekly` / `3p-5h` / `3p-weekly`. A parsed summary
 //!   (even empty) wins over legacy shapes.
 //! * Legacy per-model quota (`models{}` map with `quotaInfo`): collapses to
@@ -35,6 +36,11 @@ use super::*;
 
 /// Minimum `agy` version with read-only `/usage|/credits --output-format json`.
 pub(crate) const ANTIGRAVITY_MIN_JSON_VERSION: (u64, u64, u64) = (1, 1, 11);
+
+/// macOS Keychain service holding the Antigravity OAuth grant singleton.
+/// Discovery probes its *presence* only (never the payload): the CLI owns
+/// the secret, jackin only shells out to it.
+pub(crate) const ANTIGRAVITY_KEYCHAIN_SERVICE: &str = "gemini";
 
 const ANTIGRAVITY_SESSION_WINDOW_SECONDS: i64 = 5 * 60 * 60;
 const ANTIGRAVITY_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
@@ -181,6 +187,10 @@ fn antigravity_summary_entries(value: &serde_json::Value) -> Option<Vec<serde_js
     for groups in [
         value.get("groups"),
         value.get("response").and_then(|inner| inner.get("groups")),
+        value
+            .get("command")
+            .and_then(|command| command.get("data"))
+            .and_then(|data| data.get("groups")),
     ] {
         if let Some(groups) = groups.and_then(serde_json::Value::as_array) {
             let entries = groups
