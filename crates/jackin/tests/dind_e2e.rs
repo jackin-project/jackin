@@ -16,6 +16,8 @@
     )
 )]
 #![cfg(feature = "e2e")]
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt as _;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -40,7 +42,7 @@ mod transcript;
 #[path = "dind_e2e/util.rs"]
 mod util;
 
-use common::{e2e_construct_image, e2e_serial_lock, require_broker_sibling, require_e2e_prereqs};
+use common::{e2e_construct_image, e2e_serial_lock, require_e2e_prereqs};
 use diagnostics::e2e_failure_context;
 use fixtures::{
     seed_agent_smith_role_repo, seed_all_agent_stubs, seed_claude_installer_stub,
@@ -63,6 +65,30 @@ const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
 const SLOW_EXIT_ROLE_KEY: &str = "jackin-e2e/slow-exit";
 const SLOW_EXIT_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__slow-exit";
 const TESTCONTAINERS_SMOKE_OK: &str = "TESTCONTAINERS_SMOKE=ok";
+
+/// Fail before the interactive launch if Cargo did not build the broker binary.
+fn require_broker_sibling(jackin: &str) {
+    let broker_sibling = std::path::Path::new(jackin)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("jackin-usage-broker");
+    assert!(
+        broker_sibling.is_file(),
+        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin-runtime --bin jackin-usage-broker` first.",
+        broker_sibling.display()
+    );
+    #[cfg(unix)]
+    assert!(
+        std::fs::metadata(&broker_sibling)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o111
+            != 0,
+        "jackin-usage-broker sibling must be executable: {}",
+        broker_sibling.display()
+    );
+}
 
 /// RAII cleanup so the test's Docker resources are removed even if an
 /// assertion or `script(1)` invocation panics. Without this, a flaky run

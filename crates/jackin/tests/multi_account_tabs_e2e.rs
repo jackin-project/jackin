@@ -21,7 +21,6 @@
     expect(
         clippy::unwrap_used,
         clippy::expect_used,
-        clippy::panic,
         clippy::disallowed_methods,
         reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
     )
@@ -29,6 +28,8 @@
 #![cfg(feature = "e2e")]
 
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -58,7 +59,7 @@ mod transcript;
 #[path = "dind_e2e/util.rs"]
 mod util;
 
-use common::{e2e_construct_image, e2e_serial_lock, require_broker_sibling, require_e2e_prereqs};
+use common::{e2e_construct_image, e2e_serial_lock, require_e2e_prereqs};
 use pty_runner::{PtyFileSentinel, PtyScriptStep, run_in_pty_until_file};
 use util::{cleanup_role, run};
 
@@ -73,6 +74,30 @@ const ENDPOINT_A: &str = "https://openai-a.example.invalid/v1";
 const ENDPOINT_B: &str = "https://openai-b.example.invalid/v1";
 const MODEL_A: &str = "gpt-s3-a";
 const MODEL_B: &str = "gpt-s3-b";
+
+/// Fail before the interactive launch if Cargo did not build the broker binary.
+fn require_broker_sibling(jackin: &str) {
+    let broker_sibling = Path::new(jackin)
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("jackin-usage-broker");
+    assert!(
+        broker_sibling.is_file(),
+        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin-runtime --bin jackin-usage-broker` first.",
+        broker_sibling.display()
+    );
+    #[cfg(unix)]
+    assert!(
+        std::fs::metadata(&broker_sibling)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o111
+            != 0,
+        "jackin-usage-broker sibling must be executable: {}",
+        broker_sibling.display()
+    );
+}
 
 struct E2eRoleCleanup;
 
