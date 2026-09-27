@@ -649,11 +649,10 @@ async fn run_launch_core_suite_a_grant_failure_cleans_up_before_return() {
     let recorded = fix.docker.recorded.borrow();
     // LoadCleanup uses resource names from from_container_name.
     assert!(
-        recorded
+        !recorded
             .iter()
-            .any(|c| c.contains("docker rm -f") && c.contains("dind"))
-            || recorded.iter().any(|c| c.contains("docker network rm")),
-        "grant-failure path must run LoadCleanup (DinD/network rm); recorded: {recorded:?}"
+            .any(|c| c.contains("docker rm -f") || c.contains("docker network rm")),
+        "grant validation before resource ownership must not issue Docker teardown by name: {recorded:?}"
     );
 }
 

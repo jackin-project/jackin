@@ -390,8 +390,9 @@ async fn ad_hoc_hardline_candidates(
             continue;
         }
         let state = docker
-            .inspect_container_state(&manifest.container_base)
-            .await;
+            .inspect_container_by_name(&manifest.container_base)
+            .await
+            .state;
         let docker_live = state.is_present();
         if docker_live || manifest.is_restore_candidate() {
             candidates.push(HardlineCandidate {
@@ -449,8 +450,9 @@ async fn indexed_hardline_candidates(
     let mut candidates = Vec::new();
     for manifest in filtered {
         let state = docker
-            .inspect_container_state(&manifest.container_base)
-            .await;
+            .inspect_container_by_name(&manifest.container_base)
+            .await
+            .state;
         let docker_live = state.is_present();
         if docker_live || manifest.is_restore_candidate() {
             candidates.push(HardlineCandidate {

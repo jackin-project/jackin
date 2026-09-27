@@ -39,6 +39,15 @@ fn snapshot_exec_script_uses_capsule_client() {
 }
 
 #[test]
+fn docker_exec_fallback_binds_the_immutable_container_id() {
+    let container = ContainerHandle::new("role-name", "immutable-id").unwrap();
+    let args = docker_exec_capsule_args(&container, "exec /jackin/runtime/jackin-capsule snapshot");
+
+    assert_eq!(args[3], "immutable-id");
+    assert_ne!(args[3], container.name());
+}
+
+#[test]
 fn parses_usage_accounts_cli_stdout() {
     let accounts = usage_accounts_from_cli_stdout(
         r#"[

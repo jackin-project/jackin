@@ -159,6 +159,186 @@ use jackin_core::WorkspaceName;
 use jackin_test_support::FakeRunner;
 use std::collections::HashMap;
 
+#[tokio::test]
+async fn legacy_kept_dind_state_migrates_only_after_identity_and_ownership_verification() {
+    use jackin_core::ContainerRow;
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let dind = "jk-prewarm-dind-dind";
+    let network = "jk-prewarm-dind-net";
+    let state_path = paths.data_dir.join("prewarm-dind.json");
+    std::fs::write(
+        &state_path,
+        serde_json::json!({
+            "schema_version": 1,
+            "dind": dind,
+            "network": network,
+            "certs_volume": "jk-prewarm-dind-certs",
+            "ready_ms": 123,
+            "kept": true,
+            "created_at_ms": 456
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let labels = HashMap::from([
+        ("jackin.managed".to_owned(), "true".to_owned()),
+        ("jackin.kind".to_owned(), "prewarm-dind".to_owned()),
+        ("jackin.prewarm".to_owned(), "true".to_owned()),
+    ]);
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
+            name: dind.to_owned(),
+            id: "daemon-id-legacy".to_owned(),
+            labels: labels.clone(),
+        }]])),
+        inspect_by_id_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        container_id_by_name: std::cell::RefCell::new(HashMap::from([(
+            dind.to_owned(),
+            "daemon-id-legacy".to_owned(),
+        )])),
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            dind.to_owned(),
+            ContainerState::Running,
+        )])),
+        ..Default::default()
+    };
+
+    let migrated = super::launch_dind::ensure_prewarm_state_identity(&paths, &docker)
+        .await
+        .unwrap()
+        .expect("legacy retained container should migrate");
+    assert_eq!(migrated.id(), "daemon-id-legacy");
+    let state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+    assert_eq!(state["schema_version"], 2);
+    assert_eq!(state["dind_id"], "daemon-id-legacy");
+    assert_eq!(state["ready_ms"], 123);
+    assert_eq!(state["certs_volume"], "jk-prewarm-dind-certs");
+
+    let reloaded = super::launch_dind::ensure_prewarm_state_identity(&paths, &docker)
+        .await
+        .unwrap()
+        .expect("migrated state should use the v2 identity path");
+    assert_eq!(reloaded.id(), "daemon-id-legacy");
+    assert_eq!(
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .filter(|operation| operation.starts_with("docker ps -a"))
+            .count(),
+        1,
+        "second load must not repeat schema migration"
+    );
+}
+
+#[tokio::test]
+async fn legacy_kept_dind_state_is_preserved_when_ownership_cannot_be_verified() {
+    use jackin_core::ContainerRow;
+    use jackin_test_support::FakeDockerClient;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let state_path = paths.data_dir.join("prewarm-dind.json");
+    let legacy_state = serde_json::json!({
+        "schema_version": 1,
+        "dind": "jk-prewarm-dind-dind",
+        "network": "jk-prewarm-dind-net",
+        "certs_volume": "jk-prewarm-dind-certs",
+        "ready_ms": 123,
+        "kept": true,
+        "created_at_ms": 456
+    })
+    .to_string();
+    std::fs::write(&state_path, &legacy_state).unwrap();
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
+            name: "jk-prewarm-dind-dind".to_owned(),
+            id: "unverified-id".to_owned(),
+            labels: HashMap::new(),
+        }]])),
+        ..Default::default()
+    };
+
+    let result = super::launch_dind::ensure_prewarm_state_identity(&paths, &docker).await;
+    if let Err(error) = result {
+        assert!(!error.to_string().is_empty());
+    } else {
+        panic!("legacy state without ownership evidence must not migrate");
+    }
+    assert_eq!(std::fs::read_to_string(state_path).unwrap(), legacy_state);
+}
+
+#[tokio::test]
+async fn stopped_legacy_kept_dind_migrates_for_identity_bound_recovery() {
+    use jackin_core::ContainerRow;
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    let dind = "jk-prewarm-dind-dind";
+    let state_path = paths.data_dir.join("prewarm-dind.json");
+    std::fs::write(
+        &state_path,
+        serde_json::json!({
+            "schema_version": 1,
+            "dind": dind,
+            "network": "jk-prewarm-dind-net",
+            "certs_volume": "jk-prewarm-dind-certs",
+            "ready_ms": 123,
+            "kept": true,
+            "created_at_ms": 456
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let labels = HashMap::from([
+        ("jackin.managed".to_owned(), "true".to_owned()),
+        ("jackin.kind".to_owned(), "prewarm-dind".to_owned()),
+        ("jackin.prewarm".to_owned(), "true".to_owned()),
+    ]);
+    let stopped = ContainerState::Stopped {
+        exit_code: 137,
+        oom_killed: false,
+    };
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
+            name: dind.to_owned(),
+            id: "daemon-id-stopped".to_owned(),
+            labels,
+        }]])),
+        inspect_by_id_queue: std::cell::RefCell::new(VecDeque::from([stopped.clone()])),
+        container_id_by_name: std::cell::RefCell::new(HashMap::from([(
+            dind.to_owned(),
+            "daemon-id-stopped".to_owned(),
+        )])),
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(dind.to_owned(), stopped)])),
+        ..Default::default()
+    };
+
+    let adopted = super::launch_dind::adopt_prewarmed_dind_sidecar(&paths, &docker).await;
+    assert!(adopted.is_none(), "stopped sidecar must not be adopted");
+    let state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+    assert_eq!(state["schema_version"], 2);
+    assert_eq!(state["dind_id"], "daemon-id-stopped");
+
+    let cleanup_handle = super::launch_dind::ensure_prewarm_state_identity(&paths, &docker)
+        .await
+        .unwrap()
+        .expect("stopped sidecar remains addressable for ID-bound cleanup");
+    assert_eq!(cleanup_handle.id(), "daemon-id-stopped");
+}
+
 #[test]
 fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
     let sensitive = vec![
@@ -2615,6 +2795,21 @@ fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
 
 fn fake_docker_for_clean_attached_exit() -> jackin_test_support::FakeDockerClient {
     jackin_test_support::FakeDockerClient {
+        inspect_by_id_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            },
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            },
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            },
+        ])),
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
             String::new(),
             String::new(),
@@ -4550,7 +4745,14 @@ plugins = []
     )
     .unwrap();
 
-    let docker = jackin_test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
     let error = load_role(
         &paths,
         &mut config,
@@ -4558,7 +4760,7 @@ plugins = []
         &repo_workspace(&repo_dir),
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap_err();
@@ -4965,7 +5167,14 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
         None,
         "0",
     );
-    let mut docker = jackin_test_support::FakeDockerClient::default();
+    let mut docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
     docker
         .list_image_tags_queue
         .borrow_mut()
@@ -5003,16 +5212,16 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     );
     let docker_recorded = docker.recorded.borrow();
     assert!(
-        docker_recorded
+        !docker_recorded
             .iter()
             .any(|call| call.starts_with("docker rm -f jk-") && !call.ends_with("-dind")),
-        "role container cleanup missing after sidecar failure: {docker_recorded:?}"
+        "role cleanup must fail closed without a captured role ID: {docker_recorded:?}"
     );
     assert!(
-        docker_recorded
+        !docker_recorded
             .iter()
             .any(|call| call.starts_with("docker rm -f jk-") && call.ends_with("-dind")),
-        "DinD cleanup missing after sidecar failure: {docker_recorded:?}"
+        "DinD cleanup must fail closed without a captured DinD ID: {docker_recorded:?}"
     );
     assert!(
         docker_recorded
@@ -5504,6 +5713,7 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
         &paths,
         &DindSidecarPrewarm {
             dind: prewarm_dind.to_owned(),
+            dind_id: "prewarm-b4-dind-id".to_owned(),
             network: prewarm_net.to_owned(),
             certs_volume: prewarm_certs.to_owned(),
             ready_ms: 12,
@@ -5522,6 +5732,10 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
+    docker
+        .container_id_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), "prewarm-b4-dind-id".to_owned());
     // Adoption: pin the prewarmed dind to Running by name (the restore/claim
     // inspects that run first hit the default NotFound), and give its network
     // the prewarm labels so adoption accepts it.
@@ -5621,6 +5835,7 @@ async fn load_agent_grant_validation_failure_tears_down_adopted_dind() {
         &paths,
         &DindSidecarPrewarm {
             dind: prewarm_dind.to_owned(),
+            dind_id: "prewarm-grants-dind-id".to_owned(),
             network: prewarm_net.to_owned(),
             certs_volume: prewarm_certs.to_owned(),
             ready_ms: 12,
@@ -5638,6 +5853,10 @@ async fn load_agent_grant_validation_failure_tears_down_adopted_dind() {
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
+    docker
+        .container_id_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), "prewarm-grants-dind-id".to_owned());
     docker
         .inspect_state_by_name
         .borrow_mut()
@@ -6599,7 +6818,15 @@ plugins = ["code-review@claude-plugins-official"]
     .unwrap();
 
     let workspace = repo_workspace(&repo_dir);
-    let docker = jackin_test_support::FakeDockerClient::default();
+    let docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+            ContainerState::Created,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
     let error = load_role(
         &paths,
         &mut config,
@@ -6615,9 +6842,9 @@ plugins = ["code-review@claude-plugins-official"]
     assert!(error.to_string().contains("docker run -d --name jk-"));
     let container_name = launched_role_container_name(&runner);
     let dind = format!("{container_name}-dind");
-    let certs_volume = format!("{container_name}-dind-certs");
-    let network = format!("{container_name}-net");
-    // Cleanup uses docker (bollard) for rm operations
+    // The observation seam fails after typed create/start captured the role
+    // identity. Cleanup must therefore remove the exact role and sidecar
+    // identities, not rediscover either by name.
     assert!(
         docker
             .recorded
@@ -6630,21 +6857,22 @@ plugins = ["code-review@claude-plugins-official"]
             .recorded
             .borrow()
             .iter()
-            .any(|call| call == &format!("docker rm -f {dind}"))
+            .all(|call| call != &format!("docker rm -f {dind}")),
+        "cleanup must not remove a sidecar without its captured identity"
     );
     assert!(
         docker
             .recorded
             .borrow()
             .iter()
-            .any(|call| call == &format!("docker volume rm {certs_volume}"))
-    );
-    assert!(
-        docker
-            .recorded
-            .borrow()
-            .iter()
-            .any(|call| call == &format!("docker network rm {network}"))
+            .any(|call| call.starts_with("docker volume rm"))
+            && docker
+                .recorded
+                .borrow()
+                .iter()
+                .any(|call| call.starts_with("docker network rm")),
+        "captured identities must authorize shared-resource cleanup: {:?}",
+        docker.recorded.borrow()
     );
 }
 
@@ -7700,6 +7928,7 @@ async fn render_exit_preserves_universe_marker_when_instances_remain() {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-still-running".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::new(),
             },
         ]])),
@@ -8682,7 +8911,9 @@ async fn stopped_matching_instance_starts_current_role() {
 
     assert_eq!(
         candidate,
-        RestoreResolution::StartCurrentRole(container_name.to_owned())
+        RestoreResolution::StartCurrentRoleWithHandle(
+            jackin_core::ContainerHandle::new(container_name, container_name).unwrap(),
+        )
     );
 }
 
@@ -8699,8 +8930,8 @@ async fn stopped_matching_instance_with_missing_network_recreates_current_role()
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // When the network is missing, StartCurrentRole cannot succeed via docker start,
-    // so candidate resolution must downgrade to RecreateCurrentRole.
+    // When the network is missing, the captured role identity is retained for
+    // ID-bound teardown before recreation.
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
@@ -8716,7 +8947,55 @@ async fn stopped_matching_instance_with_missing_network_recreates_current_role()
 
     assert_eq!(
         candidate,
-        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
+        RestoreResolution::RecreateCurrentRoleWithHandle(
+            jackin_core::ContainerHandle::new(container_name, container_name).unwrap(),
+        )
+    );
+}
+
+#[tokio::test]
+async fn recreate_refuses_partial_role_and_dind_identity() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::Agent::Claude,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    let dind_name = manifest.docker.dind_container.clone().unwrap();
+    let docker = jackin_test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::Running,
+        ])),
+        container_id_by_name: std::cell::RefCell::new(
+            [(dind_name.clone(), "replacement-dind-id".to_owned())]
+                .into_iter()
+                .collect(),
+        ),
+        ..Default::default()
+    };
+
+    super::launch_pipeline::teardown_recreate_container(&paths, container_name, None, &docker)
+        .await
+        .unwrap();
+
+    assert!(
+        docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|operation| operation == "remove:replacement-dind-id")
+    );
+    assert!(
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|operation| operation == "docker network rm jk-k7p9m2xq-workspace-agentsmith-net")
     );
 }
 
