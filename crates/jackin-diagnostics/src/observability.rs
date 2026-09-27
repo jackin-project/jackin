@@ -516,8 +516,11 @@ mod otlp {
         logger: SdkLoggerProvider,
         meter: SdkMeterProvider,
         generation: u64,
-        _meter_installation: Option<jackin_telemetry::MeterInstallation>,
+        meter_installation: MeterInstallationLease,
     }
+
+    type MeterInstallationLease =
+        std::sync::Arc<std::sync::Mutex<jackin_telemetry::MeterInstallation>>;
 
     impl OtlpProviders {
         /// Flush buffered telemetry, then shut the exporters down. Called once,
@@ -531,7 +534,19 @@ mod otlp {
         /// wrong-protocol backend would fail completely silently. `shutdown`
         /// errors stay quiet — by then the data is already flushed-or-lost and a
         /// second notice adds only noise.
-        fn flush_and_shutdown(&self, deadline: std::time::Instant) -> bool {
+        fn flush_and_shutdown(
+            &mut self,
+            deadline: std::time::Instant,
+        ) -> Result<bool, jackin_telemetry::MeterDetachError> {
+            self.meter_installation
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .detach_before(deadline)?;
+            #[cfg(test)]
+            SHUTDOWN_ORDER
+                .lock()
+                .expect("shutdown order lock")
+                .push("detach.meter");
             let (trace_flush, log_flush, metric_flush) = self.force_flush_all(deadline);
             #[cfg(test)]
             SHUTDOWN_ORDER
@@ -539,34 +554,57 @@ mod otlp {
                 .expect("shutdown order lock")
                 .push("tracer");
             let tracer = self.tracer.clone();
-            let trace_shutdown = sdk_operation_before(deadline, move |timeout| {
-                tracer.shutdown_with_timeout(timeout)
-            });
+            let meter_installation = std::sync::Arc::clone(&self.meter_installation);
+            let trace_shutdown = sdk_operation_before(
+                deadline,
+                move |timeout| tracer.shutdown_with_timeout(timeout),
+                Some(meter_installation),
+            );
             #[cfg(test)]
             SHUTDOWN_ORDER
                 .lock()
                 .expect("shutdown order lock")
                 .push("logger");
             let logger = self.logger.clone();
-            let log_shutdown = sdk_operation_before(deadline, move |timeout| {
-                logger.shutdown_with_timeout(timeout)
-            });
+            let meter_installation = std::sync::Arc::clone(&self.meter_installation);
+            let log_shutdown = sdk_operation_before(
+                deadline,
+                move |timeout| logger.shutdown_with_timeout(timeout),
+                Some(meter_installation),
+            );
             #[cfg(test)]
             SHUTDOWN_ORDER
                 .lock()
                 .expect("shutdown order lock")
                 .push("meter");
             let meter = self.meter.clone();
-            let metric_shutdown = sdk_operation_before(deadline, move |timeout| {
-                meter.shutdown_with_timeout(timeout)
+            let meter_installation = std::sync::Arc::clone(&self.meter_installation);
+            let metric_shutdown = sdk_operation_before(
+                deadline,
+                move |timeout| meter.shutdown_with_timeout(timeout),
+                Some(meter_installation),
+            );
+            let failed = trace_flush.is_err() || log_flush.is_err() || metric_flush.is_err();
+            let timed_out = [
+                &trace_flush,
+                &log_flush,
+                &metric_flush,
+                &trace_shutdown,
+                &log_shutdown,
+                &metric_shutdown,
+            ]
+            .into_iter()
+            .any(|result| {
+                result
+                    .as_ref()
+                    .is_err_and(|error| error.contains("budget exhausted"))
             });
-            let failed = trace_flush
-                .err()
-                .or_else(|| log_flush.err())
-                .or_else(|| metric_flush.err());
-            let flushed = failed.is_none();
+            if timed_out {
+                retain_terminal_meter_lease(std::sync::Arc::clone(&self.meter_installation));
+            }
+            let flushed = !failed;
             health::record_flush(self.generation, flushed);
-            if failed.is_some() {
+            if failed {
                 // Direct to stderr, not the deferred buffer: this fires at final
                 // teardown where the run guard may outlive the terminal session,
                 // so a buffered notice could never be drained. The TUI is already
@@ -575,7 +613,12 @@ mod otlp {
                     "telemetry export failed to reach the backend (run telemetry may be incomplete)",
                 );
             }
-            flushed && trace_shutdown.is_ok() && log_shutdown.is_ok() && metric_shutdown.is_ok()
+            Ok(
+                flushed
+                    && trace_shutdown.is_ok()
+                    && log_shutdown.is_ok()
+                    && metric_shutdown.is_ok(),
+            )
         }
 
         fn force_flush_all(
@@ -591,9 +634,18 @@ mod otlp {
             let tracer = self.tracer.clone();
             let logger = self.logger.clone();
             let meter = self.meter.clone();
-            let traces = FlushTask::spawn(move || tracer.force_flush());
-            let logs = FlushTask::spawn(move || logger.force_flush());
-            let metrics = FlushTask::spawn(move || meter.force_flush());
+            let traces = FlushTask::spawn(
+                move || tracer.force_flush(),
+                Some(std::sync::Arc::clone(&self.meter_installation)),
+            );
+            let logs = FlushTask::spawn(
+                move || logger.force_flush(),
+                Some(std::sync::Arc::clone(&self.meter_installation)),
+            );
+            let metrics = FlushTask::spawn(
+                move || meter.force_flush(),
+                Some(std::sync::Arc::clone(&self.meter_installation)),
+            );
             (
                 traces.finish_before(deadline),
                 logs.finish_before(deadline),
@@ -608,11 +660,17 @@ mod otlp {
     }
 
     impl FlushTask {
+        // Keep the provider-bound meter lease inside the worker. If the
+        // deadline expires, `finish_before` retains only the JoinHandle; the
+        // worker must therefore own the lease until its provider operation
+        // really returns.
         fn spawn(
             operation: impl FnOnce() -> opentelemetry_sdk::error::OTelSdkResult + Send + 'static,
+            meter_installation: Option<MeterInstallationLease>,
         ) -> Self {
             let (sender, receiver) = std::sync::mpsc::sync_channel(1);
             let handle = jackin_telemetry::spawn::thread_joined(move || {
+                let _meter_installation = meter_installation;
                 drop(sender.send(operation()));
             });
             Self { receiver, handle }
@@ -644,7 +702,11 @@ mod otlp {
         }
     }
 
-    fn sdk_operation_before<F>(deadline: std::time::Instant, operation: F) -> Result<(), String>
+    fn sdk_operation_before<F>(
+        deadline: std::time::Instant,
+        operation: F,
+        meter_installation: Option<MeterInstallationLease>,
+    ) -> Result<(), String>
     where
         F: FnOnce(std::time::Duration) -> opentelemetry_sdk::error::OTelSdkResult + Send + 'static,
     {
@@ -652,7 +714,7 @@ mod otlp {
         if remaining.is_zero() {
             return Err("telemetry shutdown budget exhausted".to_owned());
         }
-        FlushTask::spawn(move || operation(remaining))
+        FlushTask::spawn(move || operation(remaining), meter_installation)
             .finish_before(deadline)
             .map_err(|error| {
                 if error == "telemetry flush failed" {
@@ -717,6 +779,12 @@ mod otlp {
     static ACTIVATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     static PROVIDERS: std::sync::Mutex<Option<OtlpProviders>> = std::sync::Mutex::new(None);
     static PENDING_FLUSH_WORKERS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+        std::sync::Mutex::new(Vec::new());
+    // A shutdown budget can expire after the last worker has been detached
+    // from its task but before the provider shutdown call can start. Retain
+    // the detached lease permanently in that terminal case so a later
+    // provider can never overlap the retired generation.
+    static TERMINAL_METER_LEASES: std::sync::Mutex<Vec<MeterInstallationLease>> =
         std::sync::Mutex::new(Vec::new());
     #[cfg(test)]
     static SHUTDOWN_ORDER: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
@@ -1295,7 +1363,7 @@ mod otlp {
                 logger: logger_provider,
                 meter: meter_provider,
                 generation,
-                _meter_installation: Some(meter_installation),
+                meter_installation: std::sync::Arc::new(std::sync::Mutex::new(meter_installation)),
             });
         } else {
             drop(meter_reservation);
@@ -1400,7 +1468,7 @@ mod otlp {
                 logger: logger_provider,
                 meter: meter_provider,
                 generation,
-                _meter_installation: Some(meter_installation),
+                meter_installation: std::sync::Arc::new(std::sync::Mutex::new(meter_installation)),
             });
         } else {
             drop(meter_reservation);
@@ -1417,18 +1485,24 @@ mod otlp {
     ) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         let tracer = tracer.clone();
-        drop(sdk_operation_before(deadline, move |timeout| {
-            tracer.shutdown_with_timeout(timeout)
-        }));
+        drop(sdk_operation_before(
+            deadline,
+            move |timeout| tracer.shutdown_with_timeout(timeout),
+            None,
+        ));
         let logger = logger.clone();
-        drop(sdk_operation_before(deadline, move |timeout| {
-            logger.shutdown_with_timeout(timeout)
-        }));
+        drop(sdk_operation_before(
+            deadline,
+            move |timeout| logger.shutdown_with_timeout(timeout),
+            None,
+        ));
         if let Some(meter) = meter {
             let meter = meter.clone();
-            drop(sdk_operation_before(deadline, move |timeout| {
-                meter.shutdown_with_timeout(timeout)
-            }));
+            drop(sdk_operation_before(
+                deadline,
+                move |timeout| meter.shutdown_with_timeout(timeout),
+                None,
+            ));
         }
     }
 
@@ -1880,16 +1954,40 @@ mod otlp {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reap_flush_workers();
-        let providers = PROVIDERS.lock().ok().and_then(|mut slot| slot.take());
+        let mut providers = PROVIDERS.lock().ok().and_then(|mut slot| slot.take());
         let generation = providers.as_ref().map(|providers| providers.generation);
-        let runtime = OTEL_RUNTIME.lock().ok().and_then(|mut slot| slot.take());
+        let mut runtime = OTEL_RUNTIME.lock().ok().and_then(|mut slot| slot.take());
         if providers.is_none() && runtime.is_none() {
             return;
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        let succeeded = providers
-            .as_ref()
-            .is_none_or(|providers| providers.flush_and_shutdown(deadline));
+        let shutdown_result = providers
+            .as_mut()
+            .map_or(Ok(true), |providers| providers.flush_and_shutdown(deadline));
+        let succeeded = match shutdown_result {
+            Ok(succeeded) => succeeded,
+            Err(error) => {
+                // A metric writer still owns the facade read lock. Keep both
+                // provider and runtime ownership published so the next
+                // shutdown call can retry; dropping either here would turn a
+                // bounded fence timeout into a lifecycle overlap with the
+                // retiring provider.
+                *PROVIDERS
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = providers.take();
+                *OTEL_RUNTIME
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = runtime.take();
+                if let Some(generation) = generation {
+                    health::record_shutdown_timeout(generation);
+                }
+                crate::logging::emit_teardown_notice(&format!(
+                    "telemetry meter shutdown fence failed: {error}"
+                ));
+                reap_flush_workers();
+                return;
+            }
+        };
         drop(providers);
         if let Some(runtime) = runtime {
             // Providers have already flushed and shut down under the deadline.
@@ -1912,6 +2010,13 @@ mod otlp {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(handle);
+    }
+
+    fn retain_terminal_meter_lease(lease: MeterInstallationLease) {
+        TERMINAL_METER_LEASES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(lease);
     }
 
     fn reap_flush_workers() {

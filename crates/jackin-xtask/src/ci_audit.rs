@@ -22,8 +22,8 @@ type JobLogs = Arc<Mutex<BTreeMap<u64, Vec<u8>>>>;
 
 #[derive(Args, Debug)]
 pub(crate) struct CiAuditArgs {
-    /// Fail when a warm run emits dependency, build, tool, or cache-miss markers.
-    #[arg(long, action = clap::ArgAction::Set, default_value_t = false)]
+    /// Fail when a warm run emits dependency, build, tool, cache, compiler, product, or report markers.
+    #[arg(long)]
     expect_clean: bool,
     /// Human-readable workflow label used in the step summary.
     #[arg(long, default_value = "CI")]
@@ -68,6 +68,35 @@ struct Step {
     completed_at: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct VelnorReport {
+    schema_version: u8,
+    log_present: bool,
+    cache_outcomes: CacheOutcomes,
+    origin_downloads: OriginDownloads,
+    compiler: CompilerReport,
+}
+
+#[derive(Deserialize)]
+struct CacheOutcomes {
+    #[serde(flatten)]
+    layers: BTreeMap<String, Option<String>>,
+}
+
+#[derive(Deserialize)]
+struct OriginDownloads {
+    updating_crates_io_index: usize,
+    updating_git: usize,
+    downloading_crates: usize,
+    downloaded_lines: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct CompilerReport {
+    compiling_lines: usize,
+    mbx_outcomes: Vec<String>,
+}
+
 struct Row {
     name: String,
     result: String,
@@ -89,9 +118,37 @@ struct StepRow {
 struct Markers {
     downloads: usize,
     builds: usize,
+    cargo_compiling_lines: usize,
     source_tools: usize,
     cache_misses: usize,
+    cache_exact_hits: usize,
+    cache_partial_restores: usize,
+    report_count: usize,
+    report_missing: usize,
+    report_fallbacks: usize,
+    report_parse_errors: usize,
+    structured_downloads: usize,
+    reported_cache_exact: usize,
+    reported_cache_non_exact: usize,
+    reported_cache_inactive: usize,
+    reported_cache_unknown: usize,
+    reported_compiler_lines: usize,
+    reported_compiler_builds: usize,
+    mbx_object_hits: usize,
+    mbx_object_misses: usize,
+    mbx_object_evidence: usize,
+    reported_cache_layers: BTreeMap<String, String>,
+    product: ProductMarkers,
     examples: Vec<String>,
+}
+
+#[derive(Default)]
+struct ProductMarkers {
+    staged: usize,
+    uploaded: usize,
+    downloaded: usize,
+    verified: usize,
+    non_success: usize,
 }
 
 pub(crate) fn run(args: CiAuditArgs) -> Result<()> {
@@ -131,6 +188,28 @@ pub(crate) fn run(args: CiAuditArgs) -> Result<()> {
         } else {
             0
         };
+        let report_expected =
+            job_report_expected(&job.status, job.conclusion.as_deref(), &job.steps);
+        let mut markers = logs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&job.id)
+            .map_or_else(
+                || {
+                    let mut markers = Markers::default();
+                    if report_expected {
+                        markers.report_missing = 1;
+                    }
+                    markers
+                },
+                |bytes| {
+                    let mut markers = scan_log(&String::from_utf8_lossy(&bytes));
+                    if !report_expected {
+                        markers.report_missing = 0;
+                    }
+                    markers
+                },
+            );
         let mut longest_step = String::from("-");
         let mut longest_step_seconds = 0;
         for step in job.steps {
@@ -142,19 +221,15 @@ pub(crate) fn run(args: CiAuditArgs) -> Result<()> {
                 longest_step_seconds = seconds;
                 longest_step.clone_from(&step.name);
             }
+            let result = step.conclusion.unwrap_or(step.status);
+            markers.product.observe(&step.name, &result);
             steps.push(StepRow {
                 job: job.name.clone(),
                 name: step.name,
-                result: step.conclusion.unwrap_or(step.status),
+                result,
                 seconds,
             });
         }
-        let markers = logs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&job.id)
-            .map(|bytes| scan_log(&String::from_utf8_lossy(&bytes)))
-            .unwrap_or_default();
         rows.push(Row {
             name: job.name,
             result: job.conclusion.unwrap_or(job.status),
@@ -174,10 +249,18 @@ pub(crate) fn run(args: CiAuditArgs) -> Result<()> {
         &steps,
         &totals,
     )?;
-    if args.expect_clean && totals.total() != 0 {
-        bail!("warm run emitted forbidden cache/dependency/tool markers");
+    if args.expect_clean && clean_gate_total(&rows) != 0 {
+        bail!("warm run emitted forbidden dependency/cache/compiler/product/report markers");
     }
     Ok(())
+}
+
+fn job_report_expected(status: &str, conclusion: Option<&str>, steps: &[Step]) -> bool {
+    status == "completed"
+        && conclusion != Some("skipped")
+        && steps
+            .iter()
+            .any(|step| step.name == "Report phase timings and cache outcomes")
 }
 
 fn download_logs(repository: &str, jobs: &[Job]) -> Result<JobLogs> {
@@ -264,7 +347,27 @@ fn epoch(timestamp: &str) -> Result<i64> {
     if timestamp.is_empty() || timestamp == "null" || timestamp.starts_with("0001-") {
         return Ok(0);
     }
-    let output = cmd::output_string(Command::new("date").args(["-u", "-d", timestamp, "+%s"]))?;
+    let without_zone = timestamp.strip_suffix('Z').unwrap_or(timestamp);
+    let normalized = without_zone
+        .split_once('.')
+        .map_or(without_zone, |(whole_seconds, _)| whole_seconds);
+    let output = if cfg!(target_os = "macos") {
+        cmd::output_string(Command::new("date").args([
+            "-u",
+            "-j",
+            "-f",
+            "%Y-%m-%dT%H:%M:%S",
+            normalized,
+            "+%s",
+        ]))?
+    } else {
+        cmd::output_string(Command::new("date").args([
+            "-u",
+            "-d",
+            &format!("{normalized}Z"),
+            "+%s",
+        ]))?
+    };
     output
         .trim()
         .parse()
@@ -285,13 +388,20 @@ fn elapsed(started: i64, completed: i64) -> i64 {
 
 fn scan_log(log: &str) -> Markers {
     let mut markers = Markers::default();
+    let mut pending_exact_cache_key = None;
     for raw in log.lines() {
         let line = strip_ansi(raw);
+        scan_velnor_report(&line, &mut markers);
+        let cache_hit = marker_value(&line, "Cache hit for:");
+        let cache_partial_hit = marker_value(&line, "Cache hit for restore-key:");
+        let cache_restore = marker_value(&line, "Cache restored from key:");
         let download = line.contains("crates.io index")
             || line.contains("Downloading crates")
             || (line.contains("Downloaded ") && line.contains(" v"))
             || (line.contains("info: downloading ") && line.contains(" components"));
         let trimmed = line.trim();
+        let compiling =
+            trimmed.starts_with("Compiling ") && trimmed.contains(" v") && !trimmed.contains(" (/");
         let build = ["Compiling ", "Checking ", "Building "]
             .iter()
             .any(|prefix| trimmed.starts_with(prefix))
@@ -299,19 +409,144 @@ fn scan_log(log: &str) -> Markers {
             && !trimmed.contains(" (/");
         let source_tool =
             line.contains("Installing ") && line.contains(" v") && line.contains("from source");
-        let cache_miss = line.contains("Cache not found")
-            || line.contains("No cache found")
-            || line.contains("Rust cache miss")
-            || line.contains("not found for input keys:");
+        let lower = line.to_ascii_lowercase();
+        let cache_miss = lower.contains("cache not found")
+            || lower.contains("no cache found")
+            || lower.contains("rust cache miss")
+            || lower.contains("not found for input keys:");
+        if let Some(key) = cache_hit.as_deref() {
+            markers.cache_exact_hits += 1;
+            pending_exact_cache_key = Some(key.to_owned());
+        } else if cache_partial_hit.is_some() {
+            markers.cache_partial_restores += 1;
+            pending_exact_cache_key = None;
+        } else if let Some(key) = cache_restore.as_deref() {
+            if pending_exact_cache_key.as_deref() != Some(key) {
+                markers.cache_partial_restores += 1;
+            }
+            pending_exact_cache_key = None;
+        } else if cache_miss {
+            pending_exact_cache_key = None;
+        }
         markers.downloads += usize::from(download);
         markers.builds += usize::from(build);
+        markers.cargo_compiling_lines += usize::from(compiling);
         markers.source_tools += usize::from(source_tool);
         markers.cache_misses += usize::from(cache_miss);
-        if (download || build || source_tool || cache_miss) && markers.examples.len() < 10 {
+        if (download
+            || build
+            || source_tool
+            || cache_miss
+            || cache_hit.is_some()
+            || cache_partial_hit.is_some()
+            || cache_restore.is_some())
+            && markers.examples.len() < 10
+        {
             markers.examples.push(line);
         }
     }
+    if markers.report_count == 0
+        && markers.report_fallbacks == 0
+        && markers.report_parse_errors == 0
+    {
+        markers.report_missing = 1;
+    }
     markers
+}
+
+fn scan_velnor_report(line: &str, markers: &mut Markers) {
+    const PREFIX: &str = "VELNOR_CI_REPORT ";
+    const FALLBACK: &str = "VELNOR_CI_REPORT_FALLBACK";
+    if let Some(payload) = report_marker_value(line, PREFIX) {
+        if payload.starts_with(FALLBACK) {
+            markers.report_fallbacks += 1;
+        } else if payload.starts_with('{') {
+            match serde_json::from_str::<VelnorReport>(payload) {
+                Ok(report) if report.schema_version == 3 => record_velnor_report(report, markers),
+                Err(_) => markers.report_parse_errors += 1,
+                Ok(_) => markers.report_parse_errors += 1,
+            }
+        } else {
+            markers.report_parse_errors += 1;
+        }
+        return;
+    }
+    if report_marker_value(line, FALLBACK).is_some() {
+        markers.report_fallbacks += 1;
+    }
+}
+
+fn record_velnor_report(report: VelnorReport, markers: &mut Markers) {
+    markers.report_count += 1;
+    if !report.log_present {
+        markers.report_parse_errors += 1;
+    }
+    for expected in ["rustup", "mold", "cargo", "mbx", "docker_seed"] {
+        if !report.cache_outcomes.layers.contains_key(expected) {
+            markers.report_parse_errors += 1;
+        }
+    }
+    for (layer, outcome) in report.cache_outcomes.layers {
+        if layer == "lane" {
+            continue;
+        }
+        let outcome = outcome.unwrap_or_else(|| String::from("null"));
+        match outcome.to_ascii_lowercase().as_str() {
+            "exact" => markers.reported_cache_exact += 1,
+            "disabled" => markers.reported_cache_inactive += 1,
+            "compatible_seed" | "miss" | "saved" => markers.reported_cache_non_exact += 1,
+            _ => markers.reported_cache_unknown += 1,
+        }
+        markers.reported_cache_layers.insert(layer, outcome);
+    }
+    markers.structured_downloads += report.origin_downloads.updating_crates_io_index
+        + report.origin_downloads.updating_git
+        + report.origin_downloads.downloading_crates
+        + report.origin_downloads.downloaded_lines.len();
+    markers.reported_compiler_lines += report.compiler.compiling_lines;
+    for outcome in report.compiler.mbx_outcomes {
+        if let Some((hits, misses)) = parse_mbx_cache_outcome(&outcome) {
+            markers.mbx_object_evidence += 1;
+            markers.mbx_object_hits += hits;
+            markers.mbx_object_misses += misses;
+        } else {
+            markers.reported_cache_unknown += 1;
+        }
+    }
+    markers.reported_compiler_builds += usize::from(report.compiler.compiling_lines > 0);
+}
+
+fn parse_mbx_cache_outcome(value: &str) -> Option<(usize, usize)> {
+    let lower = value.to_ascii_lowercase();
+    let start = lower.find("object cache:")? + "object cache:".len();
+    let mut tokens = value[start..].split_whitespace();
+    let hits = tokens.next()?.parse().ok()?;
+    if !tokens.next()?.eq_ignore_ascii_case("hits,") {
+        return None;
+    }
+    let misses = tokens.next()?.parse().ok()?;
+    if !tokens
+        .next()?
+        .trim_end_matches([';', ','])
+        .eq_ignore_ascii_case("misses")
+    {
+        return None;
+    }
+    Some((hits, misses))
+}
+
+fn marker_value(line: &str, marker: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let start = lower.find(&marker.to_ascii_lowercase())?;
+    Some(line[start + marker.len()..].trim().to_owned())
+}
+
+fn report_marker_value<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
+    let start = line.find(marker)?;
+    if start > 0 && !line.as_bytes()[start - 1].is_ascii_whitespace() {
+        return None;
+    }
+    Some(line[start + marker.len()..].trim())
 }
 
 fn strip_ansi(line: &str) -> String {
@@ -336,15 +571,88 @@ fn totals(rows: &[Row]) -> Markers {
     for row in rows {
         total.downloads += row.markers.downloads;
         total.builds += row.markers.builds;
+        total.cargo_compiling_lines += row.markers.cargo_compiling_lines;
         total.source_tools += row.markers.source_tools;
         total.cache_misses += row.markers.cache_misses;
+        total.cache_exact_hits += row.markers.cache_exact_hits;
+        total.cache_partial_restores += row.markers.cache_partial_restores;
+        total.report_count += row.markers.report_count;
+        total.report_missing += row.markers.report_missing;
+        total.report_fallbacks += row.markers.report_fallbacks;
+        total.report_parse_errors += row.markers.report_parse_errors;
+        total.structured_downloads += row.markers.structured_downloads;
+        total.reported_cache_exact += row.markers.reported_cache_exact;
+        total.reported_cache_non_exact += row.markers.reported_cache_non_exact;
+        total.reported_cache_inactive += row.markers.reported_cache_inactive;
+        total.reported_cache_unknown += row.markers.reported_cache_unknown;
+        total.reported_compiler_lines += row.markers.reported_compiler_lines;
+        total.reported_compiler_builds += row.markers.reported_compiler_builds;
+        total.mbx_object_hits += row.markers.mbx_object_hits;
+        total.mbx_object_misses += row.markers.mbx_object_misses;
+        total.mbx_object_evidence += row.markers.mbx_object_evidence;
+        total.product.staged += row.markers.product.staged;
+        total.product.uploaded += row.markers.product.uploaded;
+        total.product.downloaded += row.markers.product.downloaded;
+        total.product.verified += row.markers.product.verified;
+        total.product.non_success += row.markers.product.non_success;
     }
     total
 }
 
+fn clean_gate_total(rows: &[Row]) -> usize {
+    rows.iter().map(|row| row.markers.total()).sum()
+}
+
 impl Markers {
     fn total(&self) -> usize {
-        self.downloads + self.builds + self.source_tools + self.cache_misses
+        let warm_mbx = self.reported_cache_layers.get("mbx").map(String::as_str) == Some("exact")
+            && self.mbx_object_hits > 0
+            && self.mbx_object_evidence > 0
+            && self.mbx_object_misses == 0;
+        let counted_builds = self.builds - usize::from(warm_mbx) * self.cargo_compiling_lines;
+        self.downloads.max(self.structured_downloads)
+            + counted_builds
+            + self.source_tools
+            + self.cache_misses
+            + self.cache_partial_restores
+            + self.report_missing
+            + self.report_fallbacks
+            + self.report_parse_errors
+            + self.reported_cache_non_exact
+            + self.reported_cache_unknown
+            + if warm_mbx {
+                0
+            } else {
+                self.reported_compiler_builds
+            }
+            + self.mbx_object_misses
+            + self.product.non_success
+    }
+}
+
+impl ProductMarkers {
+    fn observe(&mut self, name: &str, result: &str) {
+        let name = name.to_ascii_lowercase();
+        let kind = if name.contains("stage product") {
+            Some(&mut self.staged)
+        } else if name.contains("upload product") {
+            Some(&mut self.uploaded)
+        } else if name.contains("download product") {
+            Some(&mut self.downloaded)
+        } else if name.contains("verify product") {
+            Some(&mut self.verified)
+        } else {
+            None
+        };
+        if let Some(count) = kind {
+            *count += 1;
+            if matches!(
+                result.to_ascii_lowercase().as_str(),
+                "failure" | "cancelled" | "timed_out" | "action_required" | "stale"
+            ) {
+                self.non_success += 1;
+            }
+        }
     }
 }
 
@@ -358,13 +666,34 @@ fn append_summary(
     let mut text = String::new();
     text.push_str(&format!("### {label} performance audit\n\n"));
     text.push_str(&format!(
-        "- Dependency/toolchain download markers: {}\n- Third-party compile/check/build markers: {}\n- Source-tool compile markers: {}\n- Cache-miss markers: {}\n\n",
-        totals.downloads, totals.builds, totals.source_tools, totals.cache_misses
+        "- Dependency/toolchain download markers: {}\n- Third-party compile/check/build markers: {}\n- Source-tool compile markers: {}\n- Cache log outcomes: {} exact hits, {} partial restores, {} misses\n- Structured Velnor reports: {} valid, {} missing, {} fallback, {} parse errors\n- Reported cache layers: {} exact, {} non-exact, {} inactive, {} unknown\n- Reported compiler lines: {}\n- Mr. Boxington object cache: {} hits, {} misses\n- Product transport steps: {} staged, {} uploaded, {} downloaded, {} verified, {} failures\n\n",
+        totals.downloads,
+        totals.builds,
+        totals.source_tools,
+        totals.cache_exact_hits,
+        totals.cache_partial_restores,
+        totals.cache_misses,
+        totals.report_count,
+        totals.report_missing,
+        totals.report_fallbacks,
+        totals.report_parse_errors,
+        totals.reported_cache_exact,
+        totals.reported_cache_non_exact,
+        totals.reported_cache_inactive,
+        totals.reported_cache_unknown,
+        totals.reported_compiler_lines,
+        totals.mbx_object_hits,
+        totals.mbx_object_misses,
+        totals.product.staged,
+        totals.product.uploaded,
+        totals.product.downloaded,
+        totals.product.verified,
+        totals.product.non_success
     ));
-    text.push_str("| Job | Result | Admission | Runtime | Longest step | Downloads | Third-party builds | Tool builds | Cache misses |\n| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |\n");
+    text.push_str("| Job | Result | Admission | Runtime | Longest step | Downloads | Third-party builds | Tool builds | Cache log H/P/M | Reported cache | Compiler lines | MBX H/M | Product S/U/D/V/! |\n| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | ---: | --- | --- |\n");
     for row in rows {
         text.push_str(&format!(
-            "| {} | {} | {} | {} | {} ({}) | {} | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {} ({}) | {} | {} | {} | {}/{}/{} | {} | {} | {}/{} | {}/{}/{}/{}/{} |\n",
             escaped(&row.name),
             row.result,
             duration(row.queue_seconds),
@@ -374,7 +703,18 @@ fn append_summary(
             row.markers.downloads,
             row.markers.builds,
             row.markers.source_tools,
-            row.markers.cache_misses
+            row.markers.cache_exact_hits,
+            row.markers.cache_partial_restores,
+            row.markers.cache_misses,
+            escaped(&reported_cache(&row.markers)),
+            row.markers.reported_compiler_lines,
+            row.markers.mbx_object_hits,
+            row.markers.mbx_object_misses,
+            row.markers.product.staged,
+            row.markers.product.uploaded,
+            row.markers.product.downloaded,
+            row.markers.product.verified,
+            row.markers.product.non_success
         ));
     }
     text.push_str("\n<details><summary>Every step duration</summary>\n\n| Job | Step | Result | Duration |\n| --- | --- | --- | ---: |\n");
@@ -410,6 +750,18 @@ fn append_summary(
     let mut existing = fs::read_to_string(path).unwrap_or_default();
     existing.push_str(&text);
     fs::write(path, existing).with_context(|| format!("writing {}", path.display()))
+}
+
+fn reported_cache(markers: &Markers) -> String {
+    if markers.reported_cache_layers.is_empty() {
+        return String::from("-");
+    }
+    markers
+        .reported_cache_layers
+        .iter()
+        .map(|(layer, outcome)| format!("{layer}={outcome}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn duration(seconds: i64) -> String {

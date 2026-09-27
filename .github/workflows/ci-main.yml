@@ -2929,6 +2929,7 @@ jobs:
         crates/jackin-xtask/benches/**
         crates/jackin-xtask/examples/**
         crates/jackin-xtask/src/**
+        crates/jackin-xtask/src/desktop.rs
         crates/jackin-xtask/tests/**
         mise.lock
       cache_paths: |
