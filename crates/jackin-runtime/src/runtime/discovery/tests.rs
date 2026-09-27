@@ -14,6 +14,7 @@ async fn list_managed_agent_names_excludes_dind_sidecars() {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             ContainerRow {
                 name: "jk-agent-smith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::new(),
             },
         ]])),
@@ -33,6 +34,7 @@ async fn list_running_agent_display_names_formats_correctly() {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             ContainerRow {
                 name: "jk-k7p9m2xq-agentsmith".to_owned(),
+                id: "container-id".to_owned(),
                 labels,
             },
         ]])),

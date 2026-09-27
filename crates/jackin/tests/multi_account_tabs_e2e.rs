@@ -21,7 +21,6 @@
     expect(
         clippy::unwrap_used,
         clippy::expect_used,
-        clippy::panic,
         clippy::disallowed_methods,
         reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
     )
@@ -29,13 +28,15 @@
 #![cfg(feature = "e2e")]
 
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use jackin_core::JackinPaths;
+use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_runtime::runtime::snapshot::fetch_snapshot;
 use tempfile::tempdir;
 
@@ -73,6 +74,30 @@ const ENDPOINT_A: &str = "https://openai-a.example.invalid/v1";
 const ENDPOINT_B: &str = "https://openai-b.example.invalid/v1";
 const MODEL_A: &str = "gpt-s3-a";
 const MODEL_B: &str = "gpt-s3-b";
+
+/// Fail before the interactive launch if Cargo did not build the broker binary.
+fn require_broker_sibling(jackin: &str) {
+    let broker_sibling = Path::new(jackin)
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("jackin-usage-broker");
+    assert!(
+        broker_sibling.is_file(),
+        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin-runtime --bin jackin-usage-broker` first.",
+        broker_sibling.display()
+    );
+    #[cfg(unix)]
+    assert!(
+        std::fs::metadata(&broker_sibling)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o111
+            != 0,
+        "jackin-usage-broker sibling must be executable: {}",
+        broker_sibling.display()
+    );
+}
 
 struct E2eRoleCleanup;
 
@@ -183,35 +208,6 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         .expect("restore observer must record an outcome")
         .expect("restore must serve bound sessions");
     assert_restore_bindings(&bindings);
-}
-
-/// `jackin load` spawns its `jackin-usage-broker` sibling during scoped
-/// usage-relay prep; `cargo test -p jackin` never builds that
-/// `jackin-runtime` bin target, so assert it up front instead of timing
-/// out inside the TUI on "Launch failed ... starting scoped usage relay".
-fn require_broker_sibling(jackin: &str) {
-    let broker_sibling = Path::new(jackin)
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("jackin-usage-broker");
-    assert!(
-        broker_sibling.is_file(),
-        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin-runtime --bin jackin-usage-broker` first.",
-        broker_sibling.display()
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let mode = std::fs::metadata(&broker_sibling)
-            .unwrap_or_else(|error| panic!("failed to stat {}: {error}", broker_sibling.display()))
-            .permissions()
-            .mode();
-        assert!(
-            mode & 0o111 != 0,
-            "jackin-usage-broker sibling must be executable, got {}",
-            broker_sibling.display()
-        );
-    }
 }
 
 /// Run the boot + split + new-tab PTY session; returns the observer outcome
@@ -350,7 +346,13 @@ fn completed_reconnect(home: &Path, container: &str, phase_ab: &PhaseAB) -> Arc<
 }
 
 fn snapshot_bindings(paths: &JackinPaths, container: &str) -> Option<Vec<(String, String)>> {
-    let snapshot = fetch_snapshot(paths, container).ok()??;
+    let output = Command::new("docker")
+        .args(["inspect", "--format", "{{.ID}}", container])
+        .output()
+        .ok()?;
+    let id = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    let handle = ContainerHandle::new(container, id).ok()?;
+    let snapshot = fetch_snapshot(paths, &handle).ok()??;
     let mut bindings = Vec::new();
     for tab in &snapshot.tabs {
         for pane in &tab.panes {
