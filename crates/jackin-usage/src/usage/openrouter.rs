@@ -16,6 +16,7 @@
 //! separate Management key, so history remains explicitly unavailable rather
 //! than being fetched with the wrong scope or inferred from live key usage.
 
+use super::refresh::{ProviderError, ProviderRateLimit};
 #[cfg_attr(
     not(test),
     expect(clippy::wildcard_imports, reason = "target-dependent")
@@ -385,7 +386,7 @@ pub(crate) fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) ->
 pub(crate) fn fetch_openrouter_key_usage(
     base_url: &str,
     key: &str,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, ProviderHttpError> {
     get_json_bearer::<serde_json::Value>(
         jackin_telemetry::schema::enums::ProviderName::Openrouter,
         "GET",
@@ -394,6 +395,13 @@ pub(crate) fn fetch_openrouter_key_usage(
         key,
         &[],
     )
+}
+
+fn openrouter_key_error_status(error: &ProviderError) -> UsageSnapshotStatus {
+    match error.status() {
+        Some(401) => UsageSnapshotStatus::NeedsLogin,
+        _ => UsageSnapshotStatus::Error,
+    }
 }
 
 /// `/credits` never fails the snapshot: every outcome (including the typed 403
@@ -458,58 +466,88 @@ pub(crate) fn fetch_openrouter_model_check(base_url: &str, model_id: &str) -> Op
 }
 
 pub(crate) fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> FocusedUsageView {
-    openrouter_snapshot_with_base(agent, key, &openrouter_base_url(), now)
+    openrouter_snapshot_with_rate_limit(agent, key, now).0
 }
 
-/// Key snapshot against an explicit base: production resolves the base from
-/// env, hermetic tests point it at a dead port.
+/// Key snapshot against an explicit base.
 pub(crate) fn openrouter_snapshot_with_base(
     agent: &str,
     key: Option<&str>,
     base_url: &str,
     now: i64,
 ) -> FocusedUsageView {
+    openrouter_snapshot_with_key_fetch(agent, key, base_url, now, fetch_openrouter_key_usage).0
+}
+
+pub(crate) fn openrouter_snapshot_with_rate_limit(
+    agent: &str,
+    key: Option<&str>,
+    now: i64,
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    openrouter_snapshot_with_key_fetch(
+        agent,
+        key,
+        &openrouter_base_url(),
+        now,
+        fetch_openrouter_key_usage,
+    )
+}
+
+/// Snapshot boundary with an injectable key fetch. Production supplies the
+/// shared HTTP fetcher; tests can drive transport/decode failures without
+/// relying on an unreserved local port.
+fn openrouter_snapshot_with_key_fetch<F>(
+    agent: &str,
+    key: Option<&str>,
+    base_url: &str,
+    now: i64,
+    fetch_key: F,
+) -> (FocusedUsageView, Option<ProviderRateLimit>)
+where
+    F: FnOnce(&str, &str) -> Result<serde_json::Value, ProviderHttpError>,
+{
     let Some(key) = key.filter(|key| !key.trim().is_empty()) else {
-        return usage_view(UsageViewInput {
-            agent,
-            provider: Some("OpenRouter"),
-            surface: UsageSurface::OpenRouter,
-            account_label: "OpenRouter key missing".to_owned(),
-            username: None,
-            plan_label: None,
-            credential_origin: None,
-            buckets: vec![bucket(
-                "Usage",
-                None,
-                None,
-                None,
-                None,
-                Some("OpenRouter API key missing"),
-                UsageSnapshotStatus::NeedsLogin,
-            )],
-            status: UsageSnapshotStatus::NeedsLogin,
-            source: UsageSource::None,
-            confidence: UsageConfidence::None,
-            now,
-            last_error: Some("OpenRouter API key missing".to_owned()),
-        });
+        return (
+            usage_view(UsageViewInput {
+                agent,
+                provider: Some("OpenRouter"),
+                surface: UsageSurface::OpenRouter,
+                account_label: "OpenRouter key missing".to_owned(),
+                username: None,
+                plan_label: None,
+                credential_origin: None,
+                buckets: vec![bucket(
+                    "Usage",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("OpenRouter API key missing"),
+                    UsageSnapshotStatus::NeedsLogin,
+                )],
+                status: UsageSnapshotStatus::NeedsLogin,
+                source: UsageSource::None,
+                confidence: UsageConfidence::None,
+                now,
+                last_error: Some("OpenRouter API key missing".to_owned()),
+            }),
+            None,
+        );
     };
-    let key_result = fetch_openrouter_key_usage(base_url, key)
-        .map_err(|error| {
-            if error.contains("401") {
-                (UsageSnapshotStatus::NeedsLogin, error)
-            } else {
-                (UsageSnapshotStatus::Error, error)
-            }
-        })
-        .and_then(|value| {
-            parse_openrouter_key_usage(value, now)
-                .map_err(|error| (UsageSnapshotStatus::Error, error))
-        });
-    let (quota, status, key_error) = match key_result {
-        Ok(quota) => (Some(quota), UsageSnapshotStatus::Fresh, None),
-        Err((status, error)) => (None, status, Some(error)),
+    let key_result = fetch_key(base_url, key)
+        .map_err(ProviderError::from)
+        .and_then(|value| parse_openrouter_key_usage(value, now).map_err(ProviderError::from));
+    let (quota, key_error) = match key_result {
+        Ok(quota) => (Some(quota), None),
+        Err(error) => (None, Some(error)),
     };
+    let status = key_error
+        .as_ref()
+        .map_or(UsageSnapshotStatus::Fresh, |error| {
+            openrouter_key_error_status(error)
+        });
+    let rate_limit = key_error.as_ref().and_then(ProviderError::rate_limit);
+    let key_error_message = key_error.as_ref().map(|error| error.message().to_owned());
     let mut buckets = quota.as_ref().map_or_else(
         || {
             vec![bucket(
@@ -518,7 +556,7 @@ pub(crate) fn openrouter_snapshot_with_base(
                 None,
                 None,
                 None,
-                key_error.as_deref(),
+                key_error_message.as_deref(),
                 status,
             )]
         },
@@ -543,7 +581,7 @@ pub(crate) fn openrouter_snapshot_with_base(
                 OpenRouterCreditsOutcome::Unavailable(error) => Some(error),
             }
         });
-    usage_view(UsageViewInput {
+    let view = usage_view(UsageViewInput {
         agent,
         provider: Some("OpenRouter"),
         surface: UsageSurface::OpenRouter,
@@ -564,8 +602,9 @@ pub(crate) fn openrouter_snapshot_with_base(
             UsageConfidence::None
         },
         now,
-        last_error: key_error.or_else(|| credits_note.flatten()),
-    })
+        last_error: key_error_message.or_else(|| credits_note.flatten()),
+    });
+    (view, rate_limit)
 }
 
 #[cfg(test)]

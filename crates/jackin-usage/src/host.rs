@@ -312,7 +312,7 @@ impl HostSurfaceId {
             "amp" => Some(Self::Amp),
             "grok" | "grokbuild" | "xai" | "xaigrok" => Some(Self::Grok),
             "zai" | "glm" | "glmzai" => Some(Self::Zai),
-            "kimi" => Some(Self::Kimi),
+            "kimi" | "moonshot" => Some(Self::Kimi),
             "minimax" => Some(Self::Minimax),
             "opencode" => Some(Self::OpenCode),
             "google" | "gemini" | "antigravity" => Some(Self::Google),
@@ -982,17 +982,17 @@ impl HostUsageRuntime {
                 "needs secret",
                 format!("credential access denied for {label}"),
             ),
-            UsageDiscoveryIssue::KeychainConsentRequired => (
-                UsageSnapshotStatus::NeedsSecret,
-                "Needs secret",
-                "needs secret",
-                format!("keychain consent required for {label}; approve jackin in Keychain Access"),
-            ),
             UsageDiscoveryIssue::InteractionRequired => (
                 UsageSnapshotStatus::NeedsSecret,
                 "Needs secret",
                 "needs secret",
                 format!("credential access requires interaction for {label}"),
+            ),
+            UsageDiscoveryIssue::KeychainConsentRequired => (
+                UsageSnapshotStatus::NeedsSecret,
+                "Approve access",
+                "approve access",
+                format!("keychain access requires approval for {label}"),
             ),
             UsageDiscoveryIssue::ConfigUnreadable => (
                 UsageSnapshotStatus::Unavailable,

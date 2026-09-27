@@ -6,6 +6,7 @@
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
+use super::refresh::{ProviderError, ProviderRateLimit};
 use super::*;
 use serde::Deserialize;
 
@@ -33,14 +34,14 @@ pub(crate) fn grok_snapshot(
             if resolve_grok_billing_auth(has_auth, has_xai_api_key, has_deployment_key)
                 == GrokBillingAuth::EnvKeyOnly =>
         {
-            Err(
+            Err(ProviderError::from(
                 "Grok consumer billing needs subscription auth; XAI_API_KEY is inference-only"
                     .to_owned(),
-            )
+            ))
         }
         _ => billing_result,
     };
-    grok_snapshot_from_rpc_result(
+    grok_snapshot_from_rpc_result_with_rate_limit(
         agent,
         now,
         &auth,
@@ -49,6 +50,7 @@ pub(crate) fn grok_snapshot(
         has_deployment_key,
         billing_result,
     )
+    .0
 }
 
 pub(crate) fn grok_snapshot_from_rpc_result(
@@ -58,12 +60,40 @@ pub(crate) fn grok_snapshot_from_rpc_result(
     has_auth: bool,
     has_xai_api_key: bool,
     has_deployment_key: bool,
-    billing_result: Result<GrokBillingSnapshot, String>,
+    billing_result: Result<GrokBillingSnapshot, ProviderError>,
 ) -> FocusedUsageView {
+    grok_snapshot_from_rpc_result_with_rate_limit(
+        agent,
+        now,
+        auth,
+        has_auth,
+        has_xai_api_key,
+        has_deployment_key,
+        billing_result,
+    )
+    .0
+}
+
+pub(crate) fn grok_snapshot_from_rpc_result_with_rate_limit<E>(
+    agent: &str,
+    now: i64,
+    auth: &Path,
+    has_auth: bool,
+    has_xai_api_key: bool,
+    has_deployment_key: bool,
+    billing_result: Result<GrokBillingSnapshot, E>,
+) -> (FocusedUsageView, Option<ProviderRateLimit>)
+where
+    E: Into<ProviderError>,
+{
     let has_credentials = has_auth || has_xai_api_key || has_deployment_key;
-    let (billing_usage, billing_error) = match billing_result {
-        Ok(usage) => (Some(usage), None),
-        Err(error) => (None, Some(error)),
+    let (billing_usage, billing_error, rate_limit) = match billing_result {
+        Ok(usage) => (Some(usage), None, None),
+        Err(error) => {
+            let error = error.into();
+            let rate_limit = error.rate_limit();
+            (None, Some(error.to_string()), rate_limit)
+        }
     };
     // credential_origin reflects the resolver arm that actually won
     // (`auth` is the resolved path — home `~/.grok/auth.json` or the handoff).
@@ -104,7 +134,7 @@ pub(crate) fn grok_snapshot_from_rpc_result(
                 status,
             )]
         });
-    usage_view(UsageViewInput {
+    let view = usage_view(UsageViewInput {
         agent,
         provider: None,
         surface: UsageSurface::Grok,
@@ -136,46 +166,8 @@ pub(crate) fn grok_snapshot_from_rpc_result(
             }
             _ => None,
         },
-    })
-}
-
-/// Typed billing-failure taxonomy: REST/HTTP and RPC failures classify into
-/// disjoint kinds so status mapping never sniffs ad-hoc substrings at the call
-/// site. Pure over this module's own error strings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GrokBillingErrorKind {
-    Auth,
-    RateLimited,
-    Timeout,
-    Rpc,
-    Decode,
-    Transport,
-}
-
-pub(crate) fn classify_grok_billing_error(error: &str) -> GrokBillingErrorKind {
-    let lower = error.to_ascii_lowercase();
-    if lower.contains("401")
-        || lower.contains("403")
-        || lower.contains("unauthorized")
-        || lower.contains("forbidden")
-        || lower.contains("expired")
-    {
-        GrokBillingErrorKind::Auth
-    } else if lower.contains("429") || lower.contains("rate-limit") || lower.contains("rate limit")
-    {
-        GrokBillingErrorKind::RateLimited
-    } else if lower.contains("timed out") || lower.contains("timeout") {
-        GrokBillingErrorKind::Timeout
-    } else if lower.contains("decode")
-        || lower.contains("shape unsupported")
-        || lower.contains("not found in")
-    {
-        GrokBillingErrorKind::Decode
-    } else if lower.contains("rpc") || lower.contains("stdio") || lower.contains("acp billing") {
-        GrokBillingErrorKind::Rpc
-    } else {
-        GrokBillingErrorKind::Transport
-    }
+    });
+    (view, rate_limit)
 }
 
 /// Billing-auth precedence: stored subscription auth outranks ambient inference
@@ -544,14 +536,15 @@ pub(crate) fn fetch_grok_billing(
     auth_path: &Path,
     now: i64,
     gate: &mut ManagedCliLaunchGate,
-) -> Result<GrokBillingSnapshot, String> {
+) -> Result<GrokBillingSnapshot, ProviderError> {
     match fetch_grok_rest_billing(auth_path, now) {
         Ok(response) => Ok(GrokBillingSnapshot::Rest(Box::new(response))),
         Err(rest_error) => match fetch_grok_rpc_billing(gate) {
             Ok(response) => Ok(GrokBillingSnapshot::Rpc(Box::new(response))),
-            Err(rpc_error) => Err(format!(
-                "{rest_error}; Grok ACP billing failed: {rpc_error}"
-            )),
+            Err(rpc_error) => Err(rest_error.with_message(format!(
+                "{}; Grok ACP billing failed: {rpc_error}",
+                rest_error.message()
+            ))),
         },
     }
 }
@@ -562,32 +555,26 @@ pub(crate) fn fetch_grok_billing(
 pub(crate) fn fetch_grok_rest_billing(
     auth_path: &Path,
     now: i64,
-) -> Result<GrokBillingResponse, String> {
-    let token = grok_bearer_token(auth_path, now)?;
-    let billing_value = provider_request(
+) -> Result<GrokBillingResponse, ProviderError> {
+    let token = grok_bearer_token(auth_path, now).map_err(ProviderError::from)?;
+    let extra_headers = [
+        (reqwest::header::USER_AGENT, "jackin-capsule"),
+        (
+            reqwest::header::HeaderName::from_static("x-xai-token-auth"),
+            "xai-grok-cli",
+        ),
+    ];
+    let billing_value = get_json_bearer::<serde_json::Value>(
         jackin_telemetry::schema::enums::ProviderName::Xai,
-        "GET",
         "/v1/billing",
-        || {
-            let client = provider_http_client()?;
-            let response = client
-                .get("https://cli-chat-proxy.grok.com/v1/billing?format=credits")
-                .bearer_auth(&token)
-                .header(reqwest::header::ACCEPT, "application/json")
-                .header(reqwest::header::USER_AGENT, "jackin-capsule")
-                .header("X-XAI-Token-Auth", "xai-grok-cli")
-                .send()
-                .map_err(|error| format!("Grok billing request failed: {error}"))?;
-            let status = response.status();
-            if !status.is_success() {
-                return Err(format!("Grok billing HTTP {status}"));
-            }
-            response
-                .json::<serde_json::Value>()
-                .map_err(|error| format!("Grok billing decode failed: {error}"))
-        },
-    )?;
-    let mut response = parse_grok_rest_billing_response(&billing_value)?;
+        "Grok billing",
+        "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+        &token,
+        &extra_headers,
+    )
+    .map_err(ProviderError::from)?;
+    let mut response =
+        parse_grok_rest_billing_response(&billing_value).map_err(ProviderError::from)?;
     if let Ok(settings) = fetch_grok_rest_settings(&token)
         && let Some(tier) = grok_tier_from_settings(&settings)
     {

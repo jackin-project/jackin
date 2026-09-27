@@ -81,7 +81,7 @@ fn disc_source_cache_alias_request_refreshes_through_governed_name() {
     // Refresh routing addresses the governed name; the alias-resolved secret
     // must be reachable through it.
     match resolver.refresh_provider_credential(HostSurfaceId::Codex, "OPENAI_API_KEY", handle) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(
                 view.last_error.as_deref(),
                 Some("OpenAI API-key subscription quota is unavailable")

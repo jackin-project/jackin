@@ -6,6 +6,7 @@
 //! Carved out of `usage.rs` for the file-size ratchet. Items in this module
 //! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
 
+use super::refresh::{ProviderError, ProviderRateLimit, split_provider_fetch};
 #[cfg_attr(
     not(test),
     expect(clippy::wildcard_imports, reason = "target-dependent")
@@ -35,7 +36,53 @@ pub(crate) fn claude_account_identity() -> Option<String> {
 }
 
 pub(crate) fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
-    claude_view_from_wave(agent, provider, now, resolve_claude_wave())
+    claude_view_from_wave_with_rate_limit(agent, provider, now, resolve_claude_wave()).0
+}
+
+/// Claude API keys do not authenticate the OAuth quota endpoint. Keep this
+/// route explicit and unsupported rather than feeding an API key into the
+/// OAuth adapter and reporting a misleading login/error state.
+pub(crate) fn claude_api_key_snapshot(
+    agent: &str,
+    provider: Option<&str>,
+    key_name: &str,
+    secret: &str,
+    now: i64,
+) -> FocusedUsageView {
+    let has_secret = !secret.trim().is_empty();
+    let status = if has_secret {
+        UsageSnapshotStatus::Unsupported
+    } else {
+        UsageSnapshotStatus::NeedsSecret
+    };
+    let message = if has_secret {
+        "Claude API-key quota is unavailable; OAuth usage requires CLAUDE_CODE_OAUTH_TOKEN"
+    } else {
+        "Claude API key is missing"
+    };
+    usage_view(UsageViewInput {
+        agent,
+        provider: provider.or(Some("Claude")),
+        surface: UsageSurface::Claude,
+        account_label: "Claude API key".to_owned(),
+        username: None,
+        plan_label: None,
+        credential_origin: Some(format!("API key · env {key_name}")),
+        buckets: vec![bucket(
+            "Usage",
+            None,
+            None,
+            None,
+            None,
+            Some(message),
+            status,
+        )],
+        status,
+        source: UsageSource::None,
+        confidence: UsageConfidence::None,
+        now,
+        last_error: Some(message.to_owned()),
+    })
 }
 
 /// Production Claude wave resolution: derive the Keychain scope from the
@@ -54,17 +101,21 @@ pub(crate) fn resolve_claude_wave() -> ClaudeWaveResolution {
         claude_keychain_state(),
         read_claude_keychain_item,
         || claude_scope_file_probe(&scope, &config),
-        || {
-            std::env::var("ANTHROPIC_API_KEY")
-                .ok()
-                .filter(|value| !value.is_empty())
-                .or_else(|| {
-                    std::env::var("ANTHROPIC_AUTH_TOKEN")
-                        .ok()
-                        .filter(|value| !value.is_empty())
-                })
-        },
+        || read_claude_oauth_env_token(|name| std::env::var(name)),
     )
+}
+
+/// Read only the Claude Code OAuth environment credential. Anthropic API keys
+/// use a different authentication protocol and must never reach the OAuth
+/// usage endpoint through the standalone resolver.
+pub(crate) fn read_claude_oauth_env_token<F>(mut read: F) -> Option<ClaudeOAuthEnvToken>
+where
+    F: FnMut(&str) -> Result<String, std::env::VarError>,
+{
+    read(jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(ClaudeOAuthEnvToken::new)
 }
 
 /// One-pass file/metadata probe for a Keychain scope. Default scope keeps
@@ -121,16 +172,15 @@ pub(crate) enum ClaudeWavePolicy {
     LocalAnonymous,
 }
 
-/// Build the Claude view for a resolved wave.
-pub(crate) fn claude_view_from_wave(
+pub(crate) fn claude_view_from_wave_with_rate_limit(
     agent: &str,
     provider: Option<&str>,
     now: i64,
     resolution: ClaudeWaveResolution,
-) -> FocusedUsageView {
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
     match resolution {
-        ClaudeWaveResolution::Denied => claude_denied_view(agent, provider, now),
-        ClaudeWaveResolution::Missing => claude_missing_view(agent, provider, now),
+        ClaudeWaveResolution::Denied => (claude_denied_view(agent, provider, now), None),
+        ClaudeWaveResolution::Missing => (claude_missing_view(agent, provider, now), None),
         ClaudeWaveResolution::Resolved(resolved) => {
             claude_resolved_view(agent, provider, now, *resolved)
         }
@@ -197,18 +247,11 @@ fn claude_missing_view(agent: &str, provider: Option<&str>, now: i64) -> Focused
 }
 
 /// True when the OAuth usage fetch failed because the token lacks the quota
-/// scope (an inference-only grant): HTTP 403 / forbidden / scope-denied, but
-/// never a 401 (expired/revoked) or a transport/decode failure. Pure so the
-/// inference-only state is unit-testable without provider I/O.
-pub(crate) fn claude_error_is_scope_restriction(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    if lower.contains("401") || lower.contains("unauthorized") {
-        return false;
-    }
-    lower.contains("403")
-        || lower.contains("forbidden")
-        || lower.contains("scope")
-        || lower.contains("permission")
+/// scope (an inference-only grant): only a typed HTTP 403. A 401, another
+/// status, or any transport/decode/CLI failure is not scope restriction. Pure
+/// so the inference-only state is unit-testable without provider I/O.
+pub(crate) fn claude_error_is_scope_restriction(error: &ProviderError) -> bool {
+    error.status() == Some(403)
 }
 
 /// Pick the provider error label for a resolved view: OAuth first, CLI second.
@@ -216,8 +259,8 @@ pub(crate) fn claude_error_is_scope_restriction(error: &str) -> bool {
 /// message so the operator sees *why* quota is unavailable instead of a bare
 /// HTTP status; every other error passes through verbatim.
 pub(crate) fn claude_provider_error_label(
-    oauth_error: Option<&str>,
-    cli_error: Option<&str>,
+    oauth_error: Option<&ProviderError>,
+    cli_error: Option<&ProviderError>,
 ) -> Option<String> {
     let error = oauth_error.or(cli_error)?;
     if oauth_error.is_some_and(claude_error_is_scope_restriction) {
@@ -225,7 +268,7 @@ pub(crate) fn claude_provider_error_label(
             "Claude token lacks usage scope (inference-only); quota unavailable".to_owned(),
         );
     }
-    Some(error.to_owned())
+    Some(error.message().to_owned())
 }
 
 fn claude_resolved_view(
@@ -233,22 +276,28 @@ fn claude_resolved_view(
     provider: Option<&str>,
     now: i64,
     resolved: ClaudeResolved,
-) -> FocusedUsageView {
-    let (oauth_quota, oauth_error) =
-        split_fetch(Some(fetch_claude_oauth_usage(&resolved.access_token)));
-    let (cli_usage, cli_error) = split_fetch(oauth_quota.is_none().then(fetch_claude_cli_usage));
-    let provider_error = claude_provider_error_label(oauth_error.as_deref(), cli_error.as_deref());
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    let (oauth_quota, oauth_error) = split_provider_fetch(Some(
+        fetch_claude_oauth_usage(&resolved.access_token).map_err(ProviderError::from),
+    ));
+    let (cli_usage, cli_error) =
+        split_provider_fetch(oauth_quota.is_none().then(fetch_claude_cli_usage));
+    let provider_error = claude_provider_error_label(oauth_error.as_ref(), cli_error.as_ref());
     let status = if oauth_quota.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else {
         UsageSnapshotStatus::Stale
     };
+    let rate_limit = (status != UsageSnapshotStatus::Fresh)
+        .then_some(oauth_error.as_ref().or(cli_error.as_ref()))
+        .flatten()
+        .and_then(ProviderError::rate_limit);
     let buckets = oauth_quota
         .map(|usage| usage.into_buckets(now))
         .or_else(|| cli_usage.as_ref().map(ClaudeCliUsage::buckets))
         .filter(|buckets| !buckets.is_empty())
         .unwrap_or_else(|| claude_pending_buckets(status, provider_error.as_deref()));
-    usage_view(UsageViewInput {
+    let view = usage_view(UsageViewInput {
         agent,
         provider,
         surface: UsageSurface::Claude,
@@ -278,7 +327,8 @@ fn claude_resolved_view(
         },
         now,
         last_error: claude_resolved_last_error(status, provider_error, cli_usage.is_some()),
-    })
+    });
+    (view, rate_limit)
 }
 
 /// `last_error` for a resolved view: the normalized provider error when stale,
@@ -410,19 +460,16 @@ pub(crate) enum ClaudeKeychainRead {
     },
     Denied,
     Missing,
-    /// The item exists but the operator has not approved this binary's access,
-    /// so the lookup failed fast instead of prompting. Missing-family (file/env
-    /// fallback stays available) with a consent diagnostic attached downstream.
+    /// A matching item requires operator consent before its payload can be read.
     ConsentRequired,
 }
 
 /// Classify a macOS `OSStatus` from a Keychain lookup. Only an explicit user
 /// cancel (`errSecUserCanceled` = -128) or auth failure (`errSecAuthFailed` =
-/// -25293) is a terminal `Denied`; headless interaction-not-allowed
-/// (`errSecInteractionNotAllowed` = -25308) is `ConsentRequired` (the item
-/// exists but needs operator approval, so file/env fallback stays available);
-/// item-not-found (-25300) and any other failure are `Missing` (absence). Pure
-/// and cross-platform so tests never touch the real Keychain.
+/// -25293) is a terminal `Denied`; headless interaction-not-allowed (-25308)
+/// is `ConsentRequired`; item-not-found (-25300) and any other failure are
+/// `Missing` (absence). Pure and cross-platform so tests never touch the real
+/// Keychain.
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     match code {
@@ -432,50 +479,21 @@ pub(crate) fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     }
 }
 
-/// Fail-fast generic-password search: `kSecUseAuthenticationUI` is pinned to
-/// skip, so a lookup that would pop a consent sheet returns immediately
-/// (empty/skipped) instead of blocking forever on a GUI prompt headless.
-/// Already-approved items are unaffected: skip only skips items that WOULD
-/// need UI. The pinned `security-framework` 3.7 `ItemSearchOptions` exposes no
-/// fail control, and this workspace forbids `unsafe`, so a manual
-/// `SecItemCopyMatching` query is not an option — skip plus the presence
-/// disambiguation in [`read_claude_keychain_item`] is the equivalent
-/// fail-instead-of-prompt contract over the safe API.
 #[cfg(target_os = "macos")]
-pub(crate) fn keychain_generic_password_search(
-    service: &str,
-    load_data: bool,
-) -> Result<Vec<security_framework::item::SearchResult>, i32> {
-    use security_framework::item::{ItemClass, ItemSearchOptions};
+pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
+    use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 
     let mut options = ItemSearchOptions::new();
     options
         .class(ItemClass::generic_password())
         .service(service)
-        .load_data(load_data)
-        .limit(1)
-        .skip_authenticated_items(true);
-    options
-        .search()
-        .map_err(security_framework::base::Error::code)
-}
-
-/// Presence-only probe for one generic-password service. Never prompts:
-/// metadata reads need no approval, and the search additionally skips
-/// auth-gated items. Fails closed to absent on any error.
-#[cfg(target_os = "macos")]
-fn keychain_generic_password_present(service: &str) -> bool {
-    matches!(
-        keychain_generic_password_search(service, false),
-        Ok(results) if !results.is_empty()
-    )
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
-    use security_framework::item::SearchResult;
-
-    match keychain_generic_password_search(service, true) {
+        .load_data(true)
+        .limit(1);
+    // Keep authentication UI enabled: `errSecInteractionNotAllowed` tells us
+    // that the matching item exists but needs consent, while
+    // `errSecItemNotFound` means it is absent. A skip-auth query would erase
+    // that distinction by hiding consent-gated items.
+    match options.search() {
         Ok(results) => {
             for result in results {
                 if let SearchResult::Data(bytes) = result {
@@ -487,25 +505,9 @@ pub(crate) fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
                     };
                 }
             }
-            // No payload: either the item is absent or it was skipped for
-            // pending consent. The presence probe disambiguates without
-            // ever prompting (metadata reads need no approval).
-            if keychain_generic_password_present(service) {
-                ClaudeKeychainRead::ConsentRequired
-            } else {
-                ClaudeKeychainRead::Missing
-            }
+            ClaudeKeychainRead::Missing
         }
-        Err(code) => {
-            let classified = classify_claude_keychain_status(code);
-            if matches!(classified, ClaudeKeychainRead::Missing)
-                && keychain_generic_password_present(service)
-            {
-                ClaudeKeychainRead::ConsentRequired
-            } else {
-                classified
-            }
-        }
+        Err(error) => classify_claude_keychain_status(error.code()),
     }
 }
 
@@ -616,7 +618,7 @@ pub(crate) struct ClaudeFileProbe {
 /// Resolve the Claude wave for `scope`: Keychain first, then scope-appropriate
 /// file/env fallback. `keychain_reader` performs the real (or test) Keychain
 /// read; `file_probe` returns the scope's file credential + metadata in one
-/// call; `env_reader` yields an env access token. No process-global env
+/// call; `env_reader` yields an OAuth env token. No process-global env
 /// mutation — all inputs are injected so the whole path is unit-testable.
 pub(crate) fn resolve_claude_refresh_wave_with<K, P, E>(
     scope: &jackin_core::ClaudeKeychainScope,
@@ -628,7 +630,7 @@ pub(crate) fn resolve_claude_refresh_wave_with<K, P, E>(
 where
     K: FnOnce(&str) -> ClaudeKeychainRead,
     P: FnOnce() -> ClaudeFileProbe,
-    E: FnOnce() -> Option<String>,
+    E: FnOnce() -> Option<ClaudeOAuthEnvToken>,
 {
     match state.read_with(&scope.service, keychain_reader) {
         ClaudeKeychainRead::Denied => ClaudeWaveResolution::Denied,
@@ -655,8 +657,6 @@ where
                 None => resolve_claude_fallback(scope, file_probe(), env_reader()),
             }
         }
-        // Consent-gated Keychain is Missing-family: file/env fallback stays
-        // available, and the discovery lane attaches the consent diagnostic.
         ClaudeKeychainRead::Missing | ClaudeKeychainRead::ConsentRequired => {
             resolve_claude_fallback(scope, file_probe(), env_reader())
         }
@@ -666,7 +666,7 @@ where
 fn resolve_claude_fallback(
     scope: &jackin_core::ClaudeKeychainScope,
     probe: ClaudeFileProbe,
-    env_token: Option<String>,
+    env_token: Option<ClaudeOAuthEnvToken>,
 ) -> ClaudeWaveResolution {
     if let Some(credential) = probe.credential {
         let origin = probe
@@ -680,17 +680,29 @@ fn resolve_claude_fallback(
         )));
     }
     let _ = scope;
-    if let Some(token) = env_token.filter(|value| !value.is_empty()) {
+    if let Some(token) = env_token {
         return ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
-            access_token: token,
+            access_token: token.0,
             subscription_type: None,
             account_email: probe.account_email,
             organization_type: probe.organization_type,
-            credential_origin: "API token · env ANTHROPIC_API_KEY".to_owned(),
+            credential_origin: format!(
+                "OAuth · env {}",
+                jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
+            ),
             is_anonymous: true,
         }));
     }
     ClaudeWaveResolution::Missing
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClaudeOAuthEnvToken(String);
+
+impl ClaudeOAuthEnvToken {
+    pub(crate) fn new(value: String) -> Self {
+        Self(value)
+    }
 }
 
 fn claude_resolved(
@@ -1286,7 +1298,7 @@ pub(crate) fn normalize_claude_spend(
 
 pub(crate) fn fetch_claude_oauth_usage(
     access_token: &str,
-) -> Result<ClaudeOAuthUsageResponse, String> {
+) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError> {
     let user_agent = claude_code_user_agent();
     get_json_bearer(
         jackin_telemetry::schema::enums::ProviderName::Anthropic,
@@ -1360,16 +1372,16 @@ pub struct ClaudeUsageDiagnostic {
     pub fetched_at_epoch: i64,
 }
 
-pub(crate) fn fetch_claude_cli_usage() -> Result<ClaudeCliUsage, String> {
-    let diagnostic = run_claude_usage_diagnostic()?;
+pub(crate) fn fetch_claude_cli_usage() -> Result<ClaudeCliUsage, ProviderError> {
+    let diagnostic = run_claude_usage_diagnostic().map_err(ProviderError::from)?;
     if !diagnostic.success {
-        return Err(format!(
+        return Err(ProviderError::from(format!(
             "Claude CLI usage exited with status {:?}",
             diagnostic.exit_code
-        ));
+        )));
     }
     parse_claude_usage_output(&diagnostic.stdout)
-        .ok_or_else(|| "Claude CLI usage output was not recognized".to_owned())
+        .ok_or_else(|| ProviderError::from("Claude CLI usage output was not recognized".to_owned()))
 }
 
 #[cfg(test)]

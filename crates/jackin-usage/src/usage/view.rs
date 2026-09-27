@@ -57,6 +57,9 @@ impl UsageCache {
         if view.focused_provider.is_none() {
             view.focused_provider = target.provider.clone();
         }
+        if state.error.is_some() {
+            refresh_failed_view_presentation(&mut view);
+        }
         self.snapshots.insert(
             usage_cache_key_for_broker_account(
                 &target.agent,
@@ -93,7 +96,38 @@ impl UsageCache {
         } else {
             UsageSnapshotStatus::Stale
         };
+        refresh_failed_view_presentation(&mut cached.view);
     }
+}
+
+/// Keep row-level status honest when a broker failure preserves last-good
+/// buckets. A stale/error view must not render fresh bucket rows or an
+/// "updated now" label.
+fn refresh_failed_view_presentation(view: &mut FocusedUsageView) {
+    if view.status != UsageSnapshotStatus::Fresh {
+        for bucket in &mut view.buckets {
+            bucket.status = view.status;
+        }
+    }
+    view.updated_label = match view.status {
+        UsageSnapshotStatus::Fresh => "Updated now",
+        UsageSnapshotStatus::Stale => "Stale",
+        UsageSnapshotStatus::NeedsLogin => "Needs login",
+        UsageSnapshotStatus::NeedsSecret => "Needs secret",
+        UsageSnapshotStatus::Unsupported => "Unsupported",
+        UsageSnapshotStatus::Unavailable => "Unavailable",
+        UsageSnapshotStatus::Error => "Error",
+    }
+    .to_owned();
+    view.status_bar_label = status_bar_label(
+        resolve_surface(
+            view.focused_agent.as_deref().unwrap_or_default(),
+            view.focused_provider.as_deref(),
+        ),
+        &view.account.account_label,
+        view.status,
+        &view.buckets,
+    );
 }
 
 /// Stamp the surface-derived agent, provider label, and tab strip onto a base
@@ -157,6 +191,12 @@ pub(crate) fn account_snapshot_views_from_cache(
             view.buckets.iter().map(|bucket| {
                 let (used_amount, used_unit, limit_amount, limit_unit) =
                     quota_amounts_for_account_snapshot(bucket);
+                let status =
+                    if snapshot_status_rank(bucket.status) > snapshot_status_rank(view.status) {
+                        bucket.status
+                    } else {
+                        view.status
+                    };
                 AccountUsageSnapshotView {
                     provider: view.account.provider_label.clone(),
                     account_label: view.account.account_label.clone(),
@@ -170,7 +210,7 @@ pub(crate) fn account_snapshot_views_from_cache(
                     resets_at: bucket.resets_at,
                     fetched_at: view.fetched_at_epoch,
                     expires_at: None,
-                    status: usage_status_storage_label(bucket.status).to_owned(),
+                    status: usage_status_storage_label(status).to_owned(),
                     last_error: view.last_error.clone(),
                 }
             })
@@ -187,6 +227,23 @@ pub(crate) fn account_snapshot_views_from_cache(
 pub(crate) fn quota_amounts_for_account_snapshot(
     bucket: &QuotaBucketView,
 ) -> (Option<i64>, Option<String>, Option<i64>, Option<String>) {
+    if bucket.used_money.is_some() || bucket.limit_money.is_some() {
+        return (
+            bucket.used_money.as_ref().map(|money| money.amount_minor),
+            bucket
+                .used_money
+                .as_ref()
+                .map(|money| money.currency.clone()),
+            bucket.limit_money.as_ref().map(|money| money.amount_minor),
+            bucket
+                .limit_money
+                .as_ref()
+                .map(|money| money.currency.clone()),
+        );
+    }
+    if bucket.status_slot == Some(StatusSlot::Spend) {
+        return (None, None, None, None);
+    }
     let Some(remaining) = bucket.remaining_percent else {
         return (None, None, None, None);
     };
@@ -196,6 +253,18 @@ pub(crate) fn quota_amounts_for_account_snapshot(
         Some(100),
         Some("percent".to_owned()),
     )
+}
+
+const fn snapshot_status_rank(status: UsageSnapshotStatus) -> u8 {
+    match status {
+        UsageSnapshotStatus::Fresh => 0,
+        UsageSnapshotStatus::Stale => 1,
+        UsageSnapshotStatus::NeedsLogin => 2,
+        UsageSnapshotStatus::NeedsSecret => 3,
+        UsageSnapshotStatus::Unsupported => 4,
+        UsageSnapshotStatus::Unavailable => 5,
+        UsageSnapshotStatus::Error => 6,
+    }
 }
 
 pub(crate) struct UsageViewInput<'a> {

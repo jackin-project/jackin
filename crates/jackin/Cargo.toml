@@ -3,7 +3,7 @@
 
 [package]
 name = "jackin"
-version = "0.6.5-dev"
+version = "0.6.4"
 edition.workspace = true
 rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
@@ -26,10 +26,6 @@ path = "src/bin/role.rs"
 [[bin]]
 name = "build-jackin-capsule"
 path = "src/bin/build_jackin_capsule/main.rs"
-
-[[bin]]
-name = "jackin-usage-broker"
-path = "src/bin/usage_broker.rs"
 
 [dependencies]
 jackin-brand = { workspace = true }

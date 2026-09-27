@@ -78,21 +78,20 @@ pub(crate) use self::antigravity::{
 pub use self::claude::ClaudeUsageDiagnostic;
 #[cfg(any(target_os = "macos", test))]
 pub(crate) use self::claude::classify_claude_keychain_status;
-#[cfg(target_os = "macos")]
-pub(crate) use self::claude::keychain_generic_password_search;
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::claude::{
-    ClaudeCliUsage, ClaudeKeychainRead, ClaudeOAuthCredentials, ClaudeOAuthExtraUsage,
-    ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney,
-    ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeQuotaWindow,
-    ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution, claude_account_identity,
-    claude_code_user_agent, claude_code_user_agent_with, claude_code_version_from_text,
-    claude_email_from_value, claude_error_is_scope_restriction, claude_oauth_candidates,
-    claude_oauth_from_value, claude_organization_type_from_value, claude_provider_error_label,
-    claude_snapshot, claude_spend_bucket, claude_view_from_wave, claude_wave_policy,
+    ClaudeCliUsage, ClaudeKeychainRead, ClaudeOAuthCredentials, ClaudeOAuthEnvToken,
+    ClaudeOAuthExtraUsage, ClaudeOAuthLimit, ClaudeOAuthLimitModel, ClaudeOAuthLimitScope,
+    ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow,
+    ClaudeQuotaWindow, ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
+    claude_account_identity, claude_api_key_snapshot, claude_code_user_agent,
+    claude_code_user_agent_with, claude_code_version_from_text, claude_email_from_value,
+    claude_error_is_scope_restriction, claude_oauth_candidates, claude_oauth_from_value,
+    claude_organization_type_from_value, claude_provider_error_label, claude_snapshot,
+    claude_spend_bucket, claude_view_from_wave_with_rate_limit, claude_wave_policy,
     fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
     normalize_claude_spend, push_claude_dollar_windows, read_claude_keychain_item,
     resolve_claude_wave,
@@ -100,7 +99,7 @@ pub(crate) use self::claude::{
 #[cfg(test)]
 pub(crate) use self::claude::{
     ClaudeFileProbe, ClaudeKeychainState, load_claude_oauth_credentials,
-    load_claude_organization_type, resolve_claude_refresh_wave_with,
+    load_claude_organization_type, read_claude_oauth_env_token, resolve_claude_refresh_wave_with,
 };
 #[cfg(test)]
 pub(crate) use self::codex::load_codex_oauth_credentials;
@@ -116,11 +115,12 @@ pub(crate) use self::codex::{
     CodexSpendControl, CodexUsageResponse, CodexWindowSnapshot, codex_access_token_from_response,
     codex_account_identity, codex_account_label_from_id_token, codex_auth_candidates,
     codex_oauth_from_value, codex_plan_display_name, codex_plan_exact_display,
-    codex_plan_word_display, codex_profile_snapshot, codex_refresh_request_body,
-    codex_rpc_notification, codex_rpc_request, codex_snapshot, decode_codex_rpc_usage,
-    fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage, fetch_codex_oauth_usage_refreshing,
-    fetch_codex_rpc_usage, push_codex_window, refresh_codex_access_token, resolve_codex_base_url,
-    resolve_codex_reset_credits_url, resolve_codex_usage_url,
+    codex_plan_word_display, codex_profile_snapshot, codex_profile_snapshot_with_rate_limit,
+    codex_refresh_request_body, codex_rpc_notification, codex_rpc_request, codex_snapshot,
+    decode_codex_rpc_usage, fetch_codex_oauth_reset_credits, fetch_codex_oauth_usage,
+    fetch_codex_oauth_usage_refreshing, fetch_codex_rpc_usage, push_codex_window,
+    refresh_codex_access_token, resolve_codex_base_url, resolve_codex_reset_credits_url,
+    resolve_codex_usage_url,
 };
 #[expect(
     unused_imports,
@@ -151,9 +151,8 @@ pub(crate) use self::cursor::{
 pub(crate) use self::gemini::{
     GEMINI_CONSUMER_OAUTH_END, GeminiEntitlement, GeminiProjectQuota,
     gemini_consumer_oauth_retired, gemini_credential_origin, gemini_credential_presence,
-    gemini_error_needs_migration, gemini_migration_action, gemini_oauth_creds_path,
-    gemini_quota_buckets, gemini_snapshot, gemini_snapshot_with_presence, parse_gemini_entitlement,
-    parse_gemini_project_quotas,
+    gemini_migration_action, gemini_oauth_creds_path, gemini_quota_buckets, gemini_snapshot,
+    gemini_snapshot_with_presence, parse_gemini_entitlement, parse_gemini_project_quotas,
 };
 #[expect(
     unused_imports,
@@ -165,8 +164,9 @@ pub(crate) use self::grok::{
     grok_account_label, grok_account_label_or_presence, grok_bearer_token,
     grok_bearer_token_from_entry, grok_binary_path, grok_cycle_label_from_minutes,
     grok_cycle_label_from_reset, grok_rpc_request, grok_rpc_request_payload, grok_snapshot,
-    grok_snapshot_from_rpc_result, grpc_web_data_frames, parse_grok_rest_billing_response,
-    parse_grok_web_billing_response, scan_protobuf,
+    grok_snapshot_from_rpc_result, grok_snapshot_from_rpc_result_with_rate_limit,
+    grpc_web_data_frames, parse_grok_rest_billing_response, parse_grok_web_billing_response,
+    scan_protobuf,
 };
 #[expect(
     unused_imports,
@@ -200,17 +200,20 @@ pub(crate) use self::openrouter::{
     OpenRouterModelCheck, check_openrouter_model_in_catalog, fetch_openrouter_credits,
     fetch_openrouter_key_usage, fetch_openrouter_model_check, openrouter_base_url,
     openrouter_base_url_from, openrouter_credits_bucket, openrouter_snapshot,
-    openrouter_snapshot_with_base, parse_openrouter_credits, parse_openrouter_key_usage,
+    openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit, parse_openrouter_credits,
+    parse_openrouter_key_usage,
 };
 #[cfg(test)]
 pub(crate) use self::refresh::MaterializedUsageAccounts;
+pub use self::refresh::ProviderRateLimit;
+
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::refresh::{
-    MATERIALIZED_TMP_COUNTER, atomic_write_usage_json, parse_retry_after_seconds,
-    usage_error_is_rate_limited, usage_error_is_unauthorized, write_materialized_usage_accounts,
+    MATERIALIZED_TMP_COUNTER, atomic_write_usage_json, usage_error_is_rate_limited,
+    usage_error_is_unauthorized, write_materialized_usage_accounts,
 };
 #[expect(
     unused_imports,
@@ -792,21 +795,40 @@ pub fn provider_credential_snapshot(
     key_name: &str,
     secret: &str,
 ) -> FocusedUsageView {
+    provider_credential_snapshot_with_rate_limit(surface_id, key_name, secret).0
+}
+
+pub(crate) fn provider_credential_snapshot_with_rate_limit(
+    surface_id: &str,
+    key_name: &str,
+    secret: &str,
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
     let now = now_epoch();
-    match surface_id {
-        "claude" => claude_view_from_wave(
-            "claude",
-            Some("Claude"),
-            now,
-            ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
-                access_token: secret.to_owned(),
-                subscription_type: None,
-                account_email: None,
-                organization_type: None,
-                credential_origin: "OAuth · configured source".to_owned(),
-                is_anonymous: true,
-            })),
-        ),
+    if surface_id == "claude" {
+        if key_name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME {
+            return claude_view_from_wave_with_rate_limit(
+                "claude",
+                Some("Claude"),
+                now,
+                ClaudeWaveResolution::Resolved(Box::new(ClaudeResolved {
+                    access_token: secret.to_owned(),
+                    subscription_type: None,
+                    account_email: None,
+                    organization_type: None,
+                    credential_origin: "OAuth · configured source".to_owned(),
+                    is_anonymous: true,
+                })),
+            );
+        }
+        return (
+            claude_api_key_snapshot("claude", Some("Claude"), key_name, secret, now),
+            None,
+        );
+    }
+    if surface_id == "openrouter" {
+        return openrouter_snapshot_with_rate_limit("opencode", Some(secret), now);
+    }
+    let view = match surface_id {
         "amp" => amp_api_key_snapshot("amp", secret, now),
         "zai" => provider_key_snapshot("codex", UsageSurface::Zai, key_name, Some(secret), now),
         "kimi" => kimi_snapshot("kimi", Some(secret), now),
@@ -818,7 +840,9 @@ pub fn provider_credential_snapshot(
             false,
             key_name == jackin_core::XAI_API_KEY_ENV_NAME,
             key_name == jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
-            Err("Grok billing requires an authenticated profile".to_owned()),
+            Err(refresh::ProviderError::from(
+                "Grok billing requires an authenticated profile".to_owned(),
+            )),
         ),
         "codex" => usage_view(UsageViewInput {
             agent: "codex",
@@ -861,13 +885,13 @@ pub fn provider_credential_snapshot(
             &format!("API key · env {key_name}"),
             now,
         ),
-        "openrouter" => openrouter_snapshot("opencode", Some(secret), now),
         // Explicitly blocked (no production dispatch): `meta` (Muse has no
         // pollable usage fetch by design), `omp`/`hermes`
         // (attribution-only adapters with no native endpoint), `copilot` (no
         // collector, registry, or discovery entry exists at all).
         _ => unsupported_snapshot(surface_id, None, now),
-    }
+    };
+    (view, None)
 }
 
 pub(crate) fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
@@ -1399,12 +1423,12 @@ pub(crate) fn provider_http_client() -> Result<reqwest::blocking::Client, String
         .map_err(|err| format!("provider HTTP client unavailable: {err}"))
 }
 
-pub(crate) fn provider_request<T>(
+pub(crate) fn provider_request<T, E>(
     provider: jackin_telemetry::schema::enums::ProviderName,
     method: &'static str,
     template: &'static str,
-    request: impl FnOnce() -> Result<T, String>,
-) -> Result<T, String> {
+    request: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
     let attrs = [
         jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::std_attrs::GEN_AI_PROVIDER_NAME,
@@ -1436,6 +1460,40 @@ pub(crate) fn provider_request<T>(
     result
 }
 
+/// Failure classes preserved by the shared bearer-auth JSON fetcher.
+///
+/// Provider snapshots may map an HTTP auth status to `NeedsLogin`, but a
+/// transport or decode failure must remain an ordinary provider error even if
+/// its rendered message happens to contain the same digits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ProviderHttpError {
+    Transport(String),
+    HttpStatus {
+        status: u16,
+        message: String,
+        retry_after_seconds: Option<u64>,
+        response_received_at_epoch: Option<i64>,
+    },
+    Decode(String),
+}
+
+impl std::fmt::Display for ProviderHttpError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transport(message) | Self::HttpStatus { message, .. } | Self::Decode(message) => {
+                formatter.write_str(message)
+            }
+        }
+    }
+}
+
+pub(crate) fn retry_after_header_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+}
+
 /// Shared GET → bearer-auth → JSON skeleton for provider quota endpoints. The
 /// caller supplies the human label (used verbatim in every error string so the
 /// per-provider wording is unchanged), the URL, the bearer token, and any extra
@@ -1448,9 +1506,9 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
     url: &str,
     token: &str,
     extra_headers: &[(reqwest::header::HeaderName, &str)],
-) -> Result<T, String> {
+) -> Result<T, ProviderHttpError> {
     provider_request(provider, "GET", template, || {
-        let client = provider_http_client()?;
+        let client = provider_http_client().map_err(ProviderHttpError::Transport)?;
         let mut request = client
             .get(url)
             .bearer_auth(token)
@@ -1458,16 +1516,23 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
         for (name, value) in extra_headers {
             request = request.header(name.clone(), *value);
         }
-        let response = request
-            .send()
-            .map_err(|err| format!("{label} request failed: {err}"))?;
+        let response = request.send().map_err(|err| {
+            ProviderHttpError::Transport(format!("{label} request failed: {err}"))
+        })?;
+        let response_received_at_epoch = now_epoch();
         let status = response.status();
+        let retry_after_seconds = retry_after_header_seconds(response.headers());
         if !status.is_success() {
-            return Err(format!("{label} HTTP {status}"));
+            return Err(ProviderHttpError::HttpStatus {
+                status: status.as_u16(),
+                message: format!("{label} HTTP {status}"),
+                retry_after_seconds,
+                response_received_at_epoch: Some(response_received_at_epoch),
+            });
         }
         response
             .json::<T>()
-            .map_err(|err| format!("{label} decode failed: {err}"))
+            .map_err(|err| ProviderHttpError::Decode(format!("{label} decode failed: {err}")))
     })
 }
 

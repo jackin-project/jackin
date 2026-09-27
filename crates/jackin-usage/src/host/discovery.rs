@@ -280,7 +280,12 @@ pub enum ProviderCredentialIdentityOutcome {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProviderCredentialRefreshOutcome {
     /// Provider snapshot, including authenticated identity when supplied.
-    Snapshot(Box<FocusedUsageView>),
+    Snapshot {
+        /// Provider view with secret-free account/quota data.
+        view: Box<FocusedUsageView>,
+        /// Typed provider rate-limit metadata, when the provider returned HTTP 429.
+        rate_limit: Option<crate::usage::ProviderRateLimit>,
+    },
     /// Credential disappeared after discovery.
     Missing,
     /// Protected credential access is no longer authorized.
@@ -319,7 +324,7 @@ pub enum UsageDiscoveryIssue {
     CredentialMissing,
     /// Protected credential access was denied/unavailable.
     CredentialDenied,
-    /// Keychain item exists but the operator has not approved access.
+    /// A Keychain item exists but the operator has not approved access.
     KeychainConsentRequired,
     /// Credential source is malformed.
     CredentialMalformed,
@@ -1022,8 +1027,6 @@ enum ProfileReadOutcome {
     Bytes(Vec<u8>),
     Missing,
     Denied,
-    /// The secret exists but the operator has not approved this binary's
-    /// access; the lookup failed fast instead of prompting.
     ConsentRequired,
 }
 
@@ -1136,18 +1139,20 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
     fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
         #[cfg(target_os = "macos")]
         {
+            use security_framework::item::{ItemClass, ItemSearchOptions};
+
             // Reference-only search: no `load_data`, so the grant payload is
             // never read into this process — presence is the whole answer.
-            // Fail-fast: auth-gated items are skipped, never prompted.
-            match crate::usage::keychain_generic_password_search(
-                crate::usage::ANTIGRAVITY_KEYCHAIN_SERVICE,
-                false,
-            ) {
+            let mut options = ItemSearchOptions::new();
+            options
+                .class(ItemClass::generic_password())
+                .service(crate::usage::ANTIGRAVITY_KEYCHAIN_SERVICE)
+                .limit(1);
+            match options.search() {
                 Ok(results) if !results.is_empty() => ProfileReadOutcome::Bytes(Vec::new()),
                 Ok(_) => ProfileReadOutcome::Missing,
-                Err(code) => match crate::usage::classify_claude_keychain_status(code) {
-                    // Unreachable: the classifier only emits
-                    // Denied/Missing/ConsentRequired.
+                Err(error) => match crate::usage::classify_claude_keychain_status(error.code()) {
+                    // Unreachable: the classifier only emits Denied/Missing.
                     // Fail closed to absence either way.
                     crate::usage::ClaudeKeychainRead::Payload { .. } => ProfileReadOutcome::Missing,
                     crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
@@ -1174,9 +1179,8 @@ enum ProfileValidation {
     Anonymous(Option<Box<ProfileCredentialMaterial>>),
     Missing,
     Denied,
-    Malformed,
-    /// Keychain item exists but needs operator consent (fail-fast, no prompt).
     ConsentRequired,
+    Malformed,
 }
 
 struct AccountAccumulator {
@@ -1294,8 +1298,8 @@ fn is_attachable_env_source(
         ProfileValidation::Anonymous(_) => true,
         ProfileValidation::Missing
         | ProfileValidation::Denied
-        | ProfileValidation::Malformed
-        | ProfileValidation::ConsentRequired => false,
+        | ProfileValidation::ConsentRequired
+        | ProfileValidation::Malformed => false,
     }
 }
 
@@ -1747,8 +1751,8 @@ fn profile_identity(
 }
 
 /// File present (any JSON shape) → anonymous binding; missing/denied/
-/// consent-gated/malformed propagate truthfully. Used for agents whose
-/// identity extraction is deferred to the usage lane.
+/// malformed propagate truthfully. Used for agents whose identity
+/// extraction is deferred to the usage lane.
 fn anonymous_when_present(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
     match read_json(reader, path) {
         Ok(Some(_)) => ProfileValidation::Anonymous(None),
@@ -1814,7 +1818,7 @@ fn gemini_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) ->
 /// Antigravity identity is the host Keychain grant singleton, probed for
 /// presence only: the CLI owns the secret, so any payload is ignored and no
 /// identity label is extracted. Grant present → anonymous binding with
-/// refresh material; absent/denied/consent-gated propagates truthfully.
+/// refresh material; absent/denied propagates truthfully.
 fn antigravity_profile_identity(reader: &dyn ProfileCredentialReader) -> ProfileValidation {
     match reader.read_antigravity_keychain() {
         ProfileReadOutcome::Bytes(_) => {
@@ -2114,7 +2118,7 @@ pub(super) fn refresh_credential_binding(
     binding: &ValidatedCredentialBinding,
     env_resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderCredentialRefreshOutcome {
-    let view = match &binding.source {
+    let (view, rate_limit) = match &binding.source {
         ValidatedCredentialSource::Env { handle, key, .. } => {
             return env_resolver.refresh_provider_credential(binding.surface, key, handle);
         }
@@ -2124,13 +2128,16 @@ pub(super) fn refresh_credential_binding(
         // Deliberate no-poll, never a provider outage: the honest
         // `Unsupported` view flows through the success path, outside
         // retry/backoff.
-        ValidatedCredentialSource::Unpollable => crate::usage::unpollable_snapshot(
-            binding.surface.agent_slug(),
-            binding.surface.provider_label(),
-            chrono::Utc::now().timestamp(),
+        ValidatedCredentialSource::Unpollable => (
+            crate::usage::unpollable_snapshot(
+                binding.surface.agent_slug(),
+                binding.surface.provider_label(),
+                chrono::Utc::now().timestamp(),
+            ),
+            None,
         ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Claude(resolved)) => {
-            crate::usage::claude_view_from_wave(
+            crate::usage::claude_view_from_wave_with_rate_limit(
                 binding.surface.agent_slug(),
                 binding.surface.provider_label(),
                 chrono::Utc::now().timestamp(),
@@ -2140,24 +2147,25 @@ pub(super) fn refresh_credential_binding(
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Codex {
             credentials,
             root,
-        }) => crate::usage::codex_profile_snapshot(
+        }) => crate::usage::codex_profile_snapshot_with_rate_limit(
             binding.surface.agent_slug(),
             credentials,
             root,
             chrono::Utc::now().timestamp(),
         ),
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Amp { key }) => {
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Amp { key }) => (
             crate::usage::amp_api_key_snapshot(
                 binding.surface.agent_slug(),
                 key,
                 chrono::Utc::now().timestamp(),
-            )
-        }
+            ),
+            None,
+        ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Grok { auth_path }) => {
             let now = chrono::Utc::now().timestamp();
             let result = crate::usage::fetch_grok_rest_billing(auth_path, now)
                 .map(|response| crate::usage::GrokBillingSnapshot::Rest(Box::new(response)));
-            crate::usage::grok_snapshot_from_rpc_result(
+            crate::usage::grok_snapshot_from_rpc_result_with_rate_limit(
                 binding.surface.agent_slug(),
                 now,
                 auth_path,
@@ -2169,46 +2177,62 @@ pub(super) fn refresh_credential_binding(
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Kimi { token }) => {
             let now = chrono::Utc::now().timestamp();
-            crate::usage::kimi_snapshot(binding.surface.agent_slug(), Some(token.as_str()), now)
+            (
+                crate::usage::kimi_snapshot(
+                    binding.surface.agent_slug(),
+                    Some(token.as_str()),
+                    now,
+                ),
+                None,
+            )
         }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => {
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => (
             crate::usage::opencode_profile_snapshot(
                 binding.surface.agent_slug(),
                 auth_path,
                 chrono::Utc::now().timestamp(),
-            )
-        }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => {
+            ),
+            None,
+        ),
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => (
             crate::usage::cursor_profile_snapshot(
                 binding.surface.agent_slug(),
                 auth_path,
                 chrono::Utc::now().timestamp(),
-            )
-        }
+            ),
+            None,
+        ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Gemini { creds_path }) => {
             // Re-prove OAuth presence at refresh: a file deleted after
             // discovery is NeedsSecret, never a stale Unsupported.
             let has_oauth = creds_path.is_file();
-            crate::usage::gemini_snapshot_with_presence(
-                binding.surface.agent_slug(),
-                binding.surface.provider_label(),
-                has_oauth,
-                false,
-                "OAuth · configured profile",
-                chrono::Utc::now().timestamp(),
+            (
+                crate::usage::gemini_snapshot_with_presence(
+                    binding.surface.agent_slug(),
+                    binding.surface.provider_label(),
+                    has_oauth,
+                    false,
+                    "OAuth · configured profile",
+                    chrono::Utc::now().timestamp(),
+                ),
+                None,
             )
         }
         // The Keychain grant needs no secret material here: `agy` owns the
         // grant and the collector shells out to it.
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity) => {
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity) => (
             crate::usage::antigravity_snapshot(
                 binding.surface.agent_slug(),
                 binding.surface.provider_label(),
                 chrono::Utc::now().timestamp(),
-            )
-        }
+            ),
+            None,
+        ),
     };
-    ProviderCredentialRefreshOutcome::Snapshot(Box::new(view))
+    ProviderCredentialRefreshOutcome::Snapshot {
+        view: Box::new(view),
+        rate_limit,
+    }
 }
 
 impl HostUsageRuntime {

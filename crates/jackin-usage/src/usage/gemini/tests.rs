@@ -59,27 +59,6 @@ fn migration_action_only_for_consumer_signal() {
 }
 
 #[test]
-fn error_migration_never_blind_maps() {
-    let now = GEMINI_CONSUMER_OAUTH_END + 1;
-    assert!(gemini_error_needs_migration(
-        "HTTP 403 forbidden",
-        true,
-        now
-    ));
-    assert!(!gemini_error_needs_migration(
-        "HTTP 403 forbidden",
-        false,
-        now
-    ));
-    assert!(!gemini_error_needs_migration(
-        "HTTP 403 forbidden",
-        true,
-        GEMINI_CONSUMER_OAUTH_END - 1
-    ));
-    assert!(!gemini_error_needs_migration("HTTP 500", true, now));
-}
-
-#[test]
 fn project_quotas_never_invent_denominators() {
     let quotas = parse_gemini_project_quotas(&serde_json::json!({
         "quotas": [

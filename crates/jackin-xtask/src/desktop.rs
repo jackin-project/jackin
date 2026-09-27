@@ -712,6 +712,7 @@ fn normalize_generated_text(source: &str) -> String {
 }
 
 fn build_xcframework(root: &Path) -> Result<()> {
+    bindings_check(root, DESKTOP_PROFILE)?;
     require_macos("desktop xcframework")?;
 
     progress(format!(
@@ -755,8 +756,9 @@ fn build_xcframework(root: &Path) -> Result<()> {
         fs::remove_file(&zip)?;
     }
 
-    // boltffi drives cargo itself; the deployment-target floor propagates
-    // through the inherited environment (slice advertises minos 26.0).
+    // boltffi's clean pack needs both its generated header and XCFramework
+    // staging inputs. It also regenerates Swift, so normalize those outputs
+    // after packing to keep the committed bindings deterministic.
     let boltffi = which("boltffi").context(
         "boltffi not on PATH; install via mise (`mise install`) — see mise.toml cargo:boltffi_cli",
     )?;
@@ -770,9 +772,6 @@ fn build_xcframework(root: &Path) -> Result<()> {
         .args(["pack", "apple"]);
     cmd::run_streaming(&mut pack)?;
 
-    // `boltffi pack` regenerates the Swift module beside the committed native
-    // sources. Keep its whitespace normalization identical to the binding
-    // command/check so a build cannot create drift that the next CI step sees.
     let generated_sources = root.join("native/Sources/JackinUsageBindings");
     for generated in find_files_with_ext(&generated_sources, "swift")? {
         normalize_generated_file(&generated)?;

@@ -44,7 +44,7 @@ fn diagnostics_validate_confirms_live_otlp_and_rejects_stopped_endpoint() -> any
     );
     assert!(runtime.block_on(testbed.wait_for_all_signals(std::time::Duration::from_secs(2))));
 
-    testbed.stop();
+    runtime.block_on(testbed.shutdown())?;
     Command::cargo_bin("jackin")?
         .args(["diagnostics", "validate"])
         .env("JACKIN_HOME_DIR", home.path())

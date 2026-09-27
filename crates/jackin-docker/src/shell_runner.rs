@@ -291,23 +291,6 @@ enum CaptureMode {
     Secret,
 }
 
-/// Merge stdout+stderr with `2>&1` semantics: each stream trimmed, joined
-/// with a newline when both are non-empty. `wait_with_output` cannot
-/// recover chronological interleaving, so stdout leads; empty streams
-/// contribute nothing (no stray blank line).
-fn merge_combined_output(stdout: &[u8], stderr: &[u8]) -> String {
-    let stdout = String::from_utf8_lossy(stdout);
-    let stderr = String::from_utf8_lossy(stderr);
-    let stdout = stdout.trim();
-    let stderr = stderr.trim();
-    match (stdout.is_empty(), stderr.is_empty()) {
-        (true, true) => String::new(),
-        (false, true) => stdout.to_owned(),
-        (true, false) => stderr.to_owned(),
-        (false, false) => format!("{stdout}\n{stderr}"),
-    }
-}
-
 fn captured_command_error(
     program: &str,
     args: &[&str],
@@ -511,7 +494,7 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, CaptureMode::Normal, false)
+        self.do_capture(program, args, cwd, CaptureMode::Normal)
             .await
     }
 
@@ -521,17 +504,7 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, CaptureMode::Secret, false)
-            .await
-    }
-
-    async fn capture_combined(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, CaptureMode::Normal, true)
+        self.do_capture(program, args, cwd, CaptureMode::Secret)
             .await
     }
 }
@@ -661,7 +634,6 @@ impl ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
         mode: CaptureMode,
-        combined: bool,
     ) -> anyhow::Result<String> {
         let operation = enter_process_execute(program);
         let result = async {
@@ -682,11 +654,7 @@ impl ShellRunner {
             if !output.status.success() {
                 return Err(captured_command_error(program, args, &output.stderr, mode));
             }
-            if combined {
-                Ok(merge_combined_output(&output.stdout, &output.stderr))
-            } else {
-                Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-            }
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
         }
         .await;
         complete_process_execute(operation, &result);

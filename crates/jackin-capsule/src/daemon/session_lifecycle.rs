@@ -300,6 +300,7 @@ impl Multiplexer {
                     &mut cmd,
                     instance,
                     config.auth_mode_for_instance(instance),
+                    config.credential_provider_surface_for_instance(instance),
                     &self.launch_env.agent_credentials,
                 );
                 Ok(SessionLaunch {

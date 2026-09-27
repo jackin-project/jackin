@@ -13,7 +13,6 @@ mod process_telemetry;
 pub mod reactive_daemon;
 pub mod runtime;
 pub mod spin_wait;
-pub mod usage_broker;
 pub mod usage_relay;
 
 // Re-export jackin_instance as `instance` so existing call sites

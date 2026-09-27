@@ -5,6 +5,4 @@
 self-hosted-runner:
   labels:
     - macos-26
-    - self-hosted
     - ubuntu-26.04
-    - velnor-target-mvp

@@ -90,7 +90,8 @@ fn workspace_instance_live_content_marks_active_focused_selected_and_shell_panes
                 panes: vec![WorkspaceInstanceLivePaneFacts {
                     session_id: 11,
                     label: "shell-pane".to_owned(),
-                    agent: None,
+                    account_id: None,
+                    config_id: None,
                     state_label: "idle".to_owned(),
                 }],
             },
@@ -101,13 +102,15 @@ fn workspace_instance_live_content_marks_active_focused_selected_and_shell_panes
                     WorkspaceInstanceLivePaneFacts {
                         session_id: 21,
                         label: "claude-pane".to_owned(),
-                        agent: Some("claude".to_owned()),
+                        account_id: Some("acc-work".to_owned()),
+                        config_id: Some("claude-work".to_owned()),
                         state_label: "running".to_owned(),
                     },
                     WorkspaceInstanceLivePaneFacts {
                         session_id: 22,
                         label: "codex-pane".to_owned(),
-                        agent: Some("codex".to_owned()),
+                        account_id: Some("acc-personal".to_owned()),
+                        config_id: Some("codex-personal".to_owned()),
                         state_label: "paused".to_owned(),
                     },
                 ],
@@ -125,7 +128,8 @@ fn workspace_instance_live_content_marks_active_focused_selected_and_shell_panes
                     active: false,
                     panes: vec![WorkspaceInstanceTabPane {
                         label: "shell-pane".to_owned(),
-                        agent_label: "shell".to_owned(),
+                        account_id: None,
+                        config_id: None,
                         state_label: "idle".to_owned(),
                         focused: true,
                         selected: false,
@@ -138,14 +142,16 @@ fn workspace_instance_live_content_marks_active_focused_selected_and_shell_panes
                     panes: vec![
                         WorkspaceInstanceTabPane {
                             label: "claude-pane".to_owned(),
-                            agent_label: "claude".to_owned(),
+                            account_id: Some("acc-work".to_owned()),
+                            config_id: Some("claude-work".to_owned()),
                             state_label: "running".to_owned(),
                             focused: true,
                             selected: false,
                         },
                         WorkspaceInstanceTabPane {
                             label: "codex-pane".to_owned(),
-                            agent_label: "codex".to_owned(),
+                            account_id: Some("acc-personal".to_owned()),
+                            config_id: Some("codex-personal".to_owned()),
                             state_label: "paused".to_owned(),
                             focused: false,
                             selected: true,
@@ -154,6 +160,62 @@ fn workspace_instance_live_content_marks_active_focused_selected_and_shell_panes
                 },
             ],
         }
+    );
+}
+
+#[test]
+fn workspace_instance_live_content_keeps_mixed_pane_identity_in_rendered_rows() {
+    let content = workspace_instance_live_content(
+        0,
+        None,
+        vec![WorkspaceInstanceLiveTabFacts {
+            label: "mixed".to_owned(),
+            focused_pane: 1,
+            panes: vec![
+                WorkspaceInstanceLivePaneFacts {
+                    session_id: 1,
+                    label: "worker".to_owned(),
+                    account_id: Some("acc-work".to_owned()),
+                    config_id: Some("claude-work".to_owned()),
+                    state_label: "running".to_owned(),
+                },
+                WorkspaceInstanceLivePaneFacts {
+                    session_id: 2,
+                    label: "worker".to_owned(),
+                    account_id: Some("acc-personal".to_owned()),
+                    config_id: Some("claude-personal".to_owned()),
+                    state_label: "idle".to_owned(),
+                },
+            ],
+        }],
+    );
+
+    let WorkspaceInstancePaneContent::Live { tabs } = &content else {
+        panic!("expected live pane content");
+    };
+    assert_eq!(tabs[0].panes[0].label, tabs[0].panes[1].label);
+    assert_eq!(tabs[0].panes[0].account_id.as_deref(), Some("acc-work"));
+    assert_eq!(tabs[0].panes[1].account_id.as_deref(), Some("acc-personal"));
+    assert_eq!(tabs[0].panes[0].config_id.as_deref(), Some("claude-work"));
+    assert_eq!(
+        tabs[0].panes[1].config_id.as_deref(),
+        Some("claude-personal")
+    );
+
+    let rendered = live_instance_lines(tabs)
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("(acc-work · claude-work)"), "{rendered}");
+    assert!(
+        rendered.contains("(acc-personal · claude-personal)"),
+        "{rendered}"
     );
 }
 
@@ -177,12 +239,16 @@ fn workspace_instance_session_content_routes_rows_and_empty_states() {
             vec![WorkspaceInstanceSessionRow {
                 name: "tmux-a".to_owned(),
                 agent_runtime: "claude".to_owned(),
+                account_id: Some("acc-work".to_owned()),
+                config_id: Some("claude-work".to_owned()),
             }],
         ),
         WorkspaceInstancePaneContent::Sessions {
             rows: vec![WorkspaceInstanceSessionRow {
                 name: "tmux-a".to_owned(),
                 agent_runtime: "claude".to_owned(),
+                account_id: Some("acc-work".to_owned()),
+                config_id: Some("claude-work".to_owned()),
             }],
         }
     );
@@ -233,10 +299,10 @@ fn workspace_list_display_helpers_own_visible_defaults() {
     assert!(instance.selected);
     assert!(instance.hovered);
     assert_eq!(instance.disclosure, Disclosure::None);
-    assert_eq!(workspace_instance_pane_agent_label(None), "shell");
+    assert_eq!(workspace_instance_pane_identity_label(None, None), "shell");
     assert_eq!(
-        workspace_instance_pane_agent_label(Some("claude")),
-        "claude"
+        workspace_instance_pane_identity_label(Some("acc-work"), Some("claude-work")),
+        "acc-work · claude-work"
     );
     assert_eq!(current_directory_workspace_title(), "Current directory");
     assert_eq!(picker_sidebar_title("alpha"), " alpha ");

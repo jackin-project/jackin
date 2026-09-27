@@ -16,6 +16,7 @@
     "../errors/E011",
     "../errors/E012",
     "../errors/E013",
+    "../errors/E014",
     "../errors/E015"
   ]
 }

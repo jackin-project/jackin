@@ -5,6 +5,9 @@ use super::{TelemetryFlushStatus, record_telemetry_rejection, telemetry_health_s
 
 #[test]
 fn facade_rejection_is_visible_in_snapshot() {
+    let _diagnostics_lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let before = telemetry_health_snapshot().facade_rejections;
     jackin_telemetry::record_export_rejection(
         jackin_telemetry::Signal::Log,
@@ -19,6 +22,9 @@ fn facade_rejection_is_visible_in_snapshot() {
 
 #[test]
 fn provider_lifecycle_reports_three_signals_flush_and_shutdown() {
+    let _diagnostics_lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _test_lock = super::TEST_STATE_LOCK.lock().expect("health test lock");
     let generation = super::set_active_signals();
     assert_eq!(telemetry_health_snapshot().active_signals, 3);
@@ -40,6 +46,9 @@ fn provider_lifecycle_reports_three_signals_flush_and_shutdown() {
 
 #[test]
 fn stale_generation_cannot_overwrite_current_lifecycle() {
+    let _diagnostics_lock = crate::DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _test_lock = super::TEST_STATE_LOCK.lock().expect("health test lock");
     let stale = super::set_active_signals();
     let current = super::set_active_signals();

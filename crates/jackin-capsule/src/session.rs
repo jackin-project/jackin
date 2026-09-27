@@ -2013,14 +2013,47 @@ pub(crate) fn apply_account_env(
     command: &mut CommandBuilder,
     instance: &str,
     auth_mode: Option<&str>,
+    provider_surface: Option<&str>,
     credentials: &jackin_protocol::AgentCredentialEnv,
 ) {
     if !matches!(auth_mode, Some("api_key" | "oauth_token")) {
         return;
     }
     if let Some(env) = credentials.for_instance(instance) {
+        let Some(entry) = credentials.instance(instance) else {
+            return;
+        };
+        let Some(command_agent) = command
+            .get_env("JACKIN_AGENT")
+            .and_then(|value| value.to_str())
+        else {
+            return;
+        };
+        // `config::validate_agent_credentials` is the authoritative launch
+        // gate. Keep the same closed agent policy here as a second boundary
+        // so a hand-built credential envelope cannot inject a foreign
+        // provider key even if it bypasses config loading.
+        // NOTE: this capsule-side surface string (credential routing) is a
+        // different concept from the usage-side `provider_surface()`
+        // (quota/discovery ownership); both derive from
+        // `HostSurfaceId::from_provider_alias`, so they compose.
+        if entry.agent != command_agent {
+            return;
+        }
+        let Some(provider_surface) = provider_surface else {
+            return;
+        };
+        let Ok(allowed) = crate::config::allowed_account_env_names(
+            &entry.agent,
+            auth_mode.unwrap_or_default(),
+            provider_surface,
+        ) else {
+            return;
+        };
         for (name, value) in env {
-            command.env(name, value);
+            if allowed.contains(name.as_str()) {
+                command.env(name, value);
+            }
         }
     }
 }

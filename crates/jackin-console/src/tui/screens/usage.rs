@@ -1249,16 +1249,31 @@ pub fn handle_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 }
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
+    render_at(frame, area, state, now_epoch());
+}
+
+/// Render one usage frame against one sampled wall-clock epoch.
+///
+/// The production entry point samples once and delegates here. Keeping the
+/// epoch explicit at this seam lets deterministic render tests use the same
+/// frame clock while ensuring the list and detail panes cannot cross a
+/// relative-time boundary independently.
+pub fn render_at(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, now_epoch: i64) {
     let body = crate::tui::view::workspace_frame_areas(area).body;
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(body);
-    render_account_list(frame, columns[0], state);
-    render_detail(frame, columns[1], state);
+    render_account_list(frame, columns[0], state, now_epoch);
+    render_detail(frame, columns[1], state, now_epoch);
 }
 
-fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
+fn render_account_list(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &ManagerState<'_>,
+    now_epoch: i64,
+) {
     let Some(screen) = state.usage.screen.as_ref() else {
         return;
     };
@@ -1288,7 +1303,6 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
     }
     let mut lines = Vec::new();
     let meter_width = inner.width.saturating_sub(8) as usize;
-    let now = now_epoch();
     lines.push(Line::from(Span::styled(
         format!(
             "  s:sort({}) f:filter({}) c:constrained",
@@ -1355,7 +1369,7 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
             "      {} · {} · {}",
             account.status,
             summary,
-            freshness_age_label(now, account)
+            freshness_age_label(now_epoch, account)
         );
         if let Some(plan) = non_empty_label(account.plan_label.as_ref()) {
             sub.push_str(&format!(" · {plan}"));
@@ -1389,11 +1403,10 @@ fn render_account_list(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'
     );
 }
 
-fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
+fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, now_epoch: i64) {
     let Some(screen) = state.usage.screen.as_ref() else {
         return;
     };
-    let now = now_epoch();
     let Some(account) = screen.selected_account() else {
         if screen.accounts.is_empty() {
             let text = if screen.loading() {
@@ -1441,11 +1454,11 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
         }
         let width = area.width.saturating_sub(8).max(8) as usize;
         for &index in &order {
-            append_overview_account(&mut lines, &screen.accounts[index], width, now);
+            append_overview_account(&mut lines, &screen.accounts[index], width, now_epoch);
         }
         for issue in &screen.projection_issues {
             lines.push(Line::from(Span::styled(
-                format!("  {}", issue_text(issue, now)),
+                format!("  {}", issue_text(issue, now_epoch)),
                 Style::default().fg(Color::Yellow),
             )));
         }
@@ -1482,12 +1495,15 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
     if let Some(expires_at) = account.credential_expires_at_epoch {
         lines.push(Line::from(format!(
             "Credential {}",
-            credential_expiry_label(now, expires_at)
+            credential_expiry_label(now_epoch, expires_at)
         )));
     }
-    let mut freshness = freshness_age_label(now, account);
+    let mut freshness = freshness_age_label(now_epoch, account);
     if let Some(retry_at) = account.retry_at_epoch {
-        freshness.push_str(&format!(" · retry {}", relative_time_label(now, retry_at)));
+        freshness.push_str(&format!(
+            " · retry {}",
+            relative_time_label(now_epoch, retry_at)
+        ));
     }
     lines.push(Line::from(format!("Freshness {freshness}")));
     lines.push(Line::from(""));
@@ -1498,9 +1514,9 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
     }
     let width = area.width.saturating_sub(8).max(8) as usize;
     if screen.detail {
-        append_account_full_body(&mut lines, account, width, now);
+        append_account_full_body(&mut lines, account, width, now_epoch);
     } else {
-        append_account_summary_body(&mut lines, account, width, now);
+        append_account_summary_body(&mut lines, account, width, now_epoch);
     }
     if let Some(notice) = &screen.notice {
         lines.push(Line::from(Span::styled(

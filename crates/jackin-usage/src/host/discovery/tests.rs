@@ -25,6 +25,29 @@ impl ProviderCredentialEnvResolver for NoEnvResolver {
     }
 }
 
+struct ConsentKeychainReader;
+
+impl ProfileCredentialReader for ConsentKeychainReader {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+
+    fn exists(&self, _path: &Path) -> bool {
+        false
+    }
+
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        ProfileReadOutcome::ConsentRequired
+    }
+
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        ProfileReadOutcome::ConsentRequired
+    }
+}
+
 #[derive(Default)]
 struct RecordingProfileReader {
     reads: Mutex<BTreeMap<PathBuf, usize>>,
@@ -172,6 +195,42 @@ fn opencode_profile_database_only_uses_reader_abstraction() {
         opencode_profile_identity(&reader, auth),
         ProfileValidation::Malformed
     ));
+}
+
+#[test]
+fn disc_claude_keychain_consent_is_not_reported_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let root = home.join(".claude");
+    let catalog = UsageDiscoveryCatalog {
+        config_generation: None,
+        candidates: Vec::new(),
+        diagnostics: Vec::new(),
+        sources: vec![DiscoveredCredentialSource::Profile {
+            surface: HostSurfaceId::Claude,
+            agent: Agent::Claude,
+            root,
+            operator_home: home,
+            account_label: Some("work".to_owned()),
+            source_id: "source-0001".to_owned(),
+            capability_id: "capability-1".to_owned(),
+            provenance: BTreeSet::from(["account work".to_owned()]),
+        }],
+    };
+
+    let validated =
+        validate_usage_sources_with_reader(catalog, &NoEnvResolver, &ConsentKeychainReader);
+
+    assert!(validated.accounts.is_empty());
+    assert_eq!(validated.diagnostics.len(), 1);
+    assert_eq!(
+        validated.diagnostics[0].issue,
+        UsageDiscoveryIssue::KeychainConsentRequired
+    );
+    assert_eq!(
+        validated.diagnostics[0].issue.id(),
+        "keychain_consent_required"
+    );
 }
 
 fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
@@ -1283,80 +1342,6 @@ fn disc_antigravity_grant_mints_cli_refresh_material() {
     }
 }
 
-/// File-blind reader with a configurable Claude Keychain outcome.
-struct ClaudeKeychainStubReader {
-    keychain: ProfileReadOutcome,
-}
-
-impl ProfileCredentialReader for ClaudeKeychainStubReader {
-    fn read(&self, _path: &Path) -> ProfileReadOutcome {
-        ProfileReadOutcome::Missing
-    }
-
-    fn exists(&self, _path: &Path) -> bool {
-        false
-    }
-
-    fn read_claude_keychain(
-        &self,
-        _scope: &jackin_core::ClaudeKeychainScope,
-    ) -> ProfileReadOutcome {
-        self.keychain.clone()
-    }
-
-    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
-        ProfileReadOutcome::Missing
-    }
-}
-
-#[test]
-fn disc_keychain_consent_required_is_isolated_consent_diagnostic() {
-    let temp = tempfile::tempdir().unwrap();
-    let config_root = temp.path().join("config");
-    let claude_root = temp.path().join("claude-profile");
-    std::fs::create_dir_all(&claude_root).unwrap();
-    std::fs::create_dir_all(&config_root).unwrap();
-    write_registry(&config_root, &[("claude", Agent::Claude, &claude_root)]);
-    let catalog = discover_usage_sources(
-        &UsageDiscoveryScope::HostDesktop {
-            config_root,
-            operator_home: temp.path().join("home"),
-        },
-        &NoEnvResolver,
-    )
-    .unwrap();
-    // Consent-gated Keychain (fail-fast, never prompted) → consent diagnostic,
-    // never an account row or a refresh binding.
-    let reader = ClaudeKeychainStubReader {
-        keychain: ProfileReadOutcome::ConsentRequired,
-    };
-    let validated = validate_usage_sources_with_reader(catalog, &NoEnvResolver, &reader);
-    assert!(validated.accounts.is_empty());
-    assert!(validated.bindings.is_empty());
-    assert!(
-        validated.diagnostics.iter().any(|diagnostic| {
-            diagnostic.surface_id.as_deref() == Some("claude")
-                && diagnostic.issue == UsageDiscoveryIssue::KeychainConsentRequired
-        }),
-        "consent-gated keychain must diagnose: {:?}",
-        validated.diagnostics
-    );
-    assert_eq!(
-        UsageDiscoveryIssue::KeychainConsentRequired.id(),
-        "keychain_consent_required"
-    );
-    assert_eq!(
-        UsageDiscoveryIssue::KeychainConsentRequired.display_message(),
-        "Keychain consent required; approve jackin in Keychain Access"
-    );
-    // Antigravity consent-gating propagates identically at the identity lane.
-    let grant_reader = AntigravityGrantReader {
-        grant: ProfileReadOutcome::ConsentRequired,
-    };
-    let outcome = profile_identity(&grant_reader, Agent::Antigravity, temp.path(), temp.path());
-    assert!(matches!(outcome, ProfileValidation::ConsentRequired));
-}
-
 #[test]
 fn disc_material_less_profile_binding_is_unpollable() {
     let temp = tempfile::tempdir().unwrap();
@@ -1409,7 +1394,7 @@ fn disc_material_less_profile_binding_is_unpollable() {
 fn refresh_unpollable_binding_returns_honest_unsupported() {
     let binding = test_binding(HostSurfaceId::Meta, ValidatedCredentialSource::Unpollable);
     match refresh_credential_binding(&binding, &NoEnvResolver) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
             assert_eq!(
                 view.last_error.as_deref(),
@@ -1451,7 +1436,7 @@ fn refresh_cursor_binding_dispatches_to_collector() {
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }),
     );
     match refresh_credential_binding(&binding, &NoEnvResolver) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(view.status, UsageSnapshotStatus::Stale);
             assert_eq!(view.account.provider_label, "Cursor");
             assert_eq!(view.focused_agent.as_deref(), Some("cursor"));
@@ -1471,7 +1456,7 @@ fn refresh_antigravity_binding_dispatches_to_cli() {
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity),
     );
     match refresh_credential_binding(&binding, &NoEnvResolver) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(view.account.provider_label, "Antigravity");
             assert_eq!(view.focused_agent.as_deref(), Some("gemini"));
             assert!(!view.is_refreshing_placeholder());
@@ -1879,7 +1864,7 @@ fn refresh_gemini_binding_dispatches_to_collector() {
         }),
     );
     match refresh_credential_binding(&binding, &NoEnvResolver) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
             assert_eq!(view.account.provider_label, "Google");
             assert_eq!(view.focused_agent.as_deref(), Some("gemini"));
@@ -1889,7 +1874,7 @@ fn refresh_gemini_binding_dispatches_to_collector() {
     // A credential file deleted after discovery re-proves as NeedsSecret.
     std::fs::remove_file(&creds).unwrap();
     match refresh_credential_binding(&binding, &NoEnvResolver) {
-        ProviderCredentialRefreshOutcome::Snapshot(view) => {
+        ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(view.status, UsageSnapshotStatus::NeedsSecret);
         }
         other => panic!("deleted gemini creds must need secret: {other:?}"),

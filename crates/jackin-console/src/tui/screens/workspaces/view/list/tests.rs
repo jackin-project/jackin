@@ -11,9 +11,10 @@ use crate::tui::mount_display::mount_path_width;
 
 const SUBPANEL_CONTENT_INDENT: usize = 2;
 
-use super::render_list_body;
+use super::{instance_details_pane, render_list_body};
 use crate::tui::layout::list::clamp_list_scroll_for_area;
 use crate::tui::layout::list::list_names_content_width;
+use crate::tui::screens::workspaces::view::WorkspaceInstancePaneContent;
 use crate::tui::state::{ManagerListRow, ManagerState};
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
@@ -132,6 +133,101 @@ fn list_name_vertical_scroll_follows_selected_new_workspace() {
         dump.contains("+ New workspace"),
         "selected sentinel should be scrolled into view: {dump:?}"
     );
+}
+
+fn identity_test_instance_entry() -> jackin_core::InstanceIndexEntry {
+    jackin_core::InstanceIndexEntry {
+        instance_id: "instance-1".into(),
+        container_base: "container-1".into(),
+        workspace_name: Some("demo".into()),
+        workspace_label: "demo".into(),
+        workdir: "/workspace/demo".into(),
+        role_key: "architect".into(),
+        agent_runtime: "claude".into(),
+        status: jackin_core::InstanceStatus::Active,
+        updated_at: "2026-09-20T00:00:00Z".into(),
+    }
+}
+
+#[test]
+fn instance_details_live_snapshot_preserves_mixed_pane_identity() {
+    let snapshot = jackin_protocol::InstanceSnapshot {
+        active_tab: 0,
+        tabs: vec![jackin_protocol::control::TabSnapshot {
+            label: "mixed".into(),
+            focused_pane: 1,
+            instance: Some("tab-config".into()),
+            account_id: Some("tab-account".into()),
+            panes: vec![
+                jackin_protocol::control::PaneSnapshot {
+                    session_id: 1,
+                    label: "worker".into(),
+                    agent: Some("claude-work".into()),
+                    account_id: Some("acc-work".into()),
+                    state: jackin_protocol::control::AgentState::Idle,
+                    agent_status_report: None,
+                },
+                jackin_protocol::control::PaneSnapshot {
+                    session_id: 2,
+                    label: "worker".into(),
+                    agent: Some("claude-personal".into()),
+                    account_id: Some("acc-personal".into()),
+                    state: jackin_protocol::control::AgentState::Idle,
+                    agent_status_report: None,
+                },
+            ],
+        }],
+    };
+
+    let pane = instance_details_pane(
+        &identity_test_instance_entry(),
+        &[],
+        false,
+        Some(&snapshot),
+        None,
+        false,
+    );
+    let WorkspaceInstancePaneContent::Live { tabs } = pane.content else {
+        panic!("expected live snapshot rows");
+    };
+    assert_eq!(tabs[0].panes[0].label, tabs[0].panes[1].label);
+    assert_eq!(tabs[0].panes[0].account_id.as_deref(), Some("acc-work"));
+    assert_eq!(tabs[0].panes[1].account_id.as_deref(), Some("acc-personal"));
+    assert_eq!(tabs[0].panes[0].config_id.as_deref(), Some("claude-work"));
+    assert_eq!(
+        tabs[0].panes[1].config_id.as_deref(),
+        Some("claude-personal")
+    );
+}
+
+#[test]
+fn instance_details_fallback_preserves_session_account_and_config_identity() {
+    let sessions = vec![jackin_core::SessionRecord {
+        session_id: "session-1".into(),
+        name: "worker".into(),
+        agent_runtime: "claude".into(),
+        tmux_name: "tmux-worker".into(),
+        created_at: "2026-09-20T00:00:00Z".into(),
+        status: jackin_core::SessionStatus::Exited,
+        last_attached_at: None,
+        instance: Some("claude-work".into()),
+        account_id: Some("acc-work".into()),
+    }];
+
+    let pane = instance_details_pane(
+        &identity_test_instance_entry(),
+        &sessions,
+        false,
+        None,
+        None,
+        false,
+    );
+    let WorkspaceInstancePaneContent::Sessions { rows } = pane.content else {
+        panic!("expected persisted session rows");
+    };
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].account_id.as_deref(), Some("acc-work"));
+    assert_eq!(rows[0].config_id.as_deref(), Some("claude-work"));
 }
 
 use crate::tui::components::mount_rows::render_mount_header;

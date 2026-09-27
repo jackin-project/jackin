@@ -12,6 +12,8 @@ use jackin_protocol::usage_broker::{
     UsageWindowCategoryV1,
 };
 
+const TEST_NOW_EPOCH: i64 = 1_800_000_000;
+
 fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
     UsageWindow {
         window_id: format!("{label}-id"),
@@ -376,7 +378,7 @@ fn manual_refresh_key_marks_refresh_due() {
 
 #[test]
 fn freshness_age_label_covers_phases_and_ages() {
-    let now = 1_800_000_000;
+    let now = TEST_NOW_EPOCH;
     let mut account = test_account("openai", "a", "work");
 
     account.freshness_phase = UsageFreshnessPhaseV1::Refreshing;
@@ -401,6 +403,81 @@ fn freshness_age_label_covers_phases_and_ages() {
     account.is_stale = false;
     account.freshness_phase = UsageFreshnessPhaseV1::Stale;
     assert_eq!(freshness_age_label(now, &account), "stale · updated 5m ago");
+}
+
+#[test]
+fn relative_labels_hold_at_fixed_epoch_boundaries() {
+    let now = TEST_NOW_EPOCH;
+
+    for (offset, expected) in [
+        (0, "in under a minute"),
+        (59, "in under a minute"),
+        (60, "in 1m"),
+        (3_599, "in 59m"),
+        (3_600, "in 1h"),
+        (86_399, "in 23h"),
+        (86_400, "in 1d"),
+    ] {
+        assert_eq!(super::relative_time_label(now, now + offset), expected);
+    }
+    for (offset, expected) in [
+        (1, "just now"),
+        (59, "just now"),
+        (60, "1m ago"),
+        (3_599, "59m ago"),
+        (3_600, "1h ago"),
+        (86_399, "23h ago"),
+        (86_400, "1d ago"),
+    ] {
+        assert_eq!(super::relative_time_label(now, now - offset), expected);
+    }
+
+    assert_eq!(
+        super::credential_expiry_label(now, now),
+        "expires in under a minute"
+    );
+    assert_eq!(
+        super::credential_expiry_label(now, now - 1),
+        "expired just now"
+    );
+}
+
+#[test]
+fn render_at_shares_one_epoch_between_list_and_detail() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let now = TEST_NOW_EPOCH;
+    let mut account = test_account("openai", "work-id", "work");
+    account.provider = "OpenAI".to_owned();
+    account.last_good_at_epoch = Some(now - 60);
+    account.retry_at_epoch = Some(now + 60);
+    account.credential_expires_at_epoch = Some(now + 60);
+    let manager = manager_with_usage(UsageScreenState {
+        accounts: vec![account],
+        selected: 1,
+        selected_id: Some("openai:work-id".to_owned()),
+        ..UsageScreenState::default()
+    });
+
+    let backend = TestBackend::new(200, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| super::render_at(frame, frame.area(), &manager, now))
+        .unwrap();
+    let text = backend_text(&terminal);
+
+    assert!(
+        text.contains("updated 1m ago"),
+        "list freshness drifted:\n{text}"
+    );
+    assert!(
+        text.contains("Freshness updated 1m ago · retry in 1m"),
+        "detail freshness drifted:\n{text}"
+    );
+    assert!(
+        text.contains("Credential expires in 1m"),
+        "credential expiry drifted:\n{text}"
+    );
 }
 
 #[test]
@@ -735,7 +812,7 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
     let backend = TestBackend::new(80, 25);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| super::render_detail(f, f.area(), &manager))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
 
     let text = backend_text(&terminal);
@@ -771,7 +848,7 @@ fn render_full_route_narrow_and_wide() {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
-            .draw(|f| super::render(f, f.area(), &manager))
+            .draw(|f| super::render_at(f, f.area(), &manager, TEST_NOW_EPOCH))
             .unwrap();
 
         let text = backend_text(&terminal);
@@ -823,7 +900,7 @@ fn render_detail_account_shows_freshness_and_refreshing_indicator() {
     let backend = TestBackend::new(80, 25);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| super::render_detail(f, f.area(), &manager))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
 
     let text = backend_text(&terminal);
@@ -866,7 +943,7 @@ fn render_unknown_window_shows_value_without_fabricated_bar() {
     let backend = TestBackend::new(80, 25);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| super::render_detail(f, f.area(), &manager))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
 
     let text = backend_text(&terminal);
@@ -915,10 +992,8 @@ struct MetricGroupEpochs {
     renews_at: i64,
 }
 
-/// Canonical projection carrying `Balance` + `SpendCap` + `Plan` groups, with the
-/// wall-clock-relative epochs it was built against. Epochs carry bucket
-/// margins: render passes real time, so asserted buckets survive a few
-/// seconds of test/render skew.
+/// Canonical projection carrying `Balance` + `SpendCap` + `Plan` groups at the
+/// same fixed epoch used by the renderer tests.
 fn metric_group_projection_fixture() -> (
     jackin_protocol::usage_broker::UsageProjectionV1,
     MetricGroupEpochs,
@@ -932,15 +1007,12 @@ fn metric_group_projection_fixture() -> (
         UsageProviderV1, UsageQuotaStateV1, UsageWindowCategoryV1,
     };
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("wall clock reads")
-        .as_secs() as i64;
+    let now = TEST_NOW_EPOCH;
     let epochs = MetricGroupEpochs {
-        retry_at: now + 150,
-        credential_expires_at: now + 30 * 86_400 + 3_600,
-        reset_at: now + 90_000,
-        renews_at: now + 5 * 86_400 + 3_600,
+        retry_at: now + 120,
+        credential_expires_at: now + 30 * 86_400,
+        reset_at: now + 86_400,
+        renews_at: now + 5 * 86_400,
     };
 
     let issue = |code: &str, scope, message: &str| UsageIssueV1 {
@@ -1155,7 +1227,7 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     let backend = TestBackend::new(120, 60);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| super::render_detail(f, f.area(), &manager))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
     let detail = backend_text(&terminal);
     assert_detail_group_rows(&detail);
@@ -1170,7 +1242,7 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     let backend = TestBackend::new(120, 60);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| super::render_detail(f, f.area(), &manager))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
     let overview = backend_text(&terminal);
     assert_overview_group_rows(&overview);
@@ -1407,7 +1479,7 @@ fn render_detail_text(state: UsageScreenState) -> String {
     let backend = TestBackend::new(120, 60);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| super::render_detail(f, f.area(), &manager))
+        .draw(|f| super::render_detail(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
     backend_text(&terminal)
 }
@@ -1418,7 +1490,7 @@ fn render_list_text(state: UsageScreenState) -> String {
     let backend = TestBackend::new(120, 60);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| super::render_account_list(f, f.area(), &manager))
+        .draw(|f| super::render_account_list(f, f.area(), &manager, TEST_NOW_EPOCH))
         .unwrap();
     backend_text(&terminal)
 }
@@ -1859,7 +1931,7 @@ fn s8_render_full(
     let backend = ratatui::backend::TestBackend::new(width, height);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
     terminal
-        .draw(|f| super::render(f, f.area(), manager))
+        .draw(|f| super::render_at(f, f.area(), manager, TEST_NOW_EPOCH))
         .unwrap();
     backend_text(&terminal)
 }

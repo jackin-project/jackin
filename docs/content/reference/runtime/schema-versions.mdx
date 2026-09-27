@@ -328,6 +328,10 @@ sync_source_dir = "/Users/alice/company/.claude"
 
 ### Manifest `v1alpha7` — 2026-09-07
 
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Role manifest (`jackin.role.toml`) | `v1alpha6` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha6/meta.toml</RepoFile> |
+
 Role provider-model tables (`[claude.providers]`, `[codex.providers]`, and `[opencode.providers]`) are removed. Provider models belong to named API accounts, assigned to workspace agents. Run `jackin role migrate <role-repo-path>` to upgrade. A manifest containing removed tables is left unchanged and migration stops with instructions to move those models into accounts. Manifests without those tables are restamped.
 
 ### Manifest `v1alpha6` — 2026-06-18
@@ -589,6 +593,7 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `dirty_exit_policy` | string | No | `v1alpha8` | `ask`, `keep`, or `discard`; global dirty/unpushed exit policy; omitted means built-in `ask` |
 | `[telemetry].level` | string | No | `v1alpha9` | Persisted telemetry capture/export level: `info`, `debug`, or `trace`; env var override wins for one process |
 | `[telemetry].categories` | string array | No | `v1alpha9` | Persisted telemetry category allowlist such as `docker` or `launch`; empty means no category filter |
+| `accounts` | table | No | `v1alpha10` | Named account registry keyed by account ID |
 | `[accounts.<id>]` | table | No | `v1alpha10` | Named account configuration |
 | `[accounts.<id>].name` | string | Yes | `v1alpha10` | Human-readable account display name |
 | `[accounts.<id>].provider` | string | Yes | `v1alpha10` | Credential issuer: `anthropic`, `openai`, `amp`, `xai`, `opencode`, `moonshot`, `zai`, `minimax`, `google`, `cursor`, `meta`, or `openrouter` (`openrouter` is for multi-provider clients only) |
@@ -601,7 +606,29 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[accounts.<id>.credential.source_selector].entry` | string | Yes when selector is present | `v1alpha12` | Exact provider/account key in the source store |
 | `[accounts.<id>.credential.source_selector].profile` | string | No | `v1alpha12` | Exact profile label when the source store exposes one |
 | `[accounts.<id>.credential].value` | string | Conditional | `v1alpha10` | Secret value or environment reference for `api_key` and `oauth_token` credentials |
+| `[accounts.<id>.credential].base_url` | string | No | `v1alpha10` | Provider endpoint override for compatible API-key routes |
+| `[accounts.<id>.credential].model` | string | No | `v1alpha10` | Explicit provider model identifier for compatible API-key routes |
+| `[accounts.<id>.credential.xdg_roots]` | table | No | `v1alpha11` | Explicit XDG state roots for split-state profile clients |
+| `[accounts.<id>.credential.xdg_roots].data` | string | Yes when roots are present | `v1alpha11` | `XDG_DATA_HOME` equivalent; absolute host directory |
+| `[accounts.<id>.credential.xdg_roots].config` | string | Yes when roots are present | `v1alpha11` | `XDG_CONFIG_HOME` equivalent; absolute host directory |
+| `[accounts.<id>.credential.xdg_roots].cache` | string | Yes when roots are present | `v1alpha11` | `XDG_CACHE_HOME` equivalent; absolute host directory |
 | `[account_bindings]` | table | No | `v1alpha10` | Global fallback account selections by agent (`<agent> = "<account-id>"`) |
+| `account_scan_exclusions` | string set | No | `v1alpha12` | Secret-free source fingerprints deliberately excluded from discovery |
+| `agent_configurations` | table | No | `v1alpha11` | Named launchable agent/account/model templates |
+| `[agent_configurations.<id>]` | table | No | `v1alpha11` | One launch configuration |
+| `[agent_configurations.<id>].agent` | string | Yes | `v1alpha11` | Canonical agent slug for the client to launch |
+| `[agent_configurations.<id>].account` | string | Yes | `v1alpha11` | Registered account ID supplying credentials |
+| `[agent_configurations.<id>].model` | string | No | `v1alpha11` | Per-instance model override |
+| `[agent_configurations.<id>].base_url` | string | No | `v1alpha11` | Per-instance endpoint override |
+| `[agent_configurations.<id>].display_label` | string | No | `v1alpha11` | Explicit instance label; otherwise derived from agent and account |
+| `[agent_configurations.<id>].invoked_via_wrapper` | table | No | `v1alpha12` | Imported shell-wrapper provenance; rejected for unsafe capsule launch |
+| `[agent_configurations.<id>.invoked_via_wrapper].identity` | string | Yes when wrapper is present | `v1alpha12` | Wrapper function or helper identity |
+| `[agent_configurations.<id>.invoked_via_wrapper].args` | string array | No | `v1alpha12` | Arguments captured at the wrapper call site |
+| `default_launch` | string array | No | `v1alpha11` | Global default launch configuration IDs; `[]` means shell-only |
+| `bootstrap` | table | No | `v1alpha11` | First-run initialization sentinel |
+| `[bootstrap].version` | integer | Yes when bootstrap is present | `v1alpha11` | Bootstrap sentinel schema version, currently `1` |
+| `[bootstrap].fresh_install` | bool | No | `v1alpha11` | Installer-created empty config still needs its one discovery scan |
+| `github` | table | No | `legacy` | Operator-only GitHub CLI auth-forward settings |
 | `[github].auth_forward` | string | No | `legacy` | `sync`, `token`, or `ignore` |
 | `[github.env]` | table | No | `legacy` | Operator env values for GitHub token auth |
 | `[env]` | table | No | `legacy` | Global operator env layer |
@@ -609,12 +636,20 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[roles.<role>].git` | string | Yes when role is declared | `legacy` | Role repository URL |
 | `[roles.<role>].trusted` | bool | No | `legacy` | Trust-on-first-use state |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-role operator env layer |
+| `docker` | table | No | `legacy` | Global Docker security and named-mount configuration |
 | `[docker.mounts]` | table | No | `legacy` | Global and scoped Docker mount config |
+| `[docker.mounts.<name>].src` | string | Yes | `legacy` | Host source path for a named global mount |
+| `[docker.mounts.<name>].dst` | string | Yes | `legacy` | Absolute container destination for a named global mount |
+| `[docker.mounts.<name>].readonly` | bool | No | `legacy` | Read-only global mount flag |
 | `[docker].profile` | string | No | `v1alpha7` | Global default Docker security profile: `locked`, `hardened`, `standard`, or `compat` |
 | `[docker.grants]` | table | No | `v1alpha7` | Global capability/resource grants layered on top of the resolved Docker profile |
+| `runtime` | table | No | `v1alpha7` | Host-wide container backend defaults |
+| `[runtime].default_backend` | string | No | `v1alpha7` | `docker` or `apple-container`; defaults to `docker` |
+| `git` | table | No | `v1alpha5` | Global commit-trailer policy |
 | `[git].coauthor_trailer` | bool | No | `v1alpha5` | Enable `Co-authored-by` agent trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[git].dco` | bool | No | `v1alpha5` | Enable `Signed-off-by` DCO trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[workspaces]` | table | No | `legacy` | Legacy read-only compatibility location; migrated into workspace files |
+| `role_repo_refresh_ttl_seconds` | integer | No | `legacy` | Launch-time role-repo refresh cache window; omitted uses the built-in default |
 
 Full operator configuration examples live in
 [Configuration File](/reference/runtime/configuration/).
@@ -637,20 +672,27 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha9`
+### Workspace field inventory
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha9` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha10` |
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `accounts` | string array | No | `v1alpha9` | Accounts this workspace may use; empty means no credentials |
 | `[account_bindings]` | table | No | `v1alpha9` | Workspace preferred account per agent (`<agent> = "<account-id>"`) |
+| `default_launch` | string array | No | `v1alpha10` | Workspace default launch configuration IDs; an explicit list replaces the inherited default |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
-| `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, or `opencode`; omitted lets launch resolution use the role manifest or prompt |
+| `default_agent` | string | No | `legacy` | Canonical agent slug; omitted lets launch resolution use the role manifest or prompt |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
+| `env` | table | No | `legacy` | Workspace operator env layer |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
+| `roles` | table | No | `v1alpha9` | Per-role workspace overrides |
+| `[roles.<role>]` | table | No | `v1alpha9` | One workspace × role override |
+| `runtime` | table | No | `v1alpha7` | Per-workspace container backend override |
+| `[runtime].backend` | string | No | `v1alpha7` | `docker` or `apple-container`; omitted inherits global `runtime.default_backend` |
 | `dirty_exit_policy` | string | No | `v1alpha8` | `ask`, `keep`, or `discard`; workspace override for dirty/unpushed exit policy; omitted means inherit from global config |
+| `docker` | table | No | `v1alpha7` | Optional workspace Docker security policy |
 | `[docker].profile` | string | No | `v1alpha7` | Workspace Docker security profile override |
 | `[docker.grants]` | table | No | `v1alpha7` | Workspace capability/resource grants layered after global grants |
 | `[env]` | table | No | `legacy` | Workspace operator env layer; each `op://` reference carries an optional `account` (the 1Password account it resolves against), since `v1alpha5` |
@@ -659,11 +701,15 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `[[mounts]].dst` | string | Yes | `legacy` | Container path |
 | `[[mounts]].readonly` | bool | No | `legacy` | Defaults to `false` |
 | `[[mounts]].isolation` | string | No | `legacy` | `shared`, `worktree`, or `clone`; legacy default is `shared` |
+| `keep_awake` | table | No | `legacy` | Workspace power-management opt-in |
 | `[keep_awake].enabled` | bool | No | `legacy` | macOS keep-awake toggle |
+| `github` | table | No | `legacy` | Workspace GitHub auth override |
 | `[github].auth_forward` | string | No | `legacy` | Workspace GitHub auth override |
 | `[github.env]` | table | No | `legacy` | Workspace GitHub token env values; `op://` references carry the per-ref `account` since `v1alpha5` |
 | `[roles.<role>.account_bindings]` | table | No | `v1alpha9` | Per-role account selection within the workspace allowlist (`<agent> = "<account-id>"`) |
+| `[roles.<role>].default_launch` | string array | No | `v1alpha10` | Role default launch configuration IDs; an explicit list replaces inherited defaults |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-workspace, per-role env override; `op://` references carry the per-ref `account` since `v1alpha5` |
+| `[roles.<role>.github]` | table | No | `legacy` | Per-workspace, per-role GitHub auth override |
 | `[roles.<role>.github].auth_forward` | string | No | `legacy` | Per-workspace, per-role GitHub auth override |
 | `[roles.<role>.github.env]` | table | No | `legacy` | Per-workspace, per-role GitHub token env values; `op://` references carry the per-ref `account` since `v1alpha5` |
 
@@ -685,14 +731,15 @@ automated migration jobs.
 | Removed | None |
 | Renamed | None |
 
-### `v1alpha6`
+### Manifest field inventory — `v1alpha7`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha7` |
 | `dockerfile` | string | Yes | `legacy` | Relative path to role Dockerfile |
 | `published_image` | string | No | `legacy` | Pre-built role image override |
-| `agents` | string array | No | `legacy` | `claude`, `codex`, or `amp`; `opencode` added in `v1alpha3`; `kimi` added in `v1alpha4`; omitted means Claude-only |
+| `agents` | string array | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, `opencode`, or `grok`; omitted means Claude-only |
+| `[identity]` | table | No | `legacy` | Role identity configuration |
 | `[identity].name` | string | No | `legacy` | Display name |
 | `[claude].model` | string | No | `legacy` | Claude model override |
 | `[claude].plugins` | string array | No | `legacy` | Claude plugin identifiers |
@@ -703,10 +750,14 @@ automated migration jobs.
 | `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
 | `[kimi].model` | string | No | `v1alpha4` | Kimi model override passed to `kimi --model` |
 | `[opencode].model` | string | No | `v1alpha3` | `OpenCode` model override in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
+| `[grok].model` | string | No | `legacy` | Grok model override passed to `grok -m` |
+| `hooks` | table | No | `legacy` | Lifecycle hook script paths |
+| `docker` | table | No | `v1alpha6` | Role minimum security profile and grants |
 | `[docker].min_profile` | string | No | `v1alpha6` | Lowest security profile the role accepts: `locked`, `hardened`, `standard`, or `compat` |
 | `[docker].dind` | string | No | `v1alpha6` | Inner Docker requirement: `none`, `rootless`, or `privileged` |
 | `[docker].allowed_hosts` | string array | No | `v1alpha6` | Hosts the role needs reachable under an allowlist network profile |
 | `[docker].capabilities_add` | string array | No | `v1alpha6` | Linux capabilities the role needs added back on top of the profile defaults |
+| `env` | table | No | `legacy` | Interactive/default role environment declarations |
 | `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script that runs on first launch only |
 | `[hooks].source` | string | No | `legacy` | Relative path to a script dot-sourced into the entrypoint shell so `export` and `PATH` mutations reach the launched agent |
 | `[hooks].preflight` | string | No | `legacy` | Relative path to a per-start preflight script |

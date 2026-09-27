@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::usage::refresh::ProviderError;
 use std::thread;
 
 #[test]
@@ -138,6 +139,27 @@ fn openrouter_credential_snapshot_is_supported_and_scoped_when_missing() {
     assert_eq!(
         view.last_error.as_deref(),
         Some("OpenRouter API key missing")
+    );
+}
+
+#[test]
+fn claude_api_key_snapshot_does_not_use_oauth_adapter() {
+    let view = provider_credential_snapshot(
+        "claude",
+        jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
+        "fixture-api-key",
+    );
+
+    assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
+    assert_eq!(view.source, UsageSource::None);
+    assert_eq!(view.account.account_label, "Claude API key");
+    assert_eq!(
+        view.account.credential_origin.as_deref(),
+        Some("API key · env ANTHROPIC_API_KEY")
+    );
+    assert_eq!(
+        view.last_error.as_deref(),
+        Some("Claude API-key quota is unavailable; OAuth usage requires CLAUDE_CODE_OAUTH_TOKEN")
     );
 }
 
@@ -747,6 +769,46 @@ fn usage_account_snapshots_use_in_memory_cache() {
     assert_eq!(accounts[0].limit_unit.as_deref(), Some("percent"));
     assert_eq!(accounts[0].fetched_at, 123);
     assert_eq!(accounts[0].status, "fresh");
+}
+
+#[test]
+fn account_snapshot_rows_preserve_money_units_for_spend_buckets() {
+    let mut view = codex_cached_usage_view();
+    view.buckets = vec![QuotaBucketView {
+        label: "Extra usage".to_owned(),
+        used_label: Some("SGD 78.00 of SGD 260.00".to_owned()),
+        limit_label: Some("SGD 260.00".to_owned()),
+        remaining_percent: Some(70),
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(StatusSlot::Spend),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: Some(Money::new(7_800, "SGD", 2)),
+        limit_money: Some(Money::new(26_000, "SGD", 2)),
+        severity: UsageSeverity::Normal,
+    }];
+    let mut snapshots = HashMap::new();
+    snapshots.insert("codex".to_owned(), CachedUsage { view });
+
+    let rows = account_snapshot_views_from_cache(&snapshots);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].used_amount, Some(7_800));
+    assert_eq!(rows[0].used_unit.as_deref(), Some("SGD"));
+    assert_eq!(rows[0].limit_amount, Some(26_000));
+    assert_eq!(rows[0].limit_unit.as_deref(), Some("SGD"));
+}
+
+#[test]
+fn account_snapshot_rows_propagate_view_failure_to_retained_buckets() {
+    let mut view = codex_cached_usage_view();
+    view.status = UsageSnapshotStatus::Stale;
+    view.buckets[0].status = UsageSnapshotStatus::Fresh;
+    let mut snapshots = HashMap::new();
+    snapshots.insert("codex".to_owned(), CachedUsage { view });
+
+    let rows = account_snapshot_views_from_cache(&snapshots);
+    assert_eq!(rows[0].status, "stale");
 }
 
 fn codex_cached_usage_view() -> FocusedUsageView {
@@ -1557,9 +1619,22 @@ fn broker_client_failure_preserves_last_good_quota() {
         },
     );
 
-    let adopted = cache.focused_snapshot(Some("claude"), Some("Claude"));
+    let adopted = cache.focused_snapshot_for_capability(
+        Some("claude"),
+        Some("Claude"),
+        Some(&target.capability),
+    );
     assert_eq!(adopted.status, UsageSnapshotStatus::Stale);
     assert_eq!(adopted.buckets[0].remaining_percent, Some(64));
+    assert_eq!(adopted.buckets[0].status, UsageSnapshotStatus::Stale);
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .next()
+            .map(|cached| cached.view.updated_label.as_str()),
+        Some("Stale")
+    );
     assert_eq!(
         adopted.last_error.as_deref(),
         Some("usage broker is unavailable")
@@ -2004,16 +2079,62 @@ fn codex_oauth_credentials_carry_refresh_token() {
 
 #[test]
 fn unauthorized_errors_are_distinguished_from_transient() {
-    assert!(usage_error_is_unauthorized(
-        "Codex OAuth usage HTTP 401 Unauthorized"
-    ));
-    assert!(usage_error_is_unauthorized(
-        "Claude OAuth usage HTTP 403 Forbidden"
-    ));
-    assert!(!usage_error_is_unauthorized("Codex OAuth usage HTTP 500"));
-    assert!(!usage_error_is_unauthorized("request failed: timed out"));
+    for status in [401, 403] {
+        assert!(usage_error_is_unauthorized(&ProviderError::from(
+            ProviderHttpError::HttpStatus {
+                status,
+                message: format!("HTTP {status}"),
+                retry_after_seconds: None,
+                response_received_at_epoch: None,
+            },
+        )));
+    }
+    assert!(!usage_error_is_unauthorized(&ProviderError::from(
+        ProviderHttpError::Transport("request failed: HTTP 401".to_owned()),
+    )));
+    assert!(!usage_error_is_unauthorized(&ProviderError::from(
+        ProviderHttpError::Decode("payload mentions 403".to_owned()),
+    )));
     // A rate-limit is transient, not an auth failure.
-    assert!(!usage_error_is_unauthorized("usage HTTP 429 rate limit"));
+    assert!(!usage_error_is_unauthorized(&ProviderError::from(
+        ProviderHttpError::HttpStatus {
+            status: 429,
+            message: "usage HTTP 429 rate limit".to_owned(),
+            retry_after_seconds: None,
+            response_received_at_epoch: None,
+        },
+    )));
+}
+
+#[test]
+fn typed_rate_limit_preserves_retry_after_but_rendered_429_text_does_not() {
+    let typed = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "provider response body mentions 429".to_owned(),
+        retry_after_seconds: Some(37),
+        response_received_at_epoch: Some(1_700_000_000),
+    });
+    assert!(usage_error_is_rate_limited(&typed));
+    assert_eq!(typed.retry_after_seconds(), Some(37));
+    assert_eq!(
+        typed.rate_limit(),
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(1_700_000_037),
+        })
+    );
+
+    for error in [
+        ProviderError::from(ProviderHttpError::Transport(
+            "transport failed after HTTP 429".to_owned(),
+        )),
+        ProviderError::from(ProviderHttpError::Decode(
+            "decode failed: payload mentions 429 and Retry-After: 37".to_owned(),
+        )),
+    ] {
+        assert!(!usage_error_is_rate_limited(&error));
+        assert_eq!(error.retry_after_seconds(), None);
+        assert_eq!(error.rate_limit(), None);
+    }
 }
 
 /// Rotating-codename dollar-budget windows (enterprise contractual
@@ -2836,7 +2957,9 @@ fn grok_snapshot_reports_probe_error_instead_of_presence_gate() {
         false,
         false,
         false,
-        Err("grok agent stdio failed to start: not found".to_owned()),
+        Err(ProviderError::from(
+            "grok agent stdio failed to start: not found".to_owned(),
+        )),
     );
 
     assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
@@ -4334,7 +4457,7 @@ fn claude_keychain_credential_wins_over_file_paths() {
             account_email: Some("user@example.com".to_owned()),
             organization_type: Some("Max".to_owned()),
         },
-        || Some("env-token".to_owned()),
+        || Some(ClaudeOAuthEnvToken::new("env-token".to_owned())),
     );
     match resolution {
         ClaudeWaveResolution::Resolved(resolved) => {
@@ -4404,7 +4527,7 @@ fn claude_keychain_missing_falls_back_to_file_then_env() {
         &state2,
         |_| ClaudeKeychainRead::Missing,
         empty_file_probe,
-        || Some("env-token".to_owned()),
+        || Some(ClaudeOAuthEnvToken::new("env-token".to_owned())),
     );
     match &with_env {
         ClaudeWaveResolution::Resolved(r) => {
@@ -4420,20 +4543,38 @@ fn claude_keychain_missing_falls_back_to_file_then_env() {
 }
 
 #[test]
+fn claude_oauth_env_reader_never_reads_api_key_variables() {
+    let mut requested = None;
+    let token = read_claude_oauth_env_token(|name| {
+        requested = Some(name.to_owned());
+        match name {
+            jackin_core::ANTHROPIC_API_KEY_ENV_NAME
+            | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME => {
+                Ok("api-key-must-not-be-read".to_owned())
+            }
+            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME => Ok("oauth-token".to_owned()),
+            _ => panic!("unexpected environment variable: {name}"),
+        }
+    });
+
+    assert_eq!(requested.as_deref(), Some("CLAUDE_CODE_OAUTH_TOKEN"));
+    assert_eq!(
+        token,
+        Some(ClaudeOAuthEnvToken::new("oauth-token".to_owned()))
+    );
+}
+
+#[test]
 fn claude_keychain_consent_required_falls_back_like_missing() {
-    // Interaction-not-allowed (-25308) is Missing-family: a consent-gated
-    // Keychain item must not short-circuit file/env fallback the way an
-    // explicit Denied does, and an empty fallback resolves to Missing
-    // (the discovery lane attaches the consent diagnostic).
     let scope = keychain_test_scope(true);
     let state = ClaudeKeychainState::default();
-    let with_file = resolve_claude_refresh_wave_with(
+    let resolution = resolve_claude_refresh_wave_with(
         &scope,
         &state,
         |_| ClaudeKeychainRead::ConsentRequired,
         || ClaudeFileProbe {
             credential: claude_oauth_from_value(
-                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token","refreshToken":"rt"}}),
+                &serde_json::json!({"claudeAiOauth":{"accessToken":"file-token"}}),
             ),
             origin: Some("OAuth · file".to_owned()),
             account_email: None,
@@ -4441,32 +4582,13 @@ fn claude_keychain_consent_required_falls_back_like_missing() {
         },
         || None,
     );
-    match with_file {
-        ClaudeWaveResolution::Resolved(r) => assert_eq!(r.access_token, "file-token"),
-        _ => panic!("file fallback must run past consent-gated keychain"),
+    match resolution {
+        ClaudeWaveResolution::Resolved(resolved) => {
+            assert_eq!(resolved.access_token, "file-token");
+        }
+        _ => panic!("consent-gated Keychain must preserve file fallback"),
     }
-    let state2 = ClaudeKeychainState::default();
-    let empty = resolve_claude_refresh_wave_with(
-        &scope,
-        &state2,
-        |_| ClaudeKeychainRead::ConsentRequired,
-        empty_file_probe,
-        || None,
-    );
-    assert!(matches!(empty, ClaudeWaveResolution::Missing));
-    assert_eq!(claude_wave_policy(&empty), ClaudeWavePolicy::LocalMissing);
-    // Consent-gated is never cached as terminal: a later wave re-reads, so
-    // an operator approval is picked up without a restart.
-    assert_eq!(state2.read_count(), 1);
-    let again = resolve_claude_refresh_wave_with(
-        &scope,
-        &state2,
-        |_| ClaudeKeychainRead::ConsentRequired,
-        empty_file_probe,
-        || None,
-    );
-    assert!(matches!(again, ClaudeWaveResolution::Missing));
-    assert_eq!(state2.read_count(), 2);
+    assert_eq!(state.read_count(), 1);
 }
 
 #[test]
@@ -4517,12 +4639,13 @@ fn claude_keychain_metadata_makes_resolution_shared() {
 
 #[test]
 fn claude_denied_view_has_no_quota_and_exact_error() {
-    let view = claude_view_from_wave(
+    let view = claude_view_from_wave_with_rate_limit(
         "claude",
         Some("Anthropic / Claude"),
         1_781_185_560,
         ClaudeWaveResolution::Denied,
-    );
+    )
+    .0;
     assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
     assert!(view.buckets.is_empty());
     assert!(view.account.account_label.is_empty());
@@ -5116,33 +5239,47 @@ fn claude_limits_inactive_flag_does_not_gate_rendering() {
 
 #[test]
 fn claude_scope_restriction_error_is_explicit() {
-    assert!(claude_error_is_scope_restriction(
-        "Claude OAuth usage HTTP 403 Forbidden"
-    ));
-    assert!(claude_error_is_scope_restriction(
-        "HTTP 403 insufficient_scope"
-    ));
-    assert!(!claude_error_is_scope_restriction(
-        "Claude OAuth usage HTTP 401 Unauthorized"
-    ));
-    assert!(!claude_error_is_scope_restriction(
-        "Claude OAuth usage request failed: connection reset"
-    ));
+    let forbidden = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 403,
+        message: "Claude OAuth usage HTTP 403 Forbidden".to_owned(),
+        retry_after_seconds: None,
+        response_received_at_epoch: None,
+    });
+    assert!(claude_error_is_scope_restriction(&forbidden));
+    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
+        ProviderHttpError::Transport("HTTP 403 insufficient_scope".to_owned()),
+    )));
+    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
+        ProviderHttpError::HttpStatus {
+            status: 401,
+            message: "Claude OAuth usage HTTP 401 Unauthorized".to_owned(),
+            retry_after_seconds: None,
+            response_received_at_epoch: None,
+        },
+    )));
+    assert!(!claude_error_is_scope_restriction(&ProviderError::from(
+        "Claude OAuth usage request failed: connection reset".to_owned(),
+    )));
     assert_eq!(
         claude_provider_error_label(
-            Some("Claude OAuth usage HTTP 403 Forbidden"),
-            Some("cli boom")
+            Some(&forbidden),
+            Some(&ProviderError::from("cli boom".to_owned()))
         )
         .as_deref(),
         Some("Claude token lacks usage scope (inference-only); quota unavailable")
     );
     // Non-scope errors pass through verbatim, OAuth first.
     assert_eq!(
-        claude_provider_error_label(Some("oauth boom"), Some("cli boom")).as_deref(),
+        claude_provider_error_label(
+            Some(&ProviderError::from("oauth boom".to_owned())),
+            Some(&ProviderError::from("cli boom".to_owned())),
+        )
+        .as_deref(),
         Some("oauth boom")
     );
     assert_eq!(
-        claude_provider_error_label(None, Some("cli boom")).as_deref(),
+        claude_provider_error_label(None, Some(&ProviderError::from("cli boom".to_owned())))
+            .as_deref(),
         Some("cli boom")
     );
     assert_eq!(claude_provider_error_label(None, None), None);

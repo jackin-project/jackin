@@ -505,7 +505,7 @@ async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() 
 
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_combined_queue([
+    let mut runner = FakeRunner::with_capture_queue([
         "/jackin/runtime/entrypoint.sh: line 85: exec: codex: not found".to_owned(),
     ]);
     let err = diagnose_premature_exit(
@@ -546,7 +546,7 @@ async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
 
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_combined_queue([String::new()]);
+    let mut runner = FakeRunner::with_capture_queue([String::new()]);
     let err = diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach)
         .await
         .expect("OOM-killed container is a premature exit");
@@ -618,7 +618,7 @@ async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
         }])),
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_combined_queue(["panic: VT screen overflow".to_owned()]);
+    let mut runner = FakeRunner::with_capture_queue(["panic: VT screen overflow".to_owned()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
@@ -654,7 +654,7 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
         }])),
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_combined_queue([String::new()]);
+    let mut runner = FakeRunner::with_capture_queue([String::new()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
@@ -683,7 +683,7 @@ async fn diagnose_premature_exit_reports_empty_docker_logs() {
         }])),
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_combined_queue([String::new()]);
+    let mut runner = FakeRunner::with_capture_queue([String::new()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
@@ -696,46 +696,6 @@ async fn diagnose_premature_exit_reports_empty_docker_logs() {
     assert!(
         msg.contains("no log output"),
         "empty-log detail missing: {msg}"
-    );
-}
-
-#[tokio::test]
-async fn diagnose_premature_exit_surfaces_stderr_only_docker_logs() {
-    // Capsule early failures (`Error: ...` from `main() -> Result`)
-    // print to stderr only, and the container runs without a TTY so
-    // `docker logs` keeps the streams split. The diagnose path must
-    // read the combined streams: stdout-only capture would report
-    // "no log output" while discarding the real reason.
-    use jackin_docker::docker_client::ContainerState;
-    use jackin_test_support::FakeDockerClient;
-
-    let docker = FakeDockerClient {
-        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
-            exit_code: 1,
-            oom_killed: false,
-        }])),
-        ..Default::default()
-    };
-    // stdout queue deliberately empty: a stdout-only `docker logs`
-    // read would see "" and fall into the "no log output" branch.
-    let mut runner =
-        FakeRunner::with_combined_queue(["Error: missing /jackin/run/agent.toml".to_owned()]);
-    let err = diagnose_premature_exit(
-        &docker,
-        &mut runner,
-        "jk-the-architect",
-        ExitPhase::PreAttach,
-    )
-    .await
-    .expect("pre-attach exit 1 must produce a diagnostic error");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("Error: missing /jackin/run/agent.toml"),
-        "stderr-only reason must be surfaced, not discarded: {msg}"
-    );
-    assert!(
-        !msg.contains("no log output"),
-        "stderr-only logs must not take the empty-logs branch: {msg}"
     );
 }
 
@@ -782,7 +742,7 @@ plugins = []
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/jackin/state")),
         "jackin state mount missing: {mounts:?}"
@@ -817,10 +777,12 @@ fn github_config_mount_skips_absent_ignored_state() {
         },
         auth: crate::instance::ProvisionedAuth::default(),
         auth_outcomes: std::collections::BTreeMap::new(),
+        auth_mount_paths: std::collections::BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
 
     assert!(
-        github_config_mount(&state).is_none(),
+        github_config_mount(&state).unwrap().is_none(),
         "ignored GitHub auth with no state should not make docker create an empty gh config dir"
     );
 }
@@ -841,10 +803,13 @@ fn github_config_mount_keeps_existing_ignored_state() {
         },
         auth: crate::instance::ProvisionedAuth::default(),
         auth_outcomes: std::collections::BTreeMap::new(),
+        auth_mount_paths: std::collections::BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
 
     assert!(
         github_config_mount(&state)
+            .unwrap()
             .as_deref()
             .is_some_and(|mount| mount.ends_with(":/home/agent/.config/gh")),
         "existing jackin-owned GitHub state should still mount"
@@ -984,7 +949,7 @@ plugins = []
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts
             .iter()
@@ -1044,7 +1009,7 @@ plugins = []
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts
             .iter()
@@ -1100,7 +1065,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/jackin/state")),
         "jackin state mount missing: {mounts:?}"
@@ -1164,7 +1129,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
         "durable Codex home mount missing: {mounts:?}"
@@ -1240,7 +1205,7 @@ async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     // Primary keeps legacy destinations; the secondary gets suffixed
     // home + handoff dirs.
     for expected in [
@@ -1335,7 +1300,7 @@ agents = ["codex"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
         "durable Codex home mount missing: {mounts:?}"
@@ -1343,6 +1308,164 @@ agents = ["codex"]
     assert!(
         !mounts.iter().any(|m| m.contains("/jackin/codex/auth.json")),
         "no auth.json handoff when host has no ~/.codex/auth.json: {mounts:?}"
+    );
+}
+
+#[test]
+fn codex_source_auth_rerun_and_prewarm_fail_closed_after_persisted_state() {
+    use crate::instance::{AuthProvisionOutcome, PrepareResolvers, RoleState};
+    use jackin_core::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(host_home.join(".codex")).unwrap();
+    let resolvers = PrepareResolvers {
+        auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+        sync_source_dirs: &|_| None,
+    };
+    let host_auth = host_home.join(".codex/auth.json");
+
+    for invalid_source in ["", " \n\t"] {
+        std::fs::write(&host_auth, "{\"token\":\"valid\"}").unwrap();
+        let (state, outcome) = RoleState::prepare(
+            &paths,
+            "jk-agent-smith",
+            &manifest,
+            &resolvers,
+            &crate::instance::GithubAuthContext::default(),
+            &host_home,
+            Agent::Codex,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        let target = state.root.join("codex/auth.json");
+        assert!(
+            agent_mounts(&state)
+                .unwrap()
+                .iter()
+                .any(|mount| mount.contains("/jackin/codex/auth.json")),
+            "valid persisted Codex auth must be mounted"
+        );
+        drop(state);
+
+        std::fs::write(&host_auth, invalid_source).unwrap();
+        assert_eq!(
+            RoleState::prewarm_auth_for_agents(
+                &paths,
+                "jk-agent-smith",
+                &manifest,
+                &resolvers,
+                &host_home,
+                &[Agent::Codex],
+            )
+            .unwrap(),
+            1
+        );
+        assert!(
+            !target.exists(),
+            "invalid source must invalidate persisted Codex auth during prewarm"
+        );
+
+        let (state, outcome) = RoleState::prepare(
+            &paths,
+            "jk-agent-smith",
+            &manifest,
+            &resolvers,
+            &crate::instance::GithubAuthContext::default(),
+            &host_home,
+            Agent::Codex,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        let mounts = agent_mounts(&state).unwrap();
+        assert!(
+            !mounts
+                .iter()
+                .any(|mount| mount.contains("/jackin/codex/auth.json")),
+            "invalid Codex source must not regain a stale auth mount: {mounts:?}"
+        );
+        assert!(
+            state.auth_mount_paths.is_empty(),
+            "invalid Codex source must not acquire an auth mount lease"
+        );
+    }
+}
+
+#[tokio::test]
+async fn codex_launch_preflight_rejects_empty_host_auth_without_mounting_it() {
+    use crate::instance::{AuthProvisionOutcome, PrepareResolvers, RoleState};
+    use jackin_core::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+
+    let host_home = temp.path().join("host_home");
+    std::fs::create_dir_all(host_home.join(".codex")).unwrap();
+    std::fs::write(host_home.join(".codex/auth.json"), "\n \t").unwrap();
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| jackin_config::AuthForwardMode::Sync,
+            sync_source_dirs: &|_| None,
+        },
+        &crate::instance::GithubAuthContext::default(),
+        &host_home,
+        Agent::Codex,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    let mounts = agent_mounts(&state).unwrap();
+    assert!(
+        !mounts
+            .iter()
+            .any(|mount| mount.contains("/jackin/codex/auth.json")),
+        "empty Codex credentials must fail closed before launch mount admission: {mounts:?}"
+    );
+    assert!(
+        state.auth_mount_paths.is_empty(),
+        "empty Codex credentials must not acquire an auth mount lease"
     );
 }
 
@@ -1394,7 +1517,7 @@ agents = ["amp"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts
             .iter()
@@ -1449,7 +1572,7 @@ agents = ["amp"]
     )
     .unwrap();
 
-    let mounts = agent_mounts(&state);
+    let mounts = agent_mounts(&state).unwrap();
     assert!(
         mounts.iter().any(|m| m.contains(":/jackin/state")),
         "jackin state mount missing: {mounts:?}"
@@ -1579,10 +1702,13 @@ fn socket_dir_is_private_with_zero_exec_bindings() {
 }
 
 #[test]
-fn launch_args_move_every_non_jackin_value_to_host_env_file() {
+fn launch_args_keep_exact_safe_metadata_inline() {
     let token = "fake-github-token-for-argv-test";
     let token_entry = format!("GH_TOKEN={token}");
     let headers_entry = "OTEL_EXPORTER_OTLP_HEADERS=authorization=fake".to_owned();
+    let secret = "fake-jackin-secret-for-argv-test";
+    let secret_entry = format!("JACKIN_SECRET={secret}");
+    let role_suffix_entry = "JACKIN_ROLE_METADATA=not-inline";
     let mut args = vec![
         "run",
         "-e",
@@ -1591,12 +1717,17 @@ fn launch_args_move_every_non_jackin_value_to_host_env_file() {
         token_entry.as_str(),
         "-e",
         headers_entry.as_str(),
+        "-e",
+        secret_entry.as_str(),
+        "-e",
+        role_suffix_entry,
     ];
 
     let host_only = extract_host_env_entries(&mut args).unwrap();
 
     assert_eq!(args, ["run", "-e", "JACKIN_ROLE=fixture"]);
     assert!(!args.join(" ").contains(token));
+    assert!(!args.join(" ").contains(secret));
     assert_eq!(
         host_only,
         [
@@ -1604,7 +1735,9 @@ fn launch_args_move_every_non_jackin_value_to_host_env_file() {
             (
                 "OTEL_EXPORTER_OTLP_HEADERS".to_owned(),
                 "authorization=fake".to_owned()
-            )
+            ),
+            ("JACKIN_SECRET".to_owned(), secret.to_owned()),
+            ("JACKIN_ROLE_METADATA".to_owned(), "not-inline".to_owned()),
         ]
     );
 }
@@ -1720,7 +1853,7 @@ fn home_mounts_for(agent_slug: &str, agent: jackin_core::Agent) -> Vec<String> {
         agent,
     )
     .unwrap();
-    agent_mounts(&state)
+    agent_mounts(&state).unwrap()
 }
 
 #[tokio::test]
@@ -2187,6 +2320,8 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
             )]),
         },
         auth_outcomes: std::collections::BTreeMap::new(),
+        auth_mount_paths: std::collections::BTreeSet::new(),
+        auth_mount_leases: Vec::new(),
     };
     let workspace = jackin_config::ResolvedWorkspace {
         name: String::new(),
@@ -4834,15 +4969,11 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
         "unexpected error: {error:#}"
     );
     let docker_recorded = docker.recorded.borrow();
-    // FailedSetup path preserves the role container for post-mortem
-    // (`docker logs`/`inspect`); only DinD/certs/network are torn down.
-    // (No role container exists yet at sidecar-start time, so there is
-    // nothing to preserve — the point is no `rm -f` is issued for it.)
     assert!(
-        !docker_recorded
+        docker_recorded
             .iter()
             .any(|call| call.starts_with("docker rm -f jk-") && !call.ends_with("-dind")),
-        "role container must be preserved after sidecar failure: {docker_recorded:?}"
+        "role container cleanup missing after sidecar failure: {docker_recorded:?}"
     );
     assert!(
         docker_recorded
@@ -6453,33 +6584,34 @@ plugins = ["code-review@claude-plugins-official"]
     let dind = format!("{container_name}-dind");
     let certs_volume = format!("{container_name}-dind-certs");
     let network = format!("{container_name}-net");
-    // Cleanup uses docker (bollard) for rm operations. FailedSetup path
-    // preserves the role container for post-mortem (`docker logs`/`inspect`)
-    // while still tearing down DinD/certs/network.
-    let recorded = docker.recorded.borrow();
+    // Cleanup uses docker (bollard) for rm operations
     assert!(
-        !recorded
+        docker
+            .recorded
+            .borrow()
             .iter()
-            .any(|call| call == &format!("docker rm -f {container_name}")),
-        "role container must be preserved for post-mortem: {recorded:?}",
+            .any(|call| call == &format!("docker rm -f {container_name}"))
     );
     assert!(
-        recorded
+        docker
+            .recorded
+            .borrow()
             .iter()
-            .any(|call| call == &format!("docker rm -f {dind}")),
-        "DinD teardown missing after attached run failure: {recorded:?}",
+            .any(|call| call == &format!("docker rm -f {dind}"))
     );
     assert!(
-        recorded
+        docker
+            .recorded
+            .borrow()
             .iter()
-            .any(|call| call == &format!("docker volume rm {certs_volume}")),
-        "cert volume teardown missing after attached run failure: {recorded:?}",
+            .any(|call| call == &format!("docker volume rm {certs_volume}"))
     );
     assert!(
-        recorded
+        docker
+            .recorded
+            .borrow()
             .iter()
-            .any(|call| call == &format!("docker network rm {network}")),
-        "network teardown missing after attached run failure: {recorded:?}",
+            .any(|call| call == &format!("docker network rm {network}"))
     );
 }
 

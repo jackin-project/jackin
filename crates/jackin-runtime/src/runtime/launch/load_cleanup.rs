@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
+use jackin_core::ContainerState;
 use jackin_docker::docker_client::DockerApi;
 
 use crate::runtime::progress::launch_output;
@@ -43,17 +44,14 @@ pub struct LoadCleanup {
     certs_volume: String,
     network: String,
     /// Host-side bind-mount dir (`~/.jackin/sockets/<container>/`).
-    /// Removed only when `armed` is true AND the cleanup fires on a path
-    /// where no post-mortem is needed — `clean_socket_dir` distinguishes
-    /// that from post-session teardown where the operator may still want
-    /// to inspect the just-written Capsule launch config, and the
-    /// `failed_setup` path (see [`LoadCleanup::run_preserving_evidence`])
-    /// where the socket dir holds the bind-mounted `agent.toml` needed
-    /// for diagnosis. Post-session teardown paths flip
-    /// `clean_socket_dir = false` before `cleanup.run()` (or call
-    /// `disarm`); explicit cleanup commands (`jackin eject`, Purge from
-    /// the console) sweep the directory via `cleanup::eject_role` /
-    /// `purge_container_filesystem`, including `FailedSetup` instances.
+    /// Removed only when `armed` is true AND the cleanup fires on the
+    /// launch-failure path — `clean_socket_dir` distinguishes that from
+    /// post-session teardown where the operator may still want to
+    /// inspect the just-written Capsule launch config. Post-session
+    /// teardown paths flip `clean_socket_dir = false` before
+    /// `cleanup.run()` (or call `disarm`); explicit cleanup commands
+    /// (`jackin eject`, Purge from the console) sweep the directory via
+    /// `cleanup::eject_role` / `purge_container_filesystem`.
     socket_dir: PathBuf,
     clean_socket_dir: bool,
     armed: bool,
@@ -98,23 +96,19 @@ impl LoadCleanup {
         self.run_inner(docker, false).await;
     }
 
-    /// Best-effort remove `DinD` container, cert volume, and network, but
-    /// preserve the dead role container and its host socket dir for
-    /// post-mortem (`docker logs`, `docker inspect`, bind-mounted
-    /// `agent.toml`).
+    /// Best-effort cleanup after the role container has started and failed.
     ///
-    /// Launch deliberately omits `--rm` so crashed containers persist for
-    /// diagnosis; the `failed_setup` path must honor that promise instead
-    /// of reaping the evidence. The preserved resources carry the
-    /// per-attempt unique container name (random instance id), so a later
-    /// retry claims a fresh name and cannot collide with them; explicit
-    /// cleanup commands (`jackin eject`, console Purge) reap `FailedSetup`
-    /// leftovers when the operator is done diagnosing.
+    /// Retain only terminal role-container evidence (`docker logs`/inspect and
+    /// the launch config in the private socket directory). A live, transitional,
+    /// missing, or uninspectable role is cleaned up fail-closed so this path
+    /// cannot leave a running container or private socket endpoint behind.
     pub async fn run_preserving_evidence(&self, docker: &impl DockerApi) {
-        self.run_inner(docker, true).await;
+        let state = docker.inspect_container_state(&self.container_name).await;
+        self.run_inner(docker, preserves_failed_start_evidence(&state))
+            .await;
     }
 
-    async fn run_inner(&self, docker: &impl DockerApi, preserve_evidence: bool) {
+    async fn run_inner(&self, docker: &impl DockerApi, preserve_role_evidence: bool) {
         if !self.armed {
             return;
         }
@@ -128,7 +122,9 @@ impl LoadCleanup {
             run.compact("cleanup", "cancel cleanup started");
         }
 
-        if !preserve_evidence && let Err(e) = docker.remove_container(&self.container_name).await {
+        if !preserve_role_evidence
+            && let Err(e) = docker.remove_container(&self.container_name).await
+        {
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact("cleanup", &format!("cleanup failed (container): {e}"));
             }
@@ -156,7 +152,7 @@ impl LoadCleanup {
             record_cleanup_teardown_failure("cleanup failed (network)");
             launch_output().step_fail(&format!("cleanup failed (network): {e}"));
         }
-        if !preserve_evidence && self.clean_socket_dir {
+        if !preserve_role_evidence && self.clean_socket_dir {
             match std::fs::remove_dir_all(&self.socket_dir) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -184,4 +180,8 @@ impl LoadCleanup {
             None,
         );
     }
+}
+
+fn preserves_failed_start_evidence(state: &ContainerState) -> bool {
+    matches!(state, ContainerState::Stopped { .. } | ContainerState::Dead)
 }

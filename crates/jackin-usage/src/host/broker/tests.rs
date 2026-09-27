@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::os::unix::fs::{PermissionsExt as _, symlink};
+use std::os::unix::fs::symlink;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
 use crate::host::{HostSurfaceId, OpaqueCredentialHandle};
-use jackin_config::{AccountCredential, AiProvider, AppConfig};
+use jackin_config::AppConfig;
 use jackin_core::{UsageCredentialEnvName, WorkspaceName};
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
@@ -268,26 +268,110 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
 }
 
 #[test]
-fn discovery_provider_rate_limit_preserves_retry_after() {
-    let before = chrono::Utc::now().timestamp();
+fn discovery_provider_error_text_cannot_set_rate_limit_or_retry_deadline() {
+    for text in [
+        "provider HTTP 401 Unauthorized",
+        "provider HTTP 403 Forbidden",
+        "provider HTTP 429; Retry-After: 97",
+        "transport failed while contacting port 429",
+    ] {
+        let mut view = quota_view();
+        view.status = UsageSnapshotStatus::Stale;
+        view.last_error = Some(text.to_owned());
+
+        let ProviderProbeOutcome::Failure {
+            kind,
+            message,
+            retry_at_epoch,
+        } = provider_probe_outcome(view)
+        else {
+            panic!("provider view must not publish as success");
+        };
+        assert_eq!(kind, UsageCoordinationErrorKind::ProviderUnavailable);
+        assert_eq!(message, text);
+        assert_eq!(retry_at_epoch, None);
+    }
+}
+
+#[test]
+fn discovery_typed_rate_limit_reaches_broker_without_text_parsing() {
     let mut view = quota_view();
     view.status = UsageSnapshotStatus::Stale;
-    view.last_error = Some("provider HTTP 429; Retry-After: 97".to_owned());
+    view.last_error = Some("transport message mentions HTTP 429".to_owned());
 
     let ProviderProbeOutcome::Failure {
         kind,
         message,
         retry_at_epoch,
-    } = provider_probe_outcome(view)
+    } = provider_probe_outcome_with_rate_limit(
+        view,
+        Some(crate::usage::ProviderRateLimit {
+            retry_at_epoch: Some(1_700_000_037),
+        }),
+    )
     else {
-        panic!("rate-limited view must not publish as success");
+        panic!("typed rate limit must be a broker failure");
     };
-    let after = chrono::Utc::now().timestamp();
     assert_eq!(kind, UsageCoordinationErrorKind::RateLimited);
     assert_eq!(message, "usage provider rate limit is active");
-    assert!(
-        retry_at_epoch.is_some_and(|deadline| { (before + 97..=after + 97).contains(&deadline) })
-    );
+    assert_eq!(retry_at_epoch, Some(1_700_000_037));
+}
+
+struct TypedRateLimitResolver;
+
+impl ProviderCredentialEnvResolver for TypedRateLimitResolver {
+    fn resolve_provider_credentials(
+        &self,
+        _config: &AppConfig,
+        _workspace: Option<&WorkspaceName>,
+        _role: Option<&str>,
+        _keys: &[UsageCredentialEnvName],
+    ) -> Vec<ProviderCredentialEnvResolution> {
+        Vec::new()
+    }
+
+    fn refresh_provider_credential(
+        &self,
+        _surface: HostSurfaceId,
+        _key: &str,
+        _handle: &OpaqueCredentialHandle,
+    ) -> ProviderCredentialRefreshOutcome {
+        ProviderCredentialRefreshOutcome::Snapshot {
+            view: Box::new(quota_view()),
+            rate_limit: Some(crate::usage::ProviderRateLimit {
+                retry_at_epoch: Some(1_700_000_037),
+            }),
+        }
+    }
+}
+
+#[test]
+fn refresh_binding_outcome_carries_typed_rate_limit_into_broker() {
+    let binding = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Claude,
+        identity: None,
+        source_id: "source-typed-rate-limit".to_owned(),
+        capability_id: "capability-typed-rate-limit".to_owned(),
+        credential_revision: "credential-revision-typed-rate-limit".to_owned(),
+        provenance: BTreeSet::new(),
+        source: ValidatedCredentialSource::Env {
+            handle: OpaqueCredentialHandle::new("typed-rate-limit-handle"),
+            key: "CLAUDE_API_KEY".to_owned(),
+            material: Some(env_material("CLAUDE_API_KEY", "fixture-secret")),
+        },
+    };
+
+    let outcome = refresh_binding_outcome(&binding, &TypedRateLimitResolver);
+    let ProviderProbeOutcome::Failure {
+        kind,
+        retry_at_epoch,
+        ..
+    } = outcome
+    else {
+        panic!("typed rate limit must remain a broker failure");
+    };
+    assert_eq!(kind, UsageCoordinationErrorKind::RateLimited);
+    assert_eq!(retry_at_epoch, Some(1_700_000_037));
 }
 
 #[test]
@@ -495,8 +579,8 @@ fn broker_failure_without_snapshot_surfaces_honest_gap_in_snapshot() {
         jackin_config::AccountConfig {
             enabled: true,
             name: "codex-key".to_owned(),
-            provider: AiProvider::OpenAi,
-            credential: AccountCredential::ApiKey {
+            provider: jackin_config::AiProvider::OpenAi,
+            credential: jackin_config::AccountCredential::ApiKey {
                 value: jackin_config::EnvValue::Plain("fixture-openai-key".to_owned()),
                 base_url: None,
                 model: None,
@@ -1858,7 +1942,6 @@ fn slow_activator_stale_caller_catalog_never_wins() {
         stale,
         &mut discover,
         &mut reconcile,
-        &mut ensure_usage_broker_process,
     )
     .unwrap();
 
@@ -1943,7 +2026,6 @@ fn catalog_conflict_retries_with_rediscovery_then_succeeds() {
         scripted_discovery(Some("generation-stale"), &[("stale", HostSurfaceId::Amp)]),
         &mut discover,
         &mut reconcile,
-        &mut ensure_usage_broker_process,
     )
     .unwrap();
 
@@ -1999,7 +2081,6 @@ fn catalog_conflict_fails_closed_after_bounded_retries() {
         scripted_discovery(None, &[]),
         &mut discover,
         &mut reconcile,
-        &mut ensure_usage_broker_process,
     )
     .unwrap_err();
 
@@ -2066,7 +2147,6 @@ fn transient_empty_scan_does_not_wipe_live_catalog() {
         good.clone(),
         &mut discover,
         &mut reconcile,
-        &mut ensure_usage_broker_process,
     )
     .unwrap();
 
@@ -2114,7 +2194,6 @@ fn confirmed_empty_scan_still_revokes_live_catalog() {
         good,
         &mut discover,
         &mut reconcile,
-        &mut ensure_usage_broker_process,
     )
     .unwrap();
 
@@ -2230,167 +2309,4 @@ fn sequential_reconcile_after_fresh_read_still_accepts_last_writer() {
         )
         .unwrap();
     assert_eq!(overwritten.discovery_revision, "catalog-stale");
-}
-
-#[test]
-fn sidecar_service_usable_classifies_spawn_candidates() {
-    assert!(!sidecar_service_usable(None));
-    let temp = tempfile::tempdir().unwrap();
-    assert!(!sidecar_service_usable(Some(
-        &temp.path().join("missing-broker")
-    )));
-    assert!(!sidecar_service_usable(Some(temp.path())));
-
-    let plain = temp.path().join("plain-file");
-    fs::write(&plain, "not executable").unwrap();
-    assert!(!sidecar_service_usable(Some(&plain)));
-
-    let runnable = temp.path().join("runnable");
-    fs::write(&runnable, "#!/bin/sh\nexit 0\n").unwrap();
-    fs::set_permissions(&runnable, fs::Permissions::from_mode(0o755)).unwrap();
-    assert!(sidecar_service_usable(Some(&runnable)));
-}
-
-#[test]
-fn process_activation_without_sidecar_names_the_cause() {
-    let temp = tempfile::tempdir().unwrap();
-    let scope = activation_scope(&temp);
-
-    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data-none"));
-    config.service_executable = None;
-    let error = ensure_usage_broker_process(config, &scope).unwrap_err();
-    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
-    assert!(
-        error
-            .message
-            .contains("no broker service executable configured")
-            && error.message.contains("JACKIN_USAGE_BROKER_BIN"),
-        "opaque error: {}",
-        error.message,
-    );
-
-    let missing = temp.path().join("missing-broker");
-    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data-missing"));
-    config.service_executable = Some(missing.clone());
-    let error = ensure_usage_broker_process(config, &scope).unwrap_err();
-    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
-    assert!(
-        error.message.contains(&format!("{}", missing.display()))
-            && error.message.contains("not usable"),
-        "opaque error: {}",
-        error.message,
-    );
-
-    let plain = temp.path().join("plain-file");
-    fs::write(&plain, "not executable").unwrap();
-    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data-plain"));
-    config.service_executable = Some(plain.clone());
-    let error = ensure_usage_broker_process(config, &scope).unwrap_err();
-    assert!(
-        error.message.contains(&format!("{}", plain.display())),
-        "opaque error: {}",
-        error.message,
-    );
-}
-
-#[test]
-fn process_activation_reports_spawn_failure() {
-    let temp = tempfile::tempdir().unwrap();
-    let scope = activation_scope(&temp);
-    // Passes the usability check (regular file with an exec bit) but the
-    // kernel refuses to execute it, exercising the spawn error mapping.
-    let broken = temp.path().join("broken-broker");
-    fs::write(&broken, "#!/nonexistent-interpreter/exec\n").unwrap();
-    fs::set_permissions(&broken, fs::Permissions::from_mode(0o755)).unwrap();
-
-    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data"));
-    config.service_executable = Some(broken.clone());
-    let error = ensure_usage_broker_process(config, &scope).unwrap_err();
-    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
-    assert!(
-        error.message.contains("failed to spawn")
-            && error.message.contains(&format!("{}", broken.display()))
-            && error.message.contains("os error"),
-        "spawn cause lost: {}",
-        error.message,
-    );
-}
-
-#[test]
-fn process_activation_from_capsule_scope_reports_host_only_policy() {
-    let temp = tempfile::tempdir().unwrap();
-    let runnable = temp.path().join("runnable");
-    fs::write(&runnable, "#!/bin/sh\nexit 0\n").unwrap();
-    fs::set_permissions(&runnable, fs::Permissions::from_mode(0o755)).unwrap();
-    let mut config = UsageBrokerConfig::for_data_dir(temp.path().join("data"));
-    config.service_executable = Some(runnable);
-
-    let error = ensure_usage_broker_process(
-        config,
-        &UsageDiscoveryScope::Capsule {
-            forwarded_accounts: Vec::new(),
-        },
-    )
-    .unwrap_err();
-    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
-    assert!(
-        error.message.contains("host desktop scope"),
-        "opaque error: {}",
-        error.message,
-    );
-}
-
-#[test]
-fn ensure_usage_broker_falls_back_to_in_process_when_sidecar_missing() {
-    let temp = tempfile::tempdir().unwrap();
-    let config_root = temp.path().join("config");
-    let mut config = AppConfig::default();
-    config.accounts.insert(
-        "codex-key".to_owned(),
-        jackin_config::AccountConfig {
-            enabled: true,
-            name: "codex-key".to_owned(),
-            provider: AiProvider::OpenAi,
-            credential: AccountCredential::ApiKey {
-                value: jackin_config::EnvValue::Plain("fixture-openai-key".to_owned()),
-                base_url: None,
-                model: None,
-            },
-        },
-    );
-    fs::create_dir_all(&config_root).unwrap();
-    fs::write(
-        config_root.join("config.toml"),
-        toml::to_string(&config).unwrap(),
-    )
-    .unwrap();
-    let scope = UsageDiscoveryScope::HostDesktop {
-        config_root,
-        operator_home: temp.path().join("home"),
-    };
-    let resolver: Arc<dyn ProviderCredentialEnvResolver> = Arc::new(FixedHandleResolver);
-    let discovery = validate_usage_sources(
-        discover_usage_sources(&scope, resolver.as_ref()).unwrap(),
-        resolver.as_ref(),
-    );
-    assert!(
-        !usage_catalog_entries(&discovery).is_empty(),
-        "fallback test requires a non-empty live catalog"
-    );
-
-    for service_executable in [None, Some(temp.path().join("missing-broker"))] {
-        let data_dir = tempfile::tempdir_in(temp.path()).unwrap();
-        let mut broker_config = UsageBrokerConfig::for_data_dir(data_dir.path().to_owned());
-        broker_config.service_executable = service_executable;
-        let handle = ensure_usage_broker(
-            broker_config,
-            scope.clone(),
-            discovery.clone(),
-            Arc::clone(&resolver),
-        )
-        .unwrap();
-        let projection = handle.client.current_projection().unwrap();
-        assert_eq!(handle.catalog_lease, projection.projection_id);
-        assert_eq!(handle.capabilities, usage_broker_capabilities(&discovery));
-    }
 }

@@ -13,7 +13,8 @@ fn conformance_endpoint_loss_never_blocks_product_emission() -> anyhow::Result<(
         &testbed.endpoint(),
         jackin_diagnostics::ServiceIdentity::HOST_ONE_SHOT,
     )?;
-    testbed.stop();
+    drop(runtime_guard);
+    runtime.block_on(testbed.shutdown())?;
 
     let started = std::time::Instant::now();
     for _ in 0..10_000 {
@@ -34,7 +35,6 @@ fn conformance_endpoint_loss_never_blocks_product_emission() -> anyhow::Result<(
         health.traces.failures + health.logs.failures + health.metrics.failures > 0,
         "flush={flush:?} health={health:?}"
     );
-    drop(runtime_guard);
     jackin_diagnostics::shutdown_capsule_tracing();
     Ok(())
 }

@@ -1,59 +1,53 @@
-schema = 1
+schema = 2
 
 [generator]
 repository = "jackin-project/jackin"
-# D19 pin: immutable Velnor source for this generated tree. The matching
-# published runtime is velnor-workflow-runtime-v1-f1e4338feb077e70
-# (closure f1e4338feb077e700b0c9b3c881967a2273e6ff199c4292386385ee7a6d9764b).
-revision = "01bc16b2ad074eb3980d7b12a7b441192a7c3bc0"
+revision = "4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0"
 
 [scan]
 exclude = ["native/Package.swift", "native/.swiftpm/**"]
 
-# Runner placement: keep both backends for manual dispatch; automatic events
-# (main push/schedule, same-repo PR) must stay GitHub-only so ci-required is
-# not blocked by queued self-hosted jobs when the Velnor fleet is unavailable.
+# Public repo: GitHub-hosted singleton (no velnor lanes). Automatic events
+# stay GitHub-only so ci-required is not blocked by queued self-hosted jobs
+# when the Velnor fleet is unavailable.
 [workflow]
-runners = "github"
-automatic = "github"
-default_dispatch_runner = "github"
-automatic_lanes = "github"
-github_runner = "ubuntu-26.04"
-macos_runner = "macos-26"
-velnor_labels = ["self-hosted", "velnor-target-mvp"]
+providers = ["github-hosted"]
+automatic_providers = ["github-hosted"]
+default_branch = "main"
+
+[workflow.selectors.github-hosted]
+runs_on = ["ubuntu-26.04"]
 
 [policy]
-ruleset_required_status_checks = ["ci-required"]
+ruleset_required_status_checks = ["ci-required", "Policy"]
 ruleset_external_status_checks = ["DCO"]
 
-# Self-hosted Renovate: schedule + writer identity from the #994 copy
-# (renovate.yml: cron "0 6 * * *", secrets.RENOVATE_TOKEN, RENOVATE_GIT_AUTHOR).
-# lanes = "github": the copy defaulted to velnor, but velnor/both lanes
-# require [workflow] velnor_trusted_label, and no trusted-label fact exists in
-# this repo. Revisit for velnor/both once the fleet label is known.
-# The copy sets RENOVATE_ALLOWED_UNSAFE_EXECUTIONS=mise (intended: let
-# `mise lock` refresh mise.lock in Renovate PRs), but renovate.json
-# configures no post-upgrade execution, so the knob has no live effect and
-# nothing is lost by omitting it. If post-upgrade execution is ever
-# configured, [renovate] allowed_commands renders RENOVATE_ALLOWED_COMMANDS.
-[renovate]
-enabled = true
-reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
-schedule = "0 6 * * *"
-token = "RENOVATE_TOKEN"
-config = "renovate.json"
-validate = true
-lanes = "github"
-author = "Renovate Bot <renovate@whitesourcesoftware.com>"
-signoff = true
-
-[[declare]]
-primitive = "renovate"
-file = "renovate.yml"
-
-[[declare]]
-primitive = "renovate-validate"
-file = "renovate-validate.yml"
+# [renovate] ON HOLD for wave pin 3 (W4 precedent): s2 `validate_renovate`
+# requires the velnor provider + [workflow.selectors.velnor], but
+# `enforce_visibility_policy` requires public repos to be exactly
+# [github-hosted] and rejects a velnor selector — so [renovate] is
+# unsatisfiable on public repos at this pin. The renderer itself is
+# provider-agnostic (`control_plane_runner`), so the fix is validation-only
+# (G12, generator side). Uncomment below + the two [[declare]] rows at pin 3
+# to restore renovate.yml/renovate-validate.yml; until then both files are
+# absent from the tree (root renovate.json stays for the writer's return).
+# [renovate]
+# enabled = true
+# reason = "Self-hosted Renovate writer for mise/cargo/docker/tool pins; validator gates renovate.json changes."
+# schedule = "0 6 * * *"
+# token = "RENOVATE_TOKEN"
+# config = "renovate.json"
+# validate = true
+# author = "Renovate Bot <renovate@whitesourcesoftware.com>"
+# signoff = true
+#
+# [[declare]]
+# primitive = "renovate"
+# file = "renovate.yml"
+#
+# [[declare]]
+# primitive = "renovate-validate"
+# file = "renovate-validate.yml"
 
 # Desktop cadence (L5): the two heavier tiers from desktop-cadence.yml.
 # Merge tier runs the PR graph + UI tests (task desktop-merge, mise.toml);
@@ -149,8 +143,8 @@ name = "Renovate upstream sources"
 events = ["push", "pull_request"]
 branches = ["main"]
 
-# Unit contracts the scan cannot derive. Command arrays are rejected by
-# velnor-workflow 721c2fed; typed capabilities only (`ci_tasks`, `mise_tools`).
+# Unit contracts the scan cannot derive. Command arrays are rejected;
+# typed capabilities only (`ci_tasks`, `mise_tools`).
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived
 # `docker build` is self-contained.
 [[units]]
@@ -158,11 +152,11 @@ id = "rust-jackin-xtask"
 mise_tools = ["github:open-telemetry/weaver"]
 
 # XCFramework must exist before `swift build` resolves the binary target.
-# Run desktop-xcframework in the same macOS job as swift-package-native so
-# the binary target path is populated on one runner (separate jobs do not
+# The ci task rebuilds it in-job on one macOS runner (separate jobs do not
 # share target/xcframework).
-# capabilities = ["xcframework"]: Q4 obligation — without it this Apple-bound
-# unit renders ubuntu + Linux plan-artifact runtime (slice 9 split).
+# platform = "macos-arm64": s2 spelling of the s1 capabilities=["xcframework"]
+# Q4 obligation — without it this Apple-bound unit renders ubuntu + Linux
+# plan-artifact runtime.
 # depends_on (F2): FFI touches select this Swift consumer; selection coupling
 # only, no forced serialization (the unit rebuilds the XCFramework in-job).
 [[units]]
@@ -172,7 +166,7 @@ root = "native"
 watch = ["native/**/*.swift", "native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved", "crates/jackin-xtask/**"]
 ci_tasks = ["swift-package-native-ci"]
 mise_tools = ["cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
-capabilities = ["xcframework"]
+platform = "macos-arm64"
 depends_on = ["rust-jackin-usage-ffi"]
 
 # jackin-lints pins nightly via crates/jackin-lints/rust-toolchain.
@@ -181,12 +175,36 @@ depends_on = ["rust-jackin-usage-ffi"]
 id = "rust-jackin-lints"
 mise_tools = ["rust", "cargo-binstall"]
 
+# The Xcode project links the FFI XCFramework (xcodebuild resolves it from
+# target/xcframework), so the bare scan-derived generate/build/test sequence
+# fails without it. The FFI unit declares the framework as a product with no
+# transportable outputs, so the consumer rebuilds it in-job: the prerequisite
+# edge prepends `mise run desktop-xcframework` to these commands (tablerock
+# pattern). mise_tools replaces the scanned set, so xcodegen rides along
+# with the rust chain the framework build needs.
+[[units]]
+id = "rust-jackin-usage-ffi"
+
+[[units.products]]
+name = "xcframework"
+task = "desktop-xcframework"
+
+[[units]]
+id = "swift-xcodegen-native-project-yml-jackindesktop"
+mise_tools = ["xcodegen", "cargo-binstall", "rust", "cargo:sccache", "cargo:boltffi_cli"]
+depends_on = ["rust-jackin-usage-ffi"]
+
+[[units.prerequisites]]
+producer = "rust-jackin-usage-ffi"
+product = "xcframework"
+
 # Q4 obligation, second Swift unit (scanned): AppKit prototype, genuinely
 # Apple-bound, but scan evidence cannot prove it. Row-over-scan merge keeps
-# the scanned base and overrides the platform requirement only.
+# the scanned base and overrides the platform requirement only (s2 spelling
+# of the s1 capabilities=["xcode"] row).
 [[units]]
 id = "swift-package-native-design-prototypes-unifiedagentusage"
-capabilities = ["xcode"]
+platform = "macos-arm64"
 
 # Desktop release (L10): tag-triggered tasks release over the canonical
 # desktop mise tasks. Each event runs exactly one self-contained job
@@ -204,7 +222,7 @@ tag_pattern = "v[0-9]*"
 
 [[release.job]]
 id = "build"
-tasks = ["desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state"]
+tasks = ["desktop-release-tools", "desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state"]
 runner = "macos"
 modes = ["validate"]
 timeout_minutes = 90
@@ -212,11 +230,16 @@ timeout_minutes = 90
 [release.job.env]
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+# Keep release jobs fail-fast after the declared tool setup. The release
+# graph invokes mise tasks in the same job; allowing task-level auto-install
+# would silently rebuild the full toolset after the setup cache is saved.
+MISE_TASK_RUN_AUTO_INSTALL = "false"
+MISE_NOT_FOUND_AUTO_INSTALL = "false"
 
 [[release.job]]
 id = "sign"
 name = "Sign release"
-tasks = ["desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state", "desktop-sign-notarize"]
+tasks = ["desktop-release-tools", "desktop-release-env", "desktop-build", "desktop-verify", "desktop-release-state", "desktop-sign-notarize"]
 runner = "macos"
 modes = ["publish"]
 timeout_minutes = 90
@@ -231,6 +254,8 @@ attestations = "write"
 [release.job.env]
 DEVELOPER_DIR = "/Applications/Xcode_26.6.app/Contents/Developer"
 MACOSX_DEPLOYMENT_TARGET = "26.0"
+MISE_TASK_RUN_AUTO_INSTALL = "false"
+MISE_NOT_FOUND_AUTO_INSTALL = "false"
 DEVELOPER_ID_APPLICATION_P12_BASE64 = "${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}"
 DEVELOPER_ID_APPLICATION_P12_PASSWORD = "${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}"
 APP_STORE_CONNECT_API_KEY_P8 = "${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}"
