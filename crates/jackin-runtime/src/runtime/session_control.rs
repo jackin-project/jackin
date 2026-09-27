@@ -32,7 +32,7 @@ use jackin_protocol::control::{
     AgentState, ClientMsg, ServerMsg, SessionEventKind, SessionEventRecord,
 };
 
-use jackin_core::JackinPaths;
+use jackin_core::{ContainerHandle, JackinPaths};
 
 use super::snapshot::{request_control_inner, run_docker_exec_capsule, socket_path};
 
@@ -63,11 +63,11 @@ pub enum ControlTransport {
 /// has already exited — a refused send is an error, never a silent no-op.
 pub fn send_session_text(
     paths: &JackinPaths,
-    container_name: &str,
+    container: &ContainerHandle,
     session: u64,
     text: &str,
 ) -> Result<(u64, ControlTransport)> {
-    let path = socket_path(paths, container_name);
+    let path = socket_path(paths, container.name());
     let request = ClientMsg::SessionSend {
         session,
         text: text.to_owned(),
@@ -79,11 +79,12 @@ pub fn send_session_text(
             Err(error) => direct_error = Some(error),
         }
     }
-    send_session_text_via_docker_exec(container_name, session, text)
+    send_session_text_via_docker_exec(container, session, text)
         .map(|bytes| (bytes, ControlTransport::DockerExecFallback))
         .map_err(|exec_error| match direct_error {
             Some(error) => exec_error.context(format!(
-                "direct socket send to {container_name} also failed: {error:#}"
+                "direct socket send to {} also failed: {error:#}",
+                container.name()
             )),
             None => exec_error,
         })
@@ -105,11 +106,11 @@ fn bytes_sent(msg: ServerMsg) -> Result<u64> {
 }
 
 fn send_session_text_via_docker_exec(
-    container_name: &str,
+    container: &ContainerHandle,
     session: u64,
     text: &str,
 ) -> Result<u64> {
-    let output = run_docker_exec_capsule(container_name, &send_exec_script(session, text))?;
+    let output = run_docker_exec_capsule(container, &send_exec_script(session, text))?;
     if !output.status.success() {
         bail!(
             "docker exec send failed with status {}: {}",
@@ -217,10 +218,10 @@ impl SessionEvents {
     /// Returns an error when neither transport can open the stream.
     pub fn subscribe(
         paths: &JackinPaths,
-        container_name: &str,
+        container: &ContainerHandle,
         session: Option<u64>,
     ) -> Result<Self> {
-        let path = socket_path(paths, container_name);
+        let path = socket_path(paths, container.name());
         let mut direct_error = None;
         if path.exists() {
             match Self::subscribe_direct(&path, session) {
@@ -228,13 +229,13 @@ impl SessionEvents {
                 Err(error) => direct_error = Some(error),
             }
         }
-        Self::subscribe_via_docker_exec(container_name, session).map_err(|exec_error| {
-            match direct_error {
-                Some(error) => exec_error.context(format!(
-                    "direct socket subscribe to {container_name} also failed: {error:#}"
-                )),
-                None => exec_error,
-            }
+        Self::subscribe_via_docker_exec(container, session).map_err(|exec_error| match direct_error
+        {
+            Some(error) => exec_error.context(format!(
+                "direct socket subscribe to {} also failed: {error:#}",
+                container.name()
+            )),
+            None => exec_error,
         })
     }
 
@@ -360,15 +361,11 @@ impl SessionEvents {
         })
     }
 
-    fn subscribe_via_docker_exec(container_name: &str, session: Option<u64>) -> Result<Self> {
-        let run_as_user = crate::runtime::identity::CAPSULE_SUPERVISOR_USER;
-        let mut args: Vec<String> = vec!["exec".to_owned()];
-        args.push("--user".to_owned());
-        args.push(run_as_user.to_owned());
-        args.push(container_name.to_owned());
-        args.push("sh".to_owned());
-        args.push("-lc".to_owned());
-        args.push(events_exec_script(session));
+    fn subscribe_via_docker_exec(
+        container: &ContainerHandle,
+        session: Option<u64>,
+    ) -> Result<Self> {
+        let args = docker_events_exec_args(container, session);
         let request = jackin_process::ExecRequest::new("docker", &args);
         let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)
             .context("starting the docker exec event stream")?;
@@ -390,6 +387,18 @@ impl SessionEvents {
             operation: Some(operation),
         })
     }
+}
+
+fn docker_events_exec_args(container: &ContainerHandle, session: Option<u64>) -> Vec<String> {
+    vec![
+        "exec".to_owned(),
+        "--user".to_owned(),
+        crate::runtime::identity::CAPSULE_SUPERVISOR_USER.to_owned(),
+        container.id().to_owned(),
+        "sh".to_owned(),
+        "-lc".to_owned(),
+        events_exec_script(session),
+    ]
 }
 
 fn write_control_request(

@@ -648,10 +648,12 @@ async fn resolve_role_multiple_matches_errors_with_names() {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-k7p9m2xq-agentsmith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             },
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-a1b2c3d4-agentsmith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             },
         ]])),
@@ -674,6 +676,7 @@ async fn resolve_role_single_match_returns_name() {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-k7p9m2xq-agentsmith".to_owned(),
+                id: "container-id".to_owned(),
                 labels: HashMap::default(),
             },
         ]])),

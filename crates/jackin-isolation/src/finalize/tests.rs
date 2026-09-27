@@ -55,16 +55,17 @@ async fn still_running_with_zero_sessions_cleans() {
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 0\n".to_owned()])),
         ..Default::default()
     };
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::still_running(),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut r,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::still_running(),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut r,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -79,16 +80,17 @@ async fn still_running_with_unparseable_status_preserves_records() {
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from([String::new()])),
         ..Default::default()
     };
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::still_running(),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut r,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::still_running(),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut r,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -105,16 +107,17 @@ async fn still_running_with_sessions_preserves() {
         ])),
         ..Default::default()
     };
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::still_running(),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut r,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::still_running(),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut r,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -126,16 +129,17 @@ async fn stopped_non_zero_preserves_records() {
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(137),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut r,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(137),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut r,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -147,16 +151,17 @@ async fn oom_killed_preserves_records() {
     let mut p = NoPrompt;
     let mut r = FakeRunner::default();
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::oom_killed(),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut r,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::oom_killed(),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut r,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -211,16 +216,17 @@ async fn clean_worktree_with_head_equal_base_deletes_record() {
     let mut runner = fake_with_outputs(&["", &branches, "refs/heads/jackin/scratch/x"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -252,16 +258,17 @@ async fn clean_worktree_with_pushed_commits_deletes_record() {
     let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/jackin/scratch/x"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -290,16 +297,17 @@ async fn clean_worktree_with_unpushed_commits_preserves() {
     let mut runner = fake_with_outputs(&["", &branches, "deadbeef\n"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -321,16 +329,17 @@ async fn clean_worktree_no_upstream_preserves_when_head_diverged() {
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -388,16 +397,17 @@ async fn dirty_worktree_interactive_preserve_choice_keeps_state() {
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::KeepAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -414,16 +424,17 @@ async fn dirty_worktree_interactive_force_delete_runs_cleanup() {
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -445,16 +456,17 @@ async fn dirty_worktree_interactive_return_to_agent_signals_caller() {
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::ReturnToAgent);
@@ -471,16 +483,17 @@ async fn dirty_worktree_non_interactive_prints_warning_and_preserves() {
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -514,16 +527,17 @@ async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
     let mut runner = fake_failing_capture(&[], "status --porcelain");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -550,16 +564,17 @@ async fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
     let mut runner = fake_failing_capture(&[""], "for-each-ref");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -595,16 +610,17 @@ async fn assess_cleanup_rev_list_failure_preserves_unpushed() {
     let mut runner = fake_failing_capture(&["", &branches], "rev-list");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -653,16 +669,17 @@ async fn multi_mount_force_delete_on_each_cleans_all_records() {
     // Operator chooses option 2 (force delete) for both.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -696,16 +713,17 @@ async fn multi_mount_keep_all_signals_preserved() {
     // D23: one dialog for all records; operator picks keep all.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::KeepAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(
@@ -732,16 +750,17 @@ async fn multi_mount_return_to_agent_signals_return_to_agent() {
     // D23: one dialog for all records; operator returns to role.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::ReturnToAgent);
@@ -796,16 +815,17 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
     // Operator force-deletes both.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .expect("loop must NOT propagate the cleanup Err — caller would see a raw error");
     assert_eq!(
@@ -836,16 +856,17 @@ async fn multi_mount_non_interactive_marks_all_preserved() {
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -871,16 +892,17 @@ async fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
     let mut runner = fake_with_outputs(&["", ""]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -922,16 +944,17 @@ async fn renamed_branch_pushed_clean_is_safe_to_delete() {
     let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/x"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -962,16 +985,17 @@ async fn squash_merged_pruned_branch_is_safe_to_delete() {
     let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -1001,16 +1025,17 @@ async fn renamed_branch_no_upstream_preserves_unpushed() {
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1035,16 +1060,17 @@ async fn renamed_branch_with_unpushed_commits_preserves() {
     let mut runner = fake_with_outputs(&["", &branches, "deadbeef\ncafef00d\n"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1073,16 +1099,17 @@ async fn multiple_branches_all_safe_deletes_record() {
     let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/b"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -1119,16 +1146,17 @@ async fn multiple_branches_one_unsafe_preserves() {
     let mut runner = fake_with_outputs(&["", &branches, ""]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1151,16 +1179,17 @@ async fn unpushed_branch_prompts_with_unpushed_reason() {
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = RecordingPrompt::new(ExitDialogChoice::KeepAll); // operator picks "preserve"
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1178,16 +1207,17 @@ async fn dirty_worktree_prompts_with_dirty_reason() {
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut p = RecordingPrompt::new(ExitDialogChoice::KeepAll);
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1214,16 +1244,17 @@ async fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1243,16 +1274,17 @@ async fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1278,16 +1310,17 @@ async fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1311,16 +1344,17 @@ async fn unpushed_branch_interactive_force_delete_runs_cleanup() {
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -1343,16 +1377,17 @@ async fn unpushed_branch_interactive_return_to_agent_signals_caller() {
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::ReturnToAgent);
@@ -1383,16 +1418,17 @@ async fn bare_gone_track_is_safe_to_delete() {
     let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -1425,16 +1461,17 @@ async fn detached_head_past_base_preserves_unpushed() {
     let mut runner = fake_failing_capture(&["", &branches, "deadbeef"], "symbolic-ref");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1456,16 +1493,17 @@ async fn detached_head_at_base_is_safe_to_delete() {
     let mut runner = fake_failing_capture(&["", &branches, "abc\n"], "symbolic-ref");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
@@ -1481,16 +1519,17 @@ async fn has_jackin_sessions_error_treated_as_sessions_present() {
         fail_with: vec![("docker exec".to_owned(), "exec failed".to_owned())],
         ..Default::default()
     };
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::still_running(),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut r,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::still_running(),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut r,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1511,16 +1550,17 @@ async fn detached_head_rev_parse_failure_preserves_unpushed() {
     };
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        false,
-        DirtyExitPolicy::Ask,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1543,16 +1583,17 @@ async fn keep_policy_preserves_dirty_record_without_prompt() {
     // NoPrompt panics if called; keep-policy must never call the dialog.
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Keep,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Keep,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1573,16 +1614,17 @@ async fn discard_policy_skips_dialog_on_dirty_record() {
     // NoPrompt panics if called; discard-policy must never call the dialog.
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Discard,
-        &mut p,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Discard,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     // Either Cleaned (git cleanup succeeded) or Preserved (git cleanup failed
@@ -1638,16 +1680,17 @@ async fn exit_action_keep_preserves_via_finalize() {
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut prompt = ExitActionPrompt { state_dir };
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut prompt,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut prompt,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Preserved);
@@ -1669,16 +1712,17 @@ async fn exit_action_discard_cleans_via_finalize() {
     let mut runner = fake_with_outputs(&[" M file\n"]);
     let mut prompt = ExitActionPrompt { state_dir };
     let docker = jackin_test_support::FakeDockerClient::default();
-    let dec = finalize_foreground_session(
-        "jackin-x",
-        dir.path(),
-        AttachOutcome::stopped(0),
-        true,
-        DirtyExitPolicy::Ask,
-        &mut prompt,
-        &docker,
-        &mut runner,
-    )
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: true,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut prompt,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);

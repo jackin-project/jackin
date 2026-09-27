@@ -73,6 +73,15 @@ fn events_exec_script_passes_the_session_filter_through() {
 }
 
 #[test]
+fn events_exec_fallback_binds_the_immutable_container_id() {
+    let container = ContainerHandle::new("role-name", "immutable-id").unwrap();
+    let args = docker_events_exec_args(&container, Some(7));
+
+    assert_eq!(args[3], "immutable-id");
+    assert_ne!(args[3], container.name());
+}
+
+#[test]
 fn bytes_sent_reports_a_refusal_as_an_error_not_a_zero_write() {
     assert_eq!(
         bytes_sent(ServerMsg::SessionSent {

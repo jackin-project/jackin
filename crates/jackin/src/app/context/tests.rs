@@ -321,6 +321,7 @@ fn fake_docker_with_running_agents(names: &[&str]) -> jackin_test_support::FakeD
         .iter()
         .map(|name| ContainerRow {
             name: name.to_string(),
+            id: "container-id".to_owned(),
             labels: std::collections::HashMap::default(),
         })
         .collect();

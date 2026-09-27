@@ -30,11 +30,11 @@
 use crate::cleanup::force_cleanup_isolated;
 use crate::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use jackin_config::DirtyExitPolicy;
-use jackin_core::CommandRunner;
 use jackin_core::JACKIN_STATUS_CMD;
 use jackin_core::PromptContextLine;
 use jackin_core::error_popup;
 use jackin_core::exit_dialog_with_inspect;
+use jackin_core::{CommandRunner, ContainerHandle};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -253,33 +253,62 @@ fn rich_exit_dialog(
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Finalize-foreground-session carries every cleanup input the daemon \
-              pass must flush: container identity, state directory, agent / role \
-              records, env, dind certs, ownership metadata, runtime bin paths. \
-              Bundling into a config struct is a parallel-pass refactor out of \
-              scope for the R6 / R7 burn-down shape."
-)]
-pub async fn finalize_foreground_session(
-    container_name: &str,
-    container_state_dir: &Path,
-    outcome: AttachOutcome,
-    is_interactive: bool,
-    dirty_exit_policy: DirtyExitPolicy,
-    prompt: &mut impl FinalizerPrompt,
-    docker: &impl jackin_docker::docker_client::DockerApi,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<FinalizeDecision> {
+/// All inputs used by foreground finalization, including the immutable Docker
+/// identity captured before attach. Cleanup must never rediscover a mutable
+/// container by name after attach has begun.
+pub struct FinalizeContext<'a, P, D, R> {
+    pub container_name: &'a str,
+    pub container_state_dir: &'a Path,
+    pub outcome: AttachOutcome,
+    pub is_interactive: bool,
+    pub dirty_exit_policy: DirtyExitPolicy,
+    pub prompt: &'a mut P,
+    pub docker: &'a D,
+    pub runner: &'a mut R,
+    pub container: ContainerHandle,
+}
+
+impl<P, D, R> std::fmt::Debug for FinalizeContext<'_, P, D, R> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FinalizeContext")
+            .field("container_name", &self.container_name)
+            .field("container_state_dir", &self.container_state_dir)
+            .field("outcome", &self.outcome)
+            .field("is_interactive", &self.is_interactive)
+            .field("dirty_exit_policy", &self.dirty_exit_policy)
+            .field("container", &self.container)
+            .finish_non_exhaustive()
+    }
+}
+
+pub async fn finalize_foreground_session<P, D, R>(
+    context: FinalizeContext<'_, P, D, R>,
+) -> anyhow::Result<FinalizeDecision>
+where
+    P: FinalizerPrompt,
+    D: jackin_docker::docker_client::DockerApi,
+    R: CommandRunner,
+{
+    let FinalizeContext {
+        container_name,
+        container_state_dir,
+        outcome,
+        is_interactive,
+        dirty_exit_policy,
+        prompt,
+        docker,
+        runner,
+        container,
+    } = context;
     if !matches!(outcome, AttachOutcome::Stopped(0)) {
         // Non-zero exit, OOM-kill, or still-running → preserve by default.
         // Exception: StillRunning with no active jackin sessions means the
         // Capsule has not exited yet after the foreground client returned.
         // Fall through to finalize_clean_exit so isolation worktrees are
         // swept normally.
-        if matches!(outcome, AttachOutcome::StillRunning)
-            && !has_jackin_sessions(docker, container_name).await
-        {
+        let no_sessions = !has_jackin_sessions_by_id(docker, &container).await;
+        if matches!(outcome, AttachOutcome::StillRunning) && no_sessions {
             return finalize_clean_exit(
                 container_name,
                 container_state_dir,
@@ -303,18 +332,12 @@ pub async fn finalize_foreground_session(
     .await
 }
 
-async fn has_jackin_sessions(
+async fn has_jackin_sessions_by_id(
     docker: &impl jackin_docker::docker_client::DockerApi,
-    container_name: &str,
+    container: &ContainerHandle,
 ) -> bool {
-    // Only an explicit `Sessions: 0` header proves the capsule is
-    // idle. Empty/malformed stdout still routes to "unknown/present"
-    // — a torn write or a daemon restart mid-call must not auto-clean.
-    // Header parser is shared with `runtime::attach::inspect_agent_sessions`
-    // so a future drift in the header shape touches one definition,
-    // not two parsers that can silently disagree on edge cases.
     match docker
-        .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
+        .exec_capture_by_id(container, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
         Ok(output) => match jackin_core::parse_session_count(&output) {
@@ -322,9 +345,11 @@ async fn has_jackin_sessions(
             Some(_) => true,
             None => {
                 eprintln!(
-                    "[jackin] warning: could not parse jackin session status in {container_name}; \
-                     treating as sessions-present — run `jackin purge {container_name}` to clean \
-                     up isolation worktrees if this was a clean exit"
+                    "[jackin] warning: could not parse jackin session status in {}; \
+                     treating as sessions-present — run `jackin purge {}` to clean \
+                     up isolation worktrees if this was a clean exit",
+                    container.name(),
+                    container.name()
                 );
                 true
             }
@@ -335,9 +360,11 @@ async fn has_jackin_sessions(
             // finalize path must not auto-clean records for a container that may
             // still have active sessions.
             eprintln!(
-                "[jackin] warning: could not check jackin sessions in {container_name} ({e}); \
-                 treating as sessions-present — run `jackin purge {container_name}` to clean \
-                 up isolation worktrees if this was a clean exit"
+                "[jackin] warning: could not check jackin sessions in {} ({e}); \
+                 treating as sessions-present — run `jackin purge {}` to clean \
+                 up isolation worktrees if this was a clean exit",
+                container.name(),
+                container.name()
             );
             true
         }
