@@ -18,7 +18,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use jackin_core::{Agent, account_key_hash};
-use jackin_protocol::control::{FocusedUsageView, UsageIdentityPresentation, UsageSeverity};
+use jackin_protocol::control::{
+    FocusedUsageView, UsageIdentityPresentation, UsageSeverity, UsageSnapshotStatus,
+};
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCoordinationError, UsageGenerationView, UsageProjectionV1,
     UsageRefreshPhase,
@@ -924,11 +926,104 @@ impl HostUsageRuntime {
         let catalog = self.materialize_account_catalog()?;
         self.reconcile_selected_accounts(&catalog, std::slice::from_ref(&surface))?;
         let selected = self.selected_accounts.get(surface.id());
-        Ok(selected
+        let view = selected
             .and_then(|key| catalog.entry(surface, key))
             .map(|entry| entry.view.clone())
             .or_else(|| catalog.provider_state(surface).cloned())
-            .unwrap_or(live))
+            .unwrap_or(live);
+        // A cold placeholder must never mask a known discovery failure: when
+        // no refresh is in flight and discovery already diagnosed this
+        // surface, surface the honest needs-login/unavailable view instead.
+        if view.is_refreshing_placeholder()
+            && !self.surface_refresh_in_progress(surface.id())
+            && let Some(honest) = self.diagnostic_view_for_surface(surface)
+        {
+            return Ok(honest);
+        }
+        Ok(view)
+    }
+
+    /// Honest view for a surface whose discovery already failed.
+    ///
+    /// Returns `None` when the surface has no discovery diagnostic (a genuine
+    /// cold start keeps the `refreshing` placeholder). Messages are sanitized:
+    /// category + surface label only, never paths or secret coordinates.
+    fn diagnostic_view_for_surface(&self, surface: HostSurfaceId) -> Option<FocusedUsageView> {
+        let issue = self
+            .discovery
+            .as_ref()?
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.surface_id.as_deref() == Some(surface.id()))
+            .map(|diagnostic| diagnostic.issue)?;
+        let now = chrono::Utc::now().timestamp();
+        let mut view = crate::usage::cached_unavailable_view(
+            surface.agent_slug(),
+            surface.provider_label(),
+            now,
+        );
+        let label = surface.label();
+        let (status, updated_label, status_bar_label, message) = match issue {
+            UsageDiscoveryIssue::CredentialMissing => (
+                UsageSnapshotStatus::NeedsLogin,
+                "Needs login",
+                "needs login",
+                format!("credential missing: log in to {label} to enable usage"),
+            ),
+            UsageDiscoveryIssue::CredentialMalformed => (
+                UsageSnapshotStatus::NeedsLogin,
+                "Needs login",
+                "needs login",
+                format!("credential malformed: log in again to {label} to enable usage"),
+            ),
+            UsageDiscoveryIssue::CredentialDenied => (
+                UsageSnapshotStatus::NeedsSecret,
+                "Needs secret",
+                "needs secret",
+                format!("credential access denied for {label}"),
+            ),
+            UsageDiscoveryIssue::InteractionRequired => (
+                UsageSnapshotStatus::NeedsSecret,
+                "Needs secret",
+                "needs secret",
+                format!("credential access requires interaction for {label}"),
+            ),
+            UsageDiscoveryIssue::KeychainConsentRequired => (
+                UsageSnapshotStatus::NeedsSecret,
+                "Approve access",
+                "approve access",
+                format!("keychain access requires approval for {label}"),
+            ),
+            UsageDiscoveryIssue::ConfigUnreadable => (
+                UsageSnapshotStatus::Unavailable,
+                "Unavailable",
+                "usage unavailable",
+                format!("configuration unreadable for {label}"),
+            ),
+            UsageDiscoveryIssue::ConfigInvalid => (
+                UsageSnapshotStatus::Unavailable,
+                "Unavailable",
+                "usage unavailable",
+                format!("configuration invalid for {label}"),
+            ),
+            UsageDiscoveryIssue::ConfigVersionUnsupported => (
+                UsageSnapshotStatus::Unavailable,
+                "Unavailable",
+                "usage unavailable",
+                format!("configuration version unsupported for {label}"),
+            ),
+            UsageDiscoveryIssue::ConfigTransientConflict => (
+                UsageSnapshotStatus::Unavailable,
+                "Unavailable",
+                "usage unavailable",
+                format!("configuration changed during discovery for {label}"),
+            ),
+        };
+        view.status = status;
+        view.updated_label = updated_label.to_owned();
+        view.status_bar_label = status_bar_label.to_owned();
+        view.last_error = Some(message);
+        Some(view)
     }
 
     /// List known accounts for one surface (or all surfaces when `None`).
