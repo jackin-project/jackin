@@ -125,8 +125,8 @@ description = "Run Clippy with CI flags over crates affected by worktree changes
 run = "cargo xtask clippy-affected"
 
 [tasks.hooks-install]
-description = "Install hk Git hooks for this checkout via the mise launcher (idempotent; stash isolation requires the local install)"
-run = "hk install --mise"
+description = "Install the repo-owned staged-snapshot Git hook"
+run = "scripts/hooks-install"
 
 # jackin❯ desktop (native macOS usage menu bar).
 # Logic lives in `cargo xtask desktop`; mise tasks are the operator entry points.
