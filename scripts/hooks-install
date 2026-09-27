@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+global_hooks=''
+if global_hooks=$(git config --global --get-regexp '^hook\.hk-pre-commit\.(command|event)$' 2>/dev/null); then
+    printf '%s\n' "error: a global hk pre-commit hook is active; remove it before installing Jackin's staged-snapshot hook" >&2
+    printf '%s\n' "$global_hooks" >&2
+    exit 1
+else
+    status=$?
+    if [ "$status" -ne 1 ]; then
+        exit "$status"
+    fi
+fi
+
+for key in hook.hk-pre-commit.command hook.hk-pre-commit.event; do
+    if git config --local --unset-all "$key" >/dev/null 2>&1; then
+        :
+    else
+        status=$?
+        if [ "$status" -ne 5 ]; then
+            exit "$status"
+        fi
+    fi
+done
+
+git config --local --replace-all hook.jackin-pre-commit.command 'sh scripts/pre-commit-snapshot'
+git config --local --replace-all hook.jackin-pre-commit.event pre-commit
+
+printf '%s\n' "installed Jackin staged-snapshot pre-commit hook"
