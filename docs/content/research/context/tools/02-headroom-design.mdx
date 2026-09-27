@@ -1,122 +1,62 @@
 ---
-title: "02 — Headroom v0.34.0: current design"
-description: "Current Headroom design, reversible input-compression mechanisms, integration boundaries, evidence, risks, and best fit."
+title: "02 — Headroom: current design"
+description: "Headroom 0.38.0: reusable Rust transforms, feature and recovery boundaries, evidence, and deployment choices."
 ---
 
 ## Summary
 
-Headroom offers the broadest reversible input-compression pipeline in the compared set, but its trained hot-path compressor and proxy boundary require independent quality and reliability proof.
-Cutoff: **2026-08-12**. Current stable: [v0.34.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.34.0), released 2026-08-05.
-
-Headroom is the most mature **broad input-compression pipeline** in the named set. It routes each payload to a content-specific compressor, uses a trained model for selected text, stores recoverable originals, and can operate as a library, MCP server, wrapper, or provider-facing proxy. Current Headroom also has opt-in output-verbosity and effort controls, so it is no longer input-only in feature scope.
+Cutoff: **2026-09-23 UTC**. Reviewed release: [Headroom v0.38.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.38.0), release commit `94206e265203acfd72a3b939e9a964e29175ad50`. Headroom is the strongest **source-level Rust transform candidate** in this comparison, not an established task-cost winner. Evaluate selected library capabilities before adopting its complete provider proxy.
 
 ## Question and scope
 
-How does Headroom v0.34.0 compress and recover context, and where do its model and proxy boundaries add risk?
+Can Jackin reuse the existing Rust implementation while retaining ownership of execution, recovery, configuration, and provider authentication?
 
 ## Method
 
-The review fixes Headroom to v0.34.0, traces each compression and recovery boundary through upstream documentation and source, and separates mechanism evidence from accepted-task outcomes.
+Read the release, workspace manifest, core crate manifest, and exported transform surface at the release tag. Separate callable source APIs from stable SDK promises, successful builds, and outcome evidence.
 
 ## Findings
 
-### Current facts
+### The Rust surface is real
 
-| Field | Current value |
-|---|---|
-| Repository | [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) |
-| Stable release | [v0.34.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.34.0) |
-| Adoption snapshot | 65,972 stars / 193 subscribers / 5,038 forks / 621 open issues and PRs |
-| Core identity | Content router + typed compressors + Kompress text model + CCR recovery |
-| Deployment | Python/TypeScript APIs, MCP, local proxy, agent wrappers, Docker |
-| Current headline | 60–95% fewer tokens on targeted payloads; not stated here as an end-to-end task guarantee |
-| License | Apache-2.0 |
+The [workspace](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/Cargo.toml) includes `headroom-core`, `headroom-proxy`, Python bindings, simulators, and parity tooling under Apache-2.0. The [core exports](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/src/transforms/mod.rs) include `LogCompressor`, `SearchCompressor`, `CompressionPipelineBuilder`, `JsonMinifier`, and recovery-aware pipeline types. Describing Headroom as Python-only or requiring a wholesale Rust rewrite is incorrect.
 
-Metadata source: [GitHub API](https://api.github.com/repos/headroomlabs-ai/headroom). Current architecture and setup: [repository README](https://github.com/headroomlabs-ai/headroom).
+| Choice | Advantage | Additional responsibility |
+|---|---|---|
+| Selected core transforms | Reuse existing algorithms without global wrapping | Typed payload contract, fidelity, packaging, bounded latency |
+| Supervised worker | Fault and dependency isolation from the launcher | Lifecycle, deadlines, IPC, state scoping |
+| Full proxy | Access to assembled provider requests | Authentication, streaming, cache continuity, retries, recovery protocol |
 
-### Current pipeline
+### Feature and dependency reality
 
-```text
-request or tool payload
-       ↓
-content classification
-       ↓
-JSON / logs / search / source / HTML / tables / prose / history
-       ↓
-typed deterministic compressor or Kompress model
-       ↓
-shorter-output and policy checks
-       ↓
-compressed payload + CCR reference to exact original
-       ↓
-provider or agent context
-```
+The [core manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml) declares internal crate version **0.1.0**, not product version 0.38.0. ML is enabled by default; `default-features = false` excludes optional ONNX/embedding/classifier dependencies. The remaining core still includes tokenizers, grammars, SQLite, and network-capable dependencies. Feature exclusion is not proof of a small binary, offline operation, or a successful build on every Jackin target.
 
-The design advantage is specialization. JSON arrays can be typed and sampled; logs can preserve anomalies/errors; source can expose structure; search results can be normalized; free-form text can use Kompress. One generic summary transform would lose the guarantees each content type needs.
+The source explicitly distinguishes parity with the Python implementation from information preservation. Matching upstream output can reproduce upstream omissions. Jackin therefore needs independent fidelity tests, not just parity fixtures.
 
-CCR makes lossy compression operationally recoverable. “Recoverable” does not mean the active model saw every omitted detail; it means the agent can request the original when uncertainty or an exact task demands it.
+### Evidence and operational interpretation
 
-### What v0.34.0 currently provides
-
-- PHP code compression and expanded IDE/agent wrapper support.
-- A marker-free lossless provider seam through `/v1/compress`.
-- Frozen-message handling and cache/accounting corrections.
-- Kompress-v2 checkpoint merging and runtime/prefetch fixes.
-- Anonymous compression telemetry that states prompts and payload content are excluded.
-- Optional verbosity steering and effort routing for output-side reduction.
-- Serena installed by the wrapper's current default unless disabled.
-- RTK and lean-ctx CLI context tools removed from the bundled wrapper path.
-
-Release source: [v0.34.0 notes](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.34.0).
-
-### Current evidence
-
-The current repository supplies per-payload benchmarks, telemetry machinery, holdout concepts, and compression counters. These are first-party. No independent end-to-end benchmark explicitly testing **v0.34.0** was found at the cutoff, so older-version results are not projected onto this release.
-
-The current Caveman v2 first-party [wrap benchmark](https://github.com/JuliusBrussee/caveman/blob/v2.0.0/docs/WRAP-BENCHMARK.md) includes a Headroom arm, but it is a competitor-owned six-fixture test and cannot establish general Headroom performance.
+No independent accepted-task result tied to this exact release and a proposed Jackin profile was established. Payload compression counters are not a control trajectory. A proxy benchmark configured to rewrite more historical content cannot qualify a selected-transform integration, and a selected-transform test cannot qualify the whole proxy. See [evidence eligibility](/research/context/tools/07-evidence-and-claims/).
 
 ## Implications for jackin❯
 
-### Benefits
+**Best part:** typed transformations of large structured observations, with explicit recovery and result metadata. Keep source code, diffs, requirements, and acceptance evidence raw until separately qualified.
 
-- Broadest mature input reach: structured payloads, logs, source, RAG, history, and provider requests.
-- Content-aware transforms instead of blanket truncation.
-- Exact-original recovery through CCR.
-- Lossless provider seam for callers that cannot accept lossy markers.
-- Multiple deployment forms; can be tested without committing to a global wrapper.
-- Apache-2.0 across the repository.
-- Current output/effort controls can reduce separate token classes under one policy layer.
+**Integration choice:** try a commit-pinned `headroom-core` dependency inside an optional Jackin worker. Start with ML disabled and a small transform allowlist. Measure cold startup, allocations, concurrency, payload limits, and model/artifact access. Do not expose upstream types as Jackin's durable public API.
 
-### Best fit
+**Reuse before rewrite:** request upstream feature decomposition or a smaller supported kernel API when necessary. Extract licensed, tested source only when the library cannot satisfy a demonstrated boundary requirement. Do not rewrite the algorithms merely to avoid a Python wrapper that this integration does not need.
 
-Test Headroom when large JSON, logs, RAG chunks, mixed tool results, or long request history dominate avoidable fresh input and exact recovery is required. Start with the narrowest deployment—library or MCP on selected payloads—before a whole-agent proxy/wrapper.
-
-Avoid a global install when native retrieval already selects small precise slices, latency is critical, or policy forbids local models, telemetry, user-scope config changes, or request interception.
-
-### Current verdict
-
-Headroom v0.34.0 is the best current **broad reversible compressor** in this set. Its 60–95% headline is plausible for selected compressible payloads but unproven as a latest-release accepted-task result. Status: **strong architecture, mature feature set, verify net benefit locally**.
-
-Next: [03 — RTK v0.45.0](/research/context/tools/03-rtk-design/).
+**Default decision:** no global provider proxy or automatic model download. Qualified transforms can later be activated invisibly at a supported tool-result seam.
 
 ## Limitations and unknowns
 
-### Costs and risks
-
-- Larger process and dependency surface than RTK: Python/Rust components, optional model artifacts, proxy/MCP state, and wrapper configuration.
-- A proxy sees full requests and can affect caching, auth, streaming, and provider compatibility.
-- Kompress adds model/runtime latency and a model supply-chain surface.
-- Wrapper defaults may install or configure adjacent tools such as Serena at user scope; inspect and disable unwanted writes.
-- Anonymous telemetry is current behavior; privacy review must use current code/config, not an assumption of zero egress.
-- Reversible omission can still cause extra retrieval turns or wrong reasoning before recovery.
-- Current `SECURITY.md` identifies an older release as latest; release metadata and code are more current than that document.
+This review did not compile the dependency or run proxy traffic. Default-disabled ML does not remove all transitive complexity. Deadlines must cover the entire pipeline, not only one compressor. Recovery must remain available for resumed sessions, and a smaller result is not automatically semantically sufficient.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Release, workspace, core manifest, and exported APIs are linked inline at the reviewed tag.
 
 ## Related work
 
-- [Token-optimization tools dossier](/research/context/tools/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Context engine](/research/context/engine/)
+- [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)
+- [Engine reuse matrix](/research/context/engine/09-reuse-decision-matrix/)
