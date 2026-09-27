@@ -4,6 +4,13 @@ use super::{
 };
 
 #[test]
+fn xcframework_pack_generates_bindings_and_headers_for_clean_builds() {
+    // The pack command must use Boltffi's default generation path: the clean
+    // build needs generated headers before XCFramework assembly.
+    assert!(include_str!("../desktop.rs").contains(".args([\"pack\", \"apple\"]);"));
+}
+
+#[test]
 fn version_accepts_dotted_numeric() {
     validate_version("0.6.0").unwrap();
     validate_version("1").unwrap();
