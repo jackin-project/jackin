@@ -1,15 +1,13 @@
 use super::{
-    MIN_OS, XunitTotals, boltffi_pack_apple_args, minos_matches_target, normalize_generated_text,
-    parse_dwarf_uuid, parse_xctest_summary, parse_xunit_totals, tree_differences, validate_build,
-    validate_version,
+    MIN_OS, XunitTotals, minos_matches_target, normalize_generated_text, parse_dwarf_uuid,
+    parse_xctest_summary, parse_xunit_totals, tree_differences, validate_build, validate_version,
 };
 
 #[test]
-fn xcframework_pack_does_not_regenerate_or_emit_package_sources() {
-    assert_eq!(
-        boltffi_pack_apple_args(),
-        ["pack", "apple", "--regenerate=false", "--xcframework-only"]
-    );
+fn xcframework_pack_generates_bindings_and_headers_for_clean_builds() {
+    // The pack command must use Boltffi's default generation path: the clean
+    // build needs generated headers before XCFramework assembly.
+    assert!(include_str!("../desktop.rs").contains(".args([\"pack\", \"apple\"]);"));
 }
 
 #[test]

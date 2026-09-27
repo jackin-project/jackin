@@ -756,10 +756,9 @@ fn build_xcframework(root: &Path) -> Result<()> {
         fs::remove_file(&zip)?;
     }
 
-    // Bindings are checked by the owning mise task before packaging. Keep
-    // packaging pure: boltffi must not regenerate the shared Swift sources.
-    // The deployment-target floor propagates through the inherited
-    // environment (slice advertises minos 26.0).
+    // boltffi's clean pack needs both its generated header and XCFramework
+    // staging inputs. It also regenerates Swift, so normalize those outputs
+    // after packing to keep the committed bindings deterministic.
     let boltffi = which("boltffi").context(
         "boltffi not on PATH; install via mise (`mise install`) — see mise.toml cargo:boltffi_cli",
     )?;
@@ -770,8 +769,13 @@ fn build_xcframework(root: &Path) -> Result<()> {
             "--cargo-arg=--profile".to_owned(),
             format!("--cargo-arg={DESKTOP_PROFILE}"),
         ])
-        .args(boltffi_pack_apple_args());
+        .args(["pack", "apple"]);
     cmd::run_streaming(&mut pack)?;
+
+    let generated_sources = root.join("native/Sources/JackinUsageBindings");
+    for generated in find_files_with_ext(&generated_sources, "swift")? {
+        normalize_generated_file(&generated)?;
+    }
 
     if !xcframework.is_dir() {
         bail!("missing {}", xcframework.display());
@@ -806,10 +810,6 @@ fn build_xcframework(root: &Path) -> Result<()> {
 
     progress(format!("==> XCFramework ready: {}", xcframework.display()));
     Ok(())
-}
-
-fn boltffi_pack_apple_args() -> [&'static str; 4] {
-    ["pack", "apple", "--regenerate=false", "--xcframework-only"]
 }
 
 fn build_app(root: &Path, version: &str, build: &str) -> Result<()> {
