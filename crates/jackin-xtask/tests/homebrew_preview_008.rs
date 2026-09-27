@@ -525,6 +525,47 @@ fn desktop_release_steps_remain_defined() {
         current_tasks.contains_key("desktop-release-state"),
         "desktop publication state task must remain present"
     );
+
+    // Keep behavioral guards for the operator entry points without pinning
+    // their full source text to a historical checkout. These checks protect
+    // the release contract while allowing harmless task edits.
+    assert_task_contains(
+        &current_tasks,
+        "desktop-build",
+        "cargo xtask desktop build --version",
+    );
+    assert_task_contains(
+        &current_tasks,
+        "desktop-verify",
+        "cargo xtask desktop verify \"${args[@]}\"",
+    );
+    assert_task_contains(
+        &current_tasks,
+        "desktop-sign-notarize",
+        "trap cleanup_signing EXIT INT TERM",
+    );
+    assert_task_contains(
+        &current_tasks,
+        "desktop-sign-notarize",
+        "cargo xtask desktop sign-notarize",
+    );
+    assert_task_contains(
+        &current_tasks,
+        "desktop-release-state",
+        "cargo xtask desktop release-state",
+    );
+}
+
+fn assert_task_contains(tasks: &BTreeMap<String, toml::Value>, task: &str, expected: &str) {
+    let value = tasks
+        .get(task)
+        .and_then(|value| value.get("run"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        value.contains(expected),
+        "desktop task `{task}` must keep `{expected}`"
+    );
 }
 
 struct ArchiveMember {
