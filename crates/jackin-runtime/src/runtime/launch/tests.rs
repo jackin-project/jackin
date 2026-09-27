@@ -505,7 +505,7 @@ async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() 
 
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue([
+    let mut runner = FakeRunner::with_combined_queue([
         "/jackin/runtime/entrypoint.sh: line 85: exec: codex: not found".to_owned(),
     ]);
     let err = diagnose_premature_exit(
@@ -546,7 +546,7 @@ async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
 
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue([String::new()]);
+    let mut runner = FakeRunner::with_combined_queue([String::new()]);
     let err = diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach)
         .await
         .expect("OOM-killed container is a premature exit");
@@ -618,7 +618,7 @@ async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
         }])),
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue(["panic: VT screen overflow".to_owned()]);
+    let mut runner = FakeRunner::with_combined_queue(["panic: VT screen overflow".to_owned()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
@@ -654,7 +654,7 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
         }])),
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue([String::new()]);
+    let mut runner = FakeRunner::with_combined_queue([String::new()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
@@ -683,7 +683,7 @@ async fn diagnose_premature_exit_reports_empty_docker_logs() {
         }])),
         ..Default::default()
     };
-    let mut runner = FakeRunner::with_capture_queue([String::new()]);
+    let mut runner = FakeRunner::with_combined_queue([String::new()]);
     let err = diagnose_premature_exit(
         &docker,
         &mut runner,
@@ -696,6 +696,39 @@ async fn diagnose_premature_exit_reports_empty_docker_logs() {
     assert!(
         msg.contains("no log output"),
         "empty-log detail missing: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn diagnose_premature_exit_surfaces_stderr_only_docker_logs() {
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 1,
+            oom_killed: false,
+        }])),
+        ..Default::default()
+    };
+    let mut runner =
+        FakeRunner::with_combined_queue(["Error: missing /jackin/run/agent.toml".to_owned()]);
+    let err = diagnose_premature_exit(
+        &docker,
+        &mut runner,
+        "jk-the-architect",
+        ExitPhase::PreAttach,
+    )
+    .await
+    .expect("pre-attach exit 1 must produce a diagnostic error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Error: missing /jackin/run/agent.toml"),
+        "stderr-only reason must be surfaced, not discarded: {msg}"
+    );
+    assert!(
+        !msg.contains("no log output"),
+        "stderr-only logs must not take the empty-logs branch: {msg}"
     );
 }
 
