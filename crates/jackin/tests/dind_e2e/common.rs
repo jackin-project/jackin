@@ -36,6 +36,34 @@ pub(super) fn require_e2e_prereqs() {
     );
 }
 
+/// `jackin load` starts its sibling `jackin-usage-broker` during scoped usage
+/// relay setup. `cargo test -p jackin` does not build that runtime binary, so
+/// report the missing fixture dependency before entering the interactive TUI.
+pub(super) fn require_broker_sibling(jackin: &str) {
+    let broker_sibling = Path::new(jackin)
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("jackin-usage-broker");
+    assert!(
+        broker_sibling.is_file(),
+        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin-runtime --bin jackin-usage-broker` first.",
+        broker_sibling.display()
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&broker_sibling)
+            .unwrap_or_else(|error| panic!("failed to stat {}: {error}", broker_sibling.display()))
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 != 0,
+            "jackin-usage-broker sibling must be executable, got {}",
+            broker_sibling.display()
+        );
+    }
+}
+
 pub(super) fn require_capsule_binary_override() {
     let Some(path) = std::env::var_os("JACKIN_CAPSULE_BIN") else {
         panic!(

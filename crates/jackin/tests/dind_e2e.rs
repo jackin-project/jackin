@@ -40,7 +40,7 @@ mod transcript;
 #[path = "dind_e2e/util.rs"]
 mod util;
 
-use common::{e2e_construct_image, e2e_serial_lock, require_e2e_prereqs};
+use common::{e2e_construct_image, e2e_serial_lock, require_broker_sibling, require_e2e_prereqs};
 use diagnostics::e2e_failure_context;
 use fixtures::{
     seed_agent_smith_role_repo, seed_all_agent_stubs, seed_claude_installer_stub,
@@ -48,8 +48,8 @@ use fixtures::{
     write_sentinel_config, write_slow_exit_config,
 };
 use pty_runner::{
-    PtyFileSentinel, PtyQuickExit, run_in_pty_until_file, run_in_pty_until_quick_exit_after_input,
-    scripted_sentinel_launch_input,
+    PtyFileSentinel, PtyQuickExit, PtyScriptStep, run_in_pty_until_file,
+    run_in_pty_until_quick_exit_after_input, scripted_sentinel_launch_input,
 };
 use util::{
     REPORT_BEGIN, REPORT_END, assert_sentinel_build_output_routed_to_log, assert_sentinel_report,
@@ -107,6 +107,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
             .display()
             .to_string()
     });
+    require_broker_sibling(&jackin);
 
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", ROLE_KEY, &target, "--agent", "claude"];
@@ -118,13 +119,18 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     let construct_image = e2e_construct_image();
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
     let report_path = workspace_dir.join("jackin-e2e-report.txt");
+    let launch_input = [PtyScriptStep {
+        wait_for: "Knock, knock, operator.",
+        input: "\r",
+        wait_for_file: "",
+    }];
     let output = run_in_pty_until_file(
         &jackin,
         &args,
         &home,
         &workspace_dir,
         &extra_env,
-        &[],
+        &launch_input,
         PtyFileSentinel {
             path: &report_path,
             text: TESTCONTAINERS_SMOKE_OK,

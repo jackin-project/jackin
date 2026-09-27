@@ -58,7 +58,7 @@ mod transcript;
 #[path = "dind_e2e/util.rs"]
 mod util;
 
-use common::{e2e_construct_image, e2e_serial_lock, require_e2e_prereqs};
+use common::{e2e_construct_image, e2e_serial_lock, require_broker_sibling, require_e2e_prereqs};
 use pty_runner::{PtyFileSentinel, PtyScriptStep, run_in_pty_until_file};
 use util::{cleanup_role, run};
 
@@ -183,35 +183,6 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         .expect("restore observer must record an outcome")
         .expect("restore must serve bound sessions");
     assert_restore_bindings(&bindings);
-}
-
-/// `jackin load` spawns its `jackin-usage-broker` sibling during scoped
-/// usage-relay prep; `cargo test -p jackin` never builds that
-/// `jackin-runtime` bin target, so assert it up front instead of timing
-/// out inside the TUI on "Launch failed ... starting scoped usage relay".
-fn require_broker_sibling(jackin: &str) {
-    let broker_sibling = Path::new(jackin)
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("jackin-usage-broker");
-    assert!(
-        broker_sibling.is_file(),
-        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin-runtime --bin jackin-usage-broker` first.",
-        broker_sibling.display()
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let mode = std::fs::metadata(&broker_sibling)
-            .unwrap_or_else(|error| panic!("failed to stat {}: {error}", broker_sibling.display()))
-            .permissions()
-            .mode();
-        assert!(
-            mode & 0o111 != 0,
-            "jackin-usage-broker sibling must be executable, got {}",
-            broker_sibling.display()
-        );
-    }
 }
 
 /// Run the boot + split + new-tab PTY session; returns the observer outcome

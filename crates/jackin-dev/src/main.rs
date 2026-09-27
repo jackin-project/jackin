@@ -214,6 +214,19 @@ fn sync(args: SyncArgs) -> Result<()> {
     run_checked(command("mise", ["trust"]).current_dir(&paths.repo))?;
     run_checked(command("mise", ["install"]).current_dir(&paths.repo))?;
     run_checked(mise_exec_command("cargo", ["build", "--bin", "jackin"]).current_dir(&paths.repo))?;
+    run_checked(
+        mise_exec_command(
+            "cargo",
+            [
+                "build",
+                "-p",
+                "jackin-runtime",
+                "--bin",
+                "jackin-usage-broker",
+            ],
+        )
+        .current_dir(&paths.repo),
+    )?;
 
     prepare_config(args.config, &paths.config, &home)?;
     fs::create_dir_all(&paths.home)
