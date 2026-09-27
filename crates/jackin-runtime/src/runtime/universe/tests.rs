@@ -207,6 +207,7 @@ async fn claim_entry_resumes_when_container_running() {
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
             name: "jk-running".to_owned(),
+            id: "container-id".to_owned(),
             labels: HashMap::new(),
         }]])),
         ..Default::default()

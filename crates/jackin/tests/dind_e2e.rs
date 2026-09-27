@@ -12,11 +12,12 @@
         clippy::unwrap_used,
         clippy::panic,
         clippy::disallowed_methods,
-        clippy::duration_suboptimal_units,
         reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
     )
 )]
 #![cfg(feature = "e2e")]
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt as _;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -49,8 +50,8 @@ use fixtures::{
     write_sentinel_config, write_slow_exit_config,
 };
 use pty_runner::{
-    PtyFileSentinel, PtyQuickExit, run_in_pty_until_file, run_in_pty_until_quick_exit_after_input,
-    scripted_sentinel_launch_input,
+    PtyFileSentinel, PtyQuickExit, PtyScriptStep, run_in_pty_until_file,
+    run_in_pty_until_quick_exit_after_input, scripted_sentinel_launch_input,
 };
 use util::{
     REPORT_BEGIN, REPORT_END, assert_sentinel_build_output_routed_to_log, assert_sentinel_report,
@@ -64,6 +65,30 @@ const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
 const SLOW_EXIT_ROLE_KEY: &str = "jackin-e2e/slow-exit";
 const SLOW_EXIT_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__slow-exit";
 const TESTCONTAINERS_SMOKE_OK: &str = "TESTCONTAINERS_SMOKE=ok";
+
+/// Fail before the interactive launch if Cargo did not build the broker binary.
+fn require_broker_sibling(jackin: &str) {
+    let broker_sibling = std::path::Path::new(jackin)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("jackin-usage-broker");
+    assert!(
+        broker_sibling.is_file(),
+        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin-runtime --bin jackin-usage-broker` first.",
+        broker_sibling.display()
+    );
+    #[cfg(unix)]
+    assert!(
+        std::fs::metadata(&broker_sibling)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o111
+            != 0,
+        "jackin-usage-broker sibling must be executable: {}",
+        broker_sibling.display()
+    );
+}
 
 /// RAII cleanup so the test's Docker resources are removed even if an
 /// assertion or `script(1)` invocation panics. Without this, a flaky run
@@ -108,6 +133,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
             .display()
             .to_string()
     });
+    require_broker_sibling(&jackin);
 
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", ROLE_KEY, &target, "--agent", "claude"];
@@ -119,13 +145,18 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     let construct_image = e2e_construct_image();
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
     let report_path = workspace_dir.join("jackin-e2e-report.txt");
+    let launch_input = [PtyScriptStep {
+        wait_for: "Knock, knock, operator.",
+        input: "\r",
+        wait_for_file: "",
+    }];
     let output = run_in_pty_until_file(
         &jackin,
         &args,
         &home,
         &workspace_dir,
         &extra_env,
-        &[],
+        &launch_input,
         PtyFileSentinel {
             path: &report_path,
             text: TESTCONTAINERS_SMOKE_OK,
@@ -537,7 +568,7 @@ fn chaos_kill_container_mid_session() {
     fault_applied.store(true, Ordering::Release);
 
     let _output = handle.join().expect("launch thread panicked");
-    chaos::wait_until_no_running(ROLE_KEY, Duration::from_secs(60));
+    chaos::wait_until_no_running(ROLE_KEY, Duration::from_mins(1));
     cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
     chaos::assert_no_orphaned_containers(ROLE_KEY);
     chaos::assert_no_stale_state_dirs(&home.join(".local/share/jackin"), &[]);

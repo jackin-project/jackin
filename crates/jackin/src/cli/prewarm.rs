@@ -119,7 +119,7 @@ pub async fn run(
     }
     let sidecar_container_result = async {
         if sidecar_container_needed {
-            Some(prewarm_sidecar_container_status(should_keep_sidecar_container(args)).await)
+            Some(prewarm_sidecar_container_status(paths, should_keep_sidecar_container(args)).await)
         } else {
             None
         }
@@ -236,10 +236,11 @@ async fn prewarm_sidecar_image_status() -> anyhow::Result<SidecarImagePrewarmSta
 }
 
 async fn prewarm_sidecar_container_status(
+    paths: &JackinPaths,
     keep: bool,
 ) -> anyhow::Result<jackin_runtime::runtime::DindSidecarPrewarm> {
     let docker = BollardDockerClient::connect()?;
-    jackin_runtime::runtime::prewarm_dind_sidecar_container(&docker, keep).await
+    jackin_runtime::runtime::prewarm_dind_sidecar_container_with_paths(paths, &docker, keep).await
 }
 
 fn print_sidecar_image_result(

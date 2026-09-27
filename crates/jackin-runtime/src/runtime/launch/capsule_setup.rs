@@ -482,11 +482,16 @@ impl std::fmt::Debug for HostEnvFile {
 pub(crate) struct HostEnvTransport {
     _file: Option<HostEnvFile>,
     arguments: Vec<String>,
+    environment: Vec<String>,
 }
 
 impl HostEnvTransport {
     pub(crate) fn append_arguments<'a>(&'a self, arguments: &mut Vec<&'a str>) {
         arguments.extend(self.arguments.iter().map(String::as_str));
+    }
+
+    pub(crate) fn environment(&self) -> &[String] {
+        &self.environment
     }
 }
 
@@ -566,6 +571,10 @@ pub(crate) fn prepare_host_env_transport(
     Ok(HostEnvTransport {
         _file: file,
         arguments: runtime_arguments,
+        environment: entries
+            .into_iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect(),
     })
 }
 

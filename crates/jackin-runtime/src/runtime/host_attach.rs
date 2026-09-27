@@ -18,8 +18,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use directories::UserDirs;
-use jackin_core::JackinPaths;
 use jackin_core::container_paths;
+use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_protocol::attach::{
     AttachControlOperation, AttachControlRequest, AttachControlResult, ClientFrame, ClientTerminal,
     ClipboardImage, ClipboardImageChunk, ClipboardImageEnd, ClipboardImageStart, FileExportChunk,
@@ -119,11 +119,12 @@ pub fn host_attach_enabled(paths: &JackinPaths) -> bool {
 
 pub(super) async fn run_host_attach_session(
     paths: &JackinPaths,
-    container_name: &str,
+    container: &ContainerHandle,
     spawn_request: Option<SpawnRequest>,
     focus_session: Option<u64>,
     env_overrides: &[(String, String)],
 ) -> Result<()> {
+    let container_name = container.name();
     let request = HostAttachRequest {
         spawn_request,
         focus_session,
@@ -145,7 +146,7 @@ pub(super) async fn run_host_attach_session(
         }
         HostAttachTransportPlan::AttachProxy { .. } => {
             let process_request =
-                jackin_process::ExecRequest::new("docker", attach_proxy_exec_args(container_name))
+                jackin_process::ExecRequest::new("docker", attach_proxy_exec_args(container))
                     .stdin_mode(jackin_process::StdioMode::Capture)
                     .stdout_mode(jackin_process::StdioMode::Capture)
                     .stderr_mode(jackin_process::StdioMode::Inherit);

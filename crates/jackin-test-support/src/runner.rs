@@ -76,6 +76,21 @@ impl FakeRunner {
 }
 
 impl CommandRunner for FakeRunner {
+    async fn observe(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        _cwd: Option<&std::path::Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<()> {
+        std::future::ready(()).await;
+        let command = format!("{} {}", program, args.join(" "));
+        self.run_options.push(opts.clone());
+        self.run_recorded.push(command.clone());
+        self.recorded.push(command.clone());
+        self.check_command(&command)
+    }
+
     async fn run(
         &mut self,
         program: &str,
@@ -83,6 +98,7 @@ impl CommandRunner for FakeRunner {
         _cwd: Option<&std::path::Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
+        std::future::ready(()).await;
         let command = format!("{} {}", program, args.join(" "));
         self.run_options.push(opts.clone());
         self.run_recorded.push(command.clone());
@@ -96,6 +112,7 @@ impl CommandRunner for FakeRunner {
         args: &[&str],
         _cwd: Option<&std::path::Path>,
     ) -> anyhow::Result<String> {
+        std::future::ready(()).await;
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
         self.check_command(&command)?;

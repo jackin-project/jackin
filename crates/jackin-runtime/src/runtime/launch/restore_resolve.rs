@@ -10,7 +10,7 @@
 use crate::instance::InstanceManifest;
 use crate::runtime::attach::ContainerState;
 
-use jackin_core::JackinPaths;
+use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_docker::docker_client::DockerApi;
 
 use super::restore::{
@@ -22,8 +22,11 @@ use super::{LaunchPlan, emit_launch_plan_for_run, emit_rejected_launch_plan_for_
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RestoreResolution {
     StartFresh,
-    StartCurrentRole(String),
+    /// Current-role start whose name lookup already captured the immutable ID.
+    StartCurrentRoleWithHandle(ContainerHandle),
     RecreateCurrentRole(String),
+    /// Current-role recreate whose name lookup already captured the immutable ID.
+    RecreateCurrentRoleWithHandle(ContainerHandle),
     RestoreCurrentRole(String),
     RecoverRelatedRole(String),
     RebuildRelatedRole(Box<InstanceManifest>),
@@ -344,8 +347,9 @@ pub(crate) async fn resolve_unselected_current_restore_candidate_with_agent_time
 
 fn current_restore_timing_detail(resolution: &RestoreResolution) -> &'static str {
     match resolution {
-        RestoreResolution::StartCurrentRole(_) => "start_stopped",
-        RestoreResolution::RecreateCurrentRole(_) => "create_from_valid_image",
+        RestoreResolution::StartCurrentRoleWithHandle(_) => "start_stopped",
+        RestoreResolution::RecreateCurrentRole(_)
+        | RestoreResolution::RecreateCurrentRoleWithHandle(_) => "create_from_valid_image",
         _ => "other",
     }
 }
@@ -429,9 +433,11 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                 Some(&manifest.container_base),
             );
         }
-        let docker_state = docker
-            .inspect_container_state(&manifest.container_base)
+        let inspection = docker
+            .inspect_container_by_name(&manifest.container_base)
             .await;
+        let docker_state = inspection.state;
+        let container_handle = inspection.handle;
         if let Some(run) = &active_run {
             run.timing_done(
                 jackin_diagnostics::DiagnosticStage::Restore,
@@ -467,8 +473,14 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
                 if check_container_network_exists(docker, &manifest).await? {
+                    let Some(container_handle) = container_handle.clone() else {
+                        anyhow::bail!(
+                            "container '{}' inspection returned no immutable ID",
+                            manifest.container_base
+                        );
+                    };
                     runnable.push(UnselectedCurrentRestoreResolution {
-                        resolution: RestoreResolution::StartCurrentRole(manifest.container_base),
+                        resolution: RestoreResolution::StartCurrentRoleWithHandle(container_handle),
                         agent,
                     });
                 } else {
@@ -484,7 +496,10 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                         Some("network_missing"),
                     );
                     recreatable.push(UnselectedCurrentRestoreResolution {
-                        resolution: RestoreResolution::RecreateCurrentRole(manifest.container_base),
+                        resolution: container_handle.map_or_else(
+                            || RestoreResolution::RecreateCurrentRole(manifest.container_base),
+                            RestoreResolution::RecreateCurrentRoleWithHandle,
+                        ),
                         agent,
                     });
                 }
@@ -549,7 +564,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     match runnable.as_slice() {
         [
             UnselectedCurrentRestoreResolution {
-                resolution: RestoreResolution::StartCurrentRole(container),
+                resolution: RestoreResolution::StartCurrentRoleWithHandle(container_handle),
                 agent,
             },
         ] => {
@@ -561,10 +576,10 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                 } else {
                     "single_current_role_agent_container_startable"
                 },
-                Some(container),
+                Some(container_handle.name()),
             );
             Ok(Some(UnselectedCurrentRestoreResolution {
-                resolution: RestoreResolution::StartCurrentRole(container.clone()),
+                resolution: RestoreResolution::StartCurrentRoleWithHandle(container_handle.clone()),
                 agent: *agent,
             }))
         }
@@ -630,9 +645,11 @@ pub(crate) async fn resolve_current_restore_candidate(
                 Some(&manifest.container_base),
             );
         }
-        let docker_state = docker
-            .inspect_container_state(&manifest.container_base)
+        let inspection = docker
+            .inspect_container_by_name(&manifest.container_base)
             .await;
+        let docker_state = inspection.state;
+        let container_handle = inspection.handle;
         if let Some(run) = &active_run {
             run.timing_done(
                 jackin_diagnostics::DiagnosticStage::Restore,
@@ -672,10 +689,18 @@ pub(crate) async fn resolve_current_restore_candidate(
                         Some(&manifest.container_base),
                         Some("network_missing"),
                     );
-                    return Ok(Some(RestoreResolution::RecreateCurrentRole(
-                        manifest.container_base.clone(),
+                    return Ok(Some(container_handle.map_or_else(
+                        || RestoreResolution::RecreateCurrentRole(manifest.container_base.clone()),
+                        RestoreResolution::RecreateCurrentRoleWithHandle,
                     )));
                 }
+
+                let Some(container_handle) = container_handle else {
+                    anyhow::bail!(
+                        "container '{}' inspection returned no immutable ID",
+                        manifest.container_base
+                    );
+                };
 
                 emit_launch_plan_scoped(
                     active_run.as_deref(),
@@ -683,8 +708,8 @@ pub(crate) async fn resolve_current_restore_candidate(
                     "current_role_container_startable",
                     Some(&manifest.container_base),
                 );
-                return Ok(Some(RestoreResolution::StartCurrentRole(
-                    manifest.container_base.clone(),
+                return Ok(Some(RestoreResolution::StartCurrentRoleWithHandle(
+                    container_handle,
                 )));
             }
             ContainerState::NotFound => {
