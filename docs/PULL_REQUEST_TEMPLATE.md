@@ -1,17 +1,14 @@
 <!--
-PR body template. Two surfaces describe how to use it:
+PR body template. Read the canonical PR guide and the shared repository rules before use:
 
-  - PULL_REQUESTS.md at the repo root — shared PR flow + body-shape
-    spec + Verify-locally policy + isolation env vars + review and
-    roadmap-retirement rules. Both humans and agents start here.
-  - .github/AGENTS.md (generator-owned, under .github/) — agent-only extras:
-    merge authorization, body-construction shell quoting, force-push
-    policy, jackin-capsule smoke-test mandate, squash-commit format.
-    Claude Code auto-loads it via .github/CLAUDE.md when working
-    under .github/.
+  - PULL_REQUESTS.md at the repo root — canonical PR flow, body shape,
+    verification, review, merge, and agent-specific procedures.
+  - AGENTS.md at the repo root — shared repository rules.
+  - .github/AGENTS.md — generated-files ownership notice only; it requires
+    Velnor input changes and regeneration, and contains no PR policy.
 
-Read both before authoring the body if you are an agent; the shared
-file alone if you are a human contributor.
+Read PULL_REQUESTS.md before authoring. The root AGENTS.md applies to all
+contributors; agent-specific procedures are included in PULL_REQUESTS.md.
 
 Rules in one line each:
 - One paragraph per section, no hard-wrap (GitHub flows the text).
@@ -21,7 +18,7 @@ Rules in one line each:
 - No deployed-docs URLs (they break post-merge). Refer to docs by name only.
 - No mechanical CI-shaped checks (sidebar diffs, link audits). Those belong in CI.
   Exception: the docs verification gate (`### Docs checks`) is the one sanctioned
-  copy-paste block — AGENTS.md requires docs authors run it before merge.
+  copy-paste block — PULL_REQUESTS.md requires docs authors run it before merge.
 - Verify-locally URLs use http://localhost:3000/... only — never deployed.
 - Each verify-locally docs page: bold URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
