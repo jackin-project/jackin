@@ -334,9 +334,13 @@ mod linux {
         // Image-baked tools and shell configuration are shared, but are not
         // account slots. They are read-only. Slot roots below are the only
         // mutable account paths outside the private session root.
+        // Grants must cover symlink targets as well as link parents: Landlock
+        // resolves `/home/agent/.local/bin/claude` to the installer-owned
+        // version under `.local/share/claude` before checking access.
         for path in [
             "/home/agent/.oh-my-zsh",
             "/home/agent/.local/bin",
+            "/home/agent/.local/share/claude",
             "/home/agent/.local/share/mise",
             "/home/agent/.local/state/mise",
             "/home/agent/.cache/mise",
@@ -996,6 +1000,36 @@ mod tests {
                 .any(|rule| rule.path == Path::new("/jackin/runtime")
                     && rule.access == super::linux::TRAVERSE)
         );
+    }
+
+    #[test]
+    fn claude_installer_share_dir_is_granted_read_only() {
+        let config = CapsuleConfig {
+            instances: vec!["slot-a".to_owned()],
+            agents: BTreeMap::from([("slot-a".to_owned(), "claude".to_owned())]),
+            instance_home_dirs: BTreeMap::from([(
+                "slot-a".to_owned(),
+                "/home/agent/.claude-a".to_owned(),
+            )]),
+            instance_mount_paths: BTreeMap::from([(
+                "slot-a".to_owned(),
+                vec!["/home/agent/.claude-a".to_owned()],
+            )]),
+            ..CapsuleConfig::default()
+        };
+        let rules = rules_for(
+            &config,
+            Some("slot-a"),
+            Path::new("/workspace/project"),
+            Path::new("/jackin/run/sessions/7"),
+        )
+        .expect("construct Landlock rules");
+        let share = rules
+            .iter()
+            .find(|rule| rule.path == Path::new("/home/agent/.local/share/claude"))
+            .expect("Claude installer share-dir rule");
+        assert_eq!(share.access, READ_ONLY);
+        assert!(!share.required);
     }
 
     #[test]
