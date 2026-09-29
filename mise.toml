@@ -574,12 +574,7 @@ for handoff_entry in "$package_dir/"*; do
   fi
 done
 
-scratch_dir="${PACKAGE_RELEASE_SCRATCH_DIR:?missing PACKAGE_RELEASE_SCRATCH_DIR}"
-expected_scratch="$runner_temp/package-release-scratch-${run_id}-${run_attempt}"
-[ "$scratch_dir" = "$expected_scratch" ] || {
-  echo "package scratch differs from the run-owned runner-temp path" >&2
-  exit 1
-}
+scratch_dir="$runner_temp/package-release-scratch-${run_id}-${run_attempt}"
 if [[ -e "$scratch_dir" || -L "$scratch_dir" ]]; then
   echo "package scratch already exists; refusing to remove a pre-existing path" >&2
   exit 1

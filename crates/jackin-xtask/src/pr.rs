@@ -136,14 +136,18 @@ fn body(args: BodyArgs) -> Result<()> {
     let files = changed_files(&root, &args.base)?;
     let cats = classify(&files);
 
-    let template_path = root.join(".github/PULL_REQUEST_TEMPLATE.md");
-    let template = fs::read_to_string(&template_path)
-        .with_context(|| format!("reading {}", template_path.display()))?;
+    let template = read_template(&root)?;
     let skeleton = filter_template(&template, &cats);
 
     emit_digest(&args.base, &files, &cats);
     emit_body(&skeleton);
     Ok(())
+}
+
+fn read_template(root: &Path) -> Result<String> {
+    let template_path = root.join("docs/PULL_REQUEST_TEMPLATE.md");
+    fs::read_to_string(&template_path)
+        .with_context(|| format!("reading {}", template_path.display()))
 }
 
 fn changed_files(root: &Path, base: &str) -> Result<Vec<String>> {

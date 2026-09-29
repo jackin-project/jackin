@@ -173,10 +173,11 @@ impl Fixture {
         fs::create_dir_all(&package_dir).unwrap();
         assert!(fs::read_dir(&package_dir).unwrap().next().is_none());
 
-        let scratch = self
-            .runner_temp
-            .join(format!("package-release-scratch-{RUN_ID}-{attempt}"));
-        assert!(!scratch.exists(), "fixture scratch must start absent");
+        let scratch = self.scratch_dir(attempt);
+        assert!(
+            !scratch.exists(),
+            "identity-derived fixture scratch must start absent"
+        );
 
         let task = producer_script();
         Command::new("bash")
@@ -195,7 +196,7 @@ impl Fixture {
             .env("GITHUB_RUN_ATTEMPT", attempt)
             .env("GITHUB_WORKSPACE", &self.source)
             .env("PACKAGE_DIR", relative)
-            .env("PACKAGE_RELEASE_SCRATCH_DIR", scratch)
+            .env_remove("PACKAGE_RELEASE_SCRATCH_DIR")
             .env(
                 "FIXTURE_TAMPER_ON_SIGN",
                 if tamper_on_sign { "1" } else { "0" },
@@ -232,6 +233,11 @@ impl Fixture {
 #[test]
 fn output_survives_task_exit() {
     let fixture = Fixture::new(false);
+    let task = producer_script();
+    assert!(
+        !task.contains("PACKAGE_RELEASE_SCRATCH_DIR"),
+        "producer must derive scratch from declared runner and run identity"
+    );
     let handoff = fixture.package_dir(PACKAGE_RELATIVE);
     let output = fixture.run_producer("1", PACKAGE_RELATIVE, false, false);
 
@@ -247,7 +253,7 @@ fn output_survives_task_exit() {
     );
     assert!(
         !fixture.scratch_dir("1").exists(),
-        "only uniquely owned scratch must be removed on exit"
+        "identity-derived RUNNER_TEMP scratch must be removed on exit"
     );
     assert!(
         !handoff.starts_with(&fixture.runner_temp),
@@ -605,6 +611,11 @@ fn write_shims(directory: &Path) {
 set -euo pipefail
 if [[ "${1:-}" == "xtask" ]]; then
   shift
+  expected_target_root="$RUNNER_TEMP/package-release-scratch-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/target"
+  case "${CARGO_TARGET_DIR:-}" in
+    "$expected_target_root"|"$expected_target_root/"*) ;;
+    *) echo "CARGO_TARGET_DIR is not under identity-derived scratch: ${CARGO_TARGET_DIR:-missing}" >&2; exit 101 ;;
+  esac
   if [[ "${1:-}" == "release-verify-package" &&
         "${FIXTURE_TAMPER_HANDOFF_ON_FINAL_VERIFY:-0}" == "1" &&
         "${VELNOR_VERIFIED_PACKAGE_DIR:-}" != */verified-package ]]; then

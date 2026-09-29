@@ -2137,6 +2137,46 @@ fn typed_rate_limit_preserves_retry_after_but_rendered_429_text_does_not() {
     }
 }
 
+#[test]
+fn retry_after_accepts_delay_seconds_and_http_dates_against_response_time() {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::RETRY_AFTER,
+        reqwest::header::HeaderValue::from_static(" 37 "),
+    );
+    assert_eq!(
+        retry_after_header_seconds(&headers, 1_445_412_400),
+        Some(37)
+    );
+
+    headers.insert(
+        reqwest::header::RETRY_AFTER,
+        reqwest::header::HeaderValue::from_static("Wed, 21 Oct 2015 07:28:00 GMT"),
+    );
+    let delay = retry_after_header_seconds(&headers, 1_445_412_400);
+    assert_eq!(delay, Some(80));
+    let typed = ProviderError::from(ProviderHttpError::HttpStatus {
+        status: 429,
+        message: "provider HTTP 429".to_owned(),
+        retry_after_seconds: delay,
+        response_received_at_epoch: Some(1_445_412_400),
+    });
+    assert_eq!(
+        typed.rate_limit(),
+        Some(ProviderRateLimit {
+            retry_at_epoch: Some(1_445_412_480),
+        })
+    );
+
+    assert_eq!(retry_after_header_value("invalid", 1_445_412_400), None);
+    assert_eq!(retry_after_header_value("37.5", 1_445_412_400), None);
+    assert_eq!(retry_after_header_value("-1", 1_445_412_400), None);
+    assert_eq!(
+        retry_after_header_value("Wed, 21 Oct 2015 07:28:00 GMT", 1_445_412_500),
+        Some(0)
+    );
+}
+
 /// Rotating-codename dollar-budget windows (enterprise contractual
 /// allocations) surface as dollar buckets instead of being dropped by the
 /// fixed-field struct; zero/absent ones are ignored.

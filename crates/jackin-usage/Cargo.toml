@@ -27,6 +27,7 @@ jackin-diagnostics = { workspace = true }
 jackin-telemetry = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
+httpdate = { workspace = true }
 icu_collator = { workspace = true }
 icu_locale = { workspace = true }
 nix = { workspace = true, features = ["fs", "signal", "term", "user"] }
