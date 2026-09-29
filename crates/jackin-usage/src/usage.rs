@@ -1487,11 +1487,41 @@ impl std::fmt::Display for ProviderHttpError {
     }
 }
 
-pub(crate) fn retry_after_header_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+pub(crate) fn retry_after_header_seconds(
+    headers: &reqwest::header::HeaderMap,
+    response_received_at_epoch: i64,
+) -> Option<u64> {
     headers
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.trim().parse::<u64>().ok())
+        .and_then(|value| retry_after_header_value(value, response_received_at_epoch))
+}
+
+pub(crate) fn retry_after_header_value(
+    value: &str,
+    response_received_at_epoch: i64,
+) -> Option<u64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(seconds);
+    }
+    let response_epoch = httpdate::parse_http_date(value)
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| {
+            i64::try_from(duration.as_secs()).unwrap_or(i64::MAX)
+        });
+    Some(
+        u64::try_from(
+            response_epoch
+                .saturating_sub(response_received_at_epoch)
+                .max(0),
+        )
+        .unwrap_or_default(),
+    )
 }
 
 /// Shared GET → bearer-auth → JSON skeleton for provider quota endpoints. The
@@ -1521,7 +1551,8 @@ pub(crate) fn get_json_bearer<T: serde::de::DeserializeOwned>(
         })?;
         let response_received_at_epoch = now_epoch();
         let status = response.status();
-        let retry_after_seconds = retry_after_header_seconds(response.headers());
+        let retry_after_seconds =
+            retry_after_header_seconds(response.headers(), response_received_at_epoch);
         if !status.is_success() {
             return Err(ProviderHttpError::HttpStatus {
                 status: status.as_u16(),

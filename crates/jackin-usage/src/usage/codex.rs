@@ -1246,7 +1246,10 @@ pub(crate) fn refresh_codex_access_token(refresh_token: &str) -> Result<String, 
                 return Err(ProviderHttpError::HttpStatus {
                     status: status.as_u16(),
                     message: format!("Codex token refresh HTTP {status}"),
-                    retry_after_seconds: retry_after_header_seconds(response.headers()),
+                    retry_after_seconds: retry_after_header_seconds(
+                        response.headers(),
+                        response_received_at_epoch,
+                    ),
                     response_received_at_epoch: Some(response_received_at_epoch),
                 });
             }
