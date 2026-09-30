@@ -540,11 +540,9 @@ fn credential_descriptor_matrix_uses_each_launch_route_key() {
             env_name: "CLAUDE_CODE_OAUTH_TOKEN",
         }
     );
-    assert!(
-        profile("profile")
-            .resolved_credential_descriptor(Agent::Claude)
-            .is_err()
-    );
+    profile("profile")
+        .resolved_credential_descriptor(Agent::Claude)
+        .unwrap_err();
 }
 
 #[test]

@@ -614,8 +614,14 @@ impl AccountConfig {
         match &self.credential {
             AccountCredential::Profile { .. } => {}
             AccountCredential::OAuthToken { value, .. } => {
+                let route = route.ok_or_else(|| {
+                    ConfigError::msg(format!(
+                        "account {:?} has no environment credential route",
+                        self.name
+                    ))
+                })?;
                 env.insert(
-                    route.expect("OAuth token route").env_name.into(),
+                    route.env_name.into(),
                     value.clone(),
                 );
                 if let Some(url) = endpoint {
@@ -638,7 +644,13 @@ impl AccountConfig {
                         self.name
                     )));
                 }
-                env.insert(route.expect("API key route").env_name.into(), value.clone());
+                let route = route.ok_or_else(|| {
+                    ConfigError::msg(format!(
+                        "account {:?} has no environment credential route",
+                        self.name
+                    ))
+                })?;
+                env.insert(route.env_name.into(), value.clone());
                 if agent == Agent::Claude
                     && let Some(model) = model
                 {
