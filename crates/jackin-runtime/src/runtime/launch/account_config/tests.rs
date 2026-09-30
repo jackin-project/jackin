@@ -724,47 +724,54 @@ fn codex_moonshot_fixture() -> (AppConfig, [jackin_config::ResolvedInstance; 1])
     (config, instances)
 }
 
-fn quarantined_payload(directory: &Path, expected: &[u8]) {
-    let matches: Vec<_> = std::fs::read_dir(directory)
-        .expect("read private config quarantine directory")
+fn quarantined_payload(directory: &Path, expected: &[u8]) -> anyhow::Result<()> {
+    let entries = std::fs::read_dir(directory)
+        .map_err(|error| anyhow::anyhow!("read private config quarantine directory: {error}"))?;
+    let matches: Vec<_> = entries
         .map(|entry| {
             entry
-                .expect("read private config quarantine directory entry")
-                .path()
+                .map(|entry| entry.path())
+                .map_err(|error| anyhow::anyhow!("read quarantine directory entry: {error}"))
         })
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .into_iter()
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| name.starts_with("config.toml.corrupt-"))
         })
         .collect();
-    assert_eq!(matches.len(), 1, "expected one quarantine file");
-    let quarantine = matches.first().expect("expected one quarantine file");
+    anyhow::ensure!(matches.len() == 1, "expected one quarantine file");
+    let quarantine = matches
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("expected one quarantine file"))?;
     let name = quarantine
         .file_name()
-        .expect("quarantine file has a name")
+        .ok_or_else(|| anyhow::anyhow!("quarantine file has no name"))?
         .to_str()
-        .expect("quarantine file name is valid UTF-8")
+        .ok_or_else(|| anyhow::anyhow!("quarantine file name is not valid UTF-8"))?
         .to_owned();
     let suffix = name
         .strip_prefix("config.toml.corrupt-")
-        .expect("quarantine file name has the expected prefix");
+        .ok_or_else(|| anyhow::anyhow!("quarantine file name has an unexpected prefix: {name}"))?;
     let (secs, pid) = suffix
         .rsplit_once('-')
-        .expect("quarantine file name has a PID suffix");
-    assert!(secs.parse::<u64>().is_ok(), "unix-secs suffix: {name}");
-    assert_eq!(
-        pid.parse::<u32>().expect("quarantine PID suffix is a u32"),
-        std::process::id()
-    );
-    assert_eq!(
-        std::fs::read(quarantine).expect("read quarantined config payload"),
-        expected
-    );
+        .ok_or_else(|| anyhow::anyhow!("quarantine file name has no PID suffix: {name}"))?;
+    let _secs = secs
+        .parse::<u64>()
+        .map_err(|error| anyhow::anyhow!("invalid unix-secs suffix in {name}: {error}"))?;
+    let pid = pid
+        .parse::<u32>()
+        .map_err(|error| anyhow::anyhow!("invalid PID suffix in {name}: {error}"))?;
+    assert_eq!(pid, std::process::id());
+    let payload = std::fs::read(quarantine)
+        .map_err(|error| anyhow::anyhow!("read quarantined config payload: {error}"))?;
+    assert_eq!(payload, expected);
+    Ok(())
 }
 
 #[test]
-fn corrupt_codex_config_is_quarantined_and_regenerated() {
+fn corrupt_codex_config_is_quarantined_and_regenerated() -> anyhow::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
     let directory = temp.path().join("home/.codex");
@@ -781,11 +788,12 @@ fn corrupt_codex_config_is_quarantined_and_regenerated() {
         parsed["model_providers"]["jackin_account"]["env_key"].as_str(),
         Some("KIMI_API_KEY")
     );
-    quarantined_payload(&directory, garbage);
+    quarantined_payload(&directory, garbage)?;
+    Ok(())
 }
 
 #[test]
-fn non_utf8_codex_config_is_quarantined_and_regenerated() {
+fn non_utf8_codex_config_is_quarantined_and_regenerated() -> anyhow::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
     let directory = temp.path().join("home/.codex");
@@ -798,11 +806,12 @@ fn non_utf8_codex_config_is_quarantined_and_regenerated() {
     let contents = std::fs::read_to_string(directory.join("config.toml")).unwrap();
     let parsed: toml::Value = toml::from_str(&contents).unwrap();
     assert_eq!(parsed["model"].as_str(), Some("k3-256k"));
-    quarantined_payload(&directory, garbage);
+    quarantined_payload(&directory, garbage)?;
+    Ok(())
 }
 
 #[test]
-fn non_table_model_providers_is_quarantined_and_regenerated() {
+fn non_table_model_providers_is_quarantined_and_regenerated() -> anyhow::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
     let directory = temp.path().join("home/.codex");
@@ -822,7 +831,8 @@ fn non_table_model_providers_is_quarantined_and_regenerated() {
         parsed["model_providers"]["jackin_account"]["env_key"].as_str(),
         Some("KIMI_API_KEY")
     );
-    quarantined_payload(&directory, garbage);
+    quarantined_payload(&directory, garbage)?;
+    Ok(())
 }
 
 #[test]

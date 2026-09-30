@@ -1216,6 +1216,7 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
         }
     };
     let resolver = Arc::new(RecordingRefreshResolver::default());
+    let resolver_for_executor: Arc<dyn ProviderCredentialEnvResolver> = Arc::clone(&resolver);
     let executor = DiscoveryProviderExecutor {
         bindings: Mutex::new(BTreeMap::from([(
             capability.clone(),
@@ -1228,7 +1229,7 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
         scope: UsageDiscoveryScope::Capsule {
             forwarded_accounts: Vec::new(),
         },
-        resolver: Arc::clone(&resolver),
+        resolver: resolver_for_executor,
         probe_budget: Duration::from_secs(1),
     };
     let scope = env_scope("zai", "zai", "ZHIPU_API_KEY", &material_b);
