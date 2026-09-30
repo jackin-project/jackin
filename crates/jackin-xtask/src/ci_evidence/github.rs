@@ -66,7 +66,7 @@ struct ApiGitObject {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct ApiRun {
+pub(crate) struct ApiRun {
     id: u64,
     #[serde(default)]
     repository: Option<ApiRunRepository>,
@@ -79,6 +79,9 @@ struct ApiRun {
     /// its `workflow_name` to this value.
     #[serde(default)]
     name: Option<String>,
+    /// A display label retained separately from the run identity.
+    #[serde(default)]
+    pub(crate) display_title: Option<String>,
     #[serde(default)]
     path: Option<String>,
     #[serde(default)]

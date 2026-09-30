@@ -1317,7 +1317,11 @@ fn validate_api_run_contract(
     let root = docs::repo_root()?;
     let expected_name = workflow_run_name_at(&root, &run.head_sha, workflow, event, branch)?;
     if run.name.as_deref() != Some(expected_name.as_str()) {
-        bail!("GitHub API run {expected_run_id} has a name inconsistent with its workflow revision");
+        bail!(
+            "GitHub API run {expected_run_id} has name {:?} (display title {:?}) inconsistent with its workflow revision",
+            run.name,
+            run.display_title
+        );
     }
     Ok(())
 }

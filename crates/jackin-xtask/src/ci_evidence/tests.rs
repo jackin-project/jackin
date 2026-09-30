@@ -405,6 +405,7 @@ fn push_head_artifact_fixture() -> (tempfile::TempDir, ApiRun, Vec<u8>, Vec<u8>)
         head_repository: Some(test_api_repository()),
         workflow_id: Some(7),
         name: Some("push-head ledger".to_owned()),
+        display_title: None,
         path: Some(format!(
             ".github/workflows/{DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW}@refs/heads/main"
         )),
@@ -590,6 +591,10 @@ fn github_run_and_jobs_decode_real_rest_identity_fields() {
     assert_ne!(run_payload["name"], run_payload["display_title"]);
     let run: ApiRun = serde_json::from_value(run_payload).unwrap();
     assert_eq!(run.name.as_deref(), Some("CI / main · push · main"));
+    assert_eq!(
+        run.display_title.as_deref(),
+        Some("Update the CI evidence observer")
+    );
     validate_api_run_contract(
         &run,
         run.id,
@@ -1059,6 +1064,7 @@ fn retired_workflow_alias_is_unclassified_without_stable_id() {
         head_repository: Some(test_api_repository()),
         workflow_id: Some(99),
         name: Some("CI / Main".to_owned()),
+        display_title: None,
         path: Some(".github/workflows/ci-main-v2.yml".to_owned()),
         event: Some("push".to_owned()),
         head_branch: Some("main".to_owned()),
@@ -1083,6 +1089,7 @@ fn stable_workflow_id_survives_path_and_name_rename() {
         head_repository: Some(test_api_repository()),
         workflow_id: Some(99),
         name: Some("renamed".to_owned()),
+        display_title: None,
         path: Some(".github/workflows/renamed.yml".to_owned()),
         event: Some("push".to_owned()),
         head_branch: Some("main".to_owned()),
@@ -1238,6 +1245,7 @@ fn active_attempt_has_no_terminal_timing_verdict() {
         head_repository: Some(test_api_repository()),
         workflow_id: Some(42),
         name: Some("CI/Main".to_owned()),
+        display_title: None,
         path: Some(".github/workflows/ci-main.yml".to_owned()),
         event: Some("push".to_owned()),
         head_branch: Some("main".to_owned()),
