@@ -726,8 +726,12 @@ fn codex_moonshot_fixture() -> (AppConfig, [jackin_config::ResolvedInstance; 1])
 
 fn quarantined_payload(directory: &Path, expected: &[u8]) {
     let matches: Vec<_> = std::fs::read_dir(directory)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
+        .expect("read private config quarantine directory")
+        .map(|entry| {
+            entry
+                .expect("read private config quarantine directory entry")
+                .path()
+        })
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
@@ -735,12 +739,28 @@ fn quarantined_payload(directory: &Path, expected: &[u8]) {
         })
         .collect();
     assert_eq!(matches.len(), 1, "expected one quarantine file");
-    let name = matches[0].file_name().unwrap().to_str().unwrap().to_owned();
-    let suffix = name.strip_prefix("config.toml.corrupt-").unwrap();
-    let (secs, pid) = suffix.rsplit_once('-').unwrap();
+    let quarantine = matches.first().expect("expected one quarantine file");
+    let name = quarantine
+        .file_name()
+        .expect("quarantine file has a name")
+        .to_str()
+        .expect("quarantine file name is valid UTF-8")
+        .to_owned();
+    let suffix = name
+        .strip_prefix("config.toml.corrupt-")
+        .expect("quarantine file name has the expected prefix");
+    let (secs, pid) = suffix
+        .rsplit_once('-')
+        .expect("quarantine file name has a PID suffix");
     assert!(secs.parse::<u64>().is_ok(), "unix-secs suffix: {name}");
-    assert_eq!(pid.parse::<u32>().unwrap(), std::process::id());
-    assert_eq!(std::fs::read(&matches[0]).unwrap(), expected);
+    assert_eq!(
+        pid.parse::<u32>().expect("quarantine PID suffix is a u32"),
+        std::process::id()
+    );
+    assert_eq!(
+        std::fs::read(quarantine).expect("read quarantined config payload"),
+        expected
+    );
 }
 
 #[test]

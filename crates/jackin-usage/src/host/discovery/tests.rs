@@ -453,7 +453,7 @@ fn disc_synthesized_routes_keep_launch_keys_separate() {
     let (canonical_key, dispatch_key, launch_keys) = catalog
         .sources
         .iter()
-        .filter_map(|source| match source {
+        .find_map(|source| match source {
             DiscoveredCredentialSource::Env {
                 key,
                 dispatch_key,
@@ -463,7 +463,6 @@ fn disc_synthesized_routes_keep_launch_keys_separate() {
             DiscoveredCredentialSource::Profile { .. }
             | DiscoveredCredentialSource::Capability { .. } => None,
         })
-        .next()
         .expect("one canonical provider source");
     assert_eq!(canonical_key, "ZAI_API_KEY");
     assert_eq!(dispatch_key, "ZAI_API_KEY");

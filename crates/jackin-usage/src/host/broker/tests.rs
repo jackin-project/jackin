@@ -1228,7 +1228,7 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
         scope: UsageDiscoveryScope::Capsule {
             forwarded_accounts: Vec::new(),
         },
-        resolver: resolver.clone(),
+        resolver: Arc::clone(&resolver),
         probe_budget: Duration::from_secs(1),
     };
     let scope = env_scope("zai", "zai", "ZHIPU_API_KEY", &material_b);

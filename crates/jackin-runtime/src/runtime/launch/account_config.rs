@@ -12,11 +12,13 @@ use jackin_core::Agent;
 
 #[cfg(unix)]
 mod private_config_fs {
-    use std::ffi::OsString;
     use std::fs::File;
     use std::io::{Read as _, Write as _};
     use std::path::{Component, Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[cfg(target_os = "macos")]
+    use std::ffi::OsString;
 
     #[cfg(target_os = "macos")]
     use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
@@ -24,7 +26,7 @@ mod private_config_fs {
     use anyhow::Context as _;
     use fs4::FileExt;
     use nix::errno::Errno;
-    use nix::fcntl::{AtFlags, OFlag, openat, renameat};
+    use nix::fcntl::{AtFlags, OFlag, open, openat, renameat};
     use nix::sys::stat::{Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
     use nix::unistd::{UnlinkatFlags, linkat, unlinkat};
 
@@ -81,11 +83,19 @@ mod private_config_fs {
     pub(super) fn open_directory(root: &Path, home_relative: &Path) -> anyhow::Result<File> {
         let root = normalize_root(root)?;
         let components = root.components().collect::<Vec<_>>();
-        let mut directory = if root.is_absolute() {
-            File::open("/").context("open filesystem root")?
+        let traversal_root = if root.is_absolute() {
+            Path::new("/")
         } else {
-            File::open(".").context("open current directory")?
+            Path::new(".")
         };
+        let mut directory = File::from(
+            open(
+                traversal_root,
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+                Mode::empty(),
+            )
+            .context("open private account config traversal root")?,
+        );
         let mut saw_root = false;
         for (index, component) in components.iter().enumerate() {
             match component {
@@ -124,7 +134,6 @@ mod private_config_fs {
 
     /// Normalize only lexical aliases. Symlinks remain rejected by the
     /// descriptor-relative `O_NOFOLLOW` walk below.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub(super) fn normalize_root(path: &Path) -> anyhow::Result<PathBuf> {
         let mut normalized = if path.is_absolute() {
             PathBuf::new()
@@ -355,8 +364,7 @@ mod private_config_fs {
         let stat = fstat(file).context("stat private account config directory")?;
         anyhow::ensure!(
             SFlag::from_bits_truncate(stat.st_mode) == SFlag::S_IFDIR,
-            "private account config path component {:?} is not a directory",
-            name
+            "private account config path component {name:?} is not a directory"
         );
         ensure_mode(
             file,
@@ -529,7 +537,7 @@ mod private_config_fs {
                     ensure_regular(&file, name.as_str())?;
                     return Ok((name.as_str().to_owned(), file));
                 }
-                Err(Errno::EEXIST) => continue,
+                Err(Errno::EEXIST) => {}
                 Err(error) => {
                     return Err(error).context("create private provider config staging file");
                 }
@@ -719,19 +727,19 @@ where
         match private_config_fs::read_optional(&directory, "config.toml")
             .context("read private Codex configuration")?
         {
-            Some(bytes) => match String::from_utf8(bytes) {
-                Ok(contents) => match toml::from_str(&contents) {
-                    Ok(document) => document,
-                    Err(_) => {
+            Some(bytes) => {
+                if let Ok(contents) = String::from_utf8(bytes) {
+                    if let Ok(document) = toml::from_str(&contents) {
+                        document
+                    } else {
                         private_config_fs::quarantine(&directory, "config.toml", "invalid TOML")?;
                         toml::Table::new()
                     }
-                },
-                Err(_) => {
+                } else {
                     private_config_fs::quarantine(&directory, "config.toml", "non-UTF8 bytes")?;
                     toml::Table::new()
                 }
-            },
+            }
             None => toml::Table::new(),
         };
     let mut provider = toml::Table::new();
