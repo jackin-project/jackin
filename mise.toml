@@ -86,6 +86,16 @@ run = "cargo xtask construct publish-manifest"
 description = "Print the resolved construct Bake configuration"
 run = "cargo xtask construct inspect"
 
+# CI evidence observer tasks keep GitHub event parsing and Actions API handling
+# in the typed xtask boundary. Results are advisory and best effort.
+[tasks.ci-evidence]
+description = "Collect advisory first-attempt CI evidence"
+run = "cargo xtask ci-evidence run"
+
+[tasks.ci-push-head-ledger]
+description = "Record the exact main push head and event payload"
+run = "cargo xtask ci-evidence record-push"
+
 # Canonical gate contract (native class). The generated ci-pr.yml gates map to
 # exactly these commands; keep the names stable because ci-pr.yml is generated
 # and never hand-edited:

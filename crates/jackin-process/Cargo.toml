@@ -19,7 +19,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-tokio = { workspace = true, features = ["process", "time", "io-util", "rt", "macros"] }
+tokio = { workspace = true, features = ["process", "time", "io-util", "rt", "macros", "sync"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }

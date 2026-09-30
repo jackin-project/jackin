@@ -73,6 +73,7 @@ impl CommandRunner for GitRunner {
         cwd: Option<&Path>,
         _opts: &RunOptions,
     ) -> anyhow::Result<()> {
+        std::future::ready(()).await;
         let mut request = ExecRequest::new(program, args)
             .stdout_mode(StdioMode::Null)
             .stderr_mode(StdioMode::Null);
@@ -92,6 +93,7 @@ impl CommandRunner for GitRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
+        std::future::ready(()).await;
         let mut request = ExecRequest::new(program, args);
         if let Some(dir) = cwd {
             request = request.cwd(dir);
