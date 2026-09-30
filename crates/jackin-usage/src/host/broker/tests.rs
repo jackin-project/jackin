@@ -1216,7 +1216,8 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
         }
     };
     let resolver = Arc::new(RecordingRefreshResolver::default());
-    let resolver_for_executor: Arc<dyn ProviderCredentialEnvResolver> = Arc::clone(&resolver);
+    let cloned_resolver = Arc::clone(&resolver);
+    let resolver_for_executor: Arc<dyn ProviderCredentialEnvResolver> = cloned_resolver;
     let executor = DiscoveryProviderExecutor {
         bindings: Mutex::new(BTreeMap::from([(
             capability.clone(),
