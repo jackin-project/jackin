@@ -266,11 +266,13 @@ fn env_capability_ids_isolate_distinct_opaque_credentials() {
         surface: HostSurfaceId::Zai,
         handle: OpaqueCredentialHandle::new("credential-1"),
         key: "ZAI_API_KEY".to_owned(),
+        dispatch_key: "ZAI_API_KEY".to_owned(),
     };
     let second = CredentialSourceKey::Env {
         surface: HostSurfaceId::Zai,
         handle: OpaqueCredentialHandle::new("credential-2"),
         key: "ZAI_API_KEY".to_owned(),
+        dispatch_key: "ZAI_API_KEY".to_owned(),
     };
 
     let first_id = source_capability_id(HostSurfaceId::Zai, &first);
@@ -352,6 +354,9 @@ fn disc_registry_api_sources_are_isolated_from_ambient_env_declarations() {
             },
         },
     );
+    config
+        .account_bindings
+        .insert(Agent::Opencode, "zai-work".to_owned());
     config.env.insert(
         "MINIMAX_API_KEY".to_owned(),
         jackin_config::EnvValue::Plain("unregistered".to_owned()),
@@ -377,13 +382,102 @@ fn disc_registry_api_sources_are_isolated_from_ambient_env_declarations() {
         UsageCredentialKind::ApiKey
     );
     let calls = resolver.calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    // Account credentials are presented under an isolated alias so CLI-side
-    // operator-env attribution (which retains out governed names) resolves
-    // the same declaration the broker resolves.
-    assert_eq!(calls[0].2, vec!["JACKIN_USAGE_ACCOUNT_ZAI_API_KEY"]);
-    assert!(!jackin_core::is_account_env(&calls[0].2[0]));
+    assert_eq!(calls.len(), 5, "all compatible Z.AI routes must resolve");
+    let mut isolated_alias_counts = BTreeMap::<String, usize>::new();
+    for (_, _, keys) in calls.iter() {
+        assert_eq!(keys.len(), 1, "each route must resolve one isolated alias");
+        assert!(!jackin_core::is_account_env(&keys[0]));
+        *isolated_alias_counts.entry(keys[0].clone()).or_default() += 1;
+    }
+    assert_eq!(
+        isolated_alias_counts,
+        BTreeMap::from([
+            ("JACKIN_USAGE_ACCOUNT_ANTHROPIC_AUTH_TOKEN".to_owned(), 1,),
+            ("JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY".to_owned(), 1),
+            ("JACKIN_USAGE_ACCOUNT_ZHIPU_API_KEY".to_owned(), 3),
+        ])
+    );
+    assert!(
+        !calls
+            .iter()
+            .any(|(_, _, keys)| { keys.iter().any(|key| key == "MINIMAX_API_KEY") })
+    );
+
+    let launch_keys = catalog
+        .sources
+        .iter()
+        .find_map(|source| match source {
+            DiscoveredCredentialSource::Env { launch_keys, .. } => Some(launch_keys.clone()),
+            DiscoveredCredentialSource::Profile { .. }
+            | DiscoveredCredentialSource::Capability { .. } => None,
+        })
+        .expect("one canonical provider source");
+    assert_eq!(
+        launch_keys,
+        BTreeSet::from([
+            "ANTHROPIC_AUTH_TOKEN".to_owned(),
+            "OPENAI_API_KEY".to_owned(),
+            "ZHIPU_API_KEY".to_owned(),
+        ])
+    );
     assert!(!format!("{catalog:?}").contains("fixture-key"));
+}
+
+#[test]
+fn disc_synthesized_routes_keep_launch_keys_separate() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "zai-routes".to_owned(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Z.AI routes".to_owned(),
+            provider: AiProvider::Zai,
+            credential: AccountCredential::ApiKey {
+                value: jackin_config::EnvValue::Plain("fixture-key".to_owned()),
+                base_url: None,
+                model: Some("glm-5".to_owned()),
+            },
+        },
+    );
+    std::fs::create_dir_all(&config_root).unwrap();
+    std::fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+
+    let resolver = SecretDedupFakeResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+    let (canonical_key, dispatch_key, launch_keys) = catalog
+        .sources
+        .iter()
+        .filter_map(|source| match source {
+            DiscoveredCredentialSource::Env {
+                key,
+                dispatch_key,
+                launch_keys,
+                ..
+            } => Some((key.as_str(), dispatch_key.as_str(), launch_keys.clone())),
+            DiscoveredCredentialSource::Profile { .. }
+            | DiscoveredCredentialSource::Capability { .. } => None,
+        })
+        .next()
+        .expect("one canonical provider source");
+    assert_eq!(canonical_key, "ZAI_API_KEY");
+    assert_eq!(dispatch_key, "ZAI_API_KEY");
+    assert_eq!(
+        launch_keys,
+        BTreeSet::from([
+            "ANTHROPIC_AUTH_TOKEN".to_owned(),
+            "OPENAI_API_KEY".to_owned(),
+            "ZHIPU_API_KEY".to_owned(),
+        ])
+    );
+    let validated = validate_usage_sources(catalog, &resolver);
+    assert_eq!(validated.bindings.len(), 1);
+    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
 }
 
 #[test]
@@ -1469,7 +1563,7 @@ fn refresh_antigravity_binding_dispatches_to_cli() {
 fn disc_account_aliases_avoid_governed_names_and_round_trip() {
     let mut seen = BTreeSet::new();
     for entry in jackin_core::USAGE_CREDENTIAL_ENV_REGISTRY {
-        let alias = usage_account_alias_entry(*entry);
+        let alias = usage_account_alias_entry(*entry, entry.owner);
         assert_eq!(alias.owner, entry.owner);
         assert_ne!(alias.name, entry.name);
         assert!(
@@ -1484,6 +1578,25 @@ fn disc_account_aliases_avoid_governed_names_and_round_trip() {
         governed_name_for_account_alias("ZAI_API_KEY"),
         "ZAI_API_KEY"
     );
+}
+
+#[test]
+fn disc_zai_aliases_keep_one_canonical_owner_and_dispatch_route() {
+    for name in ["ZAI_API_KEY", "ZHIPU_API_KEY", "Z_AI_API_KEY"] {
+        let entry = UsageCredentialEnvName {
+            name,
+            owner: UsageCredentialOwner::Zai,
+        };
+        let alias = usage_account_alias_entry(entry, UsageCredentialOwner::Zai);
+        assert_eq!(alias.owner, UsageCredentialOwner::Zai);
+        assert_eq!(
+            super::super::credential_resolver::dispatch_key_for_route(
+                alias.owner,
+                governed_name_for_account_alias(alias.name),
+            ),
+            "ZAI_API_KEY"
+        );
+    }
 }
 
 /// Mimics the CLI/broker secret-source split: resolves only the exact
@@ -1608,17 +1721,25 @@ fn disc_env_key_account_resolves_through_isolated_alias() {
         UsageCredentialKind::ApiKey
     );
     let calls = resolver.calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0], vec!["JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY"]);
+    assert_eq!(calls.len(), 4);
+    assert!(
+        calls
+            .iter()
+            .all(|call| { call.len() == 1 && call[0] == "JACKIN_USAGE_ACCOUNT_OPENAI_API_KEY" })
+    );
 
     let validated = validate_usage_sources(catalog, &resolver);
     assert_eq!(validated.accounts.len(), 1);
     assert_eq!(validated.bindings.len(), 1);
     assert!(validated.bindings[0].identity.is_some());
-    // Refresh routing and forwarding still address the governed name.
+    // Canonical ownership remains separate from exact provider dispatch.
     assert!(matches!(
         validated.bindings[0].source,
-        ValidatedCredentialSource::Env { ref key, .. } if key == "OPENAI_API_KEY"
+        ValidatedCredentialSource::Env {
+            ref key,
+            ref dispatch_key,
+            ..
+        } if key == "OPENAI_API_KEY" && dispatch_key == "OPENAI_API_KEY"
     ));
     assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
     assert_eq!(validated.unresolved_capabilities().count(), 0);
@@ -1665,7 +1786,12 @@ fn disc_oauth_token_account_resolves_through_isolated_alias() {
     assert_eq!(validated.accounts.len(), 1);
     assert!(matches!(
         validated.bindings[0].source,
-        ValidatedCredentialSource::Env { ref key, .. } if key == "CLAUDE_CODE_OAUTH_TOKEN"
+        ValidatedCredentialSource::Env { ref key, .. } if key == "ANTHROPIC_API_KEY"
+    ));
+    assert!(matches!(
+        validated.bindings[0].source,
+        ValidatedCredentialSource::Env { ref dispatch_key, .. }
+            if dispatch_key == "CLAUDE_CODE_OAUTH_TOKEN"
     ));
 }
 

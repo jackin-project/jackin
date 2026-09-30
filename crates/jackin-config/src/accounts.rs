@@ -5,7 +5,14 @@
 
 use crate::schema::WorkspaceConfig;
 use crate::{AppConfig, ConfigError, ConfigResult};
-use jackin_core::{Agent, AuthForwardMode, EnvValue, WorkspaceName};
+use jackin_core::{
+    AMP_API_KEY_ENV_NAME, ANTHROPIC_API_KEY_ENV_NAME, ANTHROPIC_AUTH_TOKEN_ENV_NAME, Agent,
+    AuthForwardMode, CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME, CURSOR_API_KEY_ENV_NAME, EnvValue,
+    GEMINI_API_KEY_ENV_NAME, KIMI_API_KEY_ENV_NAME, META_API_KEY_ENV_NAME,
+    MINIMAX_API_KEY_ENV_NAME, MOONSHOT_API_KEY_ENV_NAME, OPENAI_API_KEY_ENV_NAME,
+    OPENCODE_API_KEY_ENV_NAME, OPENROUTER_API_KEY_ENV_NAME, WorkspaceName, XAI_API_KEY_ENV_NAME,
+    ZHIPU_API_KEY_ENV_NAME,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use std::{
@@ -258,6 +265,24 @@ impl std::fmt::Debug for AccountCredential {
         }
     }
 }
+
+/// One resolved `(agent, provider)` API-key or OAuth credential route.
+///
+/// This is the canonical secret-free descriptor shared by launch materializer,
+/// host usage discovery, and forwarding checks. `env_name` is the exact key
+/// launch writes; provider ownership is never used to infer it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedCredentialDescriptor {
+    /// Effective launch agent.
+    pub agent: Agent,
+    /// Registered credential provider.
+    pub provider: AiProvider,
+    /// Forwarding mode for the account credential.
+    pub mode: AuthForwardMode,
+    /// Exact environment key used for the staged credential.
+    pub env_name: &'static str,
+}
+
 /// Reusable named account. Workspaces explicitly authorize account IDs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -329,20 +354,22 @@ impl AccountConfig {
     const fn api_key_variable(&self, agent: Agent) -> &'static str {
         match agent {
             Agent::Claude if !matches!(self.provider, AiProvider::Anthropic) => {
-                jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
+                ANTHROPIC_AUTH_TOKEN_ENV_NAME
             }
-            Agent::Claude => "ANTHROPIC_API_KEY",
-            Agent::Codex if matches!(self.provider, AiProvider::Moonshot) => "KIMI_API_KEY",
-            Agent::Codex if matches!(self.provider, AiProvider::Minimax) => "MINIMAX_API_KEY",
-            Agent::Codex => "OPENAI_API_KEY",
-            Agent::Amp => "AMP_API_KEY",
-            Agent::Kimi => "KIMI_API_KEY",
-            Agent::Grok => "XAI_API_KEY",
+            Agent::Claude => ANTHROPIC_API_KEY_ENV_NAME,
+            Agent::Codex if matches!(self.provider, AiProvider::Moonshot) => KIMI_API_KEY_ENV_NAME,
+            Agent::Codex if matches!(self.provider, AiProvider::Minimax) => {
+                MINIMAX_API_KEY_ENV_NAME
+            }
+            Agent::Codex => OPENAI_API_KEY_ENV_NAME,
+            Agent::Amp => AMP_API_KEY_ENV_NAME,
+            Agent::Kimi => KIMI_API_KEY_ENV_NAME,
+            Agent::Grok => XAI_API_KEY_ENV_NAME,
             // Single-provider newcomers only accept their native provider,
             // so the variable is fixed per agent.
-            Agent::Antigravity | Agent::Gemini => "GEMINI_API_KEY",
-            Agent::Cursor => "CURSOR_API_KEY",
-            Agent::Muse => "META_API_KEY",
+            Agent::Antigravity | Agent::Gemini => GEMINI_API_KEY_ENV_NAME,
+            Agent::Cursor => CURSOR_API_KEY_ENV_NAME,
+            Agent::Muse => META_API_KEY_ENV_NAME,
             // Multi-provider clients select the variable per provider.
             // Provider-native names are used so the routed CLI finds the
             // key without extra mapping; the OpenCode Zen key is the
@@ -350,19 +377,56 @@ impl AccountConfig {
             // (Amp is unreachable here — excluded by compatibility —
             // and Opencode's own Zen key).
             Agent::Opencode | Agent::Omp | Agent::Hermes => match self.provider {
-                AiProvider::Anthropic => "ANTHROPIC_API_KEY",
-                AiProvider::OpenAi => "OPENAI_API_KEY",
-                AiProvider::Xai => "XAI_API_KEY",
-                AiProvider::Moonshot => jackin_core::MOONSHOT_API_KEY_ENV_NAME,
-                AiProvider::Zai => jackin_core::ZHIPU_API_KEY_ENV_NAME,
-                AiProvider::Minimax => "MINIMAX_API_KEY",
-                AiProvider::Google => "GEMINI_API_KEY",
-                AiProvider::Cursor => "CURSOR_API_KEY",
-                AiProvider::Meta => "META_API_KEY",
-                AiProvider::OpenRouter => "OPENROUTER_API_KEY",
-                AiProvider::Amp | AiProvider::Opencode => "OPENCODE_API_KEY",
+                AiProvider::Anthropic => ANTHROPIC_API_KEY_ENV_NAME,
+                AiProvider::OpenAi => OPENAI_API_KEY_ENV_NAME,
+                AiProvider::Xai => XAI_API_KEY_ENV_NAME,
+                AiProvider::Moonshot => MOONSHOT_API_KEY_ENV_NAME,
+                AiProvider::Zai => ZHIPU_API_KEY_ENV_NAME,
+                AiProvider::Minimax => MINIMAX_API_KEY_ENV_NAME,
+                AiProvider::Google => GEMINI_API_KEY_ENV_NAME,
+                AiProvider::Cursor => CURSOR_API_KEY_ENV_NAME,
+                AiProvider::Meta => META_API_KEY_ENV_NAME,
+                AiProvider::OpenRouter => OPENROUTER_API_KEY_ENV_NAME,
+                AiProvider::Amp | AiProvider::Opencode => OPENCODE_API_KEY_ENV_NAME,
             },
         }
+    }
+
+    /// Resolve the exact credential route for one launch agent.
+    ///
+    /// # Errors
+    /// Rejects disabled or incompatible agent/provider combinations.
+    pub fn resolved_credential_descriptor(
+        &self,
+        agent: Agent,
+    ) -> ConfigResult<ResolvedCredentialDescriptor> {
+        if !self.supports_agent(agent) {
+            return Err(ConfigError::msg(format!(
+                "account {:?} cannot authenticate {agent}",
+                self.name
+            )));
+        }
+        let (mode, env_name) = match &self.credential {
+            AccountCredential::Profile { .. } => {
+                return Err(ConfigError::msg(format!(
+                    "account {:?} has no environment credential route",
+                    self.name
+                )));
+            }
+            AccountCredential::ApiKey { .. } => {
+                (AuthForwardMode::ApiKey, self.api_key_variable(agent))
+            }
+            AccountCredential::OAuthToken { .. } => (
+                AuthForwardMode::OAuthToken,
+                CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME,
+            ),
+        };
+        Ok(ResolvedCredentialDescriptor {
+            agent,
+            provider: self.provider,
+            mode,
+            env_name,
+        })
     }
 
     const fn default_api_url(&self, agent: Agent) -> Option<&'static str> {
@@ -529,6 +593,12 @@ impl AccountConfig {
                 self.name
             )));
         }
+        let route = match &self.credential {
+            AccountCredential::Profile { .. } => None,
+            AccountCredential::ApiKey { .. } | AccountCredential::OAuthToken { .. } => {
+                Some(self.resolved_credential_descriptor(agent)?)
+            }
+        };
         let account_endpoint = match &self.credential {
             AccountCredential::ApiKey { base_url, .. } => base_url.as_deref(),
             AccountCredential::Profile { .. } | AccountCredential::OAuthToken { .. } => None,
@@ -544,7 +614,10 @@ impl AccountConfig {
         match &self.credential {
             AccountCredential::Profile { .. } => {}
             AccountCredential::OAuthToken { value, .. } => {
-                env.insert("CLAUDE_CODE_OAUTH_TOKEN".into(), value.clone());
+                env.insert(
+                    route.expect("OAuth token route").env_name.into(),
+                    value.clone(),
+                );
                 if let Some(url) = endpoint {
                     env.insert("ANTHROPIC_BASE_URL".into(), EnvValue::from(url));
                 }
@@ -565,8 +638,7 @@ impl AccountConfig {
                         self.name
                     )));
                 }
-                let key = self.api_key_variable(agent);
-                env.insert(key.into(), value.clone());
+                env.insert(route.expect("API key route").env_name.into(), value.clone());
                 if agent == Agent::Claude
                     && let Some(model) = model
                 {
@@ -1212,6 +1284,74 @@ fn bind_explicit(
     Ok(ResolvedInstance::bind(id, config, account))
 }
 impl AppConfig {
+    /// Resolve every explicit launch route registered for one account.
+    ///
+    /// A single account may back several agent configurations. Returning all
+    /// routes lets usage discovery intersect them with the exact env keys
+    /// forwarded into the current Capsule instead of collapsing to provider
+    /// ownership. Role and workspace bindings are included; with no explicit
+    /// route every compatible agent is synthesized.
+    ///
+    /// # Errors
+    /// Fails when the account is unknown or has no compatible route.
+    pub fn credential_descriptors_for_account(
+        &self,
+        account_id: &str,
+    ) -> ConfigResult<Vec<ResolvedCredentialDescriptor>> {
+        let account = self
+            .accounts
+            .get(account_id)
+            .ok_or_else(|| ConfigError::msg(format!("unknown account {account_id:?}")))?;
+        if matches!(&account.credential, AccountCredential::Profile { .. }) {
+            return Err(ConfigError::msg(format!(
+                "account {account_id:?} has no environment credential route"
+            )));
+        }
+        let mut agents = BTreeSet::new();
+        for configuration in self.agent_configurations.values() {
+            if configuration.account == account_id {
+                agents.insert(configuration.agent);
+            }
+        }
+        let mut collect_binding = |bindings: &BTreeMap<Agent, String>| {
+            for (agent, selected) in bindings {
+                if selected == account_id {
+                    agents.insert(*agent);
+                }
+            }
+        };
+        collect_binding(&self.account_bindings);
+        for workspace in self.workspaces.values() {
+            if workspace.accounts.iter().any(|id| id == account_id) {
+                collect_binding(&workspace.account_bindings);
+                for role in workspace.roles.values() {
+                    collect_binding(&role.account_bindings);
+                }
+            }
+        }
+        // `resolve_launch` synthesizes compatible fallback instances even
+        // when another agent has an explicit account binding. Union every
+        // compatible route so usage proofs cover the actual launch surface.
+        agents.extend(
+            Agent::ALL
+                .iter()
+                .copied()
+                .filter(|agent| account.supports_agent(*agent)),
+        );
+        let descriptors = Agent::ALL
+            .iter()
+            .copied()
+            .filter(|agent| agents.contains(agent) && account.supports_agent(*agent))
+            .filter_map(|agent| account.resolved_credential_descriptor(agent).ok())
+            .collect::<Vec<_>>();
+        if descriptors.is_empty() {
+            return Err(ConfigError::msg(format!(
+                "account {account_id:?} has no compatible launch route"
+            )));
+        }
+        Ok(descriptors)
+    }
+
     /// Validate registry credentials and all account references.
     ///
     /// # Errors

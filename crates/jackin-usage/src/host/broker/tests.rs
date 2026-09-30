@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 
 use crate::host::{HostSurfaceId, OpaqueCredentialHandle};
@@ -162,11 +162,13 @@ fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
         source: ValidatedCredentialSource::Env {
             handle: OpaqueCredentialHandle::new("handle-a"),
             key: "AMP_API_KEY".to_owned(),
+            dispatch_key: "AMP_API_KEY".to_owned(),
+            launch_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
             material: Some(staged.clone()),
         },
     };
     let executor = DiscoveryProviderExecutor {
-        bindings: Mutex::new(BTreeMap::from([(capability.clone(), binding)])),
+        bindings: Mutex::new(BTreeMap::from([(capability.clone(), vec![binding])])),
         validated_catalog: Mutex::new(None),
         scope: UsageDiscoveryScope::HostDesktop {
             config_root: PathBuf::new(),
@@ -187,9 +189,13 @@ fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
         .unwrap()
         .get_mut(&capability)
         .unwrap()
+        .first_mut()
+        .unwrap()
         .source = ValidatedCredentialSource::Env {
         handle: OpaqueCredentialHandle::new("handle-a-rotated"),
         key: "AMP_API_KEY".to_owned(),
+        dispatch_key: "AMP_API_KEY".to_owned(),
+        launch_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
         material: Some(rotated),
     };
     let error = executor
@@ -204,9 +210,13 @@ fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
         .unwrap()
         .get_mut(&capability)
         .unwrap()
+        .first_mut()
+        .unwrap()
         .source = ValidatedCredentialSource::Env {
         handle: OpaqueCredentialHandle::new("handle-b-repointed"),
         key: "AMP_API_KEY".to_owned(),
+        dispatch_key: "AMP_API_KEY".to_owned(),
+        launch_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
         material: Some(repointed.clone()),
     };
     let error = executor
@@ -238,7 +248,7 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
     let executor = DiscoveryProviderExecutor {
         bindings: Mutex::new(BTreeMap::from([(
             capability.clone(),
-            ValidatedCredentialBinding {
+            vec![ValidatedCredentialBinding {
                 surface: HostSurfaceId::Zai,
                 identity: None,
                 source_id: "source-zai".to_owned(),
@@ -248,9 +258,11 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
                 source: ValidatedCredentialSource::Env {
                     handle: OpaqueCredentialHandle::new("handle-zai"),
                     key: "ZAI_API_KEY".to_owned(),
+                    dispatch_key: "ZAI_API_KEY".to_owned(),
+                    launch_keys: BTreeSet::from(["ZHIPU_API_KEY".to_owned()]),
                     material: Some(staged.clone()),
                 },
-            },
+            }],
         )])),
         validated_catalog: Mutex::new(None),
         scope: UsageDiscoveryScope::HostDesktop {
@@ -261,10 +273,19 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
         probe_budget: Duration::from_secs(1),
     };
 
-    let scope = env_scope("zhipu-account", "zai", "ZHIPU_API_KEY", &staged);
-    executor
-        .authorize_credential_scope(&capability, &scope)
-        .expect("provider-native key alias should authorize");
+    for key in ["ZAI_API_KEY", "ZHIPU_API_KEY", "Z_AI_API_KEY"] {
+        let scope = env_scope("zhipu-account", "zai", key, &staged);
+        executor
+            .authorize_credential_scope(&capability, &scope)
+            .expect("Z.AI alias with exact source material should authorize");
+    }
+    let wrong_material = env_material("ZAI_HOST_SECRET", "different-secret");
+    let rejected = env_scope("zhipu-account", "zai", "Z_AI_API_KEY", &wrong_material);
+    assert!(
+        executor
+            .authorize_credential_scope(&capability, &rejected)
+            .is_err()
+    );
 }
 
 #[test]
@@ -357,6 +378,8 @@ fn refresh_binding_outcome_carries_typed_rate_limit_into_broker() {
         source: ValidatedCredentialSource::Env {
             handle: OpaqueCredentialHandle::new("typed-rate-limit-handle"),
             key: "CLAUDE_API_KEY".to_owned(),
+            dispatch_key: "CLAUDE_API_KEY".to_owned(),
+            launch_keys: BTreeSet::from(["CLAUDE_API_KEY".to_owned()]),
             material: Some(env_material("CLAUDE_API_KEY", "fixture-secret")),
         },
     };
@@ -750,6 +773,8 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 source: ValidatedCredentialSource::Env {
                     handle: OpaqueCredentialHandle::new("env-handle"),
                     key: "AMP_API_KEY".to_owned(),
+                    dispatch_key: "AMP_API_KEY".to_owned(),
+                    launch_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
                     material: Some(env_material.clone()),
                 },
             },
@@ -806,29 +831,47 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     );
     assert_eq!(selected_profile, vec![profile_capability.clone()]);
 
-    let selected_env = forwarded_usage_capabilities(
-        &discovery,
-        scope,
-        &ForwardedUsageSources {
-            selected_account_ids: BTreeSet::from(["account-env".to_owned()]),
-            selected_account_surfaces: BTreeMap::from([(
-                "account-env".to_owned(),
-                "amp".to_owned(),
-            )]),
-            profile_surface_ids: BTreeSet::new(),
-            env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
-            credential_scope: UsageCredentialScope {
-                sources: BTreeSet::from([UsageCredentialSourceProof {
-                    account_id: "account-env".to_owned(),
-                    surface_id: "amp".to_owned(),
-                    key: "AMP_API_KEY".to_owned(),
-                    source: env_material.source.clone(),
-                    material_fingerprint: env_material.material_fingerprint.clone(),
-                }]),
-            },
+    let selected_env_sources = ForwardedUsageSources {
+        selected_account_ids: BTreeSet::from(["account-env".to_owned()]),
+        selected_account_surfaces: BTreeMap::from([("account-env".to_owned(), "amp".to_owned())]),
+        profile_surface_ids: BTreeSet::new(),
+        env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
+        credential_scope: UsageCredentialScope {
+            sources: BTreeSet::from([UsageCredentialSourceProof {
+                account_id: "account-env".to_owned(),
+                surface_id: "amp".to_owned(),
+                key: "AMP_API_KEY".to_owned(),
+                source: env_material.source.clone(),
+                material_fingerprint: env_material.material_fingerprint.clone(),
+            }]),
         },
+    };
+    let selected_env = forwarded_usage_capabilities(&discovery, scope, &selected_env_sources);
+    assert_eq!(selected_env, vec![env_capability.clone()]);
+    assert_eq!(
+        usage_capability_for_selected_account_with_sources(
+            &discovery,
+            "account-env",
+            "amp",
+            Some(&selected_env_sources),
+        ),
+        Some(env_capability.clone())
     );
-    assert_eq!(selected_env, vec![env_capability]);
+
+    let wrong_env_source = ForwardedUsageSources {
+        credential_scope: UsageCredentialScope::default(),
+        ..selected_env_sources.clone()
+    };
+    assert_eq!(
+        usage_capability_for_selected_account_with_sources(
+            &discovery,
+            "account-env",
+            "amp",
+            Some(&wrong_env_source),
+        ),
+        None,
+        "selected account and provider surface need matching source proof"
+    );
 
     let wrong_surface = forwarded_usage_capabilities(
         &discovery,
@@ -877,6 +920,420 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         UsageIdentityKindV1::ProviderStableHandle
     );
     assert_eq!(publication[&profile_capability].provenance_count, 2);
+}
+
+#[test]
+fn selected_routes_require_exact_source_proofs_and_same_identity() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let identity = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Zai,
+        subject: CanonicalAccountSubject::ProviderStableHandle("zai-account".to_owned()),
+    };
+    let material = env_material("ZAI_HOST_SECRET", "zai-secret");
+    let binding = |key: &str, handle: &str| ValidatedCredentialBinding {
+        surface: HostSurfaceId::Zai,
+        identity: Some(identity.clone()),
+        source_id: format!("source-{handle}"),
+        capability_id: format!("capability-{handle}"),
+        credential_revision: format!("revision-{handle}"),
+        provenance: BTreeSet::from(["account zai".to_owned()]),
+        source: ValidatedCredentialSource::Env {
+            handle: OpaqueCredentialHandle::new(handle),
+            key: "ZAI_API_KEY".to_owned(),
+            dispatch_key: "ZAI_API_KEY".to_owned(),
+            launch_keys: BTreeSet::from([key.to_owned()]),
+            material: Some(material.clone()),
+        },
+    };
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![
+            binding("ZHIPU_API_KEY", "zhipu"),
+            binding("ZAI_API_KEY", "zai"),
+        ],
+    };
+    let staged = ForwardedUsageSources {
+        selected_account_ids: BTreeSet::from(["zai".to_owned()]),
+        selected_account_surfaces: BTreeMap::from([("zai".to_owned(), "zai".to_owned())]),
+        profile_surface_ids: BTreeSet::new(),
+        env_keys: BTreeSet::from(["ZHIPU_API_KEY".to_owned(), "ZAI_API_KEY".to_owned()]),
+        credential_scope: UsageCredentialScope {
+            sources: BTreeSet::from([
+                UsageCredentialSourceProof {
+                    account_id: "zai".to_owned(),
+                    surface_id: "zai".to_owned(),
+                    key: "Z_AI_API_KEY".to_owned(),
+                    source: material.source.clone(),
+                    material_fingerprint: material.material_fingerprint.clone(),
+                },
+                UsageCredentialSourceProof {
+                    account_id: "zai".to_owned(),
+                    surface_id: "zai".to_owned(),
+                    key: "ZAI_API_KEY".to_owned(),
+                    source: material.source.clone(),
+                    material_fingerprint: material.material_fingerprint.clone(),
+                },
+            ]),
+        },
+    };
+    let capability =
+        usage_capability_for_selected_account_with_sources(&discovery, "zai", "zai", Some(&staged));
+    assert!(
+        capability.is_some(),
+        "same identity may combine route proofs"
+    );
+
+    let wrong_material = ForwardedUsageSources {
+        credential_scope: env_scope(
+            "zai",
+            "zai",
+            "ZAI_API_KEY",
+            &env_material("ZAI_HOST_SECRET", "other"),
+        ),
+        ..staged.clone()
+    };
+    assert_eq!(
+        usage_capability_for_selected_account_with_sources(
+            &discovery,
+            "zai",
+            "zai",
+            Some(&wrong_material),
+        ),
+        None
+    );
+
+    let wrong_account = ForwardedUsageSources {
+        credential_scope: env_scope("other", "zai", "ZAI_API_KEY", &material),
+        ..staged.clone()
+    };
+    assert_eq!(
+        usage_capability_for_selected_account_with_sources(
+            &discovery,
+            "zai",
+            "zai",
+            Some(&wrong_account),
+        ),
+        None
+    );
+
+    let wrong_source = ForwardedUsageSources {
+        credential_scope: env_scope(
+            "zai",
+            "zai",
+            "ZAI_API_KEY",
+            &env_material("OTHER_HOST_SECRET", "zai-secret"),
+        ),
+        ..staged.clone()
+    };
+    assert_eq!(
+        usage_capability_for_selected_account_with_sources(
+            &discovery,
+            "zai",
+            "zai",
+            Some(&wrong_source),
+        ),
+        None
+    );
+
+    let different_identity = ValidatedUsageDiscovery {
+        bindings: vec![
+            discovery.bindings[0].clone(),
+            ValidatedCredentialBinding {
+                identity: Some(CanonicalAccountIdentity {
+                    surface: HostSurfaceId::Zai,
+                    subject: CanonicalAccountSubject::ProviderStableHandle(
+                        "different-zai-account".to_owned(),
+                    ),
+                }),
+                ..discovery.bindings[1].clone()
+            },
+        ],
+        ..discovery
+    };
+    assert_eq!(
+        usage_capability_for_selected_account_with_sources(
+            &different_identity,
+            "zai",
+            "zai",
+            Some(&staged),
+        ),
+        None,
+        "different provider identities must not collapse into one route"
+    );
+}
+
+#[test]
+fn grouped_broker_authorization_accepts_sibling_proofs_and_rejects_conflicts() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let identity = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Zai,
+        subject: CanonicalAccountSubject::ProviderStableHandle("zai-account".to_owned()),
+    };
+    let material = env_material("ZAI_HOST_SECRET", "zai-secret");
+    let binding = |handle: &str,
+                   identity: Option<CanonicalAccountIdentity>,
+                   material: &ProviderCredentialSourceMaterial| {
+        ValidatedCredentialBinding {
+            surface: HostSurfaceId::Zai,
+            identity,
+            source_id: format!("source-{handle}"),
+            capability_id: format!("capability-{handle}"),
+            credential_revision: format!("revision-{handle}"),
+            provenance: BTreeSet::from(["account zai".to_owned()]),
+            source: ValidatedCredentialSource::Env {
+                handle: OpaqueCredentialHandle::new(handle),
+                key: "ZAI_API_KEY".to_owned(),
+                dispatch_key: "ZAI_API_KEY".to_owned(),
+                launch_keys: BTreeSet::from(["ZHIPU_API_KEY".to_owned(), "ZAI_API_KEY".to_owned()]),
+                material: Some(material.clone()),
+            },
+        }
+    };
+    let bindings = vec![binding("zai", Some(identity.clone()), &material)];
+    let valid = UsageCredentialScope {
+        sources: BTreeSet::from([
+            UsageCredentialSourceProof {
+                account_id: "zai".to_owned(),
+                surface_id: "zai".to_owned(),
+                key: "ZHIPU_API_KEY".to_owned(),
+                source: material.source.clone(),
+                material_fingerprint: material.material_fingerprint.clone(),
+            },
+            UsageCredentialSourceProof {
+                account_id: "zai".to_owned(),
+                surface_id: "zai".to_owned(),
+                key: "ZAI_API_KEY".to_owned(),
+                source: material.source.clone(),
+                material_fingerprint: material.material_fingerprint.clone(),
+            },
+        ]),
+    };
+    assert!(authorize_credential_binding_group(&bindings, "zai", &valid).is_some());
+
+    let mut unrelated = valid.clone();
+    unrelated.sources.insert(UsageCredentialSourceProof {
+        account_id: "other-account".to_owned(),
+        surface_id: "zai".to_owned(),
+        key: "Z_AI_API_KEY".to_owned(),
+        source: material.source.clone(),
+        material_fingerprint: material.material_fingerprint.clone(),
+    });
+    assert!(authorize_credential_binding_group(&bindings, "zai", &unrelated).is_some());
+
+    let conflicting_material = env_material("ZAI_HOST_SECRET", "different-secret");
+    let mut conflict = valid.clone();
+    conflict.sources.insert(UsageCredentialSourceProof {
+        account_id: "zai".to_owned(),
+        surface_id: "zai".to_owned(),
+        key: "ZHIPU_API_KEY".to_owned(),
+        source: conflicting_material.source.clone(),
+        material_fingerprint: conflicting_material.material_fingerprint.clone(),
+    });
+    assert!(authorize_credential_binding_group(&bindings, "zai", &conflict).is_none());
+
+    let duplicate_conflict = vec![
+        bindings[0].clone(),
+        binding(
+            "zhipu-other",
+            Some(CanonicalAccountIdentity {
+                surface: HostSurfaceId::Zai,
+                subject: CanonicalAccountSubject::ProviderStableHandle("zai-account".to_owned()),
+            }),
+            &conflicting_material,
+        ),
+    ];
+    assert!(
+        authorize_credential_binding_group(
+            &duplicate_conflict,
+            "zai",
+            &env_scope("zai", "zai", "ZHIPU_API_KEY", &material),
+        )
+        .is_none()
+    );
+}
+
+#[derive(Default)]
+struct RecordingRefreshResolver {
+    calls: Mutex<Vec<(String, OpaqueCredentialHandle)>>,
+}
+
+impl ProviderCredentialEnvResolver for RecordingRefreshResolver {
+    fn resolve_provider_credentials(
+        &self,
+        _config: &AppConfig,
+        _workspace: Option<&WorkspaceName>,
+        _role: Option<&str>,
+        _keys: &[UsageCredentialEnvName],
+    ) -> Vec<ProviderCredentialEnvResolution> {
+        Vec::new()
+    }
+
+    fn refresh_provider_credential(
+        &self,
+        _surface: HostSurfaceId,
+        key: &str,
+        handle: &OpaqueCredentialHandle,
+    ) -> ProviderCredentialRefreshOutcome {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((key.to_owned(), handle.clone()));
+        ProviderCredentialRefreshOutcome::Snapshot {
+            view: Box::new(quota_view()),
+            rate_limit: None,
+        }
+    }
+}
+
+#[test]
+fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
+    let capability = UsageAccountCapability {
+        account_id: "zai".to_owned(),
+        surface_id: "zai".to_owned(),
+    };
+    let material_a = env_material("SOURCE_A", "secret-a");
+    let material_b = env_material("SOURCE_B", "secret-b");
+    let binding = |handle: &str, key: &str, material: &ProviderCredentialSourceMaterial| {
+        ValidatedCredentialBinding {
+            surface: HostSurfaceId::Zai,
+            identity: None,
+            source_id: format!("source-{handle}"),
+            capability_id: "capability-zai".to_owned(),
+            credential_revision: format!("revision-{handle}"),
+            provenance: BTreeSet::from(["account zai".to_owned()]),
+            source: ValidatedCredentialSource::Env {
+                handle: OpaqueCredentialHandle::new(handle),
+                key: "ZAI_API_KEY".to_owned(),
+                dispatch_key: "ZAI_API_KEY".to_owned(),
+                launch_keys: BTreeSet::from([key.to_owned()]),
+                material: Some(material.clone()),
+            },
+        }
+    };
+    let resolver = Arc::new(RecordingRefreshResolver::default());
+    let executor = DiscoveryProviderExecutor {
+        bindings: Mutex::new(BTreeMap::from([(
+            capability.clone(),
+            vec![
+                binding("handle-a", "ZAI_API_KEY", &material_a),
+                binding("handle-b", "ZHIPU_API_KEY", &material_b),
+            ],
+        )])),
+        validated_catalog: Mutex::new(None),
+        scope: UsageDiscoveryScope::Capsule {
+            forwarded_accounts: Vec::new(),
+        },
+        resolver: resolver.clone(),
+        probe_budget: Duration::from_secs(1),
+    };
+    let scope = env_scope("zai", "zai", "ZHIPU_API_KEY", &material_b);
+    assert!(matches!(
+        probe_with_scope(&executor, &capability, Some(&scope)),
+        ProviderProbeOutcome::Success(_)
+    ));
+    assert_eq!(
+        resolver.calls.lock().unwrap().as_slice(),
+        &[(
+            "ZAI_API_KEY".to_owned(),
+            OpaqueCredentialHandle::new("handle-b"),
+        )]
+    );
+}
+
+#[test]
+fn mixed_profile_and_env_group_fails_closed_without_changing_pure_profile() {
+    let material = env_material("AMP_SOURCE", "amp-secret");
+    let profile = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Amp,
+        identity: None,
+        source_id: "profile".to_owned(),
+        capability_id: "capability".to_owned(),
+        credential_revision: "profile-revision".to_owned(),
+        provenance: BTreeSet::from(["account shared".to_owned()]),
+        source: ValidatedCredentialSource::Profile(
+            super::super::discovery::ProfileCredentialMaterial::Amp {
+                key: "profile-secret".to_owned(),
+            },
+        ),
+    };
+    let env = ValidatedCredentialBinding {
+        surface: HostSurfaceId::Amp,
+        identity: None,
+        source_id: "env".to_owned(),
+        capability_id: "capability".to_owned(),
+        credential_revision: "env-revision".to_owned(),
+        provenance: BTreeSet::from(["account shared".to_owned()]),
+        source: ValidatedCredentialSource::Env {
+            handle: OpaqueCredentialHandle::new("env-handle"),
+            key: "AMP_API_KEY".to_owned(),
+            dispatch_key: "AMP_API_KEY".to_owned(),
+            launch_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
+            material: Some(material.clone()),
+        },
+    };
+    let bindings = vec![profile.clone(), env];
+    let scope = env_scope("shared", "amp", "AMP_API_KEY", &material);
+    assert!(authorize_credential_binding_group(&bindings, "amp", &scope).is_none());
+    assert!(authorize_credential_binding_group(&[profile], "amp", &scope).is_some());
+}
+
+#[test]
+fn capability_identity_keeps_distinct_and_anonymous_sources_separate() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let make = |identity: Option<CanonicalAccountIdentity>,
+                capability_id: &str,
+                handle: &str|
+     -> ValidatedCredentialBinding {
+        ValidatedCredentialBinding {
+            surface: HostSurfaceId::Zai,
+            identity,
+            source_id: capability_id.to_owned(),
+            capability_id: capability_id.to_owned(),
+            credential_revision: "revision".to_owned(),
+            provenance: BTreeSet::from(["account zai".to_owned()]),
+            source: ValidatedCredentialSource::Env {
+                handle: OpaqueCredentialHandle::new(handle),
+                key: "ZAI_API_KEY".to_owned(),
+                dispatch_key: "ZAI_API_KEY".to_owned(),
+                launch_keys: BTreeSet::from(["ZHIPU_API_KEY".to_owned()]),
+                material: Some(env_material("ZAI_HOST_SECRET", "zai-secret")),
+            },
+        }
+    };
+    let first = make(
+        Some(CanonicalAccountIdentity {
+            surface: HostSurfaceId::Zai,
+            subject: CanonicalAccountSubject::ProviderStableHandle("first".to_owned()),
+        }),
+        "first",
+        "handle-first",
+    );
+    let second = make(
+        Some(CanonicalAccountIdentity {
+            surface: HostSurfaceId::Zai,
+            subject: CanonicalAccountSubject::ProviderStableHandle("second".to_owned()),
+        }),
+        "second",
+        "handle-second",
+    );
+    assert_ne!(
+        capability_for_binding(&first, None),
+        capability_for_binding(&second, None)
+    );
+
+    let anonymous_first = make(None, "anonymous-first", "handle-anonymous-first");
+    let anonymous_second = make(None, "anonymous-second", "handle-anonymous-second");
+    assert_ne!(
+        capability_for_binding(&anonymous_first, None),
+        capability_for_binding(&anonymous_second, None),
+        "anonymous bindings remain source-specific"
+    );
 }
 
 #[test]

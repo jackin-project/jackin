@@ -14,7 +14,8 @@ use jackin_config::{
     AccountCredential, AiProvider, AppConfig, ConfigSourceIssue, ReadOnlyConfigSnapshot,
 };
 use jackin_core::{
-    Agent, JackinPaths, UsageCredentialEnvName, UsageCredentialOwner, WorkspaceName,
+    Agent, AuthForwardMode, JackinPaths, UsageCredentialEnvName, UsageCredentialOwner,
+    WorkspaceName,
 };
 use jackin_protocol::control::FocusedUsageView;
 use jackin_protocol::usage_broker::UsageCredentialSourceIdentity;
@@ -488,7 +489,12 @@ pub(super) enum ValidatedCredentialSource {
     Profile(ProfileCredentialMaterial),
     Env {
         handle: OpaqueCredentialHandle,
+        /// Canonical provider usage identity used for account/capability
+        /// attribution and source-material lookup.
         key: String,
+        /// Exact governed route key used for provider refresh dispatch.
+        dispatch_key: String,
+        launch_keys: BTreeSet<String>,
         material: Option<ProviderCredentialSourceMaterial>,
     },
     Capability,
@@ -551,7 +557,10 @@ enum CredentialSourceKey {
     Env {
         surface: HostSurfaceId,
         handle: OpaqueCredentialHandle,
+        /// Canonical provider usage key, never a launch alias.
         key: String,
+        /// Exact governed route key whose provider semantics must be kept.
+        dispatch_key: String,
     },
     Capability {
         surface: HostSurfaceId,
@@ -575,6 +584,8 @@ pub(super) enum DiscoveredCredentialSource {
         surface: HostSurfaceId,
         handle: OpaqueCredentialHandle,
         key: String,
+        dispatch_key: String,
+        launch_keys: BTreeSet<String>,
         kind: UsageCredentialKind,
         account_label: Option<String>,
         source_id: String,
@@ -593,7 +604,7 @@ struct CandidateAccumulator {
     surface: HostSurfaceId,
     kind: UsageCredentialKind,
     provenance: BTreeSet<String>,
-    env_key: Option<String>,
+    env_keys: BTreeSet<String>,
     account_label: Option<String>,
     operator_home: Option<PathBuf>,
 }
@@ -659,7 +670,7 @@ fn discover_forwarded_sources(accounts: &[ForwardedUsageAccount]) -> UsageDiscov
                 surface,
                 kind: UsageCredentialKind::ForwardedCapability,
                 provenance: BTreeSet::from(["forwarded to Capsule".to_owned()]),
-                env_key: None,
+                env_keys: BTreeSet::new(),
                 account_label: account.account_label.clone(),
                 operator_home: None,
             });
@@ -676,7 +687,10 @@ fn discover_forwarded_sources(accounts: &[ForwardedUsageAccount]) -> UsageDiscov
 /// declaration under a non-governed alias keeps both resolvers on the same
 /// declaration; the governed name is still recorded on the discovered source
 /// for refresh routing and forwarding.
-fn usage_account_alias_entry(entry: UsageCredentialEnvName) -> UsageCredentialEnvName {
+fn usage_account_alias_entry(
+    entry: UsageCredentialEnvName,
+    canonical_owner: UsageCredentialOwner,
+) -> UsageCredentialEnvName {
     let name = match entry.name {
         jackin_core::ANTHROPIC_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_ANTHROPIC_API_KEY",
         jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME => "JACKIN_USAGE_ACCOUNT_ANTHROPIC_AUTH_TOKEN",
@@ -692,6 +706,7 @@ fn usage_account_alias_entry(entry: UsageCredentialEnvName) -> UsageCredentialEn
         jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_GROK_DEPLOYMENT_KEY",
         jackin_core::ZAI_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_ZAI_API_KEY",
         jackin_core::ZHIPU_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_ZHIPU_API_KEY",
+        "Z_AI_API_KEY" => "JACKIN_USAGE_ACCOUNT_Z_AI_API_KEY",
         jackin_core::MINIMAX_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_MINIMAX_API_KEY",
         jackin_core::OPENCODE_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_OPENCODE_API_KEY",
         jackin_core::GEMINI_API_KEY_ENV_NAME => "JACKIN_USAGE_ACCOUNT_GEMINI_API_KEY",
@@ -703,7 +718,7 @@ fn usage_account_alias_entry(entry: UsageCredentialEnvName) -> UsageCredentialEn
     };
     UsageCredentialEnvName {
         name,
-        owner: entry.owner,
+        owner: canonical_owner,
     }
 }
 
@@ -727,6 +742,7 @@ pub(super) fn governed_name_for_account_alias(name: &str) -> &str {
         "JACKIN_USAGE_ACCOUNT_GROK_DEPLOYMENT_KEY" => jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME,
         "JACKIN_USAGE_ACCOUNT_ZAI_API_KEY" => jackin_core::ZAI_API_KEY_ENV_NAME,
         "JACKIN_USAGE_ACCOUNT_ZHIPU_API_KEY" => jackin_core::ZHIPU_API_KEY_ENV_NAME,
+        "JACKIN_USAGE_ACCOUNT_Z_AI_API_KEY" => "Z_AI_API_KEY",
         "JACKIN_USAGE_ACCOUNT_MINIMAX_API_KEY" => jackin_core::MINIMAX_API_KEY_ENV_NAME,
         "JACKIN_USAGE_ACCOUNT_OPENCODE_API_KEY" => jackin_core::OPENCODE_API_KEY_ENV_NAME,
         "JACKIN_USAGE_ACCOUNT_GEMINI_API_KEY" => jackin_core::GEMINI_API_KEY_ENV_NAME,
@@ -751,7 +767,8 @@ fn enumerate_registered_accounts(
         if !account.enabled {
             continue;
         }
-        let (surface, owner) = provider_surface(account.provider);
+        let surface = provider_surface(account.provider);
+        let canonical_owner = canonical_owner_for_account(surface, account.provider);
         let mut provenance = BTreeSet::from([format!("account {id}")]);
         for (workspace_name, workspace) in &config.workspaces {
             if workspace.accounts.contains(id) {
@@ -765,6 +782,9 @@ fn enumerate_registered_accounts(
         } else {
             None
         };
+
+        // Profile discovery remains the baseline path. It does not need an
+        // env route and must not invoke the protected env resolver.
         if let AccountCredential::Profile {
             agent, directory, ..
         } = &account.credential
@@ -785,98 +805,171 @@ fn enumerate_registered_accounts(
                     surface,
                     kind: UsageCredentialKind::Profile,
                     provenance,
-                    env_key: None,
+                    env_keys: BTreeSet::new(),
                     account_label: label.clone(),
                     operator_home: Some(operator_home.to_path_buf()),
                 });
             continue;
         }
-        let (value, kind) = match &account.credential {
-            AccountCredential::ApiKey { value, .. } => (value, UsageCredentialKind::ApiKey),
-            AccountCredential::OAuthToken { value, .. } => (value, UsageCredentialKind::OAuthToken),
+
+        let (value, kind, expected_mode) = match &account.credential {
+            AccountCredential::ApiKey { value, .. } => {
+                (value, UsageCredentialKind::ApiKey, AuthForwardMode::ApiKey)
+            }
+            AccountCredential::OAuthToken { value, .. } => (
+                value,
+                UsageCredentialKind::OAuthToken,
+                AuthForwardMode::OAuthToken,
+            ),
             AccountCredential::Profile { .. } => continue,
         };
-        let entry = jackin_core::USAGE_CREDENTIAL_ENV_REGISTRY
-            .iter()
-            .copied()
-            .find(|entry| {
-                entry.owner == owner
-                    && (entry.name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
-                        == (kind == UsageCredentialKind::OAuthToken)
-            });
-        let Some(entry) = entry else {
-            diagnostics.push(account_diagnostic(
-                surface,
-                id,
-                UsageDiscoveryIssue::CredentialMalformed,
-            ));
-            continue;
-        };
-        // Reuse protected env/1Password resolution with one explicit declaration.
-        // Global env is retained only for interpolation dependencies; no roles,
-        // workspaces or unrelated provider declarations are enumerated.
-        let mut isolated = AppConfig {
-            env: config.env.clone(),
-            ..AppConfig::default()
-        };
-        let alias = usage_account_alias_entry(entry);
-        isolated.env.insert(alias.name.to_owned(), value.clone());
-        let resolutions = resolver.resolve_provider_credentials(&isolated, None, None, &[alias]);
-        let outcome = resolutions
-            .into_iter()
-            .find(|result| result.key == alias.name)
-            .map_or(ProviderCredentialEnvOutcome::Missing, |result| {
-                result.outcome
-            });
-        let issue = match outcome {
-            ProviderCredentialEnvOutcome::Resolved(handle) => {
-                candidates
-                    .entry(CredentialSourceKey::Env {
-                        surface,
-                        handle,
-                        key: entry.name.to_owned(),
-                    })
-                    .and_modify(|candidate| {
-                        candidate.provenance.extend(provenance.clone());
-                        if candidate.account_label.is_none() {
-                            candidate.account_label = label.clone();
-                        }
-                    })
-                    .or_insert_with(|| CandidateAccumulator {
-                        surface,
-                        kind,
-                        provenance,
-                        env_key: Some(entry.name.to_owned()),
-                        account_label: label.clone(),
-                        operator_home: None,
-                    });
+        let routes = match config.credential_descriptors_for_account(id) {
+            Ok(routes) => routes,
+            Err(_) => {
+                diagnostics.push(account_diagnostic(
+                    surface,
+                    id,
+                    UsageDiscoveryIssue::CredentialMalformed,
+                ));
                 continue;
             }
-            ProviderCredentialEnvOutcome::Missing => UsageDiscoveryIssue::CredentialMissing,
-            ProviderCredentialEnvOutcome::Denied => UsageDiscoveryIssue::CredentialDenied,
-            ProviderCredentialEnvOutcome::Malformed => UsageDiscoveryIssue::CredentialMalformed,
-            ProviderCredentialEnvOutcome::InteractionRequired => {
-                UsageDiscoveryIssue::InteractionRequired
-            }
         };
-        diagnostics.push(account_diagnostic(surface, id, issue));
+        for route in routes {
+            if route.mode != expected_mode {
+                diagnostics.push(account_diagnostic(
+                    surface,
+                    id,
+                    UsageDiscoveryIssue::CredentialMalformed,
+                ));
+                continue;
+            }
+            let Some(entry) = jackin_core::USAGE_CREDENTIAL_ENV_REGISTRY
+                .iter()
+                .copied()
+                .find(|entry| entry.name == route.env_name)
+            else {
+                diagnostics.push(account_diagnostic(
+                    surface,
+                    id,
+                    UsageDiscoveryIssue::CredentialMalformed,
+                ));
+                continue;
+            };
+            // Resolve the account's exact declaration through one
+            // discovery-only alias. Operator-env attribution strips governed
+            // names, so putting the governed key directly in this isolated
+            // config would incorrectly report a valid account as missing.
+            let mut isolated = AppConfig {
+                env: config.env.clone(),
+                ..AppConfig::default()
+            };
+            let alias = usage_account_alias_entry(entry, canonical_owner);
+            isolated.env.insert(alias.name.to_owned(), value.clone());
+            let resolutions =
+                resolver.resolve_provider_credentials(&isolated, None, None, &[alias]);
+            let outcome = resolutions
+                .into_iter()
+                .find(|result| result.key == alias.name)
+                .map_or(ProviderCredentialEnvOutcome::Missing, |result| {
+                    result.outcome
+                });
+            let issue = match outcome {
+                ProviderCredentialEnvOutcome::Resolved(handle) => {
+                    candidates
+                        .entry(CredentialSourceKey::Env {
+                            surface,
+                            handle,
+                            key: canonical_usage_env_name(surface).to_owned(),
+                            dispatch_key: super::credential_resolver::dispatch_key_for_route(
+                                canonical_owner,
+                                governed_name_for_account_alias(entry.name),
+                            )
+                            .to_owned(),
+                        })
+                        .and_modify(|candidate| {
+                            candidate.provenance.extend(provenance.clone());
+                            candidate.env_keys.insert(entry.name.to_owned());
+                            if candidate.account_label.is_none() {
+                                candidate.account_label = label.clone();
+                            }
+                        })
+                        .or_insert_with(|| CandidateAccumulator {
+                            surface,
+                            kind,
+                            provenance: provenance.clone(),
+                            env_keys: BTreeSet::from([entry.name.to_owned()]),
+                            account_label: label.clone(),
+                            operator_home: None,
+                        });
+                    continue;
+                }
+                ProviderCredentialEnvOutcome::Missing => UsageDiscoveryIssue::CredentialMissing,
+                ProviderCredentialEnvOutcome::Denied => UsageDiscoveryIssue::CredentialDenied,
+                ProviderCredentialEnvOutcome::Malformed => UsageDiscoveryIssue::CredentialMalformed,
+                ProviderCredentialEnvOutcome::InteractionRequired => {
+                    UsageDiscoveryIssue::InteractionRequired
+                }
+            };
+            diagnostics.push(account_diagnostic(surface, id, issue));
+        }
     }
 }
 
-fn provider_surface(provider: AiProvider) -> (HostSurfaceId, UsageCredentialOwner) {
+fn provider_surface(provider: AiProvider) -> HostSurfaceId {
     match provider {
-        AiProvider::Anthropic => (HostSurfaceId::Claude, UsageCredentialOwner::Claude),
-        AiProvider::OpenAi => (HostSurfaceId::Codex, UsageCredentialOwner::Codex),
-        AiProvider::Amp => (HostSurfaceId::Amp, UsageCredentialOwner::Amp),
-        AiProvider::Xai => (HostSurfaceId::Grok, UsageCredentialOwner::Grok),
-        AiProvider::Opencode => (HostSurfaceId::OpenCode, UsageCredentialOwner::OpenCode),
-        AiProvider::Moonshot => (HostSurfaceId::Kimi, UsageCredentialOwner::Kimi),
-        AiProvider::Zai => (HostSurfaceId::Zai, UsageCredentialOwner::Zai),
-        AiProvider::Minimax => (HostSurfaceId::Minimax, UsageCredentialOwner::Minimax),
-        AiProvider::Google => (HostSurfaceId::Google, UsageCredentialOwner::Google),
-        AiProvider::Cursor => (HostSurfaceId::Cursor, UsageCredentialOwner::Cursor),
-        AiProvider::Meta => (HostSurfaceId::Meta, UsageCredentialOwner::Meta),
-        AiProvider::OpenRouter => (HostSurfaceId::OpenRouter, UsageCredentialOwner::OpenRouter),
+        AiProvider::Anthropic => HostSurfaceId::Claude,
+        AiProvider::OpenAi => HostSurfaceId::Codex,
+        AiProvider::Amp => HostSurfaceId::Amp,
+        AiProvider::Xai => HostSurfaceId::Grok,
+        AiProvider::Opencode => HostSurfaceId::OpenCode,
+        AiProvider::Moonshot => HostSurfaceId::Kimi,
+        AiProvider::Zai => HostSurfaceId::Zai,
+        AiProvider::Minimax => HostSurfaceId::Minimax,
+        AiProvider::Google => HostSurfaceId::Google,
+        AiProvider::Cursor => HostSurfaceId::Cursor,
+        AiProvider::Meta => HostSurfaceId::Meta,
+        AiProvider::OpenRouter => HostSurfaceId::OpenRouter,
+    }
+}
+
+fn canonical_owner_for_account(
+    surface: HostSurfaceId,
+    provider: AiProvider,
+) -> UsageCredentialOwner {
+    let owner = match provider {
+        AiProvider::Anthropic => UsageCredentialOwner::Claude,
+        AiProvider::OpenAi => UsageCredentialOwner::Codex,
+        AiProvider::Amp => UsageCredentialOwner::Amp,
+        AiProvider::Moonshot => UsageCredentialOwner::Kimi,
+        AiProvider::Xai => UsageCredentialOwner::Grok,
+        AiProvider::Zai => UsageCredentialOwner::Zai,
+        AiProvider::Minimax => UsageCredentialOwner::Minimax,
+        AiProvider::Opencode => UsageCredentialOwner::OpenCode,
+        AiProvider::Google => UsageCredentialOwner::Google,
+        AiProvider::Cursor => UsageCredentialOwner::Cursor,
+        AiProvider::Meta => UsageCredentialOwner::Meta,
+        AiProvider::OpenRouter => UsageCredentialOwner::OpenRouter,
+    };
+    debug_assert_eq!(provider_surface(provider), surface);
+    owner
+}
+
+/// Canonical provider usage key. Launch routes may use provider-compatible
+/// aliases, but cache/refresh/capability identity always uses this key.
+fn canonical_usage_env_name(surface: HostSurfaceId) -> &'static str {
+    match surface {
+        HostSurfaceId::Claude => jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
+        HostSurfaceId::Codex => jackin_core::OPENAI_API_KEY_ENV_NAME,
+        HostSurfaceId::Amp => jackin_core::AMP_API_KEY_ENV_NAME,
+        HostSurfaceId::Kimi => jackin_core::KIMI_CODE_API_KEY_ENV_NAME,
+        HostSurfaceId::Grok => jackin_core::XAI_API_KEY_ENV_NAME,
+        HostSurfaceId::Zai => jackin_core::ZAI_API_KEY_ENV_NAME,
+        HostSurfaceId::Minimax => jackin_core::MINIMAX_API_KEY_ENV_NAME,
+        HostSurfaceId::OpenCode => jackin_core::OPENCODE_API_KEY_ENV_NAME,
+        HostSurfaceId::Google => jackin_core::GEMINI_API_KEY_ENV_NAME,
+        HostSurfaceId::Cursor => jackin_core::CURSOR_API_KEY_ENV_NAME,
+        HostSurfaceId::Meta => jackin_core::META_API_KEY_ENV_NAME,
+        HostSurfaceId::OpenRouter => jackin_core::OPENROUTER_API_KEY_ENV_NAME,
     }
 }
 
@@ -963,11 +1056,16 @@ fn materialize_catalog(
                 provenance: candidate.provenance,
             },
             CredentialSourceKey::Env {
-                surface, handle, ..
+                surface,
+                handle,
+                key,
+                dispatch_key,
             } => DiscoveredCredentialSource::Env {
                 surface,
                 handle,
-                key: candidate.env_key.unwrap_or_default(),
+                key,
+                dispatch_key,
+                launch_keys: candidate.env_keys,
                 kind: candidate.kind,
                 account_label: candidate.account_label,
                 source_id,
@@ -1005,14 +1103,16 @@ fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourceKey) -> St
             surface,
             handle,
             key,
+            dispatch_key,
         } => {
             fn segment(value: &str) -> String {
                 format!("{}:{value}", value.len())
             }
             format!(
-                "env-v2:{}:{}:{}",
+                "env-v3:{}:{}:{}:{}",
                 surface.id(),
                 segment(key),
+                segment(dispatch_key),
                 segment(&handle.0)
             )
         }
@@ -1519,6 +1619,8 @@ fn validate_source(
             surface,
             handle,
             key,
+            dispatch_key,
+            launch_keys,
             kind: _,
             account_label,
             source_id,
@@ -1550,8 +1652,13 @@ fn validate_source(
                 ProviderCredentialIdentityOutcome::Denied => ProfileValidation::Denied,
                 ProviderCredentialIdentityOutcome::Malformed => ProfileValidation::Malformed,
             };
-            let credential_revision =
-                opaque_credential_revision(&format!("env:{}:{}:{}", surface.id(), key, handle.0));
+            let credential_revision = opaque_credential_revision(&format!(
+                "env:{}:{}:{}:{}",
+                surface.id(),
+                key,
+                dispatch_key,
+                handle.0
+            ));
             (
                 surface,
                 source_id,
@@ -1561,6 +1668,8 @@ fn validate_source(
                 ValidatedCredentialSource::Env {
                     handle,
                     key,
+                    dispatch_key,
+                    launch_keys,
                     material,
                 },
                 outcome,
@@ -2119,8 +2228,12 @@ pub(super) fn refresh_credential_binding(
     env_resolver: &dyn ProviderCredentialEnvResolver,
 ) -> ProviderCredentialRefreshOutcome {
     let (view, rate_limit) = match &binding.source {
-        ValidatedCredentialSource::Env { handle, key, .. } => {
-            return env_resolver.refresh_provider_credential(binding.surface, key, handle);
+        ValidatedCredentialSource::Env {
+            handle,
+            dispatch_key,
+            ..
+        } => {
+            return env_resolver.refresh_provider_credential(binding.surface, dispatch_key, handle);
         }
         ValidatedCredentialSource::Capability => {
             return ProviderCredentialRefreshOutcome::Malformed;

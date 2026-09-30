@@ -19,9 +19,9 @@ use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerRequest, UsageBrokerResponse, UsageCatalogEntry,
-    UsageCoordinationError, UsageCoordinationErrorKind, UsageCredentialScope, UsageGenerationView,
-    UsageIdentityKindV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1,
-    UsageRefreshPhase,
+    UsageCoordinationError, UsageCoordinationErrorKind, UsageCredentialScope,
+    UsageCredentialSourceIdentity, UsageGenerationView, UsageIdentityKindV1,
+    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageRefreshPhase,
 };
 use nix::fcntl::{Flock, FlockArg, OFlag, open, openat};
 use nix::sys::signal::kill;
@@ -485,7 +485,10 @@ enum ForwardingRequirement {
     Profile(String),
     Env {
         surface: String,
+        /// Canonical provider usage key used for cache/refresh routing.
         key: String,
+        /// Exact launch keys synthesized for this binding's provider source.
+        launch_keys: BTreeSet<String>,
         account_ids: BTreeSet<String>,
         material: Option<ProviderCredentialSourceMaterial>,
     },
@@ -524,10 +527,12 @@ fn credential_keys_match(surface: &str, canonical: &str, staged: &str) -> bool {
             (
                 jackin_core::ZAI_API_KEY_ENV_NAME
                     | jackin_core::ZHIPU_API_KEY_ENV_NAME
+                    | "Z_AI_API_KEY"
                     | jackin_core::OPENAI_API_KEY_ENV_NAME
                     | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
                 jackin_core::ZAI_API_KEY_ENV_NAME
                     | jackin_core::ZHIPU_API_KEY_ENV_NAME
+                    | "Z_AI_API_KEY"
                     | jackin_core::OPENAI_API_KEY_ENV_NAME
                     | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
             )
@@ -535,8 +540,14 @@ fn credential_keys_match(surface: &str, canonical: &str, staged: &str) -> bool {
         HostSurfaceId::Minimax => matches!(
             (canonical, staged),
             (
-                jackin_core::MINIMAX_API_KEY_ENV_NAME | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
-                jackin_core::MINIMAX_API_KEY_ENV_NAME | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
+                jackin_core::MINIMAX_API_KEY_ENV_NAME
+                    | "MINIMAX_CODING_API_KEY"
+                    | "MINIMAX_API_TOKEN"
+                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME,
+                jackin_core::MINIMAX_API_KEY_ENV_NAME
+                    | "MINIMAX_CODING_API_KEY"
+                    | "MINIMAX_API_TOKEN"
+                    | jackin_core::ANTHROPIC_AUTH_TOKEN_ENV_NAME
             )
         ),
         HostSurfaceId::Google => matches!(
@@ -550,28 +561,220 @@ fn credential_keys_match(surface: &str, canonical: &str, staged: &str) -> bool {
     }
 }
 
-fn credential_scope_matches(
+fn credential_scope_has_matching_proof(
     scope: &UsageCredentialScope,
     account_ids: &BTreeSet<String>,
     surface: &str,
-    canonical_key: &str,
+    _canonical_key: &str,
+    launch_keys: &BTreeSet<String>,
     material: &ProviderCredentialSourceMaterial,
 ) -> bool {
-    let mut found = false;
-    for proof in scope
+    scope
         .sources
         .iter()
         .filter(|proof| account_ids.contains(&proof.account_id) && proof.surface_id == surface)
+        .any(|proof| {
+            launch_keys
+                .iter()
+                .any(|launch_key| credential_keys_match(surface, launch_key, &proof.key))
+                && proof.source == material.source
+                && proof.material_fingerprint == material.material_fingerprint
+        })
+}
+
+fn binding_account_ids(binding: &ValidatedCredentialBinding) -> BTreeSet<String> {
+    binding
+        .provenance
+        .iter()
+        .filter_map(|provenance| provenance.strip_prefix("account "))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn binding_matches_proof(
+    binding: &ValidatedCredentialBinding,
+    proof: &jackin_protocol::usage_broker::UsageCredentialSourceProof,
+) -> bool {
+    if binding.surface.id() != proof.surface_id
+        || !binding_account_ids(binding).contains(&proof.account_id)
     {
-        found = true;
-        if !credential_keys_match(surface, canonical_key, &proof.key)
-            || proof.source != material.source
-            || proof.material_fingerprint != material.material_fingerprint
-        {
-            return false;
+        return false;
+    }
+    let ValidatedCredentialSource::Env {
+        launch_keys,
+        material: Some(material),
+        ..
+    } = &binding.source
+    else {
+        return false;
+    };
+    launch_keys
+        .iter()
+        .any(|launch_key| credential_keys_match(binding.surface.id(), launch_key, &proof.key))
+        && proof.source == material.source
+        && proof.material_fingerprint == material.material_fingerprint
+}
+
+/// Authorize a capability against every relevant launch proof and return the
+/// exact binding whose source may be refreshed. Multiple route bindings may
+/// share one canonical capability, but each proof must resolve to exactly one
+/// compatible binding. Unrelated account/surface proofs are ignored;
+/// conflicts and unexpected keys fail closed.
+fn authorize_credential_binding_group(
+    bindings: &[ValidatedCredentialBinding],
+    surface: &str,
+    scope: &UsageCredentialScope,
+) -> Option<ValidatedCredentialBinding> {
+    let has_profile = bindings
+        .iter()
+        .any(|binding| matches!(&binding.source, ValidatedCredentialSource::Profile(_)));
+    let env_bindings = bindings
+        .iter()
+        .filter(|binding| {
+            binding.surface.id() == surface
+                && matches!(&binding.source, ValidatedCredentialSource::Env { .. })
+        })
+        .collect::<Vec<_>>();
+
+    // A capability group must never let env proof select a profile or let a
+    // profile's mere presence authorize an env route. Pure-profile behavior
+    // remains the baseline path.
+    if has_profile && !env_bindings.is_empty() {
+        return None;
+    }
+    if has_profile {
+        return bindings
+            .iter()
+            .find(|binding| matches!(&binding.source, ValidatedCredentialSource::Profile(_)))
+            .cloned();
+    }
+    if env_bindings.is_empty() {
+        return None;
+    }
+    // A duplicated account/surface/launch-key binding is ambiguous when its
+    // source or material differs. Reject that conflict before proof matching;
+    // a valid proof for one side must never authorize the other side.
+    let mut key_bindings = Vec::<(String, String, UsageCredentialSourceIdentity, String)>::new();
+    for binding in &env_bindings {
+        let ValidatedCredentialSource::Env {
+            launch_keys,
+            material: Some(material),
+            ..
+        } = &binding.source
+        else {
+            return None;
+        };
+        for account_id in binding_account_ids(binding) {
+            for launch_key in launch_keys {
+                let duplicate =
+                    key_bindings
+                        .iter()
+                        .find(|(existing_account, existing_key, _, _)| {
+                            existing_account == &account_id && existing_key == launch_key
+                        });
+                if let Some((_, _, source, fingerprint)) = duplicate {
+                    if source != &material.source || fingerprint != &material.material_fingerprint {
+                        return None;
+                    }
+                } else {
+                    key_bindings.push((
+                        account_id.clone(),
+                        launch_key.clone(),
+                        material.source.clone(),
+                        material.material_fingerprint.clone(),
+                    ));
+                }
+            }
         }
     }
-    found
+    let account_ids = env_bindings
+        .iter()
+        .flat_map(|binding| binding_account_ids(binding))
+        .collect::<BTreeSet<_>>();
+    let relevant = scope
+        .sources
+        .iter()
+        .filter(|proof| account_ids.contains(&proof.account_id) && proof.surface_id == surface)
+        .collect::<Vec<_>>();
+    if relevant.is_empty() {
+        return None;
+    }
+    let mut matched = Vec::with_capacity(relevant.len());
+    for proof in relevant {
+        let candidates = env_bindings
+            .iter()
+            .filter(|binding| binding_matches_proof(binding, proof))
+            .collect::<Vec<_>>();
+        if candidates.len() != 1 {
+            return None;
+        }
+        matched.push(candidates[0]);
+    }
+    let first = (**matched.first()?).clone();
+    if matched
+        .iter()
+        .all(|binding| refresh_authority_equivalent(&first, binding))
+    {
+        Some(first)
+    } else {
+        None
+    }
+}
+
+/// Compare the authority that a refresh would actually use. Launch aliases
+/// may differ, but canonical identity, semantic dispatch, opaque handle, and
+/// source material must agree before proofs can combine.
+fn refresh_authority_equivalent(
+    left: &ValidatedCredentialBinding,
+    right: &ValidatedCredentialBinding,
+) -> bool {
+    match (&left.source, &right.source) {
+        (
+            ValidatedCredentialSource::Env {
+                handle: left_handle,
+                key: left_key,
+                dispatch_key: left_dispatch,
+                material: Some(left_material),
+                ..
+            },
+            ValidatedCredentialSource::Env {
+                handle: right_handle,
+                key: right_key,
+                dispatch_key: right_dispatch,
+                material: Some(right_material),
+                ..
+            },
+        ) => {
+            left.surface == right.surface
+                && left.identity == right.identity
+                && left_handle == right_handle
+                && left_key == right_key
+                && left_dispatch == right_dispatch
+                && left_material == right_material
+        }
+        (ValidatedCredentialSource::Profile(_), ValidatedCredentialSource::Profile(_)) => {
+            left.surface == right.surface && left.identity == right.identity
+        }
+        _ => false,
+    }
+}
+
+/// Select an unscoped refresh only when the whole group has one refresh
+/// authority. This prevents background work from depending on vector order.
+fn unscoped_refresh_binding(
+    bindings: &[ValidatedCredentialBinding],
+) -> Option<ValidatedCredentialBinding> {
+    let first = bindings.first()?.clone();
+    if matches!(&first.source, ValidatedCredentialSource::Profile(_)) {
+        return bindings
+            .iter()
+            .all(|binding| matches!(&binding.source, ValidatedCredentialSource::Profile(_)))
+            .then_some(first);
+    }
+    bindings
+        .iter()
+        .all(|binding| refresh_authority_equivalent(&first, binding))
+        .then_some(first)
 }
 
 impl ForwardingRequirement {
@@ -581,11 +784,14 @@ impl ForwardingRequirement {
             Self::Env {
                 surface,
                 key,
+                launch_keys,
                 account_ids,
                 material,
             } => {
                 if sources.selected_account_ids.is_empty() {
-                    return sources.env_keys.contains(key);
+                    return launch_keys
+                        .iter()
+                        .any(|launch_key| sources.env_keys.contains(launch_key));
                 }
                 let Some(material) = material else {
                     return false;
@@ -595,11 +801,12 @@ impl ForwardingRequirement {
                     .filter(|account_id| sources.selected_account_ids.contains(*account_id))
                     .cloned()
                     .collect::<BTreeSet<_>>();
-                credential_scope_matches(
+                credential_scope_has_matching_proof(
                     &sources.credential_scope,
                     &account_ids,
                     surface,
                     key,
+                    launch_keys,
                     material,
                 )
             }
@@ -613,9 +820,15 @@ fn forwarding_requirement(binding: &ValidatedCredentialBinding) -> ForwardingReq
         ValidatedCredentialSource::Profile(_) => {
             ForwardingRequirement::Profile(binding.surface.id().to_owned())
         }
-        ValidatedCredentialSource::Env { key, material, .. } => ForwardingRequirement::Env {
+        ValidatedCredentialSource::Env {
+            key,
+            launch_keys,
+            material,
+            ..
+        } => ForwardingRequirement::Env {
             surface: binding.surface.id().to_owned(),
             key: key.clone(),
+            launch_keys: launch_keys.clone(),
             account_ids: binding
                 .provenance
                 .iter()
@@ -673,12 +886,38 @@ pub fn usage_capability_for_selected_account(
     account_id: &str,
     surface_id: &str,
 ) -> Option<UsageAccountCapability> {
+    usage_capability_for_selected_account_with_sources(discovery, account_id, surface_id, None)
+}
+
+/// Resolve one exact configured account after intersecting it with the
+/// credential sources forwarded into the current Capsule. The source proof is
+/// part of launch authority: a provider surface or account id alone cannot
+/// select a credential when several routes share that identity.
+#[must_use]
+pub fn usage_capability_for_selected_account_with_sources(
+    discovery: &ValidatedUsageDiscovery,
+    account_id: &str,
+    surface_id: &str,
+    sources: Option<&ForwardedUsageSources>,
+) -> Option<UsageAccountCapability> {
     let provenance = format!("account {account_id}");
     let capabilities = discovery
         .bindings
         .iter()
         .filter(|binding| binding.surface.id() == surface_id)
         .filter(|binding| binding.provenance.contains(&provenance))
+        .filter(|binding| {
+            sources.is_none_or(|sources| match &binding.source {
+                // API-key/OAuth routes need exact staged source proof. Profile
+                // and forwarded capability behavior stays on the baseline path.
+                ValidatedCredentialSource::Env { .. } => {
+                    forwarding_requirement(binding).is_forwarded(sources)
+                }
+                ValidatedCredentialSource::Profile(_)
+                | ValidatedCredentialSource::Capability
+                | ValidatedCredentialSource::Unpollable => true,
+            })
+        })
         .map(|binding| capability_for_binding(binding, discovery.config_generation.as_deref()))
         .collect::<BTreeSet<_>>();
     (capabilities.len() == 1)
@@ -1061,7 +1300,7 @@ fn load_projection(config: &UsageBrokerConfig) -> Result<LoadedProjection, Usage
 }
 
 struct DiscoveryProviderExecutor {
-    bindings: Mutex<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>>,
+    bindings: Mutex<BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>>>,
     validated_catalog: Mutex<Option<StagedDiscoveryCatalog>>,
     scope: UsageDiscoveryScope,
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
@@ -1074,87 +1313,90 @@ struct StagedDiscoveryCatalog {
     discovery: ValidatedUsageDiscovery,
 }
 
+fn probe_with_scope(
+    executor: &DiscoveryProviderExecutor,
+    capability: &UsageAccountCapability,
+    launch_scope: Option<&UsageCredentialScope>,
+) -> ProviderProbeOutcome {
+    // The coordinator only classifies elapsed time after a probe returns, so
+    // the blocking provider call (child CLI/RPC, secret resolution) runs under
+    // an explicit broker-side budget. Expiry completes the generation through
+    // the normal failure path: last-good quota is preserved and broker
+    // ownership is unaffected.
+    let cached = executor
+        .bindings
+        .lock()
+        .ok()
+        .and_then(|bindings| bindings.get(capability).cloned());
+    let scope = executor.scope.clone();
+    let resolver = Arc::clone(&executor.resolver);
+    let task_capability = capability.clone();
+    let launch_scope = launch_scope.cloned();
+    let outcome = probe::run_probe_with_budget(executor.probe_budget, move || {
+        let (bindings, refreshed) = match cached {
+            Some(bindings) => (Some(bindings), None),
+            None => rediscover_bindings(&scope, resolver.as_ref(), &task_capability),
+        };
+        let binding = bindings.as_deref().and_then(|bindings| {
+            launch_scope.as_ref().map_or_else(
+                || unscoped_refresh_binding(bindings),
+                |scope| {
+                    authorize_credential_binding_group(bindings, &task_capability.surface_id, scope)
+                },
+            )
+        });
+        let outcome = match binding {
+            Some(binding) => refresh_binding_outcome(&binding, resolver.as_ref()),
+            None => ProviderProbeOutcome::Failure {
+                kind: UsageCoordinationErrorKind::Unauthorized,
+                message: "usage account capability is not authorized".to_owned(),
+                retry_at_epoch: None,
+            },
+        };
+        (outcome, refreshed)
+    });
+    match outcome {
+        Ok((outcome, refreshed)) => {
+            if let Some(refreshed) = refreshed
+                && let Ok(mut bindings) = executor.bindings.lock()
+            {
+                *bindings = refreshed;
+            }
+            outcome
+        }
+        Err(_) => probe::probe_timeout_outcome(),
+    }
+}
+
 impl UsageProviderExecutor for DiscoveryProviderExecutor {
     fn authorize_credential_scope(
         &self,
         capability: &UsageAccountCapability,
         scope: &UsageCredentialScope,
     ) -> Result<(), UsageCoordinationError> {
-        let binding = self
+        let bindings = self
             .bindings
             .lock()
             .map_err(|_| unavailable())?
             .get(capability)
             .cloned()
             .ok_or_else(credential_scope_mismatch)?;
-        let (key, material) = match &binding.source {
-            ValidatedCredentialSource::Env {
-                key,
-                material: Some(material),
-                ..
-            } => (key, material),
-            // Profile credentials are already materialized into the launch
-            // auth tree and do not use the mutable env/op resolver lane.
-            ValidatedCredentialSource::Profile(_) => return Ok(()),
-            // An env binding without a source proof, a capability-only
-            // binding, and an unpollable binding have no host source to
-            // authorize.
-            ValidatedCredentialSource::Env { .. }
-            | ValidatedCredentialSource::Capability
-            | ValidatedCredentialSource::Unpollable => {
-                return Err(credential_scope_mismatch());
-            }
-        };
-        let account_ids = binding
-            .provenance
-            .iter()
-            .filter_map(|provenance| provenance.strip_prefix("account "));
-        let account_ids = account_ids.map(str::to_owned).collect::<BTreeSet<_>>();
-        credential_scope_matches(scope, &account_ids, &capability.surface_id, key, material)
-            .then_some(())
+        authorize_credential_binding_group(&bindings, &capability.surface_id, scope)
+            .map(|_| ())
             .ok_or_else(credential_scope_mismatch)
     }
 
     fn probe(&self, capability: &UsageAccountCapability, _generation: u64) -> ProviderProbeOutcome {
-        // The coordinator only classifies elapsed time after a probe returns,
-        // so the blocking provider call (child CLI/RPC, secret resolution)
-        // runs under an explicit broker-side budget. Expiry completes the
-        // generation through the normal failure path: last-good quota is
-        // preserved and broker ownership is unaffected.
-        let cached = self
-            .bindings
-            .lock()
-            .ok()
-            .and_then(|bindings| bindings.get(capability).cloned());
-        let scope = self.scope.clone();
-        let resolver = Arc::clone(&self.resolver);
-        let task_capability = capability.clone();
-        let outcome = probe::run_probe_with_budget(self.probe_budget, move || {
-            let (binding, refreshed) = match cached {
-                Some(binding) => (Some(binding), None),
-                None => rediscover_bindings(&scope, resolver.as_ref(), &task_capability),
-            };
-            let outcome = match binding {
-                Some(binding) => refresh_binding_outcome(&binding, resolver.as_ref()),
-                None => ProviderProbeOutcome::Failure {
-                    kind: UsageCoordinationErrorKind::Unauthorized,
-                    message: "usage account capability is not authorized".to_owned(),
-                    retry_at_epoch: None,
-                },
-            };
-            (outcome, refreshed)
-        });
-        match outcome {
-            Ok((outcome, refreshed)) => {
-                if let Some(refreshed) = refreshed
-                    && let Ok(mut bindings) = self.bindings.lock()
-                {
-                    *bindings = refreshed;
-                }
-                outcome
-            }
-            Err(_) => probe::probe_timeout_outcome(),
-        }
+        probe_with_scope(self, capability, None)
+    }
+
+    fn probe_scoped(
+        &self,
+        capability: &UsageAccountCapability,
+        _generation: u64,
+        scope: &UsageCredentialScope,
+    ) -> ProviderProbeOutcome {
+        probe_with_scope(self, capability, Some(scope))
     }
 
     fn reconcile_catalog(
@@ -1247,18 +1489,10 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
             .iter()
             .map(|entry| entry.capability.clone())
             .collect::<BTreeSet<_>>();
-        // First binding wins per capability, matching rediscover_all_bindings:
-        // profile sources sort before env sources, so a merged canonical
-        // account refreshes through its strongest credential.
-        let mut bindings = BTreeMap::new();
-        for binding in discovery.bindings {
-            bindings
-                .entry(capability_for_binding(
-                    &binding,
-                    discovery.config_generation.as_deref(),
-                ))
-                .or_insert(binding);
-        }
+        // Preserve every binding in a canonical capability group. Profile
+        // sources remain first for refresh selection, while authorization
+        // checks every relevant env proof against the complete group.
+        let mut bindings = grouped_bindings(&discovery);
         bindings.retain(|capability, _| admitted.contains(capability));
         self.bindings
             .lock()
@@ -1280,22 +1514,8 @@ fn rediscover_discovery(
 fn rediscover_all_bindings(
     scope: &UsageDiscoveryScope,
     resolver: &dyn ProviderCredentialEnvResolver,
-) -> Option<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>> {
-    rediscover_discovery(scope, resolver).map(|discovery| {
-        // First binding wins per capability, matching service startup:
-        // profile sources sort before env sources, so a merged canonical
-        // account refreshes through its strongest credential.
-        let mut bindings = BTreeMap::new();
-        for binding in discovery.bindings {
-            bindings
-                .entry(capability_for_binding(
-                    &binding,
-                    discovery.config_generation.as_deref(),
-                ))
-                .or_insert(binding);
-        }
-        bindings
-    })
+) -> Option<BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>>> {
+    rediscover_discovery(scope, resolver).map(|discovery| grouped_bindings(&discovery))
 }
 
 fn rediscover_bindings(
@@ -1303,20 +1523,36 @@ fn rediscover_bindings(
     resolver: &dyn ProviderCredentialEnvResolver,
     capability: &UsageAccountCapability,
 ) -> (
-    Option<ValidatedCredentialBinding>,
-    Option<BTreeMap<UsageAccountCapability, ValidatedCredentialBinding>>,
+    Option<Vec<ValidatedCredentialBinding>>,
+    Option<BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>>>,
 ) {
     let bindings = rediscover_all_bindings(scope, resolver);
     let Some(bindings) = bindings else {
         return (None, None);
     };
-    let Some(binding) = bindings.get(capability).cloned() else {
+    let Some(group) = bindings.get(capability).cloned() else {
         // A successful scan that cannot reproduce the requested capability is
         // a catalog mismatch. Do not replace the cache with a partial scan;
         // the caller must fail closed for this exact capability.
         return (None, None);
     };
-    (Some(binding), Some(bindings))
+    (Some(group), Some(bindings))
+}
+
+fn grouped_bindings(
+    discovery: &ValidatedUsageDiscovery,
+) -> BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>> {
+    let mut bindings = BTreeMap::new();
+    for binding in &discovery.bindings {
+        bindings
+            .entry(capability_for_binding(
+                binding,
+                discovery.config_generation.as_deref(),
+            ))
+            .or_insert_with(Vec::new)
+            .push(binding.clone());
+    }
+    bindings
 }
 
 fn catalog_entry_map(entries: &[UsageCatalogEntry]) -> BTreeMap<UsageAccountCapability, String> {
@@ -1637,15 +1873,7 @@ pub fn run_usage_broker_service(
         .clone()
         .unwrap_or_else(|| "empty".to_owned());
     let catalog = usage_catalog_entries(&discovery);
-    let mut bindings = BTreeMap::new();
-    for binding in discovery.bindings {
-        bindings
-            .entry(capability_for_binding(
-                &binding,
-                discovery.config_generation.as_deref(),
-            ))
-            .or_insert(binding);
-    }
+    let bindings = grouped_bindings(&discovery);
     let executor = Arc::new(DiscoveryProviderExecutor {
         bindings: Mutex::new(bindings),
         validated_catalog: Mutex::new(None),
@@ -2146,7 +2374,16 @@ fn dispatch(
                 return UsageBrokerResponse::Error { error };
             }
             publisher.observe(&capability);
-            let result = coordinator.request_refresh(&capability, observed_generation, force, now);
+            let result = match launch_credential_scope {
+                Some(scope) => coordinator.request_refresh_scoped(
+                    &capability,
+                    observed_generation,
+                    force,
+                    now,
+                    scope,
+                ),
+                None => coordinator.request_refresh(&capability, observed_generation, force, now),
+            };
             publisher.publish_due(now);
             result
         }

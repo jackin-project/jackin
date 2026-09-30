@@ -84,7 +84,10 @@ pub trait ProviderCredentialSecretSource: Send + Sync {
 }
 
 struct CachedResolution {
+    /// Canonical provider usage identity used for cache/source attribution.
     key: String,
+    /// Exact governed key whose provider semantics must drive refresh.
+    dispatch_key: String,
     owner: UsageCredentialOwner,
     declaration: EnvValue,
     handle: Option<OpaqueCredentialHandle>,
@@ -155,20 +158,22 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
         let declaration = self
             .source
             .lookup_declaration(config, workspace, role, entry)?;
-        // Discovery requests account credentials under an isolated alias, but
-        // refresh routing addresses them by governed name. Normalize the cache
-        // identity so both spellings share one entry; governed names pass
-        // through unchanged.
-        let cache_key = super::discovery::governed_name_for_account_alias(entry.name);
+        // Discovery requests account credentials under launch-specific
+        // aliases. Keep canonical ownership separate from the exact governed
+        // dispatch key: OAuth and deployment routes can share an owner while
+        // requiring a different provider snapshot path.
+        let cache_key = canonical_usage_key(entry.owner);
+        let governed_name = super::discovery::governed_name_for_account_alias(entry.name);
+        let dispatch_key = dispatch_key_for_route(entry.owner, governed_name);
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(cached) = state
-            .cache
-            .iter()
-            .find(|cached| cached.key == cache_key && cached.declaration == declaration)
-        {
+        if let Some(cached) = state.cache.iter().find(|cached| {
+            cached.key == cache_key
+                && cached.dispatch_key == dispatch_key
+                && cached.declaration == declaration
+        }) {
             return Some(ProviderCredentialEnvResolution {
                 key: entry.name.to_owned(),
                 outcome: cached.outcome.clone(),
@@ -180,6 +185,7 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
             ProviderCredentialSecretOutcome::Resolved(secret) if !secret.is_empty() => {
                 let reused = state.cache.iter().find_map(|cached| {
                     (cached.owner == entry.owner
+                        && cached.dispatch_key == dispatch_key
                         && cached.declaration == declaration
                         && cached.secret.as_deref() == Some(&secret))
                     .then(|| cached.handle.clone())
@@ -215,6 +221,7 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
         };
         state.cache.push(CachedResolution {
             key: cache_key.to_owned(),
+            dispatch_key: dispatch_key.to_owned(),
             owner: entry.owner,
             declaration: resolved.declaration,
             handle,
@@ -225,6 +232,46 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
             key: entry.name.to_owned(),
             outcome,
         })
+    }
+}
+
+fn canonical_usage_key(owner: UsageCredentialOwner) -> &'static str {
+    match owner {
+        UsageCredentialOwner::Claude => jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Codex => jackin_core::OPENAI_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Amp => jackin_core::AMP_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Kimi => jackin_core::KIMI_CODE_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Grok => jackin_core::XAI_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Zai => jackin_core::ZAI_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Minimax => jackin_core::MINIMAX_API_KEY_ENV_NAME,
+        UsageCredentialOwner::OpenCode => jackin_core::OPENCODE_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Google => jackin_core::GEMINI_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Cursor => jackin_core::CURSOR_API_KEY_ENV_NAME,
+        UsageCredentialOwner::Meta => jackin_core::META_API_KEY_ENV_NAME,
+        UsageCredentialOwner::OpenRouter => jackin_core::OPENROUTER_API_KEY_ENV_NAME,
+    }
+}
+
+/// Normalize launch aliases to the provider route that controls refresh
+/// semantics. API-key aliases share their owner's route; OAuth and Grok
+/// deployment credentials remain distinct because the provider adapter treats
+/// them differently.
+pub(super) fn dispatch_key_for_route(
+    owner: UsageCredentialOwner,
+    governed_name: &str,
+) -> &'static str {
+    match owner {
+        UsageCredentialOwner::Claude
+            if governed_name == jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME =>
+        {
+            jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
+        }
+        UsageCredentialOwner::Grok
+            if governed_name == jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME =>
+        {
+            jackin_core::GROK_DEPLOYMENT_KEY_ENV_NAME
+        }
+        _ => canonical_usage_key(owner),
     }
 }
 
@@ -273,7 +320,11 @@ impl<S: ProviderCredentialSecretSource> ProviderCredentialEnvResolver
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.cache.iter().find_map(|cached| {
-                (cached.key == key && cached.handle.as_ref() == Some(handle))
+                // `key` is the exact semantic provider route supplied by the
+                // binding refresh path. A canonical owner key alone is not
+                // enough: Claude OAuth and Grok deployment routes have
+                // different provider dispatch semantics.
+                (cached.dispatch_key == key && cached.handle.as_ref() == Some(handle))
                     .then(|| cached.secret.clone())
                     .flatten()
             })

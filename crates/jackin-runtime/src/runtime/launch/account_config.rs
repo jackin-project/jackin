@@ -7,8 +7,576 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::Context as _;
-use jackin_config::{AccountCredential, AiProvider, AppConfig, atomic_write};
+use jackin_config::{AccountCredential, AiProvider, AppConfig};
 use jackin_core::Agent;
+
+#[cfg(unix)]
+mod private_config_fs {
+    use std::ffi::OsString;
+    use std::fs::File;
+    use std::io::{Read as _, Write as _};
+    use std::path::{Component, Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[cfg(target_os = "macos")]
+    use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+
+    use anyhow::Context as _;
+    use fs4::FileExt;
+    use nix::errno::Errno;
+    use nix::fcntl::{AtFlags, OFlag, openat, renameat};
+    use nix::sys::stat::{Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
+    use nix::unistd::{UnlinkatFlags, linkat, unlinkat};
+
+    static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    const LOCK_FILE: &str = ".jackin-private-provider-config.lock";
+    const PRIVATE_DIR_MODE: Mode = Mode::S_IRWXU;
+    const PRIVATE_FILE_MODE: Mode = Mode::from_bits_truncate(0o600);
+
+    #[derive(Clone, Copy, Debug)]
+    struct LeafName<'a>(&'a str);
+
+    impl<'a> LeafName<'a> {
+        fn parse(name: &'a str) -> anyhow::Result<Self> {
+            anyhow::ensure!(!name.is_empty(), "private provider config name is empty");
+            anyhow::ensure!(
+                !name.as_bytes().contains(&0),
+                "private provider config name contains NUL"
+            );
+            anyhow::ensure!(
+                !name.contains('/'),
+                "private provider config name must not contain path separators"
+            );
+            let mut components = Path::new(name).components();
+            anyhow::ensure!(
+                matches!(components.next(), Some(Component::Normal(_)))
+                    && components.next().is_none(),
+                "private provider config name must be one normal path component"
+            );
+            Ok(Self(name))
+        }
+
+        fn as_str(self) -> &'a str {
+            self.0
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(super) enum Artifact {
+        CodexCatalog,
+        CodexConfig,
+        OpenCodeConfig,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(super) enum PublishPoint {
+        TempCreated(Artifact),
+        TempWritten(Artifact),
+        TempSynced(Artifact),
+        BeforeInstall(Artifact),
+        Installed(Artifact),
+        DirectorySynced(Artifact),
+    }
+
+    pub(super) fn open_directory(root: &Path, home_relative: &Path) -> anyhow::Result<File> {
+        let root = normalize_root(root)?;
+        let components = root.components().collect::<Vec<_>>();
+        let mut directory = if root.is_absolute() {
+            File::open("/").context("open filesystem root")?
+        } else {
+            File::open(".").context("open current directory")?
+        };
+        let mut saw_root = false;
+        for (index, component) in components.iter().enumerate() {
+            match component {
+                Component::RootDir => {}
+                Component::Normal(name) => {
+                    saw_root = true;
+                    let final_component = !components[index + 1..]
+                        .iter()
+                        .any(|component| matches!(component, Component::Normal(_)));
+                    directory = if final_component {
+                        open_child_directory(&directory, name, false)?
+                    } else {
+                        open_unchecked_child_directory(&directory, name)?
+                    };
+                }
+                Component::CurDir => {}
+                Component::ParentDir | Component::Prefix(_) => {
+                    anyhow::bail!("private account config root must not contain parent paths")
+                }
+            }
+        }
+        anyhow::ensure!(saw_root, "private account config root is empty");
+
+        let mut directory = open_child_directory(&directory, std::ffi::OsStr::new("home"), true)?;
+        let mut found_component = false;
+        for component in home_relative.components() {
+            let Component::Normal(name) = component else {
+                anyhow::bail!("private account config directory must be a relative normal path")
+            };
+            found_component = true;
+            directory = open_child_directory(&directory, name, true)?;
+        }
+        anyhow::ensure!(found_component, "private account config directory is empty");
+        Ok(directory)
+    }
+
+    /// Normalize only lexical aliases. Symlinks remain rejected by the
+    /// descriptor-relative `O_NOFOLLOW` walk below.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(super) fn normalize_root(path: &Path) -> anyhow::Result<PathBuf> {
+        let mut normalized = if path.is_absolute() {
+            PathBuf::new()
+        } else {
+            std::env::current_dir().context("finding private account config root base")?
+        };
+        let mut saw_root = false;
+        for component in path.components() {
+            match component {
+                Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+                Component::RootDir => normalized.push(Path::new("/")),
+                Component::CurDir => {}
+                Component::Normal(component) => {
+                    saw_root = true;
+                    normalized.push(component);
+                }
+                Component::ParentDir => {
+                    anyhow::bail!(
+                        "private account config root contains parent traversal: {}",
+                        path.display()
+                    )
+                }
+            }
+        }
+        anyhow::ensure!(saw_root, "private account config root is empty");
+
+        #[cfg(target_os = "macos")]
+        {
+            let bytes = normalized.as_os_str().as_bytes();
+            for alias in [b"/var".as_slice(), b"/tmp".as_slice(), b"/etc".as_slice()] {
+                if bytes == alias
+                    || bytes
+                        .strip_prefix(alias)
+                        .is_some_and(|rest| rest.starts_with(b"/"))
+                {
+                    let mut aliased = b"/private".to_vec();
+                    aliased.extend_from_slice(bytes);
+                    return Ok(PathBuf::from(OsString::from_vec(aliased)));
+                }
+            }
+        }
+        Ok(normalized)
+    }
+
+    fn open_child_directory(
+        parent: &File,
+        name: &std::ffi::OsStr,
+        create: bool,
+    ) -> anyhow::Result<File> {
+        let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW;
+        match openat(parent, name, flags, Mode::empty()) {
+            Ok(fd) => {
+                let directory = File::from(fd);
+                ensure_private_directory(&directory, name)?;
+                Ok(directory)
+            }
+            Err(Errno::ENOENT) if create => {
+                match mkdirat(parent, name, PRIVATE_DIR_MODE) {
+                    Ok(()) => parent
+                        .sync_all()
+                        .context("sync private account config parent")?,
+                    Err(Errno::EEXIST) => {}
+                    Err(error) => {
+                        return Err(error).context("create private account config directory");
+                    }
+                }
+                let directory = openat(parent, name, flags, Mode::empty())
+                    .map(File::from)
+                    .context("open private account config directory")?;
+                ensure_private_directory(&directory, name)?;
+                Ok(directory)
+            }
+            Err(error) => Err(error).context("open private account config directory"),
+        }
+    }
+
+    fn open_unchecked_child_directory(
+        parent: &File,
+        name: &std::ffi::OsStr,
+    ) -> anyhow::Result<File> {
+        openat(
+            parent,
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .map(File::from)
+        .context("open private account config path component")
+    }
+
+    pub(super) fn lock(directory: &File) -> anyhow::Result<File> {
+        let lock_name = LeafName::parse(LOCK_FILE)?;
+        let fd = openat(
+            directory,
+            lock_name.as_str(),
+            OFlag::O_RDWR
+                | OFlag::O_CREAT
+                | OFlag::O_CLOEXEC
+                | OFlag::O_NOFOLLOW
+                | OFlag::O_NONBLOCK,
+            PRIVATE_FILE_MODE,
+        )
+        .context("open private provider config lock")?;
+        let lock = File::from(fd);
+        ensure_regular(&lock, lock_name.as_str())?;
+        lock.sync_all()
+            .context("sync private provider config lock")?;
+        directory
+            .sync_all()
+            .context("sync private provider config directory")?;
+        FileExt::lock(&lock).context("lock private provider config directory")?;
+        Ok(lock)
+    }
+
+    pub(super) fn read_optional(directory: &File, name: &str) -> anyhow::Result<Option<Vec<u8>>> {
+        let name = LeafName::parse(name)?;
+        let Some(mut file) = open_existing_regular(directory, name)? else {
+            return Ok(None);
+        };
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents)
+            .with_context(|| format!("read private provider config {}", name.as_str()))?;
+        Ok(Some(contents))
+    }
+
+    /// Move a malformed config beside the replacement without resolving any
+    /// path component or following a leaf symlink. The reserved name is
+    /// created with `O_EXCL`; `renameat` then moves the original inode into
+    /// that descriptor-relative namespace.
+    pub(super) fn quarantine(directory: &File, name: &str, reason: &str) -> anyhow::Result<()> {
+        let name = LeafName::parse(name)?;
+        // Verify the source before reserving a quarantine name. This keeps a
+        // disappearing or replaced config from being silently treated as the
+        // malformed payload we just inspected.
+        drop(
+            open_existing_regular(directory, name)?.with_context(|| {
+                format!("private provider config {} disappeared", name.as_str())
+            })?,
+        );
+        let unix_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        for suffix in 0..128u32 {
+            let target = if suffix == 0 {
+                format!(
+                    "{}.corrupt-{unix_secs}-{}",
+                    name.as_str(),
+                    std::process::id()
+                )
+            } else {
+                format!(
+                    "{}.corrupt-{unix_secs}-{}-{suffix}",
+                    name.as_str(),
+                    std::process::id()
+                )
+            };
+            let target = LeafName::parse(&target)?;
+            let reserved = match openat(
+                directory,
+                target.as_str(),
+                OFlag::O_WRONLY
+                    | OFlag::O_CREAT
+                    | OFlag::O_EXCL
+                    | OFlag::O_CLOEXEC
+                    | OFlag::O_NOFOLLOW,
+                PRIVATE_FILE_MODE,
+            ) {
+                Ok(file) => File::from(file),
+                Err(Errno::EEXIST) => continue,
+                Err(error) => {
+                    return Err(error).context("reserve private provider config quarantine name");
+                }
+            };
+            ensure_regular(&reserved, target.as_str())?;
+            drop(reserved);
+            unlinkat(directory, target.as_str(), UnlinkatFlags::NoRemoveDir).with_context(
+                || {
+                    format!(
+                        "release private provider config quarantine name {}",
+                        target.as_str()
+                    )
+                },
+            )?;
+            renameat(directory, name.as_str(), directory, target.as_str())
+                .with_context(|| format!("quarantine private provider config {}", name.as_str()))?;
+            directory
+                .sync_all()
+                .context("sync private provider config quarantine")?;
+            eprintln!(
+                "[jackin] warning: private Codex configuration {} is corrupt ({reason}); moved to {} and regenerating",
+                name.as_str(),
+                target.as_str()
+            );
+            return Ok(());
+        }
+        anyhow::bail!("could not allocate a private provider config quarantine name")
+    }
+
+    fn open_existing_regular(directory: &File, name: LeafName<'_>) -> anyhow::Result<Option<File>> {
+        match openat(
+            directory,
+            name.as_str(),
+            OFlag::O_RDONLY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK,
+            Mode::empty(),
+        ) {
+            Ok(fd) => {
+                let file = File::from(fd);
+                ensure_regular(&file, name.as_str())?;
+                Ok(Some(file))
+            }
+            Err(Errno::ENOENT) => Ok(None),
+            Err(error) => Err(error)
+                .with_context(|| format!("open private provider config {}", name.as_str())),
+        }
+    }
+
+    fn ensure_regular(file: &File, name: &str) -> anyhow::Result<()> {
+        let stat = fstat(file).with_context(|| format!("stat private provider config {name}"))?;
+        anyhow::ensure!(
+            SFlag::from_bits_truncate(stat.st_mode) == SFlag::S_IFREG,
+            "private provider config {name} is not a regular file"
+        );
+        ensure_mode(file, name, PRIVATE_FILE_MODE, stat.st_mode)?;
+        Ok(())
+    }
+
+    fn ensure_private_directory(file: &File, name: &std::ffi::OsStr) -> anyhow::Result<()> {
+        let stat = fstat(file).context("stat private account config directory")?;
+        anyhow::ensure!(
+            SFlag::from_bits_truncate(stat.st_mode) == SFlag::S_IFDIR,
+            "private account config path component {:?} is not a directory",
+            name
+        );
+        ensure_mode(
+            file,
+            &name.to_string_lossy(),
+            PRIVATE_DIR_MODE,
+            stat.st_mode,
+        )
+    }
+
+    fn ensure_mode(
+        file: &File,
+        name: &str,
+        expected: Mode,
+        current: nix::libc::mode_t,
+    ) -> anyhow::Result<()> {
+        if Mode::from_bits_truncate(current) != expected {
+            fchmod(file, expected)
+                .with_context(|| format!("chmod private provider config {name}"))?;
+            let verified =
+                fstat(file).with_context(|| format!("restat private provider config {name}"))?;
+            anyhow::ensure!(
+                Mode::from_bits_truncate(verified.st_mode) == expected,
+                "private provider config {name} has unsafe mode"
+            );
+        }
+        Ok(())
+    }
+
+    pub(super) fn publish_catalog<F>(
+        directory: &File,
+        name: &str,
+        contents: &[u8],
+        mut hook: F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnMut(PublishPoint) -> anyhow::Result<()>,
+    {
+        let name = LeafName::parse(name)?;
+        match read_optional(directory, name.as_str())? {
+            Some(existing) if existing == contents => return Ok(()),
+            Some(_) => {
+                anyhow::bail!(
+                    "content-addressed Codex catalog {} has different contents",
+                    name.as_str()
+                )
+            }
+            None => {}
+        }
+
+        let (temp_name, mut temp_file) = create_temp_file(directory)?;
+        let result = (|| {
+            hook(PublishPoint::TempCreated(Artifact::CodexCatalog))?;
+            temp_file
+                .write_all(contents)
+                .context("write staged Codex model catalog")?;
+            hook(PublishPoint::TempWritten(Artifact::CodexCatalog))?;
+            temp_file
+                .sync_all()
+                .context("sync staged Codex model catalog")?;
+            hook(PublishPoint::TempSynced(Artifact::CodexCatalog))?;
+            hook(PublishPoint::BeforeInstall(Artifact::CodexCatalog))?;
+            match linkat(
+                directory,
+                temp_name.as_str(),
+                directory,
+                name.as_str(),
+                AtFlags::empty(),
+            ) {
+                Ok(()) => {}
+                Err(Errno::EEXIST) => {
+                    let existing = read_optional(directory, name.as_str())?;
+                    anyhow::ensure!(
+                        existing.as_deref() == Some(contents),
+                        "content-addressed Codex catalog {} changed during publication",
+                        name.as_str()
+                    );
+                    return Ok(());
+                }
+                Err(error) => return Err(error).context("install immutable Codex model catalog"),
+            }
+            directory
+                .sync_all()
+                .context("sync installed Codex model catalog")?;
+            hook(PublishPoint::Installed(Artifact::CodexCatalog))?;
+            directory
+                .sync_all()
+                .context("sync installed Codex model catalog")?;
+            hook(PublishPoint::DirectorySynced(Artifact::CodexCatalog))?;
+            Ok(())
+        })();
+
+        cleanup_owned_temp(directory, &temp_name, &temp_file, result)
+    }
+
+    pub(super) fn publish_atomic<F>(
+        directory: &File,
+        name: &str,
+        contents: &[u8],
+        artifact: Artifact,
+        mut hook: F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnMut(PublishPoint) -> anyhow::Result<()>,
+    {
+        let name = LeafName::parse(name)?;
+        // Check the current entry without following it. Renameat below cannot
+        // follow a leaf symlink, but rejecting non-regular entries also keeps
+        // malformed capsule state from being silently taken over.
+        drop(open_existing_regular(directory, name)?);
+        let (temp_name, mut temp_file) = create_temp_file(directory)?;
+        let result = (|| {
+            hook(PublishPoint::TempCreated(artifact))?;
+            temp_file.write_all(contents).with_context(|| {
+                format!("write staged private provider config {}", name.as_str())
+            })?;
+            hook(PublishPoint::TempWritten(artifact))?;
+            temp_file.sync_all().with_context(|| {
+                format!("sync staged private provider config {}", name.as_str())
+            })?;
+            hook(PublishPoint::TempSynced(artifact))?;
+            hook(PublishPoint::BeforeInstall(artifact))?;
+            renameat(directory, temp_name.as_str(), directory, name.as_str()).with_context(
+                || {
+                    format!(
+                        "atomically install private provider config {}",
+                        name.as_str()
+                    )
+                },
+            )?;
+            directory.sync_all().with_context(|| {
+                format!(
+                    "sync private provider config directory for {}",
+                    name.as_str()
+                )
+            })?;
+            hook(PublishPoint::Installed(artifact))?;
+            directory.sync_all().with_context(|| {
+                format!(
+                    "sync private provider config directory for {}",
+                    name.as_str()
+                )
+            })?;
+            hook(PublishPoint::DirectorySynced(artifact))?;
+            Ok(())
+        })();
+
+        cleanup_owned_temp(directory, &temp_name, &temp_file, result)
+    }
+
+    pub(super) fn create_temp_file(directory: &File) -> anyhow::Result<(String, File)> {
+        for _ in 0..128 {
+            let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let name = format!(
+                ".jackin-private-provider-config-{}-{sequence}.tmp",
+                std::process::id()
+            );
+            let name = LeafName::parse(&name)?;
+            match openat(
+                directory,
+                name.as_str(),
+                OFlag::O_WRONLY
+                    | OFlag::O_CREAT
+                    | OFlag::O_EXCL
+                    | OFlag::O_CLOEXEC
+                    | OFlag::O_NOFOLLOW,
+                PRIVATE_FILE_MODE,
+            ) {
+                Ok(fd) => {
+                    let file = File::from(fd);
+                    ensure_regular(&file, name.as_str())?;
+                    return Ok((name.as_str().to_owned(), file));
+                }
+                Err(Errno::EEXIST) => continue,
+                Err(error) => {
+                    return Err(error).context("create private provider config staging file");
+                }
+            }
+        }
+        anyhow::bail!("could not allocate a private provider config staging name")
+    }
+
+    pub(super) fn cleanup_owned_temp(
+        directory: &File,
+        temp_name: &str,
+        temp_file: &File,
+        result: anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let temp_name = LeafName::parse(temp_name)?;
+        let temp_stat = fstat(temp_file).context("stat owned provider config staging file")?;
+        anyhow::ensure!(
+            temp_stat.st_uid == nix::unistd::geteuid().as_raw(),
+            "provider config staging file is not owned by the current user"
+        );
+        let mut removed = false;
+        match fstatat(directory, temp_name.as_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
+            Ok(path_stat)
+                if path_stat.st_dev == temp_stat.st_dev && path_stat.st_ino == temp_stat.st_ino =>
+            {
+                match unlinkat(directory, temp_name.as_str(), UnlinkatFlags::NoRemoveDir) {
+                    Ok(()) => removed = true,
+                    Err(Errno::ENOENT) => {}
+                    Err(error) => {
+                        return Err(error).context("remove owned provider config staging file");
+                    }
+                }
+            }
+            Err(Errno::ENOENT) => {}
+            Ok(_) => {
+                anyhow::bail!("provider config staging name changed ownership; left untouched")
+            }
+            Err(error) => return Err(error).context("verify owned provider config staging file"),
+        }
+        if removed {
+            directory
+                .sync_all()
+                .context("sync private provider config staging cleanup")?;
+        }
+        result
+    }
+}
 
 fn account_with_effective_model(
     account: &jackin_config::AccountConfig,
@@ -80,83 +648,7 @@ pub(super) fn configure_accounts(
     Ok(())
 }
 
-/// Read an existing private Codex config without following symlinks or
-/// blocking on FIFOs. `Ok(None)` preserves the historical missing-file path.
 #[cfg(unix)]
-fn read_private_config_file(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
-    use nix::errno::Errno;
-    use nix::fcntl::{OFlag, open};
-    use nix::sys::stat::Mode;
-    use std::io::Read as _;
-
-    let fd = match open(
-        path,
-        OFlag::O_RDONLY | OFlag::O_NONBLOCK | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    ) {
-        Ok(fd) => fd,
-        Err(Errno::ENOENT) => return Ok(None),
-        Err(error) => {
-            return Err(anyhow::anyhow!(
-                "open private Codex configuration {}: {error}",
-                path.display()
-            ));
-        }
-    };
-    let mut file = std::fs::File::from(fd);
-    // Mandatory: `O_NONBLOCK` alone only makes `open(2)` on a FIFO succeed.
-    // Reject anything that is not a regular file instead of blocking on it.
-    let is_regular = file
-        .metadata()
-        .context("stat private Codex configuration")?
-        .is_file();
-    if !is_regular {
-        anyhow::bail!(
-            "refusing to read private Codex configuration {}: not a regular file",
-            path.display()
-        );
-    }
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .context("read private Codex configuration")?;
-    Ok(Some(bytes))
-}
-
-/// Non-Unix fallback: no `O_NOFOLLOW`/`O_NONBLOCK` open flags available.
-#[cfg(not(unix))]
-fn read_private_config_file(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
-    match std::fs::read(path) {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).context("read private Codex configuration"),
-    }
-}
-
-/// Preserve an unparseable config next to the regenerated file so hand-added
-/// keys survive as forensics. Fails closed: a failed rename is an error,
-/// never a silent overwrite.
-fn quarantine_corrupt_config(path: &Path, reason: &str) -> anyhow::Result<toml::Table> {
-    let unix_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs());
-    let target = path.with_file_name(format!(
-        "config.toml.corrupt-{unix_secs}-{}",
-        std::process::id()
-    ));
-    std::fs::rename(path, &target).with_context(|| {
-        format!(
-            "quarantine corrupt private Codex configuration {}",
-            path.display()
-        )
-    })?;
-    eprintln!(
-        "[jackin] warning: private Codex configuration {} is corrupt ({reason}); moved to {} and regenerating",
-        path.display(),
-        target.display()
-    );
-    Ok(toml::Table::new())
-}
-
 fn configure_codex(
     root: &Path,
     config: &AppConfig,
@@ -165,6 +657,36 @@ fn configure_codex(
     model: Option<&str>,
     effort: Option<&str>,
 ) -> anyhow::Result<()> {
+    configure_codex_with_publish_hook(root, config, instance, slot, model, effort, |_| Ok(()))
+}
+
+#[cfg(not(unix))]
+fn configure_codex(
+    _root: &Path,
+    _config: &AppConfig,
+    _instance: &jackin_config::ResolvedInstance,
+    _slot: &crate::instance::ProvisionedInstanceAuth,
+    _model: Option<&str>,
+    _effort: Option<&str>,
+) -> anyhow::Result<()> {
+    anyhow::bail!(
+        "private Codex config publication requires Unix descriptor-relative file operations"
+    )
+}
+
+#[cfg(unix)]
+fn configure_codex_with_publish_hook<F>(
+    root: &Path,
+    config: &AppConfig,
+    instance: &jackin_config::ResolvedInstance,
+    slot: &crate::instance::ProvisionedInstanceAuth,
+    model: Option<&str>,
+    effort: Option<&str>,
+    mut hook: F,
+) -> anyhow::Result<()>
+where
+    F: FnMut(private_config_fs::PublishPoint) -> anyhow::Result<()>,
+{
     let account = config
         .accounts
         .get(&instance.account_id)
@@ -178,29 +700,40 @@ fn configure_codex(
         !cross_provider || model.is_some(),
         "a model is required for a Codex provider account"
     );
-    let (default_url, key) = match account.provider {
-        AiProvider::Moonshot => ("https://api.kimi.com/coding/v1", "KIMI_API_KEY"),
-        AiProvider::Zai => ("https://api.z.ai/api/v1", "OPENAI_API_KEY"),
-        AiProvider::Minimax => ("https://api.minimax.io/v1", "MINIMAX_API_KEY"),
-        AiProvider::OpenAi => ("https://api.openai.com/v1", "OPENAI_API_KEY"),
+    let default_url = match account.provider {
+        AiProvider::Moonshot => "https://api.kimi.com/coding/v1",
+        AiProvider::Zai => "https://api.z.ai/api/v1",
+        AiProvider::Minimax => "https://api.minimax.io/v1",
+        AiProvider::OpenAi => "https://api.openai.com/v1",
         _ => anyhow::bail!("selected provider cannot authenticate Codex"),
     };
+    let key = account
+        .resolved_credential_descriptor(Agent::Codex)?
+        .env_name;
     // `container_home_rel` is computed by the auth provisioner from the same
     // slot layout used by mounts and the Capsule's CODEX_HOME value. Never
     // collapse multiple admitted Codex instances onto the primary home.
-    let directory = root.join("home").join(&slot.container_home_rel);
-    std::fs::create_dir_all(&directory).context("create private Codex configuration directory")?;
-    let path = directory.join("config.toml");
-    let mut document: toml::Table = match read_private_config_file(&path)? {
-        Some(bytes) => match String::from_utf8(bytes) {
-            Ok(contents) => match toml::from_str(&contents) {
-                Ok(document) => document,
-                Err(_) => quarantine_corrupt_config(&path, "invalid TOML")?,
+    let directory = private_config_fs::open_directory(root, Path::new(&slot.container_home_rel))?;
+    let _lock = private_config_fs::lock(&directory)?;
+    let mut document: toml::Table =
+        match private_config_fs::read_optional(&directory, "config.toml")
+            .context("read private Codex configuration")?
+        {
+            Some(bytes) => match String::from_utf8(bytes) {
+                Ok(contents) => match toml::from_str(&contents) {
+                    Ok(document) => document,
+                    Err(_) => {
+                        private_config_fs::quarantine(&directory, "config.toml", "invalid TOML")?;
+                        toml::Table::new()
+                    }
+                },
+                Err(_) => {
+                    private_config_fs::quarantine(&directory, "config.toml", "non-UTF8 bytes")?;
+                    toml::Table::new()
+                }
             },
-            Err(_) => quarantine_corrupt_config(&path, "non-UTF8 bytes")?,
-        },
-        None => toml::Table::new(),
-    };
+            None => toml::Table::new(),
+        };
     let mut provider = toml::Table::new();
     provider.insert("name".into(), account.provider.slug().into());
     provider.insert("base_url".into(), base_url.unwrap_or(default_url).into());
@@ -214,7 +747,8 @@ fn configure_codex(
         .get("model_providers")
         .is_some_and(|value| !value.is_table())
     {
-        document = quarantine_corrupt_config(&path, "model_providers is not a table")?;
+        private_config_fs::quarantine(&directory, "config.toml", "model_providers is not a table")?;
+        document = toml::Table::new();
     }
     let providers = document
         .entry("model_providers")
@@ -224,6 +758,7 @@ fn configure_codex(
         .context("Codex model_providers must be a table")?;
     providers.insert("jackin_account".into(), provider.into());
     document.insert("model_provider".into(), "jackin_account".into());
+    let mut catalog_to_publish = None;
     if let Some(model) = model {
         document.insert("model".into(), model.into());
         if let Some(catalog) = model_catalog(account.provider, model) {
@@ -233,16 +768,14 @@ fn configure_codex(
                     "Codex model {model:?} does not support reasoning effort {effort:?}"
                 );
             }
-            atomic_write(
-                &directory.join("account-models.json"),
-                &serde_json::to_string_pretty(&catalog)?,
-            )
-            .context("write private Codex model metadata")?;
+            let catalog_contents = serde_json::to_vec_pretty(&catalog)?;
+            let catalog_name = codex_catalog_filename(&catalog_contents);
             let catalog_target = Path::new(&slot.folder_target)
-                .join("account-models.json")
+                .join(&catalog_name)
                 .to_string_lossy()
                 .into_owned();
             document.insert("model_catalog_json".into(), catalog_target.into());
+            catalog_to_publish = Some((catalog_name, catalog_contents));
         } else {
             document.remove("model_catalog_json");
         }
@@ -255,8 +788,30 @@ fn configure_codex(
     } else {
         document.remove("model_reasoning_effort");
     }
-    atomic_write(&path, &toml::to_string_pretty(&document)?)
-        .context("write private Codex account configuration")
+    let config_contents = toml::to_string_pretty(&document)?.into_bytes();
+    if let Some((catalog_name, catalog_contents)) = catalog_to_publish {
+        // The catalog name is content-addressed and immutable. Sync it before
+        // atomically changing config.toml, which is the pair's commit point.
+        private_config_fs::publish_catalog(&directory, &catalog_name, &catalog_contents, &mut hook)
+            .context("publish private Codex model metadata")?;
+    }
+    private_config_fs::publish_atomic(
+        &directory,
+        "config.toml",
+        &config_contents,
+        private_config_fs::Artifact::CodexConfig,
+        &mut hook,
+    )
+    .context("publish private Codex account configuration")
+}
+
+fn codex_catalog_filename(contents: &[u8]) -> String {
+    use sha2::{Digest as _, Sha256};
+
+    format!(
+        "account-models-{}.json",
+        hex::encode(Sha256::digest(contents))
+    )
 }
 
 /// Provider identifiers from `OpenCode`'s catalog; config and CLI model use the same ID.
@@ -324,6 +879,7 @@ pub(super) fn opencode_model(provider: AiProvider, model: &str) -> anyhow::Resul
 }
 
 /// <https://opencode.ai/docs/providers>: provider options and model IDs are paired.
+#[cfg(unix)]
 fn configure_opencode(
     root: &Path,
     config: &AppConfig,
@@ -341,17 +897,17 @@ fn configure_opencode(
     let base_url = instance.base_url.as_deref();
     let (id, npm, default_url) = opencode_provider(account.provider)?;
     let credential_account = account_with_effective_model(account, model);
-    let credentials = credential_account.credential_env(Agent::Opencode)?;
-    let key = credentials
-        .keys()
-        .next()
-        .context("OpenCode account has no credential variable")?;
-    let directory = root.join("home").join(crate::instance::slot_home_rel(
-        ".config/opencode",
-        slot.slot_suffix.as_deref(),
-    ));
-    std::fs::create_dir_all(&directory)
-        .context("create private OpenCode configuration directory")?;
+    credential_account.credential_env(Agent::Opencode)?;
+    let key = account
+        .resolved_credential_descriptor(Agent::Opencode)?
+        .env_name;
+    let directory = private_config_fs::open_directory(
+        root,
+        Path::new(&crate::instance::slot_home_rel(
+            ".config/opencode",
+            slot.slot_suffix.as_deref(),
+        )),
+    )?;
     let mut provider = serde_json::json!({
         "name": account.name, "npm": npm,
         "options": { "baseURL": base_url.unwrap_or(default_url), "apiKey": format!("{{env:{key}}}") }
@@ -380,11 +936,28 @@ fn configure_opencode(
         document["model"] = full_model.into();
     }
     document["provider"] = serde_json::json!({ id: provider });
-    atomic_write(
-        &directory.join("opencode.json"),
-        &serde_json::to_string_pretty(&document)?,
+    let contents = serde_json::to_string_pretty(&document)?;
+    private_config_fs::publish_atomic(
+        &directory,
+        "opencode.json",
+        contents.as_bytes(),
+        private_config_fs::Artifact::OpenCodeConfig,
+        |_| Ok(()),
     )
     .context("write private OpenCode account configuration")
+}
+
+#[cfg(not(unix))]
+fn configure_opencode(
+    _root: &Path,
+    _config: &AppConfig,
+    _instance: &jackin_config::ResolvedInstance,
+    _slot: &crate::instance::ProvisionedInstanceAuth,
+    _model: Option<&str>,
+) -> anyhow::Result<()> {
+    anyhow::bail!(
+        "private OpenCode config publication requires Unix descriptor-relative file operations"
+    )
 }
 
 /// Provider-published metadata, not guessed for custom model IDs.

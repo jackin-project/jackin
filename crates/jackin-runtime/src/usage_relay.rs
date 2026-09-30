@@ -22,7 +22,8 @@ use jackin_usage::host::{
     CachedProviderCredentialResolver, ForwardedUsageSources, HostSurfaceId,
     ProviderCredentialSecretOutcome, ProviderCredentialSecretResolution,
     ProviderCredentialSecretSource, UsageBrokerClient, UsageBrokerConfig, discover_usage_sources,
-    forwarded_usage_capabilities, usage_capability_for_selected_account, validate_usage_sources,
+    forwarded_usage_capabilities, usage_capability_for_selected_account_with_sources,
+    validate_usage_sources,
 };
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
@@ -631,8 +632,12 @@ fn canonical_capabilities_for_launch(
             .selected_account_surfaces
             .iter()
             .filter_map(|(account_id, surface_id)| {
-                let capability =
-                    usage_capability_for_selected_account(discovery, account_id, surface_id)?;
+                let capability = usage_capability_for_selected_account_with_sources(
+                    discovery,
+                    account_id,
+                    surface_id,
+                    Some(forwarded_sources),
+                )?;
                 allowed
                     .contains(&capability)
                     .then_some(((account_id.clone(), surface_id.clone()), capability))

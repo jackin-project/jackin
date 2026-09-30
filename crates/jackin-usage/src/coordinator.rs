@@ -59,6 +59,18 @@ pub trait UsageProviderExecutor: Send + Sync {
     /// actually returns.
     fn probe(&self, capability: &UsageAccountCapability, generation: u64) -> ProviderProbeOutcome;
 
+    /// Execute one launch-scoped probe with immutable source proof. The
+    /// default preserves source compatibility for executors that do not need
+    /// launch-specific routing.
+    fn probe_scoped(
+        &self,
+        capability: &UsageAccountCapability,
+        generation: u64,
+        _scope: &UsageCredentialScope,
+    ) -> ProviderProbeOutcome {
+        self.probe(capability, generation)
+    }
+
     /// Reconcile provider bindings before a new catalog revision can start
     /// work. A failed reconciliation does not admit the new catalog.
     fn reconcile_catalog(
@@ -347,6 +359,7 @@ struct ProbeJob {
     generation: u64,
     started_at_epoch: i64,
     catalog_revision: Option<String>,
+    credential_scope: Option<UsageCredentialScope>,
 }
 
 enum WorkerMessage {
@@ -667,6 +680,37 @@ impl UsageCoordinator {
         force: bool,
         now_epoch: i64,
     ) -> Result<UsageGenerationView, UsageCoordinationError> {
+        self.request_refresh_with_scope(capability, observed_generation, force, now_epoch, None)
+    }
+
+    /// Start one refresh whose provider work must use the supplied immutable
+    /// launch source proof. The proof travels with the generation job so a
+    /// later sibling binding cannot authorize a different refresh authority.
+    pub fn request_refresh_scoped(
+        &self,
+        capability: &UsageAccountCapability,
+        observed_generation: u64,
+        force: bool,
+        now_epoch: i64,
+        credential_scope: UsageCredentialScope,
+    ) -> Result<UsageGenerationView, UsageCoordinationError> {
+        self.request_refresh_with_scope(
+            capability,
+            observed_generation,
+            force,
+            now_epoch,
+            Some(credential_scope),
+        )
+    }
+
+    fn request_refresh_with_scope(
+        &self,
+        capability: &UsageAccountCapability,
+        observed_generation: u64,
+        force: bool,
+        now_epoch: i64,
+        credential_scope: Option<UsageCredentialScope>,
+    ) -> Result<UsageGenerationView, UsageCoordinationError> {
         let catalog_lifecycle = self
             .shared
             .catalog_lifecycle
@@ -733,6 +777,7 @@ impl UsageCoordinator {
             generation,
             started_at_epoch: now_epoch,
             catalog_revision,
+            credential_scope,
         };
         drop(catalog_lifecycle);
         match self.jobs.try_send(WorkerMessage::Probe(job)) {
@@ -1143,7 +1188,13 @@ fn execute_probe(shared: &Arc<Shared>, job: ProbeJob) {
     }
     let started = Instant::now();
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        shared.executor.probe(&job.capability, job.generation)
+        if let Some(scope) = job.credential_scope.as_ref() {
+            shared
+                .executor
+                .probe_scoped(&job.capability, job.generation, scope)
+        } else {
+            shared.executor.probe(&job.capability, job.generation)
+        }
     }));
     let finished_at_epoch = job
         .started_at_epoch

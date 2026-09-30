@@ -42,6 +42,7 @@ pub use broker::{
     ensure_usage_broker, ensure_usage_broker_process, ensure_usage_broker_with_executor,
     forwarded_usage_capabilities, run_usage_broker_service, run_usage_broker_service_with_executor,
     usage_broker_capabilities, usage_capability_for_selected_account,
+    usage_capability_for_selected_account_with_sources,
 };
 pub use credential_resolver::{
     CachedProviderCredentialResolver, ProviderCredentialSecretOutcome,
