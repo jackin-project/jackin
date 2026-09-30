@@ -615,6 +615,30 @@ fn binding_matches_proof(
         && proof.material_fingerprint == material.material_fingerprint
 }
 
+fn record_key_binding(
+    key_bindings: &mut Vec<(String, String, UsageCredentialSourceIdentity, String)>,
+    account_id: &str,
+    launch_key: &str,
+    material: &ProviderCredentialSourceMaterial,
+) -> bool {
+    let Some((_, _, source, fingerprint)) =
+        key_bindings
+            .iter()
+            .find(|(existing_account, existing_key, _, _)| {
+                existing_account == account_id && existing_key == launch_key
+            })
+    else {
+        key_bindings.push((
+            account_id.to_owned(),
+            launch_key.to_owned(),
+            material.source.clone(),
+            material.material_fingerprint.clone(),
+        ));
+        return true;
+    };
+    source == &material.source && fingerprint == &material.material_fingerprint
+}
+
 /// Authorize a capability against every relevant launch proof and return the
 /// exact binding whose source may be refreshed. Multiple route bindings may
 /// share one canonical capability, but each proof must resolve to exactly one
@@ -666,23 +690,8 @@ fn authorize_credential_binding_group(
         };
         for account_id in binding_account_ids(binding) {
             for launch_key in launch_keys {
-                let duplicate =
-                    key_bindings
-                        .iter()
-                        .find(|(existing_account, existing_key, _, _)| {
-                            existing_account == &account_id && existing_key == launch_key
-                        });
-                if let Some((_, _, source, fingerprint)) = duplicate {
-                    if source != &material.source || fingerprint != &material.material_fingerprint {
-                        return None;
-                    }
-                } else {
-                    key_bindings.push((
-                        account_id.clone(),
-                        launch_key.clone(),
-                        material.source.clone(),
-                        material.material_fingerprint.clone(),
-                    ));
+                if !record_key_binding(&mut key_bindings, &account_id, launch_key, material) {
+                    return None;
                 }
             }
         }
@@ -1518,14 +1527,16 @@ fn rediscover_all_bindings(
     rediscover_discovery(scope, resolver).map(|discovery| grouped_bindings(&discovery))
 }
 
+type RediscoveredBindings = (
+    Option<Vec<ValidatedCredentialBinding>>,
+    Option<BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>>>,
+);
+
 fn rediscover_bindings(
     scope: &UsageDiscoveryScope,
     resolver: &dyn ProviderCredentialEnvResolver,
     capability: &UsageAccountCapability,
-) -> (
-    Option<Vec<ValidatedCredentialBinding>>,
-    Option<BTreeMap<UsageAccountCapability, Vec<ValidatedCredentialBinding>>>,
-) {
+) -> RediscoveredBindings {
     let bindings = rediscover_all_bindings(scope, resolver);
     let Some(bindings) = bindings else {
         return (None, None);

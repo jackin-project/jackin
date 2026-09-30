@@ -609,6 +609,19 @@ struct CandidateAccumulator {
     operator_home: Option<PathBuf>,
 }
 
+fn merge_env_candidate(
+    candidate: &mut CandidateAccumulator,
+    provenance: &BTreeSet<String>,
+    env_key: &str,
+    account_label: Option<&str>,
+) {
+    candidate.provenance.extend(provenance.clone());
+    candidate.env_keys.insert(env_key.to_owned());
+    if candidate.account_label.is_none() {
+        candidate.account_label = account_label.map(str::to_owned);
+    }
+}
+
 /// Discover and pre-deduplicate every source authorized by `scope`.
 pub fn discover_usage_sources(
     scope: &UsageDiscoveryScope,
@@ -823,16 +836,13 @@ fn enumerate_registered_accounts(
             ),
             AccountCredential::Profile { .. } => continue,
         };
-        let routes = match config.credential_descriptors_for_account(id) {
-            Ok(routes) => routes,
-            Err(_) => {
-                diagnostics.push(account_diagnostic(
-                    surface,
-                    id,
-                    UsageDiscoveryIssue::CredentialMalformed,
-                ));
-                continue;
-            }
+        let Ok(routes) = config.credential_descriptors_for_account(id) else {
+            diagnostics.push(account_diagnostic(
+                surface,
+                id,
+                UsageDiscoveryIssue::CredentialMalformed,
+            ));
+            continue;
         };
         for route in routes {
             if route.mode != expected_mode {
@@ -887,11 +897,12 @@ fn enumerate_registered_accounts(
                             .to_owned(),
                         })
                         .and_modify(|candidate| {
-                            candidate.provenance.extend(provenance.clone());
-                            candidate.env_keys.insert(entry.name.to_owned());
-                            if candidate.account_label.is_none() {
-                                candidate.account_label = label.clone();
-                            }
+                            merge_env_candidate(
+                                candidate,
+                                &provenance,
+                                entry.name,
+                                label.as_deref(),
+                            );
                         })
                         .or_insert_with(|| CandidateAccumulator {
                             surface,

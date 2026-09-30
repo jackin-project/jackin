@@ -620,10 +620,7 @@ impl AccountConfig {
                         self.name
                     ))
                 })?;
-                env.insert(
-                    route.env_name.into(),
-                    value.clone(),
-                );
+                env.insert(route.env_name.into(), value.clone());
                 if let Some(url) = endpoint {
                     env.insert("ANTHROPIC_BASE_URL".into(), EnvValue::from(url));
                 }
