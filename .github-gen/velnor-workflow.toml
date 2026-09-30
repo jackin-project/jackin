@@ -143,6 +143,51 @@ name = "Renovate upstream sources"
 events = ["push", "pull_request"]
 branches = ["main"]
 
+# Advisory CI evidence observer. Tasks retain run/job/artifact identity,
+# provenance, status, and timing for diagnosis. They make no semantic CI or
+# merge-readiness claim; artifact publication is best effort.
+[[check_profile]]
+id = "ci-evidence"
+name = "CI first-attempt evidence"
+schedule = "47 4 * * *"
+runner = "github"
+tools = ["rust"]
+tasks = ["ci-evidence"]
+timeout_minutes = 30
+status = "advisory"
+artifacts = ["target/ci-evidence/"]
+[check_profile.env]
+GH_TOKEN = "${{ github.token }}"
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "ci-evidence.yml"
+[declare.args]
+profiles = ["ci-evidence"]
+name = "CI first-attempt evidence"
+
+[[check_profile]]
+id = "ci-push-head-ledger"
+name = "CI push-head ledger"
+runner = "github"
+tools = ["rust"]
+tasks = ["ci-push-head-ledger"]
+timeout_minutes = 10
+status = "advisory"
+full_history = true
+artifacts = ["target/ci-push-head-ledger/"]
+[check_profile.env]
+GH_TOKEN = "${{ github.token }}"
+
+[[declare]]
+primitive = "scheduled-checks"
+file = "ci-push-head-ledger.yml"
+[declare.args]
+profiles = ["ci-push-head-ledger"]
+name = "CI push-head ledger"
+events = ["push"]
+branches = ["main"]
+
 # Unit contracts the scan cannot derive. Command arrays are rejected;
 # typed capabilities only (`ci_tasks`, `mise_tools`).
 # Construct Dockerfile ARG defaults match versions.env so the scan-derived

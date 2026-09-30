@@ -6,16 +6,18 @@
 //! disappearing from the denominator.
 //!
 //! The collector validates a durable push-head artifact produced by CI; it does
-//! not create that producer workflow. A local fixture is intentionally
-//! ineligible for a qualified green claim, and this module makes no live-CI
-//! production-qualification claim by itself.
+//! not create that producer workflow. The resulting rollup is an advisory
+//! observer of run identity, provenance, timing, and classification. It makes
+//! no semantic CI or merge-readiness claim.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
@@ -29,17 +31,28 @@ use crate::{cmd, docs};
 #[cfg(test)]
 mod tests;
 
-const SCHEMA: u32 = 5;
+const SCHEMA: u32 = 7;
 const DEFAULT_WINDOW_DAYS: i64 = 31;
 const DEFAULT_CI_WORKFLOW: &str = "ci-main.yml";
 const DEFAULT_DESKTOP_WORKFLOW: &str = "desktop-merge.yml";
 const DEFAULT_CI_EVIDENCE_WORKFLOW: &str = "ci-evidence.yml";
-const DEFAULT_CI_EVIDENCE_ARTIFACT: &str = "target/ci-evidence/";
+const CI_EVIDENCE_ARTIFACT_PATH: &str = "target/ci-evidence/";
+const CI_EVIDENCE_ARTIFACT_NAME: &str = "ci-evidence";
 const DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW: &str = "ci-push-head-ledger.yml";
 const DEFAULT_PUSH_HEAD_LEDGER_ARTIFACT: &str = "ci-push-head-ledger";
+const CI_PUSH_HEAD_LEDGER_ARTIFACT_PATH: &str = "target/ci-push-head-ledger/";
+const MAX_API_STDERR_BYTES: usize = 64 * 1024;
+const TARGET_REPOSITORY: &str = "jackin-project/jackin";
+const TARGET_REPOSITORY_ID: u64 = 1_197_700_841;
 const WORKFLOW_CONTRACT_PATH: &str = ".github-gen/velnor-workflow.toml";
 const WORKFLOW_STATE_PATH: &str = ".github/ci/.github-actions-generator-state";
 const MISE_PATH: &str = "mise.toml";
+const GENERATED_STATE_SCHEMA: u32 = 2;
+// Velnor 4dec emits ownership-state generator revision 69. This is a
+// checked-in consumer contract: changing it requires regenerating the state
+// with the new pinned renderer and updating this validator in the same change.
+const GENERATED_STATE_GENERATOR: &str = "69";
+static WRITE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Independently counted post-merge obligations.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
@@ -168,14 +181,16 @@ pub(crate) struct PushHeadObservation {
     pub(crate) event: String,
     pub(crate) workflow_id: u64,
     pub(crate) workflow_path: String,
+    pub(crate) workflow_sha: String,
     pub(crate) run_id: u64,
+    pub(crate) run_attempt: u32,
     pub(crate) head_sha: String,
     pub(crate) before_sha: String,
     pub(crate) tree_sha: String,
     pub(crate) committed_at: String,
     pub(crate) created_at: String,
     pub(crate) pushed_commits: Vec<String>,
-    pub(crate) raw_event_sha256: String,
+    pub(crate) event_sha256: String,
     pub(crate) artifact: PushHeadArtifactProof,
 }
 
@@ -188,6 +203,8 @@ pub(crate) struct PushHeadArtifactProof {
     pub(crate) manifest: String,
     pub(crate) event: String,
     pub(crate) manifest_sha256: String,
+    pub(crate) artifact_id: u64,
+    pub(crate) artifact_digest: String,
 }
 
 /// Proof that the first in-window push is attached to the immediately prior
@@ -196,6 +213,10 @@ pub(crate) struct PushHeadArtifactProof {
 pub(crate) enum DenominatorBoundary {
     PushHead {
         predecessor: Box<PushHeadObservation>,
+    },
+    Bootstrap {
+        first_run_id: u64,
+        before_sha: String,
     },
     Fixture,
 }
@@ -208,6 +229,11 @@ pub(crate) struct CollectionProvenance {
     pub(crate) event: String,
     pub(crate) workflow_path: String,
     pub(crate) run_id: Option<u64>,
+    pub(crate) run_attempt: Option<u32>,
+    pub(crate) workflow_ref: Option<String>,
+    pub(crate) head_sha: Option<String>,
+    pub(crate) workflow_sha: Option<String>,
+    pub(crate) artifact_name: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -249,7 +275,10 @@ pub(crate) struct AttemptEvidence {
     pub(crate) workflow_id: Option<u64>,
     pub(crate) workflow_name: Option<String>,
     pub(crate) workflow_path: Option<String>,
+    #[serde(default)]
+    pub(crate) workflow_file_sha: Option<String>,
     pub(crate) event: Option<String>,
+    pub(crate) head_branch: Option<String>,
     pub(crate) head_sha: String,
     pub(crate) denominator_source: DenominatorSource,
     pub(crate) base_sha: Option<String>,
@@ -346,12 +375,16 @@ pub(crate) struct RollupFile {
     pub(crate) total_first_attempt_failures: usize,
     pub(crate) unclassified_runs: usize,
     pub(crate) denominator: DenominatorProof,
-    pub(crate) green_claim_qualified: bool,
+    pub(crate) status: String,
     pub(crate) six_nines_claimed: bool,
 }
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiEvidenceCommand {
+    /// Collect and roll up evidence in the generated scheduled workflow.
+    Run,
+    /// Record the exact main push event as a durable denominator artifact.
+    RecordPush,
     /// Fetch main-branch runs/attempts and append normalized evidence.
     Collect(CollectArgs),
     /// Join evidence to expected obligations and write JSON + Markdown.
@@ -396,13 +429,60 @@ pub(crate) struct RollupArgs {
 
 pub(crate) fn run(command: CiEvidenceCommand) -> Result<()> {
     match command {
+        CiEvidenceCommand::Run => run_scheduled_collector(),
+        CiEvidenceCommand::RecordPush => record_push_head(),
         CiEvidenceCommand::Collect(args) => collect(args),
         CiEvidenceCommand::Rollup(args) => rollup(args),
     }
 }
 
+fn run_scheduled_collector() -> Result<()> {
+    let root = docs::repo_root()?;
+    validate_workflow_contract(&root)?;
+    if env::var("GITHUB_ACTIONS").ok().as_deref() == Some("true") {
+        match env::var("GITHUB_EVENT_NAME") {
+            Ok(event) if event == "workflow_dispatch" => {
+                bail!(
+                    "manual dispatch does not produce scheduled CI evidence; use the schedule event"
+                );
+            }
+            Ok(event) if event == "schedule" => {}
+            Ok(_) => bail!("scheduled collector only accepts schedule events"),
+            Err(error) => return Err(error).context("GITHUB_EVENT_NAME is missing"),
+        }
+    }
+    let repository = env::var("GITHUB_REPOSITORY")
+        .context("GITHUB_REPOSITORY is required by the scheduled CI evidence task")?;
+    collect(CollectArgs {
+        repository,
+        since: None,
+        until: None,
+        branch: "main".to_owned(),
+        output: PathBuf::from(CI_EVIDENCE_ARTIFACT_PATH).join("attempts.json"),
+        expected: None,
+        ci_workflow: Vec::new(),
+        desktop_workflow: Vec::new(),
+        runtime_revision: None,
+        contract_digest: None,
+    })?;
+    write_rollup_files(RollupArgs {
+        input: PathBuf::from("target/ci-evidence/attempts.json"),
+        json: PathBuf::from("target/ci-evidence/rollup.json"),
+        markdown: PathBuf::from("target/ci-evidence/rollup.md"),
+    })?;
+    for path in [
+        "target/ci-evidence/attempts.json",
+        "target/ci-evidence/rollup.json",
+        "target/ci-evidence/rollup.md",
+    ] {
+        require_nonempty_file(&root.join(path))?;
+    }
+    Ok(())
+}
+
 fn collect(args: CollectArgs) -> Result<()> {
     let root = docs::repo_root()?;
+    let output_path = repository_output_path(&root, &args.output)?;
     let repository = canonical_repository(&nonempty_or_env(args.repository, "GITHUB_REPOSITORY")?)?;
     validate_git_remote_identity(&root, &repository)?;
     let until = args.until.unwrap_or_else(now_rfc3339);
@@ -440,8 +520,9 @@ fn collect(args: CollectArgs) -> Result<()> {
             &ledger_workflow_ids,
         )?,
     };
+    let collection_window = denominator.denominator.window.clone();
     let expected = denominator.expected.clone();
-    let runs = list_runs(&repository, &args.branch, &window)?;
+    let runs = list_runs(&repository, &args.branch, &collection_window)?;
     let mut attempts = Vec::new();
     let mut unclassified_runs = Vec::new();
     for run in runs {
@@ -467,6 +548,10 @@ fn collect(args: CollectArgs) -> Result<()> {
             ));
             continue;
         };
+        let expected_workflow = match cohort {
+            Cohort::CiMain => DEFAULT_CI_WORKFLOW,
+            Cohort::Desktop => DEFAULT_DESKTOP_WORKFLOW,
+        };
         if !expected
             .iter()
             .any(|obligation| obligation.commit.sha == run.head_sha && obligation.cohort == cohort)
@@ -477,6 +562,15 @@ fn collect(args: CollectArgs) -> Result<()> {
             ));
             continue;
         }
+        validate_api_run_contract(
+            &run,
+            run.id,
+            &args.branch,
+            "push",
+            expected_workflow,
+            run.workflow_id,
+            Some(&run.head_sha),
+        )?;
         let run_attempts = list_attempts(&repository, &run)?;
         if run_attempts.is_empty() {
             bail!(
@@ -485,7 +579,7 @@ fn collect(args: CollectArgs) -> Result<()> {
             );
         }
         for attempt in run_attempts {
-            let jobs = list_jobs(&repository, run.id, attempt.run_attempt)?;
+            let jobs = list_jobs(&repository, &run, attempt.run_attempt)?;
             attempts.push(normalize_attempt(
                 &run,
                 &attempt,
@@ -497,10 +591,10 @@ fn collect(args: CollectArgs) -> Result<()> {
         }
     }
     let existing = read_evidence(
-        &args.output,
+        &output_path,
         &repository,
         &args.branch,
-        &window,
+        &collection_window,
         runtime.clone(),
     )?;
     let merged = merge_evidence(
@@ -513,24 +607,32 @@ fn collect(args: CollectArgs) -> Result<()> {
             history: denominator.history,
             push_heads: denominator.push_heads,
             repository,
-            window,
+            window: collection_window,
             runtime,
             provenance,
         },
     )?;
-    write_json(&args.output, &merged)?;
-    print_collection_summary(&merged, &args.output)?;
+    write_json(&output_path, &merged)?;
+    print_collection_summary(&merged, &output_path)?;
     Ok(())
 }
 
 fn rollup(args: RollupArgs) -> Result<()> {
-    let evidence: EvidenceFile = read_json(&args.input)?;
+    write_rollup_files(args).map(|_| ())
+}
+
+fn write_rollup_files(args: RollupArgs) -> Result<RollupFile> {
+    let root = docs::repo_root()?;
+    let input = repository_output_path(&root, &args.input)?;
+    let json = repository_output_path(&root, &args.json)?;
+    let markdown = repository_output_path(&root, &args.markdown)?;
+    let evidence: EvidenceFile = read_json(&input)?;
     validate_evidence(&evidence)?;
     let summary = build_rollup(&evidence);
-    write_json(&args.json, &summary)?;
-    write_markdown(&args.markdown, &summary, &evidence)?;
+    write_json(&json, &summary)?;
+    write_markdown(&markdown, &summary, &evidence)?;
     print_rollup_summary(&summary)?;
-    require_qualified(&summary)
+    Ok(summary)
 }
 
 fn now_rfc3339() -> String {
@@ -581,6 +683,14 @@ fn canonical_repository(value: &str) -> Result<String> {
         || owner == ".."
         || name == "."
         || name == ".."
+        || owner.len() > 39
+        || name.len() > 100
+        || !owner
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     {
         bail!("repository must be an owner/name identity, got `{value}`");
     }
@@ -593,29 +703,99 @@ fn remote_repository_identity(url: &str) -> Result<String> {
         path
     } else if let Some(path) = url.strip_prefix("https://github.com/") {
         path
-    } else if let Some(path) = url.strip_prefix("http://github.com/") {
-        path
     } else if let Some(path) = url.strip_prefix("ssh://git@github.com/") {
         path
-    } else if let Some(path) = url.strip_prefix("git://github.com/") {
-        path
     } else {
-        bail!("origin remote is not a supported github.com repository URL: `{url}`");
+        bail!("origin fetch URL must use HTTPS or SSH for github.com: `{url}`");
     };
     canonical_repository(path)
 }
 
 fn validate_git_remote_identity(root: &Path, repository: &str) -> Result<()> {
-    let remote = cmd::output_string(
-        Command::new("git")
-            .current_dir(root)
-            .args(["remote", "get-url", "origin"]),
-    )?;
-    let remote_repository = remote_repository_identity(&remote)?;
-    if remote_repository != repository {
-        bail!("git origin `{remote_repository}` does not match --repository `{repository}`");
+    if !repository.eq_ignore_ascii_case(TARGET_REPOSITORY) {
+        bail!("collector is restricted to the pinned target repository");
+    }
+    validate_effective_origin_urls(root, false, repository)?;
+    validate_effective_origin_urls(root, true, repository)?;
+
+    let mirrored = cmd::output_string(Command::new("git").current_dir(root).args([
+        "config",
+        "--bool",
+        "--default",
+        "false",
+        "--get",
+        "remote.origin.mirror",
+    ]))?;
+    if mirrored.trim().eq_ignore_ascii_case("true") {
+        bail!("git origin mirror mode is incompatible with evidence collection");
+    }
+    let fetch_specs = cmd::output_string(Command::new("git").current_dir(root).args([
+        "config",
+        "--get-all",
+        "remote.origin.fetch",
+    ]))?;
+    for spec in fetch_specs.lines().filter(|line| !line.trim().is_empty()) {
+        validate_origin_fetch_spec(spec)?;
     }
     Ok(())
+}
+
+fn validate_effective_origin_urls(root: &Path, push: bool, repository: &str) -> Result<()> {
+    let mut command = Command::new("git");
+    command.current_dir(root).args(["remote", "get-url"]);
+    if push {
+        command.arg("--push");
+    }
+    let urls = cmd::output_string(command.args(["--all", "origin"]))?;
+    let urls = urls
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+    if urls.is_empty() {
+        bail!(
+            "git origin has no effective {} URL",
+            if push { "push" } else { "fetch" }
+        );
+    }
+    for url in urls {
+        let identity = remote_repository_identity(url)
+            .context("git origin has an unsupported effective GitHub URL")?;
+        if !identity.eq_ignore_ascii_case(repository) {
+            bail!(
+                "git origin {} URL targets another repository",
+                if push { "push" } else { "fetch" }
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_origin_fetch_spec(spec: &str) -> Result<()> {
+    let spec = spec.strip_prefix('+').unwrap_or(spec);
+    let (source, destination) = spec
+        .split_once(':')
+        .context("git origin fetch refspec is malformed")?;
+    let source_ok = source == "refs/heads/*" || source == "refs/heads/main";
+    let destination_ok =
+        destination == "refs/remotes/origin/*" || destination == "refs/remotes/origin/main";
+    if !source_ok || !destination_ok {
+        bail!("git origin fetch refspec is outside the main/heads namespace");
+    }
+    Ok(())
+}
+
+fn parse_workflow_ref(value: &str, repository: &str) -> Result<(String, String)> {
+    let prefix = format!("{repository}/.github/workflows/");
+    let suffix = value
+        .strip_prefix(&prefix)
+        .context("GITHUB_WORKFLOW_REF is not under the expected repository workflow directory")?;
+    let (path, git_ref) = suffix
+        .split_once('@')
+        .context("GITHUB_WORKFLOW_REF has no ref suffix")?;
+    if path.is_empty() || path.contains('@') || git_ref.is_empty() {
+        bail!("GITHUB_WORKFLOW_REF is malformed");
+    }
+    Ok((path.to_owned(), git_ref.to_owned()))
 }
 
 fn collection_provenance(repository: &str, branch: &str) -> Result<CollectionProvenance> {
@@ -626,26 +806,42 @@ fn collection_provenance(repository: &str, branch: &str) -> Result<CollectionPro
             event: "local".to_owned(),
             workflow_path: "local".to_owned(),
             run_id: None,
+            run_attempt: None,
+            workflow_ref: None,
+            head_sha: None,
+            workflow_sha: None,
+            artifact_name: None,
         });
     }
     let event = env::var("GITHUB_EVENT_NAME").context("GITHUB_EVENT_NAME is missing")?;
     let ref_name = env::var("GITHUB_REF_NAME").context("GITHUB_REF_NAME is missing")?;
+    let git_ref = env::var("GITHUB_REF").context("GITHUB_REF is missing")?;
     let workflow_ref = env::var("GITHUB_WORKFLOW_REF").context("GITHUB_WORKFLOW_REF is missing")?;
-    let workflow_path = workflow_ref
-        .split_once("/.github/workflows/")
-        .and_then(|(_, suffix)| suffix.split_once('@').map(|(path, _)| path.to_owned()))
-        .context("GITHUB_WORKFLOW_REF has no workflow path")?;
+    let (workflow_path, workflow_git_ref) = parse_workflow_ref(&workflow_ref, repository)?;
     let run_id = env::var("GITHUB_RUN_ID")
         .context("GITHUB_RUN_ID is missing")?
         .parse::<u64>()
         .context("GITHUB_RUN_ID is not a number")?;
+    let run_attempt = env::var("GITHUB_RUN_ATTEMPT")
+        .context("GITHUB_RUN_ATTEMPT is missing")?
+        .parse::<u32>()
+        .context("GITHUB_RUN_ATTEMPT is not a number")?;
+    let head_sha = env::var("GITHUB_SHA").context("GITHUB_SHA is missing")?;
+    let workflow_sha = env::var("GITHUB_WORKFLOW_SHA").context("GITHUB_WORKFLOW_SHA is missing")?;
+    if !is_git_sha(&workflow_sha) || !is_git_sha(&head_sha) {
+        bail!("workflow/head SHA is not a 40-character hexadecimal identity");
+    }
     if event != "schedule"
         || ref_name != branch
+        || git_ref != format!("refs/heads/{branch}")
         || branch != "main"
         || workflow_path != "ci-evidence.yml"
+        || workflow_git_ref != git_ref
+        || run_id == 0
+        || run_attempt == 0
     {
         bail!(
-            "CI evidence must run as the main scheduled ci-evidence workflow; event={event}, ref={ref_name}, workflow={workflow_path}"
+            "CI evidence must run on main as the generated ci-evidence workflow; event={event}, ref={git_ref}, workflow={workflow_path}"
         );
     }
     Ok(CollectionProvenance {
@@ -654,6 +850,11 @@ fn collection_provenance(repository: &str, branch: &str) -> Result<CollectionPro
         event,
         workflow_path,
         run_id: Some(run_id),
+        run_attempt: Some(run_attempt),
+        workflow_ref: Some(workflow_ref),
+        head_sha: Some(head_sha),
+        workflow_sha: Some(workflow_sha),
+        artifact_name: Some(CI_EVIDENCE_ARTIFACT_NAME.to_owned()),
     })
 }
 
@@ -669,14 +870,14 @@ fn runtime_identity(root: &Path, mut identity: RuntimeIdentity) -> Result<Runtim
     let config = root.join(".github-gen/velnor-workflow.toml");
     let contents = fs::read_to_string(&config)
         .with_context(|| format!("reading workflow contract {}", config.display()))?;
-    let expected_revision = contents.lines().find_map(|line| {
-        let value = line
-            .trim()
-            .strip_prefix("revision = \"")?
-            .strip_suffix('"')?;
-        (value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
-            .then(|| value.to_owned())
-    });
+    let parsed: toml::Value = toml::from_str(&contents).context("parsing workflow contract")?;
+    let expected_revision = parsed
+        .get("generator")
+        .and_then(toml::Value::as_table)
+        .and_then(|generator| generator.get("revision"))
+        .and_then(toml::Value::as_str)
+        .filter(|revision| is_git_sha(revision))
+        .map(str::to_owned);
     if let Some(revision) = identity.runtime_revision.as_deref() {
         if expected_revision.as_deref() != Some(revision) {
             bail!("runtime revision marker does not match the workflow contract");
@@ -716,16 +917,13 @@ fn validate_runtime_identity(identity: &RuntimeIdentity) -> Result<()> {
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
-    let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let bytes = read_file_no_symlinks(path)?;
     serde_json::from_slice(&bytes).with_context(|| format!("parsing {}", path.display()))
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    }
     let bytes = serde_json::to_vec_pretty(value).context("serializing CI evidence")?;
-    fs::write(path, bytes).with_context(|| format!("writing {}", path.display()))
+    write_atomic(path, &bytes)
 }
 
 fn read_expected(path: &Path) -> Result<Vec<ExpectedObligation>> {
@@ -854,5 +1052,7 @@ fn required_tree_sha(root: &Path, sha: &str) -> Result<String> {
 include!("ci_evidence/ledger.rs");
 include!("ci_evidence/github.rs");
 include!("ci_evidence/storage.rs");
+include!("ci_evidence/output.rs");
 include!("ci_evidence/validation.rs");
+include!("ci_evidence/producer.rs");
 include!("ci_evidence/rollup.rs");

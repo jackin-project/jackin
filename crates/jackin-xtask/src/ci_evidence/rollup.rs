@@ -114,14 +114,6 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
                 + cohort.data_quality
         })
         .sum();
-    let qualification_bound = docs::repo_root()
-        .is_ok_and(|root| validate_qualification_binding(&root, evidence).is_ok());
-    let green_claim_qualified = total_first_attempt_failures == 0
-        && !evidence.expected.is_empty()
-        && evidence.denominator.source == DenominatorSource::PushHeadLedger
-        && evidence.denominator.fetch_succeeded
-        && evidence.unclassified_runs.is_empty()
-        && qualification_bound;
     RollupFile {
         schema: SCHEMA,
         repository: evidence.repository.clone(),
@@ -133,7 +125,7 @@ fn build_rollup(evidence: &EvidenceFile) -> RollupFile {
         total_first_attempt_failures,
         unclassified_runs: evidence.unclassified_runs.len(),
         denominator: evidence.denominator.clone(),
-        green_claim_qualified,
+        status: "advisory".to_owned(),
         six_nines_claimed: false,
     }
 }
@@ -148,34 +140,11 @@ fn timing_counts(attempts: &[&AttemptEvidence]) -> (usize, usize) {
     })
 }
 
-fn require_qualified(rollup: &RollupFile) -> Result<()> {
-    let mut reasons = Vec::new();
-    if rollup.denominator.source != DenominatorSource::PushHeadLedger {
-        reasons.push("denominator is not the durable push-head ledger");
-    }
-    if !rollup.denominator.fetch_succeeded {
-        reasons.push("denominator fetch proof is incomplete");
-    }
-    if rollup.unclassified_runs != 0 {
-        reasons.push("unclassified workflow runs are present");
-    }
-    if rollup.total_first_attempt_failures != 0 {
-        reasons.push("first-attempt failures or missing obligations are present");
-    }
-    if !rollup.green_claim_qualified {
-        reasons.push("green claim is not qualified (workflow/Git/artifact binding is absent)");
-    }
-    if reasons.is_empty() {
-        Ok(())
-    } else {
-        bail!("CI evidence rollup is unqualified: {}", reasons.join(", "))
-    }
+fn write_markdown(path: &Path, rollup: &RollupFile, evidence: &EvidenceFile) -> Result<()> {
+    write_atomic(path, render_markdown(rollup, evidence).as_bytes())
 }
 
-fn write_markdown(path: &Path, rollup: &RollupFile, evidence: &EvidenceFile) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    }
+fn render_markdown(rollup: &RollupFile, evidence: &EvidenceFile) -> String {
     let mut text = String::new();
     text.push_str("# CI first-attempt rollup\n\n");
     text.push_str(&format!(
@@ -184,6 +153,9 @@ fn write_markdown(path: &Path, rollup: &RollupFile, evidence: &EvidenceFile) -> 
     ));
     text.push_str(
         "This is an observed first-attempt ledger. Reruns remain in the input evidence and do not replace a first-attempt verdict. Six-nines is not claimed.\n\n",
+    );
+    text.push_str(
+        "Status: `advisory`. This observer records run identity, provenance, timing, and classification. It makes no semantic CI or merge-readiness claim.\n\n",
     );
     text.push_str("## Cohorts\n\n| Cohort | Expected | Observed first | Success | Product | Infrastructure | Cancellation | Missing | Inapplicable | Data quality | ≤120s | >120s |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
     for cohort in &rollup.cohorts {
@@ -204,13 +176,13 @@ fn write_markdown(path: &Path, rollup: &RollupFile, evidence: &EvidenceFile) -> 
         ));
     }
     text.push_str(&format!(
-        "\nDenominator: {:?}, branch `{}`, commits {}, fetch proof {}\nUnclassified workflow runs: {}\nQualified green claim: {}\n",
+        "\nDenominator: {:?}, branch `{}`, commits {}, fetch proof {}\nUnclassified workflow runs: {}\nObserver status: `{}`\n",
         rollup.denominator.source,
         rollup.denominator.branch,
         rollup.denominator.commit_count,
         rollup.denominator.fetch_succeeded,
         rollup.unclassified_runs,
-        rollup.green_claim_qualified
+        rollup.status
     ));
     text.push_str("\n## End-to-end per commit\n\n| Commit | CI/Main | Desktop | End-to-end |\n| --- | --- | --- | --- |\n");
     for commit in &rollup.commits {
@@ -234,7 +206,7 @@ fn write_markdown(path: &Path, rollup: &RollupFile, evidence: &EvidenceFile) -> 
         rollup.total_first_attempt_failures,
         evidence.attempts.len()
     ));
-    fs::write(path, text).with_context(|| format!("writing {}", path.display()))
+    text
 }
 
 fn print_collection_summary(evidence: &EvidenceFile, path: &Path) -> Result<()> {
@@ -254,11 +226,11 @@ fn print_rollup_summary(rollup: &RollupFile) -> Result<()> {
     let mut output = io::stdout().lock();
     writeln!(
         output,
-        "rollup: {} successes, {} failures/missing; denominator: {:?}; qualified: {}; six-nines claim: false",
+        "rollup: {} successes, {} failures/missing; denominator: {:?}; status: {}; six-nines claim: false",
         rollup.total_first_attempt_successes,
         rollup.total_first_attempt_failures,
         rollup.denominator.source,
-        rollup.green_claim_qualified
+        rollup.status
     )?;
     Ok(())
 }
