@@ -21,6 +21,9 @@ path = "src/lib.rs"
 anyhow = { workspace = true }
 tokio = { workspace = true, features = ["process", "time", "io-util", "rt", "macros"] }
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["signal", "process"] }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
 

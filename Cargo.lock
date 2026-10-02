@@ -3427,6 +3427,7 @@ name = "jackin-process"
 version = "0.6.4"
 dependencies = [
  "anyhow",
+ "nix 0.31.3",
  "tokio",
 ]
 
