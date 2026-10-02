@@ -126,9 +126,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Write request
         env:
@@ -208,9 +208,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -244,8 +244,6 @@ jobs:
       - plan
       - rust-jackin
       - rust-jackin-agent-status
-      - rust-jackin-brand
-      - rust-jackin-build-meta
       - rust-jackin-capsule
       - rust-jackin-config
       - rust-jackin-console
@@ -260,9 +258,7 @@ jobs:
       - rust-jackin-isolation
       - rust-jackin-launch
       - rust-jackin-manifest
-      - rust-jackin-oppicker
       - rust-jackin-otlp-testbed
-      - rust-jackin-pr-trailers
       - rust-jackin-process
       - rust-jackin-protocol
       - rust-jackin-runtime
@@ -298,9 +294,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Prepare pinned tools
         env:
@@ -328,14 +324,14 @@ jobs:
         env:
           VELNOR_INTERNAL_OP: write-request-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"actionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-brand\",\"rust-jackin-build-meta\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-oppicker\",\"rust-jackin-otlp-testbed\",\"rust-jackin-pr-trailers\",\"rust-jackin-process\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-xtask\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"actionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-xtask\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: "\"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\""
       - name: Merge reports
         env:
           VELNOR_INTERNAL_OP: merge-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"actionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-brand\",\"rust-jackin-build-meta\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-oppicker\",\"rust-jackin-otlp-testbed\",\"rust-jackin-pr-trailers\",\"rust-jackin-process\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-xtask\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"actionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-xtask\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: "\"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\""
       - name: Save Mise tools
@@ -386,9 +382,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -658,9 +654,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -896,550 +892,6 @@ jobs:
           name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-agent-status
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
           retention-days: "30"
-  rust-jackin-brand:
-    name: Rust / jackin-brand
-    runs-on: ubuntu-26.04
-    timeout-minutes: 30
-    needs:
-      - plan
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: "false"
-      - name: Setup Mise
-        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5
-        with:
-          cache: "true"
-          cache_key: mise-v1-x86_64-unknown-linux-gnu-2026.9.18-6270601fa454da91
-          cache_save: "false"
-          env: "false"
-          install: "false"
-          sha256: d24fe0bf7e613824ad99f7b8dac3f2b381a37b9f75f84dd250855217095a8de4
-          version: 2026.9.18
-      - name: Acquire Velnor
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_GITHUB_TOKEN: ""
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
-          VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
-      - name: Download plan
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: velnor-plan-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
-      - name: Prepare pinned tools
-        env:
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: mise --no-config --no-env --no-hooks install rust@1.98.1 mr-boxington@1.21.0 actionlint@1.7.12 shellcheck@0.11.0 zizmor@1.30.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.146
-      - name: Prepare Rust components
-        env:
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: mise --no-config --no-env --no-hooks exec rust@1.98.1 -- rustup component add --toolchain 1.98.1-x86_64-unknown-linux-gnu clippy rustfmt
-      - name: Restore Cargo sources
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          key: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-${{hashFiles('Cargo.lock')}}
-          path: "${{ runner.temp }}/velnor/cargo/.crates.toml\n${{ runner.temp }}/velnor/cargo/.crates2.json\n${{ runner.temp }}/velnor/cargo/bin\n${{ runner.temp }}/velnor/cargo/registry/index\n${{ runner.temp }}/velnor/cargo/registry/cache\n${{ runner.temp }}/velnor/cargo/git/db"
-          restore-keys: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-
-      - name: Restore MBX objects
-        uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3
-        with:
-          github-cache-mode: objects
-          version: 1.21.0
-        env:
-          ACTIONS_CACHE_MODE: ${{ github.event_name == 'push' && 'write' || 'read' }}
-      - name: Fetch Cargo sources
-        env:
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: "sh -c 'mkdir -p \"$RUNNER_TEMP/velnor/cargo-clean\" && cd \"$RUNNER_TEMP/velnor/cargo-clean\" && if mise --no-config --no-env --no-hooks exec rust@1.98.1 -- cargo metadata --locked --offline --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\" >/dev/null 2>&1; then echo \"velnor: sources hit, skipping fetch\"; else echo \"velnor: sources miss (source_missing), fetching\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 -- cargo fetch --locked --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\"; fi'"
-      - name: Format
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-brand/fmt/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-brand/clippy/default,stack/rust/crates/jackin-brand/build/default,stack/rust/crates/jackin-brand/nextest/default,stack/rust/crates/jackin-brand/doctest/default,stack/rust/crates/jackin-brand/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-brand/fmt/default
-          VELNOR_MATRIX_KEY: m-cf58832c115c3be7
-          VELNOR_TASK_DIGEST: b3-b595139a8c5ac5a69cdca38b6197abf1068b3eb150ad37f211a24659a5ed8a54
-          VELNOR_TASK_ID: stack/rust/crates/jackin-brand/fmt/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-cf58832c115c3be7\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx fmt --check --manifest-path crates/jackin-brand/Cargo.toml; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-cf58832c115c3be7\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Clippy
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-brand/clippy/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-brand/build/default,stack/rust/crates/jackin-brand/nextest/default,stack/rust/crates/jackin-brand/doctest/default,stack/rust/crates/jackin-brand/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-brand/clippy/default
-          VELNOR_MATRIX_KEY: m-28540cafe32dfb04
-          VELNOR_TASK_DIGEST: b3-d44c39c6da7d4066ba27e374641f7c2dc6009d8ba514cf2a4dfa86a1e0e44567
-          VELNOR_TASK_ID: stack/rust/crates/jackin-brand/clippy/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-28540cafe32dfb04\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx clippy --locked --offline --manifest-path crates/jackin-brand/Cargo.toml --package jackin-brand --all-targets -- -D warnings; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-28540cafe32dfb04\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Build test executables
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-brand/build/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-brand/nextest/default,stack/rust/crates/jackin-brand/doctest/default,stack/rust/crates/jackin-brand/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-brand/build/default
-          VELNOR_MATRIX_KEY: m-be111667fe4fcf49
-          VELNOR_TASK_DIGEST: b3-fb32b1da879770793bf406d28684456b38d82bdc0d16c1257fe07a81e60ef496
-          VELNOR_TASK_ID: stack/rust/crates/jackin-brand/build/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-be111667fe4fcf49\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx build --locked --offline --manifest-path crates/jackin-brand/Cargo.toml --package jackin-brand; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-be111667fe4fcf49\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Unit and integration tests
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-brand/nextest/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-brand/doctest/default,stack/rust/crates/jackin-brand/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-brand/nextest/default
-          VELNOR_MATRIX_KEY: m-1cb00b0ee619d0ce
-          VELNOR_TASK_DIGEST: b3-d0310c4db76670b878cab9f1a7369ad617b9d833126d156156c18c011bb1e638
-          VELNOR_TASK_ID: stack/rust/crates/jackin-brand/nextest/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-1cb00b0ee619d0ce\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx nextest run --profile ci --locked --offline --manifest-path crates/jackin-brand/Cargo.toml --package jackin-brand --no-tests fail; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-1cb00b0ee619d0ce\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Doctests
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-brand/doctest/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-brand/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-brand/doctest/default
-          VELNOR_MATRIX_KEY: m-6dc5c52992eb030a
-          VELNOR_TASK_DIGEST: b3-f8fe5f4398ace0b6607d8429d3354f6c1448dc5ce45f119b89387eeaebb83d4c
-          VELNOR_TASK_ID: stack/rust/crates/jackin-brand/doctest/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-6dc5c52992eb030a\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx test --locked --offline --manifest-path crates/jackin-brand/Cargo.toml --package jackin-brand --doc; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-6dc5c52992eb030a\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Documentation
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-brand/doc/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTDOCFLAGS: "-D warnings"
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-brand/doc/default
-          VELNOR_MATRIX_KEY: m-3a7d2cda8f672bd8
-          VELNOR_TASK_DIGEST: b3-7646fed1bdd5f25ef89e032950762fec2f4a7b753d267e49290ec56ce532fc4e
-          VELNOR_TASK_ID: stack/rust/crates/jackin-brand/doc/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-3a7d2cda8f672bd8\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx doc --locked --offline --manifest-path crates/jackin-brand/Cargo.toml --package jackin-brand --no-deps; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-3a7d2cda8f672bd8\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Upload crate reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          if-no-files-found: error
-          name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-brand
-          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
-          retention-days: "30"
-  rust-jackin-build-meta:
-    name: Rust / jackin-build-meta
-    runs-on: ubuntu-26.04
-    timeout-minutes: 30
-    needs:
-      - plan
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: "false"
-      - name: Setup Mise
-        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5
-        with:
-          cache: "true"
-          cache_key: mise-v1-x86_64-unknown-linux-gnu-2026.9.18-6270601fa454da91
-          cache_save: "false"
-          env: "false"
-          install: "false"
-          sha256: d24fe0bf7e613824ad99f7b8dac3f2b381a37b9f75f84dd250855217095a8de4
-          version: 2026.9.18
-      - name: Acquire Velnor
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_GITHUB_TOKEN: ""
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
-          VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
-      - name: Download plan
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: velnor-plan-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
-      - name: Prepare pinned tools
-        env:
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: mise --no-config --no-env --no-hooks install rust@1.98.1 mr-boxington@1.21.0 actionlint@1.7.12 shellcheck@0.11.0 zizmor@1.30.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.146
-      - name: Prepare Rust components
-        env:
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: mise --no-config --no-env --no-hooks exec rust@1.98.1 -- rustup component add --toolchain 1.98.1-x86_64-unknown-linux-gnu clippy rustfmt
-      - name: Restore Cargo sources
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          key: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-${{hashFiles('Cargo.lock')}}
-          path: "${{ runner.temp }}/velnor/cargo/.crates.toml\n${{ runner.temp }}/velnor/cargo/.crates2.json\n${{ runner.temp }}/velnor/cargo/bin\n${{ runner.temp }}/velnor/cargo/registry/index\n${{ runner.temp }}/velnor/cargo/registry/cache\n${{ runner.temp }}/velnor/cargo/git/db"
-          restore-keys: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-
-      - name: Restore MBX objects
-        uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3
-        with:
-          github-cache-mode: objects
-          version: 1.21.0
-        env:
-          ACTIONS_CACHE_MODE: ${{ github.event_name == 'push' && 'write' || 'read' }}
-      - name: Fetch Cargo sources
-        env:
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: "sh -c 'mkdir -p \"$RUNNER_TEMP/velnor/cargo-clean\" && cd \"$RUNNER_TEMP/velnor/cargo-clean\" && if mise --no-config --no-env --no-hooks exec rust@1.98.1 -- cargo metadata --locked --offline --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\" >/dev/null 2>&1; then echo \"velnor: sources hit, skipping fetch\"; else echo \"velnor: sources miss (source_missing), fetching\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 -- cargo fetch --locked --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\"; fi'"
-      - name: Format
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-build-meta/fmt/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-build-meta/clippy/default,stack/rust/crates/jackin-build-meta/build/default,stack/rust/crates/jackin-build-meta/nextest/default,stack/rust/crates/jackin-build-meta/doctest/default,stack/rust/crates/jackin-build-meta/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-build-meta/fmt/default
-          VELNOR_MATRIX_KEY: m-8b320ca53a2b1202
-          VELNOR_TASK_DIGEST: b3-1ddeaac8f52de21f06b915380e2d9f37731c8546b30ade92679fefc58ca98750
-          VELNOR_TASK_ID: stack/rust/crates/jackin-build-meta/fmt/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-8b320ca53a2b1202\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx fmt --check --manifest-path crates/jackin-build-meta/Cargo.toml; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-8b320ca53a2b1202\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Clippy
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-build-meta/clippy/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-build-meta/build/default,stack/rust/crates/jackin-build-meta/nextest/default,stack/rust/crates/jackin-build-meta/doctest/default,stack/rust/crates/jackin-build-meta/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-build-meta/clippy/default
-          VELNOR_MATRIX_KEY: m-4a6432a25f2034e5
-          VELNOR_TASK_DIGEST: b3-c6b8a055890d6cd29676ad9bf9202cbaabd18ac1469a1df55a3a56c018ba9450
-          VELNOR_TASK_ID: stack/rust/crates/jackin-build-meta/clippy/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-4a6432a25f2034e5\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx clippy --locked --offline --manifest-path crates/jackin-build-meta/Cargo.toml --package jackin-build-meta --all-targets -- -D warnings; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-4a6432a25f2034e5\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Build test executables
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-build-meta/build/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-build-meta/nextest/default,stack/rust/crates/jackin-build-meta/doctest/default,stack/rust/crates/jackin-build-meta/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-build-meta/build/default
-          VELNOR_MATRIX_KEY: m-9c8ac583d7abaec2
-          VELNOR_TASK_DIGEST: b3-b3e10cd6e25ba60b7a93e7749652a8a3f97cfe85bf97b4bd9b3c02841909f8ff
-          VELNOR_TASK_ID: stack/rust/crates/jackin-build-meta/build/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-9c8ac583d7abaec2\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx build --locked --offline --manifest-path crates/jackin-build-meta/Cargo.toml --package jackin-build-meta; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-9c8ac583d7abaec2\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Unit and integration tests
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-build-meta/nextest/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-build-meta/doctest/default,stack/rust/crates/jackin-build-meta/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-build-meta/nextest/default
-          VELNOR_MATRIX_KEY: m-3bbce6cd6f71a2aa
-          VELNOR_TASK_DIGEST: b3-acb62426b9bde99e3f24cea49fbb6d64997c22cb3fbda919131d6c4a4e6cec76
-          VELNOR_TASK_ID: stack/rust/crates/jackin-build-meta/nextest/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-3bbce6cd6f71a2aa\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx nextest run --profile ci --locked --offline --manifest-path crates/jackin-build-meta/Cargo.toml --package jackin-build-meta --no-tests fail; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-3bbce6cd6f71a2aa\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Doctests
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-build-meta/doctest/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-build-meta/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-build-meta/doctest/default
-          VELNOR_MATRIX_KEY: m-429d73281e81c135
-          VELNOR_TASK_DIGEST: b3-da9b7394e831e64f05e84fbb6d386c96a5b8fdaee43a278c93e02040abf23626
-          VELNOR_TASK_ID: stack/rust/crates/jackin-build-meta/doctest/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-429d73281e81c135\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx test --locked --offline --manifest-path crates/jackin-build-meta/Cargo.toml --package jackin-build-meta --doc; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-429d73281e81c135\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Documentation
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-build-meta/doc/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTDOCFLAGS: "-D warnings"
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-build-meta/doc/default
-          VELNOR_MATRIX_KEY: m-98f6ba6ae577834c
-          VELNOR_TASK_DIGEST: b3-67ca30c264a7ecc84fedfd5b1db9fbe31f18e2b802124bb5f81eed1e9cfc8c5d
-          VELNOR_TASK_ID: stack/rust/crates/jackin-build-meta/doc/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-98f6ba6ae577834c\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx doc --locked --offline --manifest-path crates/jackin-build-meta/Cargo.toml --package jackin-build-meta --no-deps; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-98f6ba6ae577834c\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Upload crate reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          if-no-files-found: error
-          name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-build-meta
-          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
-          retention-days: "30"
   rust-jackin-capsule:
     name: Rust / jackin-capsule
     runs-on: ubuntu-26.04
@@ -1474,9 +926,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -1746,9 +1198,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -2018,9 +1470,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -2290,9 +1742,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -2562,9 +2014,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -2805,9 +2257,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -3077,9 +2529,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -3349,9 +2801,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -3621,9 +3073,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -3893,9 +3345,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -4165,9 +3617,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -4437,9 +3889,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -4709,9 +4161,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -4981,9 +4433,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -5219,278 +4671,6 @@ jobs:
           name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-manifest
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
           retention-days: "30"
-  rust-jackin-oppicker:
-    name: Rust / jackin-oppicker
-    runs-on: ubuntu-26.04
-    timeout-minutes: 30
-    needs:
-      - plan
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: "false"
-      - name: Setup Mise
-        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5
-        with:
-          cache: "true"
-          cache_key: mise-v1-x86_64-unknown-linux-gnu-2026.9.18-6270601fa454da91
-          cache_save: "false"
-          env: "false"
-          install: "false"
-          sha256: d24fe0bf7e613824ad99f7b8dac3f2b381a37b9f75f84dd250855217095a8de4
-          version: 2026.9.18
-      - name: Acquire Velnor
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_GITHUB_TOKEN: ""
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
-          VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
-      - name: Download plan
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: velnor-plan-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
-      - name: Prepare pinned tools
-        env:
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: mise --no-config --no-env --no-hooks install rust@1.98.1 mr-boxington@1.21.0 actionlint@1.7.12 shellcheck@0.11.0 zizmor@1.30.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.146
-      - name: Prepare Rust components
-        env:
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: mise --no-config --no-env --no-hooks exec rust@1.98.1 -- rustup component add --toolchain 1.98.1-x86_64-unknown-linux-gnu clippy rustfmt
-      - name: Restore Cargo sources
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          key: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-${{hashFiles('Cargo.lock')}}
-          path: "${{ runner.temp }}/velnor/cargo/.crates.toml\n${{ runner.temp }}/velnor/cargo/.crates2.json\n${{ runner.temp }}/velnor/cargo/bin\n${{ runner.temp }}/velnor/cargo/registry/index\n${{ runner.temp }}/velnor/cargo/registry/cache\n${{ runner.temp }}/velnor/cargo/git/db"
-          restore-keys: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-
-      - name: Restore MBX objects
-        uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3
-        with:
-          github-cache-mode: objects
-          version: 1.21.0
-        env:
-          ACTIONS_CACHE_MODE: ${{ github.event_name == 'push' && 'write' || 'read' }}
-      - name: Fetch Cargo sources
-        env:
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: "sh -c 'mkdir -p \"$RUNNER_TEMP/velnor/cargo-clean\" && cd \"$RUNNER_TEMP/velnor/cargo-clean\" && if mise --no-config --no-env --no-hooks exec rust@1.98.1 -- cargo metadata --locked --offline --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\" >/dev/null 2>&1; then echo \"velnor: sources hit, skipping fetch\"; else echo \"velnor: sources miss (source_missing), fetching\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 -- cargo fetch --locked --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\"; fi'"
-      - name: Format
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-oppicker/fmt/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-oppicker/clippy/default,stack/rust/crates/jackin-oppicker/build/default,stack/rust/crates/jackin-oppicker/nextest/default,stack/rust/crates/jackin-oppicker/doctest/default,stack/rust/crates/jackin-oppicker/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-oppicker/fmt/default
-          VELNOR_MATRIX_KEY: m-be9e0d27516b2a05
-          VELNOR_TASK_DIGEST: b3-0ea0ccc673147f93c44a9516ec7ffdb27ca560c603bb803cf3abd5aa939e9884
-          VELNOR_TASK_ID: stack/rust/crates/jackin-oppicker/fmt/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-be9e0d27516b2a05\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx fmt --check --manifest-path crates/jackin-oppicker/Cargo.toml; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-be9e0d27516b2a05\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Clippy
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-oppicker/clippy/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-oppicker/build/default,stack/rust/crates/jackin-oppicker/nextest/default,stack/rust/crates/jackin-oppicker/doctest/default,stack/rust/crates/jackin-oppicker/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-oppicker/clippy/default
-          VELNOR_MATRIX_KEY: m-d7f8496306d8755b
-          VELNOR_TASK_DIGEST: b3-26a4cc35a7dbdad8d9e90be417ff08b0a12c1d7a224b97e5883549984a7fb74c
-          VELNOR_TASK_ID: stack/rust/crates/jackin-oppicker/clippy/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-d7f8496306d8755b\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx clippy --locked --offline --manifest-path crates/jackin-oppicker/Cargo.toml --package jackin-oppicker --all-targets -- -D warnings; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-d7f8496306d8755b\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Build test executables
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-oppicker/build/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-oppicker/nextest/default,stack/rust/crates/jackin-oppicker/doctest/default,stack/rust/crates/jackin-oppicker/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-oppicker/build/default
-          VELNOR_MATRIX_KEY: m-ffba94c54380f3e8
-          VELNOR_TASK_DIGEST: b3-ca680aa9158b5f3df2791a9618f350b98d1f22b7e97f7fc4951f3b8d25df65b3
-          VELNOR_TASK_ID: stack/rust/crates/jackin-oppicker/build/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-ffba94c54380f3e8\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx build --locked --offline --manifest-path crates/jackin-oppicker/Cargo.toml --package jackin-oppicker; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-ffba94c54380f3e8\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Unit and integration tests
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-oppicker/nextest/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-oppicker/doctest/default,stack/rust/crates/jackin-oppicker/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-oppicker/nextest/default
-          VELNOR_MATRIX_KEY: m-14df077ccd8b5437
-          VELNOR_TASK_DIGEST: b3-928df96acc90ad521cee2207e2f67346041e7ca85f8ca3c310c038eab40b43ac
-          VELNOR_TASK_ID: stack/rust/crates/jackin-oppicker/nextest/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-14df077ccd8b5437\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx nextest run --profile ci --locked --offline --manifest-path crates/jackin-oppicker/Cargo.toml --package jackin-oppicker --no-tests fail; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-14df077ccd8b5437\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Doctests
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-oppicker/doctest/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-oppicker/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-oppicker/doctest/default
-          VELNOR_MATRIX_KEY: m-bef4f041a29d1c1d
-          VELNOR_TASK_DIGEST: b3-6f90c702f33f63f3a45f3d356adf102b329f89e574182607a57b1e978cdc0145
-          VELNOR_TASK_ID: stack/rust/crates/jackin-oppicker/doctest/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-bef4f041a29d1c1d\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx test --locked --offline --manifest-path crates/jackin-oppicker/Cargo.toml --package jackin-oppicker --doc; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-bef4f041a29d1c1d\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Documentation
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-oppicker/doc/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTDOCFLAGS: "-D warnings"
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-oppicker/doc/default
-          VELNOR_MATRIX_KEY: m-27307536fafaac71
-          VELNOR_TASK_DIGEST: b3-c079e83a0df3e1e965ebe5610918ca5a63f9dd3fd35f967e390590c3922bce14
-          VELNOR_TASK_ID: stack/rust/crates/jackin-oppicker/doc/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-27307536fafaac71\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx doc --locked --offline --manifest-path crates/jackin-oppicker/Cargo.toml --package jackin-oppicker --no-deps; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-27307536fafaac71\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Upload crate reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          if-no-files-found: error
-          name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-oppicker
-          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
-          retention-days: "30"
   rust-jackin-otlp-testbed:
     name: Rust / jackin-otlp-testbed
     runs-on: ubuntu-26.04
@@ -5525,9 +4705,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -5763,249 +4943,6 @@ jobs:
           name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-otlp-testbed
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
           retention-days: "30"
-  rust-jackin-pr-trailers:
-    name: Rust / jackin-pr-trailers
-    runs-on: ubuntu-26.04
-    timeout-minutes: 30
-    needs:
-      - plan
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: "false"
-      - name: Setup Mise
-        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5
-        with:
-          cache: "true"
-          cache_key: mise-v1-x86_64-unknown-linux-gnu-2026.9.18-6270601fa454da91
-          cache_save: "false"
-          env: "false"
-          install: "false"
-          sha256: d24fe0bf7e613824ad99f7b8dac3f2b381a37b9f75f84dd250855217095a8de4
-          version: 2026.9.18
-      - name: Acquire Velnor
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_GITHUB_TOKEN: ""
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
-          VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
-      - name: Download plan
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: velnor-plan-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
-      - name: Prepare pinned tools
-        env:
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: mise --no-config --no-env --no-hooks install rust@1.98.1 mr-boxington@1.21.0 actionlint@1.7.12 shellcheck@0.11.0 zizmor@1.30.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.146
-      - name: Prepare Rust components
-        env:
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: mise --no-config --no-env --no-hooks exec rust@1.98.1 -- rustup component add --toolchain 1.98.1-x86_64-unknown-linux-gnu clippy rustfmt
-      - name: Restore Cargo sources
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          key: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-${{hashFiles('Cargo.lock')}}
-          path: "${{ runner.temp }}/velnor/cargo/.crates.toml\n${{ runner.temp }}/velnor/cargo/.crates2.json\n${{ runner.temp }}/velnor/cargo/bin\n${{ runner.temp }}/velnor/cargo/registry/index\n${{ runner.temp }}/velnor/cargo/registry/cache\n${{ runner.temp }}/velnor/cargo/git/db"
-          restore-keys: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-
-      - name: Restore MBX objects
-        uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3
-        with:
-          github-cache-mode: objects
-          version: 1.21.0
-        env:
-          ACTIONS_CACHE_MODE: ${{ github.event_name == 'push' && 'write' || 'read' }}
-      - name: Fetch Cargo sources
-        env:
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: "sh -c 'mkdir -p \"$RUNNER_TEMP/velnor/cargo-clean\" && cd \"$RUNNER_TEMP/velnor/cargo-clean\" && if mise --no-config --no-env --no-hooks exec rust@1.98.1 -- cargo metadata --locked --offline --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\" >/dev/null 2>&1; then echo \"velnor: sources hit, skipping fetch\"; else echo \"velnor: sources miss (source_missing), fetching\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 -- cargo fetch --locked --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\"; fi'"
-      - name: Format
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-pr-trailers/fmt/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-pr-trailers/clippy/default,stack/rust/crates/jackin-pr-trailers/build/default,stack/rust/crates/jackin-pr-trailers/nextest/default,stack/rust/crates/jackin-pr-trailers/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-pr-trailers/fmt/default
-          VELNOR_MATRIX_KEY: m-263805efca8e55a0
-          VELNOR_TASK_DIGEST: b3-c68732f8bd3ee0c5e9c2252a7287d9456ec99eb08951a23fffd96d496fd52c19
-          VELNOR_TASK_ID: stack/rust/crates/jackin-pr-trailers/fmt/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-263805efca8e55a0\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx fmt --check --manifest-path crates/jackin-pr-trailers/Cargo.toml; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-263805efca8e55a0\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Clippy
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-pr-trailers/clippy/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-pr-trailers/build/default,stack/rust/crates/jackin-pr-trailers/nextest/default,stack/rust/crates/jackin-pr-trailers/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-pr-trailers/clippy/default
-          VELNOR_MATRIX_KEY: m-11fb92b6ea6479e2
-          VELNOR_TASK_DIGEST: b3-97917682bf34e3a0f74351276c67b2b8e1459f47a39b4d10584dbb0e12b79633
-          VELNOR_TASK_ID: stack/rust/crates/jackin-pr-trailers/clippy/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-11fb92b6ea6479e2\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx clippy --locked --offline --manifest-path crates/jackin-pr-trailers/Cargo.toml --package jackin-pr-trailers --all-targets -- -D warnings; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-11fb92b6ea6479e2\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Build test executables
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-pr-trailers/build/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-pr-trailers/nextest/default,stack/rust/crates/jackin-pr-trailers/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-pr-trailers/build/default
-          VELNOR_MATRIX_KEY: m-5b61dbbc4b7e4f34
-          VELNOR_TASK_DIGEST: b3-22c572d3fc384fb15146c53b976f21616ca966acbde102616dbe4a089197b82b
-          VELNOR_TASK_ID: stack/rust/crates/jackin-pr-trailers/build/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-5b61dbbc4b7e4f34\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx build --locked --offline --manifest-path crates/jackin-pr-trailers/Cargo.toml --package jackin-pr-trailers; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-5b61dbbc4b7e4f34\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Unit and integration tests
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-pr-trailers/nextest/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_DOWNSTREAM_TASK_IDS: stack/rust/crates/jackin-pr-trailers/doc/default
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-pr-trailers/nextest/default
-          VELNOR_MATRIX_KEY: m-05a33eb12d4ebed3
-          VELNOR_TASK_DIGEST: b3-d3140602fe3e6502f0228b3b7cc073c33e4eef76a8a6e9c871a928bbd6ebfafa
-          VELNOR_TASK_ID: stack/rust/crates/jackin-pr-trailers/nextest/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-05a33eb12d4ebed3\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx nextest run --profile ci --locked --offline --manifest-path crates/jackin-pr-trailers/Cargo.toml --package jackin-pr-trailers --no-tests fail; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-05a33eb12d4ebed3\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Documentation
-        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/jackin-pr-trailers/doc/default,')"
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
-          ACTIONS_ID_TOKEN_REQUEST_URL: ""
-          ACTIONS_RUNTIME_TOKEN: ""
-          CARGO_REGISTRY_TOKEN: ""
-          GH_CONFIG_DIR: ""
-          GH_HOST: ""
-          GH_TOKEN: ""
-          GITHUB_TOKEN: ""
-          MISE_AUTO_INSTALL: "false"
-          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
-          MISE_EXEC_AUTO_INSTALL: "false"
-          MISE_GITHUB_TOKEN: ""
-          MISE_LOCKFILE: "0"
-          MISE_NO_CONFIG: "1"
-          MISE_NO_ENV: "1"
-          MISE_NO_HOOKS: "1"
-          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
-          RUSTDOCFLAGS: "-D warnings"
-          RUSTUP_TOOLCHAIN: 1.98.1
-          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/jackin-pr-trailers/doc/default
-          VELNOR_MATRIX_KEY: m-6f03270070ce1dc6
-          VELNOR_TASK_DIGEST: b3-2724ef8343772f15b1df1ccffecef6aa17f7f36215c236dca7d6e5cf5cf6a8e1
-          VELNOR_TASK_ID: stack/rust/crates/jackin-pr-trailers/doc/default
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; date +%s%3N > \"$RUNNER_TEMP/velnor/start-m-6f03270070ce1dc6\"; mise --no-config --no-env --no-hooks exec rust@1.98.1 mr-boxington@1.21.0 aqua:nextest-rs/nextest/cargo-nextest@0.9.146 -- mbx doc --locked --offline --manifest-path crates/jackin-pr-trailers/Cargo.toml --package jackin-pr-trailers --no-deps; code=$?; read -r start_ms rest < \"$RUNNER_TEMP/velnor/start-m-6f03270070ce1dc6\"; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$start_ms\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
-      - name: Upload crate reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          if-no-files-found: error
-          name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-pr-trailers
-          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
-          retention-days: "30"
   rust-jackin-process:
     name: Rust / jackin-process
     runs-on: ubuntu-26.04
@@ -6040,9 +4977,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -6312,9 +5249,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -6584,9 +5521,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -6856,9 +5793,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -7128,9 +6065,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -7400,9 +6337,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -7672,9 +6609,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -7944,9 +6881,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -8216,9 +7153,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: bebb7816b6beac04945fb6fa7add17f74f561affbad8fe7ca32c666ce48e89ea
+          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 95c1d6f0f1056881e42d53846dac8ffccd7aa6a5
+          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
