@@ -126,9 +126,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Write request
         env:
@@ -208,9 +208,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -294,9 +294,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Prepare pinned tools
         env:
@@ -382,9 +382,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -654,9 +654,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -926,9 +926,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -1198,9 +1198,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -1470,9 +1470,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -1742,9 +1742,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -2014,9 +2014,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -2257,9 +2257,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -2529,9 +2529,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -2801,9 +2801,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -3073,9 +3073,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -3345,9 +3345,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -3617,9 +3617,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -3889,9 +3889,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -4161,9 +4161,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -4433,9 +4433,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -4705,9 +4705,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -4977,9 +4977,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -5249,9 +5249,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -5521,9 +5521,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -5793,9 +5793,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -6065,9 +6065,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -6337,9 +6337,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -6609,9 +6609,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -6881,9 +6881,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -7153,9 +7153,9 @@ jobs:
           MISE_GITHUB_TOKEN: ""
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
-          VELNOR_ASSET_SHA256: 8922f8446140baa049514cb2ea316e9767257be706e94c5c930b45cbebbd927b
+          VELNOR_ASSET_SHA256: aa7e44d6579e9c586106d120ed3658fcf1c9b041027ad9f03473e8efacd3b5d5
           VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.0/velnor-actions-0.1.0-x86_64-unknown-linux-gnu
-          VELNOR_RELEASE_COMMIT: 89c69f629858cf11be8cbe903b323a18631197e0
+          VELNOR_RELEASE_COMMIT: c57c700459bbe1549fe7eedcb7d8689585c38986
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; mkdir -p \"$RUNNER_TEMP/velnor/bin\" && curl -fsSL --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" && echo \"$VELNOR_ASSET_SHA256  $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\" | sha256sum -c - && chmod +x \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.0\"'"
       - name: Download plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c

@@ -429,8 +429,7 @@ fn write_json_file(path: &Path, value: &serde_json::Value) -> anyhow::Result<()>
 
 fn json_file_contains_string(path: &Path, needle: &str) -> bool {
     fs::read_to_string(path)
-        .ok()
-        .is_some_and(|content| content.contains(needle))
+        .is_ok_and(|content| content.contains(needle))
 }
 
 #[cfg(test)]
