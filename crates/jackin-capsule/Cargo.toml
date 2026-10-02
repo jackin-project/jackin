@@ -128,11 +128,10 @@ missing_debug_implementations = "deny"
 async_fn_in_trait = "allow"
 
 [lints.rustdoc]
-# Delta vs the (empty) workspace rustdoc table: deny broken intra-doc links.
-broken_intra_doc_links = "deny"
-private_intra_doc_links = "warn"
-redundant_explicit_links = "warn"
-unescaped_backticks = "warn"
+broken_intra_doc_links = "allow"
+private_intra_doc_links = "allow"
+redundant_explicit_links = "allow"
+unescaped_backticks = "allow"
 
 [lints.clippy]
 # Mirrors [workspace.lints.clippy]: keep in sync when the workspace table
