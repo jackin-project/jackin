@@ -109,8 +109,8 @@ Docs rot silently. Every PR must include a one-pass verification structure-sensi
 
 ### When your PR touches `crates/**/src/**`
 
-- [ ] Did you add, rename, move, or delete a module / directory under `crates/**/src/`? If yes, update [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)'s "Module tree" and any affected row in "Code ↔ Docs Cross-Reference" in same PR.
-- [ ] Did you add a new `crates/*/src/bin/` binary? If yes, add it to "Crate root" table in [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md).
+- [ ] Did you add, rename, move, or delete a module / directory under `crates/**/src/`? If yes, update the affected crate README and any affected row in [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)'s "Code ↔ docs cross-reference" in the same PR; update the [Codebase Map](docs/content/reference/getting-oriented/codebase-map.mdx) only for tier/DAG changes.
+- [ ] Did you add, rename, move, or delete a `crates/*/src/bin/` binary? If yes, update the affected crate README in the same PR; the [docs build](docs/scripts/gen-crate-pages.ts) regenerates crate pages from READMEs.
 
 ### When your PR touches CLI behavior
 
@@ -134,4 +134,4 @@ One command to surface obvious drift targets:
 git diff --name-only origin/main... | grep -E '^crates/.*/src/|^Cargo\.toml' | head
 ```
 
-If that list is non-empty, walk the checkboxes above before requesting review. Goal: a new operator opening [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) or a roadmap doc always sees paths that resolve, commands that exist, behaviors matching current code.
+If that list is non-empty, walk the checkboxes above before requesting review. Goal: a new contributor opening a crate README, [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md), or a roadmap doc always sees paths that resolve, commands that exist, behaviors matching current code.

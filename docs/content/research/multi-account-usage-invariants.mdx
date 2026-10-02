@@ -76,8 +76,16 @@ dual-refresh races, or silently dropped accounts.
 ## Limitations and open questions
 
 - Private and reference-grade usage endpoints need live verification (URL,
-  method, auth, response shape) before jackin❯ claims support; unverified rows
-  stay unsupported with evidence.
+  method, auth, response shape) before jackin❯ claims support. Unverified
+  endpoints and unavailable observations retain those states and their evidence
+  gaps; `Unsupported` requires a verified provider or product capability
+  restriction. A missing live call, credential, or headless CLI capability does
+  not prove that a GUI/keyring source is unsupported.
+- Source inspection and model or fixture tests establish their scoped contracts;
+  they do not prove live account behavior, full Docker credential isolation, or
+  billing-event deduplication across streams. Billing-identity deduplication alone
+  does not establish event deduplication. Claims of those invariants need direct
+  evidence at the affected boundary.
 - Region and host splits (global vs regional hosts) and OAuth-grant vs
   API-key acceptance need per-endpoint proof. Failure on one host never
   authorizes retrying a credential on another provider host.
