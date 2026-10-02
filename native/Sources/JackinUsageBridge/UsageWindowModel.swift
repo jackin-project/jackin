@@ -184,10 +184,15 @@ public struct UsageWindowModel: Equatable, Sendable {
     ) {
         sidebar = glanceRows
         isEmpty = glanceRows.isEmpty
-        // An invalid/disabled incoming selection falls back to Overview; a valid
-        // one resolves to that surface's Rust detail presentation + account rows.
+        // An invalid/disabled incoming selection, including a removed account,
+        // falls back to Overview; a valid one resolves to that surface's Rust
+        // detail presentation + account rows. Never use the first sibling as a
+        // replacement for an explicit account intent.
         if let surfaceId,
-            let surface = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
+            let surface = surfaces.first(where: { $0.id == surfaceId && $0.enabled }),
+            accountSelection.map({ key in
+                accounts.contains { $0.surfaceId == surfaceId && $0.accountKey == key }
+            }) ?? true
         {
             selection = .provider(surfaceId)
             let glance = glanceRows.first(where: { $0.surfaceId == surfaceId })

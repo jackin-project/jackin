@@ -91,8 +91,9 @@ email across providers remains distinct. Empty, unknown, presence-only, and
 fabricated local-auth labels never become keys.
 
 `desktop_inventory` merges provenance while separating lifecycle from freshness.
-Selection accepts only same-surface keys; stale choices clear, and only current
-accounts become implicit fallbacks.
+Selection accepts only same-surface keys; a missing persisted key remains an
+explicit unavailable selection with no implicit sibling fallback. Only a surface
+without any selection gets its preferred current account.
 
 Desktop discovery reads global config and every effective workspace/role scope at
 open and manual Refresh. Background polling reuses the catalog. Only current

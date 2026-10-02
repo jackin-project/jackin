@@ -150,6 +150,7 @@ public struct UsageWindowDetail: View {
         } else {
             OverviewListView(
                 groups: store.providerGroups,
+                notice: store.usageNotice,
                 selectedRowID: $store.overviewSelectionID,
                 expandedProviderIDs: $store.overviewExpandedProviderIDs,
                 onSelect: { surfaceId, accountKey in

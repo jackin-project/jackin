@@ -71,6 +71,9 @@ pub use projection::{NormalizedUsageDestination, UsageDestination, normalize_des
 
 /// Relative data-dir subtree for menu-bar durable state.
 pub const HOST_USAGE_STATE_REL: &str = "usage-menu-bar";
+/// Notice retained when a persisted account selection is absent from the
+/// current catalog. Consumers use this as the persistent Overview notice.
+pub const SELECTED_ACCOUNT_UNAVAILABLE_NOTICE: &str = "Selected account is no longer available.";
 
 static CANONICAL_INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -923,11 +926,8 @@ impl HostUsageRuntime {
             .focused_snapshot(Some(surface.agent_slug()), surface.provider_label());
         let catalog = self.materialize_account_catalog()?;
         self.reconcile_selected_accounts(&catalog, std::slice::from_ref(&surface))?;
-        let selected = self.selected_accounts.get(surface.id());
-        Ok(selected
-            .and_then(|key| catalog.entry(surface, key))
-            .map(|entry| entry.view.clone())
-            .or_else(|| catalog.provider_state(surface).cloned())
+        Ok(self
+            .selected_view_for_catalog(&catalog, surface)
             .unwrap_or(live))
     }
 
@@ -1168,18 +1168,19 @@ impl HostUsageRuntime {
                 self.desktop_detected_surfaces.remove(surface.id());
                 continue;
             }
-            let selected = self
-                .selected_accounts
-                .get(surface.id())
-                .and_then(|key| catalog.entry(surface, key));
-            let Some(view) = selected
-                .map(|entry| &entry.view)
-                .or_else(|| catalog.provider_state(surface))
-            else {
+            let Some(view) = self.selected_view_for_catalog(&catalog, surface) else {
                 self.desktop_detected_surfaces.remove(surface.id());
                 continue;
             };
-            let detected = if view_is_auto_detected(view) {
+            let selected_missing = self
+                .selected_accounts
+                .get(surface.id())
+                .is_some_and(|key| catalog.entry(surface, key).is_none());
+            let has_current = catalog
+                .entries_for_surface(surface)
+                .iter()
+                .any(|entry| entry.lifecycle == AccountLifecycle::Current);
+            let detected = if (selected_missing && has_current) || view_is_auto_detected(&view) {
                 self.desktop_detected_surfaces
                     .insert(surface.id().to_owned());
                 true
@@ -1192,7 +1193,7 @@ impl HostUsageRuntime {
             if !detected {
                 continue;
             }
-            let glance = glance_bucket(surface, view);
+            let glance = glance_bucket(surface, &view);
             let remaining = glance.and_then(|b| b.remaining_percent);
             // SB-19: no numeric remaining or 0% → out of bar membership.
             let Some(rem) = remaining else {
@@ -1204,7 +1205,7 @@ impl HostUsageRuntime {
             let resets_at = glance.and_then(|b| b.resets_at);
             let row = build_provider_glance_row(
                 surface,
-                view,
+                &view,
                 self.surface_refresh_in_progress(surface.id()),
                 now,
                 prefs,
@@ -1390,11 +1391,10 @@ impl HostUsageRuntime {
         let mut providers = Vec::with_capacity(inventory.groups.len());
         for group in inventory.groups {
             let surface_id = group.surface_id.clone();
-            let selected_account_key = group
-                .accounts
-                .iter()
-                .find(|account| account.selected)
-                .map(|account| account.account_key.clone());
+            // Preserve the requested key even when its account is absent so
+            // native callers can distinguish Overview/unavailable from an
+            // implicit sibling selection.
+            let selected_account_key = self.selected_accounts.get(&surface_id).cloned();
             let selected_usage = self.snapshot(&surface_id)?;
             let is_updating = self.surface_refresh_in_progress(&surface_id);
             let identity =
@@ -1455,18 +1455,19 @@ impl HostUsageRuntime {
                 self.desktop_detected_surfaces.remove(surface.id());
                 continue;
             }
-            let selected = self
-                .selected_accounts
-                .get(surface.id())
-                .and_then(|key| catalog.entry(surface, key));
-            let Some(view) = selected
-                .map(|entry| &entry.view)
-                .or_else(|| catalog.provider_state(surface))
-            else {
+            let Some(view) = self.selected_view_for_catalog(&catalog, surface) else {
                 self.desktop_detected_surfaces.remove(surface.id());
                 continue;
             };
-            let detected = if view_is_auto_detected(view) {
+            let selected_missing = self
+                .selected_accounts
+                .get(surface.id())
+                .is_some_and(|key| catalog.entry(surface, key).is_none());
+            let has_current = catalog
+                .entries_for_surface(surface)
+                .iter()
+                .any(|entry| entry.lifecycle == AccountLifecycle::Current);
+            let detected = if (selected_missing && has_current) || view_is_auto_detected(&view) {
                 self.desktop_detected_surfaces
                     .insert(surface.id().to_owned());
                 true
@@ -1479,7 +1480,7 @@ impl HostUsageRuntime {
             if detected {
                 rows.push(build_provider_glance_row(
                     surface,
-                    view,
+                    &view,
                     self.surface_refresh_in_progress(surface.id()),
                     now,
                     prefs,
@@ -1622,10 +1623,12 @@ impl HostUsageRuntime {
         surfaces: &[HostSurfaceId],
     ) -> Result<(), String> {
         let before = self.selected_accounts.clone();
-        self.selected_accounts.retain(|surface_id, account_key| {
-            HostSurfaceId::from_id(surface_id)
-                .is_some_and(|surface| catalog.entry(surface, account_key).is_some())
-        });
+        // A missing account is an explicit unavailable selection, not an
+        // invitation to choose a sibling. Only malformed surface entries are
+        // discarded; the account key remains persisted so the selection can
+        // recover if the same canonical account returns.
+        self.selected_accounts
+            .retain(|surface_id, _| HostSurfaceId::from_id(surface_id).is_some());
         for surface in surfaces {
             if !self.selected_accounts.contains_key(surface.id())
                 && let Some(key) = catalog.preferred_current_key(*surface)
@@ -1642,6 +1645,27 @@ impl HostUsageRuntime {
             )?;
         }
         Ok(())
+    }
+
+    fn selected_view_for_catalog(
+        &self,
+        catalog: &accounts::AccountCatalog,
+        surface: HostSurfaceId,
+    ) -> Option<FocusedUsageView> {
+        match self.selected_accounts.get(surface.id()) {
+            Some(account_key) => match catalog.entry(surface, account_key) {
+                Some(entry) => Some(entry.view.clone()),
+                None if catalog.entries_for_surface(surface).is_empty()
+                    && catalog
+                        .provider_state(surface)
+                        .is_some_and(FocusedUsageView::is_refreshing_placeholder) =>
+                {
+                    catalog.provider_state(surface).cloned()
+                }
+                None => Some(selected_account_unavailable_view(surface)),
+            },
+            None => catalog.provider_state(surface).cloned(),
+        }
     }
 
     fn require_open(&self) -> Result<(), String> {
@@ -1754,6 +1778,17 @@ fn view_is_auto_detected(view: &FocusedUsageView) -> bool {
             || bucket.resets_at.is_some()
     });
     origin_affirmative || bucket_evidence
+}
+
+fn selected_account_unavailable_view(surface: HostSurfaceId) -> FocusedUsageView {
+    let mut view = FocusedUsageView::unavailable(
+        SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
+        chrono::Utc::now().timestamp(),
+    );
+    view.focused_agent = Some(surface.agent_slug().to_owned());
+    view.focused_provider = Some(surface.label().to_owned());
+    view.account.provider_label = surface.account_provider_label().to_owned();
+    view
 }
 
 /// Select the required semantic glance bucket: Weekly for the six non-Amp

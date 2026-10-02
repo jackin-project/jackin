@@ -364,6 +364,12 @@ public final class PresentationStore: ObservableObject {
     @Published public private(set) var usageSelection: String?
     /// Exact account context carried by navigation into the Usage window.
     @Published public private(set) var usageAccountSelection: String?
+    /// Rust-owned notice retained after a removed account returns Usage to
+    /// Overview.
+    ///
+    /// It survives passive projections until a new destination or refresh
+    /// intent clears it.
+    @Published public private(set) var usageNotice: String?
     /// Focused popover provider; nil lets the host select the first available provider.
     @Published public var popoverSelection: String?
     /// True only while an enqueued refresh request runs its bridge operation —
@@ -664,6 +670,7 @@ public final class PresentationStore: ObservableObject {
 
     /// Select multi-account identity for a surface (Rust-persisted).
     public func setSelectedAccount(surfaceId: String, accountKey: String) {
+        usageNotice = nil
         if fixtureMode {
             guard
                 let projection = fixtureAccountProjections[
@@ -734,6 +741,7 @@ public final class PresentationStore: ObservableObject {
         overviewExpandedProviderIDs = providerIDs
         self.popoverSelection = popoverSelection
         self.usageSelection = usageSelection
+        usageNotice = nil
         usageAccountSelection =
             accounts.first(where: {
                 $0.surfaceId == usageSelection && $0.selected
@@ -762,6 +770,7 @@ public final class PresentationStore: ObservableObject {
 
     /// Manual Refresh button — bypasses floor.
     public func refreshAll() {
+        usageNotice = nil
         if fixtureMode {
             runFixtureRefresh()
             return
@@ -790,6 +799,7 @@ public final class PresentationStore: ObservableObject {
     }
 
     public func refresh(surfaceId: String) {
+        usageNotice = nil
         if fixtureMode {
             runFixtureRefresh()
             return
@@ -934,6 +944,17 @@ public final class PresentationStore: ObservableObject {
         projectedStatusBarRows = projection.statusBarGlanceRows.map(Self.mapGlanceDto)
         refreshVisibleStatusRows()
         reconcileSelections()
+        if let notice = projection.providers.compactMap({ provider -> String? in
+            guard let selectedKey = provider.selectedAccountKey,
+                !provider.group.accounts.contains(where: { $0.accountKey == selectedKey }),
+                provider.selectedUsage.status == "unavailable"
+            else { return nil }
+            return provider.selectedUsage.lastError
+        }).first {
+            usageSelection = nil
+            usageAccountSelection = nil
+            usageNotice = notice
+        }
         lastError = projection.errorMessage
     }
 
@@ -1102,6 +1123,7 @@ public final class PresentationStore: ObservableObject {
 
     /// Open Usage on one exact canonical provider/account context.
     public func selectUsageContext(surfaceId: String?, accountKey: String?) {
+        usageNotice = nil
         guard let surfaceId else {
             usageSelection = nil
             usageAccountSelection = nil
@@ -1126,10 +1148,8 @@ public final class PresentationStore: ObservableObject {
                 $0.surfaceId == usageSelection && $0.accountKey == usageAccountSelection
             })
         {
-            self.usageAccountSelection =
-                accounts.first(where: {
-                    $0.surfaceId == usageSelection && $0.selected
-                })?.accountKey
+            self.usageSelection = nil
+            self.usageAccountSelection = nil
         }
         if let popoverSelection,
             !providerGlanceRows.contains(where: { $0.surfaceId == popoverSelection })
