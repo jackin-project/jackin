@@ -73,7 +73,7 @@ struct PrRepoArgs {
     /// Repository in owner/name form.
     #[arg(long, default_value = DEFAULT_REPO)]
     repo: String,
-    /// PR test root. Defaults to ~/Projects/jackin-project/test/pr-<number>.
+    /// PR test root. Defaults to ~/Projects/jackin-project/test/pr-\<number\>.
     #[arg(long)]
     test_dir: Option<PathBuf>,
 }
@@ -95,7 +95,7 @@ struct SyncArgs {
 struct PrPathArgs {
     /// GitHub pull request number.
     pr: u64,
-    /// PR test root. Defaults to ~/Projects/jackin-project/test/pr-<number>.
+    /// PR test root. Defaults to ~/Projects/jackin-project/test/pr-\<number\>.
     #[arg(long)]
     test_dir: Option<PathBuf>,
 }

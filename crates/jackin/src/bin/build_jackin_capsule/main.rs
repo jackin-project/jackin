@@ -15,7 +15,7 @@
 //!                        is named `jackin-capsule-debug`; the lean release binary is unchanged.
 //!                        Also accepted as `--debug` for convenience.
 //!   --export             Print `export JACKIN_CAPSULE_BIN=<path>` suitable for eval
-//!   --features <list>    Pass a comma-separated feature list to the capsule build.
+//!   --features \<list\>    Pass a comma-separated feature list to the capsule build.
 //!                        Used for opt-in performance telemetry builds.
 //!
 //! Requires: zig and cargo-zigbuild installed (`mise install zig cargo:cargo-zigbuild`)
