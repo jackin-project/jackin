@@ -1085,12 +1085,202 @@ fn multi_account_list_select_and_snapshot() {
     assert_eq!(snap.account.account_label, "personal@example.com");
     assert_eq!(snap.buckets[0].remaining_percent, Some(50));
 
+    // The current catalog removes A while sibling B remains. The persisted
+    // selection is intent, so it stays explicit and unavailable instead of
+    // being rewritten to B.
+    runtime.discovery = Some(ValidatedUsageDiscovery {
+        config_generation: Some("only-b-generation".to_owned()),
+        accounts: vec![canonical_discovered_account(
+            HostSurfaceId::Claude,
+            "work@company.com",
+        )],
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: Vec::new(),
+    });
+    let unavailable = runtime.snapshot("claude").expect("unavailable A");
+    assert_eq!(unavailable.status, UsageSnapshotStatus::Unavailable);
+    assert_eq!(
+        unavailable.last_error.as_deref(),
+        Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
+    );
+    assert_ne!(unavailable.account.account_label, "work@company.com");
+    let persisted = accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()));
+    assert_eq!(persisted.get("claude"), Some(&key_a));
+
+    let glance = runtime
+        .provider_glance_rows()
+        .expect("unavailable glance row");
+    let claude = glance
+        .iter()
+        .find(|row| row.surface_id == "claude")
+        .expect("Claude glance row");
+    assert_eq!(
+        claude.last_error.as_deref(),
+        Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
+    );
+    assert_eq!(claude.glance_remaining_percent, None);
+
+    let projection = runtime
+        .desktop_projection(3)
+        .expect("unavailable desktop projection");
+    let claude = projection
+        .providers
+        .iter()
+        .find(|provider| provider.group.surface_id == "claude")
+        .expect("Claude desktop projection");
+    assert_eq!(claude.selected_account_key.as_deref(), Some(key_a.as_str()));
+    assert_eq!(
+        claude.selected_usage.last_error.as_deref(),
+        Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
+    );
+    assert!(
+        claude
+            .group
+            .accounts
+            .iter()
+            .all(|account| !account.selected)
+    );
+
+    // Reappearing canonical A restores the valid selection without churn.
+    runtime.discovery = Some(ValidatedUsageDiscovery {
+        config_generation: Some("a-and-b-generation".to_owned()),
+        accounts: vec![
+            canonical_discovered_account(HostSurfaceId::Claude, "personal@example.com"),
+            canonical_discovered_account(HostSurfaceId::Claude, "work@company.com"),
+        ],
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: Vec::new(),
+    });
+    let restored = runtime.snapshot("claude").expect("restored A");
+    assert_eq!(restored.account.account_label, "personal@example.com");
+    assert_eq!(restored.buckets[0].remaining_percent, Some(50));
+
     runtime
         .set_selected_account("claude", &key_b)
         .expect("select B");
     let snap_b = runtime.snapshot("claude").expect("snapshot B");
     assert_eq!(snap_b.account.account_label, "work@company.com");
     assert_eq!(snap_b.buckets[0].remaining_percent, Some(20));
+}
+
+#[test]
+fn removed_last_selected_account_keeps_unavailable_provider_and_restores_exact_key() {
+    for retain_cached_quota in [false, true] {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut runtime = open_runtime(dir.path());
+        let view = codex_fixture_view();
+        let account = canonical_discovered_account(HostSurfaceId::Codex, "codex@example.com");
+        let key = account.account_key.clone();
+        runtime
+            .inject_snapshot("codex", view.clone())
+            .expect("seed quota");
+        runtime.discovery = Some(ValidatedUsageDiscovery {
+            config_generation: Some("present".to_owned()),
+            accounts: vec![account.clone()],
+            diagnostics: Vec::new(),
+            candidates: Vec::new(),
+            bindings: Vec::new(),
+        });
+        runtime
+            .set_selected_account("codex", &key)
+            .expect("select account");
+        runtime
+            .discovery
+            .as_mut()
+            .expect("discovery")
+            .accounts
+            .clear();
+        if !retain_cached_quota {
+            runtime
+                .inject_snapshot("codex", FocusedUsageView::unavailable("removed", 2))
+                .expect("clear cache");
+            runtime
+                .discovery
+                .as_mut()
+                .expect("discovery")
+                .accounts
+                .clear();
+        }
+        let projection = runtime.desktop_projection(3).expect("removed projection");
+        let provider = projection
+            .providers
+            .iter()
+            .find(|provider| provider.group.surface_id == "codex")
+            .expect("requested provider must remain visible");
+        assert!(provider.group.accounts.is_empty());
+        assert_eq!(provider.selected_account_key.as_deref(), Some(key.as_str()));
+        assert_eq!(
+            provider.selected_usage.status,
+            UsageSnapshotStatus::Unavailable
+        );
+        assert!(
+            provider.selected_usage.buckets.is_empty(),
+            "removed account cannot show cached quota"
+        );
+        assert_eq!(
+            provider.selected_usage.last_error.as_deref(),
+            Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
+        );
+        let empty = provider
+            .group
+            .empty_state
+            .as_ref()
+            .expect("explicit empty state");
+        assert_eq!(empty.status_word, "unavailable");
+        assert_eq!(
+            empty.last_error.as_deref(),
+            Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
+        );
+        assert!(!empty.is_refreshing);
+        assert!(
+            projection
+                .status_bar_glance_rows
+                .iter()
+                .all(|row| row.surface_id != "codex")
+        );
+        assert_eq!(
+            accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()))
+                .get("codex"),
+            Some(&key)
+        );
+
+        drop(runtime);
+        let mut reopened = open_runtime(dir.path());
+        reopened.discovery = Some(ValidatedUsageDiscovery {
+            config_generation: Some("still-removed".to_owned()),
+            accounts: Vec::new(),
+            diagnostics: Vec::new(),
+            candidates: Vec::new(),
+            bindings: Vec::new(),
+        });
+        let unavailable = reopened
+            .snapshot("codex")
+            .expect("persisted unavailable selection");
+        assert_eq!(unavailable.status, UsageSnapshotStatus::Unavailable);
+        assert!(unavailable.buckets.is_empty());
+        assert_eq!(
+            unavailable.last_error.as_deref(),
+            Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
+        );
+        reopened.discovery = Some(ValidatedUsageDiscovery {
+            config_generation: Some("returned".to_owned()),
+            accounts: vec![account],
+            diagnostics: Vec::new(),
+            candidates: Vec::new(),
+            bindings: Vec::new(),
+        });
+        reopened
+            .inject_snapshot("codex", view)
+            .expect("restore exact account quota");
+        let restored = reopened
+            .snapshot("codex")
+            .expect("restored selected account");
+        assert_eq!(restored.account.account_label, "codex@example.com");
+        assert_eq!(restored.buckets.len(), 2);
+        assert_eq!(reopened.selected_accounts.get("codex"), Some(&key));
+    }
 }
 
 #[test]
@@ -1384,7 +1574,7 @@ fn canon_sel_rejects_unknown_and_cross_surface_keys() {
 }
 
 #[test]
-fn canon_sel_stale_persisted_key_is_reconciled_to_visible_current_account() {
+fn canon_sel_stale_persisted_key_remains_explicitly_unavailable() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut selected = HashMap::new();
     selected.insert("codex".to_owned(), "sha256:unknown".to_owned());
@@ -1400,14 +1590,18 @@ fn canon_sel_stale_persisted_key_is_reconciled_to_visible_current_account() {
     );
     let key = account_key_for_view(&view).expect("canonical key");
     runtime.inject_snapshot("codex", view).expect("inject");
-    let rows = runtime
-        .list_accounts(Some("codex"))
-        .expect("reconciled accounts");
+    let rows = runtime.list_accounts(Some("codex")).expect("accounts");
     assert_eq!(rows.len(), 1);
-    assert!(rows[0].selected);
+    assert!(!rows[0].selected);
     assert_eq!(rows[0].account_key, key);
+    let snapshot = runtime.snapshot("codex").expect("unavailable snapshot");
+    assert_eq!(snapshot.status, UsageSnapshotStatus::Unavailable);
+    assert_eq!(
+        snapshot.last_error.as_deref(),
+        Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
+    );
     let persisted = accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()));
-    assert_eq!(persisted.get("codex"), Some(&key));
+    assert_eq!(persisted.get("codex"), Some(&"sha256:unknown".to_owned()));
 }
 
 #[test]
