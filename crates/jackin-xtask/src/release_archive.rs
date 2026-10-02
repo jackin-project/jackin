@@ -166,7 +166,7 @@ fn targets(package: ArchivePackage) -> &'static [TargetSpec] {
 
 fn binaries(package: ArchivePackage) -> &'static [&'static str] {
     match package {
-        ArchivePackage::Jackin => &["jackin", "jackin-role"],
+        ArchivePackage::Jackin => &["jackin", "jackin-role", "jackin-usage-broker"],
         ArchivePackage::JackinCapsule => &["jackin-capsule"],
         ArchivePackage::JackinRole => &["jackin-role"],
     }

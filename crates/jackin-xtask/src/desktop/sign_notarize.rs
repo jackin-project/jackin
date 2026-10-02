@@ -9,8 +9,8 @@ use clap::Args;
 use serde_json::Value;
 
 use super::{
-    assert_no_embedded_libs, progress, require_macos, resolve_version_build, tempfile_dir,
-    verify_app, which,
+    assert_no_embedded_libs, broker_path, progress, require_macos, resolve_version_build,
+    sign_broker, tempfile_dir, verify_app, which,
 };
 use crate::cmd;
 
@@ -47,8 +47,10 @@ pub(crate) fn run(args: SignNotarizeArgs) -> Result<()> {
     }
 
     assert_no_embedded_libs(&app)?;
+    verify_app(&app, None, &version, &build, false)?;
 
     progress("==> codesign (hardened runtime, secure timestamp, no --deep)");
+    sign_broker(&app, &identity, true)?;
     let mut codesign = cmd::command("codesign");
     codesign.args([
         "--force",
@@ -74,6 +76,10 @@ pub(crate) fn run(args: SignNotarizeArgs) -> Result<()> {
     check_expected_cert(&app)?;
     check_expected_team(&app)?;
     reject_get_task_allow(&app)?;
+    let broker = broker_path(&app);
+    check_expected_cert(&broker)?;
+    check_expected_team(&broker)?;
+    reject_get_task_allow(&broker)?;
 
     let notary_log_dir = match env::var("NOTARY_LOG_DIR") {
         Ok(dir) => PathBuf::from(dir),

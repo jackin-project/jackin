@@ -3002,6 +3002,7 @@ dependencies = [
  "jackin-test-support",
  "jackin-tui",
  "jackin-usage",
+ "nix 0.31.3",
  "owo-colors 4.3.0",
  "predicates",
  "ratatui",

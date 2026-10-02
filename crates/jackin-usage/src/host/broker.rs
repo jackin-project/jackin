@@ -1833,8 +1833,7 @@ fn usage_broker_handle_for(
 ///
 /// The caller never supplies an executor to this path. The sibling service
 /// performs discovery and provider work in its own process, then survives the
-/// activating client. Tests and legacy in-process seams use the hidden helper
-/// below until their owning consumers migrate.
+/// activating client. The installed `jackin` package owns this sibling binary.
 pub fn ensure_usage_broker_process(
     config: UsageBrokerConfig,
     scope: &UsageDiscoveryScope,
@@ -1843,7 +1842,15 @@ pub fn ensure_usage_broker_process(
     if connect_probe(&client) {
         return Ok(client);
     }
-    let executable = config.service_executable.clone().ok_or_else(unavailable)?;
+    let executable = config
+        .service_executable
+        .as_ref()
+        .ok_or_else(|| UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unavailable,
+            message:
+                "usage broker executable cannot be located; reinstall the complete jackin package"
+                    .to_owned(),
+        })?;
     let mut command = Command::new(executable);
     command
         .arg("--data-dir")
@@ -1866,7 +1873,13 @@ pub fn ensure_usage_broker_process(
         }
         UsageDiscoveryScope::Capsule { .. } => return Err(unavailable()),
     }
-    command.spawn().map_err(|_| unavailable())?;
+    command.spawn().map_err(|error| UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::Unavailable,
+        message: format!(
+            "cannot start usage broker executable {}: {error}; reinstall the complete jackin package",
+            executable.display(),
+        ),
+    })?;
     wait_for_leader(&client)?;
     Ok(client)
 }

@@ -24,6 +24,7 @@ use crate::cmd;
 use crate::docs;
 
 const APP_EXECUTABLE: &str = "JackinDesktop";
+const BROKER_EXECUTABLE: &str = "jackin-usage-broker";
 const BUNDLE_ID: &str = "com.jackin-project.desktop";
 const BUNDLE_NAME: &str = "jackin❯ desktop";
 const MIN_OS: &str = "26.0";
@@ -824,6 +825,33 @@ fn build_app(root: &Path, version: &str, build: &str) -> Result<()> {
         bail!("missing {}", xcframework.display());
     }
 
+    // The FFI resolves its broker beside the running app executable. Build
+    // that process for the app's native target, regardless of CLI release lanes.
+    progress("==> building native usage broker");
+    let mut broker_build = cmd::command("cargo");
+    broker_build
+        .current_dir(root)
+        .env("MACOSX_DEPLOYMENT_TARGET", MIN_OS)
+        .env("JACKIN_VERSION_OVERRIDE", version)
+        .args([
+            "build",
+            "--profile",
+            DESKTOP_PROFILE,
+            "--target",
+            HOST_TARGET,
+            "-p",
+            "jackin",
+            "--bin",
+            BROKER_EXECUTABLE,
+        ])
+        .arg("--target-dir")
+        .arg(root.join("target"));
+    cmd::run_streaming(&mut broker_build)?;
+    let built_broker = root.join(format!(
+        "target/{HOST_TARGET}/{DESKTOP_PROFILE}/{BROKER_EXECUTABLE}"
+    ));
+    verify_broker(&built_broker, version)?;
+
     let native = root.join("native");
     let manifest = native.join("project.yml");
     if !manifest.is_file() {
@@ -874,6 +902,11 @@ fn build_app(root: &Path, version: &str, build: &str) -> Result<()> {
     ]);
     cmd::run(&mut ditto)?;
 
+    let broker = broker_path(&dist);
+    fs::copy(&built_broker, &broker)
+        .with_context(|| format!("copying usage broker into {}", broker.display()))?;
+    verify_broker(&broker, version)?;
+
     let app_bin = dist.join(format!("Contents/MacOS/{APP_EXECUTABLE}"));
     if !app_bin.is_file() {
         bail!("missing Xcode app executable {}", app_bin.display());
@@ -914,6 +947,7 @@ fn build_app(root: &Path, version: &str, build: &str) -> Result<()> {
     progress(format!("==> dSYM archived beside app (UUID {app_uuid})"));
 
     progress("==> ad-hoc codesign (local/PR shape)");
+    sign_broker(&dist, "-", false)?;
     let mut codesign = cmd::command("codesign");
     codesign.args([
         "--force",
@@ -949,6 +983,8 @@ pub(super) fn verify_app(
     if !bin.is_file() {
         bail!("missing executable {}", bin.display());
     }
+    let broker = broker_path(app);
+    verify_broker(&broker, version)?;
     if !plist.is_file() {
         bail!("missing {}", plist.display());
     }
@@ -995,6 +1031,7 @@ pub(super) fn verify_app(
         app.to_str().context("app utf-8")?,
     ]);
     cmd::run(&mut codesign).context("codesign verify failed")?;
+    verify_broker_signature(app)?;
 
     if release_mode {
         let mut spctl = cmd::command("spctl");
@@ -1086,6 +1123,80 @@ fn lipo_archs(path: &Path) -> Result<String> {
     let mut lipo = cmd::command("lipo");
     lipo.args(["-archs", path.to_str().context("path utf-8")?]);
     Ok(cmd::output_string(&mut lipo)?.trim().to_owned())
+}
+
+pub(super) fn broker_path(app: &Path) -> PathBuf {
+    app.join("Contents/MacOS").join(BROKER_EXECUTABLE)
+}
+
+fn assert_native_broker_archs(archs: &str) -> Result<()> {
+    if archs.split_whitespace().collect::<Vec<_>>() != [ARCH] {
+        bail!("usage broker must be {ARCH}-only (got {archs})");
+    }
+    Ok(())
+}
+
+fn assert_broker_version(output: &str, version: &str) -> Result<()> {
+    if output.trim() != format!("{BROKER_EXECUTABLE} {version}") {
+        bail!(
+            "usage broker version mismatch (got {}, expected {version})",
+            output.trim()
+        );
+    }
+    Ok(())
+}
+
+fn assert_executable_file(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("missing usage broker {}", path.display()))?;
+    if !metadata.is_file() {
+        bail!(
+            "usage broker must be a regular executable file: {}",
+            path.display()
+        );
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o111 == 0 {
+            bail!("usage broker is not executable: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn verify_broker(path: &Path, version: &str) -> Result<()> {
+    assert_executable_file(path)?;
+    assert_native_broker_archs(&lipo_archs(path)?)?;
+    check_vtool_minos(path)?;
+    assert_no_absolute_ffi_link(path)?;
+    let mut probe = cmd::command(path);
+    probe.arg("--version");
+    assert_broker_version(&cmd::output_string(&mut probe)?, version)
+}
+
+/// Sign nested code explicitly before sealing the enclosing bundle.
+pub(super) fn sign_broker(app: &Path, identity: &str, release: bool) -> Result<()> {
+    let broker = broker_path(app);
+    assert_executable_file(&broker)?;
+    let mut codesign = cmd::command("codesign");
+    codesign.arg("--force");
+    if release {
+        codesign.args(["--options", "runtime", "--timestamp"]);
+    } else {
+        codesign.arg("--timestamp=none");
+    }
+    codesign.args(["--sign", identity]).arg(&broker);
+    cmd::run_streaming(&mut codesign)?;
+    verify_broker_signature(app)
+}
+
+pub(super) fn verify_broker_signature(app: &Path) -> Result<()> {
+    let mut codesign = cmd::command("codesign");
+    codesign
+        .args(["--verify", "--strict"])
+        .arg(broker_path(app));
+    cmd::run(&mut codesign).context("usage broker codesign verify failed")
 }
 
 /// arm64 UUID of a Mach-O binary or dSYM DWARF file, via `dwarfdump --uuid`.
