@@ -1268,15 +1268,16 @@ fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> bool {
         .store(&entry.envelope, job.started_at_epoch)
         .is_err()
     {
-        // This worker already owns the queued generation. Resolve it through
-        // the terminal path so its owner cannot remain active after the job
-        // has been discarded.
-        drop(state);
-        finish_failure(
+        // Retain the catalog transaction while resolving the owned generation;
+        // reacquiring its lifecycle mutex here would deadlock this worker.
+        finish_failure_in_state(
             shared,
+            &mut state,
             job,
-            UsageCoordinationErrorKind::Unavailable,
-            "usage state store is unavailable",
+            coordination_error(
+                UsageCoordinationErrorKind::Unavailable,
+                "usage state store is unavailable",
+            ),
             None,
             job.started_at_epoch,
         );
@@ -1337,6 +1338,25 @@ fn finish_failure(
     let Ok(mut state) = shared.state.lock() else {
         return;
     };
+    finish_failure_in_state(
+        shared,
+        &mut state,
+        job,
+        coordination_error(kind, message),
+        retry_at_epoch,
+        finished_at_epoch,
+    );
+}
+
+/// Resolve a failure inside the caller's existing catalog/state transaction.
+fn finish_failure_in_state(
+    shared: &Arc<Shared>,
+    state: &mut CoordinatorState,
+    job: &ProbeJob,
+    error: UsageCoordinationError,
+    retry_at_epoch: Option<i64>,
+    finished_at_epoch: i64,
+) {
     let Some(entry) = state.accounts.get_mut(&job.capability) else {
         return;
     };
@@ -1347,9 +1367,10 @@ fn finish_failure(
     {
         return;
     }
+    let kind = error.kind;
     entry.envelope.phase = UsageRefreshPhase::Failed;
     entry.envelope.terminal_result = None;
-    entry.envelope.terminal_error = Some(coordination_error(kind, message));
+    entry.envelope.terminal_error = Some(error);
     entry.envelope.completed_at_epoch = Some(finished_at_epoch);
     let consecutive_failures = entry.envelope.consecutive_failures.saturating_add(1);
     let retry_at_epoch = if policy::is_retryable(kind) {
@@ -1372,7 +1393,7 @@ fn finish_failure(
     }
     entry.envelope.success_deadline_epoch = None;
     entry.envelope.consecutive_failures = consecutive_failures;
-    persist_terminal(shared, &mut state, &job.capability, finished_at_epoch);
+    persist_terminal(shared, state, &job.capability, finished_at_epoch);
 }
 
 fn persist_terminal(
