@@ -16,7 +16,18 @@ test_process_budget = 4
 default_shards = 1
 
 [discovery]
-exclude = ["native/**", "docs/**", "docker/**"]
+exclude = [
+  "native/**",
+  "docs/**",
+  "docker/**",
+  "**/fuzz/**",
+  "crates/jackin-lints/**",
+  "vendor/**",
+  "crates/jackin-brand/**",
+  "crates/jackin-build-meta/**",
+  "crates/jackin-oppicker/**",
+  "crates/jackin-pr-trailers/**"
+]
 
 [stacks.rust]
 compile_driver = "mbx"
