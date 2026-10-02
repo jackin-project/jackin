@@ -1,0 +1,23 @@
+schema = 1
+
+[workflow]
+name = "CI"
+policy = "consumer-v1"
+default_branch = "main"
+runner_label = "ubuntu-26.04"
+generator_validation = "bootstrap"
+max_parallel_jobs = 4
+
+[resources]
+compiler_process_budget = 4
+test_process_budget = 4
+
+[test_sharding]
+default_shards = 1
+
+[discovery]
+exclude = ["native/**", "docs/**", "docker/**"]
+
+[stacks.rust]
+compile_driver = "mbx"
+test_runner = "cargo_nextest"
