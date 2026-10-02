@@ -11,12 +11,11 @@
 // when `mise` is unavailable. See CONTRIBUTING.md ("Git hooks") for the
 // full contract.
 //
-// Hook mode is REVIEW, not auto-stage: the repo-owned launcher snapshots
-// every non-index path with `git stash --all --keep-index`, then hk runs
-// against the staged worktree. Fixes are left unstaged and the hook fails so
-// the author reviews the diff, stages, and retries. The launcher restores the
-// snapshot on success, failure, or interruption. `hk fix` applies the same
-// fixes outside a commit.
+// Hook mode is REVIEW: the repo-owned launcher materializes the exact index
+// in a private repository and hk validates that staged tree. Isolated fixes
+// fail the commit and produce a private review patch; the live checkout and
+// compiler artifacts remain untouched. `hk fix` applies fixes explicitly.
+// Temporary source/build paths are owned and cleaned by the launcher.
 //
 // Single source of truth: every step command below is textually identical
 // to the command CI runs; steps invoke tools directly (never `mise run`)
@@ -123,7 +122,7 @@ hooks {
   ["pre-commit"] {
     fix = true
     // Snapshot ownership lives in scripts/pre-commit-snapshot. Keeping hk's
-    // own stash disabled prevents a second, path-limited snapshot.
+    // own stash disabled keeps the exact isolated staged view intact.
     stash = "none"
     stage = false
     fail_on_fix = true
