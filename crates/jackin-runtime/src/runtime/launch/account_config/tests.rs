@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+
+#[path = "tests/bounds.rs"]
+mod bounds;
 use std::collections::BTreeMap;
 use std::path::Path;
 

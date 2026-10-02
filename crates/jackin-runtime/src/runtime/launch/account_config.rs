@@ -11,9 +11,13 @@ use jackin_config::{AccountCredential, AiProvider, AppConfig};
 use jackin_core::Agent;
 
 #[cfg(unix)]
+#[path = "account_config/private_config_bounds.rs"]
+mod private_config_bounds;
+
+#[cfg(unix)]
 mod private_config_fs {
     use std::fs::File;
-    use std::io::{Read as _, Write as _};
+    use std::io::Write as _;
     use std::path::{Component, Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -24,11 +28,12 @@ mod private_config_fs {
     use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
 
     use anyhow::Context as _;
-    use fs4::FileExt;
     use nix::errno::Errno;
     use nix::fcntl::{AtFlags, OFlag, open, openat, renameat};
     use nix::sys::stat::{Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
     use nix::unistd::{UnlinkatFlags, linkat, unlinkat};
+
+    use super::private_config_bounds;
 
     static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
     const LOCK_FILE: &str = ".jackin-private-provider-config.lock";
@@ -244,19 +249,24 @@ mod private_config_fs {
         directory
             .sync_all()
             .context("sync private provider config directory")?;
-        FileExt::lock(&lock).context("lock private provider config directory")?;
+        private_config_bounds::lock(&lock)?;
         Ok(lock)
     }
 
     pub(super) fn read_optional(directory: &File, name: &str) -> anyhow::Result<Option<Vec<u8>>> {
+        read_optional_bounded(directory, name, private_config_bounds::MAX_CONFIG_BYTES)
+    }
+
+    fn read_optional_bounded(
+        directory: &File,
+        name: &str,
+        limit: usize,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
         let name = LeafName::parse(name)?;
         let Some(mut file) = open_existing_regular(directory, name)? else {
             return Ok(None);
         };
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
-            .with_context(|| format!("read private provider config {}", name.as_str()))?;
-        Ok(Some(contents))
+        private_config_bounds::read(&mut file, name.as_str(), limit).map(Some)
     }
 
     /// Move a malformed config beside the replacement without resolving any
@@ -403,7 +413,7 @@ mod private_config_fs {
         F: FnMut(PublishPoint) -> anyhow::Result<()>,
     {
         let name = LeafName::parse(name)?;
-        match read_optional(directory, name.as_str())? {
+        match read_optional_bounded(directory, name.as_str(), contents.len())? {
             Some(existing) if existing == contents => return Ok(()),
             Some(_) => {
                 anyhow::bail!(
@@ -435,7 +445,7 @@ mod private_config_fs {
             ) {
                 Ok(()) => {}
                 Err(Errno::EEXIST) => {
-                    let existing = read_optional(directory, name.as_str())?;
+                    let existing = read_optional_bounded(directory, name.as_str(), contents.len())?;
                     anyhow::ensure!(
                         existing.as_deref() == Some(contents),
                         "content-addressed Codex catalog {} changed during publication",
@@ -470,6 +480,7 @@ mod private_config_fs {
         F: FnMut(PublishPoint) -> anyhow::Result<()>,
     {
         let name = LeafName::parse(name)?;
+        validate_config_contents(contents, name.as_str())?;
         // Check the current entry without following it. Renameat below cannot
         // follow a leaf symlink, but rejecting non-regular entries also keeps
         // malformed capsule state from being silently taken over.
@@ -512,6 +523,14 @@ mod private_config_fs {
         })();
 
         cleanup_owned_temp(directory, &temp_name, &temp_file, result)
+    }
+
+    pub(super) fn validate_config_contents(contents: &[u8], name: &str) -> anyhow::Result<()> {
+        private_config_bounds::ensure_size(
+            contents.len() as u64,
+            name,
+            private_config_bounds::MAX_CONFIG_BYTES,
+        )
     }
 
     pub(super) fn create_temp_file(directory: &File) -> anyhow::Result<(String, File)> {
@@ -797,6 +816,9 @@ where
         document.remove("model_reasoning_effort");
     }
     let config_contents = toml::to_string_pretty(&document)?.into_bytes();
+    // Apply the same bound as the reader before publishing even an immutable
+    // catalog: rejection must leave the complete previous pair untouched.
+    private_config_fs::validate_config_contents(&config_contents, "config.toml")?;
     if let Some((catalog_name, catalog_contents)) = catalog_to_publish {
         // The catalog name is content-addressed and immutable. Sync it before
         // atomically changing config.toml, which is the pair's commit point.
