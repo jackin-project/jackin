@@ -150,6 +150,7 @@ impl CommandRunner for FakeRunner {
         args: &[&str],
         _cwd: Option<&std::path::Path>,
     ) -> anyhow::Result<String> {
+        std::future::ready(()).await;
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
         self.check_command(&command)?;

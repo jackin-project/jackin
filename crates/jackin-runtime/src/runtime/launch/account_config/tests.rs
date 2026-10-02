@@ -982,7 +982,8 @@ fn private_config_fs_normalizes_macos_lexical_root_aliases() {
         private_config_fs::normalize_root(Path::new("/various/jackin")).unwrap(),
         PathBuf::from("/various/jackin")
     );
-    assert!(private_config_fs::normalize_root(Path::new("/var/../tmp")).is_err());
+    private_config_fs::normalize_root(Path::new("/var/../tmp"))
+        .expect_err("private account config root must reject parent traversal");
 }
 
 #[cfg(unix)]

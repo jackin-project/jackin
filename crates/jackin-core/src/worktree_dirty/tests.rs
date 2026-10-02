@@ -45,6 +45,7 @@ impl CommandRunner for MockGit {
         _cwd: Option<&Path>,
         _opts: &RunOptions,
     ) -> anyhow::Result<()> {
+        std::future::ready(()).await;
         Ok(())
     }
 
@@ -54,6 +55,7 @@ impl CommandRunner for MockGit {
         args: &[&str],
         _cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
+        std::future::ready(()).await;
         let sub = args.get(2).copied().unwrap_or("");
         if self.fail_subcommand == Some(sub) {
             anyhow::bail!("mock git failure for {sub}");
