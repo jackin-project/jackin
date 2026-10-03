@@ -38,6 +38,7 @@ object_format=$(git rev-parse --show-object-format)
 head_oid=$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)
 
 snapshot_root=$(mktemp -d "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
+snapshot_root=$(cd "$snapshot_root" && pwd -P)
 snapshot_worktree="$snapshot_root/worktree"
 snapshot_git_dir="$snapshot_worktree/.git"
 
@@ -120,14 +121,78 @@ PYTHON
 # An inherited target path may point at the live checkout or shared compiler
 # state. Gate artifacts must have the same isolation boundary as its sources.
 export CARGO_TARGET_DIR="$snapshot_root/target"
+export CARGO_BUILD_BUILD_DIR="$snapshot_root/build"
+mise_bin=$(command -v mise)
 # The staged mise config is the same reviewed gate input, now at an owned
 # temporary path. Trust only that path for this process; persist no trust.
 export MISE_TRUSTED_CONFIG_PATHS="$snapshot_worktree"
 set +e
 # The process group owns hk and all compiler children. Signals terminate the
 # group before cleanup removes its sources/artifacts.
+# Resolve and qualify tools inside mise's environment, then install the pinned
+# Rust bin directory FIRST. No ambient shim or workspace compiler cache may
+# intercept the gate. Empty wrapper variables override global Cargo config.
 python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' \
-    mise x -- hk run pre-commit --from-hook "$@" &
+    "$mise_bin" x -- python3 -c '
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import tomllib
+
+def output(*args):
+    return subprocess.check_output(args, text=True).strip()
+
+mise, owned, *arguments = sys.argv[1:]
+channel = tomllib.loads(pathlib.Path("rust-toolchain.toml").read_text())["toolchain"]["channel"]
+if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", channel):
+    sys.exit("error: hook requires an exact Rust release pin")
+os.environ["RUSTUP_TOOLCHAIN"] = channel
+rustup = output(mise, "which", "rustup")
+paths = {name: pathlib.Path(output(rustup, "which", "--toolchain", channel, name)).resolve(strict=True)
+         for name in ("cargo", "rustc", "rustdoc", "clippy-driver", "rustfmt")}
+bin_dir = paths["rustc"].parent
+if any(path.parent != bin_dir for path in paths.values()):
+    sys.exit("error: hook Rust tools do not belong to one toolchain")
+versions = {name: output(str(path), "--version", "--verbose") for name, path in paths.items()}
+for name in ("cargo", "rustc", "rustdoc"):
+    if f"release: {channel}" not in versions[name].splitlines():
+        sys.exit(f"error: hook {name} does not match Rust {channel}")
+commit = next(line.split(": ", 1)[1] for line in versions["rustc"].splitlines() if line.startswith("commit-hash: "))
+if f"commit-hash: {commit}" not in versions["rustdoc"].splitlines():
+    sys.exit("error: hook rustdoc compiler identity mismatch")
+clippy = re.fullmatch(r"clippy [^ ]+ \(([0-9a-f]+) [^)]+\)", versions["clippy-driver"])
+if not clippy or not commit.startswith(clippy[1]):
+    sys.exit("error: hook Clippy compiler identity mismatch")
+formatter = re.fullmatch(r"rustfmt [^ ]+ \(([0-9a-f]+) [^)]+\)", versions["rustfmt"])
+if not formatter or not commit.startswith(formatter[1]):
+    sys.exit("error: hook rustfmt compiler identity mismatch")
+# Cargo environment aliases outrank the reviewed workspace alias and can
+# replace xtask with an unrelated executable. Use only the staged definition.
+for name in list(os.environ):
+    if name.startswith("CARGO_ALIAS_"):
+        del os.environ[name]
+# Resolve hk and platform lint tools from mise, avoiding inherited PATH shims.
+managed = pathlib.Path(owned) / "tools"
+managed.mkdir()
+for name in ("hk", "actionlint") + (("swiftlint",) if sys.platform == "darwin" else ()):
+    path = pathlib.Path(output(mise, "which", name)).resolve(strict=True)
+    (managed / name).symlink_to(path)
+if sys.platform == "darwin":
+    (managed / "xcrun").symlink_to("/usr/bin/xcrun")
+os.environ.update(RUSTC=str(paths["rustc"]), RUSTDOC=str(paths["rustdoc"]),
+                  CLIPPY_DRIVER=str(paths["clippy-driver"]), RUSTFMT=str(paths["rustfmt"]), CARGO_BUILD_RUSTC=str(paths["rustc"]),
+                  CARGO_BUILD_RUSTDOC=str(paths["rustdoc"]), RUSTC_WRAPPER="",
+                  RUSTC_WORKSPACE_WRAPPER="", CARGO_BUILD_RUSTC_WRAPPER="",
+                  CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER="",
+                  CARGO_BUILD_JOBS="2", NEXTEST_TEST_THREADS="4",
+                  CARGO_TARGET_DIR=str(pathlib.Path(owned) / "target"),
+                  CARGO_BUILD_BUILD_DIR=str(pathlib.Path(owned) / "build"))
+os.environ["PATH"] = os.pathsep.join((str(bin_dir), str(managed), os.environ["PATH"]))
+print(f"hook toolchain: Rust {channel}; cargo={paths["cargo"]}; rustc={paths["rustc"]}; rustdoc={paths["rustdoc"]}; clippy={paths["clippy-driver"]}; rustfmt={paths["rustfmt"]}", flush=True)
+os.execv(str(managed / "hk"), ["hk", "run", "pre-commit", "--from-hook", *arguments])
+' "$mise_bin" "$snapshot_root" "$@" &
 gate_pid=$!
 wait "$gate_pid"
 hook_status=$?

@@ -7,6 +7,7 @@ fixture=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-fixture.XXXXXX")
 fake_bin=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-bin.XXXXXX")
 snapshot_tmp=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-tmp.XXXXXX")
 trap 'rm -rf "$fixture" "$fake_bin" "$snapshot_tmp"' EXIT
+snapshot_tmp=$(cd "$snapshot_tmp" && pwd -P)
 export FIXTURE_ROOT="$fixture" SNAPSHOT_TMP="$snapshot_tmp"
 export GIT_OPTIONAL_LOCKS=0
 
@@ -14,6 +15,7 @@ git -C "$fixture" init -q
 git -C "$fixture" config user.name "Jackin hook fixture"
 git -C "$fixture" config user.email "jackin-hook-fixture@example.invalid"
 git -C "$fixture" config core.fileMode true
+printf '%s\n' '[toolchain]' 'channel = "1.97.1"' > "$fixture/rust-toolchain.toml"
 printf '%s\n' 'ignored*' target > "$fixture/.gitignore"
 printf '%s\n' base > "$fixture/partial.txt"
 printf '%s\n' base > "$fixture/deleted.txt"
@@ -74,10 +76,72 @@ chmod +x "$fake_bin/assert-live"
 "$fake_bin/assert-live" > "$fake_bin/before"
 export LIVE_BASELINE="$fake_bin/before"
 
+# mise prepares the environment; only the post-mise launcher may pin PATH.
+export TOOLCHAIN_FIXTURE="$fake_bin/pinned"
+mkdir "$TOOLCHAIN_FIXTURE"
+TOOLCHAIN_FIXTURE=$(cd "$TOOLCHAIN_FIXTURE" && pwd -P)
 cat > "$fake_bin/mise" <<'EOF'
 #!/bin/sh
 set -eu
-[ "$*" = 'x -- hk run pre-commit --from-hook fixture-arg' ]
+case "$1" in
+    x)
+        shift; test "$1" = --; shift
+        export CARGO_TARGET_DIR="$FIXTURE_ROOT/target" CARGO_BUILD_BUILD_DIR="$FIXTURE_ROOT/ignored-build"
+        export RUSTC_WRAPPER="${TOOLCHAIN_FIXTURE%/pinned}/cargo"
+        export RUSTC_WORKSPACE_WRAPPER="$RUSTC_WRAPPER"
+        export RUSTFMT=/usr/bin/true CARGO_ALIAS_XTASK=noop
+        export CARGO_BUILD_JOBS=999 NEXTEST_TEST_THREADS=999
+        exec "$@" ;;
+    which)
+        case "$2" in
+            rustup) printf "%s\n" "$TOOLCHAIN_FIXTURE/rustup" ;;
+            hk|actionlint|swiftlint) printf "%s\n" "${TOOLCHAIN_FIXTURE%/pinned}/$2" ;;
+            *) exit 71 ;;
+        esac ;;
+    *) exit 72 ;;
+esac
+EOF
+cat > "$TOOLCHAIN_FIXTURE/rustup" <<'EOF'
+#!/bin/sh
+set -eu
+test "$1" = which
+test "$2" = --toolchain
+test "$3" = 1.97.1
+printf "%s\n" "$TOOLCHAIN_FIXTURE/$4"
+EOF
+for name in cargo rustc rustdoc clippy-driver rustfmt; do
+    cat > "$TOOLCHAIN_FIXTURE/$name" <<'EOF'
+#!/bin/sh
+set -eu
+name=${0##*/}
+test "$*" = '--version --verbose'
+if [ "${POISON_TOOLCHAIN:-}" = "$name" ]; then
+    printf "%s\n" "$name 1.96.0" 'release: 1.96.0' 'commit-hash: badbad'
+    exit 0
+fi
+case "$name" in
+    clippy-driver) printf "%s\n" 'clippy 0.1.97 (abcdef0123 2026-07-14)' ;;
+    rustfmt) printf "%s\n" 'rustfmt 1.9.0-stable (abcdef0123 2026-07-14)' ;;
+    *) printf "%s\n" "$name 1.97.1" 'release: 1.97.1' 'commit-hash: abcdef0123456789' ;;
+esac
+EOF
+    chmod +x "$TOOLCHAIN_FIXTURE/$name"
+done
+# Cached artifacts and ambient shims/wrappers must never be admitted.
+for name in cargo rustc rustdoc clippy-driver rustfmt; do
+    printf "%s\n" '#!/bin/sh' 'exit 73' > "$fake_bin/$name"
+    chmod +x "$fake_bin/$name"
+done
+for name in actionlint swiftlint; do
+    printf "%s\n" '#!/bin/sh' 'exit 0' > "$fake_bin/$name"
+    chmod +x "$fake_bin/$name"
+done
+chmod +x "$fake_bin/mise" "$TOOLCHAIN_FIXTURE/rustup"
+
+cat > "$fake_bin/hk" <<'EOF'
+#!/bin/sh
+set -eu
+[ "$*" = 'run pre-commit --from-hook fixture-arg' ]
 assert-live > "$SNAPSHOT_TMP/live-now"
 diff -u "$LIVE_BASELINE" "$SNAPSHOT_TMP/live-now"
 rm "$SNAPSHOT_TMP/live-now"
@@ -95,6 +159,18 @@ mode=$(stat -f '%Lp' mode.sh 2>/dev/null || stat -c '%a' mode.sh)
 [ "$mode" = 755 ]
 [ "$(git diff --cached --name-only | wc -l | tr -d ' ')" = 5 ]
 [ "$(git diff --name-only)" = '' ]
+[ "$RUSTC" = "$TOOLCHAIN_FIXTURE/rustc" ]
+[ "$RUSTDOC" = "$TOOLCHAIN_FIXTURE/rustdoc" ]
+[ "$CLIPPY_DRIVER" = "$TOOLCHAIN_FIXTURE/clippy-driver" ]
+[ "$RUSTFMT" = "$TOOLCHAIN_FIXTURE/rustfmt" ]
+[ "$CARGO_BUILD_JOBS" = 2 ]
+[ "$NEXTEST_TEST_THREADS" = 4 ]
+[ "${CARGO_ALIAS_XTASK+x}" = "" ]
+[ "$(command -v cargo)" = "$TOOLCHAIN_FIXTURE/cargo" ]
+[ "$RUSTC_WRAPPER$RUSTC_WORKSPACE_WRAPPER$CARGO_BUILD_RUSTC_WRAPPER$CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER" = "" ]
+case "$CARGO_BUILD_BUILD_DIR" in "$SNAPSHOT_TMP"/*/build) ;; *) exit 66 ;; esac
+[ ! -e "$CARGO_TARGET_DIR" ]
+[ ! -e "$CARGO_BUILD_BUILD_DIR" ]
 case "$CARGO_TARGET_DIR" in "$SNAPSHOT_TMP"/*/target) ;; *) exit 65 ;; esac
 printf '%s\n' "$PWD" > "$SNAPSHOT_TMP/active-path"
 mkdir -p "$CARGO_TARGET_DIR"
@@ -118,7 +194,7 @@ assert-live > "$SNAPSHOT_TMP/live-now"
 diff -u "$LIVE_BASELINE" "$SNAPSHOT_TMP/live-now"
 rm "$SNAPSHOT_TMP/live-now"
 EOF
-chmod +x "$fake_bin/mise"
+chmod +x "$fake_bin/hk"
 
 assert_cleaned() {
     "$fake_bin/assert-live" | cmp -s - "$LIVE_BASELINE"
@@ -131,9 +207,20 @@ assert_cleaned() {
 
 run_hook() {
     (cd "$fixture" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" \
-        CARGO_TARGET_DIR="$fixture/target" FIXTURE_MODE="$1" "$hook" fixture-arg)
+        CARGO_TARGET_DIR="$fixture/target" CARGO_BUILD_BUILD_DIR="$fixture/ignored-build" \
+        RUSTC="$fake_bin/rustc" RUSTDOC="$fake_bin/rustdoc" CLIPPY_DRIVER="$fake_bin/clippy-driver" \
+        RUSTC_WRAPPER="$fake_bin/cargo" RUSTC_WORKSPACE_WRAPPER="$fake_bin/cargo" \
+        CARGO_BUILD_RUSTC_WRAPPER="$fake_bin/cargo" CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER="$fake_bin/cargo" FIXTURE_MODE="$1" "$hook" fixture-arg)
 }
 
+# A plausible toolchain directory alone cannot certify compiler identity.
+for name in cargo rustc rustdoc clippy-driver rustfmt; do
+    export POISON_TOOLCHAIN="$name"
+    if run_hook success; then exit 1; fi
+    test ! -f "$snapshot_tmp/active-path"
+    assert_cleaned
+done
+unset POISON_TOOLCHAIN
 run_hook success
 assert_cleaned
 if run_hook fail; then exit 1; else test "$?" -eq 23; fi
@@ -154,7 +241,10 @@ patch_mode=$(stat -f '%Lp' "$patch" 2>/dev/null || stat -c '%a' "$patch")
 test "$patch_mode" = 600
 
 (cd "$fixture" && exec env PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" \
-    CARGO_TARGET_DIR="$fixture/target" FIXTURE_MODE=interrupt "$hook" fixture-arg) &
+    CARGO_TARGET_DIR="$fixture/target" CARGO_BUILD_BUILD_DIR="$fixture/ignored-build" \
+        RUSTC="$fake_bin/rustc" RUSTDOC="$fake_bin/rustdoc" CLIPPY_DRIVER="$fake_bin/clippy-driver" \
+        RUSTC_WRAPPER="$fake_bin/cargo" RUSTC_WORKSPACE_WRAPPER="$fake_bin/cargo" \
+        CARGO_BUILD_RUSTC_WRAPPER="$fake_bin/cargo" CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER="$fake_bin/cargo" FIXTURE_MODE=interrupt "$hook" fixture-arg) &
 hook_pid=$!
 attempt=0
 while [ ! -f "$snapshot_tmp/ready" ] && [ "$attempt" -lt 100 ]; do
@@ -194,7 +284,7 @@ config_hash=$(git -C "$fixture" hash-object .git/config)
 test "$(git -C "$fixture" hash-object .git/config)" = "$config_hash"
 assert_cleaned
 
-cat > "$fake_bin/mise" <<'EOF'
+cat > "$fake_bin/hk" <<'EOF'
 #!/bin/sh
 set -eu
 test "$(git write-tree)" = "$EXPECTED_TREE"
@@ -212,6 +302,7 @@ mkdir "$case_fixture"
 git -C "$case_fixture" init -q
 git -C "$case_fixture" config user.name fixture
 git -C "$case_fixture" config user.email fixture@example.invalid
+cp "$fixture/rust-toolchain.toml" "$case_fixture/rust-toolchain.toml"
 mkdir "$case_fixture/included" "$case_fixture/excluded"
 printf '%s\n' included > "$case_fixture/included/a.txt"
 printf '%s\n' excluded > "$case_fixture/excluded/b.txt"
@@ -285,13 +376,14 @@ mkdir "$unborn"
 git -C "$unborn" init -q
 git -C "$unborn" config user.name fixture
 git -C "$unborn" config user.email fixture@example.invalid
+cp "$fixture/rust-toolchain.toml" "$unborn/rust-toolchain.toml"
 printf '%s\n' staged > "$unborn/first.txt"
-git -C "$unborn" add first.txt
-cat > "$fake_bin/mise" <<'EOF'
+git -C "$unborn" add first.txt rust-toolchain.toml
+cat > "$fake_bin/hk" <<'EOF'
 #!/bin/sh
 set -eu
 test "$(cat first.txt)" = staged
-test "$(git diff --cached --name-only)" = first.txt
+test "$(git diff --cached --name-only | head -n 1)" = first.txt
 if git rev-parse --verify HEAD >/dev/null 2>&1; then exit 1; fi
 EOF
 (cd "$unborn" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" "$hook")
