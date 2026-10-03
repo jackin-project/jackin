@@ -20,6 +20,7 @@ members = [
     "crates/jackin-image",
     "crates/jackin-manifest",
     "crates/jackin-process",
+    "crates/jackin-process-directory",
     "crates/jackin-protocol",
     "crates/jackin-launch",
     "crates/jackin-runtime",
@@ -86,6 +87,7 @@ jackin-launch = { version = "0.6.4", path = "crates/jackin-launch" }
 jackin-manifest = { version = "0.6.4", path = "crates/jackin-manifest" }
 jackin-otlp-testbed = { version = "0.6.4", path = "crates/jackin-otlp-testbed" }
 jackin-process = { version = "0.6.4", path = "crates/jackin-process" }
+jackin-process-directory = { version = "0.6.4", path = "crates/jackin-process-directory" }
 jackin-protocol = { version = "0.6.4", path = "crates/jackin-protocol" }
 jackin-runtime = { version = "0.6.4", path = "crates/jackin-runtime" }
 jackin-telemetry = { version = "0.6.4", path = "crates/jackin-telemetry" }

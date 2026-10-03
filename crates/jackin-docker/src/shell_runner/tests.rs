@@ -601,3 +601,173 @@ fn build_stderr_summary_takes_tail_and_redacts_temp_paths() {
 fn build_stderr_summary_reports_empty_capture() {
     assert_eq!(summarize_build_stderr(b"\n  \n"), "(no stderr captured)");
 }
+
+#[cfg(unix)]
+async fn fixture_bare_repository(runner: &mut ShellRunner, path: &Path) -> String {
+    let quiet = RunOptions {
+        quiet: true,
+        null_stdin: true,
+        extra_env: vec![
+            ("GIT_AUTHOR_DATE".into(), "2000-01-01T00:00:00Z".into()),
+            ("GIT_COMMITTER_DATE".into(), "2000-01-01T00:00:00Z".into()),
+        ],
+        ..RunOptions::default()
+    };
+    runner
+        .run(
+            "git",
+            &["init", "--bare", path.to_str().unwrap()],
+            None,
+            &quiet,
+        )
+        .await
+        .unwrap();
+    let tree = runner
+        .capture_with_options("git", &["--git-dir=.", "mktree"], Some(path), &quiet)
+        .await
+        .unwrap();
+    let tip = runner
+        .capture_with_options(
+            "git",
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "--git-dir=.",
+                "commit-tree",
+                &tree,
+                "-m",
+                "fixture",
+            ],
+            Some(path),
+            &quiet,
+        )
+        .await
+        .unwrap();
+    runner
+        .run(
+            "git",
+            &["--git-dir=.", "update-ref", "refs/heads/scratch", &tip],
+            Some(path),
+            &quiet,
+        )
+        .await
+        .unwrap();
+    tip
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "fixture pins a real directory before a malicious pathname swap"
+)]
+async fn descriptor_cwd_survives_repository_path_replacement_for_git_run_and_capture() {
+    let temporary = tempfile::tempdir().unwrap();
+    let repository = temporary.path().join("repository");
+    let moved = temporary.path().join("pinned-original");
+    let attacker = temporary.path().join("attacker");
+    let mut runner = ShellRunner::default();
+    let original_tip = fixture_bare_repository(&mut runner, &repository).await;
+    let attacker_tip = fixture_bare_repository(&mut runner, &attacker).await;
+    assert_eq!(
+        original_tip, attacker_tip,
+        "fixture deliberately shares ref tips"
+    );
+    let pinned = std::sync::Arc::new(std::fs::File::open(&repository).unwrap());
+    std::fs::rename(&repository, &moved).unwrap();
+    std::os::unix::fs::symlink(&attacker, &repository).unwrap();
+    let opts = RunOptions {
+        pinned_cwd: Some(pinned),
+        quiet: true,
+        null_stdin: true,
+        ..RunOptions::default()
+    };
+    let parent_cwd = std::env::current_dir().unwrap();
+    assert_eq!(
+        runner
+            .capture_with_options(
+                "git",
+                &["--git-dir=.", "rev-parse", "--verify", "refs/heads/scratch"],
+                None,
+                &opts,
+            )
+            .await
+            .unwrap(),
+        original_tip,
+    );
+    runner
+        .run(
+            "git",
+            &[
+                "-c",
+                "core.hooksPath=/dev/null",
+                "--git-dir=.",
+                "update-ref",
+                "-d",
+                "refs/heads/scratch",
+                &original_tip,
+            ],
+            None,
+            &opts,
+        )
+        .await
+        .unwrap();
+    let deleted_ref = runner
+        .capture_with_options(
+            "git",
+            &["--git-dir=.", "rev-parse", "--verify", "refs/heads/scratch"],
+            None,
+            &opts,
+        )
+        .await
+        .unwrap_err();
+    assert!(deleted_ref.to_string().contains("git"));
+    assert_eq!(
+        runner
+            .capture(
+                "git",
+                &["--git-dir=.", "rev-parse", "--verify", "refs/heads/scratch"],
+                Some(&attacker),
+            )
+            .await
+            .unwrap(),
+        attacker_tip,
+    );
+    assert_eq!(std::env::current_dir().unwrap(), parent_cwd);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "fixture opens directory and non-directory descriptors to test fail-closed behavior"
+)]
+async fn descriptor_cwd_rejects_pathname_cwd_and_non_directory_without_fallback() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut runner = ShellRunner::default();
+    let opts = RunOptions {
+        pinned_cwd: Some(std::sync::Arc::new(
+            std::fs::File::open(temporary.path()).unwrap(),
+        )),
+        quiet: true,
+        ..RunOptions::default()
+    };
+    let error = runner
+        .run("true", &[], Some(temporary.path()), &opts)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("mutually exclusive"));
+    let file = temporary.path().join("ordinary-file");
+    std::fs::write(&file, b"not a directory").unwrap();
+    let opts = RunOptions {
+        pinned_cwd: Some(std::sync::Arc::new(std::fs::File::open(file).unwrap())),
+        ..RunOptions::default()
+    };
+    let error = runner
+        .capture_with_options("true", &[], None, &opts)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("not a directory"));
+}

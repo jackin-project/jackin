@@ -3225,6 +3225,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-otlp-testbed",
  "jackin-process",
+ "jackin-process-directory",
  "jackin-telemetry",
  "reqwest",
  "serde",
@@ -3430,6 +3431,15 @@ dependencies = [
  "anyhow",
  "nix 0.31.3",
  "tokio",
+]
+
+[[package]]
+name = "jackin-process-directory"
+version = "0.6.4"
+dependencies = [
+ "nix 0.31.3",
+ "rustix 1.1.4",
+ "tempfile",
 ]
 
 [[package]]
