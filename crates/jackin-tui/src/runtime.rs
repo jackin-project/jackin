@@ -1,11 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cross-surface jackin❯ application adapter contracts.
+//! Phase-frozen jackin❯ runtime contracts retained beside active surface adapters.
 //!
-//! `TermRock` owns terminal primitives and its optional closure runner. jackin❯
-//! owns its domain effects, external subscriptions, existing surface event
-//! loops, and the small render adapters shared by those loops.
+//! Capsule and Launch use the shared view, draw, focus, and update-result APIs.
+//! `Component`, `Subscription`, and `SubscriptionPoll` remain in the facade
+//! pending their owning phases; Capsule's only `Component` impl has no call
+//! site, and no workspace package currently consumes the facade's
+//! `Subscription` / `SubscriptionPoll` pair. Console defines a separate
+//! `SubscriptionPoll` in its own `tui::runtime`. `OpPicker` owns its load polling
+//! through its own `LoadPoll` and `LoadSubscription`.
 
 use ratatui::{CompletedFrame, Frame, Terminal, backend::Backend, layout::Rect};
 

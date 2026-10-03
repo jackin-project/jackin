@@ -1,15 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared jackin❯ application-adapter wiring for the capsule TUI.
+//! Capsule adapters for the phase-frozen jackin❯ runtime facade.
 //!
-//! The shared TEA `Component<Ev, Msg>` and `View<Model>` contracts live in
-//! `jackin_tui::runtime`. This module is the capsule's implementation of
-//! those traits over its surface types. `CapsuleView` is the production
-//! adapter: `daemon/compositor.rs` routes the Ratatui frame through
-//! [`jackin_tui::runtime::drive_frame`]. Render still
-//! delegates to `tui/view.rs` (`render_capsule_ratatui_frame`); input
-//! still parses via `tui/input.rs` (`InputParser::parse`).
+//! `CapsuleView` is the active `View<Model>` adapter: `daemon/compositor.rs`
+//! routes frames through [`jackin_tui::runtime::drive_frame`], which delegates
+//! to `tui/view.rs` (`render_capsule_ratatui_frame`). The retained
+//! `Component<Vec<u8>, Vec<InputEvent>>` implementation for `InputParser` has no
+//! invocation; actual input still parses directly through `tui/input.rs`
+//! (`InputParser::parse`).
 
 use crate::tui::input::{InputEvent, InputParser};
 use crate::tui::view::CapsuleRatatuiFrame;
