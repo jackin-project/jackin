@@ -309,7 +309,8 @@ async fn default_capture_budget_is_finite() {
 async fn timeout_owns_descendants_after_direct_child_exits() {
     let path =
         std::env::temp_dir().join(format!("jackin-process-descendant-{}", std::process::id()));
-    let script = "sleep 30 <&0 & printf '%s:%s' $$ $! > \"$1\"; exit 0";
+    // Preserve the input pipe before POSIX async lists replace fd 0 with null.
+    let script = "exec 3<&0; sleep 30 <&3 & printf '%s:%s' $$ $! > \"$1\"; exit 0";
     let mut request = ExecRequest::new("sh", ["-c", script, "fixture", path.to_str().unwrap()])
         .timeout(Duration::from_millis(150));
     request.stdin = Some(vec![b'x'; 2 * 1024 * 1024]);
