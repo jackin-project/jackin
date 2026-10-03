@@ -98,9 +98,8 @@ pub struct GrantPhaseInput<'a> {
 
 /// Validate config/workspace/role docker grants and fold effective grants.
 ///
-/// Returns [`GrantsValidated`] on success. On failure the caller must run
-/// [`LoadCleanup::run`] / [`cleanup_after_grant_failure`] before returning
-/// the error (suite A ordering).
+/// Returns [`GrantsValidated`] on success. Validate before adopting or
+/// allocating Docker resources, so failure requires no resource cleanup.
 ///
 /// # Errors
 /// Returns when any layer fails grants validation or profile floor check.
@@ -300,11 +299,6 @@ pub(crate) async fn mark_failed_setup_then_cleanup(
             run.compact("status", &message);
         }
     }
-    cleanup.run(docker).await;
-}
-
-/// Grant-failure path: cleanup only (no `FailedSetup` — instance may not exist yet).
-pub async fn cleanup_after_grant_failure(cleanup: &LoadCleanup, docker: &impl DockerApi) {
     cleanup.run(docker).await;
 }
 

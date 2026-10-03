@@ -42,6 +42,7 @@ pub use broker::{
     ensure_usage_broker, ensure_usage_broker_process, ensure_usage_broker_with_executor,
     forwarded_usage_capabilities, run_usage_broker_service, run_usage_broker_service_with_executor,
     usage_broker_capabilities, usage_capability_for_selected_account,
+    usage_capability_for_selected_account_with_sources,
 };
 pub use credential_resolver::{
     CachedProviderCredentialResolver, ProviderCredentialSecretOutcome,
@@ -73,6 +74,8 @@ pub use projection::{NormalizedUsageDestination, UsageDestination, normalize_des
 
 /// Relative data-dir subtree for menu-bar durable state.
 pub const HOST_USAGE_STATE_REL: &str = "usage-menu-bar";
+/// Persistent notice when the requested account is absent from current membership.
+pub const SELECTED_ACCOUNT_UNAVAILABLE_NOTICE: &str = "Selected account is no longer available.";
 
 static CANONICAL_INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -662,6 +665,8 @@ pub struct HostUsageRuntime {
     discovery_scope: Option<UsageDiscoveryScope>,
     /// Broker generation phase per canonical account.
     broker_phases: BTreeMap<UsageAccountCapability, UsageRefreshPhase>,
+    /// Complete broker state retained for canonical freshness and issues.
+    broker_generations: BTreeMap<UsageAccountCapability, UsageGenerationView>,
     canonical_instance_id: String,
     canonical_content_id: Option<String>,
     canonical_projection_cache: Option<UsageProjectionV1>,
@@ -691,6 +696,7 @@ impl HostUsageRuntime {
             discovered_provider_views: BTreeMap::new(),
             discovery_scope: None,
             broker_phases: BTreeMap::new(),
+            broker_generations: BTreeMap::new(),
             canonical_instance_id: canonical_instance_id(),
             canonical_content_id: None,
             canonical_projection_cache: None,
@@ -747,6 +753,7 @@ impl HostUsageRuntime {
             self.discovered_views.clear();
             self.discovered_provider_views.clear();
             self.broker_phases.clear();
+            self.broker_generations.clear();
         }
         let accounts_path = host_accounts_path(&config.data_dir);
         self.cache.set_accounts_materialize_path(accounts_path);
@@ -772,6 +779,7 @@ impl HostUsageRuntime {
         self.discovered_provider_views.clear();
         self.desktop_detected_surfaces.clear();
         self.broker_phases.clear();
+        self.broker_generations.clear();
         self.data_dir = Some(config.data_dir);
         self.open = true;
         self.push_event("runtime_ready", None, None);
@@ -925,11 +933,8 @@ impl HostUsageRuntime {
             .focused_snapshot(Some(surface.agent_slug()), surface.provider_label());
         let catalog = self.materialize_account_catalog()?;
         self.reconcile_selected_accounts(&catalog, std::slice::from_ref(&surface))?;
-        let selected = self.selected_accounts.get(surface.id());
-        let view = selected
-            .and_then(|key| catalog.entry(surface, key))
-            .map(|entry| entry.view.clone())
-            .or_else(|| catalog.provider_state(surface).cloned())
+        let view = self
+            .selected_view_for_catalog(&catalog, surface)
             .unwrap_or(live);
         // A cold placeholder must never mask a known discovery failure: when
         // no refresh is in flight and discovery already diagnosed this
@@ -1263,18 +1268,13 @@ impl HostUsageRuntime {
                 self.desktop_detected_surfaces.remove(surface.id());
                 continue;
             }
-            let selected = self
-                .selected_accounts
-                .get(surface.id())
-                .and_then(|key| catalog.entry(surface, key));
-            let Some(view) = selected
-                .map(|entry| &entry.view)
-                .or_else(|| catalog.provider_state(surface))
-            else {
+            let Some(view) = self.selected_view_for_catalog(&catalog, surface) else {
                 self.desktop_detected_surfaces.remove(surface.id());
                 continue;
             };
-            let detected = if view_is_auto_detected(view) {
+            let detected = if self.selected_account_missing(&catalog, surface)
+                || view_is_auto_detected(&view)
+            {
                 self.desktop_detected_surfaces
                     .insert(surface.id().to_owned());
                 true
@@ -1287,7 +1287,7 @@ impl HostUsageRuntime {
             if !detected {
                 continue;
             }
-            let glance = glance_bucket(surface, view);
+            let glance = glance_bucket(surface, &view);
             let remaining = glance.and_then(|b| b.remaining_percent);
             // SB-19: no numeric remaining or 0% → out of bar membership.
             let Some(rem) = remaining else {
@@ -1299,7 +1299,7 @@ impl HostUsageRuntime {
             let resets_at = glance.and_then(|b| b.resets_at);
             let row = build_provider_glance_row(
                 surface,
-                view,
+                &view,
                 self.surface_refresh_in_progress(surface.id()),
                 now,
                 prefs,
@@ -1405,7 +1405,10 @@ impl HostUsageRuntime {
                 .iter()
                 .any(|entry| entry.lifecycle == AccountLifecycle::Current);
             let provider_state = catalog.provider_state(surface);
-            let detected = if has_current || provider_state.is_some_and(view_is_auto_detected) {
+            let detected = if self.selected_account_missing(&catalog, surface)
+                || has_current
+                || provider_state.is_some_and(view_is_auto_detected)
+            {
                 self.desktop_detected_surfaces
                     .insert(surface.id().to_owned());
                 true
@@ -1432,10 +1435,12 @@ impl HostUsageRuntime {
                 })
                 .collect::<Vec<_>>();
             let empty_state = accounts.is_empty().then(|| {
-                let view = provider_state.cloned().unwrap_or_else(|| {
-                    self.cache
-                        .focused_snapshot(Some(surface.agent_slug()), surface.provider_label())
-                });
+                let view = self
+                    .selected_view_for_catalog(&catalog, surface)
+                    .unwrap_or_else(|| {
+                        self.cache
+                            .focused_snapshot(Some(surface.agent_slug()), surface.provider_label())
+                    });
                 let is_refreshing = view.is_refreshing_placeholder();
                 HostDesktopProviderState {
                     status_word: usage_status_storage_label(view.status).to_owned(),
@@ -1485,11 +1490,7 @@ impl HostUsageRuntime {
         let mut providers = Vec::with_capacity(inventory.groups.len());
         for group in inventory.groups {
             let surface_id = group.surface_id.clone();
-            let selected_account_key = group
-                .accounts
-                .iter()
-                .find(|account| account.selected)
-                .map(|account| account.account_key.clone());
+            let selected_account_key = self.selected_accounts.get(&surface_id).cloned();
             let selected_usage = self.snapshot(&surface_id)?;
             let is_updating = self.surface_refresh_in_progress(&surface_id);
             let identity =
@@ -1550,18 +1551,13 @@ impl HostUsageRuntime {
                 self.desktop_detected_surfaces.remove(surface.id());
                 continue;
             }
-            let selected = self
-                .selected_accounts
-                .get(surface.id())
-                .and_then(|key| catalog.entry(surface, key));
-            let Some(view) = selected
-                .map(|entry| &entry.view)
-                .or_else(|| catalog.provider_state(surface))
-            else {
+            let Some(view) = self.selected_view_for_catalog(&catalog, surface) else {
                 self.desktop_detected_surfaces.remove(surface.id());
                 continue;
             };
-            let detected = if view_is_auto_detected(view) {
+            let detected = if self.selected_account_missing(&catalog, surface)
+                || view_is_auto_detected(&view)
+            {
                 self.desktop_detected_surfaces
                     .insert(surface.id().to_owned());
                 true
@@ -1574,7 +1570,7 @@ impl HostUsageRuntime {
             if detected {
                 rows.push(build_provider_glance_row(
                     surface,
-                    view,
+                    &view,
                     self.surface_refresh_in_progress(surface.id()),
                     now,
                     prefs,
@@ -1683,6 +1679,7 @@ impl HostUsageRuntime {
         self.discovered_views.clear();
         self.discovered_provider_views.clear();
         self.broker_phases.clear();
+        self.broker_generations.clear();
         self.canonical_content_id = None;
         self.canonical_projection_cache = None;
     }
@@ -1717,10 +1714,10 @@ impl HostUsageRuntime {
         surfaces: &[HostSurfaceId],
     ) -> Result<(), String> {
         let before = self.selected_accounts.clone();
-        self.selected_accounts.retain(|surface_id, account_key| {
-            HostSurfaceId::from_id(surface_id)
-                .is_some_and(|surface| catalog.entry(surface, account_key).is_some())
-        });
+        // Persisted selection is operator intent, including while its account
+        // is missing. A sibling must never become an implicit replacement.
+        self.selected_accounts
+            .retain(|surface_id, _| HostSurfaceId::from_id(surface_id).is_some());
         for surface in surfaces {
             if !self.selected_accounts.contains_key(surface.id())
                 && let Some(key) = catalog.preferred_current_key(*surface)
@@ -1737,6 +1734,40 @@ impl HostUsageRuntime {
             )?;
         }
         Ok(())
+    }
+
+    fn selected_account_missing(
+        &self,
+        catalog: &accounts::AccountCatalog,
+        surface: HostSurfaceId,
+    ) -> bool {
+        self.selected_accounts
+            .get(surface.id())
+            .is_some_and(|key| catalog.entry(surface, key).is_none())
+    }
+
+    fn selected_view_for_catalog(
+        &self,
+        catalog: &accounts::AccountCatalog,
+        surface: HostSurfaceId,
+    ) -> Option<FocusedUsageView> {
+        match self.selected_accounts.get(surface.id()) {
+            Some(key) => match catalog.entry(surface, key) {
+                Some(entry) => Some(entry.view.clone()),
+                None if self.discovery.is_none()
+                    && catalog.entries_for_surface(surface).is_empty()
+                    && catalog
+                        .provider_state(surface)
+                        .is_some_and(FocusedUsageView::is_refreshing_placeholder) =>
+                {
+                    // Before membership is known, retain honest loading without
+                    // borrowing another account's identity or quota.
+                    catalog.provider_state(surface).cloned()
+                }
+                None => Some(selected_account_unavailable_view(surface)),
+            },
+            None => catalog.provider_state(surface).cloned(),
+        }
     }
 
     fn require_open(&self) -> Result<(), String> {
@@ -1824,6 +1855,17 @@ fn drive_label_prefix(view: &FocusedUsageView, remaining: u8) -> Option<&str> {
         .find(|bucket| bucket.remaining_percent == Some(remaining) && bucket.status_slot.is_none())
         .map(|bucket| bucket.label.as_str())
         .filter(|label| !label.is_empty())
+}
+
+fn selected_account_unavailable_view(surface: HostSurfaceId) -> FocusedUsageView {
+    let mut view = FocusedUsageView::unavailable(
+        SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
+        chrono::Utc::now().timestamp(),
+    );
+    view.focused_agent = Some(surface.agent_slug().to_owned());
+    view.focused_provider = Some(surface.label().to_owned());
+    view.account.provider_label = surface.account_provider_label().to_owned();
+    view
 }
 
 /// A view is auto-detected when it carries affirmative credential evidence (a

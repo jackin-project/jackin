@@ -64,6 +64,17 @@ impl ProviderCredentialSecretSource for ServiceSecretSource {
 type ServiceResolver = CachedProviderCredentialResolver<ServiceSecretSource>;
 
 fn main() {
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--version")
+    {
+        let _write_result = writeln!(
+            std::io::stdout(),
+            "jackin-usage-broker {}",
+            env!("JACKIN_VERSION"),
+        );
+        return;
+    }
     detach_from_activating_session();
     if let Err(error) = run() {
         let _write_result = writeln!(std::io::stderr(), "usage broker unavailable: {error:?}");

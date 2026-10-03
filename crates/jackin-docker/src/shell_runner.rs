@@ -50,7 +50,7 @@ impl ShellRunner {
         command
     }
 
-    fn apply_run_opts(cmd: &mut Command, opts: &RunOptions) {
+    fn apply_run_opts(cmd: &mut Command, opts: &RunOptions) -> anyhow::Result<()> {
         // Destructure so a new RunOptions field forces a maintainer to
         // decide whether it belongs here (applied to every `run` arm)
         // or stays the responsibility of an arm-specific branch.
@@ -65,13 +65,23 @@ impl ShellRunner {
             tee_to_build_log: _,
             build_log_sink: _,
             timeout: _,
+            #[cfg(unix)]
+            pinned_cwd,
         } = opts;
+        #[cfg(unix)]
+        if let Some(directory) = pinned_cwd {
+            jackin_process_directory::current_dir(
+                cmd.as_std_mut(),
+                std::sync::Arc::clone(directory),
+            )?;
+        }
         if should_null_stdin(opts) {
             cmd.stdin(std::process::Stdio::null());
         }
         if !extra_env.is_empty() {
             cmd.envs(extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
         }
+        Ok(())
     }
 }
 
@@ -454,7 +464,7 @@ impl CommandRunner for ShellRunner {
                 // denying the client its TTY and blocking forever on the
                 // long-lived session — so inherit stdio directly and never capture.
                 let mut cmd = Self::build_command(program, args, cwd);
-                Self::apply_run_opts(&mut cmd, opts);
+                Self::apply_run_opts(&mut cmd, opts)?;
                 let started = Instant::now();
                 let mut child = cmd.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
                 let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
@@ -464,7 +474,7 @@ impl CommandRunner for ShellRunner {
                 }
             } else if opts.quiet {
                 let mut cmd = Self::build_command(program, args, cwd);
-                Self::apply_run_opts(&mut cmd, opts);
+                Self::apply_run_opts(&mut cmd, opts)?;
                 let started = Instant::now();
                 cmd.stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null());
@@ -489,7 +499,7 @@ impl CommandRunner for ShellRunner {
                 Box::pin(self.run_captured(&op_guard, program, args, cwd, &captured)).await?;
             } else {
                 let mut cmd = Self::build_command(program, args, cwd);
-                Self::apply_run_opts(&mut cmd, opts);
+                Self::apply_run_opts(&mut cmd, opts)?;
                 let started = Instant::now();
                 let mut child = cmd.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
                 let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
@@ -511,7 +521,25 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, CaptureMode::Normal, false)
+        self.do_capture(
+            program,
+            args,
+            cwd,
+            &RunOptions::default(),
+            CaptureMode::Normal,
+            false,
+        )
+        .await
+    }
+
+    async fn capture_with_options(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<String> {
+        self.do_capture(program, args, cwd, opts, CaptureMode::Normal, false)
             .await
     }
 
@@ -521,8 +549,15 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, CaptureMode::Secret, false)
-            .await
+        self.do_capture(
+            program,
+            args,
+            cwd,
+            &RunOptions::default(),
+            CaptureMode::Secret,
+            false,
+        )
+        .await
     }
 
     async fn capture_combined(
@@ -531,8 +566,15 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, CaptureMode::Normal, true)
-            .await
+        self.do_capture(
+            program,
+            args,
+            cwd,
+            &RunOptions::default(),
+            CaptureMode::Normal,
+            true,
+        )
+        .await
     }
 }
 
@@ -550,7 +592,7 @@ impl ShellRunner {
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
         let mut cmd = Self::build_command(program, args, cwd);
-        Self::apply_run_opts(&mut cmd, opts);
+        Self::apply_run_opts(&mut cmd, opts)?;
         if opts.capture_stdout {
             cmd.stdout(std::process::Stdio::piped());
         }
@@ -660,12 +702,14 @@ impl ShellRunner {
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
+        opts: &RunOptions,
         mode: CaptureMode,
         combined: bool,
     ) -> anyhow::Result<String> {
         let operation = enter_process_execute(program);
         let result = async {
             let mut command = Self::build_command(program, args, cwd);
+            Self::apply_run_opts(&mut command, opts)?;
             command
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped());
@@ -674,10 +718,19 @@ impl ShellRunner {
             }
             let started = Instant::now();
             let child = command.spawn().map_err(|_| ProcessBoundaryError::Spawn)?;
-            let output = child
-                .wait_with_output()
-                .await
-                .map_err(|_| ProcessBoundaryError::Io)?;
+            let output = match opts.timeout {
+                Some(duration) => tokio::time::timeout(duration, child.wait_with_output())
+                    .await
+                    .map_err(|_| DockerError::CommandTimeout {
+                        secs: duration.as_secs_f64(),
+                        program: program.to_owned(),
+                    })?
+                    .map_err(|_| ProcessBoundaryError::Io)?,
+                None => child
+                    .wait_with_output()
+                    .await
+                    .map_err(|_| ProcessBoundaryError::Io)?,
+            };
             record_subprocess_done(&operation, program, started, output.status);
             if !output.status.success() {
                 return Err(captured_command_error(program, args, &output.stderr, mode));

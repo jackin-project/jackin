@@ -40,6 +40,15 @@ pub struct DockerResources {
     pub certs_volume: Option<String>,
 }
 
+/// Immutable Docker IDs captured by the launch that created these resources.
+/// Names are descriptive only and cannot establish container ownership.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockerIdentity {
+    pub role_container_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dind_container_id: Option<String>,
+}
+
 /// Resources backing an apple-container instance. The lifecycle CLI
 /// (`container run/exec/stop/rm`) keys off `container_name`; the other fields
 /// record what the VM is running for the session contract and reconnect path.
@@ -108,6 +117,9 @@ pub struct InstanceManifest {
     pub status: InstanceStatus,
     pub last_attach_outcome: Option<String>,
     pub docker: DockerResources,
+    /// Missing identity means this record cannot authorize Docker teardown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docker_identity: Option<DockerIdentity>,
     /// Backend that launched this instance. `None` for legacy/Docker manifests
     /// (the `docker` field above is the source of truth then); `Some` records
     /// the backend explicitly for apple-container and future backends.
@@ -272,6 +284,7 @@ impl InstanceManifest {
             status: InstanceStatus::Active,
             last_attach_outcome: None,
             docker: input.docker,
+            docker_identity: None,
             backend,
             sessions: Vec::new(),
             role_git_sha: input.role_git_sha,

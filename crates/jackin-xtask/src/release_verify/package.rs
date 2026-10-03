@@ -40,22 +40,22 @@ const PAYLOADS: [PreviewPayload; 6] = [
     PreviewPayload {
         name: "jackin-aarch64-apple-darwin.tar.gz",
         target: "aarch64-apple-darwin",
-        binaries: &["jackin", "jackin-role"],
+        binaries: &["jackin", "jackin-role", "jackin-usage-broker"],
     },
     PreviewPayload {
         name: "jackin-x86_64-apple-darwin.tar.gz",
         target: "x86_64-apple-darwin",
-        binaries: &["jackin", "jackin-role"],
+        binaries: &["jackin", "jackin-role", "jackin-usage-broker"],
     },
     PreviewPayload {
         name: "jackin-aarch64-unknown-linux-gnu.tar.gz",
         target: "aarch64-unknown-linux-gnu",
-        binaries: &["jackin", "jackin-role"],
+        binaries: &["jackin", "jackin-role", "jackin-usage-broker"],
     },
     PreviewPayload {
         name: "jackin-x86_64-unknown-linux-gnu.tar.gz",
         target: "x86_64-unknown-linux-gnu",
-        binaries: &["jackin", "jackin-role"],
+        binaries: &["jackin", "jackin-role", "jackin-usage-broker"],
     },
     PreviewPayload {
         name: "jackin-capsule-aarch64-unknown-linux-gnu.tar.gz",

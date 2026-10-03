@@ -235,7 +235,10 @@ fn create_workspace_rejects_duplicate_name_and_preserves_existing_value() {
         )
         .unwrap_err();
 
-    assert!(err.to_string().contains("already exists"));
+    assert_eq!(
+        err.to_string(),
+        "workspace \"big-monorepo\" already exists; use `workspace edit`"
+    );
     assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
 }
 
@@ -339,9 +342,9 @@ fn edit_workspace_rejects_missing_remove_destination() {
         )
         .unwrap_err();
 
-    assert!(
-        err.to_string()
-            .contains("unknown workspace mount destination")
+    assert_eq!(
+        err.to_string(),
+        "unknown workspace mount destination: /workspace/missing"
     );
     assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
 }
@@ -353,4 +356,37 @@ fn remove_workspace_errors_when_missing() {
     let err = config.remove_workspace(&wn("missing")).unwrap_err();
 
     assert!(matches!(err, ConfigError::UnknownWorkspace(name) if name == "missing"));
+}
+
+#[test]
+fn edit_workspace_missing_workdir_mount_reports_path_and_preserves_original() {
+    let mut config = AppConfig::default();
+    let name = wn("missing-workdir-mount");
+    let original = WorkspaceConfig {
+        workdir: "/workspace/project".to_owned(),
+        mounts: vec![MountConfig {
+            src: "/host/project".to_owned(),
+            dst: "/workspace/project".to_owned(),
+            readonly: false,
+            isolation: crate::MountIsolation::Shared,
+        }],
+        ..Default::default()
+    };
+    config.insert_workspace_raw(name.as_str(), original.clone());
+
+    let err = config
+        .edit_workspace(
+            &name,
+            WorkspaceEdit {
+                no_workdir_mount: true,
+                ..WorkspaceEdit::default()
+            },
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "no auto-mounted workdir found (mount where src = dst = /workspace/project)"
+    );
+    assert_eq!(config.workspaces.get(name.as_str()).unwrap(), &original);
 }

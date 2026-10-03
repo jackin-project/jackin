@@ -473,6 +473,7 @@ struct LaunchRuntime<'a, D, R> {
     git: &'a crate::runtime::identity::GitIdentity,
     network: &'a str,
     dind: &'a str,
+    certs_volume: &'a str,
     resolved_profile: (DockerSecurityProfile, ProfileSource),
     account_revision: super::super::super::account_identity::AccountConfigRevision,
     effective_grants: &'a EffectiveGrants,
@@ -1131,7 +1132,26 @@ async fn initialize_launch<D: DockerApi>(
         container_name,
     } = input;
     let container_id = ContainerId::parse(container_name).context("validating container name")?;
-    let adopted = super::super::super::adopt_prewarmed_dind_sidecar(paths, docker).await;
+    let GrantsValidated {
+        effective_grants,
+        resolved_profile,
+        profile_source,
+        dind_started,
+    } = super::super::launch_phases::validate_launch_grants(
+        super::super::launch_phases::GrantPhaseInput {
+            config,
+            workspace_label: workspace.label.as_str(),
+            workspace_docker: None,
+            opts_docker_profile: opts.docker_profile,
+            selector,
+            role_manifest: &validated_repo.manifest,
+        },
+    )?;
+    let adopted = if dind_started {
+        super::super::super::adopt_prewarmed_dind_sidecar(paths, docker).await
+    } else {
+        None
+    };
     let adopted_sidecar_was_used = adopted.is_some();
     let resources = adopted.as_ref().map_or_else(
         || DockerResources::from_container_id(&container_id),
@@ -1159,28 +1179,6 @@ async fn initialize_launch<D: DockerApi>(
     if let Some(sidecar) = adopted.as_ref() {
         cleanup.set_dind_handle(sidecar.dind_handle.clone());
     }
-    let grants = super::super::launch_phases::validate_launch_grants(
-        super::super::launch_phases::GrantPhaseInput {
-            config,
-            workspace_label: workspace.label.as_str(),
-            workspace_docker: None,
-            opts_docker_profile: opts.docker_profile,
-            selector,
-            role_manifest: &validated_repo.manifest,
-        },
-    );
-    let GrantsValidated {
-        effective_grants,
-        resolved_profile,
-        profile_source,
-        dind_started,
-    } = match grants {
-        Ok(grants) => grants,
-        Err(error) => {
-            super::super::launch_phases::cleanup_after_grant_failure(&cleanup, docker).await;
-            return Err(error);
-        }
-    };
     cleanup.set_dind_required(adopted_sidecar_was_used || dind_started);
     Ok(LaunchInitialized {
         adopted_sidecar_was_used,
@@ -1495,6 +1493,7 @@ where
         git: &launch.git,
         network: &launch.initialized.network,
         dind: &launch.initialized.dind,
+        certs_volume: &launch.initialized.certs_volume,
         resolved_profile: launch.initialized.resolved_profile,
         account_revision: launch.account_revision,
         effective_grants: &launch.initialized.effective_grants,
@@ -1728,6 +1727,7 @@ where
         git,
         network,
         dind,
+        certs_volume,
         resolved_profile,
         account_revision,
         effective_grants,
@@ -1736,7 +1736,7 @@ where
             InstancePrepared {
                 image,
                 selected_image_reused,
-                instance_manifest,
+                mut instance_manifest,
                 container_state,
                 host_workdir_fingerprint,
             },
@@ -1796,8 +1796,25 @@ where
         opts.role_branch.as_deref(),
     );
     let role_handle_slot = cleanup.role_handle_slot();
+    let ownership = super::super::super::launch_runtime::DockerLaunchOwnership {
+        manifest: std::sync::Mutex::new(&mut instance_manifest),
+        resources: DockerResources {
+            role_container: container_name.to_owned(),
+            dind_container: (adopted_sidecar_was_used
+                || crate::runtime::docker_profile::dind_enabled(effective_grants))
+            .then(|| dind.to_owned()),
+            network: network.to_owned(),
+            certs_volume: (adopted_sidecar_was_used
+                || crate::runtime::docker_profile::dind_enabled(effective_grants))
+            .then(|| certs_volume.to_owned()),
+        },
+        dind_handle_slot: cleanup.dind_handle_slot(),
+        paths,
+        state_dir: &container_state,
+    };
     let ctx = super::super::super::LaunchContext {
         container_name,
+        ownership: &ownership,
         role_handle_slot: &role_handle_slot,
         image: &image,
         network,
@@ -1845,6 +1862,7 @@ where
     };
     let launch_result = super::super::super::launch_role_runtime(&ctx, steps, docker, runner).await;
     drop(ctx);
+    drop(ownership);
     complete_docker_launch(
         launch_result,
         RuntimeLaunched {

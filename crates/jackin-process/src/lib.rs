@@ -13,6 +13,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
+/// Default maximum bytes retained per stream by `exec_async` and `exec_sync`.
+pub const DEFAULT_CAPTURE_LIMIT: usize = 16 * 1024 * 1024;
+
 /// How many times to re-run a failed command (excluding the first attempt).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RetryPolicy {
@@ -70,6 +73,10 @@ pub struct ExecRequest {
     /// Kill after this duration. `None` = wait indefinitely (capsule probe
     /// semantic: no read timeout).
     pub timeout: Option<Duration>,
+    /// Maximum captured stdout bytes. `None` uses [`DEFAULT_CAPTURE_LIMIT`].
+    pub stdout_limit: Option<usize>,
+    /// Maximum captured stderr bytes. `None` uses [`DEFAULT_CAPTURE_LIMIT`].
+    pub stderr_limit: Option<usize>,
     /// Retry policy on non-success exit (not applied on timeout).
     pub retry: RetryPolicy,
 }
@@ -96,6 +103,8 @@ impl ExecRequest {
             stdout_mode: StdioMode::Capture,
             stderr_mode: StdioMode::Capture,
             timeout: None,
+            stdout_limit: None,
+            stderr_limit: None,
             retry: RetryPolicy::none(),
         }
     }
@@ -163,6 +172,14 @@ impl ExecRequest {
         self
     }
 
+    /// Bound each captured output stream independently.
+    #[must_use]
+    pub fn output_limits(mut self, stdout: usize, stderr: usize) -> Self {
+        self.stdout_limit = Some(stdout);
+        self.stderr_limit = Some(stderr);
+        self
+    }
+
     /// Clear timeout (wait forever).
     #[must_use]
     pub fn no_timeout(mut self) -> Self {
@@ -198,7 +215,8 @@ pub struct ExecResult {
 /// Async execution with optional timeout and retry.
 ///
 /// # Errors
-/// Returns when spawn fails or all retry attempts fail to start.
+/// Returns on invalid routing/limits, spawn or stream failure, output overflow,
+/// or failure to kill/reap a child. Timeout results contain empty output.
 pub async fn exec_async(request: &ExecRequest) -> Result<ExecResult> {
     let attempts = request.retry.max_retries.saturating_add(1);
     let mut last: Option<ExecResult> = None;
@@ -218,8 +236,11 @@ pub async fn exec_async(request: &ExecRequest) -> Result<ExecResult> {
 /// Spawn an async child using the same request model without waiting for it.
 ///
 /// Retry and timeout apply only to `exec_*`; lifecycle callers own waiting,
-/// cancellation, and retries after this function returns.
+/// cancellation, and retries after this function returns. Pipe readers and
+/// their byte limits belong to the caller; explicit capture limits are rejected
+/// because this function cannot enforce them. Default exec limits do not apply.
 pub fn spawn_async(request: &ExecRequest) -> Result<tokio::process::Child> {
+    validate_request(request, true)?;
     if request.stdin.is_some() {
         bail!("spawn_async does not write request stdin bytes; use exec_async or a captured stdin");
     }
@@ -231,7 +252,11 @@ pub fn spawn_async(request: &ExecRequest) -> Result<tokio::process::Child> {
 }
 
 /// Spawn a synchronous child using the same request model without waiting.
+///
+/// The caller owns pipe limits and the entire child lifecycle, as in
+/// [`spawn_async`]. Explicit capture limits are rejected.
 pub fn spawn_sync(request: &ExecRequest) -> Result<std::process::Child> {
+    validate_request(request, true)?;
     if request.stdin.is_some() {
         bail!("spawn_sync does not write request stdin bytes; use exec_sync or a captured stdin");
     }
@@ -270,57 +295,208 @@ pub fn exec_sync(request: &ExecRequest) -> Result<ExecResult> {
     }
 }
 
+fn validate_request(request: &ExecRequest, spawning: bool) -> Result<()> {
+    for (name, mode, limit) in [
+        ("stdout", request.stdout_mode, request.stdout_limit),
+        ("stderr", request.stderr_mode, request.stderr_limit),
+    ] {
+        if limit.is_some_and(|bytes| bytes > usize::MAX / 2) {
+            bail!("{name} byte limit exceeds maximum buffer size");
+        }
+        if limit.is_some() && mode != StdioMode::Capture {
+            bail!("{name} byte limit requires Capture routing");
+        }
+        if spawning && limit.is_some() {
+            bail!("spawn cannot enforce {name} byte limit; use exec_async or exec_sync");
+        }
+    }
+    Ok(())
+}
+
+/// Keep the child and its private process group owned until every pipe closes.
+/// Dropping an externally cancelled future still kills its process group;
+/// Tokio's kill-on-drop fallback reaps the direct child.
+#[derive(Debug)]
+struct OwnedChild {
+    child: tokio::process::Child,
+    #[cfg(unix)]
+    group: Option<nix::unistd::Pid>,
+}
+
+impl OwnedChild {
+    fn new(child: tokio::process::Child) -> Self {
+        Self {
+            #[cfg(unix)]
+            group: child
+                .id()
+                .and_then(|id| i32::try_from(id).ok())
+                .map(nix::unistd::Pid::from_raw),
+            child,
+        }
+    }
+
+    fn kill_group(&self) -> Result<()> {
+        #[cfg(unix)]
+        if let Some(group) = self.group {
+            match nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL) {
+                Ok(()) | Err(nix::errno::Errno::ESRCH) => {}
+                Err(error) => return Err(error).context("killing child process group"),
+            }
+        }
+        Ok(())
+    }
+
+    async fn kill_and_reap(&mut self) -> Result<()> {
+        let group_result = self.kill_group();
+        let kill_result = self.child.start_kill().context("killing child");
+        // Cleanup is bounded even when the operating system cannot reap a
+        // killed process promptly. Report failure rather than claim cleanup.
+        tokio::time::timeout(Duration::from_secs(1), self.child.wait())
+            .await
+            .context("child did not reap within cleanup deadline")?
+            .context("reaping child")?;
+        group_result?;
+        kill_result?;
+        #[cfg(unix)]
+        {
+            self.group = None;
+        }
+        Ok(())
+    }
+
+    fn disarm(&mut self) {
+        #[cfg(unix)]
+        {
+            self.group = None;
+        }
+    }
+}
+
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        drop(self.kill_group());
+    }
+}
+
+async fn read_captured(
+    stream: Option<impl tokio::io::AsyncRead + Unpin>,
+    limit: usize,
+    name: &str,
+) -> Result<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+    let Some(mut stream) = stream else {
+        return Ok(Vec::new());
+    };
+    let mut bytes = Vec::new();
+    let mut buffer = [0; 8192];
+    loop {
+        let count = stream
+            .read(&mut buffer)
+            .await
+            .with_context(|| format!("reading child {name}"))?;
+        if count == 0 {
+            return Ok(bytes);
+        }
+        if count > limit.saturating_sub(bytes.len()) {
+            bail!("captured {name} exceeded byte limit {limit}");
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+    }
+}
+
 async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
+    use tokio::io::AsyncWriteExt;
+    validate_request(request, false)?;
     let started = Instant::now();
+    let deadline = request
+        .timeout
+        .map(|timeout| {
+            started
+                .checked_add(timeout)
+                .map(tokio::time::Instant::from_std)
+                .context("process timeout exceeds clock range")
+        })
+        .transpose()?;
     let mut cmd = tokio::process::Command::new(&request.program);
     configure_async_command(&mut cmd, request);
     cmd.kill_on_drop(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.as_std_mut().process_group(0);
+    }
     if request.stdin.is_some() {
         cmd.stdin(Stdio::piped());
     }
-
-    let mut child = cmd
-        .spawn()
-        .with_context(|| format!("spawning {}", display_request(request)))?;
-
-    if let Some(bytes) = &request.stdin {
-        use tokio::io::AsyncWriteExt;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(bytes)
-                .await
-                .context("writing stdin to child")?;
+    let mut owned = OwnedChild::new(
+        cmd.spawn()
+            .with_context(|| format!("spawning {}", display_request(request)))?,
+    );
+    let stdin = owned.child.stdin.take();
+    let stdout = owned.child.stdout.take();
+    let stderr = owned.child.stderr.take();
+    let completion = async {
+        let write = async {
+            if let (Some(bytes), Some(mut stdin)) = (&request.stdin, stdin) {
+                stdin
+                    .write_all(bytes)
+                    .await
+                    .context("writing stdin to child")?;
+                stdin.shutdown().await.context("closing child stdin")?;
+            }
+            Ok::<_, anyhow::Error>(())
+        };
+        // Keep the direct child unreaped while descendants can retain pipes.
+        // Its reserved PID prevents the process-group ID from being reused.
+        let ((), stdout, stderr) = tokio::try_join!(
+            write,
+            read_captured(
+                stdout,
+                request.stdout_limit.unwrap_or(DEFAULT_CAPTURE_LIMIT),
+                "stdout"
+            ),
+            read_captured(
+                stderr,
+                request.stderr_limit.unwrap_or(DEFAULT_CAPTURE_LIMIT),
+                "stderr"
+            ),
+        )?;
+        let status = owned.child.wait().await.context("waiting on child")?;
+        Ok::<_, anyhow::Error>(((), stdout, stderr, status))
+    };
+    let outcome = if let Some(deadline) = deadline {
+        tokio::time::timeout_at(deadline, completion).await.ok()
+    } else {
+        Some(completion.await)
+    };
+    match outcome {
+        None => {
+            owned.kill_and_reap().await?;
+            Ok(ExecResult {
+                code: None,
+                success: false,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                duration: started.elapsed(),
+                timed_out: true,
+            })
+        }
+        Some(Err(error)) => {
+            owned.kill_and_reap().await.context(error.to_string())?;
+            Err(error)
+        }
+        Some(Ok(((), stdout, stderr, status))) => {
+            owned.disarm();
+            Ok(ExecResult {
+                code: status.code(),
+                success: status.success(),
+                stdout,
+                stderr,
+                duration: started.elapsed(),
+                timed_out: false,
+            })
         }
     }
-
-    let output = if let Some(timeout) = request.timeout {
-        match tokio::time::timeout(timeout, child.wait_with_output()).await {
-            Ok(result) => result.context("waiting on child")?,
-            Err(_) => {
-                // wait_with_output consumed the child on success; on timeout the
-                // future was dropped — kill_on_drop aborts the process.
-                return Ok(ExecResult {
-                    code: None,
-                    success: false,
-                    stdout: Vec::new(),
-                    stderr: Vec::new(),
-                    duration: started.elapsed(),
-                    timed_out: true,
-                });
-            }
-        }
-    } else {
-        child.wait_with_output().await.context("waiting on child")?
-    };
-
-    Ok(ExecResult {
-        code: output.status.code(),
-        success: output.status.success(),
-        stdout: output.stdout,
-        stderr: output.stderr,
-        duration: started.elapsed(),
-        timed_out: false,
-    })
 }
 
 fn stdio(mode: StdioMode) -> Stdio {

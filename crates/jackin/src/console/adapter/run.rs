@@ -138,14 +138,13 @@ pub(crate) fn execute_usage_refresh_effect(
     let mut changed = false;
     if let Some(outcome) = screen.poll_refresh() {
         match outcome {
-            Ok((accounts, notice)) => {
-                manager.usage_accounts.clone_from(&accounts);
-                manager.usage_notice.clone_from(&notice);
-                screen.apply_refresh(accounts, notice, now);
+            Ok(snapshot) => {
+                manager.usage_snapshot = snapshot.clone();
+                screen.apply_refresh(snapshot, now);
             }
             Err(message) => {
                 let notice = format!("Usage unavailable: {message}");
-                manager.usage_notice = Some(notice.clone());
+                manager.usage_snapshot.notice = Some(notice.clone());
                 screen.apply_refresh_error(notice, now);
             }
         }
@@ -156,9 +155,8 @@ pub(crate) fn execute_usage_refresh_effect(
         let paths = paths.clone();
         screen.begin_refresh(jackin_console::tui::runtime::spawn_blocking_subscription(
             move || {
-                let outcome = load_console_usage_state(&paths, plan.force)
-                    .map(|usage| (usage.accounts, usage.notice))
-                    .map_err(|error| error.to_string());
+                let outcome =
+                    load_console_usage_state(&paths, plan.force).map_err(|error| error.to_string());
                 (plan.generation, outcome)
             },
         ));
@@ -188,13 +186,25 @@ fn poll_startup_usage(
     };
     *rx = None;
     if let ConsoleStage::Manager(manager) = &mut state.stage {
+        // Startup and route workers may overlap. Once a route completion has
+        // landed, the startup result cannot replace its newer publication or
+        // transport failure. Runtime instance ids differ across these workers,
+        // so broker generations cannot order their locally built projections.
+        if manager.usage_snapshot.canonical_projection.is_some()
+            || manager
+                .usage
+                .screen
+                .as_ref()
+                .is_some_and(|screen| screen.last_refresh_at.is_some())
+        {
+            return true;
+        }
         match outcome {
-            Ok((accounts, notice)) => {
-                manager.usage_accounts = accounts;
-                manager.usage_notice = notice;
+            Ok(snapshot) => {
+                manager.usage_snapshot = snapshot;
             }
             Err(error) => {
-                manager.usage_notice = Some(format!("Usage unavailable: {error}"));
+                manager.usage_snapshot.notice = Some(format!("Usage unavailable: {error}"));
             }
         }
     }
@@ -1210,7 +1220,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let mut startup_usage_rx = Some(jackin_console::tui::runtime::spawn_blocking_subscription(
         move || {
             load_console_usage_state(&paths_for_usage_startup, false)
-                .map(|usage| (usage.accounts, usage.notice))
                 .map_err(|error| error.to_string())
         },
     ));

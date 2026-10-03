@@ -342,6 +342,26 @@ fn accepts_release_archive_with_exact_executable_x86_64_elf_members() {
     let directory = tempfile::tempdir().unwrap();
     let jackin = elf64_x86_64_version_binary("jackin", VERSION);
     let role = elf64_x86_64_version_binary("jackin-role", VERSION);
+    let broker = elf64_x86_64_version_binary("jackin-usage-broker", VERSION);
+    let path = directory.path().join("release.tar.gz");
+    release_archive(
+        &path,
+        &[
+            ("jackin", &jackin, 0o755, EntryType::Regular),
+            ("jackin-role", &role, 0o755, EntryType::Regular),
+            ("jackin-usage-broker", &broker, 0o755, EntryType::Regular),
+        ],
+    );
+
+    verify_release_archive_members(&path, TARGET, PAYLOADS[3].binaries, VERSION).unwrap();
+}
+
+#[test]
+fn rejects_host_release_archive_missing_usage_broker() {
+    const VERSION: &str = "0.6.4-preview.1+0123456";
+    let directory = tempfile::tempdir().unwrap();
+    let jackin = elf64_x86_64_version_binary("jackin", VERSION);
+    let role = elf64_x86_64_version_binary("jackin-role", VERSION);
     let path = directory.path().join("release.tar.gz");
     release_archive(
         &path,
@@ -350,8 +370,18 @@ fn accepts_release_archive_with_exact_executable_x86_64_elf_members() {
             ("jackin-role", &role, 0o755, EntryType::Regular),
         ],
     );
-
-    verify_release_archive_members(&path, TARGET, &["jackin", "jackin-role"], VERSION).unwrap();
+    for payload in PAYLOADS.iter().filter(|payload| {
+        payload.name.starts_with("jackin-") && !payload.name.starts_with("jackin-capsule-")
+    }) {
+        let error = verify_release_archive_members(
+            &path,
+            "x86_64-unknown-linux-gnu",
+            payload.binaries,
+            VERSION,
+        )
+        .expect_err("every host package requires the broker sidecar");
+        assert!(error.to_string().contains("member set is incomplete"));
+    }
 }
 
 #[test]

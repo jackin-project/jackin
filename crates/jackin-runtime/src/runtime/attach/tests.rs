@@ -167,6 +167,10 @@ fn write_admission_fixture(
         base_image_digest: None,
         supported_agents: vec![],
     });
+    manifest.docker_identity = Some(crate::instance::DockerIdentity {
+        role_container_id: container_name.to_owned(),
+        dind_container_id: Some(format!("{container_name}-dind")),
+    });
     manifest.set_admitted_instances(admitted.iter().cloned());
     manifest.write(&root).unwrap();
     let workspace = workspace
@@ -631,12 +635,106 @@ async fn start_rejects_rotation_after_lifecycle_inspect_before_container_start()
 }
 
 #[tokio::test]
+async fn existing_role_rejects_same_name_replacement_before_start_or_exec() {
+    for running in [false, true] {
+        let (_tmp, paths) = test_paths();
+        let container_name = "jk-persisted-role-identity";
+        provision_account_admission(&paths, container_name);
+        let docker = FakeDockerClient {
+            container_id_by_name: std::cell::RefCell::new(HashMap::from([(
+                container_name.into(),
+                "replacement-role-id".into(),
+            )])),
+            inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+                container_name.into(),
+                if running {
+                    ContainerState::Running
+                } else {
+                    ContainerState::Created
+                },
+            )])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let error = if running {
+            hardline_agent(&paths, container_name, &docker, &mut runner).await
+        } else {
+            start_or_reconnect_capsule_client(&paths, container_name, &docker, &mut runner).await
+        }
+        .expect_err("a name replacement must never become the recorded role");
+        assert!(
+            error.to_string().contains("ownership identity mismatch"),
+            "{error:#}"
+        );
+        assert!(
+            docker.bound_operations.borrow().is_empty(),
+            "{:?}",
+            docker.bound_operations.borrow()
+        );
+        assert!(runner.recorded.is_empty(), "{:?}", runner.recorded);
+        assert_eq!(
+            InstanceManifest::read(&paths.data_dir.join(container_name))
+                .unwrap()
+                .docker_identity
+                .unwrap()
+                .role_container_id,
+            container_name,
+            "inspection must not backfill replacement ownership"
+        );
+    }
+}
+
+#[tokio::test]
+async fn live_historical_role_without_recorded_identity_denies_exec_and_backfill() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-historical-role-identity";
+    provision_account_admission(&paths, container_name);
+    let root = paths.data_dir.join(container_name);
+    let mut manifest = InstanceManifest::read(&root).unwrap();
+    manifest.docker_identity = None;
+    manifest.write(&root).unwrap();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            container_name.into(),
+            ContainerState::Running,
+        )])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+    let error = spawn_shell_session(&paths, container_name, &docker, &mut runner)
+        .await
+        .expect_err("historical live roles need explicit ownership recovery");
+    assert!(
+        error
+            .to_string()
+            .contains("recover the original launch identity explicitly"),
+        "{error:#}"
+    );
+    assert!(docker.bound_operations.borrow().is_empty());
+    assert!(runner.recorded.is_empty());
+    assert!(
+        InstanceManifest::read(&root)
+            .unwrap()
+            .docker_identity
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn handle_aware_restore_refuses_same_name_replacement_before_start() {
     let (_tmp, paths) = test_paths();
     let container_name = "jk-restore-identity";
     provision_account_admission(&paths, container_name);
+    let root = paths.data_dir.join(container_name);
+    let mut manifest = InstanceManifest::read(&root).unwrap();
+    manifest.docker_identity.as_mut().unwrap().role_container_id = "original-role-id".into();
+    manifest.write(&root).unwrap();
     let original = ContainerHandle::new(container_name, "original-role-id").unwrap();
     let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            container_name.into(),
+            ContainerState::Created,
+        )])),
         container_id_by_name: std::cell::RefCell::new(HashMap::from([(
             container_name.to_owned(),
             "replacement-role-id".to_owned(),
@@ -658,13 +756,10 @@ async fn handle_aware_restore_refuses_same_name_replacement_before_start() {
     .expect_err("a replaced name must not redirect restore to the replacement");
 
     assert!(
-        error.to_string().contains("is missing"),
+        error.to_string().contains("ownership identity mismatch"),
         "unexpected replacement error: {error:#}"
     );
-    assert_eq!(
-        docker.bound_operations.borrow().as_slice(),
-        &["inspect:original-role-id".to_owned()]
-    );
+    assert!(docker.bound_operations.borrow().is_empty());
     assert!(
         !docker
             .bound_operations
@@ -1283,6 +1378,10 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
         base_image_ref: None,
         base_image_digest: None,
         supported_agents: vec![],
+    });
+    manifest.docker_identity = Some(crate::instance::DockerIdentity {
+        role_container_id: "role-container-id".into(),
+        dind_container_id: Some("dind-container-id".into()),
     });
     manifest.mark_status(InstanceStatus::PreservedDirty);
     manifest.last_attach_outcome = Some("exit:137".to_owned());

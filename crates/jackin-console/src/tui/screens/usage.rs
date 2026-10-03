@@ -32,10 +32,9 @@ use crate::tui::state::ManagerState;
 /// burst — at most one refresh is ever in flight.
 pub const USAGE_HEARTBEAT_INTERVAL: Duration = Duration::from_mins(2);
 
-/// Completed background refresh payload: canonical rows plus the
-/// projection-level notice. Produced off the UI thread by
+/// Completed background refresh payload: the complete publication. Produced off the UI thread by
 /// `load_console_usage_state` in the console adapter.
-pub type UsageRefreshOutcome = Result<(Vec<UsageAccount>, Option<String>), String>;
+pub type UsageRefreshOutcome = Result<UsageScreenState, String>;
 
 /// One due Usage refresh, following the instance-refresh effect+subscription
 /// pattern: the worker tags its outcome with `generation` and
@@ -270,14 +269,18 @@ impl UsageAccount {
     }
 
     /// First available Rust-ranked limit (D30: long-range, model-specific,
-    /// session, then other; ties break to provider order). Only metered
-    /// windows qualify. The list summary and its meter bar both read this one
-    /// window, matching the capsule tab status selection.
+    /// session, then other; ties break to provider order). Metered and explicitly
+    /// unlimited windows qualify. The list summary and its meter bar both read this one
+    /// window, matching the capsule tab status selection. Explicit unlimited
+    /// windows remain meaningful without a percentage.
     #[must_use]
     pub fn summary_window(&self) -> Option<&UsageWindow> {
         self.windows
             .iter()
-            .filter(|window| window.meter_percent().is_some())
+            .filter(|window| {
+                window.meter_percent().is_some()
+                    || window.quota_state == UsageQuotaStateV1::NotApplicable
+            })
             .min_by_key(|window| (summary_category_rank(window.category), window.rank))
     }
 
@@ -305,6 +308,8 @@ impl UsageAccount {
 #[derive(Debug, Default)]
 pub struct UsageScreenState {
     pub accounts: Vec<UsageAccount>,
+    /// Complete broker publication retained through startup, refresh, and navigation.
+    pub canonical_projection: Option<jackin_protocol::usage_broker::UsageProjectionV1>,
     pub selected: usize,
     pub selected_id: Option<String>,
     pub detail: bool,
@@ -319,7 +324,7 @@ pub struct UsageScreenState {
     pub force_refresh_pending: bool,
     pub refresh_generation: u64,
     pub last_refresh_at: Option<Instant>,
-    pub refresh_rx: Option<BlockingSubscription<(u64, UsageRefreshOutcome)>>,
+    pub refresh_rx: Option<Box<BlockingSubscription<(u64, UsageRefreshOutcome)>>>,
 }
 
 // Manual impls: the in-flight refresh handle carries no value identity.
@@ -330,6 +335,7 @@ impl Clone for UsageScreenState {
     fn clone(&self) -> Self {
         Self {
             accounts: self.accounts.clone(),
+            canonical_projection: self.canonical_projection.clone(),
             selected: self.selected,
             selected_id: self.selected_id.clone(),
             detail: self.detail,
@@ -351,6 +357,7 @@ impl Clone for UsageScreenState {
 impl PartialEq for UsageScreenState {
     fn eq(&self, other: &Self) -> bool {
         self.accounts == other.accounts
+            && self.canonical_projection == other.canonical_projection
             && self.selected == other.selected
             && self.selected_id == other.selected_id
             && self.detail == other.detail
@@ -374,13 +381,9 @@ impl UsageScreenState {
     /// first broker read lands right after open. Selection starts at
     /// Overview; refreshes re-anchor by stable id from there.
     #[must_use]
-    pub fn open_with_snapshot(accounts: Vec<UsageAccount>, notice: Option<String>) -> Self {
-        Self {
-            accounts,
-            notice,
-            refresh_due: true,
-            ..Self::default()
-        }
+    pub fn open_with_snapshot(mut snapshot: Self) -> Self {
+        snapshot.refresh_due = true;
+        snapshot
     }
 
     /// Project the Rust-owned canonical publication into Console rows.
@@ -496,7 +499,11 @@ impl UsageScreenState {
                 plan_label: None,
                 credential_expires_at_epoch: None,
                 issues: unresolved.issues.clone(),
-                provider_issues: Vec::new(),
+                provider_issues: projection
+                    .providers
+                    .iter()
+                    .find(|provider| provider.provider_id == unresolved.provider_id)
+                    .map_or_else(Vec::new, |provider| provider.issues.clone()),
                 windows: Vec::new(),
                 metric_groups: Vec::new(),
             });
@@ -526,6 +533,7 @@ impl UsageScreenState {
         Self {
             accounts,
             notice,
+            canonical_projection: Some(projection.clone()),
             generated_at_epoch: Some(projection.generated_at_epoch),
             projection_issues: projection.issues.clone(),
             ..Self::default()
@@ -535,14 +543,12 @@ impl UsageScreenState {
     /// Apply a completed background refresh, re-anchoring selection by
     /// stable id so renames/reorders keep the operator's row. A removed
     /// selection falls back to Overview with an inline notice.
-    pub fn apply_refresh(
-        &mut self,
-        accounts: Vec<UsageAccount>,
-        notice: Option<String>,
-        now: Instant,
-    ) {
-        self.accounts = accounts;
-        self.notice = notice;
+    pub fn apply_refresh(&mut self, snapshot: Self, now: Instant) {
+        self.accounts = snapshot.accounts;
+        self.notice = snapshot.notice;
+        self.canonical_projection = snapshot.canonical_projection;
+        self.generated_at_epoch = snapshot.generated_at_epoch;
+        self.projection_issues = snapshot.projection_issues;
         self.last_refresh_at = Some(now);
         self.refresh_due = false;
         // A refresh replaces the list: old offsets are meaningless and a
@@ -600,7 +606,19 @@ impl UsageScreenState {
     /// instead of claiming no providers are configured.
     #[must_use]
     pub fn loading(&self) -> bool {
-        self.refresh_in_flight() || self.refresh_due
+        self.refreshing() || self.refresh_due
+    }
+
+    #[must_use]
+    pub fn refreshing(&self) -> bool {
+        self.refresh_in_flight()
+            || self
+                .canonical_projection
+                .as_ref()
+                .is_some_and(|projection| {
+                    projection.refresh_state
+                        == jackin_protocol::usage_broker::UsageProjectionRefreshStateV1::Refreshing
+                })
     }
 
     /// Claim the next due refresh, if any, following the instance-refresh
@@ -627,7 +645,7 @@ impl UsageScreenState {
     }
 
     pub fn begin_refresh(&mut self, rx: BlockingSubscription<(u64, UsageRefreshOutcome)>) {
-        self.refresh_rx = Some(rx);
+        self.refresh_rx = Some(Box::new(rx));
     }
 
     /// Poll the in-flight refresh once. `None` means still running — or that
@@ -1288,13 +1306,8 @@ fn render_account_list(
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if screen.accounts.is_empty() {
-        let text = if screen.loading() {
-            "Refreshing usage…"
-        } else {
-            "No providers configured.\n\nPress R to refresh."
-        };
         frame.render_widget(
-            Paragraph::new(text)
+            Paragraph::new(empty_publication_lines(screen, now_epoch))
                 .style(Style::default().fg(Color::DarkGray))
                 .wrap(Wrap { trim: false }),
             inner,
@@ -1302,6 +1315,7 @@ fn render_account_list(
         return;
     }
     let mut lines = Vec::new();
+    append_publication_age(&mut lines, screen, now_epoch);
     let meter_width = inner.width.saturating_sub(8) as usize;
     lines.push(Line::from(Span::styled(
         format!(
@@ -1354,13 +1368,16 @@ fn render_account_list(
         }
         let selected = pos.saturating_add(1) == screen.selected;
         let cursor = if selected { "▸ " } else { "  " };
-        let summary = account
-            .summary_window()
-            .and_then(UsageWindow::meter_percent)
-            .map_or_else(
-                || account.status.clone(),
-                |percent| format!("{percent}% left"),
-            );
+        let summary = account.summary_window().map_or_else(
+            || account.status.clone(),
+            |window| {
+                if window.value.trim().is_empty() {
+                    quota_state_label(window.quota_state).to_owned()
+                } else {
+                    window.value.clone()
+                }
+            },
+        );
         lines.push(Line::from(Span::styled(
             format!("  {cursor}{}", account.account),
             row_style(selected),
@@ -1409,13 +1426,8 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, no
     };
     let Some(account) = screen.selected_account() else {
         if screen.accounts.is_empty() {
-            let text = if screen.loading() {
-                "Refreshing usage…"
-            } else {
-                "No providers configured.\n\nPress R to refresh."
-            };
             frame.render_widget(
-                Paragraph::new(text)
+                Paragraph::new(empty_publication_lines(screen, now_epoch))
                     .block(panel("Overview"))
                     .wrap(Wrap { trim: false }),
                 area,
@@ -1432,6 +1444,8 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, no
                 Line::from(""),
                 Line::from("Press f to cycle the filter."),
             ];
+            append_publication_age(&mut lines, screen, now_epoch);
+            append_publication_issues(&mut lines, screen, now_epoch);
             if let Some(notice) = &screen.notice {
                 lines.push(Line::from(Span::styled(
                     notice.clone(),
@@ -1448,7 +1462,8 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, no
             return;
         }
         let mut lines = vec![Line::from("Status    available"), Line::from("")];
-        if screen.refresh_in_flight() {
+        append_publication_age(&mut lines, screen, now_epoch);
+        if screen.refreshing() {
             lines.push(refreshing_line());
             lines.push(Line::from(""));
         }
@@ -1456,15 +1471,7 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, no
         for &index in &order {
             append_overview_account(&mut lines, &screen.accounts[index], width, now_epoch);
         }
-        for issue in &screen.projection_issues {
-            lines.push(Line::from(Span::styled(
-                format!("  {}", issue_text(issue, now_epoch)),
-                Style::default().fg(Color::Yellow),
-            )));
-        }
-        if !screen.projection_issues.is_empty() {
-            lines.push(Line::from(""));
-        }
+        append_publication_issues(&mut lines, screen, now_epoch);
         if let Some(notice) = &screen.notice {
             lines.push(Line::from(Span::styled(
                 notice.clone(),
@@ -1486,6 +1493,7 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, no
         Line::from(format!("Account   {}", account.account)),
         Line::from(format!("Status    {}", account.status)),
     ];
+    append_publication_age(&mut lines, screen, now_epoch);
     if let Some(plan) = non_empty_label(account.plan_label.as_ref()) {
         lines.push(Line::from(format!("Plan      {plan}")));
     }
@@ -1508,7 +1516,7 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, no
     lines.push(Line::from(format!("Freshness {freshness}")));
     lines.push(Line::from(""));
     lines.push(Line::from("Limits"));
-    if screen.refresh_in_flight() {
+    if screen.refreshing() {
         lines.push(refreshing_line());
         lines.push(Line::from(""));
     }
@@ -1518,6 +1526,7 @@ fn render_detail(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, no
     } else {
         append_account_summary_body(&mut lines, account, width, now_epoch);
     }
+    append_publication_issues(&mut lines, screen, now_epoch);
     if let Some(notice) = &screen.notice {
         lines.push(Line::from(Span::styled(
             notice.clone(),
@@ -1897,3 +1906,81 @@ fn meter_style(quota_state: UsageQuotaStateV1) -> Style {
 
 #[cfg(test)]
 mod tests;
+
+fn append_publication_age(
+    lines: &mut Vec<Line<'static>>,
+    screen: &UsageScreenState,
+    now_epoch: i64,
+) {
+    if let Some(generated_at) = screen.generated_at_epoch {
+        lines.push(Line::from(format!(
+            "Snapshot  {}",
+            past_age_label(now_epoch.saturating_sub(generated_at).max(0))
+        )));
+    }
+}
+
+fn empty_publication_lines(screen: &UsageScreenState, now_epoch: i64) -> Vec<Line<'static>> {
+    let message = if screen.loading() {
+        "Refreshing usage…"
+    } else if screen.notice.is_some() || publication_has_issues(screen) {
+        "Usage unavailable."
+    } else {
+        "No providers configured."
+    };
+    let mut lines = vec![Line::from(message), Line::from("")];
+    append_publication_age(&mut lines, screen, now_epoch);
+    append_publication_issues(&mut lines, screen, now_epoch);
+    if let Some(notice) = &screen.notice {
+        lines.push(Line::from(notice.clone()));
+    }
+    lines.push(Line::from("Press R to refresh."));
+    lines
+}
+
+fn publication_has_issues(screen: &UsageScreenState) -> bool {
+    !screen.projection_issues.is_empty()
+        || screen
+            .canonical_projection
+            .as_ref()
+            .is_some_and(|projection| {
+                projection
+                    .providers
+                    .iter()
+                    .any(|provider| !provider.issues.is_empty())
+            })
+}
+
+fn append_publication_issues(
+    lines: &mut Vec<Line<'static>>,
+    screen: &UsageScreenState,
+    now_epoch: i64,
+) {
+    for issue in &screen.projection_issues {
+        lines.push(Line::from(Span::styled(
+            issue_text(issue, now_epoch),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
+    if let Some(projection) = &screen.canonical_projection {
+        for provider in &projection.providers {
+            if screen
+                .visible_order()
+                .iter()
+                .any(|&index| screen.accounts[index].provider_id == provider.provider_id)
+            {
+                continue;
+            }
+            for issue in &provider.issues {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "{}: {}",
+                        provider.display_name,
+                        issue_text(issue, now_epoch)
+                    ),
+                    Style::default().fg(Color::Yellow),
+                )));
+            }
+        }
+    }
+}

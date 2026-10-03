@@ -33,8 +33,9 @@ No shell activation needed. Requirements: Git 2.54+ (config-based hooks;
 Apple Git 2.54 meets the floor exactly) and `mise` on Git's runtime PATH —
 true in terminals with mise shims, otherwise the hook fails closed with
 `mise: command not found` (use a terminal or add the shims directory to
-the GUI client's PATH). The first hook run builds `jackin-xtask`
-(one-time ~1-2 min); later runs reuse the cache. A global hk pre-commit
+the GUI client's PATH). Each hook invocation builds in its own temporary Cargo target directory.
+Compiler artifacts cannot collide with builds in the live checkout.
+Python 3 (pinned in mise) provides process group isolation and symlink checks. A global hk pre-commit
 hook is rejected because it would bypass the repository-owned snapshot
 boundary.
 
@@ -49,26 +50,30 @@ mirrors the CI definition it cites):
 - `actionlint`: workflows (`*.yml` only, matching CI)
 - `swiftlint`, `swift-format`: `native/**` on macOS; skipped elsewhere
 
-Review mode, not auto-stage: when a fixer (rustfmt, swift-format) changes
-a file, the hook applies the fix, leaves it **unstaged**, and fails so
-you review the diff, stage, and retry:
+Review mode, not auto-stage: the launcher validates the exact staged tree in
+an isolated temporary repository. Original tracked, untracked, ignored files,
+file metadata, the index, stash stack, and compiler outputs stay untouched.
+The isolated repository preserves the original HEAD and merge index, so hk
+and affected-package selection see the original staged diff. Unmerged index
+entries or staged symlinks escaping the snapshot fail before tools run.
+
+If a fixer changes source, the commit fails. The launcher saves a private
+patch under the common Git directory's `jackin-hook-evidence/pre-commit.*/`
+with directory mode 0700 and patch mode 0600. It prints the patch path, never
+its contents. Review and apply the fixes explicitly:
 
 ```sh
-git commit -m "..."   # hook applies rustfmt fix, fails for review
-git diff              # review the fix
+git commit -m "..."       # isolated fix fails for review
+mise x -- hk fix          # apply fixes in your checkout
+git diff                 # review all unstaged changes
 git add -p && git commit -m "..."
 ```
 
-`hk fix` applies the same fixes outside a commit; `hk check` runs checks
-on modified files. Partial commits are safe: the repo-owned launcher creates
-an isolated stash snapshot, publishes its private identity before clearing the
-worktree, validates the staged snapshot only, then restores — byte-identical
-when green. The user stash stack is not used for the hook snapshot. If
-restoration fails or the snapshot/stash identity changes, the snapshot is
-retained under
-`refs/jackin/pre-commit-snapshot/*`; inspect `git status` and
-`git show-ref refs/jackin/pre-commit-snapshot/` and recover it before changing
-the worktree. Bypass with `HK=0 git commit`
+`hk check` runs checks on modified files outside a commit. Partial commits
+remain safe: the hook never clears, restores, or cleans the live worktree.
+Success, failure, and catchable signals remove only the invocation's temporary
+repository and build outputs after terminating its tool process group. Review
+patches remain until the author removes them. Bypass with `HK=0 git commit`
 (emergencies only).
 
 Two intentional divergences from CI: hook Clippy is closure-scoped while
@@ -86,7 +91,7 @@ hook commands are POSIX `sh` and the Swift steps skip themselves where
 `swiftlint`/`xcrun` are absent). CI-on-Linux (the velnor Rust lane on
 `ubuntu-26.04`) proves the shared pieces there: per-package `fmt`,
 `clippy -- -D warnings`, and the `jackin-xtask` nextest suite including
-the affected-closure tests. Hook firing/stash behavior is verified on
+the affected-closure tests. Hook firing/isolation behavior is verified on
 macOS; it rides identical hk + mise artifacts on Linux (both pinned in
 `mise.lock`).
 

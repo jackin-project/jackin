@@ -425,6 +425,149 @@ fn multi_provider_clients_accept_every_provider_but_amp() {
 }
 
 #[test]
+fn credential_descriptors_follow_explicit_account_workspace_and_role_routes() {
+    let mut cfg = AppConfig::default();
+    cfg.accounts
+        .insert("zai".into(), api_key(AiProvider::Zai, Some("glm-5")));
+    cfg.account_bindings.insert(Agent::Codex, "zai".into());
+    let workspace_name = WorkspaceName::parse("project").unwrap();
+    let mut workspace = WorkspaceConfig::default();
+    workspace.accounts.push("zai".into());
+    workspace.roles.insert(
+        "review".into(),
+        WorkspaceRoleOverride {
+            account_bindings: BTreeMap::from([(Agent::Claude, "zai".into())]),
+            ..Default::default()
+        },
+    );
+    cfg.workspaces
+        .insert(workspace_name.as_str().to_owned(), workspace);
+    cfg.agent_configurations.insert(
+        "zai-opencode".into(),
+        AgentConfiguration {
+            agent: Agent::Opencode,
+            account: "zai".into(),
+            model: Some("zai-coding/glm-5".into()),
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+
+    let routes = cfg.credential_descriptors_for_account("zai").unwrap();
+    assert_eq!(
+        routes,
+        vec![
+            ResolvedCredentialDescriptor {
+                agent: Agent::Claude,
+                provider: AiProvider::Zai,
+                mode: AuthForwardMode::ApiKey,
+                env_name: "ANTHROPIC_AUTH_TOKEN",
+            },
+            ResolvedCredentialDescriptor {
+                agent: Agent::Codex,
+                provider: AiProvider::Zai,
+                mode: AuthForwardMode::ApiKey,
+                env_name: "OPENAI_API_KEY",
+            },
+            ResolvedCredentialDescriptor {
+                agent: Agent::Opencode,
+                provider: AiProvider::Zai,
+                mode: AuthForwardMode::ApiKey,
+                env_name: "ZHIPU_API_KEY",
+            },
+            ResolvedCredentialDescriptor {
+                agent: Agent::Omp,
+                provider: AiProvider::Zai,
+                mode: AuthForwardMode::ApiKey,
+                env_name: "ZHIPU_API_KEY",
+            },
+            ResolvedCredentialDescriptor {
+                agent: Agent::Hermes,
+                provider: AiProvider::Zai,
+                mode: AuthForwardMode::ApiKey,
+                env_name: "ZHIPU_API_KEY",
+            },
+        ]
+    );
+}
+
+#[test]
+fn credential_descriptor_matrix_uses_each_launch_route_key() {
+    let account = api_key(AiProvider::Zai, Some("glm-5"));
+    assert_eq!(
+        [Agent::Claude, Agent::Codex, Agent::Opencode]
+            .into_iter()
+            .map(|agent| account.resolved_credential_descriptor(agent).unwrap())
+            .collect::<Vec<_>>(),
+        vec![
+            ResolvedCredentialDescriptor {
+                agent: Agent::Claude,
+                provider: AiProvider::Zai,
+                mode: AuthForwardMode::ApiKey,
+                env_name: "ANTHROPIC_AUTH_TOKEN",
+            },
+            ResolvedCredentialDescriptor {
+                agent: Agent::Codex,
+                provider: AiProvider::Zai,
+                mode: AuthForwardMode::ApiKey,
+                env_name: "OPENAI_API_KEY",
+            },
+            ResolvedCredentialDescriptor {
+                agent: Agent::Opencode,
+                provider: AiProvider::Zai,
+                mode: AuthForwardMode::ApiKey,
+                env_name: "ZHIPU_API_KEY",
+            },
+        ]
+    );
+
+    let oauth = AccountConfig {
+        enabled: true,
+        name: "Claude OAuth".into(),
+        provider: AiProvider::Anthropic,
+        credential: AccountCredential::OAuthToken {
+            agent: Agent::Claude,
+            value: EnvValue::from("fixture-oauth"),
+        },
+    };
+    assert_eq!(
+        oauth.resolved_credential_descriptor(Agent::Claude).unwrap(),
+        ResolvedCredentialDescriptor {
+            agent: Agent::Claude,
+            provider: AiProvider::Anthropic,
+            mode: AuthForwardMode::OAuthToken,
+            env_name: "CLAUDE_CODE_OAUTH_TOKEN",
+        }
+    );
+    profile("profile")
+        .resolved_credential_descriptor(Agent::Claude)
+        .unwrap_err();
+}
+
+#[test]
+fn credential_descriptors_use_native_default_when_unreferenced() {
+    let mut cfg = AppConfig::default();
+    cfg.accounts
+        .insert("google".into(), api_key(AiProvider::Google, None));
+
+    let routes = cfg.credential_descriptors_for_account("google").unwrap();
+    assert_eq!(
+        routes.iter().map(|route| route.agent).collect::<Vec<_>>(),
+        vec![
+            Agent::Opencode,
+            Agent::Antigravity,
+            Agent::Gemini,
+            Agent::Omp,
+            Agent::Hermes,
+        ]
+    );
+    assert!(routes.iter().all(|route| {
+        route.mode == AuthForwardMode::ApiKey && route.env_name == "GEMINI_API_KEY"
+    }));
+}
+
+#[test]
 fn claude_and_codex_routing_is_unchanged_by_new_providers() {
     for agent in [Agent::Claude, Agent::Codex] {
         for provider in [AiProvider::Moonshot, AiProvider::Zai, AiProvider::Minimax] {

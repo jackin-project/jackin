@@ -346,25 +346,14 @@ pub(super) async fn teardown_recreate_container(
     known_role_handle: Option<&ContainerHandle>,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    let resources = crate::runtime::cleanup::docker_resources_for_state(paths, container);
-    // Resolve every container identity before removing any object. Names are
-    // mutable lookup keys; resolving the sidecar after removing the role
-    // could target a same-name replacement created by a concurrent launch.
-    let role_handle = match known_role_handle {
-        Some(handle) => {
-            anyhow::ensure!(
-                handle.name() == container,
-                "role container handle name mismatch: expected {container}, got {}",
-                handle.name()
-            );
-            Some(handle.clone())
-        }
-        None => {
-            crate::runtime::cleanup::resolve_optional_container_handle(docker, container).await?
-        }
-    };
-    let dind_handle =
-        crate::runtime::cleanup::resolve_dind_handle_for_state(paths, container, docker).await?;
+    let (resources, role_handle, dind_handle) =
+        crate::runtime::cleanup::resolve_cleanup_handles_for_state(
+            paths,
+            container,
+            known_role_handle,
+            docker,
+        )
+        .await?;
     if let Some(handle) = role_handle.as_ref() {
         docker.remove_container_by_id(handle).await?;
     }

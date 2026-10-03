@@ -6,6 +6,7 @@ The jackin❯ CLI — the operator-facing binary that loads roles into isolated 
 
 - The CLI surface (`cli`) and top-level application wiring (`app`), error type (`error`), and preflight checks (`preflight`).
 - Console entry (`console`), launch/prompt flow (`prompt`), and the Warp integration (`warp`).
+- The independent host `jackin-usage-broker` service entrypoint. `cargo install --path crates/jackin` installs it beside `jackin`; host release archives ship the same sibling. Broker execution and quota coordination remain in `jackin-usage`.
 - Role-authoring (`role_authoring`, `role_claude_plugins`) and workspace commands (`workspace`).
 
 ## Architecture tier and allowed dependencies

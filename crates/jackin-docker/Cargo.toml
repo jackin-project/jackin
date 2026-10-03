@@ -19,6 +19,7 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-core = { workspace = true }
+jackin-process-directory = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-process = { workspace = true }
 jackin-telemetry = { workspace = true }

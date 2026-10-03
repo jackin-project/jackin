@@ -1,7 +1,100 @@
 use super::{
-    MIN_OS, XunitTotals, minos_matches_target, normalize_generated_text, parse_dwarf_uuid,
+    MIN_OS, XunitTotals, assert_broker_version, assert_executable_file, assert_native_broker_archs,
+    broker_path, minos_matches_target, normalize_generated_text, parse_dwarf_uuid,
     parse_xctest_summary, parse_xunit_totals, tree_differences, validate_build, validate_version,
 };
+
+#[test]
+fn broker_is_sibling_of_the_desktop_executable() {
+    assert_eq!(
+        broker_path(std::path::Path::new("JackinDesktop.app")),
+        std::path::Path::new("JackinDesktop.app/Contents/MacOS/jackin-usage-broker")
+    );
+}
+
+#[test]
+fn broker_requires_exact_native_architecture() {
+    assert_native_broker_archs("arm64\n").unwrap();
+    for wrong in ["", "x86_64", "arm64 x86_64", "arm64 arm64", "arm64e"] {
+        assert!(assert_native_broker_archs(wrong).is_err(), "{wrong}");
+    }
+}
+
+#[test]
+fn broker_version_probe_requires_matching_binary_and_release() {
+    assert_broker_version("jackin-usage-broker 0.6.0\n", "0.6.0").unwrap();
+    for wrong in [
+        "jackin-usage-broker 0.5.0",
+        "jackin 0.6.0",
+        "jackin-usage-broker 0.6.0-dev",
+        "jackin-usage-broker 0.6.0\nstarting daemon",
+        "",
+    ] {
+        assert!(assert_broker_version(wrong, "0.6.0").is_err(), "{wrong}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn broker_requires_regular_executable_file() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let temp = super::tempfile_dir("jackin-desktop-broker-file-test").unwrap();
+    let broker = temp.join("broker");
+    assert!(assert_executable_file(&broker).is_err());
+    assert!(assert_executable_file(&temp).is_err());
+    std::fs::write(&broker, b"broker").unwrap();
+    std::fs::set_permissions(&broker, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(assert_executable_file(&broker).is_err());
+    std::fs::set_permissions(&broker, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_executable_file(&broker).unwrap();
+    let link = temp.join("link");
+    symlink(&broker, &link).unwrap();
+    assert!(assert_executable_file(&link).is_err());
+    std::fs::remove_dir_all(&temp).unwrap();
+}
+
+#[test]
+fn desktop_build_packages_native_broker_before_bundle_signing() {
+    let source = include_str!("../desktop.rs");
+    let build = source.split("fn build_app(").nth(1).unwrap();
+    let build = build.split("pub(super) fn verify_app(").next().unwrap();
+    assert_subsequence(
+        build,
+        &[
+            ".env(\"JACKIN_VERSION_OVERRIDE\", version)",
+            "DESKTOP_PROFILE,",
+            "HOST_TARGET,",
+            "\"jackin\",",
+            "\"--bin\",",
+            "BROKER_EXECUTABLE,",
+            ".arg(\"--target-dir\")",
+            ".arg(root.join(\"target\"))",
+            "verify_broker(&built_broker, version)?;",
+            "fs::copy(&built_broker, &broker)",
+            "verify_broker(&broker, version)?;",
+            "sign_broker(&dist, \"-\", false)?;",
+            "dist.to_str().context(\"dist utf-8\")?",
+        ],
+        "native broker assembly",
+    );
+}
+
+#[test]
+fn developer_id_signs_and_checks_broker_before_notarization() {
+    assert_subsequence(
+        include_str!("sign_notarize.rs"),
+        &[
+            "verify_app(&app, None, &version, &build, false)?;",
+            "sign_broker(&app, &identity, true)?;",
+            "app.to_str().context(\"app utf-8\")?",
+            "check_expected_cert(&broker)?;",
+            "check_expected_team(&broker)?;",
+            "reject_get_task_allow(&broker)?;",
+            "run_notarytool(&submit_zip, &notary_json)?;",
+        ],
+        "nested broker signing",
+    );
+}
 
 #[test]
 fn xcframework_pack_generates_bindings_and_headers_for_clean_builds() {

@@ -51,8 +51,8 @@ pub use accounts::zshrc::{
 };
 pub use accounts::{
     AccountConfig, AccountCredential, AgentConfiguration, AiProvider, BOOTSTRAP_VERSION,
-    BootstrapState, ProfileSelector, ResolvedInstance, WrapperSpec, XdgRoots, resolve_account,
-    resolve_launch, validate_account_id,
+    BootstrapState, ProfileSelector, ResolvedCredentialDescriptor, ResolvedInstance, WrapperSpec,
+    XdgRoots, resolve_account, resolve_launch, validate_account_id,
 };
 pub use error::{ConfigError, ConfigResult};
 

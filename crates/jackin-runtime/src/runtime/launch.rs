@@ -71,7 +71,7 @@ pub use programmatic::{
 mod launch_pipeline;
 pub use launch_pipeline::launch_phases::{
     GrantPhaseInput, GrantsValidated, ImagePhaseClass, ImagePhaseClassified, classify_image_phase,
-    cleanup_after_grant_failure, validate_launch_grants,
+    validate_launch_grants,
 };
 
 use super::discovery::list_running_agent_names;

@@ -19,9 +19,9 @@ pub mod manifest;
 pub mod naming;
 mod process_telemetry;
 pub use manifest::{
-    AdmittedInstance, AppleContainerResources, BackendResources, DockerResources, InstanceIndex,
-    InstanceIndexEntry, InstanceManifest, InstanceQuery, InstanceStatus, NewInstanceManifest,
-    RegistrationState, SessionRecord, SessionStatus,
+    AdmittedInstance, AppleContainerResources, BackendResources, DockerIdentity, DockerResources,
+    InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery, InstanceStatus,
+    NewInstanceManifest, RegistrationState, SessionRecord, SessionStatus,
 };
 pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 

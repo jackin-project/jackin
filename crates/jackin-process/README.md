@@ -5,11 +5,13 @@ Shared subprocess transport for jackin❯: capture, timeout, retry, and exit sta
 ## What this crate owns
 
 - `ExecRequest` / `ExecResult` and the async + sync run helpers used by xtask, capsule probes, and runtime shell execution.
-- Timeout and retry policy knobs only — **not** redaction, protected-value classification, environment policy, or telemetry (callers own those).
+- Independent capture byte limits (16 MiB default per stream), elapsed timeout, retry, and kill/reap ownership for run helpers. Unix runs own an isolated process group through pipe completion.
+- Bare spawn helpers return caller-owned streams and lifecycle; explicit capture limits are rejected because these helpers cannot enforce them.
+- Callers own redaction, protected-value classification, environment policy, and telemetry.
 
 ## Architecture tier
 
-**T0 foundational.** Allowed deps: external crates only (`anyhow`, `tokio`). No jackin❯ workspace dependencies.
+**T0 foundational.** Allowed deps: external crates only (`anyhow`, `tokio`, and `nix` on Unix). No jackin❯ workspace dependencies.
 
 ## Structure
 

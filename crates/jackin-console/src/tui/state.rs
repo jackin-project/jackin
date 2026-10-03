@@ -366,10 +366,8 @@ pub struct ManagerState<'a> {
     /// refreshes continue offscreen and selection survives a close/reopen
     /// round-trip.
     pub usage: UsageRouteState,
-    /// Rust-owned usage rows staged before the Usage route is opened.
-    pub usage_accounts: Vec<UsageAccount>,
-    /// Rust-owned usage discovery notice shown by the Usage route.
-    pub usage_notice: Option<String>,
+    /// Complete usage publication staged before the route is opened.
+    pub usage_snapshot: UsageScreenState,
 }
 
 // ── Impls ───────────────────────────────────────────────────────────────────

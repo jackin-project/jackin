@@ -43,7 +43,8 @@ const PAYLOADS: [&str; 6] = [
     "jackin-capsule-x86_64-unknown-linux-gnu.tar.gz",
 ];
 
-const CLI_BINARIES: [&str; 2] = ["jackin", "jackin-role"];
+// Independent archive-members oracle; do not derive expectations from the producer.
+const CLI_BINARIES: [&str; 3] = ["jackin", "jackin-role", "jackin-usage-broker"];
 const CAPSULE_BINARY: &str = "jackin-capsule";
 
 struct Fixture {
@@ -441,6 +442,37 @@ fn versions_and_manifests_match_source() {
 }
 
 #[test]
+fn missing_usage_broker_prevents_release_handoff() {
+    let fixture = Fixture::new(false);
+    let cargo_shim = fixture.shims.join("cargo");
+    let complete = fs::read_to_string(&cargo_shim).unwrap();
+    let incomplete = complete.replace(
+        "binaries=(jackin jackin-role jackin-usage-broker)",
+        "binaries=(jackin jackin-role)",
+    );
+    assert_ne!(
+        complete, incomplete,
+        "negative fixture must omit the broker"
+    );
+    fs::write(&cargo_shim, incomplete).unwrap();
+
+    let output = fixture.run_producer("1", PACKAGE_RELATIVE, false, false);
+    assert_failure_contains(&output, "release binary is missing");
+    assert_failure_contains(&output, "release/jackin-usage-broker");
+    assert!(
+        fs::read_dir(fixture.package_dir(PACKAGE_RELATIVE))
+            .unwrap()
+            .next()
+            .is_none(),
+        "incomplete host payload must never reach the declared handoff"
+    );
+    assert!(
+        !fixture.scratch_dir("1").exists(),
+        "incomplete host payload must clean its owned scratch"
+    );
+}
+
+#[test]
 fn partial_or_tampered_package_fails() {
     // Corrupt a staged archive after the real xtask writes its SHA. The real
     // verifier must reject it before promotion; the declared handoff stays empty.
@@ -642,7 +674,7 @@ done
 [[ -n "$target" ]]
 rust_target="${target%%.2.17}"
 case "$package" in
-  jackin) binaries=(jackin jackin-role) ;;
+  jackin) binaries=(jackin jackin-role jackin-usage-broker) ;;
   jackin-capsule) binaries=(jackin-capsule) ;;
   *) echo "unexpected package in cargo fixture: $package" >&2; exit 98 ;;
 esac

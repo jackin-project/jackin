@@ -72,6 +72,11 @@ OrbStack) and use the default Docker backend on all supported platforms.
 
 ## What gets installed
 
+Host release archives include `jackin`, `jackin-role`, and `jackin-usage-broker`.
+Keep the broker executable beside the CLI: host usage runs in that independent
+process. `cargo install --path crates/jackin` installs all three host executables
+together. The desktop app bundles its own broker beside its app executable.
+
 jackin❯ installs the host CLI plus the matching in-container runtime. Homebrew installs the `jackin-capsule` Linux binary beside the CLI so the first agent load does not need an extra GitHub download. Source installs can still fetch or build that runtime on first use.
 
 When you first load an agent, jackin❯ will:

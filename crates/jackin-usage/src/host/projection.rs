@@ -12,8 +12,9 @@ use jackin_protocol::control::{
     Money, QuotaBucketView, StatusSlot, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
 };
 use jackin_protocol::usage_broker::{
-    UsageAccountV1, UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageFreshnessV1,
-    UsageIdentityKindV1, UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1,
+    UsageAccountCapability, UsageAccountV1, UsageCalendarPeriodV1, UsageFreshnessPhaseV1,
+    UsageFreshnessV1, UsageGenerationView, UsageIdentityKindV1, UsageIssueRecoverabilityV1,
+    UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1,
     UsageMetricGroupKindV1, UsageMetricGroupV1, UsageMetricPeriodV1, UsageMetricScopeV1,
     UsageMetricValueV1, UsagePercent, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
     UsageProjectionV1, UsageProviderV1, UsageQuotaStateV1, UsageUnresolvedV1,
@@ -114,6 +115,7 @@ impl HostUsageRuntime {
         let draft = build_canonical_projection(
             &catalog,
             discovery,
+            &self.broker_generations,
             ProjectionMetadata {
                 projection_id: "draft",
                 generated_at_epoch: 0,
@@ -142,6 +144,7 @@ impl HostUsageRuntime {
         let projection = build_canonical_projection(
             &catalog,
             discovery,
+            &self.broker_generations,
             ProjectionMetadata {
                 projection_id: &projection_id,
                 generated_at_epoch: chrono::Utc::now().timestamp(),
@@ -160,6 +163,7 @@ impl HostUsageRuntime {
 pub(super) fn build_canonical_projection(
     catalog: &AccountCatalog,
     discovery: &ValidatedUsageDiscovery,
+    broker_generations: &BTreeMap<UsageAccountCapability, UsageGenerationView>,
     metadata: ProjectionMetadata<'_>,
 ) -> Result<UsageProjectionV1, String> {
     let locale = metadata
@@ -203,13 +207,35 @@ pub(super) fn build_canonical_projection(
             .unresolved_capabilities()
             .filter(|candidate| candidate.surface_id == surface.id())
             .count();
-        if entries.is_empty() && unresolved == 0 {
+        let issues = discovery
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.surface_id.as_deref() == Some(surface.id()))
+            .map(|diagnostic| discovery_issue(diagnostic.issue, UsageIssueScopeV1::Provider))
+            .collect::<Vec<_>>();
+        if entries.is_empty() && unresolved == 0 && issues.is_empty() {
             continue;
         }
         let accounts = entries
             .into_iter()
             .enumerate()
-            .map(|(rank, entry)| project_account(entry, rank, metadata.broker_generation))
+            .map(|(rank, entry)| {
+                let mut account = project_account(entry, rank, metadata.broker_generation)?;
+                let broker_state = discovery
+                    .bindings
+                    .iter()
+                    .find(|binding| binding.identity.as_ref() == Some(&entry.identity))
+                    .and_then(|binding| {
+                        broker_generations.get(&super::broker::capability_for_binding(
+                            binding,
+                            discovery.config_generation.as_deref(),
+                        ))
+                    });
+                if let Some(state) = broker_state {
+                    apply_generation_metadata(&mut account, state);
+                }
+                Ok::<_, String>(account)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let mut canonical_ids = BTreeSet::new();
         if let Some(collision) = accounts
@@ -229,28 +255,11 @@ pub(super) fn build_canonical_projection(
             membership_state: UsageMembershipStateV1::Current,
             freshness,
             accounts,
-            issues: Vec::new(),
+            issues,
         });
     }
 
-    let mut unresolved = discovery
-        .unresolved_capabilities()
-        .map(|candidate| UsageUnresolvedV1 {
-            provider_id: HostSurfaceId::from_id(&candidate.surface_id).map_or_else(
-                || candidate.surface_id.clone(),
-                |surface| surface.provider_id().to_owned(),
-            ),
-            capability_id: candidate.capability_id.clone(),
-            configuration_count: u32::try_from(candidate.provenance.len()).unwrap_or(u32::MAX),
-            state: UsageLifecycleV1::NeedsLogin,
-            issues: Vec::new(),
-        })
-        .collect::<Vec<_>>();
-    unresolved.sort_by(|left, right| {
-        provider_rank(&left.provider_id)
-            .cmp(&provider_rank(&right.provider_id))
-            .then(left.capability_id.cmp(&right.capability_id))
-    });
+    let unresolved = project_unresolved_capabilities(discovery, broker_generations);
     let projection = UsageProjectionV1 {
         schema_version: UsageProjectionSchemaV1,
         projection_id: metadata.projection_id.to_owned(),
@@ -268,10 +277,70 @@ pub(super) fn build_canonical_projection(
         },
         providers,
         unresolved,
-        issues: Vec::new(),
+        issues: discovery
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.surface_id.is_none())
+            .map(|diagnostic| discovery_issue(diagnostic.issue, UsageIssueScopeV1::Projection))
+            .collect(),
     };
     projection.validate()?;
     Ok(projection)
+}
+
+fn project_unresolved_capabilities(
+    discovery: &ValidatedUsageDiscovery,
+    broker_generations: &BTreeMap<UsageAccountCapability, UsageGenerationView>,
+) -> Vec<UsageUnresolvedV1> {
+    let mut unresolved = discovery
+        .unresolved_capabilities()
+        .map(|candidate| {
+            let broker_state = discovery
+                .bindings
+                .iter()
+                .find(|binding| {
+                    binding.capability_id == candidate.capability_id && binding.identity.is_none()
+                })
+                .and_then(|binding| {
+                    broker_generations.get(&super::broker::capability_for_binding(
+                        binding,
+                        discovery.config_generation.as_deref(),
+                    ))
+                });
+            let issues = broker_state
+                .and_then(|state| {
+                    state.error.as_ref().map(|error| UsageIssueV1 {
+                        code: super::broker::publish::issue_code(error.kind),
+                        scope: UsageIssueScopeV1::Provider,
+                        recoverability: super::broker::publish::issue_recoverability(error.kind),
+                        message: error.message.clone(),
+                        retry_at_epoch: state.retry_at_epoch,
+                    })
+                })
+                .into_iter()
+                .collect();
+            UsageUnresolvedV1 {
+                provider_id: HostSurfaceId::from_id(&candidate.surface_id).map_or_else(
+                    || candidate.surface_id.clone(),
+                    |surface| surface.provider_id().to_owned(),
+                ),
+                capability_id: candidate.capability_id.clone(),
+                configuration_count: u32::try_from(candidate.provenance.len()).unwrap_or(u32::MAX),
+                state: broker_state
+                    .and_then(|state| state.error.as_ref())
+                    .map_or(UsageLifecycleV1::NeedsLogin, |error| {
+                        failure_lifecycle(error.kind)
+                    }),
+                issues,
+            }
+        })
+        .collect::<Vec<_>>();
+    unresolved.sort_by(|left, right| {
+        provider_rank(&left.provider_id)
+            .cmp(&provider_rank(&right.provider_id))
+            .then(left.capability_id.cmp(&right.capability_id))
+    });
+    unresolved
 }
 
 fn provider_rank(provider_id: &str) -> usize {
@@ -322,8 +391,114 @@ fn project_account(
         // No credential-expiry signal exists in current provider views; the
         // field stays unset rather than borrowing a quota reset timestamp.
         credential_expires_at_epoch: None,
-        issues: Vec::new(),
+        issues: view_issues(&entry.view),
     })
+}
+
+fn discovery_issue(
+    issue: super::discovery::UsageDiscoveryIssue,
+    scope: UsageIssueScopeV1,
+) -> UsageIssueV1 {
+    use super::discovery::UsageDiscoveryIssue;
+    let recoverability = match issue {
+        UsageDiscoveryIssue::ConfigVersionUnsupported => UsageIssueRecoverabilityV1::Unsupported,
+        UsageDiscoveryIssue::ConfigTransientConflict => UsageIssueRecoverabilityV1::Retryable,
+        _ => UsageIssueRecoverabilityV1::ActionRequired,
+    };
+    UsageIssueV1 {
+        code: issue.id().to_owned(),
+        scope,
+        recoverability,
+        message: issue.display_message().to_owned(),
+        retry_at_epoch: None,
+    }
+}
+
+/// Typed broker state supplies recovery policy; display text never controls it.
+fn apply_generation_metadata(account: &mut UsageAccountV1, state: &UsageGenerationView) {
+    account.freshness.generation = state.generation;
+    account.freshness.retry_at_epoch = state.retry_at_epoch;
+    account.freshness.last_good_at_epoch = state
+        .snapshot
+        .as_ref()
+        .filter(|snapshot| view_is_usable(snapshot.status))
+        .map(|snapshot| snapshot.fetched_at_epoch);
+    account.freshness.is_stale = state.error.is_some()
+        && account.freshness.last_good_at_epoch.is_some()
+        || state
+            .snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.status == UsageSnapshotStatus::Stale);
+    account.freshness.phase = if state.phase.is_active() {
+        UsageFreshnessPhaseV1::Refreshing
+    } else if account.freshness.is_stale {
+        UsageFreshnessPhaseV1::Stale
+    } else if state.error.is_some() || state.snapshot.is_none() {
+        UsageFreshnessPhaseV1::Failed
+    } else {
+        account.freshness.phase
+    };
+    if let Some(error) = &state.error {
+        if state.snapshot.is_none() {
+            account.lifecycle = failure_lifecycle(error.kind);
+        }
+        account.issues = vec![UsageIssueV1 {
+            code: super::broker::publish::issue_code(error.kind),
+            scope: UsageIssueScopeV1::Account,
+            recoverability: super::broker::publish::issue_recoverability(error.kind),
+            message: error.message.clone(),
+            retry_at_epoch: state.retry_at_epoch,
+        }];
+    }
+}
+
+pub(in crate::host) fn failure_lifecycle(
+    kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind,
+) -> UsageLifecycleV1 {
+    use jackin_protocol::usage_broker::UsageCoordinationErrorKind;
+    match kind {
+        UsageCoordinationErrorKind::NeedsSecret => UsageLifecycleV1::NeedsSecret,
+        UsageCoordinationErrorKind::Unauthorized => UsageLifecycleV1::NeedsLogin,
+        UsageCoordinationErrorKind::ProtocolMismatch => UsageLifecycleV1::Unsupported,
+        UsageCoordinationErrorKind::Unavailable
+        | UsageCoordinationErrorKind::ProviderUnavailable => UsageLifecycleV1::Unavailable,
+        _ => UsageLifecycleV1::Error,
+    }
+}
+
+fn view_issues(view: &jackin_protocol::control::FocusedUsageView) -> Vec<UsageIssueV1> {
+    let Some(message) = view
+        .last_error
+        .as_ref()
+        .filter(|message| !message.trim().is_empty())
+    else {
+        return Vec::new();
+    };
+    let (code, recoverability) = match view.status {
+        UsageSnapshotStatus::NeedsLogin => {
+            ("needs_login", UsageIssueRecoverabilityV1::ActionRequired)
+        }
+        UsageSnapshotStatus::NeedsSecret => {
+            ("needs_secret", UsageIssueRecoverabilityV1::ActionRequired)
+        }
+        UsageSnapshotStatus::Unsupported => {
+            ("unsupported", UsageIssueRecoverabilityV1::Unsupported)
+        }
+        UsageSnapshotStatus::Fresh
+        | UsageSnapshotStatus::Stale
+        | UsageSnapshotStatus::Unavailable
+        | UsageSnapshotStatus::Error => (
+            "provider_unavailable",
+            UsageIssueRecoverabilityV1::Retryable,
+        ),
+    };
+    vec![UsageIssueV1 {
+        code: code.to_owned(),
+        scope: UsageIssueScopeV1::Account,
+        recoverability,
+        message: message.clone(),
+        retry_at_epoch: None,
+    }]
 }
 
 fn project_window(
@@ -672,7 +847,10 @@ fn spend_ratio_state(used: &Money, limit: &Money) -> UsageQuotaStateV1 {
     }
 }
 
-fn lifecycle(status: UsageSnapshotStatus, confidence: UsageConfidence) -> UsageLifecycleV1 {
+pub(in crate::host) fn lifecycle(
+    status: UsageSnapshotStatus,
+    confidence: UsageConfidence,
+) -> UsageLifecycleV1 {
     if confidence == UsageConfidence::PresenceOnly {
         return UsageLifecycleV1::AgentUninitialized;
     }
@@ -706,7 +884,13 @@ fn freshness(status: UsageSnapshotStatus, last_good: i64, generation: u64) -> Us
 }
 
 fn provider_freshness(accounts: &[UsageAccountV1], generation: u64) -> UsageFreshnessV1 {
-    let phase = if accounts.iter().any(|account| account.freshness.is_stale) {
+    let is_stale = accounts.iter().any(|account| account.freshness.is_stale);
+    let phase = if accounts
+        .iter()
+        .any(|account| account.freshness.phase == UsageFreshnessPhaseV1::Refreshing)
+    {
+        UsageFreshnessPhaseV1::Refreshing
+    } else if is_stale {
         UsageFreshnessPhaseV1::Stale
     } else if accounts.is_empty()
         || accounts
@@ -728,7 +912,7 @@ fn provider_freshness(accounts: &[UsageAccountV1], generation: u64) -> UsageFres
             .iter()
             .filter_map(|account| account.freshness.retry_at_epoch)
             .min(),
-        is_stale: phase == UsageFreshnessPhaseV1::Stale,
+        is_stale,
     }
 }
 

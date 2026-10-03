@@ -17,10 +17,6 @@ repository.workspace = true
 name = "jackin_runtime"
 path = "src/lib.rs"
 
-[[bin]]
-name = "jackin-usage-broker"
-path = "src/bin/usage-broker/main.rs"
-
 [dependencies]
 jackin-brand = { workspace = true }
 jackin-core = { workspace = true }
@@ -50,6 +46,7 @@ crossterm = { workspace = true }
 dialoguer = { workspace = true }
 sha2 = { workspace = true }
 fs4 = { workspace = true }
+hex = { workspace = true }
 directories = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }

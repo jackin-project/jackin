@@ -73,7 +73,7 @@ fn grant_phase_rejects_root_sudo_without_docker_io() {
 }
 
 #[tokio::test]
-async fn grant_failure_cleanup_removes_adopted_sidecar_and_owned_resources() {
+async fn captured_sidecar_cleanup_removes_owned_resources() {
     let docker = FakeDockerClient {
         inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
             "jk-role-dind".to_owned(),
@@ -89,11 +89,11 @@ async fn grant_failure_cleanup_removes_adopted_sidecar_and_owned_resources() {
         std::env::temp_dir().join("jackin-suite-a-sock"),
     );
     cleanup.set_dind_handle(ContainerHandle::new("jk-role-dind", "jk-role-dind-id").unwrap());
-    cleanup_after_grant_failure(&cleanup, &docker).await;
+    cleanup.run(&docker).await;
     let recorded = docker.recorded.borrow();
     assert!(
         recorded.iter().any(|c| c == "docker rm -f jk-role-dind"),
-        "grant-failure cleanup must remove DinD; recorded: {recorded:?}"
+        "captured-sidecar cleanup must remove DinD; recorded: {recorded:?}"
     );
     assert!(
         recorded
@@ -278,64 +278,6 @@ fn classify_image_phase_reuse_vs_build() {
     let classified = classify_image_phase(&build);
     assert_eq!(classified.class, ImagePhaseClass::BuildRequired);
     assert!(!classified.selected_image_reused);
-}
-
-#[tokio::test]
-async fn grant_failure_then_cleanup_matches_run_launch_core_order() {
-    // Mirrors run_launch_core: validate_launch_grants Err → cleanup_after_grant_failure.
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    crate::runtime::test_support::install_all_test_stubs(&paths);
-    let mut config = AppConfig::load_or_init(&paths).unwrap();
-    config.docker.grants = Some(DockerGrants {
-        user: Some("root".to_owned()),
-        sudo: Some(true),
-        ..Default::default()
-    });
-    let selector = RoleSelector::new(None, "agent-smith");
-    let manifest_temp = tempdir().unwrap();
-    std::fs::write(
-        manifest_temp.path().join("jackin.role.toml"),
-        "version = \"v1alpha4\"\ndockerfile = \"Dockerfile\"\nagents = [\"claude\"]\n\n[claude]\n",
-    )
-    .unwrap();
-    std::fs::write(
-        manifest_temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:0.1-trixie\n",
-    )
-    .unwrap();
-    let role_manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
-    let err = validate_launch_grants(GrantPhaseInput {
-        config: &config,
-        workspace_label: "workspace",
-        workspace_docker: None,
-        opts_docker_profile: None,
-        selector: &selector,
-        role_manifest: &role_manifest,
-    });
-    assert!(err.is_err(), "bad grants must fail before Docker ops");
-    drop(err.unwrap_err());
-    let docker = FakeDockerClient {
-        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
-            "jk-order-dind".to_owned(),
-            ContainerState::Running,
-        )])),
-        ..Default::default()
-    };
-    let cleanup = LoadCleanup::new(
-        "jk-order".into(),
-        "jk-order-dind".into(),
-        "jk-order-certs".into(),
-        "jk-order-net".into(),
-        std::env::temp_dir().join("jackin-order-sock"),
-    );
-    cleanup.set_dind_handle(ContainerHandle::new("jk-order-dind", "order-dind-id").unwrap());
-    cleanup_after_grant_failure(&cleanup, &docker).await;
-    let recorded = docker.recorded.borrow();
-    assert!(
-        recorded.iter().any(|c| c == "docker rm -f jk-order-dind"),
-        "post-grant-failure cleanup must tear down DinD; recorded: {recorded:?}"
-    );
 }
 
 #[test]

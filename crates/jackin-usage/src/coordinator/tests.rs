@@ -677,6 +677,148 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 }
 
+/// Fail a real filesystem write after Queued has been durably stored.
+struct UpdatingFailureStore {
+    inner: FileAccountStateStore,
+    accounts: std::path::PathBuf,
+    saved_accounts: std::path::PathBuf,
+    failed_updates: AtomicUsize,
+    persistent: bool,
+}
+
+impl UpdatingFailureStore {
+    fn restore(&self) {
+        std::fs::remove_file(&self.accounts).unwrap();
+        std::fs::rename(&self.saved_accounts, &self.accounts).unwrap();
+    }
+}
+
+impl AccountStateStore for UpdatingFailureStore {
+    fn load(
+        &self,
+        capability: &UsageAccountCapability,
+        now_epoch: i64,
+    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+        self.inner.load(capability, now_epoch)
+    }
+
+    fn store(
+        &self,
+        envelope: &AccountStateEnvelope,
+        now_epoch: i64,
+    ) -> Result<(), StateStoreError> {
+        if envelope.phase == UsageRefreshPhase::Updating
+            && self.failed_updates.fetch_add(1, Ordering::SeqCst) == 0
+        {
+            std::fs::rename(&self.accounts, &self.saved_accounts).unwrap();
+            std::fs::write(&self.accounts, b"fixture blocks account directory").unwrap();
+            let result = self.inner.store(envelope, now_epoch);
+            assert_eq!(result, Err(StateStoreError::Unavailable));
+            if !self.persistent {
+                self.restore();
+            }
+            return result;
+        }
+        self.inner.store(envelope, now_epoch)
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.inner.purge(capability)
+    }
+}
+
+fn assert_updating_store_failure_terminates(persistent: bool) {
+    let (completed, completion) = mpsc::channel();
+    // Own the coordinator inside this thread: a broken worker's Drop must not
+    // keep the test harness waiting beyond the regression's bounded deadline.
+    let fixture = std::thread::spawn(move || {
+        let temp = tempfile::tempdir().unwrap();
+        let accounts = temp.path().join("accounts");
+        let store = Arc::new(UpdatingFailureStore {
+            inner: FileAccountStateStore::at(accounts.clone()),
+            accounts,
+            saved_accounts: temp.path().join("saved-accounts"),
+            failed_updates: AtomicUsize::new(0),
+            persistent,
+        });
+        let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+            quota_view(1_000, 80),
+        )));
+        let account = capability("account-a");
+        let coordinator = UsageCoordinator::with_catalog(
+            Arc::<ImmediateExecutor>::clone(&executor),
+            Arc::<UpdatingFailureStore>::clone(&store),
+            UsageCoordinatorConfig::default(),
+            [catalog_entry(&account, "revision-a")],
+        );
+        let queued = coordinator
+            .request_refresh(&account, 0, true, 1_000)
+            .unwrap();
+        let terminal =
+            coordinator.join_generation(&account, queued.generation, Duration::from_secs(2), 1_001);
+        if persistent {
+            assert_eq!(
+                terminal.unwrap_err().kind,
+                UsageCoordinationErrorKind::Unavailable
+            );
+            assert!(
+                coordinator.is_idle(),
+                "failed persistence must release ownership"
+            );
+            assert_eq!(
+                coordinator.current(&account, 1_001).unwrap_err().kind,
+                UsageCoordinationErrorKind::Unavailable
+            );
+            store.restore();
+        } else {
+            let terminal = terminal.unwrap();
+            assert_eq!(terminal.generation, queued.generation);
+            assert_eq!(terminal.phase, UsageRefreshPhase::Failed);
+            assert_eq!(
+                terminal.error.unwrap().kind,
+                UsageCoordinationErrorKind::Unavailable
+            );
+        }
+        let recovered = coordinator.current(&account, 1_002).unwrap();
+        assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+        assert_eq!(
+            recovered.error.unwrap().kind,
+            UsageCoordinationErrorKind::Unavailable
+        );
+        let durable = store.load(&account, 1_002).unwrap().unwrap();
+        assert_eq!(durable.phase, UsageRefreshPhase::Failed);
+        assert_eq!(durable.generation, queued.generation);
+        assert_eq!(durable.consecutive_failures, 1);
+        let joined = join_ok(&coordinator, &account, queued.generation, 1_002);
+        assert_eq!(joined.phase, UsageRefreshPhase::Failed);
+        assert_eq!(
+            joined.error.unwrap().kind,
+            UsageCoordinationErrorKind::Unavailable
+        );
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(store.failed_updates.load(Ordering::SeqCst), 1);
+        assert!(coordinator.is_idle());
+        coordinator.reconcile_catalog([], 1_003).unwrap();
+        assert_eq!(store.load(&account, 1_003).unwrap(), None);
+        drop(coordinator);
+        completed.send(()).unwrap();
+    });
+    completion
+        .recv_timeout(Duration::from_secs(5))
+        .expect("Updating store failure deadlocked terminal transition or worker shutdown");
+    fixture.join().unwrap();
+}
+
+#[test]
+fn coordinator_updating_store_failure_terminates_owner() {
+    assert_updating_store_failure_terminates(false);
+}
+
+#[test]
+fn coordinator_updating_store_failure_recovers_after_terminal_store_failure() {
+    assert_updating_store_failure_terminates(true);
+}
+
 fn catalog_entry(account: &UsageAccountCapability, revision: &str) -> UsageCatalogEntry {
     UsageCatalogEntry {
         capability: account.clone(),

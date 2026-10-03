@@ -164,18 +164,7 @@ pub async fn eject_role(
 ) -> anyhow::Result<()> {
     let _timing = cleanup_timing("eject_role");
     match super::backend::backend_for_state(paths, container_name) {
-        InstanceBackend::Docker => {
-            let role_handle = resolve_container_handle(docker, container_name).await?;
-            let dind_handle = resolve_dind_handle_for_state(paths, container_name, docker).await?;
-            eject_docker_role_with_handles(
-                paths,
-                container_name,
-                docker,
-                &role_handle,
-                dind_handle.as_ref(),
-            )
-            .await
-        }
+        InstanceBackend::Docker => eject_docker_role(paths, container_name, docker).await,
         InstanceBackend::AppleContainer => {
             super::backend::AppleContainerBackend::production()
                 .eject(paths, container_name)
@@ -189,14 +178,16 @@ pub(crate) async fn eject_docker_role(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    let role_handle = resolve_container_handle(docker, container_name).await?;
-    let dind_handle = resolve_dind_handle_for_state(paths, container_name, docker).await?;
-    eject_docker_role_with_handles(
+    let (resources, role, dind) =
+        resolve_cleanup_handles_for_state(paths, container_name, None, docker).await?;
+    let role = role.ok_or_else(|| anyhow::anyhow!("container {container_name} is not present"))?;
+    eject_docker_role_with_resources(
         paths,
         container_name,
         docker,
-        &role_handle,
-        dind_handle.as_ref(),
+        &role,
+        dind.as_ref(),
+        &resources,
     )
     .await
 }
@@ -212,7 +203,49 @@ pub(crate) async fn eject_docker_role_with_handles(
     role_handle: &ContainerHandle,
     dind_handle: Option<&ContainerHandle>,
 ) -> anyhow::Result<()> {
-    let resources = docker_resources_for_state(paths, container_name);
+    // Persisted state must authorize reconnect/eject handles too. Handles
+    // supplied by an in-flight launch without a manifest remain captured
+    // creation identities, rather than a restart name lookup.
+    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
+    if let Some(manifest) = manifest.as_ref() {
+        let identity = manifest.docker_identity.as_ref().ok_or_else(|| anyhow::anyhow!(
+            "Docker ownership identity unavailable for {container_name}; refusing destructive cleanup"
+        ))?;
+        anyhow::ensure!(
+            role_handle.id() == identity.role_container_id,
+            "role container ownership identity mismatch for {container_name}"
+        );
+        if let Some(handle) = dind_handle {
+            anyhow::ensure!(
+                Some(handle.id()) == identity.dind_container_id.as_deref(),
+                "DinD container ownership identity mismatch for {}",
+                handle.name()
+            );
+        }
+    }
+    let resources = manifest.map_or_else(
+        || DockerResources::from_container_name(container_name),
+        |manifest| manifest.docker,
+    );
+    eject_docker_role_with_resources(
+        paths,
+        container_name,
+        docker,
+        role_handle,
+        dind_handle,
+        &resources,
+    )
+    .await
+}
+
+async fn eject_docker_role_with_resources(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+    role_handle: &ContainerHandle,
+    dind_handle: Option<&ContainerHandle>,
+    resources: &DockerResources,
+) -> anyhow::Result<()> {
     anyhow::ensure!(
         role_handle.name() == container_name,
         "role container handle name mismatch: expected {container_name}, got {}",
@@ -258,13 +291,77 @@ pub(crate) async fn eject_docker_role_with_handles(
     Ok(())
 }
 
-async fn resolve_container_handle(
+/// One immutable authority snapshot for the complete destructive preflight.
+pub(crate) async fn resolve_cleanup_handles_for_state(
+    paths: &JackinPaths,
+    container_name: &str,
+    known_role: Option<&ContainerHandle>,
     docker: &impl DockerApi,
-    name: &str,
+) -> anyhow::Result<(
+    DockerResources,
+    Option<ContainerHandle>,
+    Option<ContainerHandle>,
+)> {
+    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
+    let resources = manifest.as_ref().map_or_else(
+        || DockerResources::from_container_name(container_name),
+        |manifest| manifest.docker.clone(),
+    );
+    let identity = manifest
+        .as_ref()
+        .and_then(|manifest| manifest.docker_identity.as_ref());
+    if let Some(known) = known_role {
+        let identity = identity.ok_or_else(|| {
+            anyhow::anyhow!("Docker ownership identity unavailable for {container_name}")
+        })?;
+        anyhow::ensure!(
+            known.name() == container_name && known.id() == identity.role_container_id,
+            "role container ownership identity mismatch before destructive cleanup for {container_name}"
+        );
+    }
+    let role = resolve_owned_container_handle(
+        docker,
+        container_name,
+        identity.map(|identity| identity.role_container_id.as_str()),
+    )
+    .await?;
+    let dind = match resources.dind_container.as_deref() {
+        Some(name) => {
+            resolve_owned_container_handle(
+                docker,
+                name,
+                identity.and_then(|identity| identity.dind_container_id.as_deref()),
+            )
+            .await?
+        }
+        None => None,
+    };
+    Ok((resources, role, dind))
+}
+
+/// Resolve only identities belonging to the recorded launch. A name lookup
+/// checks absence/replacement; it can never establish ownership.
+pub(crate) async fn resolve_role_handle_for_state(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
 ) -> anyhow::Result<ContainerHandle> {
-    resolve_optional_container_handle(docker, name)
+    resolve_optional_role_handle_for_state(paths, container_name, docker)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("container {name} is not present"))
+        .ok_or_else(|| anyhow::anyhow!("container {container_name} is not present"))
+}
+
+pub(crate) async fn resolve_optional_role_handle_for_state(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<ContainerHandle>> {
+    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
+    let expected_id = manifest
+        .as_ref()
+        .and_then(|manifest| manifest.docker_identity.as_ref())
+        .map(|identity| identity.role_container_id.as_str());
+    resolve_owned_container_handle(docker, container_name, expected_id).await
 }
 
 pub(crate) async fn resolve_dind_handle_for_state(
@@ -272,11 +369,38 @@ pub(crate) async fn resolve_dind_handle_for_state(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<ContainerHandle>> {
-    let resources = docker_resources_for_state(paths, container_name);
+    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
+    let resources = manifest.as_ref().map_or_else(
+        || DockerResources::from_container_name(container_name),
+        |manifest| manifest.docker.clone(),
+    );
+    let expected_id = manifest
+        .as_ref()
+        .and_then(|manifest| manifest.docker_identity.as_ref())
+        .and_then(|identity| identity.dind_container_id.as_deref());
     match resources.dind_container.as_deref() {
-        Some(name) => resolve_optional_container_handle(docker, name).await,
+        Some(name) => resolve_owned_container_handle(docker, name, expected_id).await,
         None => Ok(None),
     }
+}
+
+async fn resolve_owned_container_handle(
+    docker: &impl DockerApi,
+    name: &str,
+    expected_id: Option<&str>,
+) -> anyhow::Result<Option<ContainerHandle>> {
+    let Some(handle) = resolve_optional_container_handle(docker, name).await? else {
+        return Ok(None);
+    };
+    let expected_id = expected_id.filter(|id| !id.is_empty()).ok_or_else(|| anyhow::anyhow!(
+        "Docker ownership identity unavailable for {name}; refusing lifecycle changes; recover the original launch identity explicitly"
+    ))?;
+    anyhow::ensure!(
+        handle.id() == expected_id,
+        "Docker ownership identity mismatch for {name}: recorded {expected_id}, found {}; refusing lifecycle changes",
+        handle.id()
+    );
+    Ok(Some(ContainerHandle::new(name, expected_id)?))
 }
 
 pub(crate) async fn resolve_optional_container_handle(
@@ -297,16 +421,12 @@ pub(crate) async fn resolve_optional_container_handle(
 pub(crate) fn docker_resources_for_state(
     paths: &JackinPaths,
     container_name: &str,
-) -> DockerResources {
-    let state_dir = paths.data_dir.join(container_name);
-    let manifest = InstanceManifest::read_optional(&state_dir).unwrap_or_else(|_| {
-        let _warning = jackin_telemetry::record_recovered_degradation();
-        None
-    });
-    manifest.map_or_else(
+) -> anyhow::Result<DockerResources> {
+    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
+    Ok(manifest.map_or_else(
         || DockerResources::from_container_name(container_name),
         |manifest| manifest.docker,
-    )
+    ))
 }
 
 async fn ensure_backend_absent_for_purge(

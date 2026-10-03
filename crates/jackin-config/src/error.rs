@@ -106,9 +106,20 @@ pub enum ConfigError {
 pub type ConfigResult<T> = Result<T, ConfigError>;
 
 impl ConfigError {
-    /// Wrap a free-form message as [`ConfigError::Message`].
-    pub fn msg(message: impl Into<String>) -> Self {
-        Self::Message(message.into())
+    /// Format an operator-facing message with compiler-checked arguments.
+    ///
+    /// Use `format_args!("message {value}")` for interpolation. To include a
+    /// literal format-looking string, pass it as data: `format_args!("{}", text)`.
+    ///
+    /// Raw strings cannot silently bypass formatting:
+    ///
+    /// ```compile_fail
+    /// use jackin_config::ConfigError;
+    /// let name = "project";
+    /// let _ = ConfigError::msg("workspace {name} already exists");
+    /// ```
+    pub fn msg(message: std::fmt::Arguments<'_>) -> Self {
+        Self::Message(message.to_string())
     }
 
     pub(crate) fn telemetry_owned(self) -> Self {
@@ -123,3 +134,6 @@ impl ConfigError {
         matches!(self, Self::TelemetryOwned(_))
     }
 }
+
+#[cfg(test)]
+mod tests;

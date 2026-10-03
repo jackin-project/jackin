@@ -19,7 +19,7 @@ impl ConfigEditor {
         let existing: crate::AppConfig = toml::from_str(&self.doc.to_string())?;
         for (other_id, other) in &existing.accounts {
             if other_id != id && same_credential_source(account, other) {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "credential source already registered as {other_id:?}"
                 )));
             }
@@ -69,7 +69,7 @@ impl ConfigEditor {
         let account = existing
             .accounts
             .get(id)
-            .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
+            .ok_or_else(|| ConfigError::msg(format_args!("unknown account {id:?}")))?;
         let source_fingerprint = account_source_fingerprint(account);
         let mut candidate = self.doc.clone();
         if candidate
@@ -77,7 +77,7 @@ impl ConfigEditor {
             .and_then(Item::as_table_mut)
             .is_none_or(|table| table.remove(id).is_none())
         {
-            return Err(ConfigError::msg(format!("unknown account {id:?}")));
+            return Err(ConfigError::msg(format_args!("unknown account {id:?}")));
         }
         remove_bindings(candidate.as_table_mut(), id);
         let mut workspaces = self.workspace_docs.clone();
@@ -137,15 +137,15 @@ impl ConfigEditor {
                 .get(id)
                 .is_some_and(|account| account.supports_agent(agent))
             {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "account {id:?} is disabled or incompatible with {agent}"
                 )));
             }
         }
         if role.is_some() && workspace.is_none() {
-            return Err(ConfigError::msg(
-                "role account bindings require a workspace",
-            ));
+            return Err(ConfigError::msg(format_args!(
+                "role account bindings require a workspace"
+            )));
         }
         let mut global = self.doc.clone();
         let mut docs = self.workspace_docs.clone();

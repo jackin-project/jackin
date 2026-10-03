@@ -44,6 +44,7 @@ fn broker_service_lifecycle() {
     let _ignored = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("workspace test state");
     let data_dir = root.join("data");
+    let cleanup = FixtureBrokerCleanup(data_dir.clone());
     let config_root = root.join("config");
     let operator_home = root.join("home");
     fs::create_dir_all(&config_root).expect("config root");
@@ -77,9 +78,13 @@ fn broker_service_lifecycle() {
             ensure_usage_broker_process(config, &scope).expect("broker starts")
         }));
     }
-    let clients = activators
+    let activator_results = activators
         .into_iter()
-        .map(|activator| activator.join().expect("activator thread"))
+        .map(thread::JoinHandle::join)
+        .collect::<Vec<_>>();
+    let clients = activator_results
+        .into_iter()
+        .map(|result| result.expect("activator thread"))
         .collect::<Vec<_>>();
     let client = clients[0].clone();
     let projection_ids = clients
@@ -117,6 +122,7 @@ fn broker_service_lifecycle() {
         "service outlives activator"
     );
     drop(client);
+    drop(cleanup);
     let _ignored = fs::remove_dir_all(&root);
 }
 
@@ -132,17 +138,7 @@ fn client_socket(client: &jackin_usage::host::UsageBrokerClient) -> PathBuf {
 #[cfg(unix)]
 #[test]
 fn broker_detaches_from_activating_session() {
-    use nix::sys::signal::{Signal, kill};
     use nix::unistd::{Pid, getsid};
-
-    struct KillOnDrop(Option<i32>);
-    impl Drop for KillOnDrop {
-        fn drop(&mut self) {
-            if let Some(pid) = self.0.take() {
-                let _ignored = kill(Pid::from_raw(pid), Signal::SIGKILL);
-            }
-        }
-    }
 
     // Sibling of (never a child of) the parallel lifecycle test's root:
     // its start/end `remove_dir_all` would otherwise reap our socket.
@@ -167,18 +163,12 @@ fn broker_detaches_from_activating_session() {
         config_root,
         operator_home,
     };
+    let cleanup = FixtureBrokerCleanup(data_dir.clone());
     let client = ensure_usage_broker_process(config.clone(), &scope).expect("broker starts");
     let socket = data_dir.join("usage-broker/run/usage-broker.sock");
     assert!(socket.exists(), "broker serves its socket");
 
-    let lease_bytes = fs::read(data_dir.join("usage-broker/run/leader.pid")).expect("leader lease");
-    let lease: serde_json::Value = serde_json::from_slice(&lease_bytes).expect("lease json");
-    let pid = lease
-        .get("process_id")
-        .and_then(serde_json::Value::as_i64)
-        .and_then(|pid| i32::try_from(pid).ok())
-        .expect("lease process id");
-    let cleanup = KillOnDrop(Some(pid));
+    let pid = fixture_broker_pid(&cleanup.0).expect("fixture broker pid");
 
     // A detached broker leads its own session: session id == pid, and
     // never the activator's session, so the activator's terminal HUP
@@ -207,4 +197,28 @@ fn broker_detaches_from_activating_session() {
 
 fn workspace_state_dir() -> PathBuf {
     PathBuf::from("target/ubt").join(std::process::id().to_string())
+}
+
+/// Own cleanup before activation so startup failures cannot leave a service.
+struct FixtureBrokerCleanup(PathBuf);
+
+impl Drop for FixtureBrokerCleanup {
+    fn drop(&mut self) {
+        if let Some(pid) = fixture_broker_pid(&self.0) {
+            let _ignored = nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(pid),
+                nix::sys::signal::Signal::SIGKILL,
+            );
+        }
+    }
+}
+
+/// Read authority only from this test's isolated data directory.
+fn fixture_broker_pid(data_dir: &std::path::Path) -> Option<i32> {
+    let lease_bytes = fs::read(data_dir.join("usage-broker/run/leader.pid")).ok()?;
+    let lease: serde_json::Value = serde_json::from_slice(&lease_bytes).ok()?;
+    lease
+        .get("process_id")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|pid| i32::try_from(pid).ok())
 }

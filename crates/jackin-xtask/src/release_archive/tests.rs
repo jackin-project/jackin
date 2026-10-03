@@ -6,7 +6,10 @@ use super::*;
 #[test]
 fn jackin_owns_every_release_target() {
     assert_eq!(targets(ArchivePackage::Jackin), &JACKIN_TARGETS);
-    assert_eq!(binaries(ArchivePackage::Jackin), &["jackin", "jackin-role"]);
+    assert_eq!(
+        binaries(ArchivePackage::Jackin),
+        &["jackin", "jackin-role", "jackin-usage-broker"]
+    );
 }
 
 #[test]

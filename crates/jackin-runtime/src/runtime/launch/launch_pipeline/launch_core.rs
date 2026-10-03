@@ -73,5 +73,8 @@ where
     D: DockerApi,
     R: CommandRunner,
 {
-    orchestrate::run_launch_phases(ctx).await
+    // Bound the phase state carried by callers. Embedding this concrete future
+    // through every launch adapter multiplies debug poll frames and can exhaust
+    // the default Linux test-thread stack during successful launches.
+    Box::pin(orchestrate::run_launch_phases(ctx)).await
 }

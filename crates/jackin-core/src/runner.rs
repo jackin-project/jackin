@@ -57,6 +57,11 @@ pub struct RunOptions {
     /// Enforced by implementors that own real processes (`ShellRunner`);
     /// fakes may ignore it.
     pub timeout: Option<std::time::Duration>,
+    /// Directory descriptor retained through spawn. Unix runners enter this
+    /// directory in the child, so renaming/replacing its pathname cannot
+    /// redirect the command. Mutually exclusive with a pathname cwd.
+    #[cfg(unix)]
+    pub pinned_cwd: Option<Arc<std::fs::File>>,
 }
 
 impl Default for RunOptions {
@@ -72,6 +77,8 @@ impl Default for RunOptions {
             tee_to_build_log: false,
             build_log_sink: None,
             timeout: None,
+            #[cfg(unix)]
+            pinned_cwd: None,
         }
     }
 }
@@ -107,6 +114,22 @@ pub trait CommandRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
+    /// Capture stdout with invocation options, including a pinned directory.
+    /// Implementations without descriptor support must fail closed.
+    async fn capture_with_options(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<String> {
+        #[cfg(unix)]
+        if opts.pinned_cwd.is_some() {
+            anyhow::bail!("runner does not support descriptor-pinned working directories");
+        }
+        let _ = opts;
+        self.capture(program, args, cwd).await
+    }
     /// Run and return captured stdout+stderr merged (`2>&1` semantics).
     ///
     /// For post-mortem reads where the failure may live on either stream

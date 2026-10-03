@@ -74,7 +74,7 @@ fn require_broker_sibling(jackin: &str) {
         .join("jackin-usage-broker");
     assert!(
         broker_sibling.is_file(),
-        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin-runtime --bin jackin-usage-broker` first.",
+        "e2e tests require the jackin-usage-broker sibling next to {jackin} (got {}). Run `cargo build -p jackin --bins` first.",
         broker_sibling.display()
     );
     #[cfg(unix)]

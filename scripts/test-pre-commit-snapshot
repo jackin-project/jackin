@@ -2,364 +2,391 @@
 set -eu
 
 repo_root=$(git rev-parse --show-toplevel)
-hook="$repo_root/scripts/pre-commit-snapshot"
+hook=${HOOK_UNDER_TEST:-"$repo_root/scripts/pre-commit-snapshot"}
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-fixture.XXXXXX")
 fake_bin=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-bin.XXXXXX")
 snapshot_tmp=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-tmp.XXXXXX")
-marker="$fixture/interrupt.marker"
-mise_pid_file="$fixture/mise.pid"
-race_marker="$snapshot_tmp/race.marker"
-stash_marker="$snapshot_tmp/stash.marker"
-stash_pid_file="$fixture/stash.pid"
-clear_marker="$snapshot_tmp/clear.marker"
-clear_pid_file="$fixture/clear.pid"
-unborn_fixture=$(mktemp -d "${TMPDIR:-/tmp}/jackin-hook-unborn.XXXXXX")
-trap 'rm -rf "$fixture" "$fake_bin" "$snapshot_tmp" "$unborn_fixture"' EXIT
-
-mode_of() {
-    stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
-}
+trap 'rm -rf "$fixture" "$fake_bin" "$snapshot_tmp"' EXIT
+snapshot_tmp=$(cd "$snapshot_tmp" && pwd -P)
+export FIXTURE_ROOT="$fixture" SNAPSHOT_TMP="$snapshot_tmp"
+export GIT_OPTIONAL_LOCKS=0
 
 git -C "$fixture" init -q
 git -C "$fixture" config user.name "Jackin hook fixture"
 git -C "$fixture" config user.email "jackin-hook-fixture@example.invalid"
 git -C "$fixture" config core.fileMode true
-
+printf '%s\n' '[toolchain]' 'channel = "1.97.1"' > "$fixture/rust-toolchain.toml"
+printf '%s\n' 'ignored*' target > "$fixture/.gitignore"
+printf '%s\n' base > "$fixture/partial.txt"
+printf '%s\n' base > "$fixture/deleted.txt"
+printf '%s\n' executable > "$fixture/mode.sh"
+chmod 644 "$fixture/mode.sh"
+ln -s partial.txt "$fixture/tracked-link"
 newline_name=$(printf 'newline\nname.txt')
 export NEWLINE_FILE="$newline_name"
-
-printf '%s\n' 'ignored.bin' 'ignored-*' > "$fixture/.gitignore"
-printf '%s\n' base > "$fixture/partial.txt"
-printf '%s\n' base > "$fixture/unstaged.txt"
-printf '%s\n' base > "$fixture/staged.txt"
-printf '\001\002\003base\n' > "$fixture/tracked.bin"
-printf '%s\n' base > "$fixture/tracked-link-target"
-ln -s tracked-link-target "$fixture/tracked-link"
 printf '%s\n' base > "$fixture/$newline_name"
-printf '%s\n' mode > "$fixture/mode.sh"
-chmod 644 "$fixture/mode.sh"
 git -C "$fixture" add .
 git -C "$fixture" commit -q -m baseline
-
-# Keep a pre-existing stash: the hook must leave the user stash stack untouched.
-printf '%s\n' retained > "$fixture/retained.txt"
-git -C "$fixture" stash push --all --message pre-existing >/dev/null
-before_stashes=$(git -C "$fixture" stash list --format='%H %gs')
-
+printf '%s\n' stash > "$fixture/stash.txt"
+git -C "$fixture" stash push --all --message retained >/dev/null
 printf '%s\n' staged > "$fixture/partial.txt"
-git -C "$fixture" add partial.txt
-printf '%s\n' staged worktree > "$fixture/partial.txt"
-printf '%s\n' worktree > "$fixture/unstaged.txt"
-printf '%s\n' staged-change > "$fixture/staged.txt"
-git -C "$fixture" add staged.txt
-printf '\004\005\006worktree\n' > "$fixture/tracked.bin"
+printf '%s\n' staged-new > "$fixture/new.txt"
+chmod 755 "$fixture/mode.sh"
 rm "$fixture/tracked-link"
-ln -s worktree-link-target "$fixture/tracked-link"
-printf '%s\n' worktree > "$fixture/$newline_name"
-chmod 751 "$fixture/mode.sh"
+ln -s new.txt "$fixture/tracked-link"
+git -C "$fixture" rm -q deleted.txt
+git -C "$fixture" add partial.txt new.txt mode.sh tracked-link
+printf '%s\n' unstaged > "$fixture/partial.txt"
+printf '%s\n' unstaged-new > "$fixture/new.txt"
+printf '%s\n' recreated > "$fixture/deleted.txt"
+printf '%s\n' dirty > "$fixture/$newline_name"
 chmod 751 "$fixture/$newline_name"
-printf '\007\010\011untracked\n' > "$fixture/untracked.bin"
+printf '%s\n' untracked > "$fixture/untracked.bin"
 chmod 640 "$fixture/untracked.bin"
 printf '%s\n' ignored > "$fixture/ignored.bin"
-chmod 751 "$fixture/ignored.bin"
-printf '%s\n' ignored-target > "$fixture/ignored-target"
-ln -s ignored-target "$fixture/ignored-link"
-printf '%s\n' untracked > "$fixture/ignored-note.txt"
-mkdir -p "$fixture/ignored-empty/nested"
+mkdir -p "$fixture/ignored-empty/nested" "$fixture/ignored-build"
+printf '%s\n' compiler-artifact > "$fixture/ignored-build/artifact"
 chmod 700 "$fixture/ignored-empty"
-chmod 711 "$fixture/ignored-empty/nested"
-mkdir "$fixture/untracked-empty"
-chmod 750 "$fixture/untracked-empty"
+ln -s ignored-build "$fixture/target"
 
+# Check contents AND inode/mode/timestamps during the gate. A destructive
+# clear-and-restore implementation cannot pass by reconstructing equal bytes.
+cat > "$fake_bin/assert-live" <<'EOF'
+#!/bin/sh
+set -eu
+cd "$FIXTURE_ROOT"
+for path in . .git/index .git/HEAD .git/config .git/refs/stash .git/logs/refs/stash \
+    partial.txt new.txt deleted.txt mode.sh tracked-link "$NEWLINE_FILE" \
+    untracked.bin ignored.bin ignored-empty ignored-empty/nested \
+    ignored-build ignored-build/artifact target; do
+    printf '%s\n' "$path"
+    if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+        printf '%s\n' "error: live path vanished during gate: $path" >&2
+        exit 1
+    fi
+    stat -f '%i %p %m %c %z' "$path" 2>/dev/null || stat -c '%i %f %Y %Z %s' "$path"
+    if [ -L "$path" ]; then
+        readlink "$path"
+    elif [ -f "$path" ]; then
+        git hash-object -- "$path"
+    fi
+done
+EOF
+chmod +x "$fake_bin/assert-live"
+"$fake_bin/assert-live" > "$fake_bin/before"
+export LIVE_BASELINE="$fake_bin/before"
+
+# mise prepares the environment; only the post-mise launcher may pin PATH.
+export TOOLCHAIN_FIXTURE="$fake_bin/pinned"
+mkdir "$TOOLCHAIN_FIXTURE"
+TOOLCHAIN_FIXTURE=$(cd "$TOOLCHAIN_FIXTURE" && pwd -P)
 cat > "$fake_bin/mise" <<'EOF'
 #!/bin/sh
 set -eu
-
-[ "$1" = x ]
-[ "$2" = -- ]
-[ "$3" = hk ]
-
-mode_of() {
-    stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
-}
-
-if [ "${FIXTURE_MODE:-}" = unborn ]; then
-    test "$(cat staged.txt)" = staged
-    exit 0
-fi
-
-test "$(cat partial.txt)" = "staged"
-test "$(cat unstaged.txt)" = "base"
-test "$(cat staged.txt)" = "staged-change"
-printf '\001\002\003base\n' | cmp -s - tracked.bin
-test "$(readlink tracked-link)" = tracked-link-target
-test "$(cat "$NEWLINE_FILE")" = base
-test "$(mode_of "$NEWLINE_FILE")" = 644
-test "$(mode_of mode.sh)" = 644
-test ! -e untracked.bin
-test ! -e ignored.bin
-test ! -L ignored-link
-test ! -e ignored-empty
-test ! -e untracked-empty
-
-case "${FIXTURE_MODE:-success}" in
-    success)
-        ;;
-    generated)
-        printf '%s\n' generated > generated.txt
-        printf '%s\n' ignored-generated > ignored-generated.bin
-        ;;
-    fail)
-        exit 23
-        ;;
-    tamper)
-        printf '%s\n' tampered > tamper.txt
-        git stash push --all --keep-index --message fixture-tamper >/dev/null
-        ;;
-    interrupt)
-        : > "$FIXTURE_MARKER"
-        printf '%s\n' "$$" > "$FIXTURE_MISE_PID"
-        trap 'exit 143' HUP INT TERM
-        while :; do sleep 1; done
-        ;;
-    generated-interrupt)
-        printf '%s\n' generated > generated.txt
-        printf '%s\n' ignored-generated > ignored-generated.bin
-        : > "$FIXTURE_MARKER"
-        printf '%s\n' "$$" > "$FIXTURE_MISE_PID"
-        trap 'exit 143' HUP INT TERM
-        while :; do sleep 1; done
-        ;;
-    *)
-        exit 64
-        ;;
+case "$1" in
+    x)
+        shift; test "$1" = --; shift
+        export CARGO_TARGET_DIR="$FIXTURE_ROOT/target" CARGO_BUILD_BUILD_DIR="$FIXTURE_ROOT/ignored-build"
+        export RUSTC_WRAPPER="${TOOLCHAIN_FIXTURE%/pinned}/cargo"
+        export RUSTC_WORKSPACE_WRAPPER="$RUSTC_WRAPPER"
+        export RUSTFMT=/usr/bin/true CARGO_ALIAS_XTASK=noop
+        export CARGO_BUILD_JOBS=999 NEXTEST_TEST_THREADS=999
+        exec "$@" ;;
+    which)
+        case "$2" in
+            rustup) printf "%s\n" "$TOOLCHAIN_FIXTURE/rustup" ;;
+            hk|actionlint|swiftlint) printf "%s\n" "${TOOLCHAIN_FIXTURE%/pinned}/$2" ;;
+            *) exit 71 ;;
+        esac ;;
+    *) exit 72 ;;
 esac
 EOF
-chmod +x "$fake_bin/mise"
-
-real_git=$(command -v git)
-cat > "$fake_bin/git" <<'EOF'
+cat > "$TOOLCHAIN_FIXTURE/rustup" <<'EOF'
 #!/bin/sh
 set -eu
-
-if [ "${FIXTURE_MODE:-}" = race ] &&
-    [ "${1:-}" = update-ref ] &&
-    [ "${2:-}" = --stdin ]; then
-    update_input=$(mktemp "$RACE_TMP/update-ref.XXXXXX")
-    cat > "$update_input"
-    if grep -F 'delete refs/jackin/pre-commit-snapshot/' "$update_input" >/dev/null &&
-        [ ! -e "$RACE_MARKER" ]; then
-        : > "$RACE_MARKER"
-        "$REAL_GIT" stash push --all --message fixture-race >/dev/null
-    fi
-    set +e
-    "$REAL_GIT" "$@" < "$update_input"
-    status=$?
-    set -e
-    rm -f "$update_input"
-    exit "$status"
-fi
-
-if [ "${FIXTURE_MODE:-}" = stash-interrupt ] &&
-    [ "${1:-}" = stash ] &&
-    [ "${2:-}" = create ]; then
-    : > "$STASH_MARKER"
-    printf '%s\n' "$$" > "$STASH_PID_FILE"
-    trap 'exit 143' HUP INT TERM
-    while :; do sleep 1; done
-fi
-
-if [ "${FIXTURE_MODE:-}" = clear-interrupt ] &&
-    [ "${1:-}" = restore ] &&
-    [ "${2:-}" = --worktree ] &&
-    [ ! -e "$CLEAR_MARKER" ]; then
-    : > "$CLEAR_MARKER"
-    printf '%s\n' "$$" > "$CLEAR_PID_FILE"
-    trap 'exit 143' HUP INT TERM
-    while :; do sleep 1; done
-fi
-
-exec "$REAL_GIT" "$@"
+test "$1" = which
+test "$2" = --toolchain
+test "$3" = 1.97.1
+printf "%s\n" "$TOOLCHAIN_FIXTURE/$4"
 EOF
-chmod +x "$fake_bin/git"
+for name in cargo rustc rustdoc clippy-driver rustfmt; do
+    cat > "$TOOLCHAIN_FIXTURE/$name" <<'EOF'
+#!/bin/sh
+set -eu
+name=${0##*/}
+test "$*" = '--version --verbose'
+if [ "${POISON_TOOLCHAIN:-}" = "$name" ]; then
+    printf "%s\n" "$name 1.96.0" 'release: 1.96.0' 'commit-hash: badbad'
+    exit 0
+fi
+case "$name" in
+    clippy-driver) printf "%s\n" 'clippy 0.1.97 (abcdef0123 2026-07-14)' ;;
+    rustfmt) printf "%s\n" 'rustfmt 1.9.0-stable (abcdef0123 2026-07-14)' ;;
+    *) printf "%s\n" "$name 1.97.1" 'release: 1.97.1' 'commit-hash: abcdef0123456789' ;;
+esac
+EOF
+    chmod +x "$TOOLCHAIN_FIXTURE/$name"
+done
+# Cached artifacts and ambient shims/wrappers must never be admitted.
+for name in cargo rustc rustdoc clippy-driver rustfmt; do
+    printf "%s\n" '#!/bin/sh' 'exit 73' > "$fake_bin/$name"
+    chmod +x "$fake_bin/$name"
+done
+for name in actionlint swiftlint; do
+    printf "%s\n" '#!/bin/sh' 'exit 0' > "$fake_bin/$name"
+    chmod +x "$fake_bin/$name"
+done
+chmod +x "$fake_bin/mise" "$TOOLCHAIN_FIXTURE/rustup"
 
-before_status=$(git -C "$fixture" status --porcelain=v1 --untracked-files=all --ignored=matching)
-before_partial=$(git -C "$fixture" hash-object "$fixture/partial.txt")
-before_unstaged=$(git -C "$fixture" hash-object "$fixture/unstaged.txt")
-before_staged=$(git -C "$fixture" hash-object "$fixture/staged.txt")
-before_binary=$(git -C "$fixture" hash-object "$fixture/tracked.bin")
-before_link=$(readlink "$fixture/tracked-link")
-before_newline=$(git -C "$fixture" hash-object "$fixture/$newline_name")
-before_newline_mode=$(mode_of "$fixture/$newline_name")
-before_mode=$(mode_of "$fixture/mode.sh")
-before_untracked=$(git -C "$fixture" hash-object "$fixture/untracked.bin")
-before_ignored=$(git -C "$fixture" hash-object "$fixture/ignored.bin")
+cat > "$fake_bin/hk" <<'EOF'
+#!/bin/sh
+set -eu
+[ "$*" = 'run pre-commit --from-hook fixture-arg' ]
+assert-live > "$SNAPSHOT_TMP/live-now"
+diff -u "$LIVE_BASELINE" "$SNAPSHOT_TMP/live-now"
+rm "$SNAPSHOT_TMP/live-now"
+[ "$PWD" != "$FIXTURE_ROOT" ]
+[ "$(git rev-parse --show-toplevel)" = "$(pwd -P)" ]
+[ "$(cat partial.txt)" = staged ]
+[ "$(cat new.txt)" = staged-new ]
+[ "$(cat "$NEWLINE_FILE")" = base ]
+[ "$(readlink tracked-link)" = new.txt ]
+[ ! -e deleted.txt ]
+[ ! -e untracked.bin ]
+[ ! -e ignored.bin ]
+[ ! -L target ]
+mode=$(stat -f '%Lp' mode.sh 2>/dev/null || stat -c '%a' mode.sh)
+[ "$mode" = 755 ]
+[ "$(git diff --cached --name-only | wc -l | tr -d ' ')" = 5 ]
+[ "$(git diff --name-only)" = '' ]
+[ "$RUSTC" = "$TOOLCHAIN_FIXTURE/rustc" ]
+[ "$RUSTDOC" = "$TOOLCHAIN_FIXTURE/rustdoc" ]
+[ "$CLIPPY_DRIVER" = "$TOOLCHAIN_FIXTURE/clippy-driver" ]
+[ "$RUSTFMT" = "$TOOLCHAIN_FIXTURE/rustfmt" ]
+[ "$CARGO_BUILD_JOBS" = 2 ]
+[ "$NEXTEST_TEST_THREADS" = 4 ]
+[ "${CARGO_ALIAS_XTASK+x}" = "" ]
+[ "$(command -v cargo)" = "$TOOLCHAIN_FIXTURE/cargo" ]
+[ "$RUSTC_WRAPPER$RUSTC_WORKSPACE_WRAPPER$CARGO_BUILD_RUSTC_WRAPPER$CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER" = "" ]
+case "$CARGO_BUILD_BUILD_DIR" in "$SNAPSHOT_TMP"/*/build) ;; *) exit 66 ;; esac
+[ ! -e "$CARGO_TARGET_DIR" ]
+[ ! -e "$CARGO_BUILD_BUILD_DIR" ]
+case "$CARGO_TARGET_DIR" in "$SNAPSHOT_TMP"/*/target) ;; *) exit 65 ;; esac
+printf '%s\n' "$PWD" > "$SNAPSHOT_TMP/active-path"
+mkdir -p "$CARGO_TARGET_DIR"
+printf '%s\n' generated > "$CARGO_TARGET_DIR/generated"
+printf '%s\n' ignored-output > "$CARGO_TARGET_DIR/ignored-generated.bin"
+case "${FIXTURE_MODE:-success}" in
+    success) ;;
+    fail) exit 23 ;;
+    new-source) printf '%s\n' uncommitted-source > extra.rs ;;
+    ignored-source) printf '%s\n' uncommitted-source > ignored-extra.rs ;;
+    fix) printf '%s\n' formatted > partial.txt ;;
+    interrupt)
+        (trap '' HUP INT TERM; while :; do : > "$SNAPSHOT_TMP/descendant-tick"; sleep 0.1; done) &
+        printf '%s\n' "$!" > "$SNAPSHOT_TMP/descendant-pid"
+        : > "$SNAPSHOT_TMP/ready"
+        trap 'exit 143' HUP INT TERM
+        while :; do sleep 0.1; done
+        ;;
+esac
+assert-live > "$SNAPSHOT_TMP/live-now"
+diff -u "$LIVE_BASELINE" "$SNAPSHOT_TMP/live-now"
+rm "$SNAPSHOT_TMP/live-now"
+EOF
+chmod +x "$fake_bin/hk"
 
-assert_restored() {
-    test "$(git -C "$fixture" status --porcelain=v1 --untracked-files=all --ignored=matching)" = "$before_status"
-    test "$(git -C "$fixture" hash-object "$fixture/partial.txt")" = "$before_partial"
-    test "$(git -C "$fixture" hash-object "$fixture/unstaged.txt")" = "$before_unstaged"
-    test "$(git -C "$fixture" hash-object "$fixture/staged.txt")" = "$before_staged"
-    test "$(git -C "$fixture" hash-object "$fixture/tracked.bin")" = "$before_binary"
-    test "$(readlink "$fixture/tracked-link")" = "$before_link"
-    test -f "$fixture/$newline_name"
-    test ! -e "$fixture/newline"
-    test "$(git -C "$fixture" hash-object "$fixture/$newline_name")" = "$before_newline"
-    test "$(mode_of "$fixture/$newline_name")" = "$before_newline_mode"
-    test "$(mode_of "$fixture/mode.sh")" = "$before_mode"
-    test "$(git -C "$fixture" hash-object "$fixture/untracked.bin")" = "$before_untracked"
-    test "$(git -C "$fixture" hash-object "$fixture/ignored.bin")" = "$before_ignored"
-    test "$(mode_of "$fixture/untracked.bin")" = 640
-    test "$(readlink "$fixture/ignored-link")" = ignored-target
-    test "$(mode_of "$fixture/ignored.bin")" = 751
-    test -d "$fixture/ignored-empty/nested"
-    test "$(mode_of "$fixture/ignored-empty")" = 700
-    test "$(mode_of "$fixture/ignored-empty/nested")" = 711
-    test -d "$fixture/untracked-empty"
-    test "$(mode_of "$fixture/untracked-empty")" = 750
-    test "$(git -C "$fixture" stash list --format='%H %gs')" = "$before_stashes"
-    test -z "$(git -C "$fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
+assert_cleaned() {
+    "$fake_bin/assert-live" | cmp -s - "$LIVE_BASELINE"
+    if [ -f "$snapshot_tmp/active-path" ]; then
+        test ! -e "$(cat "$snapshot_tmp/active-path")"
+    fi
+    rm -f "$snapshot_tmp/active-path" "$snapshot_tmp/ready" "$snapshot_tmp/descendant-pid" "$snapshot_tmp/descendant-tick"
     test -z "$(ls -A "$snapshot_tmp")"
 }
 
-preexisting_snapshot_ref=refs/jackin/pre-commit-snapshot
-preexisting_snapshot_oid=$(git -C "$fixture" rev-parse HEAD)
-git -C "$fixture" update-ref "$preexisting_snapshot_ref" "$preexisting_snapshot_oid"
-set +e
-(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=success REAL_GIT="$real_git" "$hook")
-status=$?
-set -e
-test "$status" -ne 0
-test "$(git -C "$fixture" rev-parse --verify "$preexisting_snapshot_ref")" = "$preexisting_snapshot_oid"
-assert_restored
-git -C "$fixture" update-ref -d "$preexisting_snapshot_ref"
+run_hook() {
+    (cd "$fixture" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" \
+        CARGO_TARGET_DIR="$fixture/target" CARGO_BUILD_BUILD_DIR="$fixture/ignored-build" \
+        RUSTC="$fake_bin/rustc" RUSTDOC="$fake_bin/rustdoc" CLIPPY_DRIVER="$fake_bin/clippy-driver" \
+        RUSTC_WRAPPER="$fake_bin/cargo" RUSTC_WORKSPACE_WRAPPER="$fake_bin/cargo" \
+        CARGO_BUILD_RUSTC_WRAPPER="$fake_bin/cargo" CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER="$fake_bin/cargo" FIXTURE_MODE="$1" "$hook" fixture-arg)
+}
 
-rm -f "$stash_marker" "$stash_pid_file"
-(cd "$fixture" && exec env TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=stash-interrupt REAL_GIT="$real_git" STASH_MARKER="$stash_marker" STASH_PID_FILE="$stash_pid_file" "$hook") &
+# A plausible toolchain directory alone cannot certify compiler identity.
+for name in cargo rustc rustdoc clippy-driver rustfmt; do
+    export POISON_TOOLCHAIN="$name"
+    if run_hook success; then exit 1; fi
+    test ! -f "$snapshot_tmp/active-path"
+    assert_cleaned
+done
+unset POISON_TOOLCHAIN
+run_hook success
+assert_cleaned
+if run_hook fail; then exit 1; else test "$?" -eq 23; fi
+assert_cleaned
+if run_hook new-source; then exit 1; fi
+assert_cleaned
+if run_hook ignored-source; then exit 1; fi
+assert_cleaned
+if run_hook fix; then exit 1; fi
+assert_cleaned
+# Fix evidence must contain the isolated change; original dirty bytes survive.
+patch=$(find "$fixture/.git/jackin-hook-evidence" -name '*.patch' -type f | while IFS= read -r candidate; do
+    if grep 'a/partial.txt' "$candidate" >/dev/null; then printf '%s\n' "$candidate"; fi
+done)
+test -n "$patch"
+git -C "$fixture" apply --numstat "$patch" | grep 'partial.txt' >/dev/null
+patch_mode=$(stat -f '%Lp' "$patch" 2>/dev/null || stat -c '%a' "$patch")
+test "$patch_mode" = 600
+
+(cd "$fixture" && exec env PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" \
+    CARGO_TARGET_DIR="$fixture/target" CARGO_BUILD_BUILD_DIR="$fixture/ignored-build" \
+        RUSTC="$fake_bin/rustc" RUSTDOC="$fake_bin/rustdoc" CLIPPY_DRIVER="$fake_bin/clippy-driver" \
+        RUSTC_WRAPPER="$fake_bin/cargo" RUSTC_WORKSPACE_WRAPPER="$fake_bin/cargo" \
+        CARGO_BUILD_RUSTC_WRAPPER="$fake_bin/cargo" CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER="$fake_bin/cargo" FIXTURE_MODE=interrupt "$hook" fixture-arg) &
 hook_pid=$!
 attempt=0
-while [ ! -f "$stash_marker" ] && [ "$attempt" -lt 50 ]; do
+while [ ! -f "$snapshot_tmp/ready" ] && [ "$attempt" -lt 100 ]; do
     sleep 0.1
     attempt=$((attempt + 1))
 done
-test -f "$stash_marker"
-stash_pid=$(cat "$stash_pid_file")
-kill -TERM "$stash_pid" 2>/dev/null || true
+test -f "$snapshot_tmp/ready"
+# Kill the real launcher, not only its subprocess: trap must reap gate first.
+descendant_pid=$(cat "$snapshot_tmp/descendant-pid")
+kill -TERM "$hook_pid"
 set +e
 wait "$hook_pid"
 status=$?
 set -e
 test "$status" -ne 0
-rm -f "$stash_marker" "$stash_pid_file"
-assert_restored
-
-(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=success REAL_GIT="$real_git" "$hook")
-assert_restored
-
-(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=generated REAL_GIT="$real_git" "$hook")
-assert_restored
-
-if (cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=fail REAL_GIT="$real_git" "$hook"); then
-    printf '%s\n' 'expected failing hook to return nonzero' >&2
-    exit 1
-else
-    status=$?
-    test "$status" -eq 23
+# No surviving descendant may write after owned files disappear.
+sleep 0.2
+if kill -0 "$descendant_pid" 2>/dev/null; then
+    # Linux may retain a killed orphan briefly as a zombie.
+    descendant_state=$(ps -o stat= -p "$descendant_pid" 2>/dev/null || true)
+    case "$descendant_state" in Z*) ;; *) exit 1 ;; esac
 fi
-assert_restored
+assert_cleaned
 
-rm -f "$marker" "$mise_pid_file"
-(cd "$fixture" && exec env TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=interrupt REAL_GIT="$real_git" FIXTURE_MARKER="$marker" FIXTURE_MISE_PID="$mise_pid_file" "$hook") &
-hook_pid=$!
-attempt=0
-while [ ! -f "$marker" ] && [ "$attempt" -lt 50 ]; do
-    sleep 0.1
-    attempt=$((attempt + 1))
-done
-test -f "$marker"
-mise_pid=$(cat "$mise_pid_file")
-kill -TERM "$mise_pid" 2>/dev/null || true
-set +e
-wait "$hook_pid"
-status=$?
-set -e
-test "$status" -ne 0
-rm -f "$marker" "$mise_pid_file"
-assert_restored
+# Full index normalization must not lose split-index entries.
+git -C "$fixture" update-index --split-index
+"$fake_bin/assert-live" > "$LIVE_BASELINE"
+run_hook success
+assert_cleaned
 
-rm -f "$clear_marker" "$clear_pid_file"
-(cd "$fixture" && exec env TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=clear-interrupt REAL_GIT="$real_git" CLEAR_MARKER="$clear_marker" CLEAR_PID_FILE="$clear_pid_file" "$hook") &
-hook_pid=$!
-attempt=0
-while [ ! -f "$clear_marker" ] && [ "$attempt" -lt 50 ]; do
-    sleep 0.1
-    attempt=$((attempt + 1))
-done
-test -f "$clear_marker"
-clear_pid=$(cat "$clear_pid_file")
-kill -TERM "$clear_pid" 2>/dev/null || true
-set +e
-wait "$hook_pid"
-status=$?
-set -e
-test "$status" -ne 0
-rm -f "$clear_marker" "$clear_pid_file"
-assert_restored
+# Global/env Git configuration cannot redirect writes into the live config.
+config_hash=$(git -C "$fixture" hash-object .git/config)
+(cd "$fixture" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" \
+    GIT_CONFIG="$fixture/.git/config" GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=core.sparseCheckout GIT_CONFIG_VALUE_0=true \
+    "$hook" fixture-arg)
+test "$(git -C "$fixture" hash-object .git/config)" = "$config_hash"
+assert_cleaned
 
-rm -f "$marker" "$mise_pid_file"
-(cd "$fixture" && exec env TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=generated-interrupt REAL_GIT="$real_git" FIXTURE_MARKER="$marker" FIXTURE_MISE_PID="$mise_pid_file" "$hook") &
-hook_pid=$!
-attempt=0
-while [ ! -f "$marker" ] && [ "$attempt" -lt 50 ]; do
-    sleep 0.1
-    attempt=$((attempt + 1))
-done
-test -f "$marker"
-mise_pid=$(cat "$mise_pid_file")
-kill -TERM "$mise_pid" 2>/dev/null || true
-set +e
-wait "$hook_pid"
-status=$?
-set -e
-test "$status" -ne 0
-rm -f "$marker" "$mise_pid_file"
-assert_restored
-
-set +e
-(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=tamper REAL_GIT="$real_git" "$hook")
-status=$?
-set -e
-test "$status" -ne 0
-git -C "$fixture" stash list --format='%gs' | grep -F 'fixture-tamper' >/dev/null
-test -n "$(git -C "$fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
-test -z "$(ls -A "$snapshot_tmp")"
-
-rm -f "$race_marker"
-set +e
-(cd "$fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=race RACE_MARKER="$race_marker" RACE_TMP="$snapshot_tmp" REAL_GIT="$real_git" "$hook")
-status=$?
-set -e
-test "$status" -ne 0
-test -f "$race_marker"
-rm -f "$race_marker"
-git -C "$fixture" stash list --format='%gs' | grep -F 'fixture-race' >/dev/null
-test -n "$(git -C "$fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
-test -z "$(ls -A "$snapshot_tmp")"
-
-git -C "$unborn_fixture" init -q
-git -C "$unborn_fixture" config user.name "Jackin hook unborn fixture"
-git -C "$unborn_fixture" config user.email "jackin-hook-unborn@example.invalid"
-git -C "$unborn_fixture" config core.fileMode true
-printf '%s\n' staged > "$unborn_fixture/staged.txt"
-git -C "$unborn_fixture" add staged.txt
-(cd "$unborn_fixture" && TMPDIR="$snapshot_tmp" PATH="$fake_bin:$PATH" FIXTURE_MODE=unborn REAL_GIT="$real_git" "$hook")
-test "$(git -C "$unborn_fixture" status --porcelain=v1)" = 'A  staged.txt'
-test "$(cat "$unborn_fixture/staged.txt")" = staged
-if git -C "$unborn_fixture" rev-parse --verify HEAD >/dev/null 2>&1; then
-    printf '%s\n' 'unborn fixture unexpectedly acquired HEAD' >&2
-    exit 1
+cat > "$fake_bin/hk" <<'EOF'
+#!/bin/sh
+set -eu
+test "$(git write-tree)" = "$EXPECTED_TREE"
+test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+test "$(git diff --name-only)" = ''
+git ls-files -z | xargs -0 -n 1 sh -c 'test -e "$1" || test -L "$1"' sh
+if [ "${EXPECTED_MERGE:-}" != '' ]; then
+    test "$(git rev-parse MERGE_HEAD)" = "$EXPECTED_MERGE"
 fi
-test -z "$(git -C "$unborn_fixture" for-each-ref --format='%(refname)' refs/jackin/pre-commit-snapshot/)"
+: > "$SNAPSHOT_TMP/gate-ran"
+EOF
+
+case_fixture="$fixture/cases"
+mkdir "$case_fixture"
+git -C "$case_fixture" init -q
+git -C "$case_fixture" config user.name fixture
+git -C "$case_fixture" config user.email fixture@example.invalid
+cp "$fixture/rust-toolchain.toml" "$case_fixture/rust-toolchain.toml"
+mkdir "$case_fixture/included" "$case_fixture/excluded"
+printf '%s\n' included > "$case_fixture/included/a.txt"
+printf '%s\n' excluded > "$case_fixture/excluded/b.txt"
+git -C "$case_fixture" add .
+git -C "$case_fixture" commit -q -m baseline
+EXPECTED_HEAD=$(git -C "$case_fixture" rev-parse HEAD)
+export EXPECTED_HEAD
+EXPECTED_TREE=$(git -C "$case_fixture" write-tree)
+export EXPECTED_TREE
+# Sparse-index entries represent paths absent from the live checkout; the
+# isolated gate still needs all of them, with skip-worktree cleared.
+git -C "$case_fixture" sparse-checkout init --cone --sparse-index
+git -C "$case_fixture" sparse-checkout set included
+(cd "$case_fixture" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" "$hook")
+test ! -e "$case_fixture/excluded/b.txt"
+rm "$snapshot_tmp/gate-ran"
 test -z "$(ls -A "$snapshot_tmp")"
 
-printf '%s\n' 'pre-commit snapshot fixture passed'
+# Linked worktrees locate index/merge state in per-worktree storage while
+# their object database and review evidence belong to the common directory.
+linked="$fixture/linked"
+git -C "$case_fixture" worktree add -q -b linked "$linked"
+printf '%s\n' staged-linked > "$linked/included/a.txt"
+git -C "$linked" add included/a.txt
+EXPECTED_TREE=$(git -C "$linked" write-tree)
+export EXPECTED_TREE
+export EXPECTED_MERGE="$EXPECTED_HEAD"
+printf '%s\n' "$EXPECTED_MERGE" > "$(git -C "$linked" rev-parse --absolute-git-dir)/MERGE_HEAD"
+linked_index=$(git -C "$linked" rev-parse --path-format=absolute --git-path index)
+linked_index_hash=$(git -C "$linked" hash-object "$linked_index")
+(cd "$linked" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" "$hook")
+test "$(git -C "$linked" hash-object "$linked_index")" = "$linked_index_hash"
+rm "$snapshot_tmp/gate-ran"
+unset EXPECTED_MERGE
+
+# A conflicted index cannot be represented as a staged tree; fail closed.
+blob=$(git -C "$linked" rev-parse HEAD:included/a.txt)
+printf '100644 %s 1\tconflict.txt\n100644 %s 2\tconflict.txt\n' "$blob" "$blob" |
+    git -C "$linked" update-index --index-info
+if (cd "$linked" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" "$hook"); then exit 1; fi
+test ! -e "$snapshot_tmp/gate-ran"
+test -z "$(ls -A "$snapshot_tmp")"
+git -C "$linked" update-index --force-remove conflict.txt
+
+# Links must resolve inside the snapshot, including paths containing chains
+# where lexical normalization would incorrectly classify the target as safe.
+for target in "$fixture/partial.txt" ../partial.txt; do
+    ln -s "$target" "$linked/escape"
+    git -C "$linked" add escape
+    if (cd "$linked" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" "$hook"); then exit 1; fi
+    test ! -e "$snapshot_tmp/gate-ran"
+    git -C "$linked" rm -q -f escape
+done
+ln -s . "$linked/chain"
+ln -s chain/../outside "$linked/escape"
+git -C "$linked" add chain escape
+if (cd "$linked" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" "$hook"); then exit 1; fi
+test ! -e "$snapshot_tmp/gate-ran"
+git -C "$linked" rm -q -f chain escape
+
+# Unsupported gitlinks cannot silently hide submodule source from validators.
+git -C "$linked" update-index --add --cacheinfo "160000,$EXPECTED_HEAD,submodule"
+if (cd "$linked" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" "$hook"); then exit 1; fi
+test ! -e "$snapshot_tmp/gate-ran"
+git -C "$linked" update-index --force-remove submodule
+test -z "$(ls -A "$snapshot_tmp")"
+
+# An unborn index still exposes every staged addition without creating HEAD.
+unborn="$fixture/unborn"
+mkdir "$unborn"
+git -C "$unborn" init -q
+git -C "$unborn" config user.name fixture
+git -C "$unborn" config user.email fixture@example.invalid
+cp "$fixture/rust-toolchain.toml" "$unborn/rust-toolchain.toml"
+printf '%s\n' staged > "$unborn/first.txt"
+git -C "$unborn" add first.txt rust-toolchain.toml
+cat > "$fake_bin/hk" <<'EOF'
+#!/bin/sh
+set -eu
+test "$(cat first.txt)" = staged
+test "$(git diff --cached --name-only | head -n 1)" = first.txt
+if git rev-parse --verify HEAD >/dev/null 2>&1; then exit 1; fi
+EOF
+(cd "$unborn" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" "$hook")
+test -z "$(ls -A "$snapshot_tmp")"
+if git -C "$unborn" rev-parse --verify HEAD >/dev/null 2>&1; then exit 1; fi
+printf '%s\n' 'pre-commit isolated staged-tree fixture passed'

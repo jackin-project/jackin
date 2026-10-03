@@ -148,21 +148,23 @@ fn usage_selection_stays_in_bounds() {
 #[test]
 fn apply_refresh_preserves_selection_across_rename_and_reorder() {
     let now = Instant::now();
-    let mut state = UsageScreenState::open_with_snapshot(
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(
         vec![
             test_account("openai", "a", "work"),
             test_account("anthropic", "b", "personal"),
         ],
         None,
-    );
+    ));
     state.move_selection(1);
     assert_eq!(state.selected_id, Some("openai:a".to_owned()));
 
     let mut renamed = test_account("openai", "a", "work-renamed");
     renamed.provider = "OpenAI Renamed".to_owned();
     state.apply_refresh(
-        vec![test_account("anthropic", "b", "personal"), renamed],
-        None,
+        snapshot(
+            vec![test_account("anthropic", "b", "personal"), renamed],
+            None,
+        ),
         now,
     );
     assert_eq!(state.selected, 2);
@@ -175,17 +177,20 @@ fn apply_refresh_preserves_selection_across_rename_and_reorder() {
 #[test]
 fn apply_refresh_removed_selection_falls_back_to_overview_with_notice() {
     let now = Instant::now();
-    let mut state = UsageScreenState::open_with_snapshot(
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(
         vec![
             test_account("openai", "a", "work"),
             test_account("anthropic", "b", "personal"),
         ],
         None,
-    );
+    ));
     state.move_selection(2);
     assert_eq!(state.selected_id, Some("anthropic:b".to_owned()));
 
-    state.apply_refresh(vec![test_account("openai", "a", "work")], None, now);
+    state.apply_refresh(
+        snapshot(vec![test_account("openai", "a", "work")], None),
+        now,
+    );
     assert_eq!(state.selected, 0);
     assert_eq!(state.selected_id, None);
     assert_eq!(
@@ -197,8 +202,10 @@ fn apply_refresh_removed_selection_falls_back_to_overview_with_notice() {
 #[test]
 fn apply_refresh_error_advances_timer_without_moving_selection() {
     let now = Instant::now();
-    let mut state =
-        UsageScreenState::open_with_snapshot(vec![test_account("openai", "a", "work")], None);
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(
+        vec![test_account("openai", "a", "work")],
+        None,
+    ));
     state.move_selection(1);
     state.apply_refresh_error("Usage unavailable: boom".to_owned(), now);
     assert_eq!(state.selected, 1);
@@ -210,7 +217,7 @@ fn apply_refresh_error_advances_timer_without_moving_selection() {
 
 #[test]
 fn heartbeat_due_only_after_first_completion() {
-    let state = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    let state = UsageScreenState::open_with_snapshot(snapshot(Vec::new(), None));
     assert!(state.refresh_due);
     assert!(!state.heartbeat_due(Instant::now()));
 
@@ -218,45 +225,45 @@ fn heartbeat_due_only_after_first_completion() {
     let completed = Instant::now()
         .checked_sub(USAGE_HEARTBEAT_INTERVAL + Duration::from_secs(1))
         .expect("heartbeat interval fits in uptime");
-    state.apply_refresh(Vec::new(), None, completed);
+    state.apply_refresh(snapshot(Vec::new(), None), completed);
     assert!(state.heartbeat_due(Instant::now()));
 
-    let mut fresh = UsageScreenState::open_with_snapshot(Vec::new(), None);
-    fresh.apply_refresh(Vec::new(), None, Instant::now());
+    let mut fresh = UsageScreenState::open_with_snapshot(snapshot(Vec::new(), None));
+    fresh.apply_refresh(snapshot(Vec::new(), None), Instant::now());
     assert!(!fresh.heartbeat_due(Instant::now()));
 }
 
 #[test]
 fn poll_refresh_delivers_ready_outcome_and_clears_in_flight() {
-    let mut state = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(Vec::new(), None));
     assert!(!state.refresh_in_flight());
     let plan = state
         .next_refresh_plan_if_due(Instant::now())
         .expect("open marks a refresh due");
     state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
         plan.generation,
-        Ok((
+        Ok(snapshot(
             vec![test_account("openai", "a", "work")],
             Some("n".to_owned()),
         )),
     )));
     assert!(state.refresh_in_flight());
     let outcome = state.poll_refresh().expect("ready outcome");
-    let (accounts, notice) = outcome.expect("ok outcome");
-    assert_eq!(accounts.len(), 1);
-    assert_eq!(notice, Some("n".to_owned()));
+    let snapshot = outcome.expect("ok outcome");
+    assert_eq!(snapshot.accounts.len(), 1);
+    assert_eq!(snapshot.notice, Some("n".to_owned()));
     assert!(!state.refresh_in_flight());
 }
 
 #[test]
 fn poll_refresh_drops_stale_generations() {
-    let mut state = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(Vec::new(), None));
     let plan = state
         .next_refresh_plan_if_due(Instant::now())
         .expect("open marks a refresh due");
     state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
         plan.generation.wrapping_add(1),
-        Ok((vec![test_account("openai", "a", "work")], None)),
+        Ok(snapshot(vec![test_account("openai", "a", "work")], None)),
     )));
     assert!(state.poll_refresh().is_none(), "stale outcome dropped");
     assert!(!state.refresh_in_flight());
@@ -265,14 +272,14 @@ fn poll_refresh_drops_stale_generations() {
 
 #[test]
 fn refresh_plan_joins_in_flight_work_without_queueing() {
-    let mut state = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(Vec::new(), None));
     let plan = state
         .next_refresh_plan_if_due(Instant::now())
         .expect("open marks a refresh due");
     assert!(!plan.force);
     state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
         plan.generation,
-        Ok((Vec::new(), None)),
+        Ok(snapshot(Vec::new(), None)),
     )));
     state.refresh_due = true;
     state.force_refresh_pending = true;
@@ -285,12 +292,12 @@ fn refresh_plan_joins_in_flight_work_without_queueing() {
 
 #[test]
 fn refresh_plan_carries_force_only_for_manual_refresh() {
-    let mut state = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(Vec::new(), None));
     let open = state
         .next_refresh_plan_if_due(Instant::now())
         .expect("open marks a refresh due");
     assert!(!open.force, "open subscribes without forcing");
-    state.apply_refresh(Vec::new(), None, Instant::now());
+    state.apply_refresh(snapshot(Vec::new(), None), Instant::now());
     assert!(
         state.next_refresh_plan_if_due(Instant::now()).is_none(),
         "fresh completion is not due"
@@ -305,11 +312,11 @@ fn refresh_plan_carries_force_only_for_manual_refresh() {
     assert_eq!(manual.generation, open.generation.wrapping_add(1));
     assert!(!state.force_refresh_pending, "force is consumed on claim");
 
-    state.apply_refresh(Vec::new(), None, Instant::now());
+    state.apply_refresh(snapshot(Vec::new(), None), Instant::now());
     let completed = Instant::now()
         .checked_sub(USAGE_HEARTBEAT_INTERVAL + Duration::from_secs(1))
         .expect("heartbeat interval fits in uptime");
-    state.apply_refresh(Vec::new(), None, completed);
+    state.apply_refresh(snapshot(Vec::new(), None), completed);
     let heartbeat = state
         .next_refresh_plan_if_due(Instant::now())
         .expect("heartbeat is due");
@@ -318,14 +325,16 @@ fn refresh_plan_carries_force_only_for_manual_refresh() {
 
 #[test]
 fn screen_clone_drops_in_flight_refresh_but_keeps_value_state() {
-    let mut state =
-        UsageScreenState::open_with_snapshot(vec![test_account("openai", "a", "work")], None);
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(
+        vec![test_account("openai", "a", "work")],
+        None,
+    ));
     let plan = state
         .next_refresh_plan_if_due(Instant::now())
         .expect("open marks a refresh due");
     state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
         plan.generation,
-        Ok((Vec::new(), None)),
+        Ok(snapshot(Vec::new(), None)),
     )));
     let cloned = state.clone();
     assert!(state.refresh_in_flight());
@@ -341,8 +350,10 @@ fn screen_clone_drops_in_flight_refresh_but_keeps_value_state() {
 
 #[test]
 fn open_with_snapshot_marks_refresh_due() {
-    let state =
-        UsageScreenState::open_with_snapshot(vec![test_account("openai", "a", "work")], None);
+    let state = UsageScreenState::open_with_snapshot(snapshot(
+        vec![test_account("openai", "a", "work")],
+        None,
+    ));
     assert!(state.refresh_due);
     assert_eq!(state.selected, 0);
     assert_eq!(state.selected_id, None);
@@ -355,13 +366,16 @@ fn manual_refresh_key_marks_refresh_due() {
 
     let config = jackin_config::AppConfig::default();
     let mut manager = ManagerState::from_config(&config, std::path::Path::new("/test"));
-    manager.usage.screen = Some(UsageScreenState::open_with_snapshot(Vec::new(), None));
+    manager.usage.screen = Some(UsageScreenState::open_with_snapshot(snapshot(
+        Vec::new(),
+        None,
+    )));
     manager
         .usage
         .screen
         .as_mut()
         .unwrap()
-        .apply_refresh(Vec::new(), None, Instant::now());
+        .apply_refresh(snapshot(Vec::new(), None), Instant::now());
     assert!(!manager.usage.screen.as_ref().unwrap().refresh_due);
 
     let key = KeyEvent {
@@ -892,7 +906,7 @@ fn render_detail_account_shows_freshness_and_refreshing_indicator() {
     };
     state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
         state.refresh_generation,
-        Ok((Vec::new(), None)),
+        Ok(snapshot(Vec::new(), None)),
     )));
     // Keep in flight: poll nothing, render while pending.
     manager.usage.screen = Some(state);
@@ -1760,7 +1774,7 @@ fn capacity_finder_selects_most_constrained_with_reset_tiebreak() {
 fn capacity_finder_empty_states_post_notice_without_moving() {
     use super::UsageFilter;
 
-    let mut empty = UsageScreenState::open_with_snapshot(Vec::new(), None);
+    let mut empty = UsageScreenState::open_with_snapshot(snapshot(Vec::new(), None));
     assert_eq!(empty.most_constrained_selected(), None);
     assert!(!empty.jump_to_most_constrained());
     assert_eq!(empty.selected, 0);
@@ -2060,10 +2074,10 @@ fn s8_page_keys_scroll_and_saturate() {
 #[test]
 fn s8_esc_and_q_close_route() {
     use crossterm::event::KeyCode;
-    let mut manager = s8_manager(UsageScreenState::open_with_snapshot(
+    let mut manager = s8_manager(UsageScreenState::open_with_snapshot(snapshot(
         vec![test_account("openai", "a", "a")],
         None,
-    ));
+    )));
 
     s8_press(&mut manager, KeyCode::Esc);
     assert!(!manager.usage.visible);
@@ -2075,10 +2089,10 @@ fn s8_esc_and_q_close_route() {
 #[test]
 fn s8_unknown_key_is_noop() {
     use crossterm::event::KeyCode;
-    let mut manager = s8_manager(UsageScreenState::open_with_snapshot(
+    let mut manager = s8_manager(UsageScreenState::open_with_snapshot(snapshot(
         vec![test_account("openai", "a", "a")],
         None,
-    ));
+    )));
     let before = manager.usage.screen.as_ref().unwrap().clone();
     s8_press(&mut manager, KeyCode::Char('z'));
     s8_press(&mut manager, KeyCode::F(5));
@@ -2090,13 +2104,12 @@ fn s8_unknown_key_is_noop() {
 fn s8_uppercase_r_refreshes_like_lowercase() {
     use crossterm::event::KeyCode;
     for code in [KeyCode::Char('r'), KeyCode::Char('R')] {
-        let mut manager = s8_manager(UsageScreenState::open_with_snapshot(
+        let mut manager = s8_manager(UsageScreenState::open_with_snapshot(snapshot(
             vec![test_account("openai", "a", "a")],
             None,
-        ));
+        )));
         manager.usage.screen.as_mut().unwrap().apply_refresh(
-            vec![test_account("openai", "a", "a")],
-            None,
+            snapshot(vec![test_account("openai", "a", "a")], None),
             Instant::now(),
         );
         assert!(!manager.usage.screen.as_ref().unwrap().refresh_due);
@@ -2109,21 +2122,23 @@ fn s8_uppercase_r_refreshes_like_lowercase() {
 
 #[test]
 fn s8_refresh_resets_scroll() {
-    let mut state = UsageScreenState::open_with_snapshot(
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(
         vec![
             test_account("openai", "a", "a"),
             test_account("anthropic", "b", "b"),
         ],
         None,
-    );
+    ));
     state.move_selection(1);
     state.scroll = 40;
     state.apply_refresh(
-        vec![
-            test_account("openai", "a", "a"),
-            test_account("anthropic", "b", "b"),
-        ],
-        None,
+        snapshot(
+            vec![
+                test_account("openai", "a", "a"),
+                test_account("anthropic", "b", "b"),
+            ],
+            None,
+        ),
         Instant::now(),
     );
     assert_eq!(state.scroll, 0);
@@ -2133,18 +2148,17 @@ fn s8_refresh_resets_scroll() {
 
 #[test]
 fn s8_removal_while_detail_open_returns_to_overview() {
-    let mut state = UsageScreenState::open_with_snapshot(
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(
         vec![
             test_account("openai", "a", "work"),
             test_account("anthropic", "b", "personal"),
         ],
         None,
-    );
+    ));
     state.move_selection(2);
     state.detail = true;
     state.apply_refresh(
-        vec![test_account("openai", "a", "work")],
-        None,
+        snapshot(vec![test_account("openai", "a", "work")], None),
         Instant::now(),
     );
     assert_eq!(state.selected, 0);
@@ -2171,29 +2185,35 @@ fn s8_removal_while_detail_open_returns_to_overview() {
 #[test]
 fn s8_empty_loading_renders_refreshing_not_unconfigured() {
     // Open path: refresh due but worker not started yet.
-    let manager = s8_manager(UsageScreenState::open_with_snapshot(Vec::new(), None));
+    let manager = s8_manager(UsageScreenState::open_with_snapshot(snapshot(
+        Vec::new(),
+        None,
+    )));
     assert!(manager.usage.screen.as_ref().unwrap().loading());
     let text = s8_render_full(&manager, 80, 24);
     assert!(text.contains("Refreshing usage…"), "{text}");
     assert!(!text.contains("No providers configured"), "{text}");
 
     // In-flight refresh over an empty cache: same loading line.
-    let mut manager = s8_manager(UsageScreenState::open_with_snapshot(Vec::new(), None));
+    let mut manager = s8_manager(UsageScreenState::open_with_snapshot(snapshot(
+        Vec::new(),
+        None,
+    )));
     let screen = manager.usage.screen.as_mut().unwrap();
     let plan = screen
         .next_refresh_plan_if_due(Instant::now())
         .expect("open marks a refresh due");
     screen.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
         plan.generation,
-        Ok((Vec::new(), None)),
+        Ok(snapshot(Vec::new(), None)),
     )));
     let text = s8_render_full(&manager, 80, 24);
     assert!(text.contains("Refreshing usage…"), "{text}");
     assert!(!text.contains("No providers configured"), "{text}");
 
     // Completed empty refresh: genuinely nothing configured.
-    let mut done = UsageScreenState::open_with_snapshot(Vec::new(), None);
-    done.apply_refresh(Vec::new(), None, Instant::now());
+    let mut done = UsageScreenState::open_with_snapshot(snapshot(Vec::new(), None));
+    done.apply_refresh(snapshot(Vec::new(), None), Instant::now());
     assert!(!done.loading());
     let manager = s8_manager(done);
     let text = s8_render_full(&manager, 80, 24);
@@ -2204,8 +2224,10 @@ fn s8_empty_loading_renders_refreshing_not_unconfigured() {
 
 #[test]
 fn s8_error_notice_renders_without_moving_selection() {
-    let mut state =
-        UsageScreenState::open_with_snapshot(vec![test_account("openai", "a", "work")], None);
+    let mut state = UsageScreenState::open_with_snapshot(snapshot(
+        vec![test_account("openai", "a", "work")],
+        None,
+    ));
     state.move_selection(1);
     state.apply_refresh_error("Usage unavailable: boom".to_owned(), Instant::now());
     let manager = s8_manager(state);
@@ -2311,4 +2333,145 @@ fn s8_scroll_moves_overview_content() {
     let moved = s8_render_full(&manager, 80, 24);
     assert!(!moved.contains("account-0"), "{moved}");
     assert!(moved.contains("account-"), "{moved}");
+}
+
+fn snapshot(accounts: Vec<UsageAccount>, notice: Option<String>) -> UsageScreenState {
+    UsageScreenState {
+        accounts,
+        notice,
+        ..UsageScreenState::default()
+    }
+}
+
+#[test]
+fn complete_publication_survives_refresh_cache_reopen_and_render() {
+    let (mut projection, _) = metric_group_projection_fixture();
+    projection.generated_at_epoch = TEST_NOW_EPOCH - 600;
+    projection.issues[0].message = "independent publication warning".to_owned();
+    projection.providers[0].accounts[0].windows[0].value_label = "independent 120% used".to_owned();
+    let publication = UsageScreenState::from_projection(&projection);
+    let mut state = UsageScreenState::open_with_snapshot(UsageScreenState::default());
+    let plan = state.next_refresh_plan_if_due(Instant::now()).unwrap();
+    state.begin_refresh(crate::tui::runtime::ready_blocking_subscription((
+        plan.generation,
+        Ok(publication),
+    )));
+    let completed = state.poll_refresh().unwrap().unwrap();
+    let cached = completed.clone();
+    state.apply_refresh(completed, Instant::now());
+    assert_eq!(state.canonical_projection.as_ref(), Some(&projection));
+    assert_eq!(state.generated_at_epoch, Some(TEST_NOW_EPOCH - 600));
+    assert_eq!(
+        state.projection_issues[0].message,
+        "independent publication warning"
+    );
+    let rendered = render_detail_text(state.clone());
+    assert!(rendered.contains("Snapshot  10m ago"), "{rendered}");
+    assert!(
+        rendered.contains("independent publication warning"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("independent 120% used"), "{rendered}");
+    let list = render_list_text(state.clone());
+    assert!(list.contains("independent 120% used"), "{list}");
+    assert!(!list.contains("0% left"), "{list}");
+    let reopened = UsageScreenState::open_with_snapshot(cached);
+    assert_eq!(reopened.canonical_projection.as_ref(), Some(&projection));
+    assert!(render_detail_text(reopened).contains("independent publication warning"));
+
+    let mut cleared = projection;
+    cleared.generated_at_epoch = TEST_NOW_EPOCH;
+    cleared.issues.clear();
+    state.apply_refresh(UsageScreenState::from_projection(&cleared), Instant::now());
+    assert!(state.projection_issues.is_empty());
+    assert_eq!(state.generated_at_epoch, Some(TEST_NOW_EPOCH));
+    assert!(!render_detail_text(state.clone()).contains("independent publication warning"));
+    let mut unlimited = cleared;
+    let window = &mut unlimited.providers[0].accounts[0].windows[0];
+    window.quota_state = UsageQuotaStateV1::NotApplicable;
+    window.value_label = "Independent unlimited quota".to_owned();
+    window.remaining_percent = None;
+    window.remaining_raw_percent = None;
+    window.used_percent = None;
+    window.used_raw_percent = None;
+    state.apply_refresh(
+        UsageScreenState::from_projection(&unlimited),
+        Instant::now(),
+    );
+    let list = render_list_text(state);
+    assert!(list.contains("Independent unlimited quota"), "{list}");
+    assert!(!list.contains('█') && !list.contains('░'), "{list}");
+}
+
+#[test]
+fn empty_failed_publication_renders_diagnostics_in_both_panels() {
+    let (mut projection, _) = metric_group_projection_fixture();
+    projection.providers.clear();
+    projection.issues[0].message = "independent empty broker failure".to_owned();
+    let mut state = UsageScreenState::from_projection(&projection);
+    state.apply_refresh_error("Usage unavailable: disconnected".to_owned(), Instant::now());
+    for rendered in [render_detail_text(state.clone()), render_list_text(state)] {
+        assert!(
+            rendered.contains("independent empty broker failure"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("Usage unavailable: disconnected"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("No providers configured"), "{rendered}");
+    }
+}
+
+#[test]
+fn canonical_refreshing_publication_keeps_loading_after_worker_completion() {
+    use jackin_protocol::usage_broker::UsageProjectionRefreshStateV1;
+    let (mut projection, _) = metric_group_projection_fixture();
+    projection.providers.clear();
+    projection.issues.clear();
+    projection.refresh_state = UsageProjectionRefreshStateV1::Refreshing;
+    let mut state = UsageScreenState::default();
+    state.apply_refresh(
+        UsageScreenState::from_projection(&projection),
+        Instant::now(),
+    );
+    assert!(!state.refresh_in_flight());
+    assert!(state.loading());
+    for rendered in [render_detail_text(state.clone()), render_list_text(state)] {
+        assert!(rendered.contains("Refreshing usage…"), "{rendered}");
+        assert!(!rendered.contains("No providers configured"), "{rendered}");
+    }
+}
+
+#[test]
+fn provider_discovery_diagnostics_survive_without_account_rows() {
+    let (mut projection, _) = metric_group_projection_fixture();
+    projection.issues.clear();
+    projection.providers[0].accounts.clear();
+    projection.providers[0].issues[0].message =
+        "independent provider configuration failure".to_owned();
+    let state = UsageScreenState::from_projection(&projection);
+    assert!(state.accounts.is_empty());
+    for rendered in [render_detail_text(state.clone()), render_list_text(state)] {
+        assert!(
+            rendered.contains("independent provider configuration failure"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("No providers configured"), "{rendered}");
+    }
+}
+
+#[test]
+fn filtered_accounts_cannot_hide_provider_publication_diagnostics() {
+    let (mut projection, _) = metric_group_projection_fixture();
+    projection.issues.clear();
+    projection.providers[0].issues[0].message = "independent hidden-provider diagnostic".to_owned();
+    let mut state = UsageScreenState::from_projection(&projection);
+    state.filter = super::UsageFilter::Stale;
+    assert!(state.visible_order().is_empty());
+    let rendered = render_detail_text(state);
+    assert!(
+        rendered.contains("independent hidden-provider diagnostic"),
+        "{rendered}"
+    );
 }

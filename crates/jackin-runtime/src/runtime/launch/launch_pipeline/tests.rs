@@ -446,9 +446,13 @@ fn tagged_grant_errors_clean_grant_yields_nothing() {
 async fn run_launch_core_happy_path_returns_container_name() {
     let mut fix = LaunchCoreFixture::new();
     let core = fix.as_core();
-    let name = launch_core::run_launch_core(core)
-        .await
-        .expect("happy path");
+    let future = launch_core::run_launch_core(core);
+    let future_bytes = size_of_val(&future);
+    assert!(
+        future_bytes <= 8 * 1024,
+        "launch core must bound propagated phase state to 8 KiB; future is {future_bytes} bytes"
+    );
+    let name = future.await.expect("happy path");
     assert_eq!(name, fix.container_name);
     // Sidecar/network teardown or role run must have touched Docker.
     let recorded = fix.docker.recorded.borrow();

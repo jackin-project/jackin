@@ -611,13 +611,13 @@ pub fn validate_mount_specs(mounts: &[MountConfig]) -> crate::ConfigResult<()> {
             return Err(ConfigError::MountDstNotAbsolute(mount.dst.clone()));
         }
         if has_dot_component(&mount.src) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "mount source must not contain `.` or `..` components: {}",
                 mount.src
             )));
         }
         if has_dot_component(&mount.dst) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "mount destination must not contain `.` or `..` components: {}",
                 mount.dst
             )));

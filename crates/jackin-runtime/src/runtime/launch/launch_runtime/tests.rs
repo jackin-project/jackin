@@ -3,6 +3,144 @@
 
 use super::*;
 
+fn ownership_manifest() -> crate::instance::InstanceManifest {
+    crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+        container_base: "ownership-role",
+        workspace_name: None,
+        workspace_label: "workspace",
+        workdir: "/workspace",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "org/role",
+        role_display_name: "Role",
+        agent_runtime: jackin_core::Agent::Claude,
+        role_source_git: "https://example.invalid/role.git",
+        role_source_ref: None,
+        image_tag: "image",
+        docker: crate::instance::DockerResources::from_container_name("ownership-role"),
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    })
+}
+
+#[test]
+fn recreated_launch_persists_created_identity_and_preserves_recorded_history() -> anyhow::Result<()>
+{
+    let temp = tempfile::tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let state_dir = paths.data_dir.join("ownership-role");
+    let mut manifest = ownership_manifest();
+    manifest.docker_identity = Some(crate::instance::DockerIdentity {
+        role_container_id: "old-role-id".to_owned(),
+        dind_container_id: Some("old-sidecar-id".to_owned()),
+    });
+    manifest.set_admitted_instances([crate::instance::AdmittedInstance::new(
+        "claude-work",
+        jackin_core::Agent::Claude,
+        "work",
+    )]);
+    manifest.sessions.push(crate::instance::SessionRecord {
+        session_id: "session-id".to_owned(),
+        name: "existing session".to_owned(),
+        agent_runtime: "claude".to_owned(),
+        tmux_name: "session".to_owned(),
+        created_at: manifest.created_at.clone(),
+        status: crate::instance::SessionStatus::Running,
+        last_attached_at: None,
+        instance: Some("claude-work".to_owned()),
+        account_id: Some("work".to_owned()),
+    });
+    manifest.write(&state_dir)?;
+    let original = manifest.clone();
+    let mut resources = manifest.docker.clone();
+    resources.dind_container = Some("adopted-sidecar".to_owned());
+    resources.certs_volume = Some("adopted-certs".to_owned());
+    let role = jackin_core::ContainerHandle::new("ownership-role", "created-role-id")?;
+    let dind = jackin_core::ContainerHandle::new("adopted-sidecar", "created-sidecar-id")?;
+    let ownership = DockerLaunchOwnership {
+        manifest: std::sync::Mutex::new(&mut manifest),
+        resources: resources.clone(),
+        dind_handle_slot: std::sync::Arc::new(std::sync::Mutex::new(Some(dind))),
+        paths: &paths,
+        state_dir: &state_dir,
+    };
+    ownership.persist(&role)?;
+    drop(ownership);
+    let persisted = crate::instance::InstanceManifest::read(&state_dir)?;
+    assert_eq!(persisted.docker, resources);
+    assert_eq!(
+        persisted.docker_identity,
+        Some(crate::instance::DockerIdentity {
+            role_container_id: "created-role-id".to_owned(),
+            dind_container_id: Some("created-sidecar-id".to_owned()),
+        })
+    );
+    assert_eq!(persisted.sessions, original.sessions);
+    assert_eq!(persisted.admitted_instances, original.admitted_instances);
+    assert_eq!(persisted.created_at, original.created_at);
+    assert_eq!(manifest.docker_identity, persisted.docker_identity);
+    Ok(())
+}
+
+#[test]
+fn missing_created_sidecar_identity_leaves_manifest_untouched() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let state_dir = paths.data_dir.join("ownership-role");
+    let mut manifest = ownership_manifest();
+    manifest.write(&state_dir)?;
+    let original = manifest.clone();
+    let resources = manifest.docker.clone();
+    let ownership = DockerLaunchOwnership {
+        manifest: std::sync::Mutex::new(&mut manifest),
+        resources,
+        dind_handle_slot: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        paths: &paths,
+        state_dir: &state_dir,
+    };
+    let role = jackin_core::ContainerHandle::new("ownership-role", "created-role-id")?;
+    assert!(ownership.persist(&role).is_err());
+    drop(ownership);
+    assert_eq!(manifest, original);
+    assert_eq!(
+        crate::instance::InstanceManifest::read(&state_dir)?,
+        original
+    );
+    Ok(())
+}
+
+#[test]
+fn role_only_launch_persists_identity_without_sidecar() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let state_dir = paths.data_dir.join("ownership-role");
+    let mut manifest = ownership_manifest();
+    let mut resources = manifest.docker.clone();
+    resources.dind_container = None;
+    resources.certs_volume = None;
+    let ownership = DockerLaunchOwnership {
+        manifest: std::sync::Mutex::new(&mut manifest),
+        resources,
+        dind_handle_slot: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        paths: &paths,
+        state_dir: &state_dir,
+    };
+    ownership.persist(&jackin_core::ContainerHandle::new(
+        "ownership-role",
+        "role-only-id",
+    )?)?;
+    drop(ownership);
+    assert_eq!(
+        crate::instance::InstanceManifest::read(&state_dir)?.docker_identity,
+        Some(crate::instance::DockerIdentity {
+            role_container_id: "role-only-id".to_owned(),
+            dind_container_id: None,
+        })
+    );
+    Ok(())
+}
+
 fn capsule_config_with(instances: &[(&str, &str)]) -> jackin_protocol::CapsuleConfig {
     let mut config = jackin_protocol::CapsuleConfig::default();
     for (id, agent) in instances {

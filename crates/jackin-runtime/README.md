@@ -7,9 +7,9 @@ Container bootstrap pipeline — the orchestrator that turns a resolved workspac
 - The launch pipeline (`runtime`) and its phase contracts: profile validation, workspace/role materialization, trust/source checks, image materialization, env/auth resolution, Docker run, wait-for-state, teardown, foreground attach, cleanup classification.
 - Backend clients (`apple_container_client`, `host_daemon`) and host-side exec (`exec_host`).
 - Mount isolation integration (`isolation`), the reactive daemon (`reactive_daemon`), and wait-for-state (`spin_wait`).
-- Host usage-broker lifecycle and per-container relay assembly; global usage
-  state never enters a container. The sibling `jackin-usage-broker` executable
-  owns the process service entrypoint.
+- Host usage-broker activation and per-container relay assembly; global usage
+  state never enters a container. The `jackin` package installs the sibling
+  `jackin-usage-broker` process service entrypoint.
 
 ## Architecture tier and allowed dependencies
 

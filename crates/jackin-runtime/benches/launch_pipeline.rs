@@ -11,9 +11,7 @@ use jackin_core::RoleSelector;
 use jackin_runtime::runtime::docker_profile::{
     DockerGrants, dind_enabled, resolve_effective_grants, resolve_profile, validate_grants,
 };
-use jackin_runtime::runtime::launch::{
-    LoadCleanup, LoadOptions, cleanup_after_grant_failure, load_role,
-};
+use jackin_runtime::runtime::launch::{LoadOptions, load_role};
 use jackin_test_support::{FakeDockerClient, FakeRunner, seed_valid_role_repo};
 use std::collections::VecDeque;
 use std::hint::black_box;
@@ -32,49 +30,6 @@ fn grant_validation_micro(c: &mut Criterion) {
             black_box(dind_enabled(&effective));
         });
     });
-
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(error) => {
-            black_box(error);
-            return;
-        }
-    };
-
-    c.bench_function(
-        "launch_pipeline/cleanup_after_grant_failure_fakedocker",
-        |b| {
-            b.iter(|| {
-                rt.block_on(async {
-                    let docker = FakeDockerClient::default();
-                    let cleanup = LoadCleanup::new(
-                        "jk-bench-role".into(),
-                        "jk-bench-dind".into(),
-                        "jk-bench-certs".into(),
-                        "jk-bench-net".into(),
-                        PathBuf::from("/tmp/jackin-bench-sock"),
-                    );
-                    // Real suite A helper used by run_launch_core on grant failure.
-                    cleanup_after_grant_failure(&cleanup, &docker).await;
-                    let recorded = docker.recorded.borrow();
-                    assert!(
-                        recorded.iter().any(|c| c == "docker rm -f jk-bench-dind"),
-                        "LoadCleanup::run must record DinD rm via FakeDocker; got {recorded:?}"
-                    );
-                    assert!(
-                        recorded
-                            .iter()
-                            .any(|c| c == "docker network rm jk-bench-net"),
-                        "LoadCleanup::run must record network rm; got {recorded:?}"
-                    );
-                    black_box(recorded.len());
-                });
-            });
-        },
-    );
 
     c.bench_function("launch_pipeline/role_selector_key", |b| {
         let selector = RoleSelector::new(Some("ns"), "the-architect");

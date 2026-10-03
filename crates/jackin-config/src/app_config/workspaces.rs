@@ -32,9 +32,10 @@ impl AppConfig {
         workspace: WorkspaceConfig,
     ) -> crate::ConfigResult<()> {
         if self.workspaces.contains_key(name.as_str()) {
-            return Err(ConfigError::msg(
+            return Err(ConfigError::msg(format_args!(
                 "workspace {name:?} already exists; use `workspace edit`",
-            ));
+                name = name.as_str()
+            )));
         }
         validate_workspace_config(name, &workspace)?;
 
@@ -49,7 +50,7 @@ impl AppConfig {
                     .iter()
                     .map(|r| format!("{} covered by {}", r.child.src, r.covered_by.src))
                     .collect();
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "workspace {name:?} initial mounts contain redundant entries:\n  - {}",
                     details.join("\n  - ")
                 )));
@@ -72,7 +73,7 @@ impl AppConfig {
         let mut seen_upsert_destinations = std::collections::HashSet::new();
         for mount in &edit.upsert_mounts {
             if !seen_upsert_destinations.insert(mount.dst.as_str()) {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "duplicate workspace edit mount destination: {}",
                     mount.dst
                 )));
@@ -89,9 +90,9 @@ impl AppConfig {
             let original_len = workspace.mounts.len();
             workspace.mounts.retain(|mount| mount.dst != dst);
             if workspace.mounts.len() == original_len {
-                return Err(ConfigError::msg(
-                    "unknown workspace mount destination: {dst}",
-                ));
+                return Err(ConfigError::msg(format_args!(
+                    "unknown workspace mount destination: {dst}"
+                )));
             }
         }
 
@@ -102,9 +103,9 @@ impl AppConfig {
                 .mounts
                 .retain(|mount| !(mount.src == *workdir && mount.dst == *workdir));
             if workspace.mounts.len() == original_len {
-                return Err(ConfigError::msg(
-                    "no auto-mounted workdir found (mount where src = dst = {workdir})",
-                ));
+                return Err(ConfigError::msg(format_args!(
+                    "no auto-mounted workdir found (mount where src = dst = {workdir})"
+                )));
             }
         }
 
@@ -179,7 +180,7 @@ impl AppConfig {
                     .iter()
                     .map(|r| format!("{} covered by {}", r.child.src, r.covered_by.src))
                     .collect();
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "workspace {name} would contain redundant mounts after this edit:\n  - {}\n\
                      use `jackin workspace prune {name}` or pass `--prune` to clean up",
                     details.join("\n  - ")
@@ -234,7 +235,7 @@ fn validate_default_launch_ids(
 ) -> crate::ConfigResult<()> {
     for id in ids {
         if !config.agent_configurations.contains_key(id) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "workspace {name} default_launch names unknown agent configuration {id:?}"
             )));
         }

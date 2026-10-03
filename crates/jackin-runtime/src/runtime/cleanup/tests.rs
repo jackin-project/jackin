@@ -18,6 +18,94 @@ fn gc_test_paths() -> JackinPaths {
     JackinPaths::for_tests(temp.path())
 }
 
+fn write_owned_cleanup_manifest(paths: &JackinPaths, role: &str, dind: &str) {
+    let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+        container_base: role,
+        workspace_name: None,
+        workspace_label: "workspace",
+        workdir: "/workspace",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "agent-smith",
+        role_display_name: "Agent Smith",
+        agent_runtime: jackin_core::Agent::Claude,
+        role_source_git: "https://example.invalid/agent-smith.git",
+        role_source_ref: None,
+        image_tag: "jk_agent-smith",
+        docker: DockerResources {
+            dind_container: Some(dind.to_owned()),
+            ..DockerResources::from_container_name(role)
+        },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    });
+    manifest.docker_identity = Some(crate::instance::DockerIdentity {
+        role_container_id: role.to_owned(),
+        dind_container_id: Some(dind.to_owned()),
+    });
+    manifest.write(&paths.data_dir.join(role)).unwrap();
+}
+
+#[tokio::test]
+async fn persisted_cleanup_refuses_same_name_role_or_dind_replacements() {
+    for replacement_is_role in [true, false] {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let role = "jk-agent-smith";
+        let dind = "jk-agent-smith-dind";
+        write_owned_cleanup_manifest(&paths, role, dind);
+        let docker = FakeDockerClient::default();
+        docker.inspect_state_by_name.borrow_mut().extend([
+            (role.to_owned(), ContainerState::Running),
+            (dind.to_owned(), ContainerState::Running),
+        ]);
+        docker.container_id_by_name.borrow_mut().insert(
+            if replacement_is_role { role } else { dind }.to_owned(),
+            "replacement-id".to_owned(),
+        );
+        let error = eject_role(&paths, role, &docker).await.unwrap_err();
+        assert!(
+            error.to_string().contains("ownership identity mismatch"),
+            "{error}"
+        );
+        assert!(docker.bound_operations.borrow().is_empty());
+        assert!(!docker.recorded.borrow().iter().any(|op| op.starts_with("docker network rm") || op.starts_with("docker volume rm")));
+    }
+}
+
+#[tokio::test]
+async fn persisted_cleanup_refuses_corrupt_manifest_without_mutation() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let role = "jk-agent-smith";
+    std::fs::create_dir_all(paths.data_dir.join(role).join(".jackin")).unwrap();
+    std::fs::write(paths.data_dir.join(role).join(".jackin/instance.json"), "{").unwrap();
+    let docker = FakeDockerClient::default();
+    let error = eject_role(&paths, role, &docker).await.unwrap_err();
+    assert!(error.to_string().contains("parsing"), "{error}");
+    assert!(docker.bound_operations.borrow().is_empty());
+}
+
+#[tokio::test]
+async fn purge_refuses_corrupt_ownership_state_before_filesystem_removal() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let role = "jk-agent-smith";
+    let state = paths.data_dir.join(role);
+    std::fs::create_dir_all(state.join(".jackin")).unwrap();
+    std::fs::write(state.join(".jackin/instance.json"), "{").unwrap();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+    let error = purge_container_state(&paths, role, &docker, &mut runner)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("parsing"), "{error}");
+    assert!(state.join(".jackin/instance.json").exists());
+    assert!(docker.recorded.borrow().is_empty());
+    assert!(runner.recorded.is_empty());
+}
+
 #[tokio::test]
 async fn lifecycle_operations_keep_original_id_after_same_name_replacement() {
     let name = "jk-agent-smith";
@@ -397,6 +485,7 @@ async fn eject_agent_removes_container_dind_and_network() {
     };
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    write_owned_cleanup_manifest(&paths, "jk-agent-smith", "jk-agent-smith-dind");
 
     eject_role(&paths, "jk-agent-smith", &docker).await.unwrap();
 
@@ -425,7 +514,7 @@ async fn eject_agent_removes_manifest_recorded_sidecar_resources() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-agent-smith";
-    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+    let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: container,
         workspace_name: Some("workspace"),
         workspace_label: "workspace",
@@ -447,6 +536,10 @@ async fn eject_agent_removes_manifest_recorded_sidecar_resources() {
         base_image_ref: None,
         base_image_digest: None,
         supported_agents: vec![],
+    });
+    manifest.docker_identity = Some(crate::instance::DockerIdentity {
+        role_container_id: container.to_owned(),
+        dind_container_id: Some("jk-prewarm-dind-dind".to_owned()),
     });
     manifest.write(&paths.data_dir.join(container)).unwrap();
 
@@ -478,7 +571,10 @@ async fn eject_agent_ignores_missing_runtime_resources() {
 
     assert_eq!(
         docker.recorded.borrow().clone(),
-        vec!["docker inspect jk-agent-smith"]
+        vec![
+            "docker inspect jk-agent-smith",
+            "docker inspect jk-agent-smith-dind"
+        ]
     );
 }
 
@@ -499,6 +595,7 @@ async fn eject_role_phase1_failure_prevents_phase2_calls() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    write_owned_cleanup_manifest(&paths, "jk-agent-smith", "jk-agent-smith-dind");
     let err = eject_role(&paths, "jk-agent-smith", &docker)
         .await
         .unwrap_err();
@@ -559,6 +656,12 @@ async fn exile_all_ejects_all_managed_agents() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    for role in [
+        "jk-k7p9m2xq-agentsmith",
+        "jk-a1b2c3d4-myworkspace-agentsmith",
+    ] {
+        write_owned_cleanup_manifest(&paths, role, &format!("{role}-dind"));
+    }
     exile_all(&paths, &docker).await.unwrap();
 
     assert!(
@@ -626,6 +729,12 @@ async fn exile_all_continues_when_some_runtime_resources_are_missing() {
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    for role in [
+        "jk-k7p9m2xq-agentsmith",
+        "jk-a1b2c3d4-myworkspace-agentsmith",
+    ] {
+        write_owned_cleanup_manifest(&paths, role, &format!("{role}-dind"));
+    }
     exile_all(&paths, &docker).await.unwrap();
 
     assert_eq!(
