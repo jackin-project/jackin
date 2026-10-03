@@ -1,0 +1,1 @@
+synthetic root-alias coverage proof
