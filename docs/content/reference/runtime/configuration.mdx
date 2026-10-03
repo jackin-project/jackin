@@ -51,7 +51,7 @@ full version history and migration matrix.
 ## Publication and recovery journal
 
 Configuration publication is implemented in
-[`crates/jackin-config/src/persist.rs`](../../../../../crates/jackin-config/src/persist.rs).
+<RepoFile path="crates/jackin-config/src/persist.rs" />.
 The private, mode-`0600` `config.publish.journal` records pending writes and deletes.
 Journal version 2 records the SHA-256 of each staged write generation; version 1
 and unknown versions are rejected and retained, with no automatic journal migration.

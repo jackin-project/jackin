@@ -8,8 +8,8 @@
 //! pending their owning phases; Capsule's only `Component` impl has no call
 //! site, and no workspace package currently consumes the facade's
 //! `Subscription` / `SubscriptionPoll` pair. Console defines a separate
-//! `SubscriptionPoll` in its own `tui::runtime`. `OpPicker` owns its load polling
-//! through its own `LoadPoll` and `LoadSubscription`.
+//! `SubscriptionPoll` in its own `tui::runtime`. The `jackin-oppicker` crate owns
+//! its load polling through `LoadPoll` and `LoadSubscription`.
 
 use ratatui::{CompletedFrame, Frame, Terminal, backend::Backend, layout::Rect};
 
