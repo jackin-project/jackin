@@ -992,6 +992,7 @@ fn github_config_mount_skips_absent_ignored_state() {
         auth_outcomes: std::collections::BTreeMap::new(),
         auth_mount_paths: std::collections::BTreeSet::new(),
         auth_mount_leases: Vec::new(),
+        provider_config_mounts: Vec::new(),
     };
 
     assert!(
@@ -1018,6 +1019,7 @@ fn github_config_mount_keeps_existing_ignored_state() {
         auth_outcomes: std::collections::BTreeMap::new(),
         auth_mount_paths: std::collections::BTreeSet::new(),
         auth_mount_leases: Vec::new(),
+        provider_config_mounts: Vec::new(),
     };
 
     assert!(
@@ -2535,6 +2537,7 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
         auth_outcomes: std::collections::BTreeMap::new(),
         auth_mount_paths: std::collections::BTreeSet::new(),
         auth_mount_leases: Vec::new(),
+        provider_config_mounts: Vec::new(),
     };
     let workspace = jackin_config::ResolvedWorkspace {
         name: String::new(),
@@ -8042,8 +8045,11 @@ async fn render_exit_clears_universe_marker_only_when_no_instances_remain() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
-    super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct);
-    let marker = paths.data_dir.join("universe-since");
+    super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct)
+        .await;
+    let marker = crate::runtime::coordination::universe_dir(&paths)
+        .unwrap()
+        .join("universe-since");
     let docker = jackin_test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         ..Default::default()
@@ -8059,8 +8065,11 @@ async fn render_exit_preserves_universe_marker_when_instances_remain() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
-    super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct);
-    let marker = paths.data_dir.join("universe-since");
+    super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct)
+        .await;
+    let marker = crate::runtime::coordination::universe_dir(&paths)
+        .unwrap()
+        .join("universe-since");
     let docker = jackin_test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
@@ -8085,8 +8094,11 @@ async fn render_exit_preserves_universe_marker_when_running_list_fails() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
-    super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct);
-    let marker = paths.data_dir.join("universe-since");
+    super::super::universe::mark_start(&paths, super::super::universe::StartKind::FreshConstruct)
+        .await;
+    let marker = crate::runtime::coordination::universe_dir(&paths)
+        .unwrap()
+        .join("universe-since");
     let docker = jackin_test_support::FakeDockerClient {
         fail_with: vec![("docker ps".to_owned(), "daemon down".to_owned())],
         ..Default::default()
@@ -10459,4 +10471,65 @@ fn metadata_file_mount_instances_require_recreation_after_layout_change() {
     let current = super::account_configuration_fingerprint(&config, None, "role", &[]).unwrap();
     std::fs::write(temp.path().join("account-config.sha256"), current).unwrap();
     assert!(super::account_configuration_matches(temp.path(), &config, None, "role").unwrap());
+}
+
+#[tokio::test]
+async fn related_restore_load_options_share_the_entry_lease_until_activation() {
+    use jackin_test_support::FakeDockerClient;
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let docker = FakeDockerClient::default();
+    let manifest = workspace_manifest(
+        "jk-related-entry-lease",
+        "the-architect",
+        "The Architect",
+        jackin_core::Agent::Codex,
+    );
+    let mut current = LoadOptions::for_load(false, false);
+    current.entry_claim = Some(std::sync::Arc::new(
+        crate::runtime::universe::claim_entry(&paths, &docker).await,
+    ));
+    let opts = related_restore_load_options(&current, &manifest).unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        current.entry_claim.as_ref().unwrap(),
+        opts.entry_claim.as_ref().unwrap(),
+    ));
+    let pending_dir = crate::runtime::coordination::universe_dir(&paths)
+        .unwrap()
+        .join("universe-pending");
+    assert_eq!(std::fs::read_dir(&pending_dir).unwrap().count(), 1);
+
+    drop(current);
+    assert_eq!(
+        std::fs::read_dir(&pending_dir).unwrap().count(),
+        1,
+        "nested restore owns the same pending lease after outer options drop"
+    );
+    opts.entry_claim
+        .as_deref()
+        .unwrap()
+        .activate()
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read_dir(&pending_dir).unwrap().count(), 0);
+    assert!(
+        crate::runtime::coordination::universe_dir(&paths)
+            .unwrap()
+            .join("universe-since")
+            .exists()
+    );
+    assert!(
+        matches!(
+            crate::runtime::universe::take_exit_claim(&paths),
+            crate::runtime::universe::ExitClaim::Claimed { .. }
+        ),
+        "activated nested restore must permit outro while options remain alive"
+    );
+    drop(opts);
+    assert!(
+        !crate::runtime::coordination::universe_dir(&paths)
+            .unwrap()
+            .join("universe-since")
+            .exists()
+    );
 }

@@ -161,14 +161,16 @@ pub(super) async fn handle_load(
     let mut opts = runtime::LoadOptions::for_load(debug, rebuild);
     opts.force = force;
     opts.agent = agent;
-    opts.account = account;
+    opts.selection = account.map(jackin_core::LaunchSelection::Account);
     opts.role_branch = role_branch;
     opts.docker_profile = docker_profile;
     // Pre-launch reconcile: if a previous role in a keep_awake
     // workspace already runs, ensure caffeinate is up before we
     // build/launch (so a long Docker build doesn't see the host
     // sleep). Post-launch reconcile below catches the new role.
-    let entry_claim = play_construct_intro_if_needed(paths, &docker).await;
+    opts.entry_claim = Some(std::sync::Arc::new(
+        play_construct_intro_if_needed(paths, &docker).await,
+    ));
     runtime::reconcile_keep_awake_when_configured(
         paths,
         &docker,
@@ -193,8 +195,10 @@ pub(super) async fn handle_load(
         &class,
         &result,
     );
-    if result.is_err() {
-        runtime::release_entry_if_idle(paths, &docker, &entry_claim).await;
+    if result.is_err()
+        && let Some(claim) = opts.entry_claim.as_deref()
+    {
+        runtime::release_entry_if_idle(&docker, claim).await;
     }
     runtime::reconcile_keep_awake_when_configured(
         paths,
@@ -271,7 +275,7 @@ pub(super) async fn handle_console(
     let mut config = take_post_console_config(console_config);
     let Some(outcome) = outcome else {
         if let Some((docker, claim)) = &console_entry {
-            runtime::release_entry_if_idle(&paths, docker, claim).await;
+            runtime::release_entry_if_idle(docker, claim).await;
         }
         if let Some(error) = startup_error_exit {
             return Err(error);
@@ -334,16 +338,10 @@ async fn dispatch_console_outcome(
             selector,
             workspace,
             agent,
-            account,
-            configuration,
+            selection,
         } => {
             return console_outcome_launch_with_account(
-                selector,
-                workspace,
-                agent,
-                account,
-                configuration,
-                &mut ctx,
+                selector, workspace, agent, selection, &mut ctx,
             )
             .await;
         }
@@ -358,7 +356,7 @@ async fn console_outcome_prewarm(
     screen: console::TerminalSession,
 ) -> Result<()> {
     if let Some((docker, claim)) = ctx.console_entry {
-        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+        runtime::release_entry_if_idle(docker, claim).await;
     }
     drop(screen);
     let args = crate::cli::PrewarmArgs {
@@ -389,7 +387,7 @@ async fn console_outcome_instance_action(
     // The action owns the terminal with its own foreground
     // process; hand it back the cooked screen.
     if let Some((docker, claim)) = ctx.console_entry {
-        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+        runtime::release_entry_if_idle(docker, claim).await;
     }
     drop(screen);
     handle_console_instance_action(ctx.paths, ctx.config, outcome, ctx.docker, ctx.runner).await
@@ -432,7 +430,7 @@ async fn console_outcome_new_session(
     )
     .await;
     if let Some((docker, claim)) = ctx.console_entry {
-        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+        runtime::release_entry_if_idle(docker, claim).await;
     }
     result
 }
@@ -441,15 +439,14 @@ async fn console_outcome_launch_with_account(
     selector: RoleSelector,
     workspace: jackin_config::ResolvedWorkspace,
     agent: jackin_core::Agent,
-    account: Option<String>,
-    configuration: Option<String>,
+    selection: jackin_core::LaunchSelection,
     ctx: &mut ConsoleLaunchCtx<'_>,
 ) -> Result<()> {
     super::emit_mount_heal_notices(&workspace);
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = Some(agent);
-    opts.account = account;
-    opts.configuration = configuration;
+    opts.selection = Some(selection);
+    opts.entry_claim = Some(std::sync::Arc::new(take_console_entry_claim(ctx).await));
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -475,8 +472,8 @@ async fn console_outcome_launch_with_account(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-    if let Some((docker, claim)) = ctx.console_entry {
-        runtime::release_entry_if_idle(ctx.paths, docker, claim).await;
+    if let Some(claim) = opts.entry_claim.as_deref() {
+        runtime::release_entry_if_idle(ctx.docker, claim).await;
     }
     result
 }
@@ -490,11 +487,7 @@ async fn console_outcome_launch(
     super::emit_mount_heal_notices(&workspace);
     let mut opts = runtime::LoadOptions::for_launch(ctx.debug);
     opts.agent = selected_agent;
-    let entry_claim = if let Some((_entry_docker, claim)) = ctx.console_entry.take() {
-        claim
-    } else {
-        play_construct_intro_if_needed(ctx.paths, ctx.docker).await
-    };
+    opts.entry_claim = Some(std::sync::Arc::new(take_console_entry_claim(ctx).await));
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
         ctx.docker,
@@ -513,8 +506,10 @@ async fn console_outcome_launch(
         &class,
         &result,
     );
-    if result.is_err() {
-        runtime::release_entry_if_idle(ctx.paths, ctx.docker, &entry_claim).await;
+    if result.is_err()
+        && let Some(claim) = opts.entry_claim.as_deref()
+    {
+        runtime::release_entry_if_idle(ctx.docker, claim).await;
     }
     runtime::reconcile_keep_awake_when_configured(
         ctx.paths,
@@ -525,6 +520,14 @@ async fn console_outcome_launch(
     .await;
     // Alternate-screen guard drops in the caller after this returns.
     result
+}
+
+async fn take_console_entry_claim(ctx: &mut ConsoleLaunchCtx<'_>) -> runtime::EntryClaim {
+    if let Some((_entry_docker, claim)) = ctx.console_entry.take() {
+        claim
+    } else {
+        play_construct_intro_if_needed(ctx.paths, ctx.docker).await
+    }
 }
 
 fn any_keep_awake_enabled(config: &AppConfig) -> bool {

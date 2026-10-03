@@ -10,6 +10,7 @@ pub mod apple_container;
 pub mod attach;
 pub mod backend;
 pub mod cleanup;
+pub(crate) mod coordination;
 pub mod discovery;
 pub mod docker_profile;
 pub mod drift;

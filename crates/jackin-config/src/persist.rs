@@ -15,6 +15,7 @@
 use anyhow::Context;
 use fs4::TryLockError;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::File;
@@ -58,6 +59,8 @@ pub(crate) struct StagedWrite {
     target: PathBuf,
     tmp: PathBuf,
     original: TargetState,
+    expected_sha256: [u8; 32],
+    recovery_owned: bool,
     committed: bool,
 }
 
@@ -311,6 +314,8 @@ pub(crate) fn stage_atomic_write_bytes(
         target: path.to_path_buf(),
         tmp,
         original,
+        expected_sha256: Sha256::digest(contents).into(),
+        recovery_owned: false,
         committed: false,
     })
 }
@@ -383,7 +388,7 @@ pub(crate) fn publication_journal_path(config_file: &Path) -> PathBuf {
 }
 
 /// Only publication-journal schema this binary forward-rolls.
-const PUBLICATION_JOURNAL_VERSION: u32 = 1;
+const PUBLICATION_JOURNAL_VERSION: u32 = 2;
 
 /// Durable record of one multi-file publication, fsync'd before the first rename.
 ///
@@ -402,8 +407,14 @@ struct PublicationJournal {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "lowercase", deny_unknown_fields)]
 enum PublicationOp {
-    Write { target: PathBuf, tmp: PathBuf },
-    Delete { target: PathBuf },
+    Write {
+        target: PathBuf,
+        tmp: PathBuf,
+        expected_sha256: [u8; 32],
+    },
+    Delete {
+        target: PathBuf,
+    },
 }
 
 fn publication_ops(writes: &[StagedWrite], deletes: &[StagedDelete]) -> Vec<PublicationOp> {
@@ -412,6 +423,7 @@ fn publication_ops(writes: &[StagedWrite], deletes: &[StagedDelete]) -> Vec<Publ
         .map(|write| PublicationOp::Write {
             target: write.target.clone(),
             tmp: write.tmp.clone(),
+            expected_sha256: write.expected_sha256,
         })
         .chain(deletes.iter().map(|delete| PublicationOp::Delete {
             target: delete.target.clone(),
@@ -424,6 +436,7 @@ fn publication_ops(writes: &[StagedWrite], deletes: &[StagedDelete]) -> Vec<Publ
 /// Written via staged tmp + fsync + rename + parent fsync at `0600`, so the
 /// journal itself is all-or-nothing: recovery either sees the full rename set
 /// or no journal at all.
+#[cfg(test)]
 pub(crate) fn write_publication_journal(
     journal_path: &Path,
     writes: &[StagedWrite],
@@ -463,9 +476,9 @@ fn remove_publication_journal(journal_path: &Path) -> crate::ConfigResult<()> {
 /// Runs under the config tree's already-held exclusive lock (see
 /// [`acquire_config_write_lock`]); it performs no locking itself. No journal
 /// still garbage-collects orphaned staged files and returns `Ok(())`. Each op
-/// is idempotent: an already-renamed write (tmp gone, target present) and an
-/// already-applied delete are skipped. A corrupt journal, a version mismatch,
-/// or a write whose staged tmp AND target are both gone fails closed with the
+/// is idempotent: a write whose target matches the recorded generation is
+/// complete; already-applied deletes are skipped. A corrupt journal, a version mismatch,
+/// or a write with missing or mismatched generation bytes fails closed with the
 /// journal left for forensics — the operator hand-verifies the tree and
 /// removes the journal to proceed. Orphaned `*.tmp.<pid>.<ctr>` staged files
 /// are garbage-collected best-effort while the write lock is held.
@@ -577,18 +590,103 @@ pub(crate) fn commit_staged_config(
     if writes.is_empty() && deletes.is_empty() {
         return Ok(());
     }
-    write_publication_journal(journal_path, writes, deletes)?;
+    commit_staged_config_with(
+        journal_path,
+        writes,
+        deletes,
+        write_publication_ops,
+        StagedWrite::commit,
+        stage_atomic_write_bytes,
+    )
+}
+
+fn commit_staged_config_with<P, C, S>(
+    journal_path: &Path,
+    writes: &mut [StagedWrite],
+    deletes: &mut [StagedDelete],
+    publish: P,
+    commit: C,
+    stage_restore: S,
+) -> crate::ConfigResult<()>
+where
+    P: FnMut(&Path, &[PublicationOp]) -> crate::ConfigResult<()>,
+    C: FnMut(&mut StagedWrite) -> crate::ConfigResult<()>,
+    S: FnMut(&Path, &[u8]) -> crate::ConfigResult<StagedWrite>,
+{
+    commit_staged_config_with_sync(
+        journal_path,
+        writes,
+        deletes,
+        (publish, commit, stage_restore),
+        sync_parent,
+    )
+}
+
+fn commit_staged_config_with_sync<P, C, S, D>(
+    journal_path: &Path,
+    writes: &mut [StagedWrite],
+    deletes: &mut [StagedDelete],
+    operations: (P, C, S),
+    mut sync_staged_parent: D,
+) -> crate::ConfigResult<()>
+where
+    P: FnMut(&Path, &[PublicationOp]) -> crate::ConfigResult<()>,
+    C: FnMut(&mut StagedWrite) -> crate::ConfigResult<()>,
+    S: FnMut(&Path, &[u8]) -> crate::ConfigResult<StagedWrite>,
+    D: FnMut(&Path) -> crate::ConfigResult<()>,
+{
+    let (mut publish, mut commit, mut stage_restore) = operations;
+    // The journal can only recover a staged generation whose directory
+    // entries are durable, including entries in the workspace directory.
+    sync_staged_parents(writes, &mut sync_staged_parent)?;
+    // Installation may rename the journal and then fail its directory sync.
+    // Recovery takes custody before that ambiguous boundary. If no journal
+    // lands, the next locked recovery collects these files as orphans.
     for write in writes.iter_mut() {
-        if let Err(error) = write.commit() {
-            return abort_staged_config(journal_path, writes, deletes, error);
+        write.recovery_owned = true;
+    }
+    publish(journal_path, &publication_ops(writes, deletes))?;
+    for write in writes.iter_mut() {
+        if let Err(error) = commit(write) {
+            return abort_staged_config(
+                journal_path,
+                writes,
+                deletes,
+                error,
+                &mut publish,
+                &mut stage_restore,
+                &mut sync_staged_parent,
+            );
         }
     }
     for delete in deletes.iter_mut() {
         if let Err(error) = delete.commit() {
-            return abort_staged_config(journal_path, writes, deletes, error);
+            return abort_staged_config(
+                journal_path,
+                writes,
+                deletes,
+                error,
+                &mut publish,
+                &mut stage_restore,
+                &mut sync_staged_parent,
+            );
         }
     }
     remove_publication_journal(journal_path)
+}
+
+/// Sync each staged parent once before a journal can name its files.
+fn sync_staged_parents<D>(writes: &[StagedWrite], sync: &mut D) -> crate::ConfigResult<()>
+where
+    D: FnMut(&Path) -> crate::ConfigResult<()>,
+{
+    let mut synced = HashSet::new();
+    for write in writes {
+        if synced.insert(write.tmp.parent()) {
+            sync(&write.tmp)?;
+        }
+    }
+    Ok(())
 }
 
 /// Restore every committed target to its pre-commit bytes.
@@ -599,26 +697,31 @@ pub(crate) fn commit_staged_config(
 /// rolls the commit forward to all-new. If applying a restore fails, the
 /// abort journal is left in place so recovery completes the abort to all-old.
 /// Either way the on-disk outcome is deterministic.
-fn abort_staged_config(
+fn abort_staged_config<P, S, D>(
     journal_path: &Path,
     writes: &mut [StagedWrite],
     deletes: &mut [StagedDelete],
     error: crate::ConfigError,
-) -> crate::ConfigResult<()> {
+    publish: &mut P,
+    stage_restore: &mut S,
+    sync_staged_parent: &mut D,
+) -> crate::ConfigResult<()>
+where
+    P: FnMut(&Path, &[PublicationOp]) -> crate::ConfigResult<()>,
+    S: FnMut(&Path, &[u8]) -> crate::ConfigResult<StagedWrite>,
+    D: FnMut(&Path) -> crate::ConfigResult<()>,
+{
     let mut restores: Vec<PublicationOp> = Vec::new();
+    let mut staged_restores = Vec::new();
     let mut restore_errors = Vec::new();
     for delete in deletes.iter_mut().rev() {
         if !delete.committed {
             continue;
         }
-        match stage_atomic_write_bytes(&delete.target, &delete.original) {
+        match stage_restore(&delete.target, &delete.original) {
             Ok(staged) => {
-                let tmp = staged.release_into_journal();
-                restores.push(PublicationOp::Write {
-                    target: delete.target.clone(),
-                    tmp,
-                });
-                delete.committed = false;
+                restores.extend(publication_ops(std::slice::from_ref(&staged), &[]));
+                staged_restores.push(staged);
             }
             Err(stage_error) => restore_errors.push(stage_error.to_string()),
         }
@@ -632,21 +735,14 @@ fn abort_staged_config(
                 restores.push(PublicationOp::Delete {
                     target: write.target.clone(),
                 });
-                write.committed = false;
             }
-            TargetState::File(contents) => {
-                match stage_atomic_write_bytes(&write.target, contents) {
-                    Ok(staged) => {
-                        let tmp = staged.release_into_journal();
-                        restores.push(PublicationOp::Write {
-                            target: write.target.clone(),
-                            tmp,
-                        });
-                        write.committed = false;
-                    }
-                    Err(stage_error) => restore_errors.push(stage_error.to_string()),
+            TargetState::File(contents) => match stage_restore(&write.target, contents) {
+                Ok(staged) => {
+                    restores.extend(publication_ops(std::slice::from_ref(&staged), &[]));
+                    staged_restores.push(staged);
                 }
-            }
+                Err(stage_error) => restore_errors.push(stage_error.to_string()),
+            },
             TargetState::Other => restore_errors.push(format!(
                 "cannot restore non-file config target {}",
                 write.target.display()
@@ -659,10 +755,24 @@ fn abort_staged_config(
             restore_errors.join("; ")
         )));
     }
-    if let Err(journal_error) = write_publication_ops(journal_path, &restores) {
+    if let Err(sync_error) = sync_staged_parents(&staged_restores, sync_staged_parent) {
+        return Err(crate::ConfigError::msg(format_args!(
+            "{error}; config rollback failed: {sync_error}"
+        )));
+    }
+    for staged in &mut staged_restores {
+        staged.recovery_owned = true;
+    }
+    if let Err(journal_error) = publish(journal_path, &restores) {
         return Err(crate::ConfigError::msg(format_args!(
             "{error}; config rollback failed: {journal_error}"
         )));
+    }
+    // The durable abort journal no longer references forward staged files.
+    // Return unused forward files to local cleanup; restore files stay owned
+    // by recovery until their operations complete.
+    for write in writes.iter_mut() {
+        write.recovery_owned = false;
     }
     let mut apply_errors = Vec::new();
     for op in &restores {
@@ -686,7 +796,11 @@ fn abort_staged_config(
 
 fn apply_publication_op(op: &PublicationOp) -> crate::ConfigResult<()> {
     match op {
-        PublicationOp::Write { target, tmp } => {
+        PublicationOp::Write {
+            target,
+            tmp,
+            expected_sha256,
+        } => {
             if tmp.parent() != target.parent() {
                 return Err(crate::ConfigError::msg(format_args!(
                     "publication journal staged file {} is not a sibling of {}",
@@ -695,8 +809,9 @@ fn apply_publication_op(op: &PublicationOp) -> crate::ConfigResult<()> {
                 )));
             }
             if !tmp.exists() {
-                if target.exists() {
-                    return Ok(());
+                if target.is_file() {
+                    verify_publication_bytes(target, expected_sha256)?;
+                    return sync_parent(target);
                 }
                 return Err(crate::ConfigError::msg(format_args!(
                     "publication journal cannot complete write to {}: staged file {} is gone; \
@@ -705,6 +820,7 @@ fn apply_publication_op(op: &PublicationOp) -> crate::ConfigResult<()> {
                     tmp.display()
                 )));
             }
+            verify_publication_bytes(tmp, expected_sha256)?;
             ensure_replaceable_target(target)?;
             std::fs::rename(tmp, target).map_err(|rename_error| {
                 anyhow::Error::new(rename_error).context(format!(
@@ -729,6 +845,17 @@ fn apply_publication_op(op: &PublicationOp) -> crate::ConfigResult<()> {
             sync_parent(target)
         }
     }
+}
+
+fn verify_publication_bytes(path: &Path, expected_sha256: &[u8; 32]) -> crate::ConfigResult<()> {
+    let actual: [u8; 32] = Sha256::digest(std::fs::read(path)?).into();
+    if &actual != expected_sha256 {
+        return Err(crate::ConfigError::msg(format_args!(
+            "publication journal generation mismatch at {}; recovery artifacts retained",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn open_staged_private(path: &Path) -> std::io::Result<File> {
@@ -771,14 +898,6 @@ fn sync_parent(path: &Path) -> crate::ConfigResult<()> {
 }
 
 impl StagedWrite {
-    /// Release the staged file into publication-journal ownership, returning
-    /// its path. The journal op consumes the file on apply; `Drop` cleanup
-    /// is disarmed so the journaled file survives this value.
-    fn release_into_journal(mut self) -> PathBuf {
-        self.committed = true;
-        self.tmp.clone()
-    }
-
     pub(crate) fn commit(&mut self) -> crate::ConfigResult<()> {
         std::fs::rename(&self.tmp, &self.target).map_err(|rename_err| {
             anyhow::Error::new(rename_err).context(format!(
@@ -804,7 +923,7 @@ impl StagedDelete {
 
 impl Drop for StagedWrite {
     fn drop(&mut self) {
-        if !self.committed {
+        if !self.recovery_owned && !self.committed {
             drop(std::fs::remove_file(&self.tmp));
         }
     }
