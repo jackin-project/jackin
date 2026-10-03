@@ -507,25 +507,22 @@ fn capture_locked_claude_source(
         }
         None => None,
     };
+    #[cfg(target_os = "macos")]
     let credentials = if let Some(credentials) = credentials {
         credentials
+    } else if host_home_is_real(host_home) {
+        let scope = jackin_core::claude_keychain_scope(source_dir, host_home, source_dir)
+            .ok_or_else(|| anyhow::anyhow!("invalid Claude config directory"))?;
+        read_claude_keychain(&scope.service)?
+            .ok_or_else(|| claude_source_missing_error(source_dir))?
     } else {
-        #[cfg(target_os = "macos")]
-        {
-            if host_home_is_real(host_home) {
-                let scope = jackin_core::claude_keychain_scope(source_dir, host_home, source_dir)
-                    .ok_or_else(|| anyhow::anyhow!("invalid Claude config directory"))?;
-                read_claude_keychain(&scope.service)?
-                    .ok_or_else(|| claude_source_missing_error(source_dir))?
-            } else {
-                return Err(claude_source_missing_error(source_dir));
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = host_home;
-            return Err(claude_source_missing_error(source_dir));
-        }
+        return Err(claude_source_missing_error(source_dir));
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let Some(credentials) = credentials else {
+        let _ = host_home;
+        return Err(claude_source_missing_error(source_dir));
     };
 
     let account = auth_directory::read_locked_source_file(
