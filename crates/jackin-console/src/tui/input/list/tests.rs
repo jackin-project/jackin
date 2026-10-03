@@ -1665,3 +1665,46 @@ fn picker_esc_closes_without_opening_url() {
 
     assert!(state.list_modal.is_none());
 }
+
+#[test]
+fn configured_launch_picker_dispatches_exact_configuration_only() {
+    let config = AppConfig::default();
+    let tmp = tempfile::tempdir().unwrap();
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    let selector = jackin_core::RoleSelector::new(None, "architect");
+    let choices = ["claude-fast", "claude-deep"]
+        .into_iter()
+        .map(|id| crate::services::launch::AccountChoice {
+            id: "shared-account".into(),
+            name: "Shared account".into(),
+            provider: jackin_config::AiProvider::Anthropic,
+            agents: vec![jackin_core::Agent::Claude],
+            configuration_id: Some(id.into()),
+            instance_id: None,
+        })
+        .collect();
+    let mut picker = crate::tui::components::account_picker::AccountPickerState::new(
+        selector.clone(),
+        jackin_core::Agent::Claude,
+        choices,
+    );
+    picker.move_down();
+    state.launch_account_picker = Some(picker);
+
+    match handle_launch_account_picker(&mut state, key(KeyCode::Enter)) {
+        InputOutcome::LaunchWithAccount {
+            selector: selected,
+            agent,
+            selection,
+        } => {
+            assert_eq!(selected, selector);
+            assert_eq!(agent, jackin_core::Agent::Claude);
+            assert_eq!(
+                selection,
+                jackin_core::LaunchSelection::Configuration("claude-deep".into())
+            );
+        }
+        other => panic!("expected exact configured launch, got {other:?}"),
+    }
+    assert!(state.launch_account_picker.is_none());
+}

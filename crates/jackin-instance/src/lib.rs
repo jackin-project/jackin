@@ -502,6 +502,7 @@ pub struct InstanceAuthBinding {
     /// Explicit XDG roots from the selected profile, if any. These are
     /// selected-instance data, never ambient process-environment state.
     pub xdg_roots: Option<jackin_config::XdgRoots>,
+    selected_source: Option<auth::SelectedAuthSourceSnapshot>,
 }
 
 impl InstanceAuthBinding {
@@ -525,7 +526,38 @@ impl InstanceAuthBinding {
             source_provider: None,
             source_selector: None,
             xdg_roots: None,
+            selected_source: None,
         }
+    }
+
+    /// Opaque revision of the selected source captured for this launch.
+    #[must_use]
+    pub fn selected_source_revision(&self) -> Option<&str> {
+        self.selected_source
+            .as_ref()
+            .map(auth::SelectedAuthSourceSnapshot::content_revision)
+    }
+
+    fn effective_selected_source_dir(&self) -> Option<PathBuf> {
+        let xdg_agent_dir = match self.agent {
+            jackin_core::Agent::Amp => Some("amp"),
+            jackin_core::Agent::Opencode => Some("opencode"),
+            _ => None,
+        };
+        xdg_agent_dir
+            .and_then(|agent_dir| {
+                self.xdg_roots
+                    .as_ref()
+                    .map(|roots| roots.data.join(agent_dir))
+            })
+            .or_else(|| self.sync_source_dir.clone())
+    }
+
+    fn provision_source_dir(&self) -> Option<&Path> {
+        self.selected_source
+            .as_ref()
+            .map(auth::SelectedAuthSourceSnapshot::materialized_source_dir)
+            .or(self.sync_source_dir.as_deref())
     }
 }
 
@@ -640,6 +672,59 @@ fn validate_selected_account_sources(
     Ok(())
 }
 
+/// Re-admit the latest selected source as one descriptor/content revision.
+/// The retained private snapshot crosses worker boundaries; original paths
+/// remain descriptor identity only and are never reopened by a worker.
+fn capture_selected_account_sources(
+    bindings: &[InstanceAuthBinding],
+    host_home: &Path,
+    role_root: &Path,
+) -> anyhow::Result<Vec<InstanceAuthBinding>> {
+    validate_selected_account_sources(bindings, host_home)?;
+    let snapshot_parent = role_root.join("provider-config/source-snapshots");
+    bindings
+        .iter()
+        .map(|binding| {
+            let mut admitted = binding.clone();
+            if binding.mode == AuthForwardMode::Sync
+                && let Some(source_dir) = binding.effective_selected_source_dir()
+            {
+                let descriptor = auth::AuthSourceDescriptor {
+                    agent: binding.agent,
+                    provider: binding.source_provider,
+                    selector: binding.source_selector.clone(),
+                    source_dir: source_dir.clone(),
+                };
+                if let Some(snapshot) = &binding.selected_source {
+                    anyhow::ensure!(
+                        snapshot.descriptor() == &descriptor,
+                        "selected source descriptor changed after credential capture for {:?}",
+                        binding.key
+                    );
+                } else {
+                    admitted.selected_source = Some(
+                        auth::capture_selected_source(
+                            binding.agent,
+                            binding.source_provider,
+                            binding.source_selector.as_ref(),
+                            &source_dir,
+                            host_home,
+                            &snapshot_parent,
+                        )?
+                        .with_context(|| {
+                            format!(
+                                "selected {} account credentials disappeared before capture",
+                                binding.agent
+                            )
+                        })?,
+                    );
+                }
+            }
+            Ok(admitted)
+        })
+        .collect()
+}
+
 /// Compare XDG cache roots by their filesystem identity, not their spelling.
 /// Reject parent traversal before canonicalization so a missing path cannot
 /// smuggle an unresolved `..` through the fallback normalization.
@@ -702,6 +787,9 @@ pub struct RoleState {
     /// stay held until that state is dropped.
     pub auth_mount_paths: BTreeSet<PathBuf>,
     pub auth_mount_leases: Vec<AuthMountLease>,
+    /// Generated provider config overlays from the host authority namespace.
+    /// Each source is mounted read-only at its per-instance destination.
+    pub provider_config_mounts: Vec<(PathBuf, String)>,
 }
 
 impl RoleState {
@@ -960,13 +1048,13 @@ impl RoleState {
 
         let hosts_yml = gh_config_dir.join("hosts.yml");
         let github_context = github.clone();
-        validate_selected_account_sources(bindings, host_home)?;
+        let bindings = capture_selected_account_sources(bindings, host_home, &root)?;
 
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
         let home_path = home_dir.clone();
 
-        let suffixes = slot_suffixes(bindings);
+        let suffixes = slot_suffixes(&bindings);
         let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(bindings.len());
             for (binding, suffix) in bindings.iter().zip(suffixes) {
@@ -1074,6 +1162,7 @@ impl RoleState {
                 auth_outcomes,
                 auth_mount_paths,
                 auth_mount_leases,
+                provider_config_mounts: Vec::new(),
             },
             selected_outcome,
         ))
@@ -1156,13 +1245,13 @@ impl RoleState {
         std::fs::create_dir_all(&home_dir)?;
         std::fs::create_dir_all(&jackin_state_dir)?;
 
-        validate_selected_account_sources(bindings, host_home)?;
+        let bindings = capture_selected_account_sources(bindings, host_home, &root)?;
 
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
         let home_path = home_dir.clone();
 
-        let suffixes = slot_suffixes(bindings);
+        let suffixes = slot_suffixes(&bindings);
         let prepared_auth = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(bindings.len());
             for (binding, suffix) in bindings.iter().zip(suffixes) {
@@ -1317,7 +1406,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let claude_dir = root.join(&layout.store_rel);
@@ -1359,7 +1448,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let codex_dir = root.join(&layout.store_rel);
@@ -1392,12 +1481,17 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let xdg_data_dir = binding
             .xdg_roots
             .as_ref()
             .map(|roots| roots.data.join("amp"));
-        let credential_source_dir = xdg_data_dir.as_deref().or(sync_source_dir);
+        let credential_source_dir = binding
+            .selected_source
+            .as_ref()
+            .map(auth::SelectedAuthSourceSnapshot::materialized_source_dir)
+            .or(xdg_data_dir.as_deref())
+            .or(sync_source_dir);
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let amp_dir = root.join(&layout.store_rel);
@@ -1443,7 +1537,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let kimi_dir = root.join(&layout.store_rel);
@@ -1473,12 +1567,17 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let xdg_data_dir = binding
             .xdg_roots
             .as_ref()
             .map(|roots| roots.data.join("opencode"));
-        let credential_source_dir = xdg_data_dir.as_deref().or(sync_source_dir);
+        let credential_source_dir = binding
+            .selected_source
+            .as_ref()
+            .map(auth::SelectedAuthSourceSnapshot::materialized_source_dir)
+            .or(xdg_data_dir.as_deref())
+            .or(sync_source_dir);
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let opencode_dir = root.join(&layout.store_rel);
@@ -1518,7 +1617,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let grok_dir = root.join(&layout.store_rel);
@@ -1552,7 +1651,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let antigravity_dir = root.join(&layout.store_rel);
@@ -1585,7 +1684,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let gemini_dir = root.join(&layout.store_rel);
@@ -1618,7 +1717,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let cursor_dir = root.join(&layout.store_rel);
@@ -1651,7 +1750,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let muse_dir = root.join(&layout.store_rel);
@@ -1684,7 +1783,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let omp_dir = root.join(&layout.store_rel);
@@ -1729,7 +1828,7 @@ impl RoleState {
         suffix: Option<&str>,
     ) -> anyhow::Result<(ProvisionedInstanceAuth, AuthProvisionOutcome)> {
         let mode = binding.mode;
-        let sync_source_dir = binding.sync_source_dir.as_deref();
+        let sync_source_dir = binding.provision_source_dir();
         let (store, home_rel) = agent_slot_dirs(binding.agent);
         let layout = slot_layout(binding.agent, store, home_rel, suffix);
         let hermes_dir = root.join(&layout.store_rel);
@@ -1873,3 +1972,6 @@ fn github_ignore_can_skip_state_prepare(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, unix))]
+mod selected_source_tests;

@@ -204,13 +204,14 @@ pub fn launch_with_committed_agent(
         agent,
         resolved.accounts,
     ) {
-        Ok(LaunchAccountSelection::Launch(id)) => Ok(Some(ConsoleOutcome::LaunchWithAccount {
-            selector: resolved.role,
-            workspace: resolved.workspace,
-            agent,
-            account: Some(id),
-            configuration: None,
-        })),
+        Ok(LaunchAccountSelection::Launch(selection)) => {
+            Ok(Some(ConsoleOutcome::LaunchWithAccount {
+                selector: resolved.role,
+                workspace: resolved.workspace,
+                agent,
+                selection,
+            }))
+        }
         Ok(LaunchAccountSelection::Pick(accounts)) => {
             open_launch_account_picker_plan(state, resolved.input, resolved.role, agent, accounts);
             Ok(None)
@@ -306,9 +307,9 @@ pub fn resolve_agent_default(
 /// Committed-launch account decision: launch immediately or show the picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchAccountSelection {
-    /// Launch immediately with this account id: either a valid binding
-    /// default or the sole eligible candidate.
-    Launch(String),
+    /// Launch immediately with the exact configuration or registered account
+    /// admitted by defaults, bindings, or the sole eligible candidate.
+    Launch(jackin_core::LaunchSelection),
     /// No default applies and several candidates are eligible: show the
     /// account picker with these choices in [`sort_account_choices_by_id`]
     /// order.
@@ -363,12 +364,18 @@ pub fn select_launch_account(
                 };
                 Err(anyhow::anyhow!(no_admitted_instance_message(agent, scope)))
             }
-            1 => Ok(LaunchAccountSelection::Launch(admitted.swap_remove(0).id)),
+            1 => Ok(LaunchAccountSelection::Launch(
+                admitted.swap_remove(0).into_launch_selection(),
+            )),
             _ => Ok(LaunchAccountSelection::Pick(admitted)),
         };
     }
     match resolve_agent_default(config, workspace, role, agent) {
-        AgentDefaultResolution::Launch(id) => return Ok(LaunchAccountSelection::Launch(id)),
+        AgentDefaultResolution::Launch(id) => {
+            return Ok(LaunchAccountSelection::Launch(
+                jackin_core::LaunchSelection::Account(id),
+            ));
+        }
         AgentDefaultResolution::Invalid(message) => return Err(anyhow::anyhow!(message)),
         AgentDefaultResolution::NoDefault => {}
     }
@@ -388,7 +395,9 @@ pub fn select_launch_account(
             };
             Err(anyhow::anyhow!(no_eligible_account_message(agent, scope)))
         }
-        1 => Ok(LaunchAccountSelection::Launch(eligible.swap_remove(0).id)),
+        1 => Ok(LaunchAccountSelection::Launch(
+            eligible.swap_remove(0).into_launch_selection(),
+        )),
         _ => {
             sort_account_choices_by_id(&mut eligible);
             Ok(LaunchAccountSelection::Pick(eligible))

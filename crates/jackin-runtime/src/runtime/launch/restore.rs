@@ -200,6 +200,7 @@ pub(super) fn related_restore_load_options(
         rebuild: current.rebuild,
         force: current.force,
         host_env: current.host_env.clone(),
+        entry_claim: current.entry_claim.clone(),
         agent: Some(manifest.agent()?),
         role_branch: manifest.role_source_ref.clone(),
         restore_container_base: Some(manifest.container_base.clone()),

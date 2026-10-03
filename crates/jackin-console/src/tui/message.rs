@@ -209,7 +209,7 @@ pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationClean
 }
 
 #[derive(Debug)]
-pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
+pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Selection> {
     Continue,
     ExitJackin,
     LaunchNamed(String),
@@ -229,8 +229,7 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     LaunchWithAccount {
         selector: RoleSelector,
         agent: Agent,
-        account: Provider,
-        configuration: Option<String>,
+        selection: Selection,
     },
 }
 
@@ -271,7 +270,7 @@ impl<Agent> ConsoleInstanceAction<Agent> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
+pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Selection> {
     Launch(RoleSelector, Workspace, Option<Agent>),
     PrewarmNamed(String),
     InstanceAction {
@@ -289,8 +288,7 @@ pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
         selector: RoleSelector,
         workspace: Workspace,
         agent: Agent,
-        account: Provider,
-        configuration: Option<String>,
+        selection: Selection,
     },
 }
 

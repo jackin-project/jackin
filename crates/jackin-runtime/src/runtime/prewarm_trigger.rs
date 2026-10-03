@@ -202,7 +202,7 @@ async fn background_sidecar_prewarm_once(
     paths: &JackinPaths,
     _debug: bool,
 ) -> anyhow::Result<SidecarPrewarmOutcome> {
-    let Some(_lock) = super::launch::try_lock_prewarmed_dind(paths) else {
+    let Some(_lock) = super::launch::try_lock_prewarmed_dind(paths).await else {
         return Ok(SidecarPrewarmOutcome::Skipped);
     };
     let docker = BollardDockerClient::connect()?;

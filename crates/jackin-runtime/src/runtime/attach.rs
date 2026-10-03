@@ -672,10 +672,15 @@ pub(super) async fn reconnect_or_create_session_with_focus_with_lease(
         docker,
         runner,
         &container,
+        None,
     )
     .await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "restore threads exact Docker ownership, account revision, and pending entry leases"
+)]
 pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease(
     paths: &JackinPaths,
     container_name: &str,
@@ -684,6 +689,7 @@ pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     container: &ContainerHandle,
+    entry_claim: Option<&super::universe::EntryClaim>,
 ) -> anyhow::Result<()> {
     validate_recorded_role_handle(paths, container_name, container)
         .map_err(mark_reconnect_admission_failure)?;
@@ -694,6 +700,13 @@ pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease
     admission_lease
         .ensure_current(paths)
         .map_err(mark_reconnect_admission_failure)?;
+    if let Some(claim) = entry_claim {
+        claim
+            .activate()
+            .await
+            .context("activating running launch entry")
+            .map_err(mark_reconnect_admission_failure)?;
+    }
     if super::host_attach::host_attach_enabled(paths) {
         let outcome =
             super::host_attach::run_host_attach_session(paths, container, None, focus_session, &[])
@@ -791,32 +804,18 @@ pub(super) async fn start_or_reconnect_capsule_client_with_lease(
         docker,
         runner,
         None,
+        None,
     )
     .await
     .map(|_| ())
 }
 
-async fn start_or_reconnect_capsule_client_with_handle_with_lease(
+async fn inspect_restore_container(
     paths: &JackinPaths,
     container_name: &str,
-    admission_lease: &super::launch::AccountConfigRevision,
     docker: &impl DockerApi,
-    runner: &mut impl CommandRunner,
     known_container: Option<&ContainerHandle>,
-) -> anyhow::Result<ContainerHandle> {
-    validate_current_account_admission(paths, container_name, admission_lease)?;
-    if let Some(container) = known_container {
-        anyhow::ensure!(
-            container.name() == container_name,
-            "container handle name mismatch: expected {container_name}, got {}",
-            container.name()
-        );
-    }
-    jackin_diagnostics::active_timing_started(
-        jackin_diagnostics::DiagnosticStage::Capsule,
-        "restore_inspect",
-        Some(container_name),
-    );
+) -> anyhow::Result<(ContainerState, Option<ContainerHandle>)> {
     let (inspect, inspect_handle) = if let Some(container) = known_container {
         validate_recorded_role_handle(paths, container_name, container)?;
         let current =
@@ -836,6 +835,33 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
     if let Some(container) = &inspect_handle {
         validate_recorded_role_handle(paths, container_name, container)?;
     }
+    Ok((inspect, inspect_handle))
+}
+
+async fn start_or_reconnect_capsule_client_with_handle_with_lease(
+    paths: &JackinPaths,
+    container_name: &str,
+    admission_lease: &super::launch::AccountConfigRevision,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    known_container: Option<&ContainerHandle>,
+    mut entry_claim: Option<&super::universe::EntryClaim>,
+) -> anyhow::Result<ContainerHandle> {
+    validate_current_account_admission(paths, container_name, admission_lease)?;
+    if let Some(container) = known_container {
+        anyhow::ensure!(
+            container.name() == container_name,
+            "container handle name mismatch: expected {container_name}, got {}",
+            container.name()
+        );
+    }
+    jackin_diagnostics::active_timing_started(
+        jackin_diagnostics::DiagnosticStage::Capsule,
+        "restore_inspect",
+        Some(container_name),
+    );
+    let (inspect, inspect_handle) =
+        inspect_restore_container(paths, container_name, docker, known_container).await?;
     let inspect_label = inspect.short_label();
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Capsule,
@@ -907,6 +933,12 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
                 }
                 return Err(start_err);
             }
+            if let Some(claim) = entry_claim.take() {
+                claim
+                    .activate()
+                    .await
+                    .context("activating running launch entry")?;
+            }
             super::launch::ensure_current_or_remove_stale_container(
                 admission_lease,
                 paths,
@@ -946,6 +978,7 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
         docker,
         runner,
         &container,
+        entry_claim,
     )
     .await?;
     Ok(container)
@@ -987,6 +1020,7 @@ pub(super) async fn start_or_hardline_agent(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     start_first: bool,
+    entry_claim: Option<&super::universe::EntryClaim>,
 ) -> anyhow::Result<()> {
     start_or_hardline_agent_with_known_container(
         paths,
@@ -996,10 +1030,15 @@ pub(super) async fn start_or_hardline_agent(
         runner,
         start_first,
         None,
+        entry_claim,
     )
     .await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "restore threads exact Docker ownership, account revision, and pending entry leases"
+)]
 pub(super) async fn start_or_hardline_agent_with_container_handle(
     paths: &JackinPaths,
     container_name: &str,
@@ -1008,6 +1047,7 @@ pub(super) async fn start_or_hardline_agent_with_container_handle(
     runner: &mut impl CommandRunner,
     start_first: bool,
     container: &ContainerHandle,
+    entry_claim: Option<&super::universe::EntryClaim>,
 ) -> anyhow::Result<()> {
     start_or_hardline_agent_with_known_container(
         paths,
@@ -1017,10 +1057,15 @@ pub(super) async fn start_or_hardline_agent_with_container_handle(
         runner,
         start_first,
         Some(container),
+        entry_claim,
     )
     .await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "restore threads exact Docker ownership, account revision, and pending entry leases"
+)]
 async fn start_or_hardline_agent_with_known_container(
     paths: &JackinPaths,
     container_name: &str,
@@ -1029,6 +1074,7 @@ async fn start_or_hardline_agent_with_known_container(
     runner: &mut impl CommandRunner,
     start_first: bool,
     known_container: Option<&ContainerHandle>,
+    entry_claim: Option<&super::universe::EntryClaim>,
 ) -> anyhow::Result<()> {
     validate_current_account_admission(paths, container_name, admission_lease)?;
     match crate::runtime::backend::backend_for_state(paths, container_name) {
@@ -1041,6 +1087,7 @@ async fn start_or_hardline_agent_with_known_container(
                     docker,
                     runner,
                     known_container,
+                    entry_claim,
                 )
                 .await?;
                 admission_lease.ensure_current(paths)?;
@@ -1074,6 +1121,7 @@ async fn start_or_hardline_agent_with_known_container(
                     docker,
                     runner,
                     &container,
+                    entry_claim,
                 )
                 .await
             }
@@ -1084,7 +1132,8 @@ async fn start_or_hardline_agent_with_known_container(
                 "immutable Docker container handle supplied for Apple Container backend"
             );
             admission_lease.ensure_current(paths)?;
-            crate::runtime::apple_container::reconnect(paths, container_name, None).await?;
+            crate::runtime::apple_container::reconnect(paths, container_name, None, entry_claim)
+                .await?;
             admission_lease.ensure_current(paths)?;
             anyhow::bail!("apple-container finalize not yet implemented - Phase 0")
         }
@@ -1473,6 +1522,7 @@ pub(crate) async fn hardline_docker_agent_with_focus(
                 docker,
                 runner,
                 &container,
+                None,
             )
             .await
         }
@@ -1520,6 +1570,10 @@ pub(crate) async fn hardline_docker_agent_with_focus(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "restore threads exact Docker ownership, account revision, and pending entry leases"
+)]
 async fn hardline_docker_agent_with_focus_with_lease(
     paths: &JackinPaths,
     container_name: &str,
@@ -1528,6 +1582,7 @@ async fn hardline_docker_agent_with_focus_with_lease(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     container: &ContainerHandle,
+    entry_claim: Option<&super::universe::EntryClaim>,
 ) -> anyhow::Result<()> {
     validate_current_account_admission(paths, container_name, admission_lease)
         .map_err(mark_reconnect_admission_failure)?;
@@ -1543,6 +1598,7 @@ async fn hardline_docker_agent_with_focus_with_lease(
         docker,
         runner,
         container,
+        entry_claim,
     )
     .await;
     // A clean last-session shutdown surfaces as a non-zero attach result (the
@@ -1699,6 +1755,7 @@ pub(super) async fn finalize_reconnected_foreground_session_with_handle(
             docker,
             runner,
             container,
+            None,
         )
         .await?;
         jackin_diagnostics::active_timing_started(

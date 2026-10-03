@@ -26,10 +26,123 @@ use crate::{InstanceError, SyncSourceValidationError};
 use anyhow::Context;
 use jackin_config::{AiProvider, AuthForwardMode, GithubAuthMode, ProfileSelector};
 use jackin_core::Agent;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 static AUTH_DIRECTORY_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Maximum bytes read from one selected credential file while it is captured
+/// for launch. Credential sources are operator-owned input, so every read
+/// must have a finite bound before the bytes cross into a worker thread.
+const MAX_AUTH_SOURCE_FILE_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum aggregate bytes copied from one selected directory source.
+const MAX_AUTH_SOURCE_TREE_BYTES: usize = 32 * 1024 * 1024;
+/// Maximum entries copied from one selected directory source.
+const MAX_AUTH_SOURCE_TREE_ENTRIES: usize = 4096;
+
+/// Secret-free identity for one selected profile source.
+///
+/// `source_dir` is the original descriptor path. The snapshot itself is a
+/// separate host-private directory and is exposed through
+/// [`SelectedAuthSourceSnapshot::materialized_source_dir`]. Keeping these
+/// values together prevents a worker from accidentally pairing bytes with a
+/// different provider or profile selector.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AuthSourceDescriptor {
+    pub(crate) agent: Agent,
+    pub(crate) provider: Option<AiProvider>,
+    pub(crate) selector: Option<ProfileSelector>,
+    pub(crate) source_dir: PathBuf,
+}
+
+struct SelectedAuthSourceSnapshotInner {
+    descriptor: AuthSourceDescriptor,
+    materialized_source: SelectedSourceDirectory,
+    content_revision: String,
+}
+
+/// Owned materialized source tree. Unix keeps the parent directory descriptor
+/// and child name so cleanup remains descriptor-relative even if a pathname is
+/// replaced while workers retain the snapshot.
+struct SelectedSourceDirectory {
+    #[cfg(unix)]
+    owner: auth_directory::SnapshotDirectory,
+    #[cfg(not(unix))]
+    owner: tempfile::TempDir,
+}
+
+impl SelectedSourceDirectory {
+    fn path(&self) -> &Path {
+        self.owner.path()
+    }
+}
+
+/// Immutable selected-source material retained across launch worker threads.
+///
+/// Capture owns a descriptor-relative read of the selected source and stores
+/// only the validated bytes in a private temporary tree. Workers may use the
+/// materialized path, but never need to reopen the original source path.
+#[derive(Clone)]
+pub(crate) struct SelectedAuthSourceSnapshot {
+    inner: Arc<SelectedAuthSourceSnapshotInner>,
+}
+
+impl std::fmt::Debug for SelectedAuthSourceSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SelectedAuthSourceSnapshot")
+            .field("descriptor", &self.inner.descriptor)
+            .field("content_revision", &self.inner.content_revision)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SelectedAuthSourceSnapshot {
+    /// Descriptor that was bound to the captured bytes.
+    pub(crate) fn descriptor(&self) -> &AuthSourceDescriptor {
+        &self.inner.descriptor
+    }
+
+    /// Host-private source tree containing the captured, validated bytes.
+    pub(crate) fn materialized_source_dir(&self) -> &Path {
+        self.inner.materialized_source.path()
+    }
+
+    /// Stable digest of the captured opaque source content.
+    pub(crate) fn content_revision(&self) -> &str {
+        &self.inner.content_revision
+    }
+}
+
+fn finish_source_snapshot(
+    agent: Agent,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+    source_dir: &Path,
+    materialized_source: SelectedSourceDirectory,
+) -> anyhow::Result<SelectedAuthSourceSnapshot> {
+    let content_revision = snapshot_content_revision(materialized_source.path())?;
+    Ok(SelectedAuthSourceSnapshot {
+        inner: Arc::new(SelectedAuthSourceSnapshotInner {
+            descriptor: AuthSourceDescriptor {
+                agent,
+                provider,
+                selector: selector.cloned(),
+                source_dir: source_dir.to_path_buf(),
+            },
+            materialized_source,
+            content_revision,
+        }),
+    })
+}
+
+fn claude_source_missing_error(source_dir: &Path) -> anyhow::Error {
+    anyhow::anyhow!(
+        "Not a Claude config folder: {} has no .credentials.json and no matching macOS Keychain \
+         login. Select the folder you set as CLAUDE_CONFIG_DIR when you logged in to Claude.",
+        source_dir.display()
+    )
+}
 
 /// Validate that `source_dir` carries the credential structure `agent`
 /// expects for sync-mode auth forwarding.
@@ -170,6 +283,573 @@ pub(crate) fn validate_sync_source_dir_for_selection(
     }
 }
 
+/// Capture one selected profile source before launch worker threads begin.
+///
+/// The source directory is locked and traversed descriptor-relatively on Unix
+/// for the whole capture. The returned snapshot owns a private temporary tree;
+/// callers must retain it until provisioning completes and pass
+/// [`SelectedAuthSourceSnapshot::materialized_source_dir`] to the existing
+/// provisioner. `snapshot_parent` must be a host-private directory that is
+/// not mounted into the capsule. A missing source directory returns
+/// `Ok(None)`; a source that exists but no longer contains the selected
+/// credential fails closed.
+pub(crate) fn capture_selected_source(
+    agent: Agent,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+    source_dir: &Path,
+    host_home: &Path,
+    snapshot_parent: &Path,
+) -> anyhow::Result<Option<SelectedAuthSourceSnapshot>> {
+    #[cfg(unix)]
+    {
+        let source = if agent == Agent::Amp {
+            lock_amp_source_dir(source_dir)?
+        } else {
+            auth_directory::lock_source_dir(source_dir)?
+        };
+        let Some(source) = source else {
+            return Ok(None);
+        };
+        let snapshot = create_source_snapshot_dir(snapshot_parent)?;
+        capture_locked_source(
+            agent,
+            provider,
+            selector,
+            source_dir,
+            host_home,
+            &source,
+            snapshot.path(),
+        )?;
+        finish_source_snapshot(agent, provider, selector, source_dir, snapshot).map(Some)
+    }
+
+    #[cfg(not(unix))]
+    {
+        let source_metadata = match std::fs::symlink_metadata(source_dir) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        anyhow::ensure!(
+            source_metadata.is_dir() && !source_metadata.file_type().is_symlink(),
+            "source auth directory {} is not a real directory",
+            source_dir.display()
+        );
+        let snapshot = create_source_snapshot_dir(snapshot_parent)?;
+        capture_unixless_source(
+            agent,
+            provider,
+            selector,
+            source_dir,
+            host_home,
+            snapshot.path(),
+        )?;
+        finish_source_snapshot(agent, provider, selector, source_dir, snapshot).map(Some)
+    }
+}
+
+fn create_source_snapshot_dir(parent: &Path) -> anyhow::Result<SelectedSourceDirectory> {
+    #[cfg(unix)]
+    {
+        Ok(SelectedSourceDirectory {
+            owner: auth_directory::create_snapshot_directory(parent)?,
+        })
+    }
+
+    #[cfg(not(unix))]
+    {
+        match std::fs::symlink_metadata(parent) {
+            Ok(metadata) => {
+                anyhow::ensure!(
+                    metadata.is_dir() && !metadata.file_type().is_symlink(),
+                    "auth snapshot parent {} is not a real directory",
+                    parent.display()
+                );
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::create_dir_all(parent).with_context(|| {
+                    format!("creating auth snapshot parent {}", parent.display())
+                })?;
+            }
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("opening auth snapshot parent {}", parent.display()));
+            }
+        }
+        let metadata = std::fs::symlink_metadata(parent)
+            .with_context(|| format!("opening auth snapshot parent {}", parent.display()))?;
+        anyhow::ensure!(
+            metadata.is_dir() && !metadata.file_type().is_symlink(),
+            "auth snapshot parent {} is not a real directory",
+            parent.display()
+        );
+        let owner = tempfile::Builder::new()
+            .prefix(".jackin-auth-source-")
+            .tempdir_in(parent)
+            .context("creating selected auth source snapshot")?;
+        Ok(SelectedSourceDirectory { owner })
+    }
+}
+
+#[cfg(unix)]
+fn capture_locked_source(
+    agent: Agent,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+    source_dir: &Path,
+    host_home: &Path,
+    source: &auth_directory::LockedSource,
+    snapshot_root: &Path,
+) -> anyhow::Result<()> {
+    match agent {
+        Agent::Claude => capture_locked_claude_source(source, source_dir, host_home, snapshot_root),
+        Agent::Codex => capture_locked_single_file_source(
+            source,
+            "auth.json",
+            "auth.json",
+            "Codex auth.json",
+            snapshot_root,
+        ),
+        Agent::Grok => capture_locked_single_file_source(
+            source,
+            "auth.json",
+            "auth.json",
+            "Grok auth.json",
+            snapshot_root,
+        ),
+        Agent::Opencode => capture_locked_opencode_source(source, provider, snapshot_root),
+        Agent::Antigravity => capture_locked_single_file_source(
+            source,
+            "settings.json",
+            "settings.json",
+            "Antigravity settings.json",
+            snapshot_root,
+        ),
+        Agent::Gemini => capture_locked_single_file_source(
+            source,
+            "oauth_creds.json",
+            "oauth_creds.json",
+            "Gemini oauth_creds.json",
+            snapshot_root,
+        ),
+        Agent::Cursor => capture_locked_single_file_source(
+            source,
+            "auth.json",
+            "auth.json",
+            "Cursor auth.json",
+            snapshot_root,
+        ),
+        Agent::Muse => capture_locked_single_file_source(
+            source,
+            "auth.json",
+            "auth.json",
+            "Muse auth.json",
+            snapshot_root,
+        ),
+        Agent::Amp => capture_locked_single_file_source(
+            source,
+            "secrets.json",
+            "secrets.json",
+            "Amp secrets.json",
+            snapshot_root,
+        ),
+        Agent::Kimi => {
+            validate_kimi_locked_source(source, source_dir)?;
+            let snapshot = auth_directory::open_directory_path(snapshot_root)?;
+            auth_directory::snapshot_source(&source.root, &snapshot)
+        }
+        Agent::Omp => {
+            let content = auth_directory::read_locked_source_file(
+                &source.root,
+                &["agent", "agent.db"],
+                "omp agent.db",
+            )?
+            .ok_or_else(|| {
+                anyhow::anyhow!("omp source {} has no agent/agent.db", source_dir.display())
+            })?;
+            write_snapshot_bytes(snapshot_root, Path::new("agent/agent.db"), &content)?;
+            validate_store_source_dir(Agent::Omp, provider, selector, snapshot_root, snapshot_root)
+                .map_err(anyhow::Error::from)
+        }
+        Agent::Hermes => {
+            let snapshot = auth_directory::open_directory_path(snapshot_root)?;
+            auth_directory::snapshot_source(&source.root, &snapshot)?;
+            validate_store_source_dir(
+                Agent::Hermes,
+                provider,
+                selector,
+                snapshot_root,
+                snapshot_root,
+            )
+            .map_err(anyhow::Error::from)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn capture_locked_claude_source(
+    source: &auth_directory::LockedSource,
+    source_dir: &Path,
+    host_home: &Path,
+    snapshot_root: &Path,
+) -> anyhow::Result<()> {
+    let credentials = auth_directory::read_locked_source_file(
+        &source.root,
+        &[".credentials.json"],
+        "Claude credentials",
+    )?;
+    let credentials = match credentials {
+        Some(bytes) => {
+            let text =
+                String::from_utf8(bytes).context("Claude .credentials.json is not valid UTF-8")?;
+            (!text.trim().is_empty()).then_some(text)
+        }
+        None => None,
+    };
+    let credentials = if let Some(credentials) = credentials {
+        credentials
+    } else {
+        #[cfg(target_os = "macos")]
+        {
+            if host_home_is_real(host_home) {
+                let scope = jackin_core::claude_keychain_scope(source_dir, host_home, source_dir)
+                    .ok_or_else(|| anyhow::anyhow!("invalid Claude config directory"))?;
+                read_claude_keychain(&scope.service)?
+                    .ok_or_else(|| claude_source_missing_error(source_dir))?
+            } else {
+                return Err(claude_source_missing_error(source_dir));
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = host_home;
+            return Err(claude_source_missing_error(source_dir));
+        }
+    };
+
+    let account = auth_directory::read_locked_source_file(
+        &source.root,
+        &[".claude.json"],
+        "Claude account metadata",
+    )?
+    .map(|bytes| String::from_utf8(bytes).context("Claude account metadata is not valid UTF-8"))
+    .transpose()?
+    .unwrap_or_else(|| "{}".to_owned());
+    write_snapshot_bytes(
+        snapshot_root,
+        Path::new(".credentials.json"),
+        credentials.as_bytes(),
+    )?;
+    write_snapshot_bytes(snapshot_root, Path::new(".claude.json"), account.as_bytes())
+}
+
+#[cfg(unix)]
+fn capture_locked_single_file_source(
+    source: &auth_directory::LockedSource,
+    source_name: &str,
+    snapshot_name: &str,
+    label: &str,
+    snapshot_root: &Path,
+) -> anyhow::Result<()> {
+    let bytes = auth_directory::read_locked_source_file(&source.root, &[source_name], label)?
+        .ok_or_else(|| anyhow::anyhow!("{label} is missing"))?;
+    let text =
+        String::from_utf8(bytes.clone()).with_context(|| format!("{label} is not valid UTF-8"))?;
+    anyhow::ensure!(!text.trim().is_empty(), "{label} is empty");
+    write_snapshot_bytes(snapshot_root, Path::new(snapshot_name), text.as_bytes())
+}
+
+#[cfg(unix)]
+fn capture_locked_opencode_source(
+    source: &auth_directory::LockedSource,
+    provider: Option<AiProvider>,
+    snapshot_root: &Path,
+) -> anyhow::Result<()> {
+    let bytes = auth_directory::read_locked_source_file(
+        &source.root,
+        &["auth.json"],
+        "OpenCode auth.json",
+    )?
+    .ok_or_else(|| anyhow::anyhow!("OpenCode auth.json is missing"))?;
+    let content = String::from_utf8(bytes).context("OpenCode auth.json is not valid UTF-8")?;
+    anyhow::ensure!(!content.trim().is_empty(), "OpenCode auth.json is empty");
+    let value = serde_json::from_str::<serde_json::Value>(&content)
+        .context("OpenCode auth.json is malformed")?;
+    let (key, entry) = select_opencode_auth_entry(&value, provider).map_err(|reason| {
+        anyhow::anyhow!("OpenCode auth.json cannot be selected safely: {reason}")
+    })?;
+    let mut selected = serde_json::Map::new();
+    selected.insert(key.to_owned(), entry.clone());
+    let selected = serde_json::to_vec(&serde_json::Value::Object(selected))
+        .context("serializing selected OpenCode credential")?;
+    write_snapshot_bytes(snapshot_root, Path::new("auth.json"), &selected)
+}
+
+#[cfg(not(unix))]
+fn capture_unixless_source(
+    agent: Agent,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+    source_dir: &Path,
+    host_home: &Path,
+    snapshot_root: &Path,
+) -> anyhow::Result<()> {
+    match agent {
+        Agent::Claude => {
+            let credentials = read_host_credentials_from_claude_config_dir(source_dir, host_home)?
+                .ok_or_else(|| anyhow::anyhow!("Claude credentials are missing"))?;
+            let account =
+                read_source_text(&source_dir.join(".claude.json"), "Claude account metadata")?
+                    .unwrap_or_else(|| "{}".to_owned());
+            write_snapshot_bytes(
+                snapshot_root,
+                Path::new(".credentials.json"),
+                credentials.as_bytes(),
+            )?;
+            write_snapshot_bytes(snapshot_root, Path::new(".claude.json"), account.as_bytes())
+        }
+        Agent::Amp => capture_unixless_single_file_source(
+            &amp_credentials_dir(source_dir),
+            "secrets.json",
+            "secrets.json",
+            "Amp secrets.json",
+            snapshot_root,
+        ),
+        Agent::Kimi | Agent::Hermes => {
+            copy_unixless_source_tree(source_dir, snapshot_root)?;
+            if agent == Agent::Kimi {
+                validate_kimi_source_dir_unixless(snapshot_root)?;
+            } else {
+                validate_store_source_dir(agent, provider, selector, snapshot_root, snapshot_root)
+                    .map_err(anyhow::Error::from)?;
+            }
+            Ok(())
+        }
+        Agent::Omp => {
+            let bytes = read_source_bytes(&source_dir.join("agent/agent.db"), "omp agent.db")?
+                .ok_or_else(|| anyhow::anyhow!("omp agent.db is missing"))?;
+            write_snapshot_bytes(snapshot_root, Path::new("agent/agent.db"), &bytes)?;
+            validate_store_source_dir(Agent::Omp, provider, selector, snapshot_root, snapshot_root)
+                .map_err(anyhow::Error::from)
+        }
+        Agent::Opencode => {
+            let content = read_source_text(&source_dir.join("auth.json"), "OpenCode auth.json")?
+                .ok_or_else(|| anyhow::anyhow!("OpenCode auth.json is missing"))?;
+            let value = serde_json::from_str::<serde_json::Value>(&content)
+                .context("OpenCode auth.json is malformed")?;
+            let (key, entry) = select_opencode_auth_entry(&value, provider).map_err(|reason| {
+                anyhow::anyhow!("OpenCode auth.json cannot be selected safely: {reason}")
+            })?;
+            let mut selected = serde_json::Map::new();
+            selected.insert(key.to_owned(), entry.clone());
+            let selected = serde_json::to_vec(&serde_json::Value::Object(selected))?;
+            write_snapshot_bytes(snapshot_root, Path::new("auth.json"), &selected)
+        }
+        Agent::Codex => capture_unixless_single_file_source(
+            source_dir,
+            "auth.json",
+            "auth.json",
+            "Codex auth.json",
+            snapshot_root,
+        ),
+        Agent::Grok => capture_unixless_single_file_source(
+            source_dir,
+            "auth.json",
+            "auth.json",
+            "Grok auth.json",
+            snapshot_root,
+        ),
+        Agent::Antigravity => capture_unixless_single_file_source(
+            source_dir,
+            "settings.json",
+            "settings.json",
+            "Antigravity settings.json",
+            snapshot_root,
+        ),
+        Agent::Gemini => capture_unixless_single_file_source(
+            source_dir,
+            "oauth_creds.json",
+            "oauth_creds.json",
+            "Gemini oauth_creds.json",
+            snapshot_root,
+        ),
+        Agent::Cursor => capture_unixless_single_file_source(
+            source_dir,
+            "auth.json",
+            "auth.json",
+            "Cursor auth.json",
+            snapshot_root,
+        ),
+        Agent::Muse => capture_unixless_single_file_source(
+            source_dir,
+            "auth.json",
+            "auth.json",
+            "Muse auth.json",
+            snapshot_root,
+        ),
+    }
+}
+
+#[cfg(not(unix))]
+fn capture_unixless_single_file_source(
+    source_dir: &Path,
+    source_name: &str,
+    snapshot_name: &str,
+    label: &str,
+    snapshot_root: &Path,
+) -> anyhow::Result<()> {
+    let bytes = read_source_bytes(&source_dir.join(source_name), label)?
+        .ok_or_else(|| anyhow::anyhow!("{label} is missing"))?;
+    let text = String::from_utf8(bytes).with_context(|| format!("{label} is not valid UTF-8"))?;
+    anyhow::ensure!(!text.trim().is_empty(), "{label} is empty");
+    write_snapshot_bytes(snapshot_root, Path::new(snapshot_name), text.as_bytes())
+}
+
+fn write_snapshot_bytes(root: &Path, relative: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    let path = root.join(relative);
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("snapshot file has no parent"))?;
+    std::fs::create_dir_all(parent)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
+    }
+    write_private_bytes(&path, bytes)
+}
+
+fn snapshot_content_revision(root: &Path) -> anyhow::Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    let mut budget = SnapshotHashBudget::default();
+    hash_snapshot_tree(root, Path::new(""), &mut digest, &mut budget)?;
+    Ok(hex::encode(digest.finalize()))
+}
+
+#[derive(Default)]
+struct SnapshotHashBudget {
+    bytes: usize,
+    entries: usize,
+}
+
+fn hash_snapshot_tree(
+    root: &Path,
+    relative: &Path,
+    digest: &mut impl sha2::Digest,
+    budget: &mut SnapshotHashBudget,
+) -> anyhow::Result<()> {
+    let mut entries = std::fs::read_dir(root)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
+        budget.entries = budget.entries.saturating_add(1);
+        anyhow::ensure!(
+            budget.entries <= MAX_AUTH_SOURCE_TREE_ENTRIES,
+            "selected auth source has too many entries"
+        );
+        let name = entry.file_name();
+        let child_relative = relative.join(&name);
+        let metadata = std::fs::symlink_metadata(entry.path())?;
+        let file_type = metadata.file_type();
+        digest.update(child_relative.as_os_str().as_encoded_bytes());
+        digest.update([0]);
+        if file_type.is_symlink() {
+            anyhow::bail!("selected auth snapshot contains a symlink");
+        }
+        if metadata.is_dir() {
+            digest.update(*b"d");
+            hash_snapshot_tree(&entry.path(), &child_relative, digest, budget)?;
+        } else if metadata.is_file() {
+            let bytes = read_bounded_local_file(&entry.path())?;
+            budget.bytes = budget.bytes.saturating_add(bytes.len());
+            anyhow::ensure!(
+                budget.bytes <= MAX_AUTH_SOURCE_TREE_BYTES,
+                "selected auth source exceeds the size limit"
+            );
+            digest.update(*b"f");
+            digest.update((bytes.len() as u64).to_be_bytes());
+            digest.update(bytes);
+        } else {
+            anyhow::bail!("selected auth snapshot contains a special file");
+        }
+    }
+    Ok(())
+}
+
+fn read_bounded_local_file(path: &Path) -> anyhow::Result<Vec<u8>> {
+    use std::io::Read;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "bounded auth reads run in joined blocking launch/prewarm workers or scoped provisioning OS threads"
+    )]
+    let file = std::fs::File::open(path)?;
+    let mut bytes = Vec::new();
+    file.take((MAX_AUTH_SOURCE_FILE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    anyhow::ensure!(
+        bytes.len() <= MAX_AUTH_SOURCE_FILE_BYTES,
+        "selected auth source file exceeds the size limit: {}",
+        path.display()
+    );
+    Ok(bytes)
+}
+
+#[cfg(not(unix))]
+fn copy_unixless_source_tree(source: &Path, destination: &Path) -> anyhow::Result<()> {
+    let mut budget = SnapshotHashBudget::default();
+    copy_unixless_source_tree_inner(source, destination, &mut budget)
+}
+
+#[cfg(not(unix))]
+fn copy_unixless_source_tree_inner(
+    source: &Path,
+    destination: &Path,
+    budget: &mut SnapshotHashBudget,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(destination)?;
+    let mut entries = std::fs::read_dir(source)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        budget.entries = budget.entries.saturating_add(1);
+        anyhow::ensure!(
+            budget.entries <= MAX_AUTH_SOURCE_TREE_ENTRIES,
+            "selected auth source has too many entries"
+        );
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let metadata = std::fs::symlink_metadata(&source_path)?;
+        if metadata.file_type().is_symlink() {
+            anyhow::bail!("selected auth source contains a symlink");
+        }
+        if metadata.is_dir() {
+            copy_unixless_source_tree_inner(&source_path, &destination_path, budget)?;
+        } else if metadata.is_file() {
+            let bytes = read_bounded_local_file(&source_path)?;
+            budget.bytes = budget.bytes.saturating_add(bytes.len());
+            anyhow::ensure!(
+                budget.bytes <= MAX_AUTH_SOURCE_TREE_BYTES,
+                "selected auth source exceeds the size limit"
+            );
+            write_snapshot_bytes(destination, Path::new(&entry.file_name()), &bytes)?;
+        } else {
+            anyhow::bail!("selected auth source contains a special file");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_kimi_source_dir_unixless(source_dir: &Path) -> anyhow::Result<()> {
+    let config = source_dir.join("config.toml");
+    let credentials = source_dir.join("credentials");
+    let config_bytes = read_bounded_local_file(&config)?;
+    String::from_utf8(config_bytes).context("Kimi config.toml is not valid UTF-8")?;
+    let metadata = std::fs::symlink_metadata(credentials)?;
+    anyhow::ensure!(metadata.is_dir() && !metadata.file_type().is_symlink());
+    Ok(())
+}
+
 #[cfg(unix)]
 fn validate_locked_sync_source_dir(
     agent: Agent,
@@ -206,9 +886,9 @@ fn validate_locked_sync_source_dir(
         Agent::Gemini => validate_locked_credential_file(source, "oauth_creds.json", "Gemini"),
         Agent::Cursor => validate_locked_credential_file(source, "auth.json", "Cursor"),
         Agent::Muse => validate_locked_credential_file(source, "auth.json", "Muse"),
-        Agent::Omp | Agent::Hermes => {
-            validate_locked_store_source_dir(agent, provider, selector, source, host_home)
-        }
+        Agent::Omp | Agent::Hermes => validate_locked_store_source_dir(
+            agent, provider, selector, source_dir, source, host_home,
+        ),
         Agent::Amp => validate_locked_credential_file(source, "secrets.json", "Amp"),
         Agent::Kimi => {
             let config = auth_directory::read_locked_source_file(
@@ -252,10 +932,20 @@ fn validate_locked_credential_file(
                 SyncSourceValidationError::new(format!("{agent} source rejected: {error:#}"))
             })?;
     match content {
-        Some(content) if !String::from_utf8_lossy(&content).trim().is_empty() => Ok(()),
-        Some(_) => Err(SyncSourceValidationError::new(format!(
-            "{agent} credential {name} is empty."
-        ))),
+        Some(content) => {
+            let text = std::str::from_utf8(&content).map_err(|error| {
+                SyncSourceValidationError::new(format!(
+                    "{agent} credential {name} is not valid UTF-8: {error}"
+                ))
+            })?;
+            if text.trim().is_empty() {
+                Err(SyncSourceValidationError::new(format!(
+                    "{agent} credential {name} is empty."
+                )))
+            } else {
+                Ok(())
+            }
+        }
         None => Err(SyncSourceValidationError::new(format!(
             "Not a {agent} config folder: expected {name} directly inside the source directory."
         ))),
@@ -301,19 +991,15 @@ fn validate_locked_store_source_dir(
     agent: Agent,
     provider: Option<AiProvider>,
     selector: Option<&ProfileSelector>,
+    source_dir: &Path,
     source: &auth_directory::LockedSource,
     host_home: &Path,
 ) -> Result<(), SyncSourceValidationError> {
-    let snapshot = tempfile::tempdir().map_err(|error| {
-        SyncSourceValidationError::new(format!("{agent} source snapshot failed: {error}"))
-    })?;
-    let snapshot_root = auth_directory::open_directory_path(snapshot.path()).map_err(|error| {
-        SyncSourceValidationError::new(format!("{agent} source snapshot failed: {error:#}"))
-    })?;
-    auth_directory::snapshot_source(&source.root, &snapshot_root).map_err(|error| {
-        SyncSourceValidationError::new(format!("{agent} source snapshot failed: {error:#}"))
-    })?;
-    validate_store_source_dir(agent, provider, selector, snapshot.path(), host_home)
+    // The source lock remains held while discovery reads the descriptor. The
+    // launch admission path performs the stronger protected-root snapshot and
+    // revalidates its bytes before any worker starts.
+    let _ = source;
+    validate_store_source_dir(agent, provider, selector, source_dir, host_home)
 }
 
 /// Validate a stores-backed source through the same single-entry discovery
@@ -392,12 +1078,19 @@ fn validate_opencode_source_dir(
     provider: Option<AiProvider>,
 ) -> Result<(), SyncSourceValidationError> {
     let auth_path = source_dir.join("auth.json");
-    let content = std::fs::read_to_string(&auth_path).map_err(|_| {
-        SyncSourceValidationError::new(format!(
-            "Not an OpenCode config folder: expected auth.json directly inside {}.",
-            source_dir.display()
-        ))
-    })?;
+    let content = read_source_text(&auth_path, "OpenCode auth.json")
+        .map_err(|_| {
+            SyncSourceValidationError::new(format!(
+                "Not an OpenCode config folder: expected auth.json directly inside {}.",
+                source_dir.display()
+            ))
+        })?
+        .ok_or_else(|| {
+            SyncSourceValidationError::new(format!(
+                "Not an OpenCode config folder: expected auth.json directly inside {}.",
+                source_dir.display()
+            ))
+        })?;
     if content.trim().is_empty() {
         return Err(SyncSourceValidationError::new(format!(
             "OpenCode credential auth.json in {} is empty.",
@@ -480,7 +1173,7 @@ fn usable_opencode_auth_entry(entry: &serde_json::Value) -> bool {
 }
 
 #[cfg(not(unix))]
-pub(super) fn amp_credentials_dir(source: &Path) -> std::path::PathBuf {
+pub(super) fn amp_credentials_dir(source: &Path) -> PathBuf {
     let nested = source.join("data/amp");
     if nested.is_dir() {
         nested
@@ -504,15 +1197,26 @@ fn require_credential_file(
     name: &str,
     agent: &str,
 ) -> Result<(), SyncSourceValidationError> {
-    match std::fs::read_to_string(dir.join(name)) {
+    match read_source_text(&dir.join(name), &format!("{agent} {name}")) {
         Ok(content) if !content.trim().is_empty() => Ok(()),
         Ok(_) => Err(SyncSourceValidationError::new(format!(
             "{agent} credential {name} in {} is empty.",
             dir.display()
         ))),
-        Err(_) => Err(SyncSourceValidationError::new(format!(
-            "Not a {agent} config folder: expected {name} directly inside {}.",
-            dir.display()
+        Err(error)
+            if error.chain().any(|cause| {
+                cause
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+            }) =>
+        {
+            Err(SyncSourceValidationError::new(format!(
+                "Not a {agent} config folder: expected {name} directly inside {}.",
+                dir.display()
+            )))
+        }
+        Err(error) => Err(SyncSourceValidationError::new(format!(
+            "{agent} source rejected: {error:#}"
         ))),
     }
 }
@@ -552,7 +1256,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_codex_auth_from_path(auth_json, mode, &host_home.join(".codex/auth.json"))
     }
 
@@ -560,7 +1264,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_codex_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
     }
 
@@ -568,7 +1272,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         host_auth_json: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         // OAuthToken is parser-rejected for Codex (unreachable in production),
         // so no warning is needed. Empty/whitespace auth is not a usable
         // credential and must agree with source-folder validation by staying
@@ -654,8 +1358,8 @@ impl RoleState {
                         // on disk — avoids touching mtime + atomic-rename on
                         // every launch when nothing changed. Mirrors the
                         // codex provisioner's no-churn guard.
-                        let needs_write = !std::fs::read_to_string(hosts_yml)
-                            .is_ok_and(|existing| existing == content);
+                        let needs_write = !read_bounded_local_file(hosts_yml)
+                            .is_ok_and(|existing| existing == content.as_bytes());
                         if needs_write {
                             write_private_file(hosts_yml, &content)?;
                         } else {
@@ -737,13 +1441,29 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
     // reads it for the `user` field) and the file-fallback path share
     // one IO.
     let hosts_path = host_home.join(".config/gh/hosts.yml");
-    let hosts_yml = match std::fs::read_to_string(&hosts_path) {
-        Ok(text) => Some(text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => {
+    let hosts_yml = match read_bounded_local_file(&hosts_path) {
+        Ok(bytes) => Some(String::from_utf8(bytes).context("GitHub hosts.yml is not valid UTF-8")?),
+        Err(error)
+            if error.chain().any(|cause| {
+                cause
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+            }) =>
+        {
+            None
+        }
+        Err(error) => {
+            let source = error
+                .chain()
+                .find_map(|cause| {
+                    cause
+                        .downcast_ref::<std::io::Error>()
+                        .map(|error| std::io::Error::new(error.kind(), error.to_string()))
+                })
+                .unwrap_or_else(|| std::io::Error::other(error.to_string()));
             return Err(InstanceError::HostConfigRead {
                 path: hosts_path,
-                source: e,
+                source,
             }
             .into());
         }
@@ -757,7 +1477,10 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
             ["auth", "token", "--hostname", "github.com"],
         )) {
             Ok(output) if output.success => {
-                let token = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                let token = String::from_utf8(output.stdout)
+                    .context("gh authentication command returned invalid UTF-8")?
+                    .trim()
+                    .to_owned();
                 if !token.is_empty() {
                     let user = hosts_yml
                         .as_deref()
@@ -1037,7 +1760,7 @@ impl RoleState {
         secrets_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_amp_auth_from_path(
             secrets_json,
             mode,
@@ -1049,7 +1772,7 @@ impl RoleState {
         secrets_json: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         #[cfg(unix)]
         if mode == AuthForwardMode::Sync {
             let content = match lock_amp_source_dir(source_dir)? {
@@ -1087,7 +1810,7 @@ impl RoleState {
         secrets_json: &Path,
         mode: AuthForwardMode,
         host_secrets_json: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         provision_single_file_credential(
             secrets_json,
             host_secrets_json,
@@ -1304,9 +2027,12 @@ const KIMI_SYNC_FILES: &[&str] = &["config.toml", "device_id"];
 /// complete or roll back an interrupted swap without retaining an old tree.
 #[cfg(unix)]
 mod auth_directory {
-    use super::{AUTH_DIRECTORY_SWAP_COUNTER, AuthProvisionOutcome};
+    use super::{
+        AUTH_DIRECTORY_SWAP_COUNTER, AuthProvisionOutcome, MAX_AUTH_SOURCE_FILE_BYTES,
+        MAX_AUTH_SOURCE_TREE_BYTES, MAX_AUTH_SOURCE_TREE_ENTRIES,
+    };
     use anyhow::Context;
-    use fs4::FileExt;
+    use fs4::{FileExt, TryLockError};
     use nix::dir::Dir;
     use nix::errno::Errno;
     use nix::fcntl::{AtFlags, OFlag, open, openat, renameat};
@@ -1327,9 +2053,12 @@ mod auth_directory {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
 
     const JOURNAL_SCHEMA_VERSION: u32 = 1;
     const MAX_JOURNAL_BYTES: usize = 16 * 1024;
+    const SOURCE_LOCK_TIMEOUT: Duration = Duration::from_secs(5);
+    const SOURCE_LOCK_POLL: Duration = Duration::from_millis(10);
 
     #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
     enum SwapPhase {
@@ -1364,6 +2093,28 @@ mod auth_directory {
     #[derive(Debug)]
     pub(crate) struct LockedSource {
         pub(crate) root: File,
+    }
+
+    pub(crate) struct SnapshotDirectory {
+        path: PathBuf,
+        parent: File,
+        name: CString,
+    }
+
+    impl SnapshotDirectory {
+        pub(crate) fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for SnapshotDirectory {
+        fn drop(&mut self) {
+            drop(remove_tree(
+                &self.parent,
+                self.name.as_c_str(),
+                "auth source snapshot",
+            ));
+        }
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1468,11 +2219,7 @@ mod auth_directory {
                 std::path::Component::CurDir => {}
                 std::path::Component::Normal(component) => normalized.push(component),
                 std::path::Component::ParentDir => {
-                    anyhow::ensure!(
-                        normalized.pop(),
-                        "auth path contains parent traversal: {}",
-                        path.display()
-                    );
+                    anyhow::bail!("auth path contains parent traversal: {}", path.display())
                 }
             }
         }
@@ -1539,6 +2286,10 @@ mod auth_directory {
         );
         let mode = stat.st_mode & 0o7777;
         if exact_private {
+            anyhow::ensure!(
+                stat.st_uid == geteuid().as_raw(),
+                "{label} is not owned by the current user"
+            );
             anyhow::ensure!(
                 mode & 0o777 == 0o700,
                 "{label} is not mode 0700 (mode {mode:o})"
@@ -1802,8 +2553,13 @@ mod auth_directory {
         let file = open_source_file(source, name, stat, label)?;
         let mut bytes = Vec::new();
         Read::by_ref(&mut &file)
+            .take((MAX_AUTH_SOURCE_FILE_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
             .with_context(|| format!("reading {label}"))?;
+        anyhow::ensure!(
+            bytes.len() <= MAX_AUTH_SOURCE_FILE_BYTES,
+            "{label} exceeds the credential source size limit"
+        );
         Ok(bytes)
     }
 
@@ -1838,8 +2594,13 @@ mod auth_directory {
         let file = open_source_file_with_hook(&directory, &file_name, &stat, label, true)?;
         let mut bytes = Vec::new();
         Read::by_ref(&mut &file)
+            .take((MAX_AUTH_SOURCE_FILE_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
             .with_context(|| format!("reading {label}"))?;
+        anyhow::ensure!(
+            bytes.len() <= MAX_AUTH_SOURCE_FILE_BYTES,
+            "{label} exceeds the credential source size limit"
+        );
         Ok(Some(bytes))
     }
 
@@ -1921,7 +2682,25 @@ mod auth_directory {
         write_private_file_at(destination, &destination_name, &bytes, label)
     }
 
+    struct CopyBudget {
+        bytes: usize,
+        entries: usize,
+    }
+
     fn copy_tree(source: &File, destination: &File, label: &str) -> anyhow::Result<()> {
+        let mut budget = CopyBudget {
+            bytes: 0,
+            entries: 0,
+        };
+        copy_tree_with_budget(source, destination, label, &mut budget)
+    }
+
+    fn copy_tree_with_budget(
+        source: &File,
+        destination: &File,
+        label: &str,
+        budget: &mut CopyBudget,
+    ) -> anyhow::Result<()> {
         validate_directory(source, label, false)?;
         fchmod(destination, Mode::from_bits_truncate(0o700))
             .map_err(|error| nix_error(error, "restricting staged auth directory"))?;
@@ -1939,6 +2718,11 @@ mod auth_directory {
         }
 
         for name in names {
+            budget.entries = budget.entries.saturating_add(1);
+            anyhow::ensure!(
+                budget.entries <= MAX_AUTH_SOURCE_TREE_ENTRIES,
+                "{label} contains too many entries"
+            );
             let entry_label = format!("{label}/{}", name.to_string_lossy());
             let stat = entry_stat(source, &name)?.ok_or_else(|| {
                 anyhow::anyhow!("{entry_label} disappeared during secure source snapshot")
@@ -1959,11 +2743,16 @@ mod auth_directory {
                 let child = open_directory_at(destination, &name, &entry_label)?;
                 validate_directory(&child, &entry_label, true)?;
                 let source_child = open_source_directory_at(source, &name, &stat, &entry_label)?;
-                copy_tree(&source_child, &child, &entry_label)?;
+                copy_tree_with_budget(&source_child, &child, &entry_label, budget)?;
                 fsync_directory(&child)?;
             } else if kind.contains(SFlag::S_IFREG) {
                 validate_owned_stat(&stat, &entry_label, SFlag::S_IFREG)?;
                 let bytes = read_source_file(source, &name, &stat, &entry_label)?;
+                budget.bytes = budget.bytes.saturating_add(bytes.len());
+                anyhow::ensure!(
+                    budget.bytes <= MAX_AUTH_SOURCE_TREE_BYTES,
+                    "{label} exceeds the credential source size limit"
+                );
                 write_private_file_at(destination, &name, &bytes, &entry_label)?;
             } else {
                 anyhow::bail!("{entry_label} is a special file; refusing to sync it");
@@ -2014,7 +2803,96 @@ mod auth_directory {
         )
     }
 
-    pub(crate) fn lock_source_dir(path: &Path) -> anyhow::Result<Option<LockedSource>> {
+    /// Allocate a source snapshot beneath a host-private parent. Missing
+    /// parent components are created descriptor-relatively with `mkdirat`;
+    /// parent and child creation both use no-follow checks. The returned
+    /// directory guard owns descriptor-relative cleanup of the unique child
+    /// path after workers release their snapshot clones.
+    pub(crate) fn create_snapshot_directory(
+        parent_path: &Path,
+    ) -> anyhow::Result<SnapshotDirectory> {
+        let (parent, target, normalized) = open_parent(parent_path, true)?;
+        let parent_directory = match open_directory_at(
+            &parent,
+            target.as_c_str(),
+            &format!("opening auth snapshot parent {}", normalized.display()),
+        ) {
+            Ok(directory) => directory,
+            Err(error)
+                if error
+                    .chain()
+                    .any(|cause| cause.downcast_ref::<Errno>() == Some(&Errno::ENOENT)) =>
+            {
+                mkdirat(&parent, target.as_c_str(), Mode::from_bits_truncate(0o700))
+                    .or_else(ignore_eexist)
+                    .map_err(|error| nix_error(error, "creating auth snapshot parent"))?;
+                open_directory_at(
+                    &parent,
+                    target.as_c_str(),
+                    &format!("opening auth snapshot parent {}", normalized.display()),
+                )?
+            }
+            Err(error) => return Err(error),
+        };
+        validate_directory(&parent_directory, "auth snapshot parent", true)?;
+        for _ in 0..128 {
+            let sequence = AUTH_DIRECTORY_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let name_text = format!(".jackin-auth-source-{}-{sequence}", std::process::id());
+            let name = CString::new(name_text.as_str())?;
+            match mkdirat(
+                &parent_directory,
+                name.as_c_str(),
+                Mode::from_bits_truncate(0o700),
+            ) {
+                Ok(()) => {
+                    let directory =
+                        open_directory_at(&parent_directory, &name, "auth source snapshot")?;
+                    validate_directory(&directory, "auth source snapshot", true)?;
+                    drop(directory);
+                    return Ok(SnapshotDirectory {
+                        path: normalized.join(name_text),
+                        parent: parent_directory,
+                        name,
+                    });
+                }
+                Err(Errno::EEXIST) => {}
+                Err(error) => return Err(nix_error(error, "creating auth source snapshot")),
+            }
+        }
+        anyhow::bail!("could not allocate a unique auth source snapshot")
+    }
+
+    fn lock_source_file(root: &File, timeout: Duration) -> anyhow::Result<()> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match FileExt::try_lock(root) {
+                Ok(()) => return Ok(()),
+                Err(TryLockError::WouldBlock) => {
+                    let now = Instant::now();
+                    if now >= deadline {
+                        anyhow::bail!(
+                            "timed out waiting {timeout:?} for the source auth directory lock"
+                        );
+                    }
+                    #[expect(
+                        clippy::disallowed_methods,
+                        reason = "source lock polling runs in blocking launch/prewarm/console validation workers or provisioning OS threads"
+                    )]
+                    std::thread::sleep(
+                        SOURCE_LOCK_POLL.min(deadline.saturating_duration_since(now)),
+                    );
+                }
+                Err(TryLockError::Error(error)) => {
+                    return Err(error).context("locking source auth directory");
+                }
+            }
+        }
+    }
+
+    fn lock_source_dir_with_timeout(
+        path: &Path,
+        timeout: Duration,
+    ) -> anyhow::Result<Option<LockedSource>> {
         let (parent, name, normalized) = match open_parent(path, false) {
             Ok(value) => value,
             Err(error) if error.downcast_ref::<Errno>() == Some(&Errno::ENOENT) => return Ok(None),
@@ -2056,8 +2934,20 @@ mod auth_directory {
             &stat,
             &format!("source auth directory {}", normalized.display()),
         )?;
-        FileExt::lock(&root).with_context(|| "locking source auth directory")?;
+        lock_source_file(&root, timeout)?;
         Ok(Some(LockedSource { root }))
+    }
+
+    pub(crate) fn lock_source_dir(path: &Path) -> anyhow::Result<Option<LockedSource>> {
+        lock_source_dir_with_timeout(path, SOURCE_LOCK_TIMEOUT)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn lock_source_dir_for_test(
+        path: &Path,
+        timeout: Duration,
+    ) -> anyhow::Result<Option<LockedSource>> {
+        lock_source_dir_with_timeout(path, timeout)
     }
 
     fn new_stage(parent: &File, key: &str) -> anyhow::Result<(CString, File)> {
@@ -2959,7 +3849,7 @@ mod auth_directory {
             !metadata.file_type().is_symlink() && metadata.is_file(),
             "{label} is not a regular source file"
         );
-        Ok(Some(std::fs::read(path)?))
+        Ok(Some(super::read_bounded_local_file(path)?))
     }
 
     pub(crate) fn stage_auth_directory<F>(
@@ -3007,11 +3897,8 @@ pub(crate) fn mount_directory_present(path: &Path) -> anyhow::Result<bool> {
 
 pub(crate) fn admit_auth_mounts(
     auth: &super::ProvisionedAuth,
-) -> anyhow::Result<(
-    std::collections::BTreeSet<std::path::PathBuf>,
-    Vec<AuthMountLease>,
-)> {
-    let mut requests = Vec::<(std::path::PathBuf, bool, Agent)>::new();
+) -> anyhow::Result<(std::collections::BTreeSet<PathBuf>, Vec<AuthMountLease>)> {
+    let mut requests = Vec::<(PathBuf, bool, Agent)>::new();
     for slot in auth.slots.values() {
         if !slot.forward_auth {
             continue;
@@ -3063,7 +3950,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_opencode_auth_from_path(
             auth_json,
             mode,
@@ -3077,7 +3964,7 @@ impl RoleState {
         mode: AuthForwardMode,
         source_dir: &Path,
         provider: Option<AiProvider>,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_opencode_auth_from_path(
             auth_json,
             mode,
@@ -3091,7 +3978,7 @@ impl RoleState {
         mode: AuthForwardMode,
         host_auth_json: &Path,
         provider: Option<AiProvider>,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         if mode == AuthForwardMode::Sync {
             reject_auth_path(auth_json)?;
             let Some(content) = read_source_text(host_auth_json, "OpenCode auth.json")? else {
@@ -3148,7 +4035,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_grok_auth_from_path(auth_json, mode, &host_home.join(".grok/auth.json"))
     }
 
@@ -3156,7 +4043,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_grok_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
     }
 
@@ -3164,7 +4051,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         host_auth_json: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         provision_single_file_credential(
             auth_json,
             host_auth_json,
@@ -3189,7 +4076,7 @@ impl RoleState {
         settings_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_antigravity_auth_from_path(
             settings_json,
             mode,
@@ -3201,7 +4088,7 @@ impl RoleState {
         settings_json: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_antigravity_auth_from_path(
             settings_json,
             mode,
@@ -3213,7 +4100,7 @@ impl RoleState {
         settings_json: &Path,
         mode: AuthForwardMode,
         host_settings_json: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         provision_single_file_credential(
             settings_json,
             host_settings_json,
@@ -3234,7 +4121,7 @@ impl RoleState {
         oauth_creds: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_gemini_auth_from_path(
             oauth_creds,
             mode,
@@ -3246,7 +4133,7 @@ impl RoleState {
         oauth_creds: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_gemini_auth_from_path(
             oauth_creds,
             mode,
@@ -3258,7 +4145,7 @@ impl RoleState {
         oauth_creds: &Path,
         mode: AuthForwardMode,
         host_oauth_creds: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         provision_single_file_credential(
             oauth_creds,
             host_oauth_creds,
@@ -3279,7 +4166,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_cursor_auth_from_path(auth_json, mode, &host_home.join(".cursor/auth.json"))
     }
 
@@ -3287,7 +4174,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_cursor_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
     }
 
@@ -3295,7 +4182,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         host_auth_json: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         provision_single_file_credential(
             auth_json,
             host_auth_json,
@@ -3319,7 +4206,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_muse_auth_from_path(
             auth_json,
             mode,
@@ -3331,7 +4218,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         source_dir: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_muse_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
     }
 
@@ -3339,7 +4226,7 @@ impl RoleState {
         auth_json: &Path,
         mode: AuthForwardMode,
         host_auth_json: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         provision_single_file_credential(
             auth_json,
             host_auth_json,
@@ -3363,7 +4250,7 @@ impl RoleState {
         host_home: &Path,
         provider: Option<AiProvider>,
         selector: Option<&ProfileSelector>,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         Self::provision_omp_auth_from_source_dir(
             agent_db,
             mode,
@@ -3379,7 +4266,7 @@ impl RoleState {
         source_dir: &Path,
         provider: Option<AiProvider>,
         selector: Option<&ProfileSelector>,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         #[cfg(unix)]
         if mode == AuthForwardMode::Sync {
             let content = match auth_directory::lock_source_dir(source_dir)? {
@@ -3392,7 +4279,14 @@ impl RoleState {
                     .ok_or_else(|| {
                         anyhow::anyhow!("omp source {} has no agent/agent.db", source_dir.display())
                     })?;
-                    validate_omp_store_content(&content, provider, selector)?;
+                    validate_store_source_dir(
+                        Agent::Omp,
+                        provider,
+                        selector,
+                        source_dir,
+                        source_dir,
+                    )
+                    .map_err(anyhow::Error::from)?;
                     Some(content)
                 }
                 None => None,
@@ -3412,28 +4306,38 @@ impl RoleState {
         agent_db: &Path,
         mode: AuthForwardMode,
         host_agent_db: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
         provision_single_blob_credential(agent_db, host_agent_db, mode, "omp agent.db", "omp")
     }
 }
 
 #[cfg(unix)]
-fn validate_omp_store_content(
-    content: &[u8],
-    provider: Option<AiProvider>,
-    selector: Option<&ProfileSelector>,
-) -> anyhow::Result<()> {
-    let snapshot = tempfile::tempdir().context("creating OMP source snapshot")?;
-    std::fs::create_dir_all(snapshot.path().join("agent"))?;
-    std::fs::write(snapshot.path().join("agent/agent.db"), content)?;
-    validate_store_source_dir(
-        Agent::Omp,
-        provider,
-        selector,
-        snapshot.path(),
-        snapshot.path(),
-    )
-    .map_err(anyhow::Error::from)
+fn create_hermes_source_snapshot(
+    hermes_dir: &Path,
+    source_dir: &Path,
+) -> anyhow::Result<auth_directory::SnapshotDirectory> {
+    let source_parent = source_dir
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty());
+    let source_parent_error = if let Some(parent) = source_parent {
+        match auth_directory::create_snapshot_directory(parent) {
+            Ok(snapshot) => return Ok(snapshot),
+            Err(error) => Some(error),
+        }
+    } else {
+        None
+    };
+    let sidecar_parent = hermes_dir
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Hermes target has no protected parent"))?
+        .join(".jackin-auth-source-snapshots");
+    auth_directory::create_snapshot_directory(&sidecar_parent).with_context(|| {
+        source_parent_error.map_or_else(
+            || "creating Hermes source snapshot".to_owned(),
+            |error| format!("creating Hermes source snapshot (source parent failed: {error:#})"),
+        )
+    })
 }
 
 impl RoleState {
@@ -3472,7 +4376,11 @@ impl RoleState {
                     hermes_dir, source_dir, mode, None,
                 );
             };
-            let snapshot = tempfile::tempdir().context("creating Hermes source snapshot")?;
+            // A selected source already lives beneath the protected
+            // `source-snapshots` parent captured for this launch. Reuse that
+            // parent for the validation copy; legacy callers fall back to a
+            // private sidecar beneath the role target instead of ambient /tmp.
+            let snapshot = create_hermes_source_snapshot(hermes_dir, source_dir)?;
             let snapshot_root = auth_directory::open_directory_path(snapshot.path())?;
             auth_directory::snapshot_source(&source.root, &snapshot_root)?;
             validate_store_source_dir(
@@ -3654,7 +4562,7 @@ fn provision_single_blob_credential(
     mode: AuthForwardMode,
     label: &str,
     agent_name: &str,
-) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
     let content = if mode == AuthForwardMode::Sync {
         read_source_bytes(host_path, &format!("{agent_name} {label}"))?
     } else {
@@ -3669,7 +4577,7 @@ fn provision_single_blob_credential_from_content(
     content: Option<Vec<u8>>,
     label: &str,
     agent_name: &str,
-) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
     use anyhow::Context;
 
     reject_auth_path(target)?;
@@ -3753,7 +4661,7 @@ fn provision_single_file_credential(
     treat_empty_as_missing: bool,
     warn_on_oauth: bool,
     wipe_on_oauth: bool,
-) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
     let content = if mode == AuthForwardMode::Sync {
         read_source_text(host_path, label)?
     } else {
@@ -3784,7 +4692,7 @@ fn provision_single_file_credential_with_content(
     treat_empty_as_missing: bool,
     warn_on_oauth: bool,
     wipe_on_oauth: bool,
-) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
     use anyhow::Context;
 
     reject_auth_path(target)?;
@@ -3943,9 +4851,7 @@ fn read_host_credentials(host_home: &Path) -> anyhow::Result<Option<String>> {
     // dirs) while still supporting the Keychain in production.
     #[cfg(target_os = "macos")]
     if host_home_is_real(host_home) {
-        return Ok(read_claude_keychain(
-            jackin_core::CLAUDE_KEYCHAIN_SERVICE_BASE,
-        ));
+        return read_claude_keychain(jackin_core::CLAUDE_KEYCHAIN_SERVICE_BASE);
     }
 
     Ok(None)
@@ -3984,7 +4890,7 @@ fn locked_claude_credentials(
     if host_home_is_real(host_home) {
         let scope = jackin_core::claude_keychain_scope(source_dir, host_home, source_dir)
             .ok_or_else(|| anyhow::anyhow!("invalid Claude config directory"))?;
-        return Ok(read_claude_keychain(&scope.service));
+        return read_claude_keychain(&scope.service);
     }
 
     let _ = (source_dir, host_home);
@@ -4014,7 +4920,7 @@ fn read_host_credentials_from_claude_config_dir(
         // normalizes and hashes the same path so instance and usage never drift.
         let scope = jackin_core::claude_keychain_scope(source_dir, host_home, source_dir)
             .ok_or_else(|| anyhow::anyhow!("invalid Claude config directory"))?;
-        return Ok(read_claude_keychain(&scope.service));
+        return read_claude_keychain(&scope.service);
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -4025,19 +4931,23 @@ fn read_host_credentials_from_claude_config_dir(
 /// Read a credential blob from the macOS login Keychain under `service`.
 /// Returns `None` on lookup failure or an empty value.
 #[cfg(target_os = "macos")]
-fn read_claude_keychain(service: &str) -> Option<String> {
-    let output = crate::process_telemetry::exec_sync(&jackin_process::ExecRequest::new(
+fn read_claude_keychain(service: &str) -> anyhow::Result<Option<String>> {
+    let Ok(output) = crate::process_telemetry::exec_sync(&jackin_process::ExecRequest::new(
         "security",
         ["find-generic-password", "-s", service, "-w"],
-    ))
-    .ok()?;
+    )) else {
+        return Ok(None);
+    };
     if output.success {
-        let creds = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let creds = String::from_utf8(output.stdout)
+            .context("Claude Keychain credential is not valid UTF-8")?
+            .trim()
+            .to_owned();
         if !creds.is_empty() {
-            return Some(creds);
+            return Ok(Some(creds));
         }
     }
-    None
+    Ok(None)
 }
 
 /// Reject symlinks at `path` to prevent a compromised role from
