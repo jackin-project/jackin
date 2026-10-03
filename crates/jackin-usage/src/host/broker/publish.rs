@@ -39,7 +39,7 @@ use crate::coordinator::{
     FileProjectionStateStore, ProjectionStateEnvelope, StateStoreError, UsageCoordinator,
 };
 
-use super::super::projection::metric_groups_for_view;
+use super::super::projection::{failure_lifecycle, lifecycle, metric_groups_for_view};
 
 /// Server-side incremental publisher. Cheap to clone; all state is shared.
 #[derive(Debug, Clone)]
@@ -621,16 +621,16 @@ fn account_for_view(
     } else {
         header_label.clone()
     };
-    let status = snapshot.as_ref().map(|snapshot| snapshot.status);
-    let lifecycle = match status {
-        Some(UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::NeedsSecret) => {
-            UsageLifecycleV1::NeedsSecret
-        }
-        Some(UsageSnapshotStatus::Unsupported) => UsageLifecycleV1::Unsupported,
-        Some(UsageSnapshotStatus::Unavailable) => UsageLifecycleV1::Unavailable,
-        Some(UsageSnapshotStatus::Error) | None if view.error.is_some() => UsageLifecycleV1::Error,
-        _ => UsageLifecycleV1::Available,
-    };
+    let lifecycle = snapshot.as_ref().map_or_else(
+        || {
+            view.error
+                .as_ref()
+                .map_or(UsageLifecycleV1::Unavailable, |error| {
+                    failure_lifecycle(error.kind)
+                })
+        },
+        |snapshot| lifecycle(snapshot.status, snapshot.confidence),
+    );
     let is_stale = snapshot.as_ref().is_some_and(|snapshot| {
         matches!(snapshot.status, UsageSnapshotStatus::Stale)
             || view.phase == UsageRefreshPhase::Failed
@@ -835,7 +835,7 @@ fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
         || bucket.limit_label.is_some()
 }
 
-fn issue_code(kind: UsageCoordinationErrorKind) -> String {
+pub(in crate::host) fn issue_code(kind: UsageCoordinationErrorKind) -> String {
     match kind {
         UsageCoordinationErrorKind::Unavailable => "unavailable",
         UsageCoordinationErrorKind::Unauthorized => "unauthorized",
@@ -911,7 +911,9 @@ fn catalog_revision_conflict() -> UsageCoordinationError {
     }
 }
 
-const fn issue_recoverability(kind: UsageCoordinationErrorKind) -> UsageIssueRecoverabilityV1 {
+pub(in crate::host) const fn issue_recoverability(
+    kind: UsageCoordinationErrorKind,
+) -> UsageIssueRecoverabilityV1 {
     match kind {
         UsageCoordinationErrorKind::NeedsSecret | UsageCoordinationErrorKind::Unauthorized => {
             UsageIssueRecoverabilityV1::ActionRequired
@@ -1627,5 +1629,65 @@ mod tests {
         assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
         assert_eq!(executor.reconciles.load(Ordering::SeqCst), 0);
         assert_eq!(projection.lock().unwrap().discovery_revision, "catalog");
+    }
+    #[test]
+    fn account_for_view_preserves_canonical_access_lifecycles() {
+        for (status, expected) in [
+            (
+                UsageSnapshotStatus::NeedsLogin,
+                UsageLifecycleV1::NeedsLogin,
+            ),
+            (
+                UsageSnapshotStatus::NeedsSecret,
+                UsageLifecycleV1::NeedsSecret,
+            ),
+        ] {
+            let mut snapshot = fresh_view();
+            snapshot.status = status;
+            let account = account_for_view(
+                &UsageGenerationView {
+                    capability: capability(),
+                    generation: 1,
+                    phase: UsageRefreshPhase::Completed,
+                    snapshot: Some(snapshot),
+                    error: None,
+                    retry_at_epoch: None,
+                },
+                0,
+                None,
+            );
+            assert_eq!(account.lifecycle, expected);
+        }
+        for (kind, expected) in [
+            (
+                UsageCoordinationErrorKind::Unauthorized,
+                UsageLifecycleV1::NeedsLogin,
+            ),
+            (
+                UsageCoordinationErrorKind::NeedsSecret,
+                UsageLifecycleV1::NeedsSecret,
+            ),
+            (
+                UsageCoordinationErrorKind::ProtocolMismatch,
+                UsageLifecycleV1::Unsupported,
+            ),
+        ] {
+            let account = account_for_view(
+                &UsageGenerationView {
+                    capability: capability(),
+                    generation: 1,
+                    phase: UsageRefreshPhase::Failed,
+                    snapshot: None,
+                    error: Some(UsageCoordinationError {
+                        kind,
+                        message: "Account access unavailable".to_owned(),
+                    }),
+                    retry_at_epoch: None,
+                },
+                0,
+                None,
+            );
+            assert_eq!(account.lifecycle, expected);
+        }
     }
 }

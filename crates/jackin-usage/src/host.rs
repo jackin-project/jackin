@@ -665,6 +665,8 @@ pub struct HostUsageRuntime {
     discovery_scope: Option<UsageDiscoveryScope>,
     /// Broker generation phase per canonical account.
     broker_phases: BTreeMap<UsageAccountCapability, UsageRefreshPhase>,
+    /// Complete broker state retained for canonical freshness and issues.
+    broker_generations: BTreeMap<UsageAccountCapability, UsageGenerationView>,
     canonical_instance_id: String,
     canonical_content_id: Option<String>,
     canonical_projection_cache: Option<UsageProjectionV1>,
@@ -694,6 +696,7 @@ impl HostUsageRuntime {
             discovered_provider_views: BTreeMap::new(),
             discovery_scope: None,
             broker_phases: BTreeMap::new(),
+            broker_generations: BTreeMap::new(),
             canonical_instance_id: canonical_instance_id(),
             canonical_content_id: None,
             canonical_projection_cache: None,
@@ -750,6 +753,7 @@ impl HostUsageRuntime {
             self.discovered_views.clear();
             self.discovered_provider_views.clear();
             self.broker_phases.clear();
+            self.broker_generations.clear();
         }
         let accounts_path = host_accounts_path(&config.data_dir);
         self.cache.set_accounts_materialize_path(accounts_path);
@@ -775,6 +779,7 @@ impl HostUsageRuntime {
         self.discovered_provider_views.clear();
         self.desktop_detected_surfaces.clear();
         self.broker_phases.clear();
+        self.broker_generations.clear();
         self.data_dir = Some(config.data_dir);
         self.open = true;
         self.push_event("runtime_ready", None, None);
@@ -1674,6 +1679,7 @@ impl HostUsageRuntime {
         self.discovered_views.clear();
         self.discovered_provider_views.clear();
         self.broker_phases.clear();
+        self.broker_generations.clear();
         self.canonical_content_id = None;
         self.canonical_projection_cache = None;
     }

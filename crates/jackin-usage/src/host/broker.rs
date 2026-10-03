@@ -78,6 +78,10 @@ impl HostUsageRuntime {
                 })
                 .cloned()
         });
+        if binding.is_some() {
+            self.broker_generations
+                .insert(capability.clone(), state.clone());
+        }
         if let Some(mut view) = state.snapshot {
             if let Some(error) = &state.error {
                 view.last_error = Some(error.message.clone());
@@ -197,6 +201,41 @@ impl HostUsageRuntime {
                 Some(&capability.surface_id),
                 Some("failed".to_owned()),
             );
+        }
+        // A failed client request still affects the rendered account. Keep
+        // the last broker snapshot and reported retry deadline; a transport
+        // failure supplies neither a new quota observation nor retry policy.
+        let binding = self.discovery.as_ref().and_then(|discovery| {
+            discovery.bindings.iter().find(|binding| {
+                capability_for_binding(binding, discovery.config_generation.as_deref())
+                    == *capability
+            })
+        });
+        if let Some(binding) = binding {
+            let mut state = self
+                .broker_generations
+                .get(capability)
+                .cloned()
+                .unwrap_or_else(|| UsageGenerationView {
+                    capability: capability.clone(),
+                    generation: 0,
+                    phase: UsageRefreshPhase::Failed,
+                    snapshot: binding.identity.as_ref().and_then(|identity| {
+                        self.discovered_views
+                            .get(&(binding.surface, identity.account_key()))
+                            .cloned()
+                    }),
+                    error: None,
+                    retry_at_epoch: None,
+                });
+            // Request failure does not cancel work already running at the
+            // broker. Keep its active phase until the next received state.
+            if !state.phase.is_active() || error.kind == UsageCoordinationErrorKind::CatalogRevoked
+            {
+                state.phase = UsageRefreshPhase::Failed;
+            }
+            state.error = Some(error.clone());
+            self.apply_broker_generation(state)?;
         }
         self.push_event(
             "probe_failed",
@@ -2072,7 +2111,7 @@ pub fn ensure_usage_broker_with_executor(
 }
 
 mod probe;
-mod publish;
+pub(super) mod publish;
 mod view;
 mod waits;
 

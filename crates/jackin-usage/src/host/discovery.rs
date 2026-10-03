@@ -2417,6 +2417,7 @@ impl HostUsageRuntime {
             .map(|(capability, _)| capability.clone())
             .collect::<Vec<_>>();
         self.broker_phases.clear();
+        self.broker_generations.clear();
         for capability in active {
             self.push_event(
                 "broker_phase_changed",
