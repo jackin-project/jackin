@@ -24,6 +24,7 @@
     "jackin-otlp-testbed",
     "jackin-pr-trailers",
     "jackin-process",
+    "jackin-process-directory",
     "jackin-protocol",
     "jackin-runtime",
     "jackin-telemetry",
