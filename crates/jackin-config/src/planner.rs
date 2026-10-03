@@ -139,7 +139,7 @@ pub fn apply_isolation_overrides(
 ) -> crate::ConfigResult<()> {
     for (dst, mode) in overrides {
         let target = mounts.iter_mut().find(|m| m.dst == *dst).ok_or_else(|| {
-            anyhow::Error::from(ConfigError::msg(format!(
+            anyhow::Error::from(ConfigError::msg(format_args!(
                 "--mount-isolation references unknown destination `{dst}`; \
                  it must match a mount in the final plan"
             )))

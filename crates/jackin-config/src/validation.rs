@@ -34,7 +34,7 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> crate::ConfigResult<
                 } else {
                     (*b, *a)
                 };
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "isolated mount `{inner}` cannot be nested inside isolated mount `{outer}`; \
                      either make the inner mount `shared` or move the inner mount outside \
                      the parent's path"
@@ -44,7 +44,7 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> crate::ConfigResult<
                 && matches!(mb.isolation, MountIsolation::Worktree)
                 && same_host_repo(&ma.src, &mb.src)?
             {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "isolated mounts `{}` and `{}` cannot share the same host repository `{}`; \
                      remove one of them or change one to `shared` (V1 limitation — see roadmap)",
                     ma.dst, mb.dst, ma.src,
@@ -84,7 +84,7 @@ pub fn validate_workspace_config(
         )
     });
     if !covers_workdir {
-        return Err(ConfigError::msg(format!(
+        return Err(ConfigError::msg(format_args!(
             "workspace {name:?} workdir must be equal to, inside, or a parent of one of the workspace mount destinations"
         )));
     }
@@ -96,7 +96,7 @@ pub fn validate_workspace_config(
             .iter()
             .any(|role| role == default_role)
     {
-        return Err(ConfigError::msg(format!(
+        return Err(ConfigError::msg(format_args!(
             "workspace {name:?} default_role must be a member of allowed_roles when allowed_roles is set"
         )));
     }
@@ -111,13 +111,15 @@ pub fn validate_workspace_config(
 fn validate_container_workdir_boundary(workdir: &str) -> crate::ConfigResult<PathBuf> {
     let normalized = container_paths::normalize_path(Path::new(workdir));
     if !normalized.is_absolute() {
-        return Err(ConfigError::msg("workspace workdir must be absolute"));
+        return Err(ConfigError::msg(format_args!(
+            "workspace workdir must be absolute"
+        )));
     }
     let workdir = normalized;
     for protected_root in ["/home/agent", container_paths::JACKIN_ROOT] {
         let protected_root = container_paths::normalize_path(Path::new(protected_root));
         if container_paths::paths_overlap(&workdir, &protected_root) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "workspace workdir {workdir:?} overlaps capsule-protected path {protected_root:?}"
             )));
         }

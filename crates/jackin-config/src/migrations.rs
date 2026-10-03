@@ -244,7 +244,7 @@ pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> crate::Con
         Some(item) => match item.as_str() {
             Some(s) => s.to_owned(),
             None => {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
                      found {item:?}"
                 )));
@@ -517,7 +517,7 @@ pub(crate) fn migrate_document_if_needed(
     let current = parse_version(current_raw)?;
 
     if old_version > current {
-        return Err(ConfigError::msg(format!(
+        return Err(ConfigError::msg(format_args!(
             "{label} is at {old_version}, this binary only understands up to {current_raw}; upgrade jackin"
         )));
     }
@@ -543,13 +543,13 @@ pub fn apply_migrations(
     let mut cursor = old_version.clone();
     while &cursor < current_version {
         let Some(step) = find_step(&cursor, migrations)? else {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "{label} is at {old_version}, but this binary no longer includes a migration path to {current_version}; upgrade through an older jackin first"
             )));
         };
         let next = parse_registry_version(step.to)?;
         if next <= cursor {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "{label} migration registry is invalid: step {} -> {} does not move forward",
                 step.from, step.to
             )));
@@ -560,7 +560,7 @@ pub fn apply_migrations(
         cursor = next;
     }
     if &cursor != current_version {
-        return Err(ConfigError::msg(format!(
+        return Err(ConfigError::msg(format_args!(
             "{label} migration registry stopped at {cursor}, expected {current_version}"
         )));
     }
@@ -593,7 +593,7 @@ pub fn doc_version(doc: &DocumentMut, label: &str) -> crate::ConfigResult<Schema
         return Ok(SchemaVersion::Legacy);
     };
     let Some(version) = item.as_str() else {
-        return Err(ConfigError::msg(format!(
+        return Err(ConfigError::msg(format_args!(
             "{label} version must be a string"
         )));
     };
@@ -607,14 +607,19 @@ pub fn doc_version(doc: &DocumentMut, label: &str) -> crate::ConfigResult<Schema
 // "Prefer libraries over hand-rolled parsers" carve-out).
 /// Parse a Kubernetes-style schema version string (`v1`, `v1alpha2`, …).
 pub fn parse_version(version: &str) -> crate::ConfigResult<SchemaVersion> {
-    let rest = version
-        .strip_prefix('v')
-        .ok_or_else(|| anyhow::Error::from(ConfigError::msg("version must start with `v`")))?;
-    let (major_raw, suffix) = split_first_nondigit(rest)
-        .ok_or_else(|| anyhow::Error::from(ConfigError::msg("missing major version")))?;
+    let rest = version.strip_prefix('v').ok_or_else(|| {
+        anyhow::Error::from(ConfigError::msg(format_args!(
+            "version must start with `v`"
+        )))
+    })?;
+    let (major_raw, suffix) = split_first_nondigit(rest).ok_or_else(|| {
+        anyhow::Error::from(ConfigError::msg(format_args!("missing major version")))
+    })?;
     let major = parse_canonical_u32(major_raw, "major version")?;
     let major = NonZeroU32::new(major).ok_or_else(|| {
-        anyhow::Error::from(ConfigError::msg("major version must be greater than zero"))
+        anyhow::Error::from(ConfigError::msg(format_args!(
+            "major version must be greater than zero"
+        )))
     })?;
 
     let channel = if suffix.is_empty() {
@@ -624,9 +629,9 @@ pub fn parse_version(version: &str) -> crate::ConfigResult<SchemaVersion> {
     } else if let Some(seq_raw) = suffix.strip_prefix("beta") {
         Channel::Beta(parse_sequence("beta", seq_raw)?)
     } else {
-        return Err(ConfigError::msg(
-            "version must look like v1, v1beta1, or v1alpha1",
-        ));
+        return Err(ConfigError::msg(format_args!(
+            "version must look like v1, v1beta1, or v1alpha1"
+        )));
     };
 
     Ok(SchemaVersion::Kubernetes(KubernetesVersion {
@@ -637,13 +642,14 @@ pub fn parse_version(version: &str) -> crate::ConfigResult<SchemaVersion> {
 
 fn parse_sequence(prefix: &str, raw: &str) -> anyhow::Result<NonZeroU32> {
     if raw.is_empty() {
-        return Err(
-            ConfigError::msg(format!("{prefix} version must include a sequence number")).into(),
-        );
+        return Err(ConfigError::msg(format_args!(
+            "{prefix} version must include a sequence number"
+        ))
+        .into());
     }
     let value = parse_canonical_u32(raw, &format!("{prefix} sequence"))?;
     NonZeroU32::new(value).ok_or_else(|| {
-        anyhow::Error::from(ConfigError::msg(format!(
+        anyhow::Error::from(ConfigError::msg(format_args!(
             "{prefix} sequence must be greater than zero"
         )))
     })
@@ -654,7 +660,7 @@ fn parse_sequence(prefix: &str, raw: &str) -> anyhow::Result<NonZeroU32> {
 // non-canonical form forever (the file is only rewritten when migrating).
 fn parse_canonical_u32(raw: &str, label: &str) -> anyhow::Result<u32> {
     if raw.len() > 1 && raw.starts_with('0') {
-        return Err(ConfigError::msg(format!("{label} must not have leading zeros")).into());
+        return Err(ConfigError::msg(format_args!("{label} must not have leading zeros")).into());
     }
     raw.parse::<u32>()
         .with_context(|| format!("invalid {label} {raw:?}"))

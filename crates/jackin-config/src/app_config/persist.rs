@@ -478,7 +478,7 @@ fn normalize_workspace_contents(
     let current_version = migrations::parse_version(CURRENT_WORKSPACE_VERSION)?;
     if old_version > current_version {
         return Err(WorkspaceNormalizationError::UnsupportedVersion(
-            ConfigError::msg(format!(
+            ConfigError::msg(format_args!(
                 "workspace config is at {old_version}, this binary only understands up to \
                  {CURRENT_WORKSPACE_VERSION}; upgrade jackin"
             )),
@@ -596,7 +596,7 @@ pub(crate) fn load_split_config_locked(
             // strict parse, otherwise unknown agent tables brick the load
             // (`WorkspaceConfig` denies unknown fields).
             migrate_embedded_workspaces(&mut doc).map_err(|issue| {
-                ConfigError::msg(format!(
+                ConfigError::msg(format_args!(
                     "migrating embedded workspace configuration: {issue:?}"
                 ))
             })?;
@@ -751,7 +751,7 @@ fn load_workspace_files_locked(
     let mut pending_writes = Vec::new();
     for path in paths {
         let stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
-            anyhow::Error::from(ConfigError::msg(format!(
+            anyhow::Error::from(ConfigError::msg(format_args!(
                 "invalid workspace filename {}",
                 path.display()
             )))
@@ -776,7 +776,8 @@ fn load_workspace_files_locked(
                 (raw, needs_write)
             }
             Err(error) => {
-                let event_result = Err(ConfigError::msg("workspace migration failed"));
+                let event_result =
+                    Err(ConfigError::msg(format_args!("workspace migration failed")));
                 migrations::emit_migration_result(
                     "workspace",
                     CURRENT_WORKSPACE_VERSION,
@@ -825,7 +826,7 @@ fn legacy_workspace_op_accounts(contents: &str) -> anyhow::Result<BTreeMap<Strin
                 out.insert(name.to_owned(), acct.to_owned());
             }
             None => {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "workspace {name:?}: `op_account` must be a string, found {item:?}"
                 ))
                 .into());
@@ -863,7 +864,7 @@ fn plan_legacy_workspace_writes(
             if existing == &desired {
                 continue;
             }
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "cannot migrate workspace {name:?}: {} already exists with different contents \
                  than the legacy config.toml. Reconcile the two copies (delete the split file to \
                  take the legacy version, or remove [workspaces.{name}] from config.toml to take \
@@ -935,7 +936,7 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> crate::ConfigResult<()
     if offenses.is_empty() {
         return Ok(());
     }
-    Err(ConfigError::msg(format!(
+    Err(ConfigError::msg(format_args!(
         "config contains reserved jackin runtime env vars:\n{}",
         offenses.join("\n")
     )))

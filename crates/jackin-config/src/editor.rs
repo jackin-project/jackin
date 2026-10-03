@@ -838,7 +838,7 @@ impl ConfigEditor {
         use toml_edit::{InlineTable, Item, Value, value as toml_value};
 
         if jackin_core::is_account_env(key) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "env name {key:?} belongs to account credentials and cannot be set here"
             )));
         }

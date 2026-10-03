@@ -132,7 +132,9 @@ impl std::str::FromStr for AiProvider {
             "cursor" => Ok(Self::Cursor),
             "meta" => Ok(Self::Meta),
             "openrouter" => Ok(Self::OpenRouter),
-            _ => Err(ConfigError::msg(format!("unknown AI provider {value:?}"))),
+            _ => Err(ConfigError::msg(format_args!(
+                "unknown AI provider {value:?}"
+            ))),
         }
     }
 }
@@ -156,7 +158,7 @@ pub struct ProfileSelector {
 impl ProfileSelector {
     fn validate(&self, id: &str) -> ConfigResult<()> {
         if self.entry.trim().is_empty() || self.entry.contains('\0') {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {id:?} has an invalid profile-store entry selector"
             )));
         }
@@ -165,7 +167,7 @@ impl ProfileSelector {
             .as_deref()
             .is_some_and(|profile| profile.trim().is_empty() || profile.contains('\0'))
         {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {id:?} has an invalid profile-store profile selector"
             )));
         }
@@ -401,14 +403,14 @@ impl AccountConfig {
         agent: Agent,
     ) -> ConfigResult<ResolvedCredentialDescriptor> {
         if !self.supports_agent(agent) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {:?} cannot authenticate {agent}",
                 self.name
             )));
         }
         let (mode, env_name) = match &self.credential {
             AccountCredential::Profile { .. } => {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "account {:?} has no environment credential route",
                     self.name
                 )));
@@ -460,7 +462,7 @@ impl AccountConfig {
     fn validate(&self, id: &str) -> ConfigResult<()> {
         validate_account_id(id)?;
         if self.name.trim().is_empty() {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {id:?} has an empty name"
             )));
         }
@@ -472,10 +474,12 @@ impl AccountConfig {
                 source_selector,
             } => {
                 if !directory.is_absolute() || !self.compatible_agent(*agent) {
-                    return Err(ConfigError::msg(format!("invalid profile account {id:?}")));
+                    return Err(ConfigError::msg(format_args!(
+                        "invalid profile account {id:?}"
+                    )));
                 }
                 if source_selector.is_some() && !matches!(agent, Agent::Omp | Agent::Hermes) {
-                    return Err(ConfigError::msg(format!(
+                    return Err(ConfigError::msg(format_args!(
                         "account {id:?} has a store selector for unsupported agent {agent}"
                     )));
                 }
@@ -488,7 +492,7 @@ impl AccountConfig {
                         Some(var) if matches!(var.kind, jackin_core::FolderVarKind::XdgRoot)
                     );
                     if !supports_xdg_roots {
-                        return Err(ConfigError::msg(format!(
+                        return Err(ConfigError::msg(format_args!(
                             "account {id:?} sets xdg_roots, but its agent does not use XDG roots"
                         )));
                     }
@@ -496,7 +500,7 @@ impl AccountConfig {
                         || !roots.config.is_absolute()
                         || !roots.cache.is_absolute()
                     {
-                        return Err(ConfigError::msg(format!(
+                        return Err(ConfigError::msg(format_args!(
                             "account {id:?} requires absolute xdg_roots directories"
                         )));
                     }
@@ -505,7 +509,7 @@ impl AccountConfig {
             AccountCredential::ApiKey { value, .. }
             | AccountCredential::OAuthToken { value, .. } => {
                 if value.as_persisted_str().trim().is_empty() || value.is_on_demand() {
-                    return Err(ConfigError::msg(format!(
+                    return Err(ConfigError::msg(format_args!(
                         "account {id:?} requires a nonempty launch-time credential"
                     )));
                 }
@@ -519,7 +523,7 @@ impl AccountConfig {
                 .as_deref()
                 .is_some_and(|model| model.trim().is_empty())
             {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "account {id:?} has an empty model"
                 )));
             }
@@ -527,13 +531,13 @@ impl AccountConfig {
                 .as_deref()
                 .is_some_and(|url| !Self::is_valid_http_endpoint(url))
             {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "account {id:?} requires an HTTP(S) endpoint"
                 )));
             }
         }
         if !Agent::ALL.iter().any(|a| self.compatible_agent(*a)) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {id:?} has no compatible agent"
             )));
         }
@@ -588,7 +592,7 @@ impl AccountConfig {
         endpoint_override: Option<&str>,
     ) -> ConfigResult<BTreeMap<String, EnvValue>> {
         if !self.supports_agent(agent) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {:?} cannot authenticate {agent}",
                 self.name
             )));
@@ -605,7 +609,7 @@ impl AccountConfig {
         };
         let endpoint = endpoint_override.or(account_endpoint);
         if endpoint.is_some_and(|url| !Self::is_valid_http_endpoint(url)) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {:?} requires an HTTP(S) endpoint",
                 self.name
             )));
@@ -615,7 +619,7 @@ impl AccountConfig {
             AccountCredential::Profile { .. } => {}
             AccountCredential::OAuthToken { value, .. } => {
                 let route = route.ok_or_else(|| {
-                    ConfigError::msg(format!(
+                    ConfigError::msg(format_args!(
                         "account {:?} has no environment credential route",
                         self.name
                     ))
@@ -636,13 +640,13 @@ impl AccountConfig {
                 ) && Some(self.provider) != AiProvider::for_agent(agent)
                     && model.as_deref().is_none_or(|model| model.trim().is_empty())
                 {
-                    return Err(ConfigError::msg(format!(
+                    return Err(ConfigError::msg(format_args!(
                         "account {:?} requires an explicit model for {agent}",
                         self.name
                     )));
                 }
                 let route = route.ok_or_else(|| {
-                    ConfigError::msg(format!(
+                    ConfigError::msg(format_args!(
                         "account {:?} has no environment credential route",
                         self.name
                     ))
@@ -662,7 +666,7 @@ impl AccountConfig {
                 }
                 let default_url = self.default_api_url(agent);
                 if matches!(agent, Agent::Omp | Agent::Hermes) && endpoint.is_some() {
-                    return Err(ConfigError::msg(format!(
+                    return Err(ConfigError::msg(format_args!(
                         "account {:?} has an endpoint override for {agent}, but that provider configuration is unsupported",
                         self.name
                     )));
@@ -679,9 +683,9 @@ impl AccountConfig {
                         Agent::Codex => "OPENAI_BASE_URL",
                         Agent::Kimi => "KIMI_BASE_URL",
                         _ => {
-                            return Err(ConfigError::msg(
-                                "endpoint overrides are unsupported for this agent",
-                            ));
+                            return Err(ConfigError::msg(format_args!(
+                                "endpoint overrides are unsupported for this agent"
+                            )));
                         }
                     };
                     env.insert(name.into(), EnvValue::from(url));
@@ -804,9 +808,9 @@ pub fn validate_account_id(id: &str) -> ConfigResult<()> {
             .next()
             .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
     {
-        return Err(ConfigError::msg(
-            "account ID must be a lowercase slug of 1–64 characters",
-        ));
+        return Err(ConfigError::msg(format_args!(
+            "account ID must be a lowercase slug of 1–64 characters"
+        )));
     }
     Ok(())
 }
@@ -837,16 +841,16 @@ pub fn resolve_account<'a>(
         .or_else(|| cfg.account_bindings.get(&agent));
     if let Some(id) = binding {
         if ws.is_some_and(|w| !w.accounts.contains(id)) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {id:?} is not assigned to this workspace"
             )));
         }
         let account = cfg
             .accounts
             .get(id)
-            .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
+            .ok_or_else(|| ConfigError::msg(format_args!("unknown account {id:?}")))?;
         if !account.supports_agent(agent) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {id:?} does not support {agent}"
             )));
         }
@@ -855,7 +859,7 @@ pub fn resolve_account<'a>(
     let Some(ws) = ws else { return Ok(None) };
     for id in &ws.accounts {
         if !cfg.accounts.contains_key(id) {
-            return Err(ConfigError::msg(format!("unknown account {id:?}")));
+            return Err(ConfigError::msg(format_args!("unknown account {id:?}")));
         }
     }
     let mut candidates = ws
@@ -865,7 +869,7 @@ pub fn resolve_account<'a>(
         .filter(|a| a.supports_agent(agent));
     let selected = candidates.next();
     if candidates.next().is_some() {
-        return Err(ConfigError::msg(format!(
+        return Err(ConfigError::msg(format_args!(
             "multiple accounts support {agent}; select an account binding"
         )));
     }
@@ -939,13 +943,15 @@ impl AgentConfiguration {
         accounts: &BTreeMap<String, AccountConfig>,
     ) -> ConfigResult<()> {
         validate_account_id(id).map_err(|_| {
-            ConfigError::msg("configuration ID must be a lowercase slug of 1–64 characters")
+            ConfigError::msg(format_args!(
+                "configuration ID must be a lowercase slug of 1–64 characters"
+            ))
         })?;
         let account = accounts
             .get(&self.account)
-            .ok_or_else(|| ConfigError::msg(format!("unknown account {:?}", self.account)))?;
+            .ok_or_else(|| ConfigError::msg(format_args!("unknown account {:?}", self.account)))?;
         if !account.supports_agent(self.agent) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {:?} is not authorized for {}",
                 self.account, self.agent
             )));
@@ -955,7 +961,7 @@ impl AgentConfiguration {
             .as_deref()
             .is_some_and(|model| model.trim().is_empty())
         {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "configuration {id:?} has an empty model"
             )));
         }
@@ -964,12 +970,12 @@ impl AgentConfiguration {
             .as_deref()
             .is_some_and(|url| !AccountConfig::is_valid_http_endpoint(url))
         {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "configuration {id:?} requires an HTTP(S) endpoint"
             )));
         }
         if self.base_url.is_some() && matches!(self.agent, Agent::Omp | Agent::Hermes) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "configuration {id:?} has an endpoint override for {}, but that provider configuration is unsupported",
                 self.agent
             )));
@@ -979,7 +985,7 @@ impl AgentConfiguration {
             .as_deref()
             .is_some_and(|label| label.trim().is_empty())
         {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "configuration {id:?} has an empty display label"
             )));
         }
@@ -990,7 +996,7 @@ impl AgentConfiguration {
     /// Reject launch settings the capsule cannot execute safely.
     fn validate_launch_transport(&self, id: &str) -> ConfigResult<()> {
         if self.invoked_via_wrapper.is_some() {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "configuration {id:?} declares an unsupported shell wrapper; jackin capsule launches cannot execute arbitrary host wrappers safely"
             )));
         }
@@ -1124,7 +1130,7 @@ pub fn resolve_launch(
         let mut instances = Vec::with_capacity(selection.len());
         for id in selection {
             if !seen.insert(id) {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "duplicate configuration {id:?} in launch selection"
                 )));
             }
@@ -1146,10 +1152,9 @@ pub fn resolve_launch(
             && ws.and_then(|w| w.default_launch.as_deref()).is_none();
         let mut instances = Vec::with_capacity(ids.len());
         for id in ids {
-            let config = cfg
-                .agent_configurations
-                .get(id)
-                .ok_or_else(|| ConfigError::msg(format!("unknown agent configuration {id:?}")))?;
+            let config = cfg.agent_configurations.get(id).ok_or_else(|| {
+                ConfigError::msg(format_args!("unknown agent configuration {id:?}"))
+            })?;
             // Role/workspace scopes validate atomically like bindings;
             // inherited global candidates filter by authorization.
             if scope_is_global && !authorized(&config.account) {
@@ -1188,7 +1193,7 @@ pub fn resolve_launch(
                 let account = cfg
                     .accounts
                     .get(id)
-                    .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
+                    .ok_or_else(|| ConfigError::msg(format_args!("unknown account {id:?}")))?;
                 for agent in agents {
                     if account.supports_agent(*agent) {
                         eligible.push(ResolvedInstance::synthesize(id, *agent, account));
@@ -1207,12 +1212,14 @@ pub fn resolve_launch(
         }
     }
     if eligible.is_empty() {
-        return Err(ConfigError::msg("no eligible account for this launch"));
+        return Err(ConfigError::msg(format_args!(
+            "no eligible account for this launch"
+        )));
     }
     if eligible.len() > 1 {
-        return Err(ConfigError::msg(
-            "multiple accounts are eligible; select launch configurations",
-        ));
+        return Err(ConfigError::msg(format_args!(
+            "multiple accounts are eligible; select launch configurations"
+        )));
     }
     Ok(eligible)
 }
@@ -1244,14 +1251,14 @@ fn checked_launch_instances(
         {
             Some((_, FolderVarKind::Dir | FolderVarKind::Parent)) => {}
             Some((name, FolderVarKind::XdgRoot)) => {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "agent {agent} admits only one account per container: \
                      isolating several accounts needs {name}, which would also \
                      redirect unrelated XDG consumers of the pane process"
                 )));
             }
             None => {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "agent {agent} admits only one account per container: \
                      it has no config-folder env var to isolate instances"
                 )));
@@ -1270,12 +1277,12 @@ fn bind_explicit(
     let config = cfg
         .agent_configurations
         .get(id)
-        .ok_or_else(|| ConfigError::msg(format!("unknown agent configuration {id:?}")))?;
+        .ok_or_else(|| ConfigError::msg(format_args!("unknown agent configuration {id:?}")))?;
     config.validate_launch_transport(id)?;
     if let Some(w) = ws
         && !w.accounts.contains(&config.account)
     {
-        return Err(ConfigError::msg(format!(
+        return Err(ConfigError::msg(format_args!(
             "account {:?} is not assigned to this workspace",
             config.account
         )));
@@ -1283,9 +1290,9 @@ fn bind_explicit(
     let account = cfg
         .accounts
         .get(&config.account)
-        .ok_or_else(|| ConfigError::msg(format!("unknown account {:?}", config.account)))?;
+        .ok_or_else(|| ConfigError::msg(format_args!("unknown account {:?}", config.account)))?;
     if !account.supports_agent(config.agent) {
-        return Err(ConfigError::msg(format!(
+        return Err(ConfigError::msg(format_args!(
             "account {:?} is not authorized for {}",
             config.account, config.agent
         )));
@@ -1310,9 +1317,9 @@ impl AppConfig {
         let account = self
             .accounts
             .get(account_id)
-            .ok_or_else(|| ConfigError::msg(format!("unknown account {account_id:?}")))?;
+            .ok_or_else(|| ConfigError::msg(format_args!("unknown account {account_id:?}")))?;
         if matches!(&account.credential, AccountCredential::Profile { .. }) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {account_id:?} has no environment credential route"
             )));
         }
@@ -1354,7 +1361,7 @@ impl AppConfig {
             .filter_map(|agent| account.resolved_credential_descriptor(agent).ok())
             .collect::<Vec<_>>();
         if descriptors.is_empty() {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "account {account_id:?} has no compatible launch route"
             )));
         }
@@ -1378,7 +1385,7 @@ impl AppConfig {
             let mut seen = BTreeSet::new();
             for id in &ws.accounts {
                 if !self.accounts.contains_key(id) || !seen.insert(id) {
-                    return Err(ConfigError::msg(format!(
+                    return Err(ConfigError::msg(format_args!(
                         "unknown or duplicate workspace account {id:?}"
                     )));
                 }
@@ -1409,7 +1416,7 @@ impl AppConfig {
             let mut seen = BTreeSet::new();
             for id in &ws.accounts {
                 if !self.accounts.contains_key(id) || !seen.insert(id) {
-                    return Err(ConfigError::msg(format!(
+                    return Err(ConfigError::msg(format_args!(
                         "unknown or duplicate workspace account {id:?}"
                     )));
                 }
@@ -1432,9 +1439,9 @@ impl AppConfig {
             let account = self
                 .accounts
                 .get(id)
-                .ok_or_else(|| ConfigError::msg(format!("unknown account {id:?}")))?;
+                .ok_or_else(|| ConfigError::msg(format_args!("unknown account {id:?}")))?;
             if !account.supports_agent(*agent) || allowed.is_some_and(|ids| !ids.contains(id)) {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "account {id:?} is not authorized for {agent}"
                 )));
             }
@@ -1453,16 +1460,15 @@ impl AppConfig {
         let mut seen = BTreeSet::new();
         for id in ids {
             if !seen.insert(id) {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "duplicate launch configuration {id:?}"
                 )));
             }
-            let config = self
-                .agent_configurations
-                .get(id)
-                .ok_or_else(|| ConfigError::msg(format!("unknown agent configuration {id:?}")))?;
+            let config = self.agent_configurations.get(id).ok_or_else(|| {
+                ConfigError::msg(format_args!("unknown agent configuration {id:?}"))
+            })?;
             if allowed.is_some_and(|ids| !ids.contains(&config.account)) {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "account {:?} is not assigned to this workspace",
                     config.account
                 )));

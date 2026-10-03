@@ -117,7 +117,7 @@ impl AppConfig {
         }
 
         let namespace = selector.namespace.as_ref().ok_or_else(|| {
-            anyhow::Error::from(ConfigError::msg(format!(
+            anyhow::Error::from(ConfigError::msg(format_args!(
                 "unknown selector {}",
                 selector.key()
             )))

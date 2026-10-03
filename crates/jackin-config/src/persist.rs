@@ -341,7 +341,7 @@ fn target_state(path: &Path) -> TargetState {
 pub(crate) fn ensure_replaceable_target(path: &Path) -> crate::ConfigResult<()> {
     match std::fs::metadata(path) {
         Ok(metadata) if metadata.is_file() => Ok(()),
-        Ok(_) => Err(crate::ConfigError::msg(format!(
+        Ok(_) => Err(crate::ConfigError::msg(format_args!(
             "config target {} is not a regular file",
             path.display()
         ))),
@@ -358,7 +358,7 @@ pub(crate) fn stage_delete(path: &Path) -> crate::ConfigResult<Option<StagedDele
             original: std::fs::read(path)?,
             committed: false,
         })),
-        Ok(_) => Err(crate::ConfigError::msg(format!(
+        Ok(_) => Err(crate::ConfigError::msg(format_args!(
             "config target {} is not a regular file",
             path.display()
         ))),
@@ -438,7 +438,7 @@ fn write_publication_ops(journal_path: &Path, ops: &[PublicationOp]) -> crate::C
         ops: ops.to_vec(),
     };
     let contents = serde_json::to_string_pretty(&journal).map_err(|error| {
-        crate::ConfigError::msg(format!("serializing publication journal: {error}"))
+        crate::ConfigError::msg(format_args!("serializing publication journal: {error}"))
     })?;
     atomic_write(journal_path, &contents)
 }
@@ -448,7 +448,7 @@ fn remove_publication_journal(journal_path: &Path) -> crate::ConfigResult<()> {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
-            return Err(crate::ConfigError::msg(format!(
+            return Err(crate::ConfigError::msg(format_args!(
                 "config committed but removing publication journal {} failed: {error}; \
                  re-run any config write to converge",
                 journal_path.display()
@@ -478,21 +478,21 @@ pub(crate) fn recover_pending_publication(config_file: &Path) -> crate::ConfigRe
             return Ok(());
         }
         Err(error) => {
-            return Err(crate::ConfigError::msg(format!(
+            return Err(crate::ConfigError::msg(format_args!(
                 "reading publication journal {} failed: {error}",
                 journal_path.display()
             )));
         }
     };
     let journal: PublicationJournal = serde_json::from_slice(&raw).map_err(|parse_error| {
-        crate::ConfigError::msg(format!(
+        crate::ConfigError::msg(format_args!(
             "publication journal {} is corrupt (malformed JSON: {parse_error}); hand-verify the \
              config tree, then remove the journal to proceed",
             journal_path.display()
         ))
     })?;
     if journal.version != PUBLICATION_JOURNAL_VERSION {
-        return Err(crate::ConfigError::msg(format!(
+        return Err(crate::ConfigError::msg(format_args!(
             "publication journal {} has unsupported version {} (expected \
              {PUBLICATION_JOURNAL_VERSION}); hand-verify the config tree, then remove the journal \
              to proceed",
@@ -654,13 +654,13 @@ fn abort_staged_config(
         }
     }
     if !restore_errors.is_empty() {
-        return Err(crate::ConfigError::msg(format!(
+        return Err(crate::ConfigError::msg(format_args!(
             "{error}; config rollback failed: {}",
             restore_errors.join("; ")
         )));
     }
     if let Err(journal_error) = write_publication_ops(journal_path, &restores) {
-        return Err(crate::ConfigError::msg(format!(
+        return Err(crate::ConfigError::msg(format_args!(
             "{error}; config rollback failed: {journal_error}"
         )));
     }
@@ -672,13 +672,13 @@ fn abort_staged_config(
     }
     if apply_errors.is_empty() {
         if let Err(journal_error) = remove_publication_journal(journal_path) {
-            return Err(crate::ConfigError::msg(format!(
+            return Err(crate::ConfigError::msg(format_args!(
                 "{error}; config rollback failed: {journal_error}"
             )));
         }
         return Err(error);
     }
-    Err(crate::ConfigError::msg(format!(
+    Err(crate::ConfigError::msg(format_args!(
         "{error}; config rollback failed: {}; abort journal left for recovery",
         apply_errors.join("; ")
     )))
@@ -688,7 +688,7 @@ fn apply_publication_op(op: &PublicationOp) -> crate::ConfigResult<()> {
     match op {
         PublicationOp::Write { target, tmp } => {
             if tmp.parent() != target.parent() {
-                return Err(crate::ConfigError::msg(format!(
+                return Err(crate::ConfigError::msg(format_args!(
                     "publication journal staged file {} is not a sibling of {}",
                     tmp.display(),
                     target.display()
@@ -698,7 +698,7 @@ fn apply_publication_op(op: &PublicationOp) -> crate::ConfigResult<()> {
                 if target.exists() {
                     return Ok(());
                 }
-                return Err(crate::ConfigError::msg(format!(
+                return Err(crate::ConfigError::msg(format_args!(
                     "publication journal cannot complete write to {}: staged file {} is gone; \
                      hand-verify the config tree, then remove the journal to proceed",
                     target.display(),
@@ -720,7 +720,7 @@ fn apply_publication_op(op: &PublicationOp) -> crate::ConfigResult<()> {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => {
-                    return Err(crate::ConfigError::msg(format!(
+                    return Err(crate::ConfigError::msg(format_args!(
                         "publication journal cannot complete delete of {}: {error}",
                         target.display()
                     )));

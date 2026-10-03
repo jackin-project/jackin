@@ -121,7 +121,7 @@ pub fn resolve_load_workspace(
                 cwd.join(&expanded_src)
             };
             let canonical_src = abs_src.canonicalize().map_err(|e| {
-                anyhow::Error::from(ConfigError::msg(format!(
+                anyhow::Error::from(ConfigError::msg(format_args!(
                     "cannot resolve path {expanded_src}: {e}"
                 )))
             })?;
@@ -157,7 +157,7 @@ pub fn resolve_load_workspace(
                     .iter()
                     .any(|role| role == &selector.key())
             {
-                return Err(ConfigError::msg(format!(
+                return Err(ConfigError::msg(format_args!(
                     "role {} is not allowed by workspace {name}",
                     selector.key()
                 )));
@@ -173,7 +173,7 @@ pub fn resolve_load_workspace(
             .iter()
             .any(|existing| existing.dst == ad_hoc.dst)
         {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "ad-hoc mount destination conflicts with workspace mount destination: {}",
                 ad_hoc.dst
             )));
@@ -214,7 +214,7 @@ pub fn resolve_load_workspace(
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {
-            return Err(ConfigError::msg(format!(
+            return Err(ConfigError::msg(format_args!(
                 "global mount destination conflicts with workspace destination: {}",
                 mount.dst
             )));
