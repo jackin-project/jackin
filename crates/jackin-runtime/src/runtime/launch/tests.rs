@@ -5687,6 +5687,10 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
         auth_forward: jackin_config::GithubAuthMode::Token,
         env: std::collections::BTreeMap::new(),
     });
+    config.docker.grants = Some(jackin_core::DockerGrants {
+        dind: Some(jackin_core::DindGrant::Privileged),
+        ..Default::default()
+    });
     persist_test_config(&paths, &config);
 
     let selector = RoleSelector::new(None, "agent-smith");
@@ -5800,7 +5804,135 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
 }
 
 #[tokio::test]
-async fn load_agent_grant_validation_failure_tears_down_adopted_dind() {
+async fn load_agent_dind_free_launch_preserves_available_prewarm() {
+    // Regression for the adopted-prewarm-DinD leak: `adopt_prewarmed_dind_sidecar`
+    // takes over a *running* prewarmed DinD container/network/volume and deletes
+    // its on-disk state, so nothing re-adopts it. A fallible preflight after
+    // adoption (here Token-mode GitHub auth with no resolvable token) must tear
+    // those resources down rather than orphan a live privileged container.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    // Token mode with an empty env => GH_TOKEN resolves to None =>
+    // `verify_github_token_present` fails, after adoption.
+    config.github = Some(jackin_config::GithubAuthConfig {
+        auth_forward: jackin_config::GithubAuthMode::Token,
+        env: std::collections::BTreeMap::new(),
+    });
+    config.docker.grants = Some(jackin_core::DockerGrants {
+        dind: Some(jackin_core::DindGrant::None),
+        ..Default::default()
+    });
+    persist_test_config(&paths, &config);
+
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+
+    // Seed a kept, running prewarmed DinD so the launch adopts it.
+    let prewarm_dind = "jk-prewarm-b4-dind";
+    let prewarm_net = "jk-prewarm-b4-net";
+    let prewarm_certs = "jk-prewarm-b4-certs";
+    write_prewarmed_dind_state(
+        &paths,
+        &DindSidecarPrewarm {
+            dind: prewarm_dind.to_owned(),
+            dind_id: "prewarm-b4-dind-id".to_owned(),
+            network: prewarm_net.to_owned(),
+            certs_volume: prewarm_certs.to_owned(),
+            ready_ms: 12,
+            kept: true,
+        },
+    )
+    .unwrap();
+
+    let docker = jackin_test_support::FakeDockerClient::default();
+    // Image-reuse path (no build needed to reach adoption).
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    docker
+        .container_id_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), "prewarm-b4-dind-id".to_owned());
+    // Adoption: pin the prewarmed dind to Running by name (the restore/claim
+    // inspects that run first hit the default NotFound), and give its network
+    // the prewarm labels so adoption accepts it.
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), ContainerState::Running);
+    let mut network_labels = HashMap::new();
+    network_labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+    network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+    docker.inspect_network_queue.borrow_mut().push_back(Some(
+        jackin_docker::docker_client::NetworkRow {
+            name: prewarm_net.to_owned(),
+            labels: network_labels,
+        },
+    ));
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        ..LoadOptions::default()
+    };
+
+    let result = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await;
+
+    result.expect_err("missing Token-mode GitHub token must fail the launch");
+    let recorded = docker.recorded.borrow();
+    assert!(
+        !recorded
+            .iter()
+            .any(|call| call == &format!("docker rm -f {prewarm_dind}")
+                || call == &format!("docker network rm {prewarm_net}"))
+    );
+    assert!(paths.data_dir.join("prewarm-dind.json").exists());
+}
+
+#[tokio::test]
+async fn load_agent_grant_validation_failure_preserves_unadopted_dind() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -5909,24 +6041,17 @@ async fn load_agent_grant_validation_failure_tears_down_adopted_dind() {
         "unexpected error: {error:#}"
     );
     let recorded = docker.recorded.borrow();
-    assert!(
-        recorded
-            .iter()
-            .any(|call| call == &format!("docker rm -f {prewarm_dind}")),
-        "adopted prewarm DinD must be torn down after grant validation failure; recorded: {recorded:?}"
-    );
-    assert!(
-        recorded
-            .iter()
-            .any(|call| call == &format!("docker volume rm {prewarm_certs}")),
-        "adopted prewarm cert volume must be torn down after grant validation failure; recorded: {recorded:?}"
-    );
-    assert!(
-        recorded
-            .iter()
-            .any(|call| call == &format!("docker network rm {prewarm_net}")),
-        "adopted prewarm network must be torn down after grant validation failure; recorded: {recorded:?}"
-    );
+    for operation in [
+        format!("docker rm -f {prewarm_dind}"),
+        format!("docker volume rm {prewarm_certs}"),
+        format!("docker network rm {prewarm_net}"),
+    ] {
+        assert!(
+            !recorded.contains(&operation),
+            "invalid grants must not adopt or destroy prewarm: {recorded:?}"
+        );
+    }
+    assert!(paths.data_dir.join("prewarm-dind.json").exists());
 }
 
 #[tokio::test]
@@ -6048,6 +6173,10 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
         jackin_core::Agent::Claude,
     );
     manifest.workspace_name = None;
+    manifest.docker_identity = Some(crate::instance::DockerIdentity {
+        role_container_id: container_name.to_owned(),
+        dind_container_id: manifest.docker.dind_container.clone(),
+    });
     write_indexed_manifest(&paths, &manifest);
     provision_restore_account_policy(&paths, &config, &manifest);
     let docker = jackin_test_support::FakeDockerClient {
@@ -6132,10 +6261,18 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
         jackin_core::Agent::Claude,
     );
     manifest.mark_status(InstanceStatus::Running);
+    manifest.docker_identity = Some(crate::instance::DockerIdentity {
+        role_container_id: container_name.to_owned(),
+        dind_container_id: manifest.docker.dind_container.clone(),
+    });
     write_indexed_manifest(&paths, &manifest);
     provision_restore_account_policy(&paths, &config, &manifest);
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Stopped {
+                exit_code: 137,
+                oom_killed: false,
+            },
             ContainerState::Stopped {
                 exit_code: 137,
                 oom_killed: false,
@@ -8979,24 +9116,91 @@ async fn recreate_refuses_partial_role_and_dind_identity() {
         ..Default::default()
     };
 
-    super::launch_pipeline::teardown_recreate_container(&paths, container_name, None, &docker)
-        .await
-        .unwrap();
+    let error =
+        super::launch_pipeline::teardown_recreate_container(&paths, container_name, None, &docker)
+            .await
+            .unwrap_err();
 
     assert!(
-        docker
-            .bound_operations
-            .borrow()
-            .iter()
-            .any(|operation| operation == "remove:replacement-dind-id")
+        error.to_string().contains("ownership identity unavailable"),
+        "{error}"
     );
+    assert!(docker.bound_operations.borrow().is_empty());
     assert!(
-        docker
+        !docker
             .recorded
             .borrow()
             .iter()
-            .any(|operation| operation == "docker network rm jk-k7p9m2xq-workspace-agentsmith-net")
+            .any(|operation| operation.starts_with("docker network rm")
+                || operation.starts_with("docker volume rm"))
     );
+}
+
+#[tokio::test]
+async fn recreate_checks_recorded_sidecar_identity_before_mutation() {
+    for actual_id in ["original-dind-id", "replacement-dind-id"] {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+        let mut manifest = workspace_manifest(
+            container_name,
+            "agent-smith",
+            "Agent Smith",
+            jackin_core::Agent::Claude,
+        );
+        manifest.docker_identity = Some(crate::instance::DockerIdentity {
+            role_container_id: "original-role-id".to_owned(),
+            dind_container_id: Some("original-dind-id".to_owned()),
+        });
+        write_indexed_manifest(&paths, &manifest);
+        let dind_name = manifest.docker.dind_container.clone().unwrap();
+        let docker = jackin_test_support::FakeDockerClient {
+            inspect_state_by_name: std::cell::RefCell::new(std::collections::HashMap::from([
+                (container_name.to_owned(), ContainerState::NotFound),
+                (dind_name.clone(), ContainerState::Running),
+            ])),
+            container_id_by_name: std::cell::RefCell::new(std::collections::HashMap::from([(
+                dind_name,
+                actual_id.to_owned(),
+            )])),
+            ..Default::default()
+        };
+        let result = super::launch_pipeline::teardown_recreate_container(
+            &paths,
+            container_name,
+            None,
+            &docker,
+        )
+        .await;
+        if actual_id == "original-dind-id" {
+            result.unwrap();
+            assert_eq!(
+                docker.bound_operations.borrow().as_slice(),
+                ["remove:original-dind-id"]
+            );
+            assert!(
+                docker
+                    .recorded
+                    .borrow()
+                    .iter()
+                    .any(|op| op == &format!("docker network rm {}", manifest.docker.network))
+            );
+        } else {
+            let error = result.unwrap_err();
+            assert!(
+                error.to_string().contains("ownership identity mismatch"),
+                "{error}"
+            );
+            assert!(docker.bound_operations.borrow().is_empty());
+            assert!(
+                !docker
+                    .recorded
+                    .borrow()
+                    .iter()
+                    .any(|op| op.starts_with("docker network rm"))
+            );
+        }
+    }
 }
 
 #[tokio::test]

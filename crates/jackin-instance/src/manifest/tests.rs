@@ -6,6 +6,26 @@ use super::*;
 use tempfile::tempdir;
 
 #[test]
+fn docker_identity_roundtrips_without_inferring_ownership_from_names() -> anyhow::Result<()> {
+    let temp = tempdir()?;
+    let mut manifest = sample_manifest();
+    manifest.write(temp.path())?;
+    assert_eq!(InstanceManifest::read(temp.path())?.docker_identity, None);
+    manifest.docker_identity = Some(DockerIdentity {
+        role_container_id: "original-role-id".to_owned(),
+        dind_container_id: Some("original-sidecar-id".to_owned()),
+    });
+    manifest.write(temp.path())?;
+    assert_eq!(InstanceManifest::read(temp.path())?, manifest);
+    manifest.docker_identity.as_mut().unwrap().dind_container_id = None;
+    manifest.docker.dind_container = None;
+    manifest.docker.certs_volume = None;
+    manifest.write(temp.path())?;
+    assert_eq!(InstanceManifest::read(temp.path())?, manifest);
+    Ok(())
+}
+
+#[test]
 fn manifest_v3_backend_roundtrips_and_omitted_backend_deserializes() {
     let manifest = InstanceManifest::new_with_backend(
         NewInstanceManifest {

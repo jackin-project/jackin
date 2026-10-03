@@ -375,6 +375,34 @@ fn git_policy_env_pairs(coauthor_trailer: bool, dco: bool) -> Vec<(&'static str,
     pairs
 }
 
+/// A fresh inspection proves liveness, never ownership. Only the launch-recorded
+/// immutable ID authorizes use of an existing role's retained state/credentials.
+fn validate_recorded_role_handle(
+    paths: &JackinPaths,
+    container_name: &str,
+    container: &ContainerHandle,
+) -> anyhow::Result<()> {
+    let manifest = InstanceManifest::read(&paths.data_dir.join(container_name)).context(
+        "Docker ownership identity unavailable; recover the original launch identity explicitly",
+    )?;
+    let expected_id = manifest
+        .docker_identity
+        .as_ref()
+        .map(|identity| identity.role_container_id.as_str())
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| anyhow::anyhow!(
+            "Docker ownership identity unavailable for {container_name}; refusing lifecycle changes; recover the original launch identity explicitly"
+        ))?;
+    anyhow::ensure!(
+        container.name() == container_name
+            && manifest.docker.role_container == container_name
+            && container.id() == expected_id,
+        "Docker ownership identity mismatch for {container_name}: recorded {expected_id}, found {}; refusing lifecycle changes",
+        container.id()
+    );
+    Ok(())
+}
+
 /// Existing containers retain credential material: every attach route must
 /// recheck their recorded admission against current host policy before use.
 pub(crate) fn require_current_account_admission(
@@ -634,6 +662,8 @@ pub(super) async fn reconnect_or_create_session_with_focus_with_lease(
             )
         })
         .map_err(mark_reconnect_admission_failure)?;
+    validate_recorded_role_handle(paths, container_name, &container)
+        .map_err(mark_reconnect_admission_failure)?;
     reconnect_or_create_session_with_container_handle_with_lease(
         paths,
         container_name,
@@ -655,6 +685,8 @@ pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease
     runner: &mut impl CommandRunner,
     container: &ContainerHandle,
 ) -> anyhow::Result<()> {
+    validate_recorded_role_handle(paths, container_name, container)
+        .map_err(mark_reconnect_admission_failure)?;
     set_role_terminal_title(paths, container_name);
     wait_for_capsule_daemon_with_handle(paths, container, docker)
         .await
@@ -786,6 +818,13 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
         Some(container_name),
     );
     let (inspect, inspect_handle) = if let Some(container) = known_container {
+        validate_recorded_role_handle(paths, container_name, container)?;
+        let current =
+            super::cleanup::resolve_role_handle_for_state(paths, container_name, docker).await?;
+        anyhow::ensure!(
+            current == *container,
+            "Docker ownership identity changed for {container_name}"
+        );
         (
             docker.inspect_container_by_id(container).await,
             Some(container.clone()),
@@ -794,6 +833,9 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
         let inspection = docker.inspect_container_by_name(container_name).await;
         (inspection.state, inspection.handle)
     };
+    if let Some(container) = &inspect_handle {
+        validate_recorded_role_handle(paths, container_name, container)?;
+    }
     let inspect_label = inspect.short_label();
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Capsule,
@@ -811,7 +853,7 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
                 anyhow::bail!("container '{container_name}' inspection returned no immutable ID");
             };
             let resources =
-                crate::runtime::cleanup::docker_resources_for_state(paths, container_name);
+                crate::runtime::cleanup::docker_resources_for_state(paths, container_name)?;
             restart_stopped_dind_if_needed(paths, container_name, admission_lease, docker).await?;
 
             jackin_diagnostics::active_timing_started(
@@ -915,7 +957,7 @@ async fn restart_stopped_dind_if_needed(
     admission_lease: &super::launch::AccountConfigRevision,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    let resources = crate::runtime::cleanup::docker_resources_for_state(paths, container_name);
+    let resources = crate::runtime::cleanup::docker_resources_for_state(paths, container_name)?;
     if resources.dind_container.is_none() {
         return Ok(());
     }
@@ -1023,6 +1065,7 @@ async fn start_or_hardline_agent_with_known_container(
                         )
                     })?
                 };
+                validate_recorded_role_handle(paths, container_name, &container)?;
                 hardline_docker_agent_with_focus_with_lease(
                     paths,
                     container_name,
@@ -1075,9 +1118,11 @@ async fn require_container_running(
     let inspection = docker.inspect_container_by_name(container_name).await;
     match inspection.state {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-            inspection.handle.ok_or_else(|| {
+            let container = inspection.handle.ok_or_else(|| {
                 anyhow::anyhow!("container '{container_name}' inspection returned no immutable ID")
-            })
+            })?;
+            validate_recorded_role_handle(paths, container_name, &container)?;
+            Ok(container)
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -1418,6 +1463,7 @@ pub(crate) async fn hardline_docker_agent_with_focus(
             let Some(container) = container_handle else {
                 anyhow::bail!("container '{container_name}' inspection returned no immutable ID");
             };
+            validate_recorded_role_handle(paths, container_name, &container)?;
             let admission_lease = require_current_account_admission(paths, container_name)?;
             hardline_docker_agent_with_focus_with_lease(
                 paths,
@@ -1591,6 +1637,7 @@ pub(super) async fn finalize_reconnected_foreground_session_with_handle(
     container: &ContainerHandle,
 ) -> anyhow::Result<()> {
     validate_current_account_admission(paths, container_name, admission_lease)?;
+    validate_recorded_role_handle(paths, container_name, container)?;
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Hardline,
         "post_attach_outcome_inspect",
@@ -1784,7 +1831,10 @@ pub async fn inspect_hardline_instance(
     );
     let role_container_state = role_inspection.state;
     let sessions = match role_inspection.handle {
-        Some(container) => inspect_agent_sessions(docker, &container, &role_container_state).await,
+        Some(container) => match validate_recorded_role_handle(paths, container_name, &container) {
+            Ok(()) => inspect_agent_sessions(docker, &container, &role_container_state).await,
+            Err(error) => AgentSessionInventory::Unavailable(error.to_string()),
+        },
         None => AgentSessionInventory::NotRunning,
     };
     let role_state = role_container_state.inspect_label();

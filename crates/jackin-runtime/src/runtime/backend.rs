@@ -70,7 +70,7 @@ where
         paths: &JackinPaths,
         container_name: &str,
     ) -> Result<()> {
-        let resources = super::cleanup::docker_resources_for_state(paths, container_name);
+        let resources = super::cleanup::docker_resources_for_state(paths, container_name)?;
         super::cleanup::ensure_role_resources_absent_for_purge(self.docker, &resources).await
     }
 

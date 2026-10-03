@@ -35,8 +35,9 @@ use crate::runtime::progress::launch_output;
     clippy::struct_excessive_bools,
     reason = "LaunchContext carries independent launch switches (debug, git_coauthor_trailer, git_dco, non_interactive) resolved upstream, not a state machine."
 )]
-pub(crate) struct LaunchContext<'a> {
+pub(crate) struct LaunchContext<'a, 'manifest> {
     pub(crate) container_name: &'a str,
+    pub(crate) ownership: &'a DockerLaunchOwnership<'manifest>,
     pub(crate) role_handle_slot:
         &'a std::sync::Arc<std::sync::Mutex<Option<jackin_core::ContainerHandle>>>,
     pub(crate) image: &'a str,
@@ -82,6 +83,47 @@ pub(crate) struct LaunchContext<'a> {
     pub(crate) non_interactive: bool,
     /// Immutable account/config generation lease held through container start.
     pub(crate) account_revision: &'a super::account_identity::AccountConfigRevision,
+}
+
+/// Persist the containers this launch actually created before starting them.
+pub(crate) struct DockerLaunchOwnership<'a> {
+    pub(crate) manifest: std::sync::Mutex<&'a mut crate::instance::InstanceManifest>,
+    pub(crate) resources: crate::instance::DockerResources,
+    pub(crate) dind_handle_slot:
+        std::sync::Arc<std::sync::Mutex<Option<jackin_core::ContainerHandle>>>,
+    pub(crate) paths: &'a JackinPaths,
+    pub(crate) state_dir: &'a std::path::Path,
+}
+
+impl DockerLaunchOwnership<'_> {
+    pub(crate) fn persist(&self, role: &jackin_core::ContainerHandle) -> anyhow::Result<()> {
+        let dind = self
+            .dind_handle_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        anyhow::ensure!(
+            role.name() == self.resources.role_container,
+            "created role identity does not match launch resources"
+        );
+        match (&self.resources.dind_container, &dind) {
+            (Some(name), Some(handle)) if name == handle.name() => {}
+            (None, None) => {}
+            _ => anyhow::bail!("launch sidecar ownership was not captured"),
+        }
+        let mut manifest = self
+            .manifest
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        manifest.docker = self.resources.clone();
+        manifest.docker_identity = Some(crate::instance::DockerIdentity {
+            role_container_id: role.id().to_owned(),
+            dind_container_id: dind.map(|handle| handle.id().to_owned()),
+        });
+        manifest.backend = None;
+        let status = manifest.status;
+        super::write_instance_status(self.paths, self.state_dir, &mut manifest, status)
+    }
 }
 
 pub(crate) struct SelectedImageRefresh<'a> {
@@ -371,13 +413,14 @@ pub(crate) enum LaunchOutcome {
               same deferred-parallel-pass plan."
 )]
 pub(crate) async fn launch_role_runtime(
-    ctx: &LaunchContext<'_>,
+    ctx: &LaunchContext<'_, '_>,
     steps: &mut StepCounter,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<LaunchOutcome> {
     let LaunchContext {
         container_name,
+        ownership,
         role_handle_slot,
         image,
         network,
@@ -408,7 +451,11 @@ pub(crate) async fn launch_role_runtime(
         account_revision,
     } = ctx;
 
-    let certs_volume = dind_certs_volume(container_name);
+    let certs_volume = ownership
+        .resources
+        .certs_volume
+        .clone()
+        .unwrap_or_else(|| dind_certs_volume(container_name));
     let dind_enabled = crate::runtime::docker_profile::dind_enabled(grants);
     let network_disabled = crate::runtime::docker_profile::network_disabled(grants);
 
@@ -1250,6 +1297,7 @@ pub(crate) async fn launch_role_runtime(
                 *role_handle_slot
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(container.clone());
+                ownership.persist(&container)?;
                 docker
                     .start_container_by_id(&container)
                     .await
