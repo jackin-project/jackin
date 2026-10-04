@@ -46,6 +46,7 @@ mod op_types;
 mod operator_notice;
 mod path_text;
 mod paths;
+mod profile_material;
 mod prompt_result;
 mod reasoning_effort;
 mod runner;
@@ -91,6 +92,11 @@ pub use operator_notice::{
 };
 pub use path_text::*;
 pub use paths::*;
+pub use profile_material::{
+    ProfileCredentialSourceIdentity, ProfileCredentialSourceMaterial,
+    amp_profile_credential_payload, profile_credential_material_revision,
+    profile_credential_source_identity,
+};
 pub use prompt_result::*;
 pub use reasoning_effort::{ParseReasoningEffortError, ReasoningEffort};
 pub use runner::*;
