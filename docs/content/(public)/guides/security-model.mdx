@@ -125,7 +125,7 @@ This reduces accidental cross-role interference.
 Inside their boundary, agents have broad autonomy:
 
 - execute arbitrary shell commands
-- install packages with `apt`, `npm`, `pip`, and similar tools
+- install or update dependencies in writable workspace or session paths when the package manager can do so without system-level writes. System package installation that needs root, such as `apt install`, is unsupported in the wrapped session; put those system tools in the role image.
 - build and run containers through a per-role DinD sidecar when an effective DinD grant enables it
 - modify files inside writable mounts
 - reach network endpoints exposed by the selected backend and effective grants; Docker egress and DinD behavior are described below
@@ -140,13 +140,20 @@ Inside their boundary, agents have broad autonomy:
 
 These guarantees are useful, but they are not absolute in the face of a kernel escape or Docker escape vulnerability.
 
-## User mapping
+## Container supervisor and agent sessions
 
-jackin❯ remaps the container user to your host UID and GID. That means:
+The Docker container starts the trusted Capsule supervisor as root so it can
+prepare per-session identities and install the process boundary. Agent and
+interactive shell PTY commands pass through the Capsule wrapper, which admits
+the identity configured for that instance or shell, drops to its nonzero UID
+and GID, retains only `CAP_DAC_OVERRIDE`, then sets no-new-privileges and
+Landlock before executing the command. The container's root startup identity
+is not the agent's identity.
 
-- files created in mounted directories are owned by your host user
-- you avoid common permission conflicts after the agent edits files
-- the main runtime process does not run as root
+This describes the wrapped PTY path. It is not a claim that Capsule protects
+against a compromised root supervisor, arbitrary root commands run outside the
+wrapper, a container escape, or a kernel exploit. Host-mounted files written
+through the paths granted to a session still change immediately.
 
 ## What persists and what does not
 
@@ -155,8 +162,9 @@ Each agent keeps its own session state — conversation history, OAuth credentia
 Several important things do **not** persist:
 
 - the mutable root filesystem of the runtime container
-- packages installed interactively into the running container
 - containers and images the agent built inside its own private `Docker` daemon during the session
+
+System package installation through an agent or shell session is unsupported. Install those tools in the role image. Package-manager operations confined to paths granted to the session are not blocked by this system-write restriction.
 
 This is a deliberate trade-off. jackin❯ is biased toward reproducible agent images and explicit workspace mounts, not long-lived mutable sandboxes. Use `jackin purge <role>` to wipe all of an agent's persisted state and start fresh.
 
@@ -172,7 +180,12 @@ The sidecar is launched by the host Docker engine. A privileged DinD grant uses 
 
 ### Docker egress controls
 
-Docker profiles provide `none`, `allowlist`, and `open` egress modes. Hardened and Locked default to allowlist; Standard and Compat default to open. `none` disables Docker networking only when DinD is off. DinD requires a non-internal per-role network, and the firewall is installed only for `allowlist`, so `none` with DinD does not isolate role egress. Allowlist enforcement is partial when the role has `sudo` or runs as root; inner containers started through any DinD grant bypass the role container's host-iptables rules, including rootless DinD.
+Docker profiles provide `none`, `allowlist`, and `open` egress modes. Hardened and Locked default to allowlist; Standard and Compat default to open. `none` disables Docker networking only when DinD is off. DinD requires a non-internal per-role network, and the firewall is installed only for `allowlist`, so `none` with DinD does not isolate role egress. Wrapped agent and shell sessions do not receive root or `CAP_NET_ADMIN`, so the `sudo` and `user = "root"` grant metadata does not let them flush the firewall. Inner containers started through any DinD grant bypass the role container's host-iptables rules, including rootless DinD.
+
+The current launch summary can still label allowlist enforcement `partial` when
+`sudo = true` or `user = "root"` is configured. That label is based on grant
+metadata and does not reflect the wrapped PTY capability set; its explanation
+is a separate reporting defect.
 
 If an agent can read a mounted secret and its network policy permits an outbound path, jackin❯ cannot stop exfiltration over that path.
 
@@ -207,11 +220,11 @@ jackin❯ is designed to reduce the most common operator risks:
 | Threat | Mitigation | Residual risk |
 |---|---|---|
 | Agent reads unrelated host files | The role container directly sees only mounted paths by default | A host Docker daemon API or container escape can bypass the mount boundary; sensitive data inside mounted paths remains readable |
-| Agent edits system files | Runtime filesystem is isolated | Writable host mounts still change immediately |
-| Agent reaches host Docker daemon | jackin❯ does not mount the host Docker socket by default; an explicit mount or reachable API endpoint can expose a daemon. With a DinD grant, the role uses a separate per-role endpoint over TLS | Host Docker starts the sidecar; privileged DinD can bypass some role-container capability drops. Rootless DinD skips `--privileged`; root or sudo can weaken allowlist enforcement, and any DinD tier lets inner containers bypass host-iptables rules |
+| Agent edits system files | Per-session Landlock grants only enumerated writable paths | Writable host mounts granted to a session still change immediately |
+| Agent reaches host Docker daemon | jackin❯ does not mount the host Docker socket by default; an explicit mount or reachable API endpoint can expose a daemon. With a DinD grant, the role uses a separate per-role endpoint over TLS | Host Docker starts the sidecar; privileged DinD can bypass some role-container capability drops. Rootless DinD skips `--privileged`; any DinD tier lets inner containers bypass host-iptables rules |
 | Agent writes host clipboard | OSC 52 passthrough is denied by default | Operators can opt in with `JACKIN_OSC52=allow`; terminal-native clipboard actions outside jackin❯ policy still depend on the terminal |
 | Agent interferes with another agent | Different role launches use separate containers; when networking is enabled, their Docker networks are separate. Runtimes or tabs within one launch share those resources | On Docker, role containers share the daemon host's Linux kernel; Apple Container runs workloads inside VMs |
-| Agent persists random system changes | Runtime root filesystem is ephemeral | Persisted tool state and mounted files still survive |
+| Agent writes system paths | Per-session Landlock grants only enumerated writable paths | Writable host mounts granted to a session still change immediately |
 | Typosquatted or malicious role repo | Trust-on-first-use prompt before building | User must review the source; trusted flag persists |
 | Malicious code in an unmerged PR branch | Branch trust gate always fires for `--role-branch` | User must confirm they reviewed the branch diff; cannot be skipped |
 
@@ -221,7 +234,7 @@ jackin❯ is designed to reduce the most common operator risks:
 Docker containers share the Linux kernel used by their Docker daemon; Docker isolation is not a hypervisor boundary. On macOS with Docker Desktop or OrbStack, the daemon runs in a Linux VM, so containers share that VM's kernel rather than macOS's. Apple Container runs workloads inside VMs.
 </Aside>
 - **Docker container escapes and kernel exploits** — Docker containers share the daemon host's Linux kernel. Apple Container runs workloads inside VMs.
-- **Network exfiltration** — depends on the selected network mode; Docker allowlist enforcement is partial with sudo or any DinD grant.
+- **Network exfiltration** — depends on the selected network mode; DinD lets inner containers bypass the role's host-iptables allowlist. Wrapped PTY `sudo` does not change that process's identity or capabilities.
 - **Credentials stored inside the runtime** — if you log in inside the container, the agent can potentially read what that tool stores
 - **Host-file mistakes inside writable mounts** — if you give an agent write access to a project, it can delete or rewrite that project
 

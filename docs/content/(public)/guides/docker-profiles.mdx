@@ -11,14 +11,18 @@ The agent binaries run with full bypass flags (`--dangerously-skip-permissions`,
 
 Four profiles are available, ordered from least to most capable:
 
-| Profile | Network | DinD | Sudo | Root filesystem | Memory limit |
+| Profile | Network | DinD | Sudoers setup | Root filesystem | Memory limit |
 |---|---|---|---|---|---|
 | `locked` | Allowlist (model API only) | None (opt-in via grant) | No | Read-only | 4 GiB hard |
 | `hardened` | Allowlist (model API + GitHub) | None (opt-in via grant) | No | Read-only | 16 GiB hard |
 | `standard` | Open | None (opt-in via grant) | Opt-in | Writable | 16 GiB hard |
 | `compat` | Open | Privileged | Yes | Writable | None |
 
-**`standard`** is the current default. It keeps everyday development usable while removing legacy standing sudo and privileged DinD. Use `compat` explicitly when a workflow still needs the old maximum-compatibility behavior.
+The sudoers column describes a file provisioned during container setup. It
+does not mean the interactive agent or shell can become root; Capsule wraps
+those PTY processes in a separate nonroot NNP and Landlock boundary.
+
+**`standard`** is the current default. It keeps everyday development usable while defaulting sudoers setup and privileged DinD off. Use `compat` explicitly for privileged DinD and maximum Docker-level allowances; it still does not enable interactive root sessions.
 
 ### `locked` — minimal grant
 
@@ -50,7 +54,7 @@ profile = "hardened"
 
 ### `standard` — everyday dev work
 
-Everyday development capability with resource protection. `gh pr create`, normal build/test commands, and tools already present in the role image work by default. Runtime `apt install`, Docker Compose, and Testcontainers need explicit grants because `standard` does not grant sudo or DinD automatically.
+Everyday development capability with resource protection. `gh pr create`, normal build/test commands, and tools already present in the role image work by default. Docker Compose and Testcontainers need an explicit DinD grant because `standard` does not enable DinD automatically. System package installation from an agent or shell session (for example, `apt install`) is unsupported; install system tools in the role image. This does not mean every package-manager operation in a writable workspace or session path is blocked.
 
 Use when:
 - Working with trusted role repos built by your team
@@ -64,13 +68,13 @@ profile = "standard"
 
 ### `compat` — maximum compatibility
 
-Today's exact behavior. Privileged DinD sidecar, open network, full sudo, no resource limits. Required for complex Docker workflows, multi-stage builds, and any role that needs privileged operations inside the container.
+Today's exact behavior. Privileged DinD sidecar, open network, writable container root filesystem, no resource limits, and a sudoers entry provisioned during container setup. The scoped agent and shell sessions still run as admitted nonroot identities under NNP and Landlock, so this profile does not enable interactive sudo or system package installation.
 
 Use when:
 - Docker Compose workflows inside the agent
 - Java Testcontainers with `--privileged` requirements
 - Exact backward compatibility needed
-- Runtime package installation needs passwordless sudo and the role has not been updated to request a narrower sudo grant
+- Docker workflows require privileged DinD and cannot use the rootless tier
 
 ## CLI override
 
@@ -113,12 +117,13 @@ allowed_hosts = [
 ]
 ```
 
-**Allowlist enforcement:** when `network = "allowlist"`, jackin❯ installs an outbound allowlist firewall in the container before the agent session starts, and the launch fails closed if that firewall cannot be applied. The allowlist always includes the configured agent's model API endpoint and the telemetry (OTLP) host automatically, so you never have to add them by hand.
+**Allowlist enforcement:** when `network = "allowlist"`, jackin❯ installs an outbound allowlist firewall through a root setup command before the agent session starts, and the launch fails closed if that firewall cannot be applied. The allowlist always includes the configured agent's model API endpoint and the telemetry (OTLP) host automatically, so you never have to add them by hand. The production Capsule wrapper starts agent and shell sessions as admitted nonroot identities, resets their capabilities to `CAP_DAC_OVERRIDE`, then applies NNP and Landlock before exec; `sudo` and `user = "root"` metadata do not let those sessions flush the firewall. DinD remains a separate network path.
 
 Enforcement quality depends on other grants:
-- `full` — when `sudo = false` and `dind = "none"` (the agent cannot reach the firewall rules)
-- `partial` — when `sudo = true` (the agent can flush the firewall rules)
+- `full` — when `dind = "none"` (the wrapped agent cannot reach the firewall rules)
 - `partial` — when DinD is active (inner containers have their own network path and bypass the host firewall)
+
+The current session-contract code may still report `partial` for `sudo = true` or `user = "root"` metadata. That reason is stale: the wrapped agent does not receive root or `CAP_NET_ADMIN`. Treat this as a reporting defect, not evidence that the agent can alter the firewall.
 
 The active enforcement quality is reported in the launch summary and in `--debug` output.
 
@@ -142,24 +147,34 @@ It remains opt-in. The `standard` profile keeps `dind = "none"` by default becau
 
 ```toml
 [docker.grants]
-user = "agent"    # "agent" (default) | "root" | any image username
-sudo = false      # passwordless sudo, provisioned only when granted
+user = "agent"    # accepted metadata; does not select the PTY session UID
+sudo = false      # controls sudoers setup; does not enable interactive agent sudo
 
 # Validation error: user = "root" and sudo = true are mutually exclusive.
 ```
 
 When sudo is granted, jackin❯ provisions `/etc/sudoers.d/agent` after the
-container starts by executing the capsule helper as Docker root. The construct
-image does not bake a standing passwordless sudoers entry into the base layer.
+container starts by executing the capsule helper as Docker root. This is a
+container setup action. Agent and shell PTY processes always pass through the
+Capsule wrapper: it admits the configured nonzero identity, drops privileges,
+sets NNP, and installs Landlock before executing the requested program. The
+outer Docker NNP flag does not override that per-session NNP setting, so the
+provisioned sudoers entry does not let an interactive session become root. The
+construct image does not bake a standing sudoers entry into its base layer.
+
+The schema still accepts `user`, but the current runtime does not use it to
+select a container or PTY identity. In particular, `user = "root"` is not a
+root-agent mode. The container starts its trusted Capsule supervisor as root;
+agent and shell sessions use the identity admitted by Capsule configuration.
 
 ### Filesystem grant
 
 ```toml
 [docker.grants]
-system_writes = true   # false = --read-only root; true = writable root
+system_writes = true   # writable Docker root filesystem; does not widen PTY Landlock grants
 ```
 
-`system_writes = false` enables `--read-only` on the container root filesystem, with writable in-memory scratch space for the paths a process legitimately needs to write at runtime. Compatible only with roles where all tools are pre-installed in the Dockerfile — `apt install` at runtime fails because package installation writes to read-only image paths.
+When the resolved `system_writes` grant is `false`, Docker starts the container with `--read-only` and writable in-memory scratch space for startup paths. This is the default for `locked` and `hardened`. `standard` and `compat` resolve to a writable root filesystem, and grants only widen that setting, so `system_writes = false` cannot narrow those profiles. `true` removes the Docker-level read-only mount. Neither value widens the per-session Landlock policy: the agent still gets no general write access to `/usr`, `/etc`, or `/var`. System package installation from agent sessions is unsupported; install system tools in the role image.
 
 ### Resource grants
 
@@ -263,11 +278,11 @@ For the full design rationale and phased implementation plan, see the [Docker Ru
 The profile model and most controls are live; a few items remain deferred. This section is the honest split — do not rely on an in-development control for isolation until it moves to "Enforced today."
 
 **Enforced today:**
-- All four profiles with enforced capability sets (`locked`, `hardened`, `standard`, `compat`) and `no-new-privileges` on by default outside `compat`
+- All four profiles with enforced Docker capability sets (`locked`, `hardened`, `standard`, `compat`); Docker-level `no-new-privileges` is on by default outside `compat` and follows the resolved `sudo` grant, while the PTY wrapper sets it for sessions under every profile
 - `[docker.grants]` in config and workspace for per-dimension overrides
 - `[docker]` in `jackin.role.toml` for role declarations (`min_profile`, `dind`, `allowed_hosts`, `capabilities_add`)
-- `standard`/`hardened`/`locked` sudo off by default; `compat` keeps sudo on unchanged
-- Runtime sudo provisioning when `sudo = true` is granted (off by default outside `compat`)
+- `standard`/`hardened`/`locked` sudoers provisioning off by default; `compat` provisions the sudoers entry
+- A `sudo = true` grant provisions a sudoers file through root setup but does not enable sudo in wrapped agent sessions
 - DinD off by default in `standard`/`hardened`/`locked`, on in `compat` — the per-profile default and skip-when-disabled behavior
 - The `allowlist` network tier — the outbound allowlist firewall is applied at launch, fails closed if it cannot be installed, and always includes the model API and telemetry endpoints
 - The `locked` Docker-internal network
@@ -284,7 +299,7 @@ See the [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-co
 
 ### Current default: `standard`
 
-Every launch uses `standard` by default unless CLI, config, workspace config, or role metadata selects another profile. The Plan 049 compatibility matrix passed on the supported cgroup-v2 path with expected rejects for runtime package installation without sudo and Docker workflows without DinD.
+Every launch uses `standard` by default unless CLI, config, workspace config, or role metadata selects another profile. The compatibility matrix covers Docker-level profile posture; it does not exercise interactive `sudo` or package installation through the production Capsule session wrapper. The wrapper applies its own NNP and Landlock boundary to each agent and shell process.
 
 To use the legacy maximum-compatibility profile:
 
@@ -315,7 +330,7 @@ Rootless DinD is **recommended opt-in**, not a `standard` default. Use `dind = "
 
 ### The `compat` profile stays permanently
 
-`compat` is not a temporary workaround — it is a valid named profile for roles that need privileged DinD, `apt install` at runtime, or any other capability that `standard` doesn't grant. Because `standard` is the default, `compat` requires explicit opt-in:
+`compat` is a valid named profile for roles that need privileged DinD or the other Docker-level settings it raises. It does not enable interactive root or system package installation from agent sessions. Because `standard` is the default, `compat` requires explicit opt-in:
 ```sh
 jackin load fullstack . --docker-profile compat
 ```
@@ -328,7 +343,7 @@ profile = "compat"
 or in a role manifest:
 ```toml
 [docker]
-min_profile = "compat"   # role needs full sudo + apt install at runtime
+min_profile = "compat"   # role needs privileged DinD / other Compat Docker grants
 ```
 
 ### Deferred items
