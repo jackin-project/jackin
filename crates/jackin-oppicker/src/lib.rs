@@ -311,7 +311,7 @@ pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
     Accounts(anyhow::Result<Vec<Account>>),
     Vaults(anyhow::Result<Vec<Vault>>),
     Items(anyhow::Result<Vec<Item>>),
-    Fields(anyhow::Result<Vec<Field>>),
+    Fields(anyhow::Result<jackin_core::OpItemDetail<Field>>),
 }
 
 /// Typed request for external 1Password metadata loading.
@@ -351,7 +351,7 @@ pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
         account: Option<Account>,
         vault: Vault,
         item_name: String,
-        section: Option<String>,
+        section: Option<OpSectionTarget>,
         field_label: String,
     },
     /// Write/append a field in an existing item.
@@ -359,12 +359,14 @@ pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
         account: Option<Account>,
         vault: Vault,
         item: Item,
-        section: Option<String>,
+        section: Option<OpSectionTarget>,
         field: FieldTarget,
     },
 }
 
-pub use jackin_core::{OpAccount as OpPickerAccount, OpVault as OpPickerVault};
+pub use jackin_core::{
+    OpAccount as OpPickerAccount, OpSection, OpSectionTarget, OpVault as OpPickerVault,
+};
 /// Re-exported from `jackin-core` — canonical definitions live there so
 /// `jackin-env` no longer depends on `jackin-console` for data types.
 pub use jackin_core::{OpField as OpPickerField, OpItem as OpPickerItem};
@@ -376,8 +378,12 @@ pub type OpPickerCache =
 /// A single row in the field-picker display list.
 #[derive(Debug, Clone)]
 pub enum FieldDisplayRow {
-    /// A collapsible section header derived from the `op://` reference.
-    SectionHeader { name: String, field_count: usize },
+    /// A collapsible section header identified by opaque section ID.
+    SectionHeader {
+        section_id: String,
+        name: String,
+        field_count: usize,
+    },
     /// A selectable field row. The index points into the filtered fields.
     Field { field_idx: usize },
     /// `+ New field` creation row.
@@ -410,6 +416,11 @@ pub struct OpPickerFieldRef<'a> {
     pub id: &'a str,
     pub label: &'a str,
     pub reference: &'a str,
+    /// Exact section ID from the item detail response, when present.
+    /// Otherwise, the reference segment is resolved against item metadata.
+    pub section_id: Option<&'a str>,
+    /// Human label joined from the field's opaque section ID.
+    pub section_label: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -568,13 +579,13 @@ pub const fn section_stage_back_plan() -> SectionStageBackPlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SectionStageCommitPlan {
     NewSectionName,
-    ExistingSection { selected_section: Option<String> },
+    ExistingSection { selected_section: Option<OpSection> },
     NoSelection,
 }
 
 pub fn section_stage_commit_plan(
     selected: Option<usize>,
-    choices: &[Option<String>],
+    choices: &[Option<OpSection>],
 ) -> SectionStageCommitPlan {
     let selected = selected.unwrap_or(0);
     if selected == choices.len() {
@@ -727,28 +738,28 @@ pub fn section_header_collapse_target(
     collapsed_sections: &HashSet<String>,
     intent: SectionCollapseIntent,
 ) -> Option<(String, bool)> {
-    let Some(FieldDisplayRow::SectionHeader { name, .. }) = row else {
+    let Some(FieldDisplayRow::SectionHeader { section_id, .. }) = row else {
         return None;
     };
     let collapsed = match intent {
         SectionCollapseIntent::Collapse => true,
         SectionCollapseIntent::Expand => false,
-        SectionCollapseIntent::Toggle => !collapsed_sections.contains(name.as_str()),
+        SectionCollapseIntent::Toggle => !collapsed_sections.contains(section_id.as_str()),
     };
-    Some((name.clone(), collapsed))
+    Some((section_id.clone(), collapsed))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldStageCommitPlan {
     ToggleSection {
-        name: String,
+        section_id: String,
         collapsed: bool,
     },
     ExistingField {
         field_idx: usize,
     },
     NewField {
-        pending_section: Option<String>,
+        pending_section: Option<OpSectionTarget>,
         field_label_origin: FieldLabelOrigin,
         stage: OpPickerStage,
     },
@@ -758,20 +769,24 @@ pub enum FieldStageCommitPlan {
 pub fn field_stage_commit_plan(
     row: Option<&FieldDisplayRow>,
     collapsed_sections: &HashSet<String>,
-    selected_section: Option<&str>,
+    selected_section: Option<&OpSection>,
 ) -> FieldStageCommitPlan {
     match row {
         Some(FieldDisplayRow::SectionHeader { .. }) => {
             section_header_collapse_target(row, collapsed_sections, SectionCollapseIntent::Toggle)
-                .map_or(FieldStageCommitPlan::NoSelection, |(name, collapsed)| {
-                    FieldStageCommitPlan::ToggleSection { name, collapsed }
-                })
+                .map_or(
+                    FieldStageCommitPlan::NoSelection,
+                    |(section_id, collapsed)| FieldStageCommitPlan::ToggleSection {
+                        section_id,
+                        collapsed,
+                    },
+                )
         }
         Some(FieldDisplayRow::Field { field_idx }) => FieldStageCommitPlan::ExistingField {
             field_idx: *field_idx,
         },
         Some(FieldDisplayRow::NewFieldSentinel) => FieldStageCommitPlan::NewField {
-            pending_section: selected_section.map(str::to_owned),
+            pending_section: selected_section.cloned().map(OpSectionTarget::Existing),
             field_label_origin: FieldLabelOrigin::NewField,
             stage: OpPickerStage::FieldLabel,
         },
@@ -783,7 +798,7 @@ pub fn field_stage_commit_plan(
 pub struct NamingStagePlan {
     pub stage: OpPickerStage,
     pub field_label_origin: Option<FieldLabelOrigin>,
-    pub pending_section: Option<String>,
+    pub pending_section: Option<OpSectionTarget>,
     pub clear_pending_section: bool,
 }
 
@@ -800,7 +815,7 @@ pub fn new_section_name_commit_plan(name: &str) -> NamingStagePlan {
     NamingStagePlan {
         stage: OpPickerStage::FieldLabel,
         field_label_origin: Some(FieldLabelOrigin::NewSection),
-        pending_section: Some(name.trim().to_owned()),
+        pending_section: Some(OpSectionTarget::NewLabel(name.trim().to_owned())),
         clear_pending_section: false,
     }
 }
@@ -820,14 +835,14 @@ pub enum FieldLabelCommitPlan<Account, Vault, Item> {
         account: Option<Account>,
         vault: Vault,
         item_name: String,
-        section: Option<String>,
+        section: Option<OpSectionTarget>,
         field_label: String,
     },
     EditItemField {
         account: Option<Account>,
         vault: Vault,
         item: Item,
-        section: Option<String>,
+        section: Option<OpSectionTarget>,
         field_label: String,
     },
 }
@@ -836,7 +851,7 @@ pub fn field_label_commit_plan<Account, Vault, Item>(
     account: Option<Account>,
     vault: Vault,
     item: Option<Item>,
-    pending_section: Option<String>,
+    pending_section: Option<OpSectionTarget>,
     item_name: String,
     raw_label: &str,
 ) -> FieldLabelCommitPlan<Account, Vault, Item> {
@@ -897,7 +912,7 @@ pub fn field_label_commit_selection<Reference, Account, Vault, Item, FieldTarget
 pub enum ExistingFieldCommitPlan {
     ExistingReference,
     EditItemField {
-        section: Option<String>,
+        section: Option<OpSectionTarget>,
         field_id: String,
         field_label: String,
     },
@@ -907,11 +922,11 @@ pub fn existing_field_commit_plan(
     mode: &OpPickerMode,
     field_id: &str,
     field_label: &str,
-    selected_section: Option<String>,
+    selected_section: Option<OpSection>,
 ) -> ExistingFieldCommitPlan {
     if mode.is_create() {
         return ExistingFieldCommitPlan::EditItemField {
-            section: selected_section,
+            section: selected_section.map(OpSectionTarget::Existing),
             field_id: field_id.to_owned(),
             field_label: field_label.to_owned(),
         };
@@ -1037,97 +1052,216 @@ pub fn classify_probe_error_message(message: impl Into<String>) -> OpPickerError
     }
 }
 
-/// Distinct sections present in loaded `op://` field references, in
-/// first-appearance order, with a leading `None` (`(root)`) entry.
-pub fn section_choices_from_references<S>(
-    references: impl IntoIterator<Item = S>,
-) -> Vec<Option<String>>
-where
-    S: AsRef<str>,
-{
-    let mut out: Vec<Option<String>> = vec![None];
-    for reference in references {
-        if let Some(name) =
-            jackin_core::parse_op_reference(reference.as_ref()).and_then(|parts| parts.section)
-            && !out
-                .iter()
-                .any(|section| section.as_deref() == Some(name.as_str()))
-        {
-            out.push(Some(name));
-        }
+/// Human-readable section label for a picker row. Duplicate labels get an
+/// opaque-ID suffix so sections remain distinct to the operator.
+pub fn section_display_label(section: &OpSection, sections: &[OpSection]) -> String {
+    let label = if section.label.is_empty() {
+        "(unnamed section)"
+    } else {
+        section.label.as_str()
+    };
+    let has_duplicate_label = sections
+        .iter()
+        .any(|candidate| candidate.label == section.label && candidate.id != section.id);
+    if !has_duplicate_label {
+        return label.to_owned();
     }
-    out
+
+    let id_chars = section.id.chars().collect::<Vec<_>>();
+    let mut prefix_len = 4.min(id_chars.len());
+    while prefix_len < id_chars.len()
+        && sections.iter().any(|candidate| {
+            candidate.label == section.label
+                && candidate.id != section.id
+                && candidate
+                    .id
+                    .chars()
+                    .take(prefix_len)
+                    .eq(id_chars.iter().copied().take(prefix_len))
+        })
+    {
+        prefix_len += 1;
+    }
+    let id_prefix = id_chars.iter().take(prefix_len).collect::<String>();
+    format!("{label} [{id_prefix}]")
 }
 
-/// Build browse-mode field rows from the currently visible field
-/// references. Returned `field_idx` values index into the visible-field
-/// list supplied by the caller.
-pub fn browse_field_display_rows<S>(
-    references: impl IntoIterator<Item = S>,
-    collapsed_sections: &HashSet<String>,
-) -> Vec<FieldDisplayRow>
-where
-    S: AsRef<str>,
-{
-    let mut unsectioned: Vec<usize> = Vec::new();
-    let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
+pub(crate) fn section_label_for_id<'a>(
+    section_id: &str,
+    sections: &'a [OpSection],
+) -> Option<&'a str> {
+    sections
+        .iter()
+        .find(|section| section.id == section_id)
+        .map(|section| section.label.as_str())
+}
 
-    for (idx, reference) in references.into_iter().enumerate() {
-        match jackin_core::parse_op_reference(reference.as_ref()).and_then(|parts| parts.section) {
-            None => unsectioned.push(idx),
-            Some(name) => {
-                if let Some(entry) = sections.iter_mut().find(|(section, _)| section == &name) {
-                    entry.1.push(idx);
+fn section_label_for_field(section_id: &str, reference: &str, sections: &[OpSection]) -> String {
+    if let Some(section) = sections.iter().find(|section| section.id == section_id) {
+        return section_display_label(section, sections);
+    }
+
+    let label = jackin_core::parse_op_reference(reference)
+        .and_then(|parts| parts.section)
+        .filter(|label| !label.is_empty())
+        .unwrap_or_else(|| "(unnamed section)".to_owned());
+    let id_prefix = section_id.chars().take(8).collect::<String>();
+    format!("{label} [{id_prefix}]")
+}
+
+/// Resolve the section segment from a field reference against the selected
+/// item's metadata. Opaque IDs are authoritative; labels are accepted only
+/// when they identify one distinct section ID.
+fn section_for_reference_segment<'a>(
+    section_segment: &str,
+    sections: &'a [OpSection],
+) -> Option<&'a OpSection> {
+    if let Some(section) = sections
+        .iter()
+        .find(|section| section.id == section_segment)
+    {
+        return Some(section);
+    }
+
+    let mut matching_section: Option<&OpSection> = None;
+    for section in sections
+        .iter()
+        .filter(|section| section.label.eq_ignore_ascii_case(section_segment))
+    {
+        if matching_section.is_some_and(|matched| matched.id != section.id) {
+            return None;
+        }
+        matching_section = Some(section);
+    }
+    matching_section
+}
+
+/// Keep an explicit field section ID. When it is absent, infer the opaque ID
+/// only from an exact section ID or a unique case-insensitive metadata label.
+fn resolved_field_section_id(
+    section_id: Option<&str>,
+    reference: &str,
+    sections: &[OpSection],
+) -> Option<String> {
+    if let Some(section_id) = section_id {
+        return Some(section_id.to_owned());
+    }
+    let section_segment = jackin_core::parse_op_reference(reference)?.section?;
+    section_for_reference_segment(&section_segment, sections).map(|section| section.id.clone())
+}
+
+/// Fill missing field section IDs from item metadata before the picker caches
+/// or displays a field. A section-bearing reference that cannot resolve to one
+/// section is invalid picker metadata and must not be treated as a root field.
+pub(crate) fn normalize_field_section_ids(
+    fields: &mut [OpPickerField],
+    sections: &[OpSection],
+) -> Result<(), String> {
+    for field in fields {
+        if field.section_id.is_some() {
+            continue;
+        }
+        let Some(section_segment) =
+            jackin_core::parse_op_reference(&field.reference).and_then(|parts| parts.section)
+        else {
+            continue;
+        };
+        let Some(section) = section_for_reference_segment(&section_segment, sections) else {
+            return Err(format!(
+                "field {:?} has section reference {:?}, but it does not resolve to one section ID; re-open the picker to refresh",
+                field.id, section_segment
+            ));
+        };
+        field.section_id = Some(section.id.clone());
+    }
+    Ok(())
+}
+
+/// Build field rows using opaque section IDs for grouping and scoping.
+/// Returned `field_idx` values index into the filtered field list.
+pub fn field_display_rows_for_picker(
+    mode: &OpPickerMode,
+    filter: &str,
+    fields: &[OpPickerField],
+    sections: &[OpSection],
+    selected_section_id: Option<&str>,
+    collapsed_sections: &HashSet<String>,
+) -> Vec<FieldDisplayRow> {
+    let visible = filtered_fields(filter, fields);
+    if mode.is_create() {
+        let mut rows: Vec<FieldDisplayRow> = visible
+            .iter()
+            .enumerate()
+            .filter(|(_, field)| {
+                match resolved_field_section_id(
+                    field.section_id.as_deref(),
+                    &field.reference,
+                    sections,
+                ) {
+                    Some(section_id) => selected_section_id == Some(section_id.as_str()),
+                    None => {
+                        selected_section_id.is_none()
+                            && field.section_id.is_none()
+                            && jackin_core::parse_op_reference(&field.reference)
+                                .and_then(|parts| parts.section)
+                                .is_none()
+                    }
+                }
+            })
+            .map(|(field_idx, _)| FieldDisplayRow::Field { field_idx })
+            .collect();
+        rows.push(FieldDisplayRow::NewFieldSentinel);
+        return rows;
+    }
+
+    let mut unsectioned: Vec<usize> = Vec::new();
+    let mut grouped_sections: Vec<(String, String, Vec<usize>)> = Vec::new();
+    for (idx, field) in visible.iter().enumerate() {
+        match resolved_field_section_id(field.section_id.as_deref(), &field.reference, sections) {
+            None => {
+                if field.section_id.is_none()
+                    && jackin_core::parse_op_reference(&field.reference)
+                        .and_then(|parts| parts.section)
+                        .is_none()
+                {
+                    unsectioned.push(idx);
+                }
+            }
+            Some(section_id) => {
+                if let Some(entry) = grouped_sections
+                    .iter_mut()
+                    .find(|(existing_id, _, _)| existing_id == &section_id)
+                {
+                    entry.2.push(idx);
                 } else {
-                    sections.push((name, vec![idx]));
+                    grouped_sections.push((
+                        section_id.clone(),
+                        section_label_for_field(&section_id, &field.reference, sections),
+                        vec![idx],
+                    ));
                 }
             }
         }
     }
 
-    let mut rows = Vec::new();
-
-    for idx in unsectioned {
-        rows.push(FieldDisplayRow::Field { field_idx: idx });
-    }
-
-    for (section_name, indices) in sections {
-        let count = indices.len();
+    let mut rows = unsectioned
+        .into_iter()
+        .map(|field_idx| FieldDisplayRow::Field { field_idx })
+        .collect::<Vec<_>>();
+    for (section_id, name, indices) in grouped_sections {
         rows.push(FieldDisplayRow::SectionHeader {
-            name: section_name.clone(),
-            field_count: count,
+            section_id: section_id.clone(),
+            name,
+            field_count: indices.len(),
         });
-        if !collapsed_sections.contains(section_name.as_str()) {
-            for idx in indices {
-                rows.push(FieldDisplayRow::Field { field_idx: idx });
-            }
+        if !collapsed_sections.contains(section_id.as_str()) {
+            rows.extend(
+                indices
+                    .into_iter()
+                    .map(|field_idx| FieldDisplayRow::Field { field_idx }),
+            );
         }
     }
-
-    rows
-}
-
-/// Build create-mode field rows scoped to `selected_section`. Returned
-/// `field_idx` values index into the visible-field list supplied by the
-/// caller. A trailing `+ New field` sentinel is always present.
-pub fn create_field_display_rows<S>(
-    references: impl IntoIterator<Item = S>,
-    selected_section: Option<&str>,
-) -> Vec<FieldDisplayRow>
-where
-    S: AsRef<str>,
-{
-    let mut rows: Vec<FieldDisplayRow> = references
-        .into_iter()
-        .enumerate()
-        .filter(|(_, reference)| {
-            let section =
-                jackin_core::parse_op_reference(reference.as_ref()).and_then(|parts| parts.section);
-            section.as_deref() == selected_section
-        })
-        .map(|(idx, _)| FieldDisplayRow::Field { field_idx: idx })
-        .collect();
-    rows.push(FieldDisplayRow::NewFieldSentinel);
     rows
 }
 
@@ -1177,63 +1311,93 @@ pub fn filtered_fields<'a>(filter: &str, fields: &'a [OpPickerField]) -> Vec<&'a
         .collect()
 }
 
-pub fn field_display_rows_for_picker(
-    mode: &OpPickerMode,
-    filter: &str,
-    fields: &[OpPickerField],
-    selected_section: Option<&str>,
-    collapsed_sections: &HashSet<String>,
-) -> Vec<FieldDisplayRow> {
-    let visible = filtered_fields(filter, fields);
-    if mode.is_create() {
-        create_field_display_rows(
-            visible.iter().map(|field| field.reference.as_str()),
-            selected_section,
-        )
-    } else {
-        browse_field_display_rows(
-            visible.iter().map(|field| field.reference.as_str()),
-            collapsed_sections,
-        )
-    }
-}
-
 /// Build the committed `op://` value and display path from the picker
-/// cache values. UUID-form `op` segments are paired with human-readable
-/// path segments, preserving a section segment from the field reference
-/// when 1Password supplies one.
+/// cache values. Known IDs supply URI segments; a missing section ID resolves
+/// from item metadata by exact ID or unique case-insensitive label. Human-
+/// readable labels stay in the separately escaped local display path.
 pub fn build_op_picker_ref<'a>(
     vault: OpPickerVaultRef<'a>,
     selected_item: OpPickerItemRef<'a>,
     items_in_vault: impl IntoIterator<Item = OpPickerItemRef<'a>>,
     field: OpPickerFieldRef<'a>,
     fields_in_item: impl IntoIterator<Item = OpPickerFieldRef<'a>>,
-) -> BuiltOpPickerRef {
+    sections: &[OpSection],
+) -> Option<BuiltOpPickerRef> {
+    build_op_picker_ref_with_section(
+        vault,
+        selected_item,
+        items_in_vault,
+        field,
+        fields_in_item,
+        sections,
+    )
+}
+
+pub(crate) fn build_op_picker_ref_with_section<'a>(
+    vault: OpPickerVaultRef<'a>,
+    selected_item: OpPickerItemRef<'a>,
+    items_in_vault: impl IntoIterator<Item = OpPickerItemRef<'a>>,
+    field: OpPickerFieldRef<'a>,
+    fields_in_item: impl IntoIterator<Item = OpPickerFieldRef<'a>>,
+    sections: &[OpSection],
+) -> Option<BuiltOpPickerRef> {
     let item_name_collides = items_in_vault
         .into_iter()
         .any(|item| item.id != selected_item.id && item.name == selected_item.name);
-    let safe_to_embed = !selected_item.name.contains('[') && !selected_item.name.contains(']');
-    let item_segment = if item_name_collides && safe_to_embed && !selected_item.subtitle.is_empty()
-    {
-        format!("{}[{}]", selected_item.name, selected_item.subtitle)
+    let item_segment = if item_name_collides && !selected_item.subtitle.is_empty() {
+        format!(
+            "{}[{}]",
+            jackin_core::encode_op_breadcrumb_segment(selected_item.name),
+            jackin_core::encode_op_breadcrumb_segment(selected_item.subtitle)
+        )
     } else {
-        selected_item.name.to_owned()
+        jackin_core::encode_op_breadcrumb_segment(selected_item.name)
     };
 
-    if let Some(section_name) =
-        jackin_core::parse_op_reference(field.reference).and_then(|parts| parts.section)
-    {
-        return BuiltOpPickerRef {
-            op: format!(
-                "op://{}/{}/{}/{}",
-                vault.id, selected_item.id, section_name, field.id
-            ),
+    let canonical_section =
+        jackin_core::parse_op_reference(field.reference).and_then(|parts| parts.section);
+    let section_id = resolved_field_section_id(field.section_id, field.reference, sections);
+    if field.section_id.is_some() || canonical_section.is_some() {
+        // A reference that names a section must resolve to an opaque ID before
+        // it can be committed. Never fall back to a four-segment URI using a
+        // human label or silently drop the section.
+        let section_id = section_id.as_deref()?;
+        let section_name = field
+            .section_label
+            .filter(|label| !label.is_empty())
+            .map(str::to_owned)
+            .or_else(|| {
+                sections
+                    .iter()
+                    .find(|section| section.id == section_id)
+                    .map(|section| section.label.as_str())
+                    .filter(|label| !label.is_empty())
+                    .map(str::to_owned)
+            })
+            .or_else(|| canonical_section.clone())
+            .unwrap_or_else(|| section_id.to_owned());
+        let op = jackin_core::build_op_reference(
+            vault.id,
+            selected_item.id,
+            Some(section_id),
+            field.id,
+        )?;
+        let field_label = if field.label.is_empty() {
+            field.id
+        } else {
+            field.label
+        };
+        return Some(BuiltOpPickerRef {
+            op,
             path: format!(
                 "{}/{}/{}/{}",
-                vault.name, item_segment, section_name, field.label
+                jackin_core::encode_op_breadcrumb_segment(vault.name),
+                item_segment,
+                jackin_core::encode_op_breadcrumb_segment(&section_name),
+                jackin_core::encode_op_breadcrumb_segment(field_label)
             ),
             empty_reference_with_sibling_refs: false,
-        };
+        });
     }
 
     let label = if field.label.is_empty() {
@@ -1246,9 +1410,15 @@ pub fn build_op_picker_ref<'a>(
             .into_iter()
             .any(|sibling| sibling.id != field.id && !sibling.reference.is_empty());
 
-    BuiltOpPickerRef {
-        op: format!("op://{}/{}/{}", vault.id, selected_item.id, field.id),
-        path: format!("{}/{}/{}", vault.name, item_segment, label),
+    let op = jackin_core::build_op_reference(vault.id, selected_item.id, None, field.id)?;
+    Some(BuiltOpPickerRef {
+        op,
+        path: format!(
+            "{}/{}/{}",
+            jackin_core::encode_op_breadcrumb_segment(vault.name),
+            item_segment,
+            jackin_core::encode_op_breadcrumb_segment(label)
+        ),
         empty_reference_with_sibling_refs,
-    }
+    })
 }

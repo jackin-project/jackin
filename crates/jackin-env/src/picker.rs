@@ -52,6 +52,15 @@ pub(crate) struct RawOpItem {
 pub(crate) struct RawOpItemDetail {
     #[serde(default)]
     pub(crate) fields: Vec<RawOpField>,
+    #[serde(default)]
+    pub(crate) sections: Vec<RawOpSection>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct RawOpSection {
+    pub(super) id: String,
+    #[serde(default)]
+    pub(super) label: String,
 }
 
 // SAFETY: 'value' is intentionally absent from this struct. The picker is a
@@ -59,13 +68,14 @@ pub(crate) struct RawOpItemDetail {
 // Any change adding a `value` field here breaks the picker's trust model.
 //
 // `reference` IS deserialized: the string `op://...` that 1Password's
-// CLI emits per field is metadata, not a credential, and the picker
-// commits it verbatim instead of synthesizing a path from display
-// names (which mishandled section nesting and `/`/whitespace in
-// names).
+// CLI emits per field is metadata, not a credential. The picker uses it as
+// fallback section identity when section metadata is absent; known IDs and
+// labels are otherwise kept separate when building the final reference.
 #[derive(serde::Deserialize)]
 pub(crate) struct RawOpField {
     pub(super) id: String,
+    #[serde(default)]
+    pub(super) section: Option<RawOpFieldSection>,
     #[serde(default)]
     pub(super) label: String,
     #[serde(rename = "type", default)]
@@ -74,6 +84,20 @@ pub(crate) struct RawOpField {
     pub(super) purpose: String,
     #[serde(default)]
     pub(super) reference: String,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct RawOpFieldSection {
+    pub(super) id: String,
+}
+
+impl From<RawOpSection> for jackin_core::OpSection {
+    fn from(raw: RawOpSection) -> Self {
+        Self {
+            id: raw.id,
+            label: raw.label,
+        }
+    }
 }
 
 impl From<RawOpAccount> for OpAccount {
@@ -110,6 +134,7 @@ impl From<RawOpField> for OpField {
         let concealed = raw.field_type == "CONCEALED" || raw.purpose == "PASSWORD";
         Self {
             id: raw.id,
+            section_id: raw.section.map(|section| section.id),
             label: raw.label,
             field_type: raw.field_type,
             concealed,
@@ -143,6 +168,159 @@ pub(crate) fn op_section_id(label: &str) -> String {
     }
 }
 
+/// Keep selected IDs exact; allocate a fresh ID for a newly typed label.
+fn target_section_id(
+    item: &serde_json::Value,
+    section: Option<&jackin_core::OpSectionTarget>,
+) -> anyhow::Result<Option<String>> {
+    use jackin_core::OpSectionTarget;
+    let Some(section) = section else {
+        return Ok(None);
+    };
+    let sections = item["sections"].as_array();
+    match section {
+        OpSectionTarget::Existing(target_section) => {
+            anyhow::ensure!(
+                jackin_core::is_valid_op_reference_path_component(&target_section.id),
+                "section id {:?} cannot be represented as one `op://` path component; re-open the picker to refresh and retry",
+                target_section.id
+            );
+            let section = sections.and_then(|sections| {
+                sections
+                    .iter()
+                    .find(|section| section["id"].as_str() == Some(target_section.id.as_str()))
+            });
+            anyhow::ensure!(
+                section.is_some(),
+                "section id {:?} not found; re-open the picker to refresh and retry",
+                target_section.id
+            );
+            Ok(Some(target_section.id.clone()))
+        }
+        OpSectionTarget::NewLabel(label) => {
+            anyhow::ensure!(
+                !label.is_empty(),
+                "section label must not be empty; cannot create a valid 1Password reference"
+            );
+            let base = op_section_id(label);
+            anyhow::ensure!(
+                jackin_core::is_valid_op_reference_path_component(&base),
+                "generated section id {base:?} cannot be represented as one `op://` path component"
+            );
+            let mut id = base.clone();
+            let mut suffix = 2_u64;
+            while sections.is_some_and(|sections| {
+                sections
+                    .iter()
+                    .any(|section| section["id"].as_str() == Some(&id))
+            }) {
+                id = format!("{base}_{suffix}");
+                suffix = suffix
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow::anyhow!("section ID space exhausted"))?;
+            }
+            Ok(Some(id))
+        }
+    }
+}
+
+/// Preserve and validate selected IDs before piping the edited item to `op`.
+fn existing_field_section_id(
+    item: &serde_json::Value,
+    target: &FieldTarget,
+) -> anyhow::Result<Option<String>> {
+    let FieldTarget::Existing { id, .. } = target else {
+        return Ok(None);
+    };
+    anyhow::ensure!(
+        jackin_core::is_valid_op_reference_path_component(id),
+        "field id {id:?} cannot be represented as one `op://` path component; re-open the picker to refresh and retry"
+    );
+    let Some(field) = item["fields"]
+        .as_array()
+        .and_then(|fields| fields.iter().find(|field| field["id"].as_str() == Some(id)))
+    else {
+        // The usual stale-id error is raised by `apply_field_edit` below.
+        return Ok(None);
+    };
+    let field_id = field["id"].as_str().unwrap_or_default();
+    anyhow::ensure!(
+        jackin_core::is_valid_op_reference_path_component(field_id),
+        "field id {field_id:?} cannot be represented as one `op://` path component; re-open the picker to refresh and retry"
+    );
+    let reference_section = field
+        .get("reference")
+        .and_then(serde_json::Value::as_str)
+        .and_then(jackin_core::parse_op_reference)
+        .and_then(|parts| parts.section);
+    let section_id = if let Some(section_id) = field
+        .pointer("/section/id")
+        .and_then(serde_json::Value::as_str)
+    {
+        section_id
+    } else if let Some(section_segment) = reference_section.as_deref() {
+        // A reference may contain either an opaque section ID or a label.
+        // Resolve it against item metadata before reusing it in an edit.
+        let sections = item["sections"].as_array().ok_or_else(|| {
+            anyhow::anyhow!(
+                "field id {id:?} has section segment {section_segment:?}, but item section metadata is unavailable; re-open the picker to refresh and retry"
+            )
+        })?;
+        let exact_id = sections
+            .iter()
+            .find(|section| section["id"].as_str() == Some(section_segment))
+            .and_then(|section| section["id"].as_str());
+        if let Some(section_id) = exact_id {
+            section_id
+        } else {
+            let mut matching_ids: Vec<&str> = Vec::new();
+            for section in sections.iter().filter(|section| {
+                section["label"]
+                    .as_str()
+                    .is_some_and(|label| label.eq_ignore_ascii_case(section_segment))
+            }) {
+                if let Some(section_id) = section["id"].as_str()
+                    && !matching_ids.contains(&section_id)
+                {
+                    matching_ids.push(section_id);
+                }
+            }
+            match matching_ids.as_slice() {
+                [section_id] => *section_id,
+                [] => anyhow::bail!(
+                    "field id {id:?} has section segment {section_segment:?} that does not match a section ID or label; re-open the picker to refresh and retry"
+                ),
+                matches => anyhow::bail!(
+                    "field id {id:?} has ambiguous section segment {section_segment:?} matching {} section IDs; re-open the picker to refresh and retry",
+                    matches.len()
+                ),
+            }
+        }
+    } else {
+        return Ok(None);
+    };
+    anyhow::ensure!(
+        jackin_core::is_valid_op_reference_path_component(section_id),
+        "field id {id:?} belongs to section id {section_id:?}, which cannot be represented as one `op://` path component; re-open the picker to refresh and retry"
+    );
+    Ok(Some(section_id.to_owned()))
+}
+
+/// Creation identity is the pair (section, label). Exact field IDs remain
+/// global identities for an existing selection.
+pub(crate) fn matches_field_target(
+    field: &serde_json::Value,
+    target: &FieldTarget,
+    section_id: Option<&str>,
+) -> bool {
+    match target {
+        FieldTarget::Existing { id, .. } => field["id"].as_str() == Some(id),
+        FieldTarget::New { label } => {
+            field["section"]["id"].as_str() == section_id && field["label"].as_str() == Some(label)
+        }
+    }
+}
+
 /// Apply a single concealed-field edit to a parsed `op item get` JSON
 /// value in place, ready to pipe back to `op item edit`.
 ///
@@ -152,29 +330,49 @@ pub(crate) fn op_section_id(label: &str) -> String {
 /// re-parent the field (GUI-created section ids are opaque, not the
 /// `label` slug). A stale id (gone since it was picked) bails loudly
 /// rather than appending a stray field. [`FieldTarget::New`] places a new
-/// `CONCEALED` field (overwriting a same-label field if one exists),
+/// `CONCEALED` field (overwriting a same-label field in the selected section),
 /// in `section` when one is supplied, registering that section if missing.
 pub(crate) fn apply_field_edit(
     item: &mut serde_json::Value,
     target: &FieldTarget,
     value: &str,
-    section: Option<&str>,
-) -> anyhow::Result<()> {
+    section: Option<&jackin_core::OpSectionTarget>,
+) -> anyhow::Result<AppliedFieldEdit> {
+    let section_id = if matches!(target, FieldTarget::New { .. }) {
+        target_section_id(item, section)?
+    } else {
+        if matches!(section, Some(jackin_core::OpSectionTarget::Existing(_))) {
+            // A caller-supplied existing section ID is still input to the
+            // reference pipeline even when an existing field keeps its own
+            // section. Validate it before any remote mutation.
+            target_section_id(item, section)?;
+        }
+        existing_field_section_id(item, target)?
+    };
     let fields = item["fields"]
         .as_array_mut()
         .ok_or_else(|| anyhow::anyhow!("item has no `fields` array"))?;
 
     let label = target.label();
-    let found = match target {
-        FieldTarget::Existing { id, .. } => {
-            fields.iter_mut().find(|f| f["id"].as_str() == Some(id))
-        }
-        FieldTarget::New { label } => fields.iter_mut().find(|f| {
-            f["label"].as_str() == Some(label.as_str()) || f["id"].as_str() == Some(label.as_str())
-        }),
-    };
+    let found_index = fields
+        .iter()
+        .position(|field| matches_field_target(field, target, section_id.as_deref()));
+    let existing_field_id = found_index
+        .and_then(|index| fields.get(index))
+        .and_then(|field| field["id"].as_str())
+        .map(str::to_owned);
+    if let Some(index) = found_index {
+        let field_id = fields
+            .get(index)
+            .and_then(|field| field["id"].as_str())
+            .unwrap_or_default();
+        anyhow::ensure!(
+            jackin_core::is_valid_op_reference_path_component(field_id),
+            "existing field id {field_id:?} cannot be represented as one `op://` path component; re-open the picker to refresh and retry"
+        );
+    }
+    let found = found_index.and_then(|index| fields.get_mut(index));
 
-    let section_id = section.map(op_section_id);
     let mut appended_in_section = false;
     match (found, target) {
         (Some(field), _) => {
@@ -192,7 +390,10 @@ pub(crate) fn apply_field_edit(
         ),
         (None, FieldTarget::New { .. }) => {
             let mut field = serde_json::json!({
-                "id": label,
+                // Per the 1Password JSON-template contract, an empty id asks
+                // the CLI to generate a unique field ID. Labels are not
+                // globally unique because separate sections may reuse them.
+                "id": "",
                 "label": label,
                 "type": "CONCEALED",
                 "value": value,
@@ -207,48 +408,63 @@ pub(crate) fn apply_field_edit(
 
     // Register the section only when a new field was actually placed in
     // it; an overwrite never creates or moves sections.
-    if appended_in_section && let (Some(id), Some(label)) = (section_id.as_deref(), section) {
+    if appended_in_section
+        && let (Some(id), Some(jackin_core::OpSectionTarget::NewLabel(label))) =
+            (section_id.as_deref(), section)
+    {
         if !item["sections"].is_array() {
             item["sections"] = serde_json::Value::Array(Vec::new());
         }
         let Some(sections) = item["sections"].as_array_mut() else {
-            return Ok(());
+            return Ok(AppliedFieldEdit {
+                section_id,
+                existing_field_id,
+            });
         };
         if !sections.iter().any(|s| s["id"].as_str() == Some(id)) {
             sections.push(serde_json::json!({ "id": id, "label": label }));
         }
     }
-    Ok(())
+    Ok(AppliedFieldEdit {
+        section_id,
+        existing_field_id,
+    })
 }
 
-/// Locate the edited field in the JSON `op item edit` returns and build the
-/// UUID-form `OpRef`. [`FieldTarget::Existing`] matches by the exact id
-/// (stable across the edit); [`FieldTarget::New`] matches by label (case-
-/// insensitive), since `op` assigns the new field's id. The `op://` ref is
-/// built from UUIDs (vault/item/field ids) so it survives renames; `path`
-/// carries the human-readable names for display, same three-segment shape.
+pub(crate) struct AppliedFieldEdit {
+    pub(crate) section_id: Option<String>,
+    pub(crate) existing_field_id: Option<String>,
+}
+
+/// Locate the edited field in the JSON `op item edit` returns and build its
+/// `OpRef`. [`FieldTarget::Existing`] matches by the exact id (stable across
+/// the edit); a same-label existing [`FieldTarget::New`] keeps its preflighted
+/// ID, while a new field is located by section id and label after `op` assigns
+/// its ID. The URI always uses IDs; breadcrumb labels use local path escaping.
 pub(crate) fn resolve_edited_field_ref(
     updated: &serde_json::Value,
     target: &FieldTarget,
     vault_id: &str,
     item_id: &str,
     account: Option<String>,
+    edit: &AppliedFieldEdit,
+    section_target: Option<&jackin_core::OpSectionTarget>,
 ) -> anyhow::Result<OpRef> {
     let label = target.label();
+    let section_id = edit.section_id.as_deref();
+    let existing_field_id = edit.existing_field_id.as_deref();
+
     let updated_fields = updated["fields"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("updated item has no `fields` array"))?;
 
     let field = updated_fields
         .iter()
-        .find(|f| match target {
-            FieldTarget::Existing { id, .. } => f["id"].as_str() == Some(id),
-            FieldTarget::New { label } => {
-                f["label"]
-                    .as_str()
-                    .is_some_and(|l| l.eq_ignore_ascii_case(label))
-                    || f["id"].as_str() == Some(label)
-            }
+        .find(|field| {
+            existing_field_id.map_or_else(
+                || matches_field_target(field, target, section_id),
+                |id| field["id"].as_str() == Some(id),
+            )
         })
         .ok_or_else(|| {
             let labels: Vec<&str> = updated_fields
@@ -261,11 +477,15 @@ pub(crate) fn resolve_edited_field_ref(
             )
         })?;
 
-    let vid = updated["vault"]["id"].as_str().unwrap_or(vault_id);
-    let iid = updated["id"].as_str().unwrap_or(item_id);
-    let fid = field["id"].as_str().unwrap_or(label);
-    let op_uri = format!("op://{vid}/{iid}/{fid}");
-
+    // The edit target IDs were validated before the mutating CLI call. Keep
+    // those stable identities for existing entities; only a newly generated
+    // field ID must be learned from the CLI response.
+    let vid = vault_id;
+    let iid = item_id;
+    let fid = existing_field_id
+        .or_else(|| field["id"].as_str())
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("`op item edit` returned no field ID for {target:?}"))?;
     let vault_name = updated["vault"]["name"]
         .as_str()
         .filter(|s| !s.is_empty())
@@ -278,7 +498,61 @@ pub(crate) fn resolve_edited_field_ref(
         .as_str()
         .filter(|s| !s.is_empty())
         .unwrap_or(label);
-    let path = format!("{vault_name}/{item_title}/{field_label_display}");
+    let returned_section_id = field
+        .pointer("/section/id")
+        .and_then(serde_json::Value::as_str);
+    let section_id = section_id.or(returned_section_id);
+    if let Some(id) = section_id {
+        anyhow::ensure!(
+            jackin_core::is_valid_op_reference_path_component(id),
+            "section id {id:?} cannot be represented as one `op://` path component"
+        );
+    }
+    let section_label = section_id
+        .and_then(|section_id| {
+            updated
+                .pointer("/sections")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|sections| {
+                    sections.iter().find(|section| {
+                        section.pointer("/id").and_then(serde_json::Value::as_str)
+                            == Some(section_id)
+                    })
+                })
+                .and_then(|section| section.pointer("/label"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|label| !label.is_empty())
+                .map(str::to_owned)
+        })
+        .or_else(|| {
+            section_target.and_then(|target| match target {
+                jackin_core::OpSectionTarget::Existing(section)
+                    if Some(section.id.as_str()) == section_id =>
+                {
+                    Some(section.label.clone())
+                }
+                jackin_core::OpSectionTarget::NewLabel(label) if section_id.is_some() => {
+                    Some(label.clone())
+                }
+                _ => None,
+            })
+        });
+    let op_uri = jackin_core::build_op_reference(vid, iid, section_id, fid).ok_or_else(|| {
+        anyhow::anyhow!(
+            "cannot build a valid `op://` reference from the existing 1Password IDs; re-open the picker to refresh and retry"
+        )
+    })?;
+    let section_display = section_label.as_deref().or(section_id);
+    let section_path_part = section_display
+        .map(|name| format!("{}/", jackin_core::encode_op_breadcrumb_segment(name)))
+        .unwrap_or_default();
+    let path = format!(
+        "{}/{}/{}{}",
+        jackin_core::encode_op_breadcrumb_segment(vault_name),
+        jackin_core::encode_op_breadcrumb_segment(item_title),
+        section_path_part,
+        jackin_core::encode_op_breadcrumb_segment(field_label_display)
+    );
 
     Ok(OpRef {
         op: op_uri,

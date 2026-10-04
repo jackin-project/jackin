@@ -8,6 +8,8 @@
 //! `jackin-config` (workspace env maps) and `jackin-env` (resolution logic)
 //! depend on these types, so they live in the leaf crate.
 
+use crate::OpSection;
+
 /// A resolved or unresolved operator env value.
 ///
 /// - `OpRef`: a 1Password `op://...` reference to be resolved via `op read`
@@ -50,13 +52,14 @@ impl EnvValue {
     }
 
     /// Human-readable display form. For `Plain`, same as `as_persisted_str`;
-    /// for `OpRef`, the snapshot breadcrumb (`path`) — stale if the 1Password
+    /// for `OpRef`, the decoded snapshot breadcrumb — stale if the 1Password
     /// item was renamed since pick time.
-    pub const fn as_display_str(&self) -> &str {
+    #[must_use]
+    pub fn as_display_str(&self) -> String {
         match self {
-            Self::Plain(s) => s.as_str(),
-            Self::OpRef(r) => r.path.as_str(),
-            Self::Extended(e) => e.value.as_str(),
+            Self::Plain(s) => s.clone(),
+            Self::OpRef(r) => crate::display_op_breadcrumb_path(&r.path),
+            Self::Extended(e) => e.value.clone(),
         }
     }
 
@@ -103,7 +106,11 @@ pub struct OpRef {
     #[serde(deserialize_with = "deserialize_op_uri")]
     pub op: String,
 
-    /// Snapshot breadcrumb: `<Vault>/<Item>/[<Section>/]<Field>`.
+    /// Snapshot breadcrumb: `<Vault>/<Item>/[<Section>/]<Field>`. Runtime
+    /// stores the v1 percent-escaped value; TOML serializes it under the
+    /// versioned `breadcrumb` object. This keeps literal percent sequences in
+    /// older files distinct from escaped delimiters in new values.
+    #[serde(rename = "breadcrumb", with = "versioned_op_breadcrumb")]
     pub path: String,
 
     /// 1Password account (id/email) the ref resolves against. `None` = op's
@@ -118,6 +125,60 @@ pub struct OpRef {
     /// serialized TOML when `false` so existing refs round-trip unchanged.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_demand: bool,
+}
+
+mod versioned_op_breadcrumb {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    const VERSION: u8 = 1;
+
+    #[derive(Serialize)]
+    struct Encoded<'a> {
+        version: u8,
+        value: &'a str,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Decoded {
+        version: u8,
+        value: String,
+    }
+
+    pub(super) fn serialize<S>(path: &String, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if crate::parse_op_breadcrumb_path(path).is_none() {
+            return Err(serde::ser::Error::custom(
+                "1Password breadcrumb is not a valid v1 escaped path",
+            ));
+        }
+        Encoded {
+            version: VERSION,
+            value: path,
+        }
+        .serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let encoded = Decoded::deserialize(deserializer)?;
+        if encoded.version != VERSION {
+            return Err(serde::de::Error::custom(format!(
+                "unsupported 1Password breadcrumb version {}; expected {VERSION}",
+                encoded.version
+            )));
+        }
+        if crate::parse_op_breadcrumb_path(&encoded.value).is_none() {
+            return Err(serde::de::Error::custom(
+                "1Password breadcrumb value is not a valid v1 escaped path",
+            ));
+        }
+        Ok(encoded.value)
+    }
 }
 
 fn deserialize_op_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -196,4 +257,13 @@ impl FieldTarget {
             Self::Existing { label, .. } | Self::New { label } => label,
         }
     }
+}
+
+/// Whether a picker section is an existing opaque ID or a newly typed label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpSectionTarget {
+    /// Select an existing section with its exact opaque ID and display label.
+    Existing(OpSection),
+    /// Create a section using the supplied display label.
+    NewLabel(String),
 }

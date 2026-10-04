@@ -1560,7 +1560,7 @@ fn set_env_var_writes_inline_table_for_op_ref() {
     let serialized = std::fs::read_to_string(&paths.config_file).unwrap();
     // Inline-table form, not a scalar string with quoted JSON.
     assert!(
-            serialized.contains(r#"SERVICE_TOKEN = { op = "op://abc/def/fld", path = "Private/Claude/security/auth token" }"#),
+            serialized.contains(r#"SERVICE_TOKEN = { op = "op://abc/def/fld", breadcrumb = { version = 1, value = "Private/Claude/security/auth token" } }"#),
             "expected inline-table emit, got:\n{serialized}"
         );
 }
@@ -1594,7 +1594,7 @@ fn set_env_var_persists_op_ref_account() {
     let saved = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(
             saved.contains(
-                r#"SERVICE_TOKEN = { op = "op://abc/def/fld", path = "Work/Claude/auth token", account = "WORKACCT" }"#
+                r#"SERVICE_TOKEN = { op = "op://abc/def/fld", breadcrumb = { version = 1, value = "Work/Claude/auth token" }, account = "WORKACCT" }"#
             ),
             "expected account key in inline table, got:\n{saved}"
         );

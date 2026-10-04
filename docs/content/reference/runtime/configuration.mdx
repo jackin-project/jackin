@@ -42,8 +42,8 @@ Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather t
 - **Restore the full setup on a new machine** by checking out the dotfile repo and running `chezmoi apply` (or equivalent), with no manual TOML reconstruction.
 - **Diff a single workspace** in PR review without seeing churn in unrelated workspaces, which is impossible when every change touches a shared `[workspaces.*]` block.
 
-Each file carries its own schema-version stamp (`v1alpha12` for
-`config.toml`, `v1alpha10` for workspace files), so a dotfile-managed setup
+Each file carries its own schema-version stamp (`v1alpha13` for
+`config.toml`, `v1alpha11` for workspace files), so a dotfile-managed setup
 that is partially old (some workspaces stamped, some not) migrates per-file on
 first load. See [Schema Versions](/reference/runtime/schema-versions/) for the
 full version history and migration matrix.
@@ -170,7 +170,7 @@ The configuration is TOML. Global settings live at
 `~/.config/jackin/workspaces/`. The CLI and console manage both locations
 for you, so you generally don't need to edit them by hand.
 
-Top-level `version` is the config schema version. jackin❯ writes `version = "v1alpha12"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
+Top-level `version` is the config schema version. jackin❯ writes `version = "v1alpha13"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
 ### Runtime backend selection
 
@@ -330,14 +330,14 @@ auth_forward = "sync"   # "sync" (default), "token", or "ignore"
 auth_forward = "token"
 
 [github.env]
-GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-fine-grained-pat" }
+GH_TOKEN = { op = "op://abc.../def.../fld...", breadcrumb = { version = 1, value = "Work/ACME/github-fine-grained-pat" } }
 
 # Layer 3 — workspace × role override (e.g. a tighter release-bot token)
 [roles.release-bot.github]
 auth_forward = "token"
 
 [roles.release-bot.github.env]
-GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-release-pat" }
+GH_TOKEN = { op = "op://abc.../def.../fld...", breadcrumb = { version = 1, value = "Work/ACME/github-release-pat" } }
 
 # Per-role opt-out — throwaway role with no GitHub access
 [roles.scratch.github]

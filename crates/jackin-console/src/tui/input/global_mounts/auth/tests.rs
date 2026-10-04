@@ -54,6 +54,7 @@ fn onepassword_commit_preserves_form_until_validation_completes() {
         }),
         fields: vec![jackin_env::OpField {
             id: "key-id".into(),
+            section_id: None,
             label: "key".into(),
             reference: "op://Private/Account/key".into(),
             field_type: "concealed".into(),
