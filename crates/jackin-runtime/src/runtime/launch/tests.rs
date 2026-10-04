@@ -9433,7 +9433,7 @@ async fn restore_candidate_label_includes_manifest_and_mount_state() {
     crate::isolation::state::write_records(
         &paths.data_dir.join(container_name),
         &[crate::isolation::state::IsolationRecord {
-            workspace: "workspace".into(),
+            workspace_name: Some(jackin_core::WorkspaceName::parse("workspace").unwrap()),
             mount_dst: "/workspace".into(),
             original_src: "/host/workspace".into(),
             isolation: MountIsolation::Worktree,

@@ -16,7 +16,10 @@
 use crate::MountIsolation;
 use crate::branch::branch_name;
 use crate::error::IsolationError;
-use crate::state::{CleanupStatus, IsolationRecord, read_record, upsert_record};
+use crate::state::{
+    CleanupStatus, IsolationRecord, read_record, read_worktree_cleanup, upsert_record,
+    worktree_cleanup_journal_name,
+};
 use anyhow::Context;
 use jackin_config::ResolvedWorkspace;
 use jackin_core::CommandRunner;
@@ -509,7 +512,28 @@ pub async fn preflight_worktree(
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    require_directory_git_metadata(mount)?;
     preflight_isolated(mount, ctx, runner).await
+}
+
+fn require_directory_git_metadata(mount: &MountConfig) -> anyhow::Result<()> {
+    let git_entry = Path::new(&mount.src).join(".git");
+    match std::fs::symlink_metadata(&git_entry) {
+        Ok(metadata) if metadata.file_type().is_dir() => Ok(()),
+        Ok(metadata) if metadata.file_type().is_file() => anyhow::bail!(
+            "isolated worktree mount `{}` uses `{}` as a Git file pointer; worktree isolation requires a repository root with a `.git` directory",
+            mount.dst,
+            mount.src
+        ),
+        Ok(_) => anyhow::bail!(
+            "isolated worktree mount `{}` has unsupported Git metadata at `{}`; expected a `.git` directory",
+            mount.dst,
+            mount.src
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error)
+            .with_context(|| format!("inspect Git metadata for isolated mount `{}`", mount.dst)),
+    }
 }
 
 async fn check_dirty_tree(
@@ -550,15 +574,14 @@ async fn check_dirty_tree(
 /// and per-mount-materializes `Worktree` mounts. Returns the
 /// `MaterializedWorkspace` ready for Docker launch.
 ///
-/// `workspace_label` is the path/display label (see [`WorkspaceLabel`]), not
-/// the config-stem [`jackin_core::WorkspaceName`]. Callers convert at the dual
-/// semantics boundary so identity stems and path labels are not confused.
+/// `workspace_name` is the saved config-file identity, or `None` for ad-hoc
+/// workspaces. Display labels belong only to the preflight context.
 pub async fn materialize_workspace(
     resolved: &ResolvedWorkspace,
     container_state_dir: &Path,
     selector_key: &str,
     container_name: &str,
-    workspace_label: &WorkspaceLabel,
+    workspace_name: Option<&jackin_core::WorkspaceName>,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedWorkspace> {
@@ -585,7 +608,7 @@ pub async fn materialize_workspace(
                     container_state_dir,
                     selector_key,
                     container_name,
-                    workspace_label,
+                    workspace_name,
                     ctx,
                     runner,
                 )
@@ -597,7 +620,7 @@ pub async fn materialize_workspace(
                     container_state_dir,
                     selector_key,
                     container_name,
-                    workspace_label,
+                    workspace_name,
                     ctx,
                     runner,
                 )
@@ -624,13 +647,39 @@ async fn materialize_one(
     container_state_dir: &Path,
     selector_key: &str,
     container_name: &str,
-    workspace_label: &WorkspaceLabel,
+    workspace_name: Option<&jackin_core::WorkspaceName>,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedMount> {
+    // Existing worktree records bypass preflight, so reject file-backed Git
+    // pointers before any reuse or override writes too.
+    require_directory_git_metadata(mount)?;
+    let source_git_dir = std::fs::canonicalize(Path::new(&mount.src).join(".git"))
+        .with_context(|| format!("canonicalize common Git directory for {}", mount.src))?;
+    let source_git_dir = crate::safe_remove::pin_dir(&source_git_dir)?
+        .context("common Git directory disappeared before worktree admission")?;
+    anyhow::ensure!(
+        source_git_dir.read_file("commondir")?.is_none(),
+        "worktree admission requires the source repository's common Git directory"
+    );
+    let _worktree_registry_lock = source_git_dir
+        .lock_worktree_registry()
+        .await
+        .context("cannot acquire common Git worktree registry lock")?;
+    let journal_name = worktree_cleanup_journal_name(&mount.dst);
+    anyhow::ensure!(
+        read_worktree_cleanup(container_state_dir, &journal_name)?.is_none(),
+        "worktree cleanup for mount `{}` is incomplete; purge must resume it before materialization",
+        mount.dst
+    );
     let worktree_path = worktree_path_for(container_state_dir, &mount.dst, container_name);
     // Drift guard: if a record exists, src must match.
     if let Some(record) = read_record(container_state_dir, &mount.dst)? {
+        anyhow::ensure!(
+            record.workspace_name.as_ref() == workspace_name,
+            "isolated mount `{}` belongs to a different saved workspace; preserve the state and rebuild this instance from its recorded workspace",
+            mount.dst,
+        );
         if record.original_src != mount.src {
             return Err(IsolationError::SourceDrift {
                 container: container_name.into(),
@@ -759,7 +808,7 @@ async fn materialize_one(
     upsert_record(
         container_state_dir,
         IsolationRecord {
-            workspace: workspace_label.as_str().into(),
+            workspace_name: workspace_name.cloned(),
             mount_dst: mount.dst.clone(),
             original_src: mount.src.clone(),
             isolation: MountIsolation::Worktree,
@@ -787,12 +836,17 @@ async fn materialize_clone(
     container_state_dir: &Path,
     selector_key: &str,
     container_name: &str,
-    workspace_label: &WorkspaceLabel,
+    workspace_name: Option<&jackin_core::WorkspaceName>,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedMount> {
     let clone_path = clone_path_for(container_state_dir, &mount.dst, container_name);
     if let Some(record) = read_record(container_state_dir, &mount.dst)? {
+        anyhow::ensure!(
+            record.workspace_name.as_ref() == workspace_name,
+            "isolated mount `{}` belongs to a different saved workspace; preserve the state and rebuild this instance from its recorded workspace",
+            mount.dst,
+        );
         if record.original_src != mount.src {
             return Err(IsolationError::SourceDrift {
                 container: container_name.into(),
@@ -924,7 +978,7 @@ async fn materialize_clone(
     upsert_record(
         container_state_dir,
         IsolationRecord {
-            workspace: workspace_label.as_str().into(),
+            workspace_name: workspace_name.cloned(),
             mount_dst: mount.dst.clone(),
             original_src: mount.src.clone(),
             isolation: MountIsolation::Clone,

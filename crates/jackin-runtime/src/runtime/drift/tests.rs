@@ -16,7 +16,7 @@ use tempfile::TempDir;
 
 fn record_for(workspace: &str, container: &str, dst: &str, src: &str) -> IsolationRecord {
     IsolationRecord {
-        workspace: workspace.into(),
+        workspace_name: Some(wn(workspace)),
         mount_dst: dst.into(),
         original_src: src.into(),
         isolation: MountIsolation::Worktree,
@@ -241,4 +241,49 @@ async fn detect_drift_flags_record_when_dst_removed_from_edit() {
         "removing the dst from the workspace must surface the existing record as drift",
     );
     assert_eq!(det.stopped_records[0].mount_dst, "/workspace/jackin");
+}
+
+#[tokio::test]
+async fn drift_selects_saved_stem_and_excludes_label_and_ad_hoc_records() {
+    let data = TempDir::new().unwrap();
+    let stem_record = record_for(
+        "saved-stem",
+        "jk-a1b2c3d4-stem",
+        "/workspace/repo",
+        "/old/src",
+    );
+    let label_record = record_for(
+        "display-label",
+        "jk-b1b2c3d4-label",
+        "/workspace/repo",
+        "/old/src",
+    );
+    let mut ad_hoc = record_for(
+        "saved-stem",
+        "jk-c1b2c3d4-adhoc",
+        "/workspace/repo",
+        "/old/src",
+    );
+    ad_hoc.workspace_name = None;
+    for record in [&stem_record, &label_record, &ad_hoc] {
+        write_records(
+            &data.path().join(&record.container_name),
+            std::slice::from_ref(record),
+        )
+        .unwrap();
+    }
+    let detected = detect_workspace_edit_drift(
+        &paths_for(data.path()),
+        &wn("saved-stem"),
+        &[mount(
+            "/new/src",
+            "/workspace/repo",
+            MountIsolation::Worktree,
+        )],
+        &FakeDockerClient::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(detected.stopped_records, vec![stem_record]);
+    assert!(detected.running_containers.is_empty());
 }

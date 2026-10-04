@@ -417,6 +417,15 @@ where
         supported_agents: supported_agents.to_vec(),
     });
     let container_state = paths.data_dir.join(container_name);
+    // The launch was admitted before `prepare_instance`; migrate any old
+    // isolation envelope while its independent v3 manifest witness is still
+    // on disk. Inspection and restore-candidate reads stay non-mutating.
+    if let Err(error) = crate::isolation::state::migrate_records(&container_state)
+        .context("cannot migrate admitted isolation state before manifest replacement")
+    {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
     let mut instance_manifest = if restoring {
         match InstanceManifest::read_optional(&container_state).with_context(|| {
             format!(
@@ -1595,7 +1604,7 @@ where
         &prepared.container_state,
         role_key,
         container_name,
-        &workspace_label,
+        environment.workspace_opt.as_ref(),
         &preflight,
         runner,
     );

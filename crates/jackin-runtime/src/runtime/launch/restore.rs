@@ -15,10 +15,16 @@ mod tests;
 fn launch_candidate_for_manifest(
     paths: &JackinPaths,
     manifest: &InstanceManifest,
-    label: String,
-) -> jackin_core::LaunchCandidate {
+    label: impl FnOnce(&[jackin_core::IsolationRecord]) -> String,
+) -> anyhow::Result<jackin_core::LaunchCandidate> {
     let state_dir = paths.data_dir.join(&manifest.container_base);
-    let records = crate::isolation::state::read_records(&state_dir).unwrap_or_default();
+    let records = crate::isolation::state::read_records(&state_dir).map_err(|error| {
+        error.context(format!(
+            "cannot establish restore isolation state for {}; refusing restore/delete choice",
+            manifest.container_base
+        ))
+    })?;
+    let label = label(&records);
     let is_dirty = records.iter().any(|r| {
         matches!(
             r.cleanup_status,
@@ -30,11 +36,11 @@ fn launch_candidate_for_manifest(
         .iter()
         .map(|rec| crate::isolation::git_inspect::worktree_inspect(&rec.worktree_path))
         .collect();
-    jackin_core::LaunchCandidate {
+    Ok(jackin_core::LaunchCandidate {
         label,
         is_dirty,
         inspect,
-    }
+    })
 }
 
 /// D23/D21: launch dialog with Del-to-delete and I-to-inspect (D24).
@@ -55,16 +61,25 @@ pub(super) fn present_restore_choice(
     let mut launch_candidates: Vec<jackin_core::LaunchCandidate> = candidates
         .iter()
         .map(|manifest| {
-            launch_candidate_for_manifest(paths, manifest, restore_candidate_label(paths, manifest))
+            launch_candidate_for_manifest(paths, manifest, |records| {
+                restore_candidate_label_from_records(manifest, records)
+            })
         })
-        .collect();
-    launch_candidates.extend(related.iter().map(|candidate| {
-        let label = format!(
-            "Recover other role with hardline {}",
-            related_restore_candidate_label(paths, candidate)
-        );
-        launch_candidate_for_manifest(paths, &candidate.manifest, label)
-    }));
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    launch_candidates.extend(
+        related
+            .iter()
+            .map(|candidate| {
+                launch_candidate_for_manifest(paths, &candidate.manifest, |records| {
+                    format!(
+                        "Recover other role with hardline {} docker:{}",
+                        restore_candidate_label_from_records(&candidate.manifest, records),
+                        candidate.docker_state.short_label()
+                    )
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?,
+    );
 
     let Some(progress) = progress else {
         let hint = candidates.first().map_or_else(
@@ -209,20 +224,18 @@ pub(super) fn related_restore_load_options(
     })
 }
 
-pub(super) fn related_restore_candidate_label(
-    paths: &JackinPaths,
-    candidate: &RelatedRestoreCandidate,
-) -> String {
-    format!(
-        "{} docker:{}",
-        restore_candidate_label(paths, &candidate.manifest),
-        candidate.docker_state.short_label()
-    )
-}
-
+#[cfg(test)]
 pub(super) fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> String {
     let state_dir = paths.data_dir.join(&manifest.container_base);
-    let isolation = crate::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
+    let records = crate::isolation::state::read_records(&state_dir).unwrap();
+    restore_candidate_label_from_records(manifest, &records)
+}
+
+fn restore_candidate_label_from_records(
+    manifest: &InstanceManifest,
+    records: &[jackin_core::IsolationRecord],
+) -> String {
+    let isolation = crate::isolation::state::MountSummary::from_records(records).prompt_label();
     let attach = manifest
         .last_attach_outcome
         .as_deref()
