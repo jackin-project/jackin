@@ -19,7 +19,7 @@
 use crate::instance::{InstanceIndex, InstanceManifest, InstanceStatus, RegistrationState};
 use anyhow::Context as _;
 use jackin_core::container_paths;
-use jackin_core::{CommandRunner, ContainerHandle, JACKIN_STATUS_CMD, RunOptions};
+use jackin_core::{CommandRunner, ContainerHandle, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 use jackin_protocol::attach::SpawnRequest;
 use std::path::PathBuf;
@@ -116,11 +116,8 @@ pub fn select_host_attach_transport(
         };
     }
 
-    match jackin_diagnostics::operation::connection_attempt_sync(
-        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
-        || std::os::unix::net::UnixStream::connect(&socket_path),
-    ) {
-        Ok(_) => HostAttachTransportPlan::DirectSocket { socket_path },
+    match capsule_socket_negotiates(&socket_path) {
+        Ok(()) => HostAttachTransportPlan::DirectSocket { socket_path },
         Err(err) => HostAttachTransportPlan::AttachProxy {
             socket_path,
             direct_error: Some(err.to_string()),
@@ -186,8 +183,12 @@ async fn wait_for_capsule_daemon_ready(
             return Ok(());
         }
 
+        let protocol_check = format!(
+            "exec /jackin/runtime/jackin-capsule protocol-check --expected-major {}",
+            jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR
+        );
         let Err(exec_error) = docker
-            .exec_capture_by_id(container, &["sh", "-c", JACKIN_STATUS_CMD])
+            .exec_capture_by_id(container, &["sh", "-c", &protocol_check])
             .await
         else {
             return Ok(());
@@ -206,12 +207,26 @@ async fn wait_for_capsule_daemon_ready(
 
 fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> bool {
     let socket_path = super::snapshot::socket_path(paths, container_name);
-    socket_path.exists()
-        && jackin_diagnostics::operation::connection_attempt_sync(
-            jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
-            || std::os::unix::net::UnixStream::connect(socket_path),
-        )
-        .is_ok()
+    socket_path.exists() && capsule_socket_negotiates(&socket_path).is_ok()
+}
+
+fn capsule_socket_negotiates(socket_path: &std::path::Path) -> anyhow::Result<()> {
+    let mut stream = jackin_diagnostics::operation::connection_attempt_sync(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
+        || std::os::unix::net::UnixStream::connect(socket_path),
+    )
+    .with_context(|| format!("connecting to Capsule socket {}", socket_path.display()))?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .context("setting Capsule readiness read timeout")?;
+    stream
+        .set_write_timeout(Some(std::time::Duration::from_secs(2)))
+        .context("setting Capsule readiness write timeout")?;
+    jackin_protocol::capsule_transport::client_handshake(
+        &mut stream,
+        std::time::Duration::from_secs(2),
+    )
+    .context("negotiating Capsule readiness protocol")
 }
 
 use jackin_core::JackinPaths;
@@ -243,8 +258,11 @@ pub async fn inspect_agent_sessions(
         return AgentSessionInventory::NotRunning;
     }
 
+    let status_command = jackin_core::jackin_status_command(
+        jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR,
+    );
     match docker
-        .exec_capture_by_id(container, &["sh", "-c", JACKIN_STATUS_CMD])
+        .exec_capture_by_id(container, &["sh", "-c", &status_command])
         .await
     {
         Ok(output) => match parse_jackin_sessions(&output) {

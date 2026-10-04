@@ -97,6 +97,7 @@ SUBCOMMANDS:
     attach-proxy                   Relay attach protocol bytes over stdio
     usage accounts                 Print cached account quota rows as JSON
     usage verify                   Verify all provider quota rows are cached and trusted
+    protocol-check [--expected-major <major>]  Check the Capsule protocol major
     usage-relay-proxy              Internal scoped usage stdio tunnel
     --focus <session_id>           Connect and focus the given session
     exec <command> [args…]         Run a command with operator-approved on-demand credentials
@@ -122,6 +123,7 @@ connecting as a client.",
             Some("status") if args.get(2).map(String::as_str) == Some("capture") => {
                 client::run_status_capture(&args).await
             }
+            Some("protocol-check") => client::run_protocol_check(&args[2..]).await,
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
             Some("send") => client::run_session_send(&args).await,
@@ -192,7 +194,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, attach-proxy, usage accounts, usage verify, usage-relay-proxy, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], exec <command>, mcp-server, runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, attach-proxy, usage accounts, usage verify, protocol-check, usage-relay-proxy, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], exec <command>, mcp-server, runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -246,8 +248,8 @@ fn is_daemon_entrypoint_args(args: &[String]) -> bool {
         // the client-mode dispatch match in `main`).
         Some(
             "status" | "snapshot" | "send" | "events" | "usage" | "agents" | "runtime-setup"
-            | "mcp-server" | "prepare-commit-msg" | "new" | "usage-relay-proxy" | "--version"
-            | "-V" | "--help" | "-h",
+            | "mcp-server" | "prepare-commit-msg" | "new" | "usage-relay-proxy" | "protocol-check"
+            | "--version" | "-V" | "--help" | "-h",
         ) => false,
         // Anything else is the initial agent slug → daemon entrypoint.
         Some(_) => true,

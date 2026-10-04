@@ -140,12 +140,12 @@ impl AttachResponseCompletion {
     }
 }
 
-/// Per-connection handshake task. Reads the first byte, routes
-/// control-channel requests back to the main daemon loop (one-shot
-/// reply, closes the socket), and forwards validated attach Hellos
-/// back to the main loop via `handshake_tx`. Owning the slow
-/// `read_exact` here keeps a silent or slow client from stalling the
-/// daemon's main `select!`.
+/// Per-connection handshake task. Negotiates the transport major before
+/// reading an application byte, then routes control-channel requests back to
+/// the main daemon loop (one-shot reply, closes the socket) or forwards a
+/// validated attach Hello via `handshake_tx`. Owning the slow `read_exact`
+/// calls here keeps a silent or slow client from stalling the daemon's main
+/// `select!`.
 pub(crate) async fn perform_handshake(
     mut stream: UnixStream,
     client_permit: tokio::sync::OwnedSemaphorePermit,
@@ -167,8 +167,30 @@ pub(crate) async fn perform_handshake(
         );
     };
 
+    match tokio::time::timeout(
+        HANDSHAKE_TIMEOUT,
+        jackin_protocol::capsule_transport::server_handshake_async(&mut stream),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(_)) => {
+            drop(client_permit);
+            return jackin_telemetry::spawn::DetachedCompletion::failure(
+                jackin_telemetry::schema::enums::ErrorType::RpcError,
+            );
+        }
+        Err(_) => {
+            drop(client_permit);
+            return jackin_telemetry::spawn::DetachedCompletion::timeout();
+        }
+    }
+
     let mut first = [0u8; 1];
-    match tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.read_exact(&mut first)).await {
+    match tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.read(&mut first)).await {
+        // `protocol-check` closes after the ACK and sends no application
+        // bytes. That is a successful read-only negotiation, not a failed RPC.
+        Ok(Ok(0)) => return jackin_telemetry::spawn::DetachedCompletion::success(),
         Ok(Ok(_)) => {}
         Ok(Err(_)) => {
             drop(client_permit);

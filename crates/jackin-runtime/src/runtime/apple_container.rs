@@ -119,10 +119,13 @@ pub async fn check_dns(container_name: &str) {
     }
 }
 
-/// Wait until `/jackin/run/jackin.sock` is answering status queries inside
-/// the apple/container container.
+/// Wait until `/jackin/run/jackin.sock` negotiates the host's Capsule protocol
+/// major inside the apple/container container.
 pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
-    let check_cmd = "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
+    let check_cmd = format!(
+        "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule protocol-check --expected-major {}",
+        jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR
+    );
     let deadline =
         tokio::time::Instant::now() + tokio::time::Duration::from_millis(ATTACH_MAX_WAIT_MS);
 
@@ -143,7 +146,7 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
                 container_name,
                 "sh",
                 "-c",
-                check_cmd,
+                &check_cmd,
             ],
         ))
         .await;

@@ -403,6 +403,9 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
         )
         .await
         .with_context(|| format!("connecting to capsule socket at {SOCKET_PATH}"))?;
+        jackin_protocol::capsule_transport::client_handshake_async(&mut stream)
+            .await
+            .context("negotiating Capsule control transport")?;
         stream
             .write_all(&frame(&request))
             .await

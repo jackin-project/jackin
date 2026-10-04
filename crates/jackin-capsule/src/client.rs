@@ -7,7 +7,7 @@
 //! Not responsible for: daemon session management, PTY allocation, or
 //! in-container rendering.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use jackin_telemetry::ResultTelemetryExt as _;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -70,17 +70,54 @@ pub async fn run_attach_proxy() -> Result<()> {
     run_attach_proxy_at(SOCKET_PATH, tokio::io::stdin(), tokio::io::stdout()).await
 }
 
+/// Check that the running daemon speaks this Capsule transport major.
+///
+/// The command is read-only: it opens a socket, negotiates the fixed transport
+/// preface, then closes without sending a control request or attach Hello.
+/// # Errors
+///
+/// Returns an error when the daemon cannot be reached or does not ACK the
+/// exact protocol major.
+pub async fn run_protocol_check(args: &[String]) -> Result<()> {
+    let expected_major = match args {
+        [] => jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR,
+        [flag, value] if flag == "--expected-major" => value
+            .parse::<u16>()
+            .context("--expected-major must be an unsigned 16-bit integer")?,
+        _ => bail!("usage: jackin-capsule protocol-check [--expected-major <major>]"),
+    };
+    anyhow::ensure!(
+        expected_major == jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR,
+        "Capsule client protocol major {} does not match required major {}",
+        jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR,
+        expected_major
+    );
+    let mut stream = jackin_diagnostics::operation::connection_attempt(
+        jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleControl,
+        UnixStream::connect(SOCKET_PATH),
+    )
+    .await
+    .with_context(|| format!("cannot connect to jackin-capsule daemon at {SOCKET_PATH}"))?;
+    jackin_protocol::capsule_transport::client_handshake_async(&mut stream)
+        .await
+        .context("Capsule transport protocol check failed")?;
+    Ok(())
+}
+
 async fn run_attach_proxy_at<R, W>(socket_path: &str, input: R, output: W) -> Result<()>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let stream = jackin_diagnostics::operation::connection_attempt(
+    let mut stream = jackin_diagnostics::operation::connection_attempt(
         jackin_telemetry::schema::enums::ConnectionPeerType::CapsuleAttach,
         UnixStream::connect(socket_path),
     )
     .await
     .with_context(|| format!("cannot connect to jackin-capsule daemon at {socket_path}"))?;
+    jackin_protocol::capsule_transport::client_handshake_async(&mut stream)
+        .await
+        .context("negotiating Capsule attach transport")?;
     let (mut socket_read, mut socket_write) = stream.into_split();
     let mut input = input;
     let mut output = output;
@@ -644,15 +681,22 @@ async fn connect_and_send(
     } else {
         jackin_telemetry::propagation::inject(&mut ctx);
     }
-    let result = stream
-        .write_all(&control_frame(&ControlRequest {
-            ctx,
-            session_capability: std::env::var(jackin_protocol::SESSION_CAPABILITY_ENV)
-                .ok()
-                .filter(|value| !value.is_empty()),
-            msg: request.clone(),
-        }))
-        .await;
+    let result = async {
+        jackin_protocol::capsule_transport::client_handshake_async(&mut stream)
+            .await
+            .context("negotiating Capsule control transport")?;
+        stream
+            .write_all(&control_frame(&ControlRequest {
+                ctx,
+                session_capability: std::env::var(jackin_protocol::SESSION_CAPABILITY_ENV)
+                    .ok()
+                    .filter(|value| !value.is_empty()),
+                msg: request.clone(),
+            }))
+            .await
+            .context("writing Capsule control request")
+    }
+    .await;
     if let Err(error) = result {
         if let Some(operation) = operation {
             operation.complete(
@@ -660,7 +704,7 @@ async fn connect_and_send(
                 Some(jackin_telemetry::schema::enums::ErrorType::RpcError),
             );
         }
-        return Err(error.into());
+        return Err(error);
     }
     Ok((stream, operation))
 }

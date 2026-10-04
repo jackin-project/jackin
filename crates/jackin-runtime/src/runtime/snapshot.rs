@@ -154,6 +154,14 @@ pub(crate) fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<
     stream
         .set_write_timeout(Some(SOCKET_TIMEOUT))
         .context("setting write timeout")?;
+    jackin_protocol::capsule_transport::client_handshake(&mut stream, SOCKET_TIMEOUT)
+        .context("negotiating Capsule control transport")?;
+    stream
+        .set_read_timeout(Some(SOCKET_TIMEOUT))
+        .context("restoring read timeout")?;
+    stream
+        .set_write_timeout(Some(SOCKET_TIMEOUT))
+        .context("restoring write timeout")?;
 
     stream
         .write_all(&control_frame(&ControlRequest {
@@ -252,6 +260,30 @@ pub(crate) fn run_docker_exec_capsule(
     container: &ContainerHandle,
     script: &str,
 ) -> Result<std::process::Output> {
+    ensure_capsule_protocol_via_docker_exec(container)?;
+    run_docker_exec_capsule_raw(container, script)
+}
+
+/// Require the container's installed Capsule client to negotiate with the
+/// daemon before a Docker-exec fallback can issue its actual command.
+pub(crate) fn ensure_capsule_protocol_via_docker_exec(container: &ContainerHandle) -> Result<()> {
+    let protocol_check = protocol_check_exec_script();
+    let output = run_docker_exec_capsule_raw(container, &protocol_check)?;
+    if !output.status.success() {
+        bail!(
+            "Capsule protocol preflight failed for {} with status {}: {}",
+            container.name(),
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+fn run_docker_exec_capsule_raw(
+    container: &ContainerHandle,
+    script: &str,
+) -> Result<std::process::Output> {
     let args = docker_exec_capsule_args(container, script);
     let request = jackin_process::ExecRequest::new("docker", &args);
     let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)
@@ -325,6 +357,13 @@ const fn snapshot_exec_script() -> &'static str {
 
 const fn usage_accounts_exec_script() -> &'static str {
     "exec /jackin/runtime/jackin-capsule usage accounts"
+}
+
+fn protocol_check_exec_script() -> String {
+    format!(
+        "exec /jackin/runtime/jackin-capsule protocol-check --expected-major {}",
+        jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR
+    )
 }
 
 fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {

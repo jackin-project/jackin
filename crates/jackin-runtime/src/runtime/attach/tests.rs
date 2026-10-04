@@ -29,6 +29,25 @@ fn test_container_handle(name: &str) -> ContainerHandle {
     ContainerHandle::new(name, format!("{name}-id")).unwrap()
 }
 
+fn spawn_capsule_preface_ack(
+    listener: std::os::unix::net::UnixListener,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        stream.set_nonblocking(true).unwrap();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async move {
+                let mut stream = tokio::net::UnixStream::from_std(stream).unwrap();
+                jackin_protocol::capsule_transport::server_handshake_async(&mut stream)
+                    .await
+                    .unwrap();
+            });
+    })
+}
+
 type ScheduledConfigRotation = (String, PathBuf, Vec<u8>);
 
 fn config_rotation_slot() -> &'static Mutex<Vec<ScheduledConfigRotation>> {
@@ -302,11 +321,13 @@ fn host_attach_transport_surfaces_over_sun_len_socket_path() {
 fn host_attach_transport_uses_direct_socket_when_connect_succeeds() {
     let (_tmp, paths) = short_test_paths();
     let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");
-    let _listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let server = spawn_capsule_preface_ack(listener);
 
     let plan = select_host_attach_transport(&paths, "jk-agent-smith");
 
     assert_eq!(plan, HostAttachTransportPlan::DirectSocket { socket_path });
+    server.join().unwrap();
 }
 
 #[test]
@@ -354,7 +375,8 @@ fn insert_run_as_user_is_noop_when_absent() {
 async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
     let (_tmp, paths) = short_test_paths();
     let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");
-    let _listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let server = spawn_capsule_preface_ack(listener);
     let docker = FakeDockerClient {
         fail_with: vec![("docker exec".to_owned(), "unexpected exec".to_owned())],
         ..Default::default()
@@ -364,6 +386,7 @@ async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
         .await
         .unwrap();
 
+    server.join().unwrap();
     assert!(
         docker.recorded.borrow().is_empty(),
         "direct socket readiness must not spawn docker exec"
