@@ -26,12 +26,12 @@ those PTY processes in a separate nonroot NNP and Landlock boundary.
 
 ### `locked` — minimal grant
 
-The agent can read files, think, and call its model API. Nothing else is granted by default.
+`locked` keeps the container root filesystem read-only, but configured writable workspace/cwd bind mounts remain writable and can change host files. Set those mounts read-only for a read-only review.
 
 Use when:
 - Reviewing a PR diff from an unfamiliar source
 - Running a read-only code analysis agent
-- Maximum confidence that the container cannot change anything on your machine
+- Keeping the root filesystem read-only while allowing configured mounts to remain writable
 
 ```toml
 [docker]
@@ -174,7 +174,7 @@ agent and shell sessions use the identity admitted by Capsule configuration.
 system_writes = true   # writable Docker root filesystem; does not widen PTY Landlock grants
 ```
 
-When the resolved `system_writes` grant is `false`, Docker starts the container with `--read-only` and writable in-memory scratch space for startup paths. This is the default for `locked` and `hardened`. `standard` and `compat` resolve to a writable root filesystem, and grants only widen that setting, so `system_writes = false` cannot narrow those profiles. `true` removes the Docker-level read-only mount. Neither value widens the per-session Landlock policy: the agent still gets no general write access to `/usr`, `/etc`, or `/var`. System package installation from agent sessions is unsupported; install system tools in the role image.
+When the resolved `system_writes` grant is `false`, Docker starts the container with `--read-only` and writable in-memory scratch space for startup paths. This is the default for `locked` and `hardened`. `standard` and `compat` resolve to a writable root filesystem, and grants only widen that setting, so `system_writes = false` cannot narrow those profiles. `true` removes the Docker-level read-only mount. Per-session Landlock protections apply outside explicitly admitted cwd and workspace mounts; the runtime grants `FULL` access to those paths and retains DAC override. For example, `workdir = "/usr"` is accepted with the workspace mounted at `/usr/project`; on a writable-root profile, the admitted `/usr` cwd lets the session write under `/usr`. System package installation from agent sessions is unsupported; install system tools in the role image.
 
 ### Resource grants
 
@@ -198,7 +198,7 @@ capabilities_add = ["NET_RAW", "SYS_PTRACE"]
 
 Adds Linux capabilities beyond the profile's base set. Valid names (without `CAP_` prefix): `AUDIT_CONTROL`, `AUDIT_READ`, `AUDIT_WRITE`, `BPF`, `BLOCK_SUSPEND`, `CHECKPOINT_RESTORE`, `CHOWN`, `DAC_OVERRIDE`, `DAC_READ_SEARCH`, `FOWNER`, `FSETID`, `IPC_LOCK`, `IPC_OWNER`, `KILL`, `LEASE`, `LINUX_IMMUTABLE`, `MAC_ADMIN`, `MAC_OVERRIDE`, `MKNOD`, `NET_ADMIN`, `NET_BIND_SERVICE`, `NET_BROADCAST`, `NET_RAW`, `PERFMON`, `SETFCAP`, `SETGID`, `SETPCAP`, `SETUID`, `SYS_ADMIN`, `SYS_BOOT`, `SYS_CHROOT`, `SYS_MODULE`, `SYS_NICE`, `SYS_PACCT`, `SYS_PTRACE`, `SYS_RAWIO`, `SYS_RESOURCE`, `SYS_TIME`, `SYS_TTY_CONFIG`, `WAKE_ALARM`.
 
-Common additions: `NET_RAW` for `tcpdump`/`nmap`/`ping`; `SYS_PTRACE` for debuggers (`gdb`, `strace`); `NET_BIND_SERVICE` for servers binding ports < 1024.
+These Docker-level additions affect the container and its supervisor, not Capsule-wrapped agent/shell PTYs, which reset capabilities to `CAP_DAC_OVERRIDE`. Common uses for other container processes include `NET_RAW` for `tcpdump`/`nmap`/`ping`, `SYS_PTRACE` for debuggers (`gdb`, `strace`), and `NET_BIND_SERVICE` for servers binding ports < 1024.
 
 `NET_ADMIN` and `NET_RAW` are implicitly granted when `network = "allowlist"` — they are prerequisites for iptables and do not need to be listed explicitly.
 
@@ -265,7 +265,7 @@ jackin load the-architect . --docker-profile hardened --debug
 ## What the profiles cannot guarantee
 
 - **Shared host kernel.** Containers share the host kernel. A kernel exploit can escape the container regardless of profile. microVM-based backends (tracked in the roadmap) are the path to stronger isolation.
-- **Writable workspace mounts.** Even under `locked` with read-only root, the workspace bind mounts are writable if the mount was configured as writable. The profile does not retroactively make mounts read-only.
+- **Writable workspace/cwd mounts.** Even under `locked` with read-only root, configured writable bind mounts remain mutable and can change their corresponding host files. Set them read-only for read-only reviews.
 - **DinD with allowlist networking.** When DinD is active, inner containers can bypass network allowlists because they have their own network path. Enforcement quality is `partial (DinD inner containers bypass host iptables)` and is reported in the launch summary, `--debug` session contract, and `JACKIN_NETWORK_ENFORCEMENT` inside the role container.
 - **Credential files inside the container.** Credentials from an assigned profile account are readable by the agent after forwarding. API-key and OAuth-token accounts also provide credentials to the selected process. Docker profiles do not replace workspace account authorization.
 
@@ -299,7 +299,7 @@ See the [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-co
 
 ### Current default: `standard`
 
-Every launch uses `standard` by default unless CLI, config, workspace config, or role metadata selects another profile. The compatibility matrix covers Docker-level profile posture; it does not exercise interactive `sudo` or package installation through the production Capsule session wrapper. The wrapper applies its own NNP and Landlock boundary to each agent and shell process.
+Every launch uses `standard` by default unless the CLI, global config, or workspace config selects another profile. Role metadata `min_profile` only rejects a resolved profile below its minimum; it does not select or raise the profile. Choose `compat` explicitly when needed. The compatibility matrix covers Docker-level profile posture; it does not exercise interactive `sudo` or package installation through the production Capsule session wrapper. The wrapper applies its own NNP and Landlock boundary to each agent and shell process.
 
 To use the legacy maximum-compatibility profile:
 
@@ -340,10 +340,10 @@ or
 profile = "compat"
 ```
 
-or in a role manifest:
+Role manifests can require `compat`, but this sets a minimum; it does not select the profile. The operator must still explicitly choose `compat`:
 ```toml
 [docker]
-min_profile = "compat"   # role needs privileged DinD / other Compat Docker grants
+min_profile = "compat"   # reject launch unless the resolved profile is compat
 ```
 
 ### Deferred items

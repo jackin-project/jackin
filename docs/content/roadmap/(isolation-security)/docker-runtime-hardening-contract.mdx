@@ -20,7 +20,7 @@ Shipped pieces:
 - DinD is tier-aware: `none`, `rootless`, and `privileged` are selectable; rootless uses `docker:dind-rootless`, fails closed where cgroup v2 is required, and is the recommended explicit grant for Docker workflows on cgroup v2. When DinD and allowlist networking are both active, the launch contract reports partial enforcement because inner containers bypass the role-container firewall.
 - The session contract and compact/debug telemetry report the effective profile decisions before launch.
 - `cargo xtask profile-matrix standard` checks Docker-level profile posture. Its Tier 2 real-workload cases, including DinD workflows, remain TODO; it does not exercise sudo or package installation through the production Capsule session wrapper.
-- `standard` is the compiled-in default. `compat` remains available through CLI/config/workspace/role selection for privileged DinD and resource-unlimited Docker workflows. Its root setup may provision sudoers, but wrapped agent and shell sessions remain nonroot.
+- `standard` is the compiled-in default. `compat` remains available through CLI/config/workspace selection for privileged DinD and resource-unlimited Docker workflows. Role `min_profile` only rejects a weaker resolved profile; it does not select `compat`. Its root setup may provision sudoers, but wrapped agent and shell sessions remain nonroot.
 - Host Docker socket exclusion has a regression test.
 - Schema, guide, and runtime reference docs for the shipped fields exist in [Docker Security Profiles](/guides/docker-profiles/), [Role manifest](/developing/role-manifest/), [Configuration](/reference/runtime/configuration/), and [Schema Versions](/reference/runtime/schema-versions/).
 
