@@ -144,3 +144,42 @@ It stopped during offline dependency resolution with `no matching package named 
 required by the newly registered `jackin-omp-store v0.6.4` workspace package. It did not compile or
 run tests. The CLI model/effort tests remain NOT RUN until Cargo.lock is updated and the exact
 source is exercised through the reviewed MBX runner.
+
+## PR #1111 exact-source CLI review and CI failure
+
+The source-only CLI review covers commit `24b8d5423a212130e4a1c60beffed860248b7f27`, tree
+`63e21941838f728583e22220e9432f6afceb90b9`, parent `4afc5a6eaa5dea404784c6176a32d9bd0c7f80b4`.
+The immutable archive is
+`/root/.jackin-pr1111-source-24b8-20261005/jackin-24b8d5423a212130e4a1c60beffed860248b7f27.tar`
+(SHA-256 `c8454e72854767370cbcb484fe2abec7e8bd7c851d7adf5780d09228df4e500a`, 39,147,520 bytes).
+Its tree inventory SHA-256 is `1a6ed9bdb90c4204942ff9aecc5d1518e2b4ab1770d3ed5928cfb4d8e4a1c5a2`
+and its exact-source packet SHA-256 is
+`22a0a9e3a777fbac13c3fbbec01505ab53bb3ebe18acc3d91f3fb1cfbe28bf2a`. The export handshake
+confirmed the pull-request API and `refs/pull/1111/head`; the only changed path at this head is
+`crates/jackin/src/app/load_cmd.rs`. Independent source review passed the four-file CLI model/effort
+change after its private-interface correction. This is source evidence only; no local Rust test,
+compile, or CLI runtime was performed.
+
+GitHub Actions run `37353665241` was a `pull_request` run for this exact head and completed at
+`2026-10-05T18:18:25Z` with 28 successful jobs and two failures. The sole independent failure is
+`Rust / jackin`: Clippy reports `too_many_lines` at `crates/jackin/src/app/load_cmd.rs:43`, where
+`handle_load` is 151/150 lines. The other failure is the dependent `Required` gate. The failed job
+log is retained at `/var/tmp/jackin-pr1111-job111910828878.zip`, 93,736 bytes, mode 0600,
+SHA-256 `a1ebe1b0be395dcac86c2e73357eccea0eeda5d56af49994f47f11dfc1d2ff4c`; despite its suffix,
+the downloaded file is plaintext CI output. A bounded extraction fix is assigned; no lint
+suppression is planned.
+
+Final-head feedback remains open: the automated Codex review is `COMMENTED` and says it reviewed
+`a64af27dbefdf4d9239ad9e94209cb2416a4dbc4`. Its three inline comments are two known OMP P1s
+(rollback-journal snapshots and ambiguous joint WAL salt/checksum corruption) plus a P2 at
+`crates/jackin-runtime/src/runtime/universe.rs:596` about a process killed after creating a pending
+claim token. The latter can leave an orphan token that causes later exits to report `Missing`; a
+bounded recovery fix is assigned. The PR remains open and mergeable; source tests, OMP runtime,
+docs specs, and live Usage/broker smoke remain separate gates.
+
+The CI line-count failure was addressed in commit `c7aede8f9eb3296027ab652135501486d2786e00`
+(tree `1610cbea8815416ac8d5b957a90cff5606741fdc`, parent 24b8). It extracts a private dry-run
+plan helper from `handle_load`, with no lint suppression. The exact commit has not yet completed
+source-bound MBX verification. Its new GitHub run `37355227790` is still in progress: DCO and
+Actionlint succeeded, while Plan was running at the last query (`2026-10-05T18:20:47Z`). The
+24b8 archive above is historical for this new source head; the immutable c7 archive is pending.
