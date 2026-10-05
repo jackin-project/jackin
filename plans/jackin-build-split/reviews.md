@@ -171,16 +171,23 @@ The `unprivileged_exec_design` owner is checking supported offline `mise link` b
 | `preflight_security_review` | Initial security gate | Initial review complete; follow-up pending |
 | `unprivileged_exec_design` | Execution boundary and MBX launcher | IN PROGRESS; launcher correction pending; activation NOT RUN |
 | `codex_schema_runtime` | Agent settings confirmation | IN PROGRESS |
-| `branches` | Fetch passed; full diff review | IN PROGRESS |
+| `branches` | Source disposition matrix | Complete; selected integration remains pending |
 | `baseline_method_review` | PR #1108 exact-head source review | Complete; final build-performance review NOT STARTED |
 | `execution_crosscheck` | Consolidation source review and final gates | OMP source review complete; route source review pending; final correctness review NOT STARTED |
 | `consolidation_review` | Migration fixtures and redaction correction | IN PROGRESS; redaction tests NOT RUN pending MBX |
 | `jackin_ci_consumer` | Collector and Mise/MBX integration | IN PROGRESS |
 | `omp` | Account database and WAL root fix | Source review PASS at `1638522184ef45f0cd51fa5601a5e80c7fd89762`; stale-comment follow-up; Cargo tests NOT RUN |
 | `debian_codex_route` | Codex account discovery route | Source review pending at `688057f40173d32dda04a55bff1e3868c219710d`; runtime route NOT RUN |
+| `jackin_cli` | Launch prompt cleanup | Source review PASS at `640b33f9598307a360484526a46c9c20bd068f4e`; Cargo tests NOT RUN pending MBX |
 | `architect_schema_review` | Independent runtime-performance review | NOT STARTED; exact runtime evidence pending |
 
 The `architect_manifest_fix` owner supplied the exact-head review. The `velnor_recon` owners supplied generator history and workflow evidence.
+
+## CLI prompt cleanup
+
+Source review PASS at commit `640b33f9598307a360484526a46c9c20bd068f4e` (`refactor(load): remove unsupported initial prompt option`). The change removes `LoadOptions.prompt` and its current-role reuse and explicit-restore checks in `crates/jackin-runtime/src/runtime/launch.rs` and `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs`.
+
+Cargo tests remain NOT RUN pending reviewed MBX activation. This record reports source review only.
 
 ## Final review ownership
 

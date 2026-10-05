@@ -21,22 +21,108 @@
 - The task worktree copy has SHA256 `ac3b0998f110538c5bb34f2653afaf7f2713d7f9f026dde1bb3f50845cef06ef`.
 - This work changes documentation files only.
 
-## Partial branch and PR snapshot
+## Exact branch and PR inventory
 
-The branch owner reported five branch refs, two open PRs, and no fork heads before this task branch was pushed. That API inventory matched the then-fetched branch and PR SHAs.
+This is the 2026-10-05 branch audit. Counts use `origin/main` at `0aa821a088e1bacf3d4d85a4c9faaa67faa85132` as the base. Keep the complete PR branches out of the merge path until selected changes pass their listed gates.
 
-The fresh fetch below ran after this task branch was pushed. It updated six local remote branch refs. No GitHub API query followed it. Treat the earlier branch count and PR status as a prior snapshot.
-
-| Ref | Local ref SHA and delta | Earlier PR snapshot |
+| Ref | Exact SHA and delta from main | Inventory status |
 |---|---|---|
-| `origin/main` | `0aa821a088e1bacf3d4d85a4c9faaa67faa85132` | Base at inventory time |
-| `origin/codex/credential-routing-recovery-20260930`, PR [#1111](https://github.com/jackin-project/jackin/pull/1111) | `3a28c199f17da335ecd9abd8dd67ebf1aecc0421`; 38 ahead, 0 behind; 95 files; `+8,106/-994` | Draft; 31 checks succeeded, one skipped; no reviews or comments reported |
-| `origin/codex/ci-evidence-ledger-20260929`, PR [#1108](https://github.com/jackin-project/jackin/pull/1108) | `2990df17e25f30afca84804d9c402abc1ce00231`; 7 ahead, 2 behind; 29 files; `+8,229/-57` | Draft; 47 checks, five failed; no reviews or comments reported |
-| `origin/codex/account-usage-capsule-consolidation-20261004` | `18bc09e9536d9b662876d2fb4205357a829caa9a`; descends from #1111 by 11 commits; 124 files; `+11,777/-1,889` | No PR or checks reported; 49 commits ahead total; 209 files; `+19,880/-2,880` |
-| `origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/staged-index-jackin-1044-current-0437497d7f22` | `0437497d7f22fbdb7c8aad986be932704d707fe9`; stale parent `c52e912...`; 32 behind, 1 ahead | Seven-file merge-base delta: `+206/-134`; earlier review said not a merge candidate |
-| `origin/refactor/build-split` | `34c32ca31e58b5e3dac71e88892778568f6f70d1` | This documentation branch; no PR opened |
+| `origin/main` | `0aa821a088e1bacf3d4d85a4c9faaa67faa85132` | Audit base. |
+| `origin/codex/credential-routing-recovery-20260930`, PR [#1111](https://github.com/jackin-project/jackin/pull/1111) | `3a28c199f17da335ecd9abd8dd67ebf1aecc0421`; 38 commits: 36 non-merge and 2 sync merges; 95 files; `+8,106/-994` | Open draft; CLEAN. DCO, Required, 28 Rust jobs, Actionlint, and Plan passed; Publish baseline skipped. No review comments or threads at feedback refresh. |
+| `origin/codex/ci-evidence-ledger-20260929`, PR [#1108](https://github.com/jackin-project/jackin/pull/1108) | `2990df17e25f30afca84804d9c402abc1ce00231`; 7 commits ahead, 2 behind; 29 files; `+8,229/-57` | Open draft; DIRTY against stale base. Policy, Rust dependency, xtask, ci-required, and Control checks failed. No review comments or threads at feedback refresh. |
+| `origin/codex/account-usage-capsule-consolidation-20261004` | `18bc09e9536d9b662876d2fb4205357a829caa9a`; 11 commits after #1111; 49 commits reachable from main; 124 added files in this segment, `+11,777/-1,889`; full delta: 209 files, `+19,880/-2,880` | No PR. Review only selected groups below after their gates pass. |
+| `origin/recovery/jackin-20261004T211752Z-e002bd55/keeper/staged-index-jackin-1044-current-0437497d7f22` | `0437497d7f22fbdb7c8aad986be932704d707fe9`; merge-base `c52e912bd3757c4ca736be288b0e03779144b561`; 32 behind, 1 unique commit; 7 paths, `+206/-134` | Not a merge candidate. Review only the isolated Apple deployment-target change below. |
 
-The PR check and comment results are historical. The latest check and feedback state remain NOT VERIFIED.
+At the 2026-10-05T02:39:20Z feedback refresh, the only open PRs were #1111 and #1108. The refresh found zero reviews, comments, and review threads for both. The all-state paginated API inventory contained 1,103 PR records. A branch-ref refresh at 2026-10-05T02:20:13Z reported 1,157 refs. See the [fetch record](#fetch-and-feedback-records).
+
+### Current open PR state and merge gate
+
+| PR | State at refresh | Checks and feedback |
+|---|---|---|
+| #1111, head `3a28c199f17da335ecd9abd8dd67ebf1aecc0421` | CLEAN, draft | DCO, Required, 28 Rust jobs, Actionlint, and Plan passed; Publish baseline was skipped. Zero reviews, comments, and threads. |
+| #1108, head `2990df17e25f30afca84804d9c402abc1ce00231` | DIRTY, draft; stale base | Policy, Rust dependency, xtask, ci-required, and Control checks failed. Zero reviews, comments, and threads. |
+
+The `protect-main` ruleset requires resolved review threads, DCO and Required checks, and squash merges. It requires zero approvals. These rules do not approve either PR or waive their failing gates. Do not merge either full branch. Recheck feedback and required checks at each final head before merging an eligible PR.
+
+### PR #1111 usage and source matrix
+
+The exact `origin/main..origin/codex/credential-routing-recovery-20260930` graph has 38 commits: 36 non-merge commits and two sync merges. The delta is 95 files, `+8,106/-994`. The Sol matrix audit classified the non-merge commits as follows.
+
+| Disposition | Commit group | Evidence or gate |
+|---|---|---|
+| ALREADY PRESENT; no-op | Sync merges `c256792e`, `0fb305e` | Preserve history only when needed; do not merge the branch for these commits. |
+| ALREADY PRESENT; no-op | Usage discovery/coordinator: `f09c716`, `793663f`, `e3ff5d4`, `3664233` | For each commit's touched paths, `git diff origin/main..3a28c199f17da335ecd9abd8dd67ebf1aecc0421 -- <touched-paths>` is empty. Sol independently verified the net-zero result. |
+| ALREADY PRESENT; no-op | Process, broker, CI, and hooks: `6b0fb2c`, `8a9ec7e`, `5eb3bc7`, `02b0c57`, `1e822df`, `1433c6a`, `3e1bb81`, `81a26f7` | The same per-commit touched-path comparison against current main is empty; Sol independently verified. |
+| ALREADY PRESENT; no-op | Broker Arc test `a6c85ba8a154ccce224dce80d1ed5ef8fa03bc6e`; TODO and usage-evidence docs `dd1aa569678134e0d81301ec5131edf6f110d7ce` | Both have empty per-commit touched-path diffs against current main. Sol independently verified. |
+| SELECT; pending integration | Private config, account authority, and authentication: `37c18b0`, `b349e1c`, `7f5ed14`, `0a98671`, `4830237`, `e426186`, `3a28c19` | Select only the private-config and authority changes. Treat usage-path hunks already present on main as no-ops. Require exact security review. |
+| SELECT; pending integration | Runtime identity, workspace, and typed IDs: `7db8266`, `2610c9c`, `5375756` | Review as a cohesive runtime change and verify consumers. |
+| SELECT; pending integration | Joined Console usage refresh: `53da175`, `cd119a39`, `ed5e240` | Keep the joined refresh and its documented persistence behavior together. |
+| SELECT; pending integration | Durable config persistence and editor behavior: `1ea072f`, `60f7d661` | Review as a group with its affected schema consumers. |
+| SELECT; pending integration | TUI facade and documentation: `e51b2b9`, `e901fa1`, `8bf933c`, `38db68d` | Recheck links and claims against current source before integration. |
+| SELECT; pending scope decision | Codex subagent settings: `0a252f3`, `5344167` | Include only if the build-split task requires those settings. |
+| REPLACE | Broad formatting and type changes: `3c33f29` | Do not port wholesale. Reapply only a separately justified fix against current source. |
+
+These rows account for 36 non-merge commits and two sync merges. The audit also found no-op changes inside otherwise selected commit paths. This is source triage, not integration approval. Do not merge the full #1111 branch. Integrate selected groups only after their dependencies and final gates pass.
+
+#### Selected independent units and focused test scope
+
+The path groups below preserve unit boundaries. Run the listed focused checks only after reviewed MBX activation. These checks have NOT RUN in this audit.
+
+| Unit | Source paths | Focused test scope |
+|---|---|---|
+| Credential capture and account authority | `crates/jackin-runtime/src/runtime/launch/account_config.rs` and its `tests.rs`, `tests/bounds.rs`, `authority_tests.rs`; `crates/jackin-instance/src/auth.rs`, `auth/tests.rs`, `selected_source_tests.rs`; `crates/jackin-core/src/launch_selection.rs`; `crates/jackin-config/src/editor/accounts.rs`, `schema.rs`; Console `tui/screens/editor/model/state_impl/workspace.rs`; runtime `coordination.rs`, `launch.rs`, `attach.rs`, `cleanup.rs`, `usage_relay.rs`; `crates/jackin-protocol/src/control.rs`. | Account-config bounds/authority; auth/selected-source; `launch_runtime/tests.rs`, `attach/tests.rs`, `cleanup/tests.rs`, `apple_container/coordination_tests.rs`, `usage_relay/tests.rs`, and cross-platform configuration. |
+| Typed identity and runtime consumers | `crates/jackin-core/src/container_id.rs`, `session_id.rs`, and `launch_selection.rs`; `crates/jackin-instance/src/manifest.rs`; runtime attach, cleanup, and launch phases. | `container_id/tests.rs`, `session_id/tests.rs`, `manifest/tests.rs`, `runtime/attach/tests.rs`, `runtime/cleanup/tests.rs`, `launch_phases/tests.rs`, and `crates/jackin/tests/per_mount_isolation_e2e.rs`. Avoid duplicate auth/runtime paths. |
+| Joined Console usage refresh | `crates/jackin-console/src/tui/screens/usage.rs`, `tui/input/list.rs`, `tui/state.rs`, `tui/state/manager.rs`; `crates/jackin/src/console/adapter/run.rs`; Console command and operator-console docs. | `tui/screens/usage/tests.rs`, `tui/input/list/tests.rs`, and `crates/jackin/src/console/adapter/run/tests.rs`. No host provider changes are selected. |
+| Config journal and editor | `crates/jackin-config/src/persist.rs`, `persist/tests.rs`, `editor/accounts.rs`, `schema.rs`; Console workspace editor state and tests. | Journal publication, recovery, and workspace editor tests. Keep separate from later schema migration. |
+| TUI facade, docs, and defaults | `crates/jackin-tui/src/runtime.rs` and README; `crates/jackin-capsule/src/tui/runtime.rs`; TUI architecture and code-map docs; `.codex/config.toml` for model-default commits. | Check facade consumers and source links. Include model defaults only if this task requires them. |
+
+Security-doc paths include `docs/content/(public)/(role-authoring)/developing/construct-image.mdx`, `docs/content/(public)/(role-authoring)/guides/role-repos.mdx`, `docs/content/(public)/getting-started/concepts.mdx`, `docs/content/(public)/getting-started/why.mdx`, and `docs/content/(public)/guides/security-model.mdx`. Recheck every claim against current code before integration.
+
+### Account and capsule consolidation matrix
+
+The consolidation ref adds eleven commits after #1111. Its review does not approve the full 49-commit history.
+
+| Commit | Disposition | Gate or scope |
+|---|---|---|
+| `c2c7154c02de16ba6eac9f3682fc8d5275910451` | REJECT | Do not bring brand changes into this consolidation. |
+| `7102f0afd4546b6b47b87814df16782a1cbf998c` | REPLACE | Recheck documentation against current source and rewrite stale claims. |
+| `72aa9142b2d176db7dcf3f0a463dd95432e2c246`, `ae634df85896a15a724b5af9563a440f9f7a6055` | SELECT | Review profile and security documentation against current behavior. |
+| `7cbbbdf736c70a94961d3adb1176d1994a47d43e` | REPLACE | Use the architecture-level redaction correction under review. The current patch remains rejected. |
+| `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | SELECT after fix | Require ordered fsync and recovery correction before integration. |
+| `455526b92a2a4350476bb192455e5e3414f7ab9a` | SELECT after fixtures | Add predecessor directories and schema, metadata, and golden fixtures. Run migration tests and schema checks under reviewed MBX. |
+| `cd3ced4189fb19624359da8c0eec5684ef1bacd8` | SELECT | Review profile material proofs with their consumers. |
+| `c72e25d384ce2d8a80cf584457ec4b28e619980b`, `e4bcb842bd151c608691a72c7af8fc6e765a3105` | SELECT as a pair | Review status and OSC changes together. |
+| `18bc09e9536d9b662876d2fb4205357a829caa9a` | SELECT as one linked unit | Keep protocol, core, capsule, runtime, status, and isolation changes together across 20 paths. Do not select the transport type alone. |
+
+These eleven commit dispositions remain pending integration. Migration, transaction, and redaction gates are documented in [review findings](reviews.md#account-consolidation-review).
+
+#### Consolidation paths and focused test gates
+
+| Commit group | Paths and focused tests | Dependency gate |
+|---|---|---|
+| `455526b92a2a4350476bb192455e5e3414f7ab9a` | Config `accounts.rs`/`migrations.rs`; core, env, oppicker, Console, runtime launch helpers, CLI config, and schema/security docs. Focus migration compatibility tests. | Add predecessor directories and schema, metadata, and golden fixtures. Run migration checks under reviewed MBX. |
+| `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | Core workspace/isolation records; isolation `cleanup.rs`, `state_io.rs`, `ref_transaction.rs`, `safe_remove.rs`; runtime cleanup/restore; `crates/jackin/tests/per_mount_isolation_e2e.rs`. Focus cleanup, ref, recovery, restore, and per-mount failure tests. | Fix durable ordering before integration. Verify ordered fsync and recovery behavior. |
+| `cd3ced4189fb19624359da8c0eec5684ef1bacd8` | `crates/jackin-core/src/profile_material.rs`, core exports, Cargo metadata, and fuzz lockfiles. Focus proof creation and invalidation tests. | Review proof consumers and fuzz dependency changes. |
+| `c72e25d384ce2d8a80cf584457ec4b28e619980b` + `e4bcb842bd151c608691a72c7af8fc6e765a3105` | Agent-status rules and signed bundles; `crates/jackin-agent-status/src/osc.rs`; capsule session parser. Focus rule verification, OSC parsing, and session framing tests. | Keep rule-bundle validation and OSC session decoding together. |
+| `18bc09e9536d9b662876d2fb4205357a829caa9a` | 20 paths: capsule attach protocol/client/client tests/daemon tests/exec/main/socket/TUI; core status; isolation finalize; protocol transport/lib; runtime Apple container/attach/attach tests/host attach/session control/snapshot; CLI status; persistence/reattach E2E. | Focus protocol, capsule client/daemon, persistence/reattach, runtime attach, and isolation finalization tests. Integrate as one linked consumer change. |
+
+These test lists define review scope. They do not record test execution or acceptance.
+
+### Recovery ref disposition
+
+Recovery commit `0437497d7f22fbdb7c8aad986be932704d707fe9` has parent and merge-base `c52e912bd3757c4ca736be288b0e03779144b561`. It is 32 commits behind main and adds one unique commit across seven paths (`+206/-134`). Reject it as a merge base.
+
+| Path | Disposition | Required action |
+|---|---|---|
+| `.github-gen/static/renovate-validate.yml` | REPLACE | Recreate coverage through current `.velnor` ownership. |
+| `.github-gen/static/renovate.yml` | REPLACE | Recreate coverage through current `.velnor` ownership. |
+| `.github-gen/visibility.toml` | REPLACE | Recreate visibility through its current owner. |
+| `.github-gen/velnor-workflow.toml` | REJECT | Do not restore this old generator contract. |
+| `.xcode-version` | REPLACE | Derive the pin from the current canonical source. |
+| `crates/jackin-usage-ffi/boltffi.toml` | SELECT | Consider only `deployment_target = "26.0"`, pending current Apple CI. |
+| `mise.toml` | REPLACE | Preserve removed `swift-package-native-ci` coverage through the current task owner. |
+
+Do not merge or cherry-pick the recovery commit as a unit.
 
 ### PR #1108 check detail
 
@@ -95,19 +181,26 @@ Jackin `mise.toml` build, test, and lint root tasks still call `cargo xtask`. Th
 
 The Rust-MBX variant and Jackin Mise-wrapper integration remain pending design and activation review. No invocation bypass fix is claimed.
 
-`git cherry` found no patch-equivalent changes in the earlier inventory. Final diff review and dispositions remain IN PROGRESS.
+The earlier `git cherry` pass found no patch-equivalent changes. Later per-commit path comparisons identified the no-op groups above. Selected integration work and final diff review remain IN PROGRESS.
 
-## Broad inventory refresh
+## Fetch and feedback records
 
-The coordinator reports a refresh at `2026-10-05T02:20:13Z` with 1,157 refs and 1,103 PR records. This report contains no per-ref SHA list or final feedback state. Final PR status remains NOT VERIFIED and needs a fresh query.
+At `2026-10-05 02:20:13 UTC`, the branch auditor fetched all branch and pull request heads. Git reported 1,157 new refs. A paginated all-state PR query returned 1,103 records. The auditor verified heads with paginated API filters and `git ls-remote`. No raw transcript was saved.
 
-## Fetch record
+```sh
+git fetch origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/origin/pr/*'
+gh api --paginate 'repos/jackin-project/jackin/pulls?state=all&per_page=100' --jq '.[].number' | wc -l
+```
+
+At `2026-10-05 02:39:20 UTC`, the open-PR feedback refresh found exactly #1111 and #1108. It found zero reviews, comments, and review threads for both.
+
+### Later targeted fetch
 
 - Command time: `2026-10-05T02:29:52+02:00`.
 - Command result: exit code `0`; stdout was `ok fetched`.
-- Evidence pointer: this subsection records the command result. The following ref snapshot records the local refs.
+- Evidence pointer: the following ref snapshot records the local refs.
 - A separate shell transcript was not saved.
-- The earlier API comparison came from the branch owner. This refresh did not query the API.
+- This later targeted fetch did not query the API.
 
 ```sh
 git fetch --no-prune --no-tags --no-write-fetch-head origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/1111/head:refs/codex-inspection/pr/1111/head' '+refs/pull/1108/head:refs/codex-inspection/pr/1108/head'
@@ -127,10 +220,10 @@ The ref snapshot command was `git for-each-ref --format='%(objectname) %(refname
 34c32ca31e58b5e3dac71e88892778568f6f70d1 refs/remotes/origin/refactor/build-split
 ```
 
-Fetch status: PASS for ref synchronization only. Do not treat it as API verification, diff approval, or merge approval.
+Fetch status: PASS for ref synchronization only. The earlier branch auditor also compared PR heads against paginated API filters and `git ls-remote`. Neither result approves a diff or a merge.
 
 ## Owner
 
-`branches` completed inventory. It owns full diff review and dispositions. Keep this section IN PROGRESS until that work finishes.
+`branches` completed the source disposition matrix. Selected integration and dependency gates remain IN PROGRESS. This record does not approve whole-branch integration or merging.
 
 See the [checklist](checklist.md) and [reviews](reviews.md).
