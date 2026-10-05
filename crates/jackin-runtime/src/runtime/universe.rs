@@ -677,7 +677,7 @@ pub(super) async fn observe_exit(
             )),
         };
         match attempt {
-            Ok(ExitClaimAttempt::Reobserve) => continue,
+            Ok(ExitClaimAttempt::Reobserve) => {}
             Ok(ExitClaimAttempt::Complete(claim)) => return Ok((running, claim)),
             Err(_) => {
                 record_exit_claim_recovery();
