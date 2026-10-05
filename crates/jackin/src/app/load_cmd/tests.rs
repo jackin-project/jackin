@@ -175,6 +175,7 @@ fn dry_run_json_carries_the_resolved_image_decision_and_published_image() {
         "claude",
         None,
         false,
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let data = &plan["data"];
@@ -202,6 +203,7 @@ fn dry_run_json_keeps_every_pre_existing_key() {
         "codex",
         Some("feat/my-pr"),
         true,
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let data = &plan["data"];
@@ -212,6 +214,8 @@ fn dry_run_json_keeps_every_pre_existing_key() {
         "role_branch",
         "agent",
         "rebuild",
+        "model_override",
+        "effort",
         "mounts",
         "image_decision",
         "published_image",
@@ -224,6 +228,8 @@ fn dry_run_json_keeps_every_pre_existing_key() {
     assert_eq!(data["agent"], "codex");
     assert_eq!(data["role_branch"], "feat/my-pr");
     assert_eq!(data["rebuild"], true);
+    assert!(data["model_override"].is_null());
+    assert!(data["effort"].is_null());
     assert_eq!(
         data["mounts"][0]["container_dest"],
         "/workspace/big-monorepo"
@@ -243,6 +249,7 @@ fn a_role_without_a_published_image_reports_it_as_null_not_missing() {
         "claude",
         None,
         false,
+        super::DryRunLaunchOverrides::default(),
         &image_plan,
     );
     let data = &plan["data"];
@@ -373,6 +380,7 @@ fn dry_run_json_emits_the_model_pin_at_top_level_and_per_instance() {
         "claude",
         None,
         false,
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let identity = jackin_runtime::runtime::DryRunIdentity {
@@ -409,6 +417,7 @@ fn dry_run_json_reports_an_absent_model_pin_as_null_not_missing() {
         "codex",
         None,
         false,
+        super::DryRunLaunchOverrides::default(),
         &dry_run_image_plan(),
     );
     let identity = jackin_runtime::runtime::DryRunIdentity {
@@ -420,4 +429,43 @@ fn dry_run_json_reports_an_absent_model_pin_as_null_not_missing() {
     let data = &plan["data"];
     assert!(data["model"].is_null());
     assert!(data["instances"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+fn dry_run_json_reports_explicit_model_and_effort_overrides() {
+    let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
+    let plan = super::dry_run_plan_json(
+        &selector,
+        &dry_run_workspace(),
+        "codex",
+        None,
+        false,
+        super::DryRunLaunchOverrides {
+            model: Some("provider/model-id"),
+            effort: Some(jackin_core::ReasoningEffort::Max),
+        },
+        &dry_run_image_plan(),
+    );
+    assert_eq!(plan["data"]["model_override"], "provider/model-id");
+    assert_eq!(plan["data"]["effort"], "max");
+}
+
+#[test]
+fn normal_load_dispatch_preserves_absent_model_and_effort_defaults() {
+    let mut options = jackin_runtime::runtime::LoadOptions::for_load(false, false);
+    super::apply_load_model_effort(&mut options, None, None);
+    assert_eq!(options.model, None);
+    assert_eq!(options.effort, None);
+}
+
+#[test]
+fn normal_load_dispatch_forwards_model_and_effort_overrides() {
+    let mut options = jackin_runtime::runtime::LoadOptions::for_load(false, false);
+    super::apply_load_model_effort(
+        &mut options,
+        Some("provider/model-id".to_owned()),
+        Some(jackin_core::ReasoningEffort::High),
+    );
+    assert_eq!(options.model.as_deref(), Some("provider/model-id"));
+    assert_eq!(options.effort, Some(jackin_core::ReasoningEffort::High));
 }
