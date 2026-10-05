@@ -103,9 +103,12 @@ final class PresentationStoreTests: XCTestCase {
             let codexAccount = fixture.accounts.first(where: {
                 $0.surfaceId == "codex" && $0.selected
             }),
-            let claudeAccount = fixture.accounts.first(where: { $0.surfaceId == "claude" })
+            let claudeAccount = fixture.accounts.first(where: { $0.surfaceId == "claude" }),
+            let claudeSibling = fixture.accounts.first(where: {
+                $0.surfaceId == "claude" && $0.id != claudeAccount.id
+            })
         else {
-            return XCTFail("catalog fixture is missing a selected Codex or Claude account")
+            return XCTFail("catalog fixture is missing expected Codex or Claude accounts")
         }
         // Claude's selected account is absent from this projection while the
         // active Codex account remains present. Other providers must not clear
@@ -128,9 +131,10 @@ final class PresentationStoreTests: XCTestCase {
         )
 
         XCTAssertFalse(store.accounts.contains { $0.id == claudeAccount.id })
-        XCTAssertTrue(
-            store.providerGroups.first(where: { $0.surfaceId == "claude" })?.accounts.isEmpty
-                == true
+        XCTAssertTrue(store.accounts.contains { $0.id == claudeSibling.id })
+        XCTAssertEqual(
+            store.providerGroups.first(where: { $0.surfaceId == "claude" })?.accounts.map(\.id),
+            [claudeSibling.id]
         )
         XCTAssertEqual(store.usageSelection, "codex")
         XCTAssertEqual(store.usageAccountSelection, codexAccount.accountKey)
