@@ -1764,7 +1764,7 @@ fn renderer_op_ref_with_malformed_path_renders_repick_placeholder_no_panic() {
         .insert((SecretsScopeTag::Workspace, "TOKEN".into()));
 
     let dump = render_to_dump_wide(&editor);
-    // Malformed path → parse_path_breadcrumb returns None → no [op] marker.
+    // Malformed breadcrumb → the shared core parser rejects it → no [op] marker.
     assert!(!dump.contains("[op]"), "no [op] marker; dump:\n{dump}");
     // Re-pick placeholder must be shown instead of the UUID URI.
     assert!(

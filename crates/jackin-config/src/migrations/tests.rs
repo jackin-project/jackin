@@ -886,6 +886,32 @@ breadcrumb = { version = 2, value = "Vault/Item/Field" }
 
     let error = migrate_workspace_file_if_needed(&path).unwrap_err();
 
-    assert!(error.to_string().contains("version 2"));
+    assert!(
+        error
+            .to_string()
+            .contains("strict environment-value schema")
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), original);
+}
+
+#[test]
+fn migration_rejects_unknown_versioned_breadcrumb_fields_without_stamping() {
+    let original = r#"version = "v1alpha10"
+
+[env.TOKEN]
+op = "op://vault-id/item-id/field-id"
+breadcrumb = { version = 1, value = "Vault/Item/Field", extra = "x" }
+"#;
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("workspace.toml");
+    std::fs::write(&path, original).unwrap();
+
+    let error = migrate_workspace_file_if_needed(&path).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("strict environment-value schema")
+    );
     assert_eq!(std::fs::read_to_string(path).unwrap(), original);
 }

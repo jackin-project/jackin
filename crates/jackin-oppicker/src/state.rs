@@ -17,9 +17,9 @@ use crate::{
     FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerAccount, OpPickerCache, OpPickerField,
     OpPickerFieldRef, OpPickerItem, OpPickerItemRef, OpPickerLoadRequest, OpPickerLoadResult,
     OpPickerMode, OpPickerPendingLoad, OpPickerStage, OpPickerVault, OpPickerVaultRef, OpSection,
-    build_op_picker_ref_with_section, field_display_rows_for_picker, filtered_accounts,
-    filtered_fields, filtered_item_choices, filtered_items, filtered_vaults,
-    naming_stage_input_for_stage, section_label_for_id, selected_account_id,
+    build_op_picker_ref, field_display_rows_for_picker, filtered_accounts, filtered_fields,
+    filtered_item_choices, filtered_items, filtered_vaults, naming_stage_input_for_stage,
+    section_label_for_id, selected_account_id,
 };
 
 /// Concrete load-result type for the op picker (all four payload variants
@@ -203,7 +203,7 @@ impl OpPickerState {
             .as_ref()
             .expect("item must be selected before commit");
 
-        let built = build_op_picker_ref_with_section(
+        let built = build_op_picker_ref(
             OpPickerVaultRef {
                 id: &vault.id,
                 name: &vault.name,

@@ -411,14 +411,7 @@ fn migrate_op_ref_value(table: &mut dyn toml_edit::TableLike) -> crate::ConfigRe
             );
             Ok(())
         }
-        (None, true) => {
-            let Some(reference) = table.get("op").and_then(toml_edit::Item::as_str) else {
-                return Err(ConfigError::msg(format_args!(
-                    "versioned OpRef breadcrumb requires a string `op` URI"
-                )));
-            };
-            validate_versioned_op_breadcrumb(table, reference)
-        }
+        (None, true) => validate_versioned_op_breadcrumb(table),
         (None, false) => Err(ConfigError::msg(format_args!(
             "OpRef is missing both legacy `path` and versioned `breadcrumb` fields"
         ))),
@@ -428,42 +421,32 @@ fn migrate_op_ref_value(table: &mut dyn toml_edit::TableLike) -> crate::ConfigRe
 /// Validate already-versioned data before the migration stamps a new schema.
 /// A malformed breadcrumb must not be written successfully and then fail only
 /// when the strict `EnvValue` deserializer reads the file on the next load.
-fn validate_versioned_op_breadcrumb(
-    table: &dyn toml_edit::TableLike,
-    reference: &str,
-) -> crate::ConfigResult<()> {
-    let Some(reference_parts) = jackin_core::parse_op_reference(reference) else {
+fn validate_versioned_op_breadcrumb(table: &dyn toml_edit::TableLike) -> crate::ConfigResult<()> {
+    // Use the canonical strict runtime schema here instead of maintaining a
+    // second list of OpRef/breadcrumb keys and value types in the migrator.
+    // This also ensures an unknown key is rejected before the file is stamped
+    // current and later becomes unreadable by EnvValue's deny_unknown_fields.
+    let mut document = toml_edit::DocumentMut::new();
+    for (key, item) in table.iter() {
+        document.as_table_mut().insert(key, item.clone());
+    }
+    let decoded: jackin_core::EnvValue = toml_edit::de::from_document(document).map_err(|_| {
+        ConfigError::msg(format_args!(
+            "versioned OpRef does not match the strict environment-value schema"
+        ))
+    })?;
+    let jackin_core::EnvValue::OpRef(op_ref) = decoded else {
+        return Err(ConfigError::msg(format_args!(
+            "versioned OpRef does not match the strict environment-value schema"
+        )));
+    };
+
+    let Some(reference_parts) = jackin_core::parse_op_reference(&op_ref.op) else {
         return Err(ConfigError::msg(format_args!(
             "versioned OpRef `op` must be a valid 3/4-segment op:// URI"
         )));
     };
-    let Some(breadcrumb) = table
-        .get("breadcrumb")
-        .and_then(toml_edit::Item::as_table_like)
-    else {
-        return Err(ConfigError::msg(format_args!(
-            "versioned OpRef breadcrumb must be a table"
-        )));
-    };
-    let Some(version) = breadcrumb
-        .get("version")
-        .and_then(toml_edit::Item::as_integer)
-    else {
-        return Err(ConfigError::msg(format_args!(
-            "versioned OpRef breadcrumb requires an integer version"
-        )));
-    };
-    if version != 1 {
-        return Err(ConfigError::msg(format_args!(
-            "unsupported OpRef breadcrumb version {version}; expected 1"
-        )));
-    }
-    let Some(path) = breadcrumb.get("value").and_then(toml_edit::Item::as_str) else {
-        return Err(ConfigError::msg(format_args!(
-            "versioned OpRef breadcrumb requires a string value"
-        )));
-    };
-    let Some(path_parts) = jackin_core::parse_op_breadcrumb_path(path) else {
+    let Some(path_parts) = jackin_core::parse_op_breadcrumb_path(&op_ref.path) else {
         return Err(ConfigError::msg(format_args!(
             "versioned OpRef breadcrumb value is not a valid v1 escaped path"
         )));
@@ -474,7 +457,7 @@ fn validate_versioned_op_breadcrumb(
         )));
     }
     if let Some(path_query) = path_parts.attribute_query.as_deref() {
-        let reference_query = reference.split_once('?').map(|(_, query)| query);
+        let reference_query = op_ref.op.split_once('?').map(|(_, query)| query);
         if reference_query != path_query.strip_prefix('?') {
             return Err(ConfigError::msg(format_args!(
                 "OpRef breadcrumb query suffix does not match its op:// URI"
