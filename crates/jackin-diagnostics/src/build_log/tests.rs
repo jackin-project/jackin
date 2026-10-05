@@ -74,13 +74,49 @@ fn direct_line_push_is_redacted_before_snapshot() {
 fn direct_multiline_push_redacts_buildkit_prefixed_blocks() {
     let _guard = TEST_LOCK.lock().unwrap();
     begin();
-    push_line(
-        "#7 0.1 api_key: |\n#7 0.2   direct-buildkit-canary\n#7 0.3 visible record",
-    );
+    push_line("#7 0.1 api_key: |\n#7 0.2   direct-buildkit-canary\n#7 0.3 visible record");
     let lines = snapshot();
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains("<redacted>"));
     assert!(lines[0].contains("#7 0.3 visible record"));
     assert!(!lines[0].contains("direct-buildkit-canary"));
+    end();
+}
+
+#[test]
+fn separate_push_line_calls_keep_secret_context_between_snapshots() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    begin();
+
+    push_line("#7 0.1 token = \"\"\"");
+    let header = snapshot().join("\n");
+    assert!(header.contains("<redacted>"));
+    assert!(!header.contains("canary"));
+
+    push_line("#7 0.2 split-canary");
+    let during = snapshot().join("\n");
+    assert!(!during.contains("split-canary"));
+
+    push_line("#7 0.3 \"\"\"");
+    assert!(!snapshot().join("\n").contains("split-canary"));
+    push_line("#7 0.4 visible-record");
+    assert!(snapshot().join("\n").contains("visible-record"));
+
+    end();
+}
+
+#[test]
+fn capture_end_resets_open_context_before_later_sink_calls() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    begin();
+    push_line("#7 0.1 token = \"\"\"");
+    end();
+
+    push_line("#7 0.2 visible-after-end");
+    assert!(snapshot().join("\n").contains("visible-after-end"));
+
+    begin();
+    push_line("#7 0.3 visible-after-begin");
+    assert_eq!(snapshot(), vec!["#7 0.3 visible-after-begin"]);
     end();
 }
