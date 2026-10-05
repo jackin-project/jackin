@@ -323,3 +323,11 @@ All final reviews are NOT STARTED. Each review requires final commits and comple
 | Runtime performance | `architect_schema_review` (Sol/medium) | `architect_contract` and `debian_codex_route` | NOT STARTED; wait for role restart and host account recheck at final heads. |
 
 See [checklist](checklist.md), [build results](build-results.md), and [Debian results](debian-results.md).
+
+## DCO-signed history replacement
+
+The original task branch `refactor/build-split` remains frozen at `73ea2117b8e584c64dec92242271a86149a53125`; its DCO check reported ACTION REQUIRED. A replacement branch `refactor/build-split-dco` was created from the same main base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. It replays the original 60 commits in order with `-x`, adding `-s` only to the 39 Codex-authored commits that lacked a matching sign-off. The 21 commits with valid existing sign-offs retain them. No author identity or original content was rewritten.
+
+Independent Sol review by `model_policy_audit` verified each old/new commit pair's tree, author, date, linear parent, and source-attribution trailer. Every commit tree matches its source, and the replacement final tree `9eebc07e80d91f2d29cc9d975b78a53ca4198b3b` exactly matches old head `73ea2117b8e584c64dec92242271a86149a53125`. The exact private mapping packet is `/root/.velnor-work/jackin-dco-replay-20261005/replay-evidence.md`, SHA-256 `4a027a6e1d354e91229e70959eab93827b809f875214767ad29d3da86585a923`, mode `0400`. The reviewer did not independently witness historical push receipts or pre-replay dirty-file hashes; those remain owner-recorded preservation evidence.
+
+Replacement PR [#1113](https://github.com/jackin-project/jackin/pull/1113) was opened as a draft at head `7b6ea934490b6ef0d867a43def527e29caa3b63f`. Its DCO-2 check passed. Its first run `37289881948` failed Plan because pinned Velnor `0.1.0` rejects the configured `tasks` field; Required failed as a consequence and Rust jobs were skipped. This validates the sign-off remediation only; it does not establish source tests, generated-workflow correctness, or merge readiness. PR #1112 remains open until the replacement destination and its applicable gates are verified.

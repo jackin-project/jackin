@@ -363,3 +363,9 @@ Fetch status: PASS for ref synchronization only. The earlier branch auditor also
 `branches` recorded the inventory and source dispositions. Exhaustive path accounting and fixing dependencies remain IN PROGRESS. This record does not approve whole-branch integration or merging.
 
 See the [checklist](checklist.md) and [reviews](reviews.md).
+
+## DCO replay destination
+
+The former task ref `refactor/build-split` is frozen at `73ea2117b8e584c64dec92242271a86149a53125`. Its DCO failure was addressed on the new ref `refactor/build-split-dco`, head `7b6ea934490b6ef0d867a43def527e29caa3b63f`, without force-pushing or changing the old branch. The replay contains 60 replacement commits in source order and has the same final tree `9eebc07e80d91f2d29cc9d975b78a53ca4198b3b`.
+
+Replacement PR [#1113](https://github.com/jackin-project/jackin/pull/1113) is open and draft against main `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. Run `37289881948` at that head has DCO-2 and Actionlint PASS; Plan and Required FAIL because the pinned Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks`; 25 Rust jobs and Publish baseline were skipped. The failure is a generator-version/configuration gate, not a Rust test result. #1112 remains open pending verification of the replacement destination. At the refresh, both PRs had zero formal reviews and zero review threads; #1112 also had zero inline and issue comments. Re-fetch checks and feedback after any head change.

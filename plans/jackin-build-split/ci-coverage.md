@@ -107,6 +107,14 @@ The exact source has not passed Cargo tests, Clippy, generated migration-golden 
 
 PR #1112 can proceed as soon as its own source, generated workflow, feedback, and required checks pass. It need not wait for separate live Architect-role testing, host account discovery, or the post-integration performance baseline. Record those follow-ups after the merge without treating them as PR-specific check results.
 
+### DCO-signed replacement PR #1113
+
+At `2026-10-05 09:27 UTC`, PR #1113 is open and draft at head `7b6ea934490b6ef0d867a43def527e29caa3b63f`, based on main `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. It replaces the DCO-invalid history of #1112 without changing the final tree. The independent replay review verified all 60 old/new commit pairs and the shared final tree `9eebc07e80d91f2d29cc9d975b78a53ca4198b3b`; 39 Codex-authored commits have matching sign-offs, and 21 existing valid sign-offs remain. See [DCO replay review](reviews.md#dco-signed-history-replacement).
+
+The old #1112 head `73ea2117b8e584c64dec92242271a86149a53125` remains open and frozen as the source destination. Its latest refreshed run `37288558605` had Actionlint PASS, Plan and Required FAIL, 25 Rust jobs SKIPPED, Publish baseline SKIPPED, and DCO ACTION REQUIRED. Paginated REST and GraphQL refreshes found zero inline comments, reviews, issue comments, or review threads.
+
+Replacement run `37289881948` completed on `7b6ea934490b6ef0d867a43def527e29caa3b63f`. DCO-2 and Actionlint passed. Plan failed because acquired Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks` as `unknown_config_field`; no plan artifact was produced. Required failed while merging reports, all 25 Rust jobs were skipped, and Publish baseline was skipped. The current Velnor task schema is not yet available through the pinned release. The replacement PR has no reviews, inline comments, issue comments, or review threads at this refresh. These results are not Rust test or compile results. Any later docs commit changes the head and requires a new exact-head check refresh.
+
 ## Task invocation gate
 
 At Jackin base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, the `mise.toml` build, test, and lint root tasks call `cargo xtask` directly.
