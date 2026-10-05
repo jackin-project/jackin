@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
+use quick_xml::{XmlVersion, events::Event, reader::Reader};
 
 use crate::cmd;
 use crate::docs;
@@ -223,11 +224,11 @@ fn run_desktop_tests(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `SwiftPM` unit tests with a count proof. `SwiftPM` writes xUnit only for
-/// Swift Testing tests (`<name>-swift-testing.xml`); `XCTest` totals come from
-/// the runner's `All tests` summary line in the captured log. Both halves
-/// must be present and nonzero — a mistyped selector, crashed runner, or
-/// missing report can never look green.
+/// `SwiftPM` unit tests with a count proof. Parallel XCTest writes the
+/// aggregate xUnit report at `swift-unit-tests.xml`; Swift Testing writes its
+/// separate `swift-unit-tests-swift-testing.xml` report. Both reports must be
+/// present and nonzero — a mistyped selector, crashed runner, or missing
+/// report can never look green.
 fn run_swift_unit_tests(root: &Path, jobs: usize) -> Result<()> {
     require_macos("desktop test-swift")?;
     let native = root.join("native");
@@ -262,38 +263,11 @@ fn run_swift_unit_tests(root: &Path, jobs: usize) -> Result<()> {
         run?;
     }
 
-    let log_text = fs::read_to_string(&log)
-        .with_context(|| format!("missing captured swift test log {}", log.display()))?;
-    let xctest = parse_xctest_summary(&log_text)?;
-    if xctest.tests == 0 {
-        bail!("XCTest executed zero tests — refusing the false-green selection trap");
-    }
-    if xctest.failures > 0 {
-        bail!(
-            "XCTest reported {} failures across {} tests",
-            xctest.failures,
-            xctest.tests
-        );
-    }
+    let xctest = read_xunit_totals(&xunit_base, "XCTest")?;
+    validate_test_totals("XCTest", &xctest)?;
 
-    let swift_testing_text = fs::read_to_string(&swift_testing_report).with_context(|| {
-        format!(
-            "missing Swift Testing xUnit report {}; the package declares swift-testing tests, so its absence is corruption",
-            swift_testing_report.display()
-        )
-    })?;
-    let swift_testing = parse_xunit_totals(&swift_testing_text)?;
-    if swift_testing.tests == 0 {
-        bail!("Swift Testing executed zero tests — refusing the false-green selection trap");
-    }
-    if swift_testing.failures > 0 || swift_testing.errors > 0 {
-        bail!(
-            "Swift Testing reported {} failures and {} errors across {} tests",
-            swift_testing.failures,
-            swift_testing.errors,
-            swift_testing.tests
-        );
-    }
+    let swift_testing = read_xunit_totals(&swift_testing_report, "Swift Testing")?;
+    validate_test_totals("Swift Testing", &swift_testing)?;
 
     progress(format!(
         "==> swift unit tests OK: {} XCTest + {} Swift Testing executed, 0 failures",
@@ -334,43 +308,14 @@ fn swift_test_args(jobs: usize, xunit_report: &Path) -> Result<Vec<String>> {
         "--parallel".to_owned(),
         "--num-workers".to_owned(),
         jobs.to_string(),
+        "--experimental-maximum-parallelization-width".to_owned(),
+        jobs.to_string(),
         "--xunit-output".to_owned(),
         xunit_report
             .to_str()
             .context("xunit path utf-8")?
             .to_owned(),
     ])
-}
-
-/// Extract the final `XCTest` `All tests` summary from captured runner output.
-/// Missing or malformed summary lines are corruption, never zero.
-fn parse_xctest_summary(log: &str) -> Result<XunitTotals> {
-    let mut totals: Option<XunitTotals> = None;
-    let mut in_all_tests = false;
-    for line in log.lines() {
-        if line.contains("Test Suite 'All tests'") {
-            in_all_tests = true;
-            continue;
-        }
-        if in_all_tests && line.contains("Executed ") {
-            let numbers: Vec<u64> = line
-                .split(|c: char| !c.is_ascii_digit())
-                .filter(|part| !part.is_empty())
-                .filter_map(|part| part.parse().ok())
-                .collect();
-            // `Executed N tests, with M failures (K unexpected) in X (Y) seconds`
-            let (Some(&tests), Some(&failures)) = (numbers.first(), numbers.get(1)) else {
-                bail!("corrupt XCTest summary line: {line}");
-            };
-            totals = Some(XunitTotals {
-                tests,
-                failures,
-                errors: 0,
-            });
-            in_all_tests = false;
-        }
-    }
-    totals.context("corrupt swift test log: no 'All tests' XCTest summary found")
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -383,44 +328,94 @@ struct XunitTotals {
 /// Sum `tests`/`failures`/`errors` across every `<testsuite>` element.
 /// Missing elements or attributes are corruption, never zero.
 fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
-    fn attr_u64(tag: &str, name: &str) -> Result<u64> {
-        let needle = format!("{name}=\"");
-        let start = tag
-            .find(&needle)
-            .with_context(|| format!("corrupt xUnit: testsuite missing {name} attribute"))?
-            + needle.len();
-        let rest = &tag[start..];
-        let end = rest
-            .find('"')
-            .context("corrupt xUnit: unterminated attribute")?;
-        rest[..end]
-            .parse()
-            .with_context(|| format!("corrupt xUnit: non-numeric {name} attribute"))
-    }
-
+    let mut reader = Reader::from_str(source);
     let mut totals = XunitTotals {
         tests: 0,
         failures: 0,
         errors: 0,
     };
     let mut suites = 0_u64;
-    let mut rest = source;
-    while let Some(index) = rest.find("<testsuite ") {
-        rest = &rest[index + "<testsuite ".len()..];
-        let end = rest
-            .find('>')
-            .context("corrupt xUnit: unterminated testsuite tag")?;
-        let tag = &rest[..end];
-        totals.tests += attr_u64(tag, "tests")?;
-        totals.failures += attr_u64(tag, "failures")?;
-        totals.errors += attr_u64(tag, "errors")?;
-        suites += 1;
-        rest = &rest[end..];
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element) | Event::Empty(element))
+                if element.name().as_ref() == b"testsuite" =>
+            {
+                let mut suite = XunitTotals {
+                    tests: 0,
+                    failures: 0,
+                    errors: 0,
+                };
+                let mut found_tests = false;
+                let mut found_failures = false;
+                let mut found_errors = false;
+                for attribute in element.attributes() {
+                    let attribute = attribute.context("parsing xUnit testsuite attribute")?;
+                    let value = attribute
+                        .decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
+                        .context("decoding xUnit testsuite attribute")?;
+                    let (slot, found) = match attribute.key.as_ref() {
+                        b"tests" => (&mut suite.tests, &mut found_tests),
+                        b"failures" => (&mut suite.failures, &mut found_failures),
+                        b"errors" => (&mut suite.errors, &mut found_errors),
+                        _ => continue,
+                    };
+                    *slot = value.parse().with_context(|| {
+                        format!(
+                            "corrupt xUnit: non-numeric {} attribute",
+                            String::from_utf8_lossy(attribute.key.as_ref())
+                        )
+                    })?;
+                    *found = true;
+                }
+                anyhow::ensure!(
+                    found_tests && found_failures && found_errors,
+                    "corrupt xUnit: testsuite must have tests, failures, and errors attributes"
+                );
+                totals.tests = totals
+                    .tests
+                    .checked_add(suite.tests)
+                    .context("corrupt xUnit: tests total overflow")?;
+                totals.failures = totals
+                    .failures
+                    .checked_add(suite.failures)
+                    .context("corrupt xUnit: failures total overflow")?;
+                totals.errors = totals
+                    .errors
+                    .checked_add(suite.errors)
+                    .context("corrupt xUnit: errors total overflow")?;
+                suites += 1;
+            }
+            Ok(Event::Eof) => break,
+            Ok(_) => {}
+            Err(error) => bail!("corrupt xUnit at byte {}: {error}", reader.error_position()),
+        }
     }
     if suites == 0 {
         bail!("corrupt xUnit: no testsuite elements");
     }
     Ok(totals)
+}
+
+fn read_xunit_totals(path: &Path, framework: &str) -> Result<XunitTotals> {
+    let source = fs::read_to_string(path)
+        .with_context(|| format!("missing {framework} xUnit report {}", path.display()))?;
+    parse_xunit_totals(&source)
+        .with_context(|| format!("invalid {framework} xUnit report {}", path.display()))
+}
+
+fn validate_test_totals(framework: &str, totals: &XunitTotals) -> Result<()> {
+    if totals.tests == 0 {
+        bail!("{framework} executed zero tests — refusing the false-green selection trap");
+    }
+    if totals.failures > 0 || totals.errors > 0 {
+        bail!(
+            "{framework} reported {} failures and {} errors across {} tests",
+            totals.failures,
+            totals.errors,
+            totals.tests
+        );
+    }
+    Ok(())
 }
 
 fn run_app(args: &RunArgs) -> Result<()> {

@@ -1,8 +1,8 @@
 use super::{
     DesktopCommand, MIN_OS, XunitTotals, assert_broker_version, assert_executable_file,
     assert_native_broker_archs, broker_path, minos_matches_target, normalize_generated_text,
-    parse_dwarf_uuid, parse_swift_jobs, parse_xctest_summary, parse_xunit_totals, swift_build_args,
-    swift_test_args, tree_differences, validate_build, validate_version,
+    parse_dwarf_uuid, parse_swift_jobs, parse_xunit_totals, read_xunit_totals, swift_build_args,
+    swift_test_args, tree_differences, validate_build, validate_test_totals, validate_version,
 };
 
 #[test]
@@ -213,12 +213,93 @@ fn xunit_totals_sum_every_testsuite() {
 }
 
 #[test]
-fn xunit_totals_reject_corrupt_reports() {
+fn parallel_xctest_xunit_counts_every_worker_suite() {
+    let source = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+        "<testsuites tests=\"5\" failures=\"0\" errors=\"0\">\n",
+        "  <testsuite name=\"worker-1\" tests=\"2\" failures=\"0\" errors=\"0\"/>\n",
+        "  <testsuite name=\"worker-2\" tests=\"3\" failures=\"0\" errors=\"0\"/>\n",
+        "</testsuites>\n"
+    );
+    let totals = parse_xunit_totals(source).unwrap();
+    assert_eq!(
+        totals,
+        XunitTotals {
+            tests: 5,
+            failures: 0,
+            errors: 0,
+        }
+    );
+    validate_test_totals("XCTest", &totals).unwrap();
+}
+
+#[test]
+fn xunit_totals_reject_corrupt_or_incomplete_reports() {
     parse_xunit_totals("").unwrap_err();
     parse_xunit_totals("<testsuites></testsuites>").unwrap_err();
-    parse_xunit_totals("<testsuite name=\"a\" tests=\"1\">").unwrap_err();
+    parse_xunit_totals(
+        "<testsuites><testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\">",
+    )
+    .unwrap_err();
     parse_xunit_totals("<testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\"")
         .unwrap_err();
+    parse_xunit_totals("<testsuites><testsuite name=\"a\" tests=\"1\" errors=\"0\"/></testsuites>")
+        .unwrap_err();
+    parse_xunit_totals(
+        "<testsuites><testsuite name=\"a\" tests=\"many\" failures=\"0\" errors=\"0\"/></testsuites>",
+    )
+        .unwrap_err();
+    parse_xunit_totals(
+        "<testsuites><testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\"></testsuites>",
+    )
+    .unwrap_err();
+}
+
+#[test]
+fn xunit_counts_failures_and_errors_and_rejects_zero_tests() {
+    let failures = parse_xunit_totals(
+        "<testsuites><testsuite name=\"xctest\" tests=\"3\" failures=\"1\" errors=\"0\"/></testsuites>",
+    )
+    .unwrap();
+    assert!(validate_test_totals("XCTest", &failures).is_err());
+
+    let errors = parse_xunit_totals(
+        "<testsuites><testsuite name=\"swift-testing\" tests=\"2\" failures=\"0\" errors=\"1\"/></testsuites>",
+    )
+    .unwrap();
+    assert!(validate_test_totals("Swift Testing", &errors).is_err());
+
+    let empty = parse_xunit_totals(
+        "<testsuites><testsuite name=\"empty\" tests=\"0\" failures=\"0\" errors=\"0\"/></testsuites>",
+    )
+    .unwrap();
+    assert!(validate_test_totals("Swift Testing", &empty).is_err());
+}
+
+#[test]
+fn report_reader_fails_closed_on_missing_or_invalid_framework_reports() {
+    let temp = tempfile::tempdir().unwrap();
+    let xctest = temp.path().join("swift-unit-tests.xml");
+    assert!(
+        read_xunit_totals(&xctest, "XCTest")
+            .unwrap_err()
+            .to_string()
+            .contains("missing XCTest xUnit report")
+    );
+
+    std::fs::write(&xctest, "<testsuites><testsuite").unwrap();
+    let error = read_xunit_totals(&xctest, "XCTest").unwrap_err();
+    assert!(format!("{error:#}").contains("invalid XCTest xUnit report"));
+}
+
+#[test]
+fn swift_testing_xunit_is_a_separate_required_counted_report() {
+    let report = parse_xunit_totals(
+        "<testsuites><testsuite name=\"ProjectBaselineTests\" tests=\"2\" failures=\"0\" errors=\"0\"/></testsuites>",
+    )
+    .unwrap();
+    assert_eq!(report.tests, 2);
+    validate_test_totals("Swift Testing", &report).unwrap();
 }
 
 #[test]
@@ -273,6 +354,8 @@ fn swiftpm_build_and_test_arguments_share_a_bounded_worker_limit() {
             "--parallel",
             "--num-workers",
             "3",
+            "--experimental-maximum-parallelization-width",
+            "3",
             "--xunit-output",
             "/tmp/native package/tests.xml",
         ]
@@ -282,37 +365,6 @@ fn swiftpm_build_and_test_arguments_share_a_bounded_worker_limit() {
     );
     assert!(swift_build_args(0).is_err());
     assert!(swift_test_args(9, std::path::Path::new("tests.xml")).is_err());
-}
-
-#[test]
-fn xctest_summary_reads_last_all_tests_block() {
-    let log = concat!(
-        "Test Suite 'PlatformLaneTests' started\n",
-        "\t Executed 3 tests, with 0 failures (0 unexpected) in 0.012 (0.013) seconds\n",
-        "Test Suite 'All tests' passed at 2026-08-20 10:00:00.000\n",
-        "\t Executed 71 tests, with 0 failures (0 unexpected) in 2.733 (2.738) seconds\n"
-    );
-    assert_eq!(
-        parse_xctest_summary(log).unwrap(),
-        XunitTotals {
-            tests: 71,
-            failures: 0,
-            errors: 0,
-        }
-    );
-}
-
-#[test]
-fn xctest_summary_rejects_missing_or_truncated_block() {
-    parse_xctest_summary("nothing here").unwrap_err();
-    // 'All tests' header without the following Executed line = crashed runner.
-    parse_xctest_summary("Test Suite 'All tests' started\n").unwrap_err();
-    // Executed line without parseable numbers is corruption, never zero.
-    let log = concat!(
-        "Test Suite 'All tests' passed\n",
-        "\t Executed many tests, with no failures\n"
-    );
-    parse_xctest_summary(log).unwrap_err();
 }
 
 fn repo_text(relative: &str) -> String {
