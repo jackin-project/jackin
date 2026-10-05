@@ -25,6 +25,23 @@ It identifies no dependent workspace crate for that target. It has not ranked si
 
 Do not treat this candidate as approved. Record measured dependencies and build effects after the baseline and extraction runs.
 
+## Interface requirements
+
+The extraction review must map each interface to its current consumer, contract, and verification command.
+
+| Interface | Status | Required record |
+|---|---|---|
+| CLI | IN PROGRESS | Commands, arguments, output, and binary consumers. |
+| Account discovery | IN PROGRESS | Host inputs, account selection, and consumers. |
+| Authentication | IN PROGRESS | Credential boundaries, inputs, and consumers. |
+| Launch | IN PROGRESS | Role inputs, launch outputs, and runtime consumers. |
+| Console and TUI | IN PROGRESS | Entry points, host services, and consumers. |
+| Storage | IN PROGRESS | Schemas, migrations, and read/write consumers. |
+| FFI and native targets | IN PROGRESS | Native targets, toolchains, and linking consumers. |
+| Release | IN PROGRESS | Release artifacts, signing boundary, and downstream consumers. |
+
+The workspace manifest identifies four binary targets in the `jackin` package: `jackin`, `jackin-role`, `jackin-usage-broker`, and `build-jackin-capsule`. Verify each target after extraction. No dependent workspace crate was identified for the candidate target in the static review. Confirm that result during the complete consumer inventory.
+
 ## Architect and account route
 
 - The Architect role repository is `jackin-project/jackin-the-architect`, at reported main SHA `2cf461e2fed1b95d9fd1e7ba74c10d4d8b1c685d`.

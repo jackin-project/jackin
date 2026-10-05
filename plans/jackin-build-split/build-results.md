@@ -16,12 +16,26 @@ These facts do not establish a build duration or cache hit.
 
 ## Required measurements
 
-| Measurement | Status | Reason |
+Every comparable build scenario requires at least three repetitions. Report median, minimum, maximum, peak memory when measurable, timing output, and MBX cache hits, misses, and bypasses. Record object provenance for every MBX run.
+
+### Scenario matrix
+
+| Scenario | Status | Reason |
 |---|---|---|
-| Initial `jackin` build baseline | NOT RUN | Build execution is outside this checkpoint. |
-| Second baseline before extraction | NOT RUN | No source extraction exists. |
-| MBX activity and object provenance | NOT RUN | No compilation ran. |
-| Post-split comparison | NOT RUN | No implementation change exists. |
+| Empty target with an isolated empty MBX store | NOT RUN | Security review gates compilation. |
+| Fresh target with a warm MBX store | NOT RUN | Security review gates compilation. |
+| Unchanged source with an existing target | NOT RUN | Security review gates compilation. |
+| Private change in one small crate | NOT RUN | Extraction and security review are pending. |
+| Shared account-types change | NOT RUN | Extraction and security review are pending. |
+| Codex discovery or authentication change | NOT RUN | Extraction and security review are pending. |
+| Usage-provider change | NOT RUN | Extraction and security review are pending. |
+| CLI or Console change | NOT RUN | Extraction and security review are pending. |
+| Focused tests for the changed crate | NOT RUN | Tests are outside this checkpoint. |
+| Workspace verification | NOT RUN | Security review gates compilation. |
+| Required release build | NOT RUN | Release design and security review are pending. |
+| Two consecutive compatible CI runs | NOT RUN | Coverage review and implementation remain pending. |
+
+Do not set numeric split targets before measurements show build variation. Each scenario above must use the same reporting fields when those fields apply.
 
 The `build_baseline` owner must record commands, elapsed time, resource use, cache state, and output hashes in a later authorized execution phase.
 

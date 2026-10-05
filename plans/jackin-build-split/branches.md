@@ -38,6 +38,63 @@ The fresh fetch below ran after this task branch was pushed. It updated six loca
 
 The PR check and comment results are historical. The latest check and feedback state remain NOT VERIFIED.
 
+### PR #1108 check detail
+
+These results refer to earlier head `2990df17e25f30afca84804d9c402abc1ce00231`. Exact-head Sol review is complete; fixes remain pending.
+
+| Check | Result |
+|---|---|
+| Generated-tree policy | FAIL: collapsed Swift/Apple job members disagree on the Xcode pin. Adding `.xcode-version` did not resolve it. [Failed job](https://github.com/jackin-project/jackin/actions/runs/36701333261/job/109841216417) |
+| `jackin-xtask` Clippy | FAIL: `crates/jackin-xtask/src/ci_evidence/ledger.rs:339` uses `Duration::from_secs(180)`; the lint requires `Duration::from_mins`. Tests and doctests were skipped. [Failed job](https://github.com/jackin-project/jackin/actions/runs/36701335714/job/109841803013) |
+| Rust dependency policy | FAIL: `zlib-rs 0.6.8` uses Zlib, which the Apache-2.0/MIT-only base policy rejects without an operator ruling. [Failed job](https://github.com/jackin-project/jackin/actions/runs/36701335714/job/109841803175) |
+| `ci-required` | Collected 41 of 41 artifacts. It reports the Clippy and `cargo-deny` failures. |
+| Control Required | Mirrors the failed required-check result. |
+| Advisory collector | `ci_evidence/github.rs:867-921` labels a generic workflow failure Product. `ci-evidence.yml:22,38-45` lets dispatch errors continue and missing files warn, so the collector can report green without an artifact. |
+
+The collector issue is advisory evidence. It does not clear the failing required checks. Record final disposition after exact-head Sol review.
+
+### Independent Sol review disposition
+
+The independent source review covered exact PR head `2990df17e25f30afca84804d9c402abc1ce00231`. It does not approve the branch for merge.
+
+| Group | Disposition | Evidence and action |
+|---|---|---|
+| Obsolete generator contract | REJECT | The PR reintroduces `.github-gen/velnor-workflow.toml` and `.github/ci/project.toml`, changes `.github/ci/.github-actions-generator-state`, and deletes `.velnor/config.toml` and current `.github/workflows/ci.yml`. Replace these contracts through current generator ownership. |
+| Old workflow and Xcode registration | REJECT | Reject the PR's generated collector workflow registration and `.xcode-version` restoration. Port useful checks through current workflow ownership. |
+| Bounded child and owned-process behavior | ALREADY PRESENT | Current main `0aa821a088e1bacf3d4d85a4c9faaa67faa85132` has bounded capture and `OwnedChild` in `crates/jackin-process/src/lib.rs:175-181,320-450`. Do not port duplicate process code. |
+| Hook and Clippy fixes | ALREADY PRESENT | Hook predicate and three async-trait lint changes match current main in `crates/jackin-capsule/src/agent_status/hook_installer.rs`, `crates/jackin-capsule/src/exit_assess.rs`, and `crates/jackin-xtask/src/ci/tests.rs`. |
+| Evidence collector and ledger | REPLACE | Port useful collection, provenance, immutable-attempt, atomic-output, and fixture behavior to current workflows and generator contracts. Preserve attribution and current ownership. |
+| Bounded helper | SELECT | Select only a bounded helper that remains useful. Adapt it to main's process API and current owner. |
+| Collector permission and failure reporting | REPLACE | Fix the collector and its validator. Do not broaden global workflow permissions. |
+| Xcode pin intent and dependencies | REPLACE | Recompute dependencies and lockfile for the replacement. Preserve license policy and use supported native workflow ownership. |
+| Workflow display labels | REPLACE | Preserve useful labels in current generated output. |
+
+GitHub reported PR #1108 as conflicting and dirty against current main. Its latest reported run used merge SHA `65ba707` from older base `310e644`. That run does not validate integration with current main.
+
+#### Stdin regression
+
+In the PR source, `crates/jackin-process/src/lib.rs:489-555` waits for a bounded-output child without closing unused child stdin. The unbounded path closes it at `:355-358`. A child such as `cat` can wait for input indefinitely.
+
+Add a one-second regression test. Preserve child exit and signal results. Do not mark the test as run; builds and tests remain outside this documentation task.
+
+#### Artifact permission
+
+The PR collector downloads artifact ZIPs at `crates/jackin-xtask/src/ci_evidence/ledger.rs:336-343`. The generated [.github/workflows/ci-evidence.yml](https://github.com/jackin-project/jackin/blob/2990df17e25f30afca84804d9c402abc1ce00231/.github/workflows/ci-evidence.yml) grants only `contents: read` at lines 10-11. The validator at `crates/jackin-xtask/src/ci_evidence/validation.rs:941-948` rejects additional permission keys.
+
+GitHub's [artifact download endpoint](https://docs.github.com/en/rest/actions/artifacts#download-an-artifact) requires Actions repository permission `read` for fine-grained tokens. No 403 was observed. Add `actions: read` only to the collector workflow and update its validator. Do not change global permissions.
+
+Both collector workflows expose `workflow_dispatch`, but `ci_evidence.rs:444-459` and `producer.rs:16-19` reject dispatch. Their jobs use `continue-on-error`, and artifact upload warns when files are missing. The workflows are absent from current main's default-branch Actions list, so no dispatch run confirmed this behavior.
+
+Remove the unsupported dispatch trigger or emit an explicit inapplicable result. Make missing artifacts an observer failure. Do not make this advisory collector a required merge check.
+
+The classifier in `ci_evidence/github.rs:867-921` labels generic failed conclusions as Product. Such conclusions do not prove product causation. Add an unknown or data-quality category, or provide causal evidence.
+
+#### Task invocation gate
+
+Jackin `mise.toml` build, test, and lint root tasks still call `cargo xtask`. The PR adds `ci-evidence` and `ci-push-head-ledger` tasks that also call `cargo xtask` at `mise.toml:91-97`. Velnor's `VerificationTask` uses `mise run` only for proven non-Rust tasks.
+
+The Rust-MBX variant and Jackin Mise-wrapper integration remain pending design and activation review. No invocation bypass fix is claimed.
+
 `git cherry` found no patch-equivalent changes in the earlier inventory. Final diff review and dispositions remain IN PROGRESS.
 
 ## Fetch record
