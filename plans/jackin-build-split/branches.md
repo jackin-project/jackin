@@ -375,11 +375,11 @@ Replacement PR [#1113](https://github.com/jackin-project/jackin/pull/1113) is op
 
 ## Current DCO task branch snapshot
 
-The active task branch is `refactor/build-split-dco`, based on `main` at `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. Local and remote both resolve to `d1326491e922d8c536add67042325943a1363597`, tree `b16f2fff00ce1e2c8a6f6e2f4f5bc77e9da38556`. The task-record files are being updated separately from source commits.
+The active task branch is `refactor/build-split-dco`, based on `main` at `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. The latest reviewed code snapshot is `0cd9890607d65b6d4e2264acac9303a8b67b561a`, tree `229e4b2d45e0805ee28bb5ff4e06bbefa3a188e1`; it adds formatting-only changes to two image source files after the `d132649` cleanup fix. The following task-record commit is docs-only.
 
-Since `aa0316901eaf3be24a2dc746c40b0a2c1b2168ff`, commits added the MBX wrapper harness and TOML lock edges, then changed Swift reporting/parallelism, cleanup postconditions, XML parsing, and diagnostics redaction. The exact commit sequence is in the task branch history. Source review passed for the `toml_edit` lock edge, Mise version parser, Swift XML parser, diagnostics lifecycle fix, and cleanup parser correction. The first cleanup parser (`89af5ed`) failed review; `d132649` closes that finding with complete fail-closed inventory validation. Tests on current head remain NOT RUN.
+Since `aa0316901eaf3be24a2dc746c40b0a2c1b2168ff`, commits added the MBX wrapper harness and TOML lock edges, then changed Swift reporting/parallelism, cleanup postconditions, XML parsing, diagnostics redaction, and formatting in the image build files. The exact commit sequence is in the task branch history. Source review passed for the `toml_edit` lock edge, Mise version parser, Swift XML parser, diagnostics lifecycle fix, and cleanup parser correction. The first cleanup parser (`89af5ed`) failed review; `d132649` closes that finding with complete fail-closed inventory validation. Targeted rustfmt passes at `0cd9890`; Rust tests on current source remain NOT RUN.
 
-PR #1113 run `37325595138` completed on this exact head. Actionlint and DCO passed. Plan and Required failed because pinned Velnor `0.1.0` rejects `tasks`; all 27 Rust jobs and Publish baseline were skipped. This refresh supersedes the earlier `b80f991` snapshot. See [current PR gates](ci-coverage.md#pr-1113-current-replacement-head).
+PR #1113 run `37326706037` completed on code snapshot `0cd9890607d65b6d4e2264acac9303a8b67b561a`. Actionlint and DCO passed. Plan and Required failed because pinned Velnor `0.1.0` rejects `tasks`; all 27 Rust jobs and Publish baseline were skipped. This refresh supersedes the earlier `d132649` snapshot. The docs-only commit containing this record follows that run. See [current PR gates](ci-coverage.md#pr-1113-current-replacement-head).
 
 ## Recovery inventory v2 closure mechanics
 
