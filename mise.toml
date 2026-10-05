@@ -48,6 +48,13 @@ cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
 lockfile = true
 
+# Keep ordinary Cargo calls routed through MBX, including Cargo subprocesses
+# started by jackin-xtask and boltffi. Rust version selection remains owned by
+# rust-toolchain.toml; MBX has its own independent pinned tool entry above.
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+
 # Construct image tasks. Each delegates to the `jackin-xtask` Rust binary
 # via `cargo xtask construct <sub>`; all task logic lives in Rust, not shell.
 [tasks.construct-init-buildx]

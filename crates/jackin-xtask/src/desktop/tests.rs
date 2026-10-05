@@ -321,6 +321,30 @@ fn cadence_tasks_define_the_canonical_graph() {
 }
 
 #[test]
+fn cargo_wrapper_routes_native_commands_through_mbx() {
+    let mise = repo_text("mise.toml");
+    assert!(
+        mise.contains("[wrappers.cargo]\ncommand = \"mbx\"\nenv = { MBX_CARGO_SHIM_MODE = \"1\" }"),
+        "all Cargo calls must use MBX's transparent Mise shim"
+    );
+    assert!(
+        mise.contains("mr-boxington = \"1.22.0\""),
+        "the transparent wrapper must resolve the locked MBX tool"
+    );
+    assert!(
+        mise.contains("idiomatic_version_file_enable_tools = [\"rust\"]"),
+        "rust-toolchain.toml remains the single Rust version source"
+    );
+
+    let desktop_ci = task_block(&mise, "desktop-ci");
+    assert!(desktop_ci.contains("cargo xtask desktop test-swift"));
+    assert!(
+        !desktop_ci.contains("mbx build"),
+        "do not nest explicit MBX builds inside the transparent Cargo wrapper"
+    );
+}
+
+#[test]
 fn release_workflow_invokes_canonical_mise_tasks() {
     let release = repo_text(".github/workflows/release.yml");
     let mise = repo_text("mise.toml");
