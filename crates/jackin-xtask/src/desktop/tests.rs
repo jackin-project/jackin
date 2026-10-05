@@ -259,13 +259,6 @@ fn repo_text(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
 }
 
-fn repo_text_opt(relative: &str) -> std::io::Result<String> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(relative);
-    std::fs::read_to_string(&path)
-}
-
 fn task_block<'a>(mise: &'a str, name: &str) -> &'a str {
     let marker = format!("[tasks.{name}]\n");
     let start = mise
@@ -329,9 +322,7 @@ fn cadence_tasks_define_the_canonical_graph() {
 
 #[test]
 fn release_workflow_invokes_canonical_mise_tasks() {
-    let Ok(release) = repo_text_opt(".github/workflows/release.yml") else {
-        return;
-    };
+    let release = repo_text(".github/workflows/release.yml");
     let mise = repo_text("mise.toml");
     let release_tools = task_block(&mise, "desktop-release-tools");
     assert!(
@@ -369,9 +360,7 @@ fn release_workflow_invokes_canonical_mise_tasks() {
 
 #[test]
 fn generated_ci_delegates_the_native_lane() {
-    let Ok(ci) = repo_text_opt(".github/workflows/ci-pr.yml") else {
-        return;
-    };
+    let ci = repo_text(".github/workflows/ci-pr.yml");
     assert!(
         ci.contains("ci-unit-swift.yml"),
         "generated ci-pr.yml must dispatch the Swift units to the unit workflow"
