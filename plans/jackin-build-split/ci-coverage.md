@@ -167,3 +167,23 @@ Velnor `main` currently resolves to `4fffbc22ce159305c62ae039668da2a14e2e3366`, 
 ## Native build-task capability
 
 The conditional Sol design review accepts a same-job macOS build-and-test task as the smallest supported capability; no artifact handoff is required. Existing `VerificationTask` jobs remain compile-free. Velnor Git owner reserved an isolated worktree at base `4fffbc22ce159305c62ae039668da2a14e2e3366` for a separate typed build-task contract and renderer. The implementation owner is `velnor_freshness_research`; reserved source and test files are listed in [the implementation review record](reviews.md#native-build-task-capability). Generated `.github/**` files remain owned by Velnor's generator. No source commit, generation, macOS job, or Apple-toolchain test has passed yet.
+
+## PR #1111 exact head and live gates
+
+Read-only refresh on 2026-10-05 found PR #1111 open, draft, and mergeable. Its head is `3a28c199f17da335ecd9abd8dd67ebf1aecc0421`, tree `ad74cbc0b3a69283bce851568222be8f688e3641`; base is `main`. Exact Sol source review calls it a merge candidate. The source archive and packet hashes are recorded in [the review record](reviews.md#pr-1111-exact-source-and-gate-status).
+
+Run `37176424544` completed on that exact head. Actionlint, Plan, all 27 Rust jobs, Required, and DCO succeeded. Publish baseline was skipped by its main-only condition. GitHub returned no review submissions and no review threads. One issue comment corrected the PR's model-default statement and records that live Usage and docs-spec gates remain pending. The PR body now describes the broader implementation scope.
+
+The current workflow invokes MBX for Rust compile, Clippy, Nextest, doctest, and documentation tasks. Dependency metadata and fetch steps use direct Cargo through Mise. The workflow does not run `docs specs`. A candidate invocation is `mise exec --locked --deny-net -- mbx run --locked --offline -p jackin-xtask --bin jackin-xtask -- docs specs`; it has not run. The source gate validates spec rows and cited test names. In CI mode it may spawn direct `cargo nextest list`; nested MBX routing is unverified.
+
+The bounded `jackin console --debug`, `u`, `r` smoke also has not run. With a private empty home, isolated Jackin paths, sanitized environment, disabled network, and no discovered providers, it would cover TUI routing, background discovery, forced refresh, and empty broker handling. It would not prove authenticated provider requests. Stop if discovery finds a provider. PR #1111 remains blocked on both gates; do not infer completion from green workflow checks.
+
+## PR #1113 current replacement head
+
+Read-only refresh at 2026-10-05 14:33 UTC found PR #1113 open, draft, and mergeable at head `d1326491e922d8c536add67042325943a1363597`, tree `b16f2fff00ce1e2c8a6f6e2f4f5bc77e9da38556`, against `main`. Run `37325595138` completed on that exact head. Actionlint and DCO succeeded. Plan failed because pinned Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks`. Required failed, all 27 Rust jobs were skipped, and Publish baseline was skipped. This is a generator-schema failure, not a Rust test result.
+
+The refreshed PR API reports no review submissions or comments for #1113. The current check run has no generated Plan artifact. Source-only migration and diagnostics reviews do not satisfy compilation, fixture rebake, or test gates. PR #1112 remains open and frozen until #1113 reaches a verified destination. Re-fetch feedback and checks before any close or merge action.
+
+## Current external Velnor main tip
+
+A direct read-only `git ls-remote` at `2026-10-05 14:28 UTC` returned Velnor main `ccb337ecc66e694bf8cb292af1ff43332389fb97`. The earlier owner-reported snapshot `098be4ad61e614fa4ddfb30f7e7148e470974597` had run `37319085496` and Plan artifact `11349640822`, but the coordinator did not independently retrieve those records. No CI status or helper artifact is recorded for `ccb337e`. Rebind source and checks to a fresh immutable snapshot before claiming current generator compatibility.

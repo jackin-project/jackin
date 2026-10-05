@@ -141,9 +141,10 @@ Every comparable build scenario requires at least three repetitions. Report medi
 
 | Scenario | Status | Reason |
 |---|---|---|
-| Empty target with an isolated empty MBX store | NARROW PASS | Three cold observations completed, but contention prevents an uncontended comparable baseline or performance claim. |
-| Fresh target with a warm MBX store | NARROW PASS | Three repeated cache observations passed method review; the `aws-lc-sys` miss remains unexplained, and varying host load prevents a performance claim. |
-| Unchanged source with an existing target | NARROW PASS | Three no-op runs passed the collector gate; contention and timing-report writes prevent a performance or immutable-target claim. |
+| Empty target with an isolated empty MBX store | PASS | Three cold observations passed the reviewed collection gate. Contention prevents an uncontended performance claim. |
+| Fresh target with a warm MBX store | PASS | Three cache observations passed method review. One `aws-lc-sys` miss remains unexplained; host load varied. |
+| Unchanged source with an existing target | PASS | Three no-op observations passed collection. Timing reports changed the target; contention prevents a performance claim. |
+| Comparable performance baseline and split-benefit claim | NOT RUN | No accepted-main second baseline uses the same source, toolchain, flags, and CPU window. |
 | Private change in one small crate | NOT RUN | Extraction and security review are pending. |
 | Shared account-types change | NOT RUN | Extraction and security review are pending. |
 | Codex discovery or authentication change | NOT RUN | Extraction and security review are pending. |
@@ -158,4 +159,4 @@ Do not set numeric split targets before measurements show build variation. Each 
 
 The `build_baseline` owner must record commands, elapsed time, resource use, cache state, and output hashes in a later authorized execution phase.
 
-Further cache and performance runs require MBX cache and object provenance. See [reviews](reviews.md). Tests, workspace verification, release builds, post-extraction builds, and valid repeated cache-behavior scenarios remain NOT RUN.
+The three cold, warm-store, and no-op scenarios have reviewed collection records. They do not establish a comparable performance baseline. The post-integration baseline and all split measurements remain NOT RUN. Focused tests, workspace verification, release builds, and post-extraction builds also remain NOT RUN.

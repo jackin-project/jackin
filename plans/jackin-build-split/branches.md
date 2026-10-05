@@ -375,7 +375,11 @@ Replacement PR [#1113](https://github.com/jackin-project/jackin/pull/1113) is op
 
 ## Current DCO task branch snapshot
 
-The active task branch is `refactor/build-split-dco`, based on `main` at `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. At this snapshot, local and remote both resolve to `3986dfdd07dcfeb739f09f837d3a3ebdd944cbb9`, tree `50f5bbfc7e89fc66b71356ad12629028abfccea4`; the worktree was clean when the source archive was made. Since documentation snapshot `aa0316901eaf3be24a2dc746c40b0a2c1b2168ff`, the three commits `8e356e2`, `0cf350b`, and `3986dfd` changed only `scripts/test-mbx-cargo-wrapper.py` and `Cargo.lock`. Source review passes for the migration lock correction and parser correction. Runtime tests remain NOT RUN. See the exact archive in [the migration source review](reviews.md#current-migration-source-and-mbx-wrapper-review).
+The active task branch is `refactor/build-split-dco`, based on `main` at `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. Local and remote both resolve to `d1326491e922d8c536add67042325943a1363597`, tree `b16f2fff00ce1e2c8a6f6e2f4f5bc77e9da38556`. The task-record files are being updated separately from source commits.
+
+Since `aa0316901eaf3be24a2dc746c40b0a2c1b2168ff`, commits added the MBX wrapper harness and TOML lock edges, then changed Swift reporting/parallelism, cleanup postconditions, XML parsing, and diagnostics redaction. The exact commit sequence is in the task branch history. Source review passed for the `toml_edit` lock edge, Mise version parser, Swift XML parser, diagnostics lifecycle fix, and cleanup parser correction. The first cleanup parser (`89af5ed`) failed review; `d132649` closes that finding with complete fail-closed inventory validation. Tests on current head remain NOT RUN.
+
+PR #1113 run `37325595138` completed on this exact head. Actionlint and DCO passed. Plan and Required failed because pinned Velnor `0.1.0` rejects `tasks`; all 27 Rust jobs and Publish baseline were skipped. This refresh supersedes the earlier `b80f991` snapshot. See [current PR gates](ci-coverage.md#pr-1113-current-replacement-head).
 
 ## Recovery inventory v2 closure mechanics
 
@@ -383,4 +387,4 @@ The read-only recovery appendix v2 is `/tmp/jackin-recovery-exhaustive-inventory
 
 The appendix separates exact ancestry from patch/content evidence, assigns per-unit `SELECT`, `REPLACE`, `ALREADY PRESENT`, or `REJECT`, and treats whole merge wrappers as `REJECT` while classifying merge-resolution content separately. Its 244 MiB merge-patch payloads remain host-local paths with size and hash evidence; they are not copied into the appendix. The related fsck supplement v2 (`/tmp/jackin-recovery-fsck-supplement-20261005-v2/SHA256SUMS.txt`, SHA-256 `ef8e8403c456e8890319925bdbf9b513b9b29c798a8c195f229681ba224a409b`) received a narrow evidence PASS for 27 unreachable objects, 90 blob checks, and seven process test intents already present. Neither packet approves a whole branch.
 
-Semantic units remain unresolved, including the Rust persisted `HostUsageRuntime` selection and notice behavior from 4be, selected c7b content, and native macOS execution. The exact current PR #1113 head includes only the three commits listed above; the appendix's earlier 8e path-state is historical. Per-unit independent review and applicable execution gates remain required.
+Semantic units remain unresolved, including the Rust persisted `HostUsageRuntime` selection and notice behavior from 4be, selected c7b content, and native macOS execution. The appendix's PR #1113 path-state at `8e356e2` is historical and does not include later task commits. Per-unit independent review and applicable execution gates remain required.
