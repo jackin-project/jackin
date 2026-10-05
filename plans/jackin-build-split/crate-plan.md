@@ -15,7 +15,7 @@
 
 Six package build scripts call `jackin_build_meta::derive_workspace_crate_version`: `jackin`, `jackin-image`, `jackin-docker`, `jackin-launch`, `jackin-runtime`, and `jackin-capsule`.
 
-The `jackin-diagnostics` build script records the Rust compiler version. These are static source findings. No build ran.
+The `jackin-diagnostics` build script records the Rust compiler version. These remain static source findings. The first MBX attempt failed before compilation; a later attempt succeeded once. See [build results](build-results.md#reviewed-linker-v2-source-proof).
 
 ## Candidate scope
 
@@ -24,6 +24,22 @@ The crate-design worker identifies `jackin` glue as the candidate split target.
 It identifies no dependent workspace crate for that target. It has not ranked side binaries or console host extraction. Those decisions need build evidence.
 
 Do not treat this candidate as approved. Record measured dependencies and build effects after the baseline and extraction runs.
+
+## Usage crate naming proposals
+
+Two independent Luna proposals use `jackin-session-usage` and `jackin-host-usage`. Another names the boundary by data, such as token or provider usage. Protocol owns shared DTOs.
+
+These names are alternatives, not selected crate boundaries. No proposal has completed the consumer map, dependency graph, extraction targets, or expected build effect. Keep those items IN PROGRESS until source ownership and measurements support a design.
+
+| Design item | Status | Evidence needed |
+|---|---|---|
+| Crate names and public boundaries | IN PROGRESS | Compare session/host responsibilities with token/provider responsibilities. |
+| Direct and indirect consumers | IN PROGRESS | Trace workspace dependencies and binary entry points. |
+| Protocol DTO ownership | IN PROGRESS | Define stable protocol types and their consumers. |
+| Extraction targets | IN PROGRESS | Select targets after the dependency map. |
+| Expected build effect | IN PROGRESS | Measure repeated baseline and split scenarios. |
+
+Do not infer ownership from a proposed crate name. Do not claim a performance benefit before measurements.
 
 ## Interface requirements
 
