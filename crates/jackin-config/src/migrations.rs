@@ -411,15 +411,16 @@ fn migrate_op_ref_value(table: &mut dyn toml_edit::TableLike) -> crate::ConfigRe
             );
             Ok(())
         }
-        (None, true) => validate_versioned_op_breadcrumb(table),
+        (None, true) => Ok(()),
         (None, false) => Err(ConfigError::msg(format_args!(
             "OpRef is missing both legacy `path` and versioned `breadcrumb` fields"
         ))),
-    }
+    }?;
+    validate_versioned_op_breadcrumb(table)
 }
 
-/// Validate already-versioned data before the migration stamps a new schema.
-/// A malformed breadcrumb must not be written successfully and then fail only
+/// Validate normalized data before the migration stamps a new schema. A
+/// malformed breadcrumb must not be written successfully and then fail only
 /// when the strict `EnvValue` deserializer reads the file on the next load.
 fn validate_versioned_op_breadcrumb(table: &dyn toml_edit::TableLike) -> crate::ConfigResult<()> {
     // Use the canonical strict runtime schema here instead of maintaining a
