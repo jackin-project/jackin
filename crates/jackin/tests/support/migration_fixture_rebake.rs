@@ -51,6 +51,8 @@ fn rebake_migration_fixtures_to_output_dir() {
         .prefix(".migration-fixture-rebake-")
         .tempdir_in(&output_parent)
         .unwrap();
+    validate_private_output_parent(&output_parent, staging.path())
+        .unwrap_or_else(|error| panic!("{error}"));
     rebake_fixtures(
         "config",
         |path| Ok(jackin_config::migrate_config_file_if_needed(path).map(|_| ())?),
@@ -62,12 +64,46 @@ fn rebake_migration_fixtures_to_output_dir() {
         staging.path(),
     );
 
+    validate_private_output_parent(&output_parent, staging.path())
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_missing_path(&output);
     fs::rename(staging.path(), &output).unwrap_or_else(|error| {
         panic!(
             "publishing generated fixture directory {}: {error}",
             output.display()
         )
     });
+}
+
+#[cfg(unix)]
+fn validate_private_output_parent(parent: &Path, staging: &Path) -> Result<(), String> {
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+
+    let parent_metadata = fs::metadata(parent)
+        .map_err(|error| format!("checking output parent {}: {error}", parent.display()))?;
+    if !parent_metadata.is_dir() {
+        return Err(format!(
+            "fixture output parent is not a directory: {}",
+            parent.display()
+        ));
+    }
+    if parent_metadata.permissions().mode() & 0o077 != 0 {
+        return Err(format!(
+            "fixture output parent must not be accessible to group or other users: {}",
+            parent.display()
+        ));
+    }
+    let staging_metadata = fs::metadata(staging)
+        .map_err(|error| format!("checking staging directory {}: {error}", staging.display()))?;
+    if parent_metadata.uid() != staging_metadata.uid() {
+        return Err("fixture output parent must be owned by the writing task".to_owned());
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_private_output_parent(_parent: &Path, _staging: &Path) -> Result<(), String> {
+    Err("fixture output requires a private Unix task directory".to_owned())
 }
 
 fn assert_missing_path(path: &Path) {
@@ -210,5 +246,21 @@ fn fixture_rebake_updates_only_one_target_version_line() {
             "v1alpha13"
         )
         .is_err()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn fixture_rebake_rejects_group_accessible_output_parent() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let parent = tempfile::tempdir().unwrap();
+    let staging = tempfile::tempdir_in(parent.path()).unwrap();
+    assert!(validate_private_output_parent(parent.path(), staging.path()).is_ok());
+    fs::set_permissions(parent.path(), fs::Permissions::from_mode(0o770)).unwrap();
+    assert!(
+        validate_private_output_parent(parent.path(), staging.path())
+            .unwrap_err()
+            .contains("group or other users")
     );
 }
