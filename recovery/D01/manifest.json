@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "created_at": "2026-09-29T20:37:07Z",
+  "purpose": "Private recovery for D01 tailrocks remote-tracking refs before D01 retirement",
+  "source": {
+    "path": "/private/tmp/jackin-bundle-post-diagnostics.4z9BfA/repo.git",
+    "device": 16777233,
+    "inode": 721104963,
+    "packed_refs_sha256": "d45c48b88483bd2a2c3bed30e338fb7c145685c043e89fc4dc13694ce27d2553",
+    "pack": {
+      "file": "objects/pack/pack-7b33f3339c946fed18274646a5a679d64c3e04b3.pack",
+      "sha256": "6dcbfa2cf5a57cbfc255bc2aa77faa3633b4a754c84acef85b0910a4d286aee1"
+    },
+    "index": {
+      "file": "objects/pack/pack-7b33f3339c946fed18274646a5a679d64c3e04b3.idx",
+      "sha256": "d0cfa875caeba4f93f98b421a3b09a6d6367d8933abefa23e23400bd8c883087"
+    },
+    "frozen_before_and_after": true
+  },
+  "remote_probe": {
+    "url": "https://github.com/tailrocks/jackin.git",
+    "result": "repository_not_found",
+    "checked_refs": [
+      "refs/remotes/tailrocks/codex/fix-generated-whitespace",
+      "refs/remotes/tailrocks/main",
+      "refs/remotes/tailrocks/pr-958-merge"
+    ]
+  },
+  "refs": [
+    {
+      "name": "refs/remotes/tailrocks/codex/fix-generated-whitespace",
+      "oid": "83bdf1670c45d345efec7d1315434ad6317c2bfb",
+      "tree": "ccbc3b9f0217c0c0605a98fcac14422dc3060902",
+      "parents": ["0dc79895ff1c5e88be7c3822c437e1c5b5282e12"],
+      "subject": "fix(workflow): prevent generated whitespace",
+      "disposition": "PRESERVE_REMOTE_TRACKING / PRIVATE_LOCAL_STATE"
+    },
+    {
+      "name": "refs/remotes/tailrocks/main",
+      "oid": "b5a4b4afaa6ca807927cacc03659b570a895dd5c",
+      "tree": "a14df926b9654566efa947dddc24c70a0c4e57c6",
+      "parents": ["0dc79895ff1c5e88be7c3822c437e1c5b5282e12"],
+      "subject": "ci: pin generated tree to published runtime",
+      "disposition": "PRESERVE_REMOTE_TRACKING / PRIVATE_LOCAL_STATE"
+    },
+    {
+      "name": "refs/remotes/tailrocks/pr-958-merge",
+      "oid": "a4187f29742b1fdcb51a4c08b58e37bc17f082f8",
+      "tree": "1b0c02e33976a740d76a9ef631ec7ea3d37a48b4",
+      "parents": [
+        "b5a4b4afaa6ca807927cacc03659b570a895dd5c",
+        "676c92046b562b0d0da7c48b69c203ef94da3a00"
+      ],
+      "subject": "Merge 676c92046b562b0d0da7c48b69c203ef94da3a00 into b5a4b4afaa6ca807927cacc03659b570a895dd5c",
+      "disposition": "PRESERVE_REMOTE_TRACKING / PRIVATE_LOCAL_STATE"
+    }
+  ],
+  "closure": {
+    "per_ref_object_counts": {
+      "refs/remotes/tailrocks/codex/fix-generated-whitespace": 21349,
+      "refs/remotes/tailrocks/main": 21359,
+      "refs/remotes/tailrocks/pr-958-merge": 21394
+    },
+    "union_objects": 21394,
+    "union_commits": 1988,
+    "missing_from_keeper": 21379,
+    "missing_from_velnor": 1,
+    "missing_from_keeper_and_velnor": [
+      "a4187f29742b1fdcb51a4c08b58e37bc17f082f8"
+    ],
+    "comparison_basis": {
+      "keeper": "/Users/donbeave/Projects/tailrocks/jackin-project/jackin",
+      "velnor": "/private/tmp/jackin-recovery/R08/all-refs.bundle"
+    },
+    "bundle_scope": "Full union closure of all three refs; retained because the pr-958-merge tip is absent from keeper and Velnor."
+  },
+  "bundle": {
+    "path": "/Users/donbeave/Projects/tailrocks/jackin-project/jackin/.git/recovery/D01/tailrocks-remote.bundle",
+    "mode": "0600",
+    "bytes": 13887224,
+    "sha256": "cc793e82a4908111bd804670ef220a89a1342931561dd028ac56e371e1bb6b7c",
+    "hash_algorithm": "sha1",
+    "complete_history": true,
+    "list_heads_exact": true,
+    "verified_in": "/private/tmp/d01-tailrocks-verify.GieawD",
+    "fetch_result": "3 new refs",
+    "fetch_refs_exact": true,
+    "fetch_closure_objects": 21394,
+    "fsck_full_no_reflogs_exit": 0,
+    "tree_ids_match_source": true,
+    "tree_ids": {
+      "refs/remotes/tailrocks/codex/fix-generated-whitespace": "ccbc3b9f0217c0c0605a98fcac14422dc3060902",
+      "refs/remotes/tailrocks/main": "a14df926b9654566efa947dddc24c70a0c4e57c6",
+      "refs/remotes/tailrocks/pr-958-merge": "1b0c02e33976a740d76a9ef631ec7ea3d37a48b4"
+    }
+  },
+  "other_private_refs": {
+    "tag_count": 266,
+    "tag_objects_missing_keeper": 216,
+    "tag_objects_missing_keeper_or_velnor": 0,
+    "tag_name_oid_pairs_missing_from_velnor_bundle": 0,
+    "notes_count": 0,
+    "stash_refs_count": 0,
+    "recovery_refs": [
+      {"name": "refs/recovery/audit-pr1083", "oid": "4b2d244c93ce3edbba4ff91e685ded6875b5647c"},
+      {"name": "refs/recovery/pr1082-head", "oid": "dacddce6ee64ad4432118874e78c3f33993139d3"},
+      {"name": "refs/recovery/pr1084-head", "oid": "7dbe32107d7914671faa3e37e273e56ed42acb73"},
+      {"name": "refs/recovery/pr1088-head", "oid": "9e4491259f1f5ab90cb4d8f1a018d8f945f864a3"},
+      {"name": "refs/recovery/pr1089-head", "oid": "45149fe266fd114899f0f6f04cd4706a45f06125"},
+      {"name": "refs/recovery/pr1090-head", "oid": "dc0f353c8ca62f2ced112b864738b94aeaba612a"}
+    ],
+    "recovery_objects_missing_keeper": 6,
+    "recovery_objects_missing_keeper_or_velnor": 0,
+    "recovery_object_oids_missing_from_velnor_bundle": 0,
+    "disposition": "No tag, note, stash, or recovery object is unique to D01. The six recovery OIDs are absent from keeper but present in the R08/Velnor all-refs bundle; retain that independent recovery evidence until final reconciliation. No additional D01 private bundle is required."
+  }
+}

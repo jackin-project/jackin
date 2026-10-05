@@ -1,0 +1,4 @@
+fix(docs): bound static prerender concurrency
+
+Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
+Co-authored-by: Codex <codex@openai.com>
