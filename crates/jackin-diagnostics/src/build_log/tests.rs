@@ -110,10 +110,14 @@ fn capture_end_resets_open_context_before_later_sink_calls() {
     let _guard = TEST_LOCK.lock().unwrap();
     begin();
     push_line("#7 0.1 token = \"\"\"");
+    push_line("#7 0.2 end-boundary-canary");
+    assert!(!snapshot().join("\n").contains("end-boundary-canary"));
     end();
 
     push_line("#7 0.2 visible-after-end");
-    assert!(snapshot().join("\n").contains("visible-after-end"));
+    let after_end = snapshot().join("\n");
+    assert!(after_end.contains("visible-after-end"));
+    assert!(!after_end.contains("end-boundary-canary"));
 
     begin();
     push_line("#7 0.3 visible-after-begin");

@@ -541,7 +541,6 @@ impl StreamRedactor {
 pub fn redact_text(input: &str) -> Cow<'_, str> {
     let mut redactor = StreamRedactor::default();
     let mut redacted = redactor.push_complete_text(input);
-    let _ = redactor.finish();
     if !input.ends_with('\n') {
         if let Some(without_crlf) = redacted.strip_suffix("\r\n") {
             redacted = without_crlf.to_owned();

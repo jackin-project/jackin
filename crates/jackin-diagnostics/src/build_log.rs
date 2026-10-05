@@ -55,9 +55,9 @@ pub fn begin() {
 pub fn end() {
     ACTIVE.store(false, Ordering::Release);
     if let Ok(mut state) = state().lock() {
-        // Discard any unterminated secret context so a later capture cannot
-        // inherit it. `finish` returns no body text for an open context.
-        let _ = state.redactor.finish();
+        // `push_line` feeds complete records, so there is no partial byte line
+        // to flush. Reset only the open secret context at the capture boundary.
+        state.redactor.reset();
     }
 }
 
