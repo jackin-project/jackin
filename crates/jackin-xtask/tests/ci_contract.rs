@@ -410,7 +410,7 @@ fn configured_verification_jobs_are_isolated_and_run_only_the_declared_mise_task
                 "{job_id} changed its runner"
             );
             ensure!(
-                job.get("timeout-minutes").and_then(JsonValue::as_integer) == Some(10),
+                job.get("timeout-minutes").and_then(JsonValue::as_i64) == Some(10),
                 "{job_id} changed its timeout"
             );
             ensure!(job.get("needs").is_none(), "{job_id} must be standalone");
@@ -491,13 +491,12 @@ fn configured_verification_jobs_are_isolated_and_run_only_the_declared_mise_task
                         sha256.len() == 64 && sha256.bytes().all(|byte| byte.is_ascii_hexdigit()),
                         "{job_id} Mise action SHA-256 must be pinned"
                     );
-                    mise_cache_is_disabled = inputs.is_some_and(|inputs| {
+                    mise_cache_is_disabled =
                         ["cache", "cache_save", "env", "install"].iter().all(|key| {
                             inputs.get(*key).is_some_and(|value| {
                                 value.as_bool() == Some(false) || value.as_str() == Some("false")
                             })
-                        })
-                    });
+                        });
                 }
                 if let Some(run) = step.get("run").and_then(JsonValue::as_str) {
                     run_step_count += 1;
