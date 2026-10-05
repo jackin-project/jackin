@@ -11,7 +11,7 @@ The immediate STOP was honored. No implementation, tests, reviews, research, or 
 | `jackin-refactor-build-split` | `refactor/build-split` | `9e6ed667a858f3c6d50c34d93300b009121c6c39` | WIP migration-fixture and evidence-note checkpoint; clean. |
 | `jackin-refactor-build-split-c72-docs` | `docs/build-split-c72-record` | `3cb98f2a634c1e660e501489d7383329569db7a3` | WIP record checkpoint; clean. |
 | `jackin-refactor-build-split-dco` | `refactor/build-split-dco` | `5e9d24e85545686f0803b39540e71148a9c5fe41` | WIP record checkpoint; clean. |
-| `jackin-refactor-build-split-dco-signed` | `refactor/build-split-dco-dco-signed` | `a2c0b1d6562041c561e0e95305a73fd1043fecd3` | Clean before this preservation delivery commit. |
+| `jackin-refactor-build-split-dco-signed` | `refactor/build-split-dco-dco-signed` | `23230ad5d2f4a830a1e56bdf70f870cd1337de5f` | Preservation archives committed and pushed; clean. |
 | `jackin-refactor-build-split-docs-3b` | `docs/build-split-evidence-3b` | `114effca63bb5c4ce83f8bd56d80187e800cd5d8` | Clean local checkpoint branch pushed at the same OID. |
 | `jackin-refactor-build-split-docs-current` | `docs/build-split-evidence-41265` | `b1e08b880223594cceccf3ea44322d44e3cdf984` | WIP record checkpoint; clean. |
 
@@ -35,4 +35,8 @@ R14c's image build and networkless runtime result remain a separate private reco
 
 ## Cleanup state
 
-At this record cut, no temporary files, source snapshots, rootfs/runtime directories, or worktrees had been deleted. The main worktree's `mise.lock` and `.local/` remain untouched. Private runtime/log/source evidence stays outside the archive; it was not copied into Git. No test/build/review/merge is claimed by this delivery.
+After the archive commit was verified remotely, six clean task worktrees were removed: `jackin-pr1111-omp-clippy`, `jackin-refactor-build-split`, `jackin-refactor-build-split-c72-docs`, `jackin-refactor-build-split-dco`, `jackin-refactor-build-split-docs-3b`, and `jackin-refactor-build-split-docs-current`. Their branch refs remain local and on origin at the SHAs above. The `main` worktree and this signed-record worktree remain. The main worktree's unrelated `mise.lock` and `.local/` were untouched.
+
+Using the pushed archive manifests as allowlists, I removed 204 regular helper-code files whose bytes, sizes, and non-symlink file types matched the recorded SHA-256 entries exactly (4,522,134 bytes total). One R14c duplicate was already absent because the same file had been removed via the broader Architect archive. The corresponding original code paths under `/root/.velnor-work/mbx-review.uXg3BZsJ/mbx-pr1111-24b8`, `/root/.velnor-generator-preview-20261005`, `/root/.velnor-work/architect-image-verify-*`, and `/root/.jackin-pr1111-source-*` are preserved in the pushed archives. No non-matching or unlisted files were removed.
+
+Private logs, markers, source packets/archives, seed and artifact evidence, and runtime state were not copied to Git and remain private. The 1.9 GiB MBX V5 rootfs and 42 MiB extracted 24b8 runtime/source directory remain as private historical evidence; they were not deleted. No test/build/review/merge is claimed by this delivery.
