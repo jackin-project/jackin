@@ -215,23 +215,25 @@ pub struct DiscoveryReport {
     pub issues: Vec<DiscoveryIssue>,
 }
 
-/// Scan catalog defaults first. Codex uses `CODEX_HOME` when set; otherwise
-/// it uses the operator's `home/.codex`. Other shell config-directory
-/// overrides are imported separately. This performs blocking filesystem/
-/// Keychain work; UI callers must use a worker.
+/// Scan catalog defaults first. Codex uses a nonempty `CODEX_HOME` when set;
+/// an unset or empty value selects the operator's `home/.codex`. Other shell
+/// config-directory overrides are imported separately. This performs
+/// blocking filesystem/Keychain work; UI callers must use a worker.
 pub fn discover_default_accounts(home: &Path) -> DiscoveryReport {
     let codex_home = std::env::var_os("CODEX_HOME");
     discover_default_accounts_with_codex_home(home, codex_home.as_deref())
 }
 
 /// Discover catalog defaults with the Codex home supplied by the caller.
-/// `None` selects the operator's `home/.codex`; a present override is used
-/// directly and never falls back to that default.
-fn discover_default_accounts_with_codex_home(
+/// `None` or an empty value selects the operator's `home/.codex`; a nonempty
+/// override is resolved from the current directory if relative and must be an
+/// existing directory.
+pub(crate) fn discover_default_accounts_with_codex_home(
     home: &Path,
     codex_home: Option<&OsStr>,
 ) -> DiscoveryReport {
     let mut report = DiscoveryReport::default();
+    let has_explicit_codex_home = codex_home.is_some_and(|value| !value.is_empty());
     let codex_directory = match codex_home_directory(home, codex_home) {
         Ok(directory) => Some(directory),
         Err(error) => {
@@ -277,11 +279,17 @@ fn discover_default_accounts_with_codex_home(
                     break;
                 }
                 Ok(None) => {}
-                Err(error) => report.issues.push(DiscoveryIssue {
-                    agent,
-                    directory,
-                    error,
-                }),
+                Err(error) => {
+                    report.issues.push(DiscoveryIssue {
+                        agent,
+                        directory: if agent == Agent::Codex && has_explicit_codex_home {
+                            PathBuf::from("CODEX_HOME")
+                        } else {
+                            directory
+                        },
+                        error,
+                    });
+                }
             }
         }
     }
@@ -292,13 +300,31 @@ fn codex_home_directory(
     home: &Path,
     codex_home: Option<&OsStr>,
 ) -> Result<PathBuf, DiscoveryError> {
-    match codex_home {
-        None => Ok(home.join(Agent::Codex.runtime().state_paths().credential_dir)),
-        Some(value) if value.is_empty() => {
-            Err(DiscoveryError::Unsupported("CODEX_HOME is set but empty"))
+    let Some(value) = codex_home.filter(|value| !value.is_empty()) else {
+        return Ok(home.join(Agent::Codex.runtime().state_paths().credential_dir));
+    };
+    let configured = PathBuf::from(value);
+    let directory = if configured.is_absolute() {
+        configured
+    } else {
+        std::env::current_dir()
+            .map_err(|_| {
+                DiscoveryError::Unsupported("CODEX_HOME cannot be resolved from current directory")
+            })?
+            .join(configured)
+    };
+    let metadata = std::fs::metadata(&directory).map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => {
+            DiscoveryError::Unsupported("CODEX_HOME path does not exist")
         }
-        Some(value) => Ok(PathBuf::from(value)),
+        _ => DiscoveryError::Unreadable,
+    })?;
+    if !metadata.is_dir() {
+        return Err(DiscoveryError::Unsupported(
+            "CODEX_HOME path is not a directory",
+        ));
     }
+    Ok(directory)
 }
 
 /// Inspect a selected config/credential directory, without reading shell files.

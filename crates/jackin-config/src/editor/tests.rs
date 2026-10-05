@@ -2549,6 +2549,77 @@ fn scan_for_accounts_imports_profiles_with_bootstrap_naming_and_dedupes() {
 }
 
 #[test]
+fn scan_for_accounts_uses_injected_codex_home_instead_of_ambient_override() {
+    const CHILD_ROOT_ENV: &str = "JACKIN_CODEX_HOME_ROUTE_TEST_ROOT";
+    let Some(root) = std::env::var_os(CHILD_ROOT_ENV) else {
+        let fixture = tempdir().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg(
+                "editor::tests::scan_for_accounts_uses_injected_codex_home_instead_of_ambient_override",
+            )
+            .env(CHILD_ROOT_ENV, fixture.path())
+            .env("CODEX_HOME", fixture.path().join("host-codex"))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated discovery child failed; stdout: {}; stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("running 1 test"),
+            "isolated discovery child did not run the expected fixture: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        return;
+    };
+
+    let root = PathBuf::from(root);
+    let host_codex = root.join("host-codex");
+    let injected_codex = root.join("injected-codex");
+    for (directory, token) in [
+        (&host_codex, "host-codex-sentinel"),
+        (&injected_codex, "injected-codex-sentinel"),
+    ] {
+        std::fs::create_dir_all(directory).unwrap();
+        std::fs::write(
+            directory.join("auth.json"),
+            format!(r#"{{"tokens":{{"access_token":"{token}"}}}}"#),
+        )
+        .unwrap();
+    }
+
+    let paths = JackinPaths::for_tests(&root.join("jackin"));
+    minimal_config_file(&paths);
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    let environment = BTreeMap::from([(
+        "CODEX_HOME".to_owned(),
+        injected_codex.to_string_lossy().into_owned(),
+    )]);
+    let report = editor
+        .scan_for_accounts_with(&paths.home_dir, &environment)
+        .unwrap();
+    let (_, account) = report
+        .added
+        .iter()
+        .find(|(id, _)| id == "default-codex")
+        .expect("injected Codex profile is registered");
+    match &account.credential {
+        crate::AccountCredential::Profile {
+            agent: Agent::Codex,
+            directory,
+            ..
+        } => assert_eq!(directory, &injected_codex),
+        credential => panic!("unexpected Codex credential route: {credential:?}"),
+    }
+    let rendered = format!("{report:?}");
+    assert!(!rendered.contains("host-codex-sentinel"));
+    assert!(!rendered.contains("injected-codex-sentinel"));
+}
+
+#[test]
 fn removed_account_stays_excluded_from_scan_after_reload() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
