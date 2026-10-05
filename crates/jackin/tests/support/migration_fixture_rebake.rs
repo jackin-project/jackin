@@ -137,6 +137,18 @@ fn rebake_fixtures(file_kind: &str, migrate: MigrateFn, output_root: &Path) {
         file_kind_dir.display(),
         entries.len()
     );
+    let required_fixture = match file_kind {
+        "config" => "from-v1alpha12",
+        "workspace" => "from-v1alpha10",
+        other => panic!("unknown fixture kind {other:?}"),
+    };
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry.file_name().to_str() == Some(required_fixture)),
+        "required OpRef migration fixture {required_fixture} is missing under {}",
+        file_kind_dir.display()
+    );
 
     let output_kind = output_root.join(file_kind);
     fs::create_dir(&output_kind).unwrap();
