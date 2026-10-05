@@ -915,3 +915,36 @@ breadcrumb = { version = 1, value = "Vault/Item/Field", extra = "x" }
     );
     assert_eq!(std::fs::read_to_string(path).unwrap(), original);
 }
+
+#[test]
+fn migration_rejects_legacy_op_ref_unknown_fields_before_stamping() {
+    for (name, op_ref) in [
+        (
+            "unknown-key",
+            r#"op = "op://vault-id/item-id/field-id"
+path = "Vault/Item/Field"
+extra = "x""#,
+        ),
+        (
+            "invalid-account-type",
+            r#"op = "op://vault-id/item-id/field-id"
+path = "Vault/Item/Field"
+account = 1"#,
+        ),
+    ] {
+        let original = format!("version = \"v1alpha10\"\n\n[env.TOKEN]\n{op_ref}\n");
+        let temp = tempdir().unwrap();
+        let path = temp.path().join(format!("{name}.toml"));
+        std::fs::write(&path, &original).unwrap();
+
+        let error = migrate_workspace_file_if_needed(&path).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("strict environment-value schema"),
+            "{name}: {error:#}"
+        );
+        assert_eq!(std::fs::read_to_string(path).unwrap(), original, "{name}");
+    }
+}
