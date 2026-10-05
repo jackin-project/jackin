@@ -135,29 +135,3 @@ pub(super) async fn record_built_agent_version(
     }
     extract_agent_version(paths, image, agent, debug, runner).await;
 }
-
-/// Resolves a GitHub token for authenticating mise's GitHub API calls during
-/// Docker image builds. Checks `GITHUB_TOKEN` and `GH_TOKEN` env vars first
-/// (set in CI and by operators), then falls back to `gh auth token` for local
-/// development where the user is already logged in via the gh CLI.
-///
-/// Returns `None` when no token is available; callers must degrade gracefully
-/// (build still works, mise falls back to unauthenticated GitHub API access).
-pub async fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String> {
-    for var in ["GITHUB_TOKEN", "GH_TOKEN"] {
-        if let Some(t) = std::env::var(var).ok().filter(|t| !t.trim().is_empty()) {
-            return Some(t.trim().to_owned());
-        }
-    }
-    if let Ok(token) = runner.capture_secret("gh", &["auth", "token"], None).await {
-        let token = token.trim().to_owned();
-        (!token.is_empty()).then_some(token)
-    } else {
-        record_github_token_recovery();
-        None
-    }
-}
-
-pub(crate) fn record_github_token_recovery() {
-    let _warning = jackin_telemetry::record_recovered_degradation();
-}
