@@ -12,6 +12,13 @@ max_parallel_jobs = 4
 # free of Cargo/rustc; Rust work belongs to the MBX-backed Rust stack.
 [[workflow.tasks]]
 kind = "verification"
+id = "construct-upstream-assets"
+mise_task = "renovate-upstream-sources"
+runner = "linux-x64"
+timeout_minutes = 10
+
+[[workflow.tasks]]
+kind = "verification"
 id = "native-swift-format"
 mise_task = "desktop-format-check"
 runner = "macos-arm64"
@@ -22,13 +29,6 @@ kind = "verification"
 id = "native-swiftlint"
 mise_task = "desktop-lint"
 runner = "macos-arm64"
-timeout_minutes = 10
-
-[[workflow.tasks]]
-kind = "verification"
-id = "construct-upstream-assets"
-mise_task = "renovate-upstream-sources"
-runner = "linux-x64"
 timeout_minutes = 10
 
 [resources]

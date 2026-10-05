@@ -14,6 +14,12 @@ const ARCHITECT_MANIFEST_SHA256: &str =
     "b38e506587c98137d0a1a88247fb68afc9f9f215c8104c838df251933a917ae0";
 const REQUIRED_VERIFICATION_TASKS: [(&str, &str, &str, &str); 3] = [
     (
+        "construct-upstream-assets",
+        "renovate-upstream-sources",
+        "linux-x64",
+        "docker/construct/versions.env",
+    ),
+    (
         "native-swift-format",
         "desktop-format-check",
         "macos-arm64",
@@ -24,12 +30,6 @@ const REQUIRED_VERIFICATION_TASKS: [(&str, &str, &str, &str); 3] = [
         "desktop-lint",
         "macos-arm64",
         "swiftlint lint --strict",
-    ),
-    (
-        "construct-upstream-assets",
-        "renovate-upstream-sources",
-        "linux-x64",
-        "docker/construct/versions.env",
     ),
 ];
 const DENIED_CREDENTIALS_ARGV_PREFIX: &str = "env -u MISE_GITHUB_TOKEN -u GITHUB_TOKEN -u GH_TOKEN \
@@ -63,6 +63,7 @@ fn verification_tasks(root: &Path) -> Result<BTreeMap<String, TomlValue>> {
         .and_then(TomlValue::as_array)
         .context("workflow.tasks declares maintained verification jobs")?;
     let mut by_id = BTreeMap::new();
+    let mut previous_id: Option<String> = None;
     for task in tasks {
         let kind = task
             .get("kind")
@@ -76,6 +77,13 @@ fn verification_tasks(root: &Path) -> Result<BTreeMap<String, TomlValue>> {
             .get("id")
             .and_then(TomlValue::as_str)
             .context("workflow task id is stable")?;
+        if let Some(previous_id) = previous_id.as_deref() {
+            ensure!(
+                previous_id < id,
+                "workflow.tasks entries must be in strict ascending ID order"
+            );
+        }
+        previous_id = Some(id.to_owned());
         ensure!(
             by_id.insert(id.to_owned(), task.clone()).is_none(),
             "duplicate task id {id}"
