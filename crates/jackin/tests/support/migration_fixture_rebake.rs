@@ -164,6 +164,22 @@ fn rebake_fixtures(file_kind: &str, migrate: MigrateFn, output_root: &Path) {
             format!("from-{}", meta.from_version),
             "fixture directory and from_version differ"
         );
+        let require_op_ref_migration = matches!(
+            (file_kind, name.as_str()),
+            ("config", "from-v1alpha12") | ("workspace", "from-v1alpha10")
+        );
+        if require_op_ref_migration {
+            assert!(
+                meta.expected_error.is_none(),
+                "the immediate OpRef predecessor fixture must migrate successfully: {name}"
+            );
+            let source_document: toml::Value = toml::from_str(&before)
+                .unwrap_or_else(|error| panic!("parsing {name}/before.toml: {error}"));
+            assert!(
+                contains_op_ref_field(&source_document, "path"),
+                "{name} must exercise migration of a legacy OpRef path"
+            );
+        }
 
         let temp = tempfile::tempdir().unwrap();
         let target = temp.path().join(filename_for(file_kind));
@@ -181,6 +197,16 @@ fn rebake_fixtures(file_kind: &str, migrate: MigrateFn, output_root: &Path) {
             let after = fs::read_to_string(&target).unwrap();
             parse_fixture(file_kind, &after, &name, "actual");
             let document: toml::Value = toml::from_str(&after).unwrap();
+            if require_op_ref_migration {
+                assert!(
+                    !contains_op_ref_field(&document, "path"),
+                    "{name}: legacy OpRef path survived migration"
+                );
+                assert!(
+                    contains_op_ref_field(&document, "breadcrumb"),
+                    "{name}: migration did not emit a versioned OpRef breadcrumb"
+                );
+            }
             let target_version = document["version"]
                 .as_str()
                 .unwrap_or_else(|| panic!("{name}: migrated output has no version"));
@@ -224,6 +250,21 @@ fn replace_target_version(meta: &str, old: &str, new: &str) -> Result<String, St
     Ok(meta.replacen(&old_line, &format!("target_version = \"{new}\""), 1))
 }
 
+fn contains_op_ref_field(value: &toml::Value, field: &str) -> bool {
+    match value {
+        toml::Value::Table(table) => {
+            (table.contains_key("op") && table.contains_key(field))
+                || table
+                    .values()
+                    .any(|child| contains_op_ref_field(child, field))
+        }
+        toml::Value::Array(values) => values
+            .iter()
+            .any(|child| contains_op_ref_field(child, field)),
+        _ => false,
+    }
+}
+
 #[test]
 fn fixture_rebake_updates_only_one_target_version_line() {
     assert_eq!(
@@ -263,4 +304,21 @@ fn fixture_rebake_rejects_group_accessible_output_parent() {
             .unwrap_err()
             .contains("group or other users")
     );
+}
+
+#[test]
+fn op_ref_field_detection_requires_both_op_and_requested_field() {
+    let legacy: toml::Value = toml::from_str(
+        "[env]\nTOKEN = { op = \"op://vault/item/field\", path = \"Vault/Item/Field\" }\n",
+    )
+    .unwrap();
+    assert!(contains_op_ref_field(&legacy, "path"));
+    assert!(!contains_op_ref_field(&legacy, "breadcrumb"));
+
+    let versioned: toml::Value = toml::from_str(
+        "[env]\nTOKEN = { op = \"op://vault/item/field\", breadcrumb = { version = 1, value = \"Vault/Item/Field\" } }\n",
+    )
+    .unwrap();
+    assert!(contains_op_ref_field(&versioned, "breadcrumb"));
+    assert!(!contains_op_ref_field(&versioned, "path"));
 }
