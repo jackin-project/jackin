@@ -149,6 +149,20 @@ Runtime verification of wrapper dispatch is pending the reviewed fake-command ha
 
 `velnor_recon` and `jackin_generator_config` own generator and CI coverage. Record their final job matrix and required-check result here.
 
+## Latest task PR refresh
+
+Read-only GitHub refresh at 2026-10-05 15:39 UTC:
+
+| PR | Exact head | Current result | Remaining gate |
+|---|---|---|---|
+| Jackin #1111 | `e45405bd4a799ea7b0b30dbc80f45e2e5103690d` | OPEN, draft, mergeable. Run `37334128618` had Plan, Actionlint, and DCO PASS. `Rust / jackin-instance` failed; several Rust jobs remained active. | Resolve two OMP snapshot findings from exact 8ca review, review the changed head, finish all CI, and run the promised live/docs gates. |
+| Jackin #1113 | `25701ee67199857e3b33f49de9e9e2acdcd4b7a7` | OPEN, draft. The last recorded run `37329637685` failed Plan and Required because pinned Velnor `0.1.0` rejects `tasks`; Rust jobs were skipped. | Velnor typed build-task contract and current-source generation; re-fetch checks and feedback at the new head. |
+| Velnor #65 | `c6e18543b33d295d613c874aa41273ec608c6653` | OPEN, draft, mergeable. Run `37334164232`: DCO, Actionlint, Cargo Deny, Cargo Machete, Zizmor, and Alint PASS. Plan and Required failed; Rust jobs were skipped and Publish baseline was skipped. | Fix generated workflow ShellCheck errors at `generator-release.yml:69,93`; rerun checks and review current source. |
+
+For Jackin #1111, Sol's exact 8ca source review used head `8ca6152972bf157084e06d606a089980837d07c9`, tree `db5a842dfb9030bcef3ad825f31ad701ce9e0f1b`. Follow-up `e45405bd` changes `auth.rs` and has not received source re-review. The failed `jackin-instance` job's complete log was not available while run `37334128618` remained active. Do not attribute its cause without the job log.
+
+Velnor #65's fetched Plan log identifies generated ShellCheck parse errors, including `SC1050` and `SC1072`, at the two listed workflow lines. This is a generator Plan failure, not a Rust test result.
+
 See [branch findings](branches.md), [build results](build-results.md), and [reviews](reviews.md).
 
 
@@ -180,10 +194,28 @@ The bounded `jackin console --debug`, `u`, `r` smoke also has not run. With a pr
 
 ## PR #1113 current replacement head
 
-Read-only refresh at 2026-10-05 14:41 UTC found PR #1113 open, draft, and mergeable at code snapshot `0cd9890607d65b6d4e2264acac9303a8b67b561a`, tree `229e4b2d45e0805ee28bb5ff4e06bbefa3a188e1`, against `main`. Run `37326706037` completed on that exact snapshot. Actionlint and DCO succeeded. Plan failed because pinned Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks`. Required failed, all 27 Rust jobs were skipped, and Publish baseline was skipped. This is a generator-schema failure, not a Rust test result. The later task-record commit is documentation-only.
+Read-only refresh at 2026-10-05 14:46 UTC found PR #1113 open, draft, and mergeable at docs-only head `0ee479a93ebd0d4aaefa69809d0bfb4619761d5c`, tree `a1bfe1340c9b888a5e8c8eaa257e055fb71032fb`, against `main`. Its source snapshot is code commit `0cd9890607d65b6d4e2264acac9303a8b67b561a`, tree `229e4b2d45e0805ee28bb5ff4e06bbefa3a188e1`. Run `37327117521` completed on the exact PR head. Actionlint and DCO succeeded. Plan failed because pinned Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks`. Required failed, all 27 Rust jobs were skipped, and Publish baseline was skipped. This is a generator-schema failure, not a Rust test result.
 
 The refreshed PR API reports no review submissions or comments for #1113. The current check run has no generated Plan artifact. Source-only migration and diagnostics reviews do not satisfy compilation, fixture rebake, or test gates. PR #1112 remains open and frozen until #1113 reaches a verified destination. Re-fetch feedback and checks before any close or merge action.
 
 ## Current external Velnor main tip
 
-A direct read-only `git ls-remote` at `2026-10-05 14:41 UTC` returned Velnor main `b640665abc7238050e856257c9fb3a150580bc8d`, tree `97655eb96bcd6a5da170ed15c4cd32126cb0666e`, parent `ccb337ecc66e694bf8cb292af1ff43332389fb97`. Its push CI run `37325218926` was in progress at the check time. The earlier owner-reported snapshot `098be4ad61e614fa4ddfb30f7e7148e470974597` had run `37319085496` and Plan artifact `11349640822`, but the coordinator did not independently retrieve those records. No helper artifact or completed CI result is recorded for `b640665`. Rebind source and checks to a fresh immutable snapshot before claiming current generator compatibility.
+A direct read-only `git ls-remote` at `2026-10-05 14:41 UTC` returned Velnor main `b640665abc7238050e856257c9fb3a150580bc8d`, tree `97655eb96bcd6a5da170ed15c4cd32126cb0666e`, parent `ccb337ecc66e694bf8cb292af1ff43332389fb97`. Its push CI run `37325218926` was queued as of 14:46 UTC. The earlier owner-reported snapshot `098be4ad61e614fa4ddfb30f7e7148e470974597` had run `37319085496` and Plan artifact `11349640822`, but the coordinator did not independently retrieve those records. No helper artifact or completed CI result is recorded for `b640665`. Rebind source and checks to a fresh immutable snapshot before claiming current generator compatibility.
+
+## Exact PR check refresh at 2026-10-05 16:11 UTC
+
+The following states were read from the paginated PR/check APIs and exact run records. These updates supersede older head snapshots in this file; earlier rows remain historical.
+
+| PR | Head | Run | Passed | Failed or skipped | Result |
+|---|---|---|---|---|---|
+| Jackin #1111 | `a64af27dbefdf4d9239ad9e94209cb2416a4dbc4` | [`37336793714`](https://github.com/jackin-project/jackin/actions/runs/37336793714) | Plan, Actionlint, Required, DCO, all 27 Rust package jobs | Publish baseline skipped | Workflow run succeeded. OMP review, live Usage UI/broker smoke, and `docs specs` remain separate open gates. |
+| Jackin #1113 | `010444548ed976f415289c53c22da8ab801d9e53` | [`37336019365`](https://github.com/jackin-project/jackin/actions/runs/37336019365) | Actionlint | DCO ACTION REQUIRED; Plan and Required failed; 27 Rust jobs and Publish baseline skipped | Original PR is blocked. Plan output: `velnor-actions: .velnor/config.toml: tasks: unknown_config_field`. |
+| Jackin #1114 | `5914945f4d5613ee45837e0d61680c3e6be21258` | [`37338479371`](https://github.com/jackin-project/jackin/actions/runs/37338479371) | DCO, Actionlint | Plan and Required failed; 27 Rust jobs and Publish baseline skipped | Signed replacement is blocked by the same Velnor `0.1.0` task-schema rejection. |
+| Architect #480 | `818ea17a727ec1ace911be44d78b13995e3f6571` | [`37322851929`](https://github.com/jackin-project/jackin-the-architect/actions/runs/37322851929) | Required, Actionlint, Plan, DCO, Sonar | Publish baseline skipped | PR checks pass, but the R10 runtime probe failed after its MBX compile invocation when execution from `/tmp` returned `Permission denied`; no MBX runtime pass or ARM64 result. |
+| Velnor #65 | `a54e34b01b8bd5b327dcdac0de4831370303b86e` | [`37337142461`](https://github.com/tailrocks/velnor-new/actions/runs/37337142461) | DCO, Actionlint, Alint, Cargo Deny, Cargo Machete, Zizmor | Plan and Required failed; 14 Rust jobs and Publish baseline skipped | Plan log reports ShellCheck parse failures in generated `generator-release.yml` at lines 57, 69, and 93. PR state is DIRTY against main. |
+
+For #1111, the API refresh shows two issue comments, no submitted reviews, and no review decision. The latest comment records the two outstanding OMP findings: omitted rollback-journal recovery/capture, and acceptance of a frame with simultaneous salt/checksum corruption. Both findings are based on exact source review of the OMP snapshot and remain open at a64 because its follow-up only changes a Clippy test expression. The docs-spec and credential-free UI/broker smoke are NOT RUN.
+
+The DCO replacement is a normal new signed commit, not a rewrite of public history. Original #1113 remains open at `0104445` with DCO ACTION REQUIRED. PR #1114 at `5914945` contains a `-x` reference and sign-off, has the exact same source tree and parent as `0104445`, and its DCO check passed. Keep #1113 open until #1114 passes the generator and required checks and is otherwise verified as the destination.
+
+PR #480 has no submitted review or review threads and five issue comments at the current refresh. Its checks pass, but the image-runtime test remains failed; draft status is appropriate. PR #65 likewise remains draft and blocked by the generated workflow parse errors. Neither green static checks nor DCO pass substitutes for the failed Plan/Required gates.

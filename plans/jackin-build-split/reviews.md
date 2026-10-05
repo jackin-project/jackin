@@ -192,6 +192,22 @@ The review leaves a stale-comment follow-up. Cargo tests remain NOT RUN pending 
 
 The earlier root-fix plan called for a bounded database and WAL snapshot under a source-directory pin, a committed token for WAL-only state, and provider-and-selector revalidation. Review any provider-heavy dependency before adoption.
 
+### OMP snapshot capture findings at PR #1111
+
+Read-only source research reviewed PR #1111 head `8ca6152972bf157084e06d606a089980837d07c9`, tree `db5a842dfb9030bcef3ad825f31ad701ce9e0f1b`. It used synthetic fixtures and public SQLite documentation only. No credential data, provider access, or tests were used.
+
+Two correctness findings remain open. First, capture reads `agent.db` and `agent.db-wal` but ignores `agent.db-journal`. SQLite hot-journal recovery requires locking, rollback, and synchronization before ordinary reads; raw file capture can preserve partially applied database pages. Second, after a valid WAL prefix, the parser treats simultaneous salt and checksum mismatch as a stale-generation suffix. SQLite salts are not part of the frame checksum input, so those fields do not distinguish a genuine old tail from joint corruption of a current frame. Existing tests mutate salt and checksum separately, not together.
+
+The bounded regression proposal mutates one current frame's salt and checksum together and requires rejection before provisioning. A rollback-mode fixture should contain a real SQLite-generated hot journal and prove either recovery to the pre-transaction canary or fail-closed behavior. A dummy sidecar tests only a conservative presence guard.
+
+The architectural recommendation is to use SQLite's normal recovery and a consistent backup/read transaction, then publish only a complete bounded snapshot. Fail closed on snapshot errors or timeout. This is a design recommendation, not an accepted implementation. Primary references: [SQLite hot journals](https://www.sqlite.org/lockingv3.html#hot_journals), [SQLite atomic commit](https://www.sqlite.org/atomiccommit.html#hot_rollback_journals), [WAL format](https://www.sqlite.org/fileformat.html#walformat), and [SQLite backup API](https://www.sqlite.org/c3ref/backup_finish.html). Exact-head review and implementation tests remain pending.
+
+### PR #1111 §12.3 account coverage inventory
+
+The source-only inventory covers the twelve requested scenarios: missing credential source; invalid credential structure; unsupported provider content; duplicate source path; distinct accounts; permission failure; expired credentials; concurrent refresh; persisted account selection after reopen; slow endpoints; stale-cache replacement; and root plus explicit-home source precedence.
+
+The inventory identifies Rust, FFI, and Swift test candidates, but no tests were executed. This is not a PASS for any scenario. Source coverage is partial for native persisted-selection states. The audit also identifies missing proof for a real FFI selection round-trip, token-persistence compare-and-swap, and a deliberately stalled live UI bridge. The task branch's typed unavailable-account route change is separate work at head `25701ee67199857e3b33f49de9e9e2acdcd4b7a7`; its dirty local source is not yet committed, generated bindings are unchanged, and Rust/macOS tests remain NOT RUN.
+
 ## Architect integration review
 
 The Architect repository is [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect). Its base is `2cf461e2fed1b95d9fd1e7ba74c10d4d8b1c685d`.
@@ -422,3 +438,21 @@ R10 fixed archive-derived modes and passed its image build in 29.584 seconds. It
 An owner-reported Velnor main snapshot `098be4ad61e614fa4ddfb30f7e7148e470974597` had successful run `37319085496` and Plan artifact `11349640822`. The coordinator did not independently retrieve its artifact or records. A later read-only `git ls-remote` at `2026-10-05 14:28 UTC` returned main `ccb337ecc66e694bf8cb292af1ff43332389fb97`. No CI or artifact status is recorded for this newer tip.
 
 PR #65 release alignment remains dirty and unreviewed in `/tmp/velnor-g0-provenance-20261005` at `ba6b23171851320e55a86a7f98dafb6dad9fd66d`, tree `9ecb4c7b94983fc9eca14b58654a18d4878026cb`. The owner reports no commit or exact-head Sol review. Separate Velnor acquisition attempt V7 failed after namespace setup when the host rendered requested `hidepid=2` as `hidepid=invisible`; its guard rejected that value. No Rustup, Mise, Cargo, network, or acquisition phase ran. Failure log SHA-256 is `c59075dacd8dfaa26895785e7c6b05c54cd3c22ccc4662bbae66d9aec0bc267a`. This does not establish a Cargo acquisition PASS.
+
+The later V9 namespace attempt is also a failure, despite passing raw source-snapshot checks and completing mount/namespace setup. The sealed rootfs lacks `find`, `sha256sum`, `cut`, and `python3`, although the in-chroot command body needs them. The `find` status is swallowed by command substitution, and the single-quoted `cut -d' '` breaks the `sh -c` argument boundary. The helper, Rustup, Mise, Cargo metadata, fetch, compilation, and generation never ran. V9 log SHA-256 is `96a996c403592bbac060c48e62201f4b071392e395b1b7c5e08ac8fc9d2911ed`; outer, namespace, and helper source hashes are `7d3e4ae04dff400a063ff3b83aebe9a502de8a76765690d7870e55da6771fa10`, `59d14f020a88558578e4abafab674705c46cf4445d3b4f492cc024338f287019`, and `5876a1cfb5a1c6a43182995af93a31cb8729fa4421e3c5466a1afe8cfb9e3f0f`. No acquisition result is accepted. Fix command closure and rootfs inventory through an independently reviewed design before retrying.
+
+Separately, MBX recovery attempt v5 verified the fresh reusable 3986 rootfs clone at `/opt/.jackin-mbx-current-17b2b1b-v5-62dfd1ac/rootfs-clean-3986dfdd-v1`: 70,761 entries, 1,778,244,793 regular bytes. Recovery and verification exited 0. The operation created no source stage or build output; it did not run source tests, account access, or generation. This is rootfs inventory evidence only and does not repair or supersede the V9 acquisition failure.
+
+## Current DCO replacement review
+
+At #1113 head `010444548ed976f415289c53c22da8ab801d9e53`, the DCO-2 check returned ACTION REQUIRED because the last commit has no sign-off trailer. The branch was not rewritten. A separate branch, `refactor/build-split-dco-dco-signed`, replays only that final commit from its exact parent using `git cherry-pick -x -s`.
+
+Replacement `5914945f4d5613ee45837e0d61680c3e6be21258` has parent `25701ee67199857e3b33f49de9e9e2acdcd4b7a7`, tree `7cf828cb012f8dccf0d9b335fc8e59207a69d45d`, and original author and timestamp. The commit message references source `010444548ed976f415289c53c22da8ab801d9e53` and signs off as `Codex <codex@openai.com>`. Independent Sol review verified that the replacement's complete tree matches the original and that its parent/content attribution are exact. This confirms DCO mapping only; it does not approve the implementation behavior.
+
+PR #1114 is the destination for this signed commit. Its DCO check passed, while Plan failed because pinned Velnor `0.1.0` reports `.velnor/config.toml: tasks: unknown_config_field`; Required failed and Rust jobs were skipped. Original PR #1113 remains open with DCO ACTION REQUIRED until #1114 is verified as an acceptable destination. Neither PR is merge-ready.
+
+## Latest PR execution gate review
+
+The 2026-10-05 16:11 UTC refresh found PR #1111 at `a64af27dbefdf4d9239ad9e94209cb2416a4dbc4`. Run `37336793714` succeeded: Plan, Actionlint, Required, DCO, and all 27 Rust package jobs passed; Publish baseline was skipped. These CI results do not resolve the two OMP findings at the preceding WAL/auth source review, nor satisfy the separate live Usage UI/broker or `docs specs` commitments. Those gates remain NOT RUN.
+
+The same refresh found PR #1114 blocked by the Plan configuration error. PR #480's required checks passed, but the R10 image runtime failed after the explicit MBX build invocation because the compiled probe could not execute from `/tmp` (`Permission denied`). Velnor #65's Plan failed ShellCheck parsing for generated workflow lines 57, 69, and 93. See [the exact check table](ci-coverage.md#exact-pr-check-refresh-at-2026-10-05-1611-utc); no successful source review, CI check, or partial build should be described as closure of these runtime or generated-workflow gates.

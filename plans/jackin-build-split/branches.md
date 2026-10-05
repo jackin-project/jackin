@@ -364,6 +364,14 @@ Fetch status: PASS for ref synchronization only. The earlier branch auditor also
 
 `branches` recorded the inventory and source dispositions. Exhaustive path accounting and fixing dependencies remain IN PROGRESS. This record does not approve whole-branch integration or merging.
 
+## Latest PR #1111 checkpoint
+
+At 2026-10-05 15:48 UTC, PR #1111 was OPEN, draft, and mergeable at head `e45405bd4a799ea7b0b30dbc80f45e2e5103690d`, based on main. DCO passed. Run `37334128618` remained active; Plan and Actionlint passed, while `Rust / jackin-instance` had failed. Other Rust jobs were still running. This partial check set does not support a merge decision.
+
+The branch added OMP WAL and credential-snapshot changes in commits `33d97d1fe0ad5025af831133426ddfd625e0d5ac` and `8ca6152972bf157084e06d606a089980837d07c9`. The Clippy-only follow-up `e45405bd` changes `crates/jackin-instance/src/auth.rs`; its parent is the reviewed 8ca head. Exact 8ca review found two unresolved correctness gates: rollback-journal sidecars are ignored during database capture, and a paired WAL salt/checksum corruption can be accepted as a stale suffix. The 8ca review does not automatically cover the later auth.rs change. Keep PR #1111 blocked until both findings receive exact-head resolution and review, and all checks pass.
+
+The branch remains draft. Its current PR body describes account routing, runtime lifecycle, and usage refresh. The current API refresh found zero reviews, zero review threads, and one issue comment. The live credential-free Usage UI/broker smoke and `docs specs` gate remain NOT RUN. See [current CI records](ci-coverage.md#latest-task-pr-refresh) and [snapshot review](reviews.md#omp-snapshot-capture-findings-at-pr-1111).
+
 See the [checklist](checklist.md) and [reviews](reviews.md).
 
 ## DCO replay destination
@@ -379,7 +387,7 @@ The active task branch is `refactor/build-split-dco`, based on `main` at `0aa821
 
 Since `aa0316901eaf3be24a2dc746c40b0a2c1b2168ff`, commits added the MBX wrapper harness and TOML lock edges, then changed Swift reporting/parallelism, cleanup postconditions, XML parsing, diagnostics redaction, and formatting in the image build files. The exact commit sequence is in the task branch history. Source review passed for the `toml_edit` lock edge, Mise version parser, Swift XML parser, diagnostics lifecycle fix, and cleanup parser correction. The first cleanup parser (`89af5ed`) failed review; `d132649` closes that finding with complete fail-closed inventory validation. Targeted rustfmt passes at `0cd9890`; Rust tests on current source remain NOT RUN.
 
-PR #1113 run `37326706037` completed on code snapshot `0cd9890607d65b6d4e2264acac9303a8b67b561a`. Actionlint and DCO passed. Plan and Required failed because pinned Velnor `0.1.0` rejects `tasks`; all 27 Rust jobs and Publish baseline were skipped. This refresh supersedes the earlier `d132649` snapshot. The docs-only commit containing this record follows that run. See [current PR gates](ci-coverage.md#pr-1113-current-replacement-head).
+The task branch and PR #1113 now point to `010444548ed976f415289c53c22da8ab801d9e53`, tree `7cf828cb012f8dccf0d9b335fc8e59207a69d45d`, parent `25701ee67199857e3b33f49de9e9e2acdcd4b7a7`. This commit adds the typed selected-account route across Rust, FFI, and Swift. Sol source review passed; Rust and Swift tests were NOT RUN. Its commit message lacks a `Signed-off-by` trailer, and the current DCO check reports ACTION REQUIRED. Run `37336019365` had Actionlint PASS and Plan IN PROGRESS at the refresh. See [current PR gates](ci-coverage.md#latest-task-pr-refresh).
 
 ## Recovery inventory v2 closure mechanics
 
@@ -388,3 +396,25 @@ The read-only recovery appendix v2 is `/tmp/jackin-recovery-exhaustive-inventory
 The appendix separates exact ancestry from patch/content evidence, assigns per-unit `SELECT`, `REPLACE`, `ALREADY PRESENT`, or `REJECT`, and treats whole merge wrappers as `REJECT` while classifying merge-resolution content separately. Its 244 MiB merge-patch payloads remain host-local paths with size and hash evidence; they are not copied into the appendix. The related fsck supplement v2 (`/tmp/jackin-recovery-fsck-supplement-20261005-v2/SHA256SUMS.txt`, SHA-256 `ef8e8403c456e8890319925bdbf9b513b9b29c798a8c195f229681ba224a409b`) received a narrow evidence PASS for 27 unreachable objects, 90 blob checks, and seven process test intents already present. Neither packet approves a whole branch.
 
 Semantic units remain unresolved, including the Rust persisted `HostUsageRuntime` selection and notice behavior from 4be, selected c7b content, and native macOS execution. The appendix's PR #1113 path-state at `8e356e2` is historical and does not include later task commits. Per-unit independent review and applicable execution gates remain required.
+
+## Current pull-request status refresh
+
+Read-only GitHub refresh at `2026-10-05 16:11 UTC`:
+
+| PR | Exact head and state | Checks | Merge blockers |
+|---|---|---|---|
+| Jackin #1111 | Open draft, `a64af27dbefdf4d9239ad9e94209cb2416a4dbc4`, base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, CLEAN | Run `37336793714`: Required, Actionlint, Plan, DCO, and all 27 Rust package jobs succeeded; Publish baseline skipped. | Two source-reviewed OMP capture findings remain unresolved: rollback-journal state is omitted, and joint WAL salt/checksum corruption can be accepted. The promised `docs specs` and credential-free Usage UI/broker smoke are NOT RUN. Keep draft. |
+| Jackin #1113 | Open draft, `010444548ed976f415289c53c22da8ab801d9e53`, base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, BLOCKED | Run `37336019365`: Actionlint passed; DCO is ACTION REQUIRED; Plan and Required failed; Rust jobs and Publish baseline skipped. | The final commit lacks a sign-off trailer. Its Plan log says Velnor `0.1.0` rejects `.velnor/config.toml: tasks`. This is the original PR and remains open. |
+| Jackin #1114 | Open draft, `5914945f4d5613ee45837e0d61680c3e6be21258`, base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, BLOCKED | Run `37338479371`: DCO and Actionlint passed; Plan and Required failed; all Rust jobs and Publish baseline skipped. | This DCO-signed replacement preserves the original `0104445` source tree and author attribution. Its Plan log has the same pinned Velnor `0.1.0` `tasks: unknown_config_field` failure. Do not close #1113 before #1114 is a verified destination. |
+| Architect #480 | Open draft, `818ea17a727ec1ace911be44d78b13995e3f6571`, base `7b72b38fe1d66e35c0931899c53bf3719592bbcc`, CLEAN | Run `37322851929`: Required, Actionlint, Plan, DCO, and Sonar passed; Publish baseline skipped. | R10 image build passed, but the runtime probe failed when executing the compiled MBX probe from `/tmp` (`Permission denied`). No passing MBX runtime or ARM64 image result. |
+| Velnor #65 | Open draft, `a54e34b01b8bd5b327dcdac0de4831370303b86e`, base `2217ad1b53209fc19895912ffc0dde7c4fcf7915`, DIRTY | Run `37337142461`: DCO, Actionlint, Alint, Cargo Deny, Cargo Machete, and Zizmor passed; Plan and Required failed; Rust jobs and Publish baseline skipped. | Plan reports ShellCheck parse errors in generated `generator-release.yml` at lines 57, 69, and 93. |
+
+These are separate PRs with different source trees and gates. #1111's green run does not close its OMP, live-smoke, or docs-spec blockers. #1114's DCO success does not close the generator Plan failure. Refresh feedback and checks at each candidate merge head; do not merge a PR while its listed blockers remain.
+
+The GraphQL feedback refresh returned no submitted reviews or review threads for #1111, #1113, #1114, #480, or #65. Issue-comment counts were respectively 2, 0, 0, 5, and 1; each comments connection was fully paginated with `hasNextPage: false`. The #1111 and #480 comments include our source/gate dispositions; #65's existing comment has been read. No feedback item was deleted or resolved in this refresh.
+
+### DCO-signed replacement for the final task commit
+
+The original task ref `refactor/build-split-dco` remains at `010444548ed976f415289c53c22da8ab801d9e53`. Its final commit has no `Signed-off-by` trailer, and the DCO check on #1113 reports ACTION REQUIRED. Repository history was left untouched. A one-commit replacement was created from the exact parent `25701ee67199857e3b33f49de9e9e2acdcd4b7a7` with `git cherry-pick -x -s 010444548ed976f415289c53c22da8ab801d9e53` on `refactor/build-split-dco-dco-signed`.
+
+Replacement `5914945f4d5613ee45837e0d61680c3e6be21258` has the same tree `7cf828cb012f8dccf0d9b335fc8e59207a69d45d` as `0104445`, preserves the original author and timestamp, and adds both the `-x` source reference and `Signed-off-by: Codex <codex@openai.com>`. Independent Sol review verified the exact parent/tree/author mapping and remote branch equality. PR [#1114](https://github.com/jackin-project/jackin/pull/1114) is the replacement destination. Its DCO check passed, but its Plan and Required checks failed; #1113 remains open until #1114 reaches a verified destination.
