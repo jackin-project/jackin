@@ -19,6 +19,8 @@ The audit counted 131 branch heads, 1,104 pull heads, 1,104 all-state PR records
 
 A later read-only capture matched all 126 remote recovery refs. It found 120 distinct tip trees; two refs are disconnected from main. The ref-head inventory is `/tmp/jackin-recovery-ref-heads-20261005.csv`, SHA-256 `38ff62c5f6be689658d6e0759cbb9195714b9260fa0dcf564add27698fdf5d31`. This verifies ref coverage only; patch and behavior dispositions remain incomplete.
 
+The complete 126-row ref inventory is now committed at [recovery-ref-heads-2026-10-05.csv](evidence/recovery-ref-heads-2026-10-05.csv), with the same SHA-256 `38ff62c5f6be689658d6e0759cbb9195714b9260fa0dcf564add27698fdf5d31`. CSV parsing verified 126 rows, 126 unique refs, and 17 columns. The inventory captures ref heads and tip metadata; it does not replace the outstanding per-change content dispositions.
+
 A Sol completeness check found 415 distinct non-merge commit OIDs across other recovery refs. They lack individual content dispositions or equivalent destination mappings. The count used this query:
 
 ```sh

@@ -82,6 +82,14 @@ The publisher source at `ff41745394712604bddf94b6a4e9f1069100789e` received exac
 
 These Velnor snapshots do not validate the Jackin fixture rebake or source tests. The current Jackin migration fixture archive and pending execution gates are recorded in [reviews](reviews.md#current-migration-source-and-fixture-checkpoint).
 
+### Velnor PR #65 latest generated-workflow result
+
+PR [#65](https://github.com/tailrocks/velnor-new/pull/65) remains open and draft at merge commit `bc7f784a51233bd29676353392c9fc07c0ad01a7`. Run `37289064072` completed on that exact SHA. Zizmor, Actionlint, Cargo Deny, Cargo Machete, Alint, and DCO passed. Plan failed at generated-file comparison because `.github/workflows/generator-release.yml` differed from the rendered preview; Required failed because no plan artifact was produced. All 12 Rust crate jobs and Publish baseline were skipped.
+
+The Plan log confirms the helper-only build path completed `Build helper`, `Verify MBX compile`, `Write helper manifest`, `Upload helper`, and `Stage helper` successfully before the generated-file comparison. This is helper build/upload evidence only, not a passing generated workflow or PR gate. The earlier source review at `ff41745394712604bddf94b6a4e9f1069100789e` predates the 81-path change in the merged `bc7f784` tree; it does not re-review that exact later tree. No final renderer/generator review or Rust test acceptance is claimed.
+
+The base-asset materializer source gate passed independently at artifact SHA `6cea80e6c5cb1303f1e2180cfc73d3f18a9b0b18f32af6fdda8572dbedbe6506`; the reviewer verified four packet hashes and the source/dependency inventories, but ran no materializer or fixture. Two subsequent stage attempts are owner-reported as safely stopped: attempt 1 used a wrong key, and attempt 2 rejected an unsafe relative path after partial staging. The private owner records remain the evidence source; no staging PASS exists. Keep the static source PASS separate from actual staging and execution.
+
 ## Current Jackin consumer check
 
 Consumer source review PASS at `07f5ce7efe38c6c608fb975013df43e770d92b2b`. It pins Architect PR head `7db69b62f598a0971809ee4a006ad3f5477d0996` and manifest SHA-256 `b38e506587c98137d0a1a88247fb68afc9f9f215c8104c838df251933a917ae5`. The source review covers the immutable manifest fixture and CI contract. Tests remain NOT RUN.
