@@ -150,3 +150,20 @@ Runtime verification of wrapper dispatch is pending the reviewed fake-command ha
 `velnor_recon` and `jackin_generator_config` own generator and CI coverage. Record their final job matrix and required-check result here.
 
 See [branch findings](branches.md), [build results](build-results.md), and [reviews](reviews.md).
+
+
+## PR #1113 exact head at `3986dfdd`
+
+Direct `git ls-remote` and the local task ref matched `3986dfdd07dcfeb739f09f837d3a3ebdd944cbb9`, tree `50f5bbfc7e89fc66b71356ad12629028abfccea4`. PR #1113 remains open, draft, and mergeable against `main`. Run `37312549475` completed on that exact head. Actionlint and DCO passed; Plan and Required failed; every `Rust / *` job was skipped; Publish baseline was skipped.
+
+The Plan log shows locked Cargo source fetching passed before generation. The failure is `velnor-actions-0.1.0`: `.velnor/config.toml: tasks: unknown_config_field`. Required then failed while merging the missing plan result. The Cargo.lock update removed the earlier locked-fetch failure; it did not resolve the pinned-generator schema mismatch. PR feedback queries found no reviews, comments, or review threads at this head. These checks do not establish Rust compilation or migration tests.
+
+Since the previous recorded head `aa0316901eaf3be24a2dc746c40b0a2c1b2168ff`, three commits updated two paths: `8e356e2858fbfd390afd847604789b83bc0f451c` adds the MBX wrapper harness; `0cf350be6a66fd1316239452a718e890c051ad23` adds the two `toml_edit` serde lock edges; `3986dfdd07dcfeb739f09f837d3a3ebdd944cbb9` corrects the pinned Mise version parser. The parser source received exact Sol review PASS, but its fixtures and full harness have NOT RUN. The exact archive and packet hashes are recorded in [the migration source review](reviews.md#current-migration-source-and-mbx-wrapper-review).
+
+## External Velnor freshness update
+
+Velnor `main` currently resolves to `4fffbc22ce159305c62ae039668da2a14e2e3366`, tree `bc3fba64412ac80fd34b3d2367ecaf03415a2a0d`, parent `d435ac5b7e686ad9c9c594dde4b024b702435e47`. Alexey Zhokhov authored this upstream commit. It updates only `.velnor/freshness-inventory.json` and `docs/implemented/freshness-evidence-2026-10-05.md`. Run `37307721482` passed all 20 Velnor jobs, including Plan, Required, 12 Rust jobs, and Publish baseline. This is external Velnor evidence; it does not update Jackin's pinned generator or validate Jackin's generated workflow.
+
+## Native build-task capability
+
+The conditional Sol design review accepts a same-job macOS build-and-test task as the smallest supported capability; no artifact handoff is required. Existing `VerificationTask` jobs remain compile-free. Velnor Git owner reserved an isolated worktree at base `4fffbc22ce159305c62ae039668da2a14e2e3366` for a separate typed build-task contract and renderer. The implementation owner is `velnor_freshness_research`; reserved source and test files are listed in [the implementation review record](reviews.md#native-build-task-capability). Generated `.github/**` files remain owned by Velnor's generator. No source commit, generation, macOS job, or Apple-toolchain test has passed yet.
