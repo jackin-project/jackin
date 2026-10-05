@@ -55,6 +55,41 @@ MBX uses `ACTIONS_CACHE_MODE` with `write` only for push events. Other events us
 
 This is a static finding at Jackin base. Check current generator output before finalizing the disposition.
 
+### Velnor design review
+
+The Sol design review accepts a separate release and signing path. This decision does not close the required CI coverage gaps.
+
+The review records missing native, non-Rust, excluded Rust-test, and security-policy coverage. The required coverage disposition remains IN PROGRESS. Keep release and signing gates separate from pull-request CI. Document their own checks.
+
+The review used Velnor main `0c40d077fcad5450521351f497ce003c69915eff`. A later `git ls-remote` result reported main at `ad73ae9f0500ddd02d64aad142bbecb2122c0617` at `2026-10-05T00:39:47Z`. Recheck the design against the later head.
+
+Before generator implementation, a later fetch recorded Velnor `origin/main` at `d9f3f3be03d67021748fd6adb4a18684d046e5e7` at `2026-10-05T01:09:24Z`. The commit timestamp was `2026-10-05T07:52:37+07:00`. The work branch was rebased onto that head before edits. Run the final generator review after upstream fixes merge.
+
+## Account consolidation review
+
+The account-consolidation branch at `18bc09e9536d9b662876d2fb4205357a829caa9a` contains commit `455526b92a2a4350476bb192455e5e3414f7ab9a`, titled `feat(op): persist canonical section identifiers`. Four later commits retain the fixture defect.
+
+This commit raises the current config version from v1alpha12 to v1alpha13 and the workspace version from v1alpha10 to v1alpha11. It adds migration logic without corresponding new migration fixtures in `crates/jackin-config/src/migrations/tests.rs`.
+
+An exact-head Sol source review at `18bc09e9536d9b662876d2fb4205357a829caa9a` confirms these fixture findings. Tests were not run.
+
+- Config `from-v1alpha11` still targets and expects v1alpha12. Workspace `from-v1alpha9` still targets and expects v1alpha10.
+- Config `from-v1alpha12` and workspace `from-v1alpha10` predecessor directories are absent. `crates/jackin-xtask/src/schema.rs:124-134` requires three fixture files in each directory.
+- Migration code at `crates/jackin-config/src/migrations.rs:602,617,770` stamps the new versions. `crates/jackin/tests/migration_fixtures.rs:219-239` checks versions and exact golden contents.
+- The migration changes legacy `path` data into versioned `breadcrumb` data. Fixtures must cover breadcrumb behavior and malformed-input preservation.
+
+The reviewer labels the concrete missing-fixture failures P2. Task tracking records the consolidation finding as P1. Do not accept or merge this change until both predecessor directories and their meta and golden fixtures exist. Run migration fixtures and `schema-check` under reviewed MBX. Re-review the exact fixing commit.
+
+Add both predecessor fixture directories. Update successful fixture metadata and goldens. Cover breadcrumb transformations and malformed-input preservation.
+
+## Account snapshot follow-up
+
+The `omp` worker's root-fix plan is IN PROGRESS. It proposes a bounded database and WAL snapshot under a source-directory pin, a committed token for WAL-only state, and provider-and-selector revalidation.
+
+The planned fixtures cover WAL-only replacement and a concurrent writer. The plan awaits SQLite-native backup or a proof-backed stable capture. Review any provider-heavy dependency before adoption.
+
+Tests remain NOT RUN until MBX provenance and activation are reviewed. This plan does not establish an implemented fix or passing test result.
+
 ## Architect integration review
 
 The Architect repository is [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect). Its base is `2cf461e2fed1b95d9fd1e7ba74c10d4d8b1c685d`.
@@ -81,7 +116,11 @@ No local provenance transcript was saved. Artifact installation and activation r
 | `unprivileged_exec_design` | Execution boundary | IN PROGRESS |
 | `codex_schema_runtime` | Agent settings confirmation | IN PROGRESS |
 | `branches` | Fetch passed; full diff review | IN PROGRESS |
-| `execution_crosscheck` | Independent gate crosscheck | Complete; implementation acceptance NOT RUN |
+| `baseline_method_review` | PR #1108 exact-head source review | Complete; replacement required |
+| `execution_crosscheck` | Consolidation source review and final gates | Consolidation review complete; split implementation review NOT RUN |
+| `consolidation_review` | Migration fixture correction | IN PROGRESS |
+| `jackin_ci_consumer` | Collector and Mise/MBX integration | IN PROGRESS |
+| `omp` | Account database and WAL root-fix plan | IN PROGRESS; tests NOT RUN |
 
 The `architect_manifest_fix` owner supplied the exact-head review. The `velnor_recon` owners supplied generator history and workflow evidence.
 
