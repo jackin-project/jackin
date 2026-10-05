@@ -22,7 +22,8 @@ plugins = [
   "pr-review-toolkit@claude-plugins-official",
   "rust-analyzer-lsp@claude-plugins-official",
   "jackin-dev@jackin-marketplace",
-  "tailrocks-skills@tailrocks-skills",
+  "tailrocks-rust-skills@tailrocks-rust-skills",
+  "tailrocks-roadmap-skills@tailrocks-roadmap-skills",
   "caveman@caveman",
 ]
 
@@ -30,7 +31,10 @@ plugins = [
 source = "jackin-project/jackin-marketplace"
 
 [[claude.marketplaces]]
-source = "tailrocks/tailrocks-skills"
+source = "tailrocks/tailrocks-rust-skills"
+
+[[claude.marketplaces]]
+source = "tailrocks/tailrocks-roadmap-skills"
 
 [[claude.marketplaces]]
 source = "JuliusBrussee/caveman"

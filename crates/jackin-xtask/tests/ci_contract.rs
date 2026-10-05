@@ -9,9 +9,9 @@ use std::{
 use toml::Value as TomlValue;
 
 const ARCHITECT_REPOSITORY: &str = "jackin-project/jackin-the-architect";
-const ARCHITECT_COMMIT: &str = "0592d0deeaeaa5b785fa67a43d23d3b627552720";
+const ARCHITECT_COMMIT: &str = "7db69b62f598a0971809ee4a006ad3f5477d0996";
 const ARCHITECT_MANIFEST_SHA256: &str =
-    "eb08cf89aa32971c17db9875ec633ac22fe609927abf23fd18182756819e7fca";
+    "b38e506587c98137d0a1a88247fb68afc9f9f215c8104c838df251933a917ae0";
 const REQUIRED_VERIFICATION_TASKS: [(&str, &str, &str, &str); 3] = [
     (
         "native-swift-format",
@@ -45,6 +45,14 @@ fn read_toml(path: &Path) -> Result<TomlValue> {
     let contents =
         fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     toml::from_str(&contents).with_context(|| format!("parsing {}", path.display()))
+}
+
+fn core_string_constant<'a>(contents: &'a str, name: &str) -> Result<&'a str> {
+    let marker = format!("pub const {name}: &str = \"");
+    contents
+        .split_once(marker.as_str())
+        .and_then(|(_, rest)| rest.split_once('"').map(|(value, _)| value))
+        .with_context(|| format!("Jackin declares {name}"))
 }
 
 fn verification_tasks(root: &Path) -> Result<BTreeMap<String, TomlValue>> {
@@ -234,9 +242,12 @@ fn architect_manifest_snapshot_is_bound_to_an_immutable_source_commit() -> Resul
         "Architect repository pin changed"
     );
     ensure!(commit == ARCHITECT_COMMIT, "Architect commit pin changed");
+    let core_constants = fs::read_to_string(root.join("crates/jackin-core/src/constants.rs"))
+        .context("Jackin manifest constants exist")?;
+    let current_manifest_filename = core_string_constant(&core_constants, "MANIFEST_FILENAME")?;
     ensure!(
-        source_path == "jackin.role.toml",
-        "Architect manifest path changed"
+        source_path == current_manifest_filename,
+        "Architect manifest path differs from Jackin's current MANIFEST_FILENAME"
     );
     ensure!(
         expected_sha256 == ARCHITECT_MANIFEST_SHA256,
@@ -255,7 +266,8 @@ fn architect_manifest_snapshot_is_bound_to_an_immutable_source_commit() -> Resul
         "source revision must be hexadecimal"
     );
 
-    let manifest = fs::read(fixture.join(source_path)).context("pinned role manifest exists")?;
+    let manifest = fs::read(fixture.join(current_manifest_filename))
+        .context("pinned role manifest exists at Jackin's current manifest path")?;
     let actual_sha256 = hex::encode(Sha256::digest(&manifest));
     ensure!(
         actual_sha256 == expected_sha256,
@@ -269,13 +281,7 @@ fn architect_manifest_snapshot_is_bound_to_an_immutable_source_commit() -> Resul
         .get("version")
         .and_then(TomlValue::as_str)
         .context("role manifest declares its version")?;
-    let constants = fs::read_to_string(root.join("crates/jackin-core/src/constants.rs"))
-        .context("Jackin manifest-version declaration exists")?;
-    let version_marker = "pub const CURRENT_MANIFEST_VERSION: &str = \"";
-    let current_version = constants
-        .split_once(version_marker)
-        .and_then(|(_, rest)| rest.split_once('\"').map(|(version, _)| version))
-        .context("Jackin declares CURRENT_MANIFEST_VERSION")?;
+    let current_version = core_string_constant(&core_constants, "CURRENT_MANIFEST_VERSION")?;
     ensure!(
         manifest_version == current_version,
         "pinned Architect manifest version differs from Jackin"
@@ -307,6 +313,13 @@ fn required_fan_in_covers_every_workspace_crate_and_configured_verification_task
     );
 
     let mut expected = workspace_crate_job_ids(&root)?;
+    for crate_name in ["jackin-manifest", "jackin-xtask"] {
+        let job_id = format!("rust-{crate_name}");
+        ensure!(
+            expected.contains(&job_id),
+            "{job_id} must remain in Required to run the Architect parser and provenance contracts"
+        );
+    }
     let mise = read_toml(&root.join("mise.toml"))?;
     let mise_tasks = mise
         .get("tasks")

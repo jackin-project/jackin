@@ -41,6 +41,12 @@ plugins = []
 fn loads_architect_manifest_from_immutable_ci_snapshot() -> Result<(), Box<dyn std::error::Error>> {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../jackin-xtask/tests/fixtures/architect");
+    assert!(
+        fixture
+            .join(crate::repo_contract::MANIFEST_FILENAME)
+            .is_file(),
+        "Architect snapshot must provide Jackin's current manifest path"
+    );
     let manifest = load_role_manifest(&fixture)?;
 
     assert_eq!(manifest.version, jackin_core::CURRENT_MANIFEST_VERSION);
