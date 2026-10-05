@@ -37,6 +37,10 @@ pub struct LaunchImagePlan {
     /// The manifest's `published_image`, verbatim. `None` when the role
     /// declares none — the warm base is optional, the git source is not.
     pub published_image: Option<String>,
+    /// Per-agent role model defaults read during image-plan resolution. The
+    /// dry-run path combines these with admitted account models and launch
+    /// overrides through the runtime's canonical model resolver.
+    pub role_models: std::collections::BTreeMap<jackin_core::Agent, String>,
 }
 
 impl LaunchImagePlan {
@@ -105,12 +109,9 @@ pub async fn resolve_launch_image_plan(
         runner,
     )
     .await?;
-    Ok(plan_from_decision(
-        selector,
-        role_branch,
-        &decision,
-        published_image,
-    ))
+    let mut plan = plan_from_decision(selector, role_branch, &decision, published_image);
+    plan.role_models = super::capsule_setup::role_model_defaults(&validated_repo.manifest);
+    Ok(plan)
 }
 
 /// Project a decided image onto the plan shape. Split out from the async
@@ -142,6 +143,7 @@ pub(crate) fn plan_from_decision(
         base_image: decision.base_image_ref().map(ToOwned::to_owned),
         role_git_sha,
         published_image,
+        role_models: std::collections::BTreeMap::new(),
     }
 }
 
