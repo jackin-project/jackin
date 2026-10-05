@@ -209,6 +209,15 @@ fn cadence_tasks_define_the_canonical_graph() {
         "desktop-ci",
     );
     assert_subsequence(
+        task_block(&mise, "swift-package-native-ci"),
+        &[
+            "mise run desktop-bindings-check",
+            "mise run desktop-xcframework",
+            "cd native && swift build && swift test --parallel",
+        ],
+        "swift-package-native-ci",
+    );
+    assert_subsequence(
         task_block(&mise, "desktop-merge"),
         &["desktop-ci", "desktop-test-ui"],
         "desktop-merge",
