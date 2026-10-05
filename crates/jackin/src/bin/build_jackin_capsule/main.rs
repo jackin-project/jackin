@@ -322,10 +322,11 @@ fn check_zigbuild_installed(workspace: &Path) -> Result<()> {
     // contract.
     const INSTALL_HINT: &str = "Install the pinned toolchain from mise.toml with:\n  \
                                 mise install zig cargo:cargo-zigbuild";
-    let mut command = process::Command::new("mise");
-    command
-        .args(["exec", "--", "cargo-zigbuild", "--version"])
-        .current_dir(workspace);
+    let args = [
+        OsString::from("cargo-zigbuild"),
+        OsString::from("--version"),
+    ];
+    let mut command = mise_exec_command(OsStr::new("mise"), workspace, &args);
     #[expect(
         clippy::disallowed_methods,
         reason = "capsule build helper is a standalone build utility, not a render/runtime thread"
@@ -345,25 +346,43 @@ fn check_zigbuild_installed(workspace: &Path) -> Result<()> {
     }
 }
 
-fn ensure_rustup_target(triple: &str) -> Result<()> {
-    let mut command = process::Command::new("rustup");
-    command.args(["target", "list", "--installed"]);
+fn ensure_rustup_target(workspace: &Path, triple: &str) -> Result<()> {
+    ensure_rustup_target_with_mise(OsStr::new("mise"), workspace, triple)
+}
+
+fn ensure_rustup_target_with_mise(mise: &OsStr, workspace: &Path, triple: &str) -> Result<()> {
+    let list_args = [
+        OsString::from("rustup"),
+        OsString::from("target"),
+        OsString::from("list"),
+        OsString::from("--installed"),
+    ];
+    let mut command = mise_exec_command(mise, workspace, &list_args);
     #[expect(
         clippy::disallowed_methods,
         reason = "capsule build helper is a standalone build utility, not a render/runtime thread"
     )]
     let out = command
         .output()
-        .with_context(|| "failed to run `rustup target list --installed`")?;
+        .with_context(|| "failed to run `mise exec -- rustup target list --installed`")?;
+    anyhow::ensure!(
+        out.status.success(),
+        "mise exec -- rustup target list --installed failed"
+    );
     let installed = String::from_utf8_lossy(&out.stdout);
     if installed.lines().any(|l| l.trim() == triple) {
         return Ok(());
     }
     eprintln!("[build] installing rustup target {triple}...");
-    let status = process::Command::new("rustup")
-        .args(["target", "add", triple])
+    let add_args = [
+        OsString::from("rustup"),
+        OsString::from("target"),
+        OsString::from("add"),
+        OsString::from(triple),
+    ];
+    let status = mise_exec_command(mise, workspace, &add_args)
         .status()
-        .with_context(|| format!("failed to run `rustup target add {triple}`"))?;
+        .with_context(|| format!("failed to run `mise exec -- rustup target add {triple}`"))?;
     anyhow::ensure!(status.success(), "rustup target add {triple} failed");
     Ok(())
 }
@@ -376,7 +395,7 @@ fn build_via_zigbuild(
     dest: &Path,
 ) -> Result<()> {
     check_zigbuild_installed(workspace)?;
-    ensure_rustup_target(target_triple(arch))?;
+    ensure_rustup_target(workspace, target_triple(arch))?;
 
     let target = zigbuild_target(arch);
     let cargo_profile = profile.cargo_profile_arg();
@@ -387,10 +406,9 @@ fn build_via_zigbuild(
     );
 
     let mbx_args = mbx_zigbuild_args(target, cargo_profile, features, &target_dir);
-    let mut command = mise_command_with_fd_limit(OsStr::new("mise"), &mbx_args);
+    let mut command = mise_command_with_fd_limit(OsStr::new("mise"), workspace, &mbx_args);
 
     let status = command
-        .current_dir(workspace)
         .status()
         .with_context(|| "failed to spawn `mise exec -- mbx zigbuild`")?;
 
@@ -417,6 +435,7 @@ fn build_via_zigbuild(
     Ok(())
 }
 
+/// Choose the target root shared by the nested build and artifact lookup.
 fn target_directory(workspace: &Path, configured: Option<&OsStr>) -> PathBuf {
     let Some(configured) = configured.filter(|path| !path.is_empty()) else {
         return workspace.join("target");
@@ -458,7 +477,20 @@ fn mbx_zigbuild_args(
     args
 }
 
-fn mise_command_with_fd_limit(mise: &OsStr, args: &[OsString]) -> process::Command {
+fn mise_exec_command(mise: &OsStr, workspace: &Path, args: &[OsString]) -> process::Command {
+    let mut command = process::Command::new(mise);
+    command
+        .args(["exec", "--"])
+        .args(args)
+        .current_dir(workspace);
+    command
+}
+
+fn mise_command_with_fd_limit(
+    mise: &OsStr,
+    workspace: &Path,
+    args: &[OsString],
+) -> process::Command {
     #[cfg(unix)]
     {
         let mut command = process::Command::new("sh");
@@ -468,14 +500,17 @@ fn mise_command_with_fd_limit(mise: &OsStr, args: &[OsString]) -> process::Comma
             .arg("build-jackin-capsule")
             .arg(mise)
             .args(["exec", "--"])
-            .args(args);
+            .args(args)
+            .current_dir(workspace);
         command
     }
     #[cfg(not(unix))]
     {
         let mut command = process::Command::new(mise);
-        command.args(["exec", "--"]);
-        command.args(args);
+        command
+            .args(["exec", "--"])
+            .args(args)
+            .current_dir(workspace);
         command
     }
 }
