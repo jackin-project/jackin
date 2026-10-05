@@ -85,10 +85,10 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | IFACE-08 | Preserve release interfaces. | IN PROGRESS | `jackin_generator_config` and `crate_design` | Release design and extraction design | Record release outputs and signing boundary. | [Crate plan](crate-plan.md#interface-requirements) |
 | ROLE-01 | Restart the Architect role after manifest correction. | NOT RUN | `architect_contract` | Reviewed MBX and role parser validation | Record restart outcome at the exact role head. | [Architect review](reviews.md#architect-integration-review) |
 | HOST-02 | Recheck host account discovery after restart. | NOT RUN | `debian_codex_route` | Jackin runtime and role restart | Record account selection and launch state. | [Debian results](debian-results.md) |
-| FINAL-01 | Complete final correctness review. | NOT RUN | `execution_crosscheck` | Exact implementation SHA and tests | Review code, tests, and recorded decisions. | [Review record](reviews.md) |
-| FINAL-02 | Complete final security review. | IN PROGRESS | `preflight_security_review` | Exact execution design and artifact provenance | Clear all security gates before execution. | [Security review](reviews.md) |
-| FINAL-03 | Complete final build review. | NOT RUN | `build_baseline` and `execution_crosscheck` | Repeated baseline and post-split measurements | Review all scenario results and cache evidence. | [Build results](build-results.md) |
-| FINAL-04 | Complete final runtime review. | NOT RUN | `architect_contract` and `debian_codex_route` | Role restart and host account recheck | Review runtime evidence at exact heads. | [Debian results](debian-results.md); [Architect review](reviews.md#architect-integration-review) |
+| FINAL-01 | Complete final correctness review. | NOT RUN | `execution_crosscheck` (Sol/medium) | Exact implementation SHA, tests, and worker evidence | Not started until final changes and test evidence exist. Review exact-head correctness independently. | [Review record](reviews.md#final-review-ownership) |
+| FINAL-02 | Complete final security review. | NOT RUN | `preflight_security_review` (Sol/medium) | Final execution design and artifact provenance from evidence owners | Not started until exact final design and artifact evidence exist. Clear all security gates independently. | [Security review](reviews.md#final-review-ownership) |
+| FINAL-03 | Complete final build-performance review. | NOT RUN | `baseline_method_review` (Sol/medium) | Repeated measurements from `build_baseline` at exact baseline and split commits | Not started until every scenario and cache record exists. Worker measurements do not approve themselves. | [Build results](build-results.md); [review ownership](reviews.md#final-review-ownership) |
+| FINAL-04 | Complete final runtime-performance review. | NOT RUN | `architect_schema_review` (Sol/medium) | Role and host evidence from `architect_contract` and `debian_codex_route` at final heads | Not started until role restart and host account recheck evidence exist. Worker evidence is not approval. | [Debian results](debian-results.md); [Architect review](reviews.md#architect-integration-review); [review ownership](reviews.md#final-review-ownership) |
 | MERGE-01 | Merge only after feedback and required checks close. | NOT RUN | `coordinator` | Four final reviews and task PR | Re-fetch feedback at final head and close every thread. | [Branch record](branches.md) |
 | MAIN-01 | Verify the final change on the default branch. | NOT RUN | `execution_crosscheck` | Authorized merge and final main SHA | Re-fetch main and verify the merged commit and checks. | [Final report](final-report.md) |
 | CONSOL-01 | Fix and review the account-consolidation migration fixtures. | IN PROGRESS | `consolidation_review` and `execution_crosscheck` | Required predecessor, golden, and meta fixtures; verified MBX | Do not accept or merge before fixture checks and exact-head review pass. | [Consolidation review](reviews.md#account-consolidation-review) |
@@ -110,10 +110,12 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | `jackin_ci_consumer` | Current CI collector and Mise/MBX integration | IN PROGRESS |
 | `consolidation_review` | Migration fixture correction | IN PROGRESS; Sol review found missing fixtures |
 | `omp` | Account database and WAL root-fix plan | IN PROGRESS; tests NOT RUN |
-| `execution_crosscheck` | Independent source reviews and final gates | PR #1108 and consolidation source reviews complete; split implementation review NOT RUN |
+| `execution_crosscheck` | Independent Sol/medium correctness reviewer | Earlier source reviews complete; final correctness review NOT STARTED |
 | `codex_schema_runtime` | Codex schema and runtime settings | IN PROGRESS |
 | `unprivileged_exec_design` | Execution boundary | IN PROGRESS |
-| `preflight_security_review` | Preliminary security review | Initial review complete; follow-up pending |
+| `preflight_security_review` | Sol/medium security reviewer | Preliminary review complete; final review NOT STARTED |
+| `baseline_method_review` | Sol/medium build-performance reviewer | PR #1108 review complete; final build review NOT STARTED |
+| `architect_schema_review` | Sol/medium runtime-performance reviewer | Final review NOT STARTED; runtime evidence pending |
 | `debian_codex_route` | Debian account route | Static review complete; runtime route NOT RUN |
 
 ## Records

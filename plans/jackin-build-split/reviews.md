@@ -116,12 +116,24 @@ No local provenance transcript was saved. Artifact installation and activation r
 | `unprivileged_exec_design` | Execution boundary | IN PROGRESS |
 | `codex_schema_runtime` | Agent settings confirmation | IN PROGRESS |
 | `branches` | Fetch passed; full diff review | IN PROGRESS |
-| `baseline_method_review` | PR #1108 exact-head source review | Complete; replacement required |
-| `execution_crosscheck` | Consolidation source review and final gates | Consolidation review complete; split implementation review NOT RUN |
+| `baseline_method_review` | PR #1108 exact-head source review | Complete; final build-performance review NOT STARTED |
+| `execution_crosscheck` | Consolidation source review and final gates | Consolidation review complete; final correctness review NOT STARTED |
 | `consolidation_review` | Migration fixture correction | IN PROGRESS |
 | `jackin_ci_consumer` | Collector and Mise/MBX integration | IN PROGRESS |
 | `omp` | Account database and WAL root-fix plan | IN PROGRESS; tests NOT RUN |
+| `architect_schema_review` | Independent runtime-performance review | NOT STARTED; exact runtime evidence pending |
 
 The `architect_manifest_fix` owner supplied the exact-head review. The `velnor_recon` owners supplied generator history and workflow evidence.
+
+## Final review ownership
+
+All final reviews are NOT STARTED. Each review requires final commits and complete evidence. Implementation workers provide evidence. They do not approve their own work.
+
+| Review | Independent reviewer | Evidence producers | Status and start condition |
+|---|---|---|---|
+| Correctness | `execution_crosscheck` (Sol/medium) | Implementation and test owners | NOT STARTED; wait for exact final commits and test evidence. |
+| Security | `preflight_security_review` (Sol/medium) | `unprivileged_exec_design` and `mbx_activation` | NOT STARTED; wait for final execution design and artifact provenance. |
+| Build performance | `baseline_method_review` (Sol/medium) | `build_baseline` | NOT STARTED; wait for repeated baseline and split measurements for every scenario. |
+| Runtime performance | `architect_schema_review` (Sol/medium) | `architect_contract` and `debian_codex_route` | NOT STARTED; wait for role restart and host account recheck at final heads. |
 
 See [checklist](checklist.md), [build results](build-results.md), and [Debian results](debian-results.md).
