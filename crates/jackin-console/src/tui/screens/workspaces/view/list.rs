@@ -180,7 +180,8 @@ fn instance_details_content(
                         .map(|pane| WorkspaceInstanceLivePaneFacts {
                             session_id: pane.session_id,
                             label: pane.label.clone(),
-                            agent: pane.agent.clone(),
+                            account_id: pane.account_id.clone(),
+                            config_id: pane.agent.clone(),
                             state_label: pane.state.label().to_owned(),
                         })
                         .collect(),
@@ -192,6 +193,8 @@ fn instance_details_content(
         sessions.iter().map(|session| WorkspaceInstanceSessionRow {
             name: session.tmux_name.clone(),
             agent_runtime: session.agent_runtime.clone(),
+            account_id: session.account_id.clone(),
+            config_id: session.instance.clone(),
         }),
     )
 }

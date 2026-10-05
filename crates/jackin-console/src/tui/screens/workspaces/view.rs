@@ -372,8 +372,19 @@ pub fn instance_purge_confirm_label(container_base: &str, role_key: Option<&str>
 }
 
 #[must_use]
-pub fn workspace_instance_pane_agent_label(agent: Option<&str>) -> String {
-    agent.unwrap_or("shell").to_owned()
+pub fn workspace_instance_pane_identity_label(
+    account_id: Option<&str>,
+    config_id: Option<&str>,
+) -> String {
+    match (
+        account_id.filter(|id| !id.is_empty()),
+        config_id.filter(|id| !id.is_empty()),
+    ) {
+        (Some(account_id), Some(config_id)) => format!("{account_id} · {config_id}"),
+        (Some(account_id), None) => account_id.to_owned(),
+        (None, Some(config_id)) => config_id.to_owned(),
+        (None, None) => "shell".to_owned(),
+    }
 }
 
 #[must_use]
@@ -1318,7 +1329,8 @@ pub struct WorkspaceInstanceTab {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceInstanceTabPane {
     pub label: String,
-    pub agent_label: String,
+    pub account_id: Option<String>,
+    pub config_id: Option<String>,
     pub state_label: String,
     pub focused: bool,
     pub selected: bool,
@@ -1328,6 +1340,8 @@ pub struct WorkspaceInstanceTabPane {
 pub struct WorkspaceInstanceSessionRow {
     pub name: String,
     pub agent_runtime: String,
+    pub account_id: Option<String>,
+    pub config_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1341,7 +1355,8 @@ pub struct WorkspaceInstanceLiveTabFacts {
 pub struct WorkspaceInstanceLivePaneFacts {
     pub session_id: u64,
     pub label: String,
-    pub agent: Option<String>,
+    pub account_id: Option<String>,
+    pub config_id: Option<String>,
     pub state_label: String,
 }
 
@@ -1377,7 +1392,8 @@ pub fn workspace_instance_live_content(
                     .into_iter()
                     .map(|pane| WorkspaceInstanceTabPane {
                         label: pane.label,
-                        agent_label: workspace_instance_pane_agent_label(pane.agent.as_deref()),
+                        account_id: pane.account_id,
+                        config_id: pane.config_id,
                         state_label: pane.state_label,
                         focused: pane.session_id == tab.focused_pane,
                         selected: selected_pane == Some(pane.session_id),
@@ -1501,6 +1517,10 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
                     .fg
                     .unwrap_or_default())
             };
+            let identity_label = workspace_instance_pane_identity_label(
+                pane.account_id.as_deref(),
+                pane.config_id.as_deref(),
+            );
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("    {cursor_prefix}{marker} "),
@@ -1518,7 +1538,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
                 ),
                 Span::styled(format!("{:<16}", pane.label), label_style),
                 Span::styled(
-                    format!("  ({}) ", pane.agent_label),
+                    format!("  ({identity_label}) "),
                     Style::default().fg(termrock::style::DesignSystem::default()
                         .style(termrock::style::Role::TextMuted)
                         .fg
@@ -1539,7 +1559,7 @@ fn live_instance_lines(tabs: &[WorkspaceInstanceTab]) -> Vec<Line<'static>> {
 
 fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
-        format!("  {:<24}  Agent", "Session"),
+        format!("  {:<24}  Identity", "Session"),
         termrock::style::DesignSystem::default().style(termrock::style::Role::TextStrong),
     ))];
     for row in rows {
@@ -1548,6 +1568,16 @@ fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'sta
             format!("{cut}…")
         } else {
             row.name.clone()
+        };
+        let identity_label = if row.account_id.is_some() || row.config_id.is_some() {
+            workspace_instance_pane_identity_label(
+                row.account_id.as_deref(),
+                row.config_id.as_deref(),
+            )
+        } else if row.agent_runtime.is_empty() {
+            workspace_instance_pane_identity_label(None, None)
+        } else {
+            row.agent_runtime.clone()
         };
         lines.push(Line::from(vec![
             Span::styled(
@@ -1558,7 +1588,7 @@ fn session_instance_lines(rows: &[WorkspaceInstanceSessionRow]) -> Vec<Line<'sta
                     .unwrap_or_default()),
             ),
             Span::styled(
-                row.agent_runtime.clone(),
+                identity_label,
                 Style::default().fg(termrock::style::DesignSystem::default()
                     .style(termrock::style::Role::TextMuted)
                     .fg
