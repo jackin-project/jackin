@@ -208,6 +208,16 @@ Jackin consumer source review PASS at `07f5ce7efe38c6c608fb975013df43e770d92b2b`
 
 Architect image prefix `ad3b0069` predates the merged role content and has no source match. No live Codex profile probe, role request, or role launch ran. Codex environment evidence is synthetic-fixture-only.
 
+### Maintained Architect image installer source review (PR #480)
+
+PR [#480](https://github.com/jackin-project/jackin-the-architect/pull/480) is open and draft at source commit `03482411fd5f1ef55c61bb1e2265f198dca3434b`, tree `57070227c97a4f11ef357dd0a471896fe7ea47aa`, against main `7b72b38fe1d66e35c0931899c53bf3719592bbcc`. Exact Sol source review PASS covers the complete Dockerfile installer update and its maintained npm build-only project. GitHub checks at this head show DCO, Actionlint, Plan, Required, and SonarCloud success; Publish baseline is skipped by its main-only condition.
+
+The build-only package pins `ctx7@0.5.11` and `skills@1.5.22`. Its lock is npm lockfile v3 with 89 dependency entries; all entries have registry integrity metadata, and none declare `hasInstallScript`. The package manifest SHA-256 is `8e4644c137635eee9942e08d36459f4bcfc635182eb834fd9d798f689016c2ae`; lock SHA-256 is `b5f6a5fa0a1432d3f2c1e20327a1d0fa0ab9370fb7f71bbd1ad9b7124890cb6f`. The lock was generated with Node `24.21.0` and npm `11.19.0` using `--package-lock-only --ignore-scripts --no-audit --no-fund`; it created no `node_modules` and ran no package lifecycle scripts. Node archive SHA-256 is `6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff`.
+
+The `ctx7@0.5.11` registry tarball SHA-256 and SRI match the captured bytes. Its embedded source map matches all 31 source files at upstream tag commit `d304ff2c0880110c0b53c8e1e4d4c664feae1e5e`. The tag is unsigned and npm `gitHead` is null; no signature or registry attestation is claimed. The corrected private audit revision is `installer-source-audit.rev1.md`, SHA-256 `b790c63a6a155d8654bc7f882d93275ecd625c83023c6573a91fe440a685d340`; it preserves the original packet and fixes only the transcribed `skills` SRI. The separate ctx7 supplement is SHA-256 `058063c4ae763a6bad8fcb3c42249bf251a2f97b8223de7c41888005199dc093`. The Node/npm lock provenance packet is SHA-256 `27413ecedb649fdc4f9e5e5cca569a8e33f8f2a98cd981526df41319e071ecf1`.
+
+This is source and lock-generation evidence only. Docker image construction, `npm ci`, CLI invocation, role loading, and role execution remain NOT RUN. The CI success does not establish image behavior.
+
 ### Velnor PR #59 permissions follow-up
 
 Exact Sol/medium source review PASS at remote PR head `81e65fee08edc3b73839d9ff810cb7da6a170a65`, tree `4162acc9850461784105c6ce7d3d322df0c05c9d`, against then-current main `1856b5b9f47569515c8fa00657a2c8dde6aada9f`. It scoped `actions:read` to the Required artifact consumer and left the Plan baseline lookup tokenless as a separately documented gap. The PR's generated Plan run and then Required failed; Rust jobs and publish-baseline were skipped. This source PASS does not cover newer main or the current local merge state.
