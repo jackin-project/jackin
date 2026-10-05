@@ -12,8 +12,13 @@ Work agents are tool-assigned Luna/max. Runtime confirmation remains pending. De
 
 - The official [Codex configuration reference](https://developers.openai.com/codex/config-reference) defines `model_reasoning_effort` as a string.
 - Supported reasoning levels depend on the selected model.
-- Codex CLI is `0.160.0`. The generated app-server v2 schema bundle SHA-256 is `e77b7d1436a78f431a74b2cb263a862e92ae40d70411bc63835b47ab2168827c`.
-- Thread start and resume notifications expose the configured model and reasoning effort. Turn notifications do not expose per-turn model or effort.
+- Codex CLI is `0.160.0`. The command was `codex app-server generate-json-schema --experimental --out /tmp/codex-schema.jOAb5D`.
+- The v2 bundle is `/tmp/codex-schema.jOAb5D/codex_app_server_protocol.v2.schemas.json`. Its recorded generation time is `2026-10-05 03:44:00.610074727 +0200`.
+- The bundle SHA-256 is `e77b7d1436a78f431a74b2cb263a862e92ae40d70411bc63835b47ab2168827c`.
+- `v2/ThreadStartResponse.json#/properties/model` and `v2/ThreadStartResponse.json#/properties/reasoningEffort` expose response fields.
+- `v2/ThreadResumeResponse.json#/properties/model` and `v2/ThreadResumeResponse.json#/properties/reasoningEffort` expose response fields.
+- `v2/ThreadStartedNotification.json#/properties/thread` refers to `#/definitions/Thread`. The bundle's `#/definitions/Thread/properties/model` and `#/definitions/Thread/properties/reasoningEffort` fields describe configured or persisted thread state.
+- The v2 schema defines `ThreadResumeResponse`, but no thread-resumed notification. `TurnStartedNotification` and `TurnCompletedNotification` expose `threadId` and `turn`; `#/definitions/Turn` has no model or `reasoningEffort` fields.
 - The filtered local catalog output is recorded in [checklist](checklist.md#codex-catalog-command).
 - Luna supports `low`, `medium`, `high`, `xhigh`, and `max`.
 - Sol supports those levels and `ultra`.
