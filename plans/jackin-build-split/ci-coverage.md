@@ -141,9 +141,9 @@ The maintained workflow inventory has six active workflows. Only `.github/workfl
 
 At Jackin base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, the `mise.toml` build, test, and lint root tasks call `cargo xtask` directly.
 
-The Velnor `VerificationTask` uses `mise run` only for proven non-Rust tasks. A Rust-MBX variant and Jackin Mise-wrapper integration remain pending design and activation review. Do not claim the invocation bypass is fixed.
+Commit `091bbae649ba663ce8a77239938ac31493eb7eda` adds the supported Mise `[wrappers.cargo]` route to MBX and enables `MBX_CARGO_SHIM_MODE=1`; the existing Rust version remains owned by `rust-toolchain.toml`, with MBX pinned separately in the task configuration. Mise 2026.10.1 parsed the wrapper configuration, and exact pinned Mise/MBX source review passed.
 
-Resolve this integration before CI acceptance. Verify generated output at the final Velnor head.
+Runtime verification of wrapper dispatch is pending the reviewed fake-command harness and source-bound MBX execution. The explicit invocation `mise exec -- mbx test ...` is a direct MBX CLI command; it does not itself prove transparent wrapper behavior for nested `cargo xtask` or Boltffi commands. The Velnor `VerificationTask` continues to use `mise run` only for proven non-Rust tasks. Resolve the supported generated-CI Rust test path and verify generated output at the final Velnor head before CI acceptance.
 
 ## Owner
 
