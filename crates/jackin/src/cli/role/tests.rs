@@ -69,6 +69,38 @@ fn load_args_agent_optional() {
 }
 
 #[test]
+fn load_args_parses_task_scoped_model_and_effort() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "load",
+        "agent-smith",
+        "--agent",
+        "codex",
+        "--model",
+        "gpt-6-luna",
+        "--effort",
+        "max",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Load(super::LoadArgs {
+            model: Some(ref model),
+            effort: Some(jackin_core::ReasoningEffort::Max),
+            ..
+        })) if model == "gpt-6-luna"
+    ));
+}
+
+#[test]
+fn load_args_rejects_unknown_effort() {
+    let error =
+        Cli::try_parse_from(["jackin", "load", "agent-smith", "--effort", "maximum"]).unwrap_err();
+    let message = strip_ansi(&error.to_string());
+    assert!(message.contains("low, medium, high, max"), "{message}");
+}
+
+#[test]
 fn load_args_parses_branch_flag() {
     let cli = Cli::try_parse_from([
         "jackin",
@@ -260,6 +292,10 @@ fn load_help_shows_description_and_examples() {
     assert!(help.contains("Examples:"));
     assert!(help.contains("jackin load agent-smith"));
     assert!(help.contains("jackin load agent-smith big-monorepo"));
+    assert!(help.contains("--model"));
+    assert!(help.contains("--effort"));
+    assert!(help.contains("low, medium"));
+    assert!(help.contains("max"));
 }
 
 #[test]

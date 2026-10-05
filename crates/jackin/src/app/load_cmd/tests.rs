@@ -421,3 +421,71 @@ fn dry_run_json_reports_an_absent_model_pin_as_null_not_missing() {
     assert!(data["model"].is_null());
     assert!(data["instances"].as_array().is_some_and(Vec::is_empty));
 }
+
+#[test]
+fn dry_run_load_overrides_show_selected_model_and_effort_per_agent() {
+    use jackin_config::ResolvedInstance;
+
+    let selector = jackin_core::RoleSelector::parse("donbeave/the-architect").unwrap();
+    let mut plan = super::dry_run_plan_json(
+        &selector,
+        &dry_run_workspace(),
+        "codex",
+        None,
+        false,
+        &dry_run_image_plan(),
+    );
+    let identity = jackin_runtime::runtime::DryRunIdentity {
+        account_id: None,
+        model: None,
+        instances: vec![
+            ResolvedInstance {
+                config_id: "codex-work".to_owned(),
+                agent: Agent::Codex,
+                account_id: "c-codex".to_owned(),
+                model: Some("account-model-work".to_owned()),
+                base_url: None,
+                xdg_roots: None,
+                label: "Codex · Work".to_owned(),
+                synthesized: false,
+            },
+            ResolvedInstance {
+                config_id: "codex-personal".to_owned(),
+                agent: Agent::Codex,
+                account_id: "c-codex-personal".to_owned(),
+                model: Some("account-model-personal".to_owned()),
+                base_url: None,
+                xdg_roots: None,
+                label: "Codex · Personal".to_owned(),
+                synthesized: false,
+            },
+            ResolvedInstance {
+                config_id: "claude-work".to_owned(),
+                agent: Agent::Claude,
+                account_id: "a-claude".to_owned(),
+                model: Some("claude-role-model".to_owned()),
+                base_url: None,
+                xdg_roots: None,
+                label: "Claude · Work".to_owned(),
+                synthesized: false,
+            },
+        ],
+    };
+    apply_dry_run_identity_json(&mut plan, &identity);
+    super::apply_dry_run_load_overrides_json(
+        &mut plan,
+        Agent::Codex,
+        Some("gpt-6-luna"),
+        Some(jackin_core::ReasoningEffort::Max),
+    );
+
+    let data = &plan["data"];
+    assert_eq!(data["model"], "gpt-6-luna");
+    assert_eq!(data["effort"], "max");
+    assert_eq!(data["instances"][0]["model"], "gpt-6-luna");
+    assert_eq!(data["instances"][0]["effort"], "max");
+    assert_eq!(data["instances"][1]["model"], "gpt-6-luna");
+    assert_eq!(data["instances"][1]["effort"], "max");
+    assert_eq!(data["instances"][2]["model"], "claude-role-model");
+    assert!(data["instances"][2]["effort"].is_null());
+}
