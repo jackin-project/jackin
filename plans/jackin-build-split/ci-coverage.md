@@ -123,6 +123,8 @@ The old #1112 head `73ea2117b8e584c64dec92242271a86149a53125` remains open and f
 
 Replacement run `37289881948` completed on `7b6ea934490b6ef0d867a43def527e29caa3b63f`. DCO-2 and Actionlint passed. Plan failed because acquired Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks` as `unknown_config_field`; no plan artifact was produced. Required failed while merging reports, all 25 Rust jobs were skipped, and Publish baseline was skipped. The current Velnor task schema is not yet available through the pinned release. The replacement PR has no reviews, inline comments, issue comments, or review threads at this refresh. These results are not Rust test or compile results. Any later docs commit changes the head and requires a new exact-head check refresh.
 
+After docs-only evidence commit `edde91c92d64d9c04211f20012d271d8b1b28cf3`, run `37290996910` completed at that exact head with the same result: DCO-2 and Actionlint PASS; Plan FAIL on `tasks: unknown_config_field`; Required FAIL because Plan produced no artifact; all 25 Rust jobs and Publish baseline SKIPPED. The Plan log confirms the same Velnor `0.1.0` invocation. REST and GraphQL feedback refreshes at `edde91c` found zero inline comments, reviews, issue comments, or review threads. The docs-only commit did not change executable source; tests remain unrun on this task branch.
+
 ## Task invocation gate
 
 At Jackin base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, the `mise.toml` build, test, and lint root tasks call `cargo xtask` directly.

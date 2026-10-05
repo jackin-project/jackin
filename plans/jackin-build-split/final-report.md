@@ -9,6 +9,8 @@ The task branch `refactor/build-split` is based on `main` at `0aa821a088e1bacf3d
 
 The DCO-invalid branch was preserved at `73ea2117b8e584c64dec92242271a86149a53125`. Its 60 commits were replayed with source trailers and matching sign-offs where missing onto `refactor/build-split-dco`; independent Sol review confirmed the replay final tree is identical. Replacement PR #1113 is open as a draft at `7b6ea934490b6ef0d867a43def527e29caa3b63f`. DCO-2 and Actionlint pass, but Plan fails against the pinned Velnor `0.1.0` generator, Required fails, and all Rust jobs are skipped. The replacement is not merge-ready. See [DCO review](reviews.md#dco-signed-history-replacement) and [exact-head CI](ci-coverage.md#dco-signed-replacement-pr-1113).
 
+The latest task-docs commit is `edde91c92d64d9c04211f20012d271d8b1b28cf3`; it updates the ref inventory, naming record, and Velnor helper-run evidence without changing source. Exact PR run `37290996910` at that head repeats the same DCO-2/Actionlint PASS and Plan/Required FAIL; Rust jobs remain skipped.
+
 The first main-source MBX attempt failed because the private chroot lacked `/etc/alternatives`. A second bounded proof succeeded at the same base SHA. Later reviewed runs collected three cold builds, a separate warm-store seed, three fresh-target warm-store observations, and three no-op observations. The method review accepted only narrow initial-main evidence gates: cold runs were contended, each warm run has an unexplained `aws-lc-sys` miss, and no-op runs wrote timing reports. No split comparison or post-integration baseline is accepted.
 
 ## Current evidence state
