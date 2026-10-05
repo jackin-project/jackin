@@ -68,11 +68,19 @@ Do not claim generated workflow parity. Compare generator source, configuration,
 
 ## Velnor PR #59
 
-Status: OPEN; generation and execution gates are IN PROGRESS.
+Status: MERGED on a later main snapshot; permission source review PASS; Jackin generation remains separately gated.
 
-The [PR](https://github.com/tailrocks/velnor-new/pull/59) is `fix/required-actions-read-scope`. Its head is `81e65fee08edc3b73839d9ff810cb7da6a170a65`. The recorded base is `1856b5b9f47569515c8fa00657a2c8dde6aada9f`. A later direct ref check found main at `c4fc31efd2fbb39b7cfc2cce423d99b7c4733c3d`; checks at that newer main are not recorded here.
+The [PR](https://github.com/tailrocks/velnor-new/pull/59) is `fix/required-actions-read-scope`. Earlier snapshots at head `81e65fee08edc3b73839d9ff810cb7da6a170a65` and base `1856b5b9f47569515c8fa00657a2c8dde6aada9f` are superseded. A later snapshot reported PR head `dccf0fbe04a43cd0b04791663a6c9fe619687a62`, base `c8a891bfb9e9a692e328732dc950e918c182fc78`, and Velnor main `7ccc7617253343d6e59feb1727b068a0cc0e937e`. The PR was merged by that main snapshot. GitHub reported 19 completed checks successful.
 
-`architect_manifest_fix` is the sole heavy owner for generator build and self-CI regeneration. An immutable source, archive, and isolation packet is pending, followed by applicable review. No MBX or Cargo execution is recorded for this PR. Do not claim generated-source or test acceptance.
+Exact Sol source review at PR head `dccf0fbe` and tree `d073b2c4008202705935fb062ff615e8d00f67f3` passed against base `c8a891b`. The review covered only the permission-scope change: workflow defaults do not grant Actions access, while Plan and Required receive the reviewed read scope. It did not re-review unrelated imported runner changes. The 19 successful checks are the reported Velnor snapshot; they do not establish current Jackin generation, role validation, or runtime acceptance.
+
+## Velnor PR #65
+
+Status: SOURCE PASS; generated-workflow CI and execution remain NOT PASS.
+
+The publisher source at `ff41745394712604bddf94b6a4e9f1069100789e` received exact Sol source review PASS. CI run `37275543333` built the helper through Mise and MBX and uploaded its preseed artifact, but failed the generated-workflow comparison. Required then failed, and Rust jobs were skipped. No successful generator or Rust-test result is recorded. The artifact remains unexecuted: the security review found the isolated workspace and cleared environment do not constrain filesystem, socket, or network access. PR #65 remains draft and unmerged; no release or publication occurred.
+
+These Velnor snapshots do not validate the Jackin fixture rebake or source tests. The current Jackin migration fixture archive and pending execution gates are recorded in [reviews](reviews.md#current-migration-source-and-fixture-checkpoint).
 
 ## Current Jackin consumer check
 
