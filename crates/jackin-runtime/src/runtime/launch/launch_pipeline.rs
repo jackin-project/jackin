@@ -841,7 +841,7 @@ pub(crate) async fn load_role_with(
         opts.account.is_none() || opts.configuration.is_none(),
         "account and configuration launch selections cannot both be supplied"
     );
-    validate_explicit_restore_options(opts)?;
+    validate_explicit_restore_options(paths, opts)?;
     let admission_config = config.clone();
     let mut account_config =
         opts.configuration
@@ -1776,15 +1776,17 @@ fn current_role_reuse_is_compatible(opts: &super::LoadOptions) -> bool {
 /// inspecting or starting it rather than silently dropping the caller's
 /// requested agent, account, model, effort, image, profile, environment, or
 /// mounts.
-fn validate_explicit_restore_options(opts: &super::LoadOptions) -> anyhow::Result<()> {
-    if opts.restore_container_base.is_none() {
+fn validate_explicit_restore_options(
+    paths: &JackinPaths,
+    opts: &super::LoadOptions,
+) -> anyhow::Result<()> {
+    let Some(container) = opts.restore_container_base.as_deref() else {
         return Ok(());
-    }
+    };
     anyhow::ensure!(
         !opts.rebuild
             && !opts.force
             && !opts.non_interactive
-            && opts.agent.is_none()
             && opts.account.is_none()
             && opts.configuration.is_none()
             && opts.docker_profile.is_none()
@@ -1794,8 +1796,18 @@ fn validate_explicit_restore_options(opts: &super::LoadOptions) -> anyhow::Resul
             && opts.on_demand_bindings.is_empty()
             && opts.extra_mounts.is_empty()
             && opts.prompt.is_none(),
-        "an explicit restore container cannot apply rebuild, agent, account, configuration, model, effort, profile, environment, credential, or mount overrides; start a fresh role instance instead"
+        "an explicit restore container cannot apply rebuild, account, configuration, model, effort, profile, environment, credential, or mount overrides; its selected agent must match the stored instance; start a fresh role instance instead"
     );
+    if let Some(requested_agent) = opts.agent {
+        let manifest = InstanceManifest::read(&paths.data_dir.join(container))?;
+        let stored_agent = manifest.agent()?;
+        anyhow::ensure!(
+            requested_agent == stored_agent,
+            "explicit restore agent {} does not match stored instance agent {}",
+            requested_agent.slug(),
+            stored_agent.slug(),
+        );
+    }
     Ok(())
 }
 
@@ -1803,6 +1815,7 @@ fn validate_explicit_restore_options(opts: &super::LoadOptions) -> anyhow::Resul
 mod restore_reuse_intent_tests {
     use super::{current_role_reuse_is_compatible, validate_explicit_restore_options};
     use crate::runtime::launch::LoadOptions;
+    use jackin_core::JackinPaths;
 
     #[test]
     fn current_role_reuse_rejects_launch_configuration_overrides() {
@@ -1836,15 +1849,24 @@ mod restore_reuse_intent_tests {
             ..LoadOptions::default()
         };
         options.model = Some("gpt-6-luna".to_owned());
-        let error = validate_explicit_restore_options(&options).unwrap_err();
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let error = validate_explicit_restore_options(&paths, &options).unwrap_err();
         assert!(error.to_string().contains("cannot apply"));
 
         let mut options = LoadOptions {
             restore_container_base: Some("jk-existing-role".to_owned()),
             ..LoadOptions::default()
         };
+        options.effort = Some(jackin_core::ReasoningEffort::Max);
+        assert!(validate_explicit_restore_options(&paths, &options).is_err());
+
+        let mut options = LoadOptions {
+            restore_container_base: Some("jk-existing-role".to_owned()),
+            ..LoadOptions::default()
+        };
         options.account = Some("work".to_owned());
-        let error = validate_explicit_restore_options(&options).unwrap_err();
+        let error = validate_explicit_restore_options(&paths, &options).unwrap_err();
         assert!(error.to_string().contains("account"));
 
         let mut options = LoadOptions {
@@ -1852,7 +1874,7 @@ mod restore_reuse_intent_tests {
             ..LoadOptions::default()
         };
         options.non_interactive = true;
-        assert!(validate_explicit_restore_options(&options).is_err());
+        assert!(validate_explicit_restore_options(&paths, &options).is_err());
     }
 }
 
