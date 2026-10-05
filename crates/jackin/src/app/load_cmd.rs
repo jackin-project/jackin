@@ -742,7 +742,7 @@ pub(super) async fn handle_eject(
 ///
 /// Split out from printing so the wire shape is asserted directly, without a
 /// Docker daemon or a captured stdout.
-pub(crate) fn dry_run_plan_json(
+fn dry_run_plan_json(
     class: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
     agent_slug: &str,
