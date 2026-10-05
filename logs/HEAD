@@ -1,0 +1,143 @@
+0000000000000000000000000000000000000000 278cdbe517164564fc7206f37becff0e2b92b0b2 Alexey Zhokhov <alexey@zhokhov.com> 1789648708 +0700	clone: from github.com:jackin-project/jackin.git
+278cdbe517164564fc7206f37becff0e2b92b0b2 278cdbe517164564fc7206f37becff0e2b92b0b2 Alexey Zhokhov <alexey@zhokhov.com> 1789649040 +0700	checkout: moving from main to feat/multi-account-support
+278cdbe517164564fc7206f37becff0e2b92b0b2 0b1f74525ea14690733fe9b0b12b8f48b94dbc81 Alexey Zhokhov <alexey@zhokhov.com> 1789649053 +0700	commit: docs: define multi-account support contract
+0b1f74525ea14690733fe9b0b12b8f48b94dbc81 21232c7e218026c2a3ecf34795acc9ca322330f6 Alexey Zhokhov <alexey@zhokhov.com> 1789649546 +0700	commit: docs: pin implementation branch in goal
+21232c7e218026c2a3ecf34795acc9ca322330f6 abc2ca20906b6eb7683c331d82b310011e098e6d Alexey Zhokhov <alexey@zhokhov.com> 1789650309 +0700	commit: docs(multi-account): freeze T02 domain contracts and ledger
+abc2ca20906b6eb7683c331d82b310011e098e6d 59aeb421f476066b24441b751fc0dd4b28c1d38b Alexey Zhokhov <alexey@zhokhov.com> 1789652747 +0700	commit: docs(multi-account): bank lane ledger rows and catalog-to-support ledger
+59aeb421f476066b24441b751fc0dd4b28c1d38b 023ce3a74b479311ba1ea667bd7a8754bdbf112a Alexey Zhokhov <alexey@zhokhov.com> 1789653941 +0700	commit: feat(console): async usage route with stable IDs, heartbeat, and honored launch defaults
+023ce3a74b479311ba1ea667bd7a8754bdbf112a acffbaa645483dac64c0ecf63866ba1ef79dd05a Alexey Zhokhov <alexey@zhokhov.com> 1789653941 +0700	commit: feat(usage): canonical metric groups, raw over-100pct, distinct quota states
+acffbaa645483dac64c0ecf63866ba1ef79dd05a 988b4d3c0b764346dc72e9ea04239abb809e2455 Alexey Zhokhov <alexey@zhokhov.com> 1789653941 +0700	commit: test(support): scripted HTTP, fake process, and manual clock harnesses
+988b4d3c0b764346dc72e9ea04239abb809e2455 a4af8b2f3121e42c2a8634d27353123900a49e62 Alexey Zhokhov <alexey@zhokhov.com> 1789654509 +0700	commit: feat(core): expand agent catalog to 12 runtimes with adapters
+a4af8b2f3121e42c2a8634d27353123900a49e62 9b7612b3048758657728a9cd278f45fe8593d2a6 Alexey Zhokhov <alexey@zhokhov.com> 1789654509 +0700	commit: feat(config): 12 providers, multi-provider profiles, stores-backed discovery
+9b7612b3048758657728a9cd278f45fe8593d2a6 20e478affe609f329bf92b5866ae2ecb17ae69ed Alexey Zhokhov <alexey@zhokhov.com> 1789654514 +0700	commit: feat(launch): provision, mount, and image support for 6 new runtimes
+20e478affe609f329bf92b5866ae2ecb17ae69ed 09de3ff045f9b9f44ef8ba03b40443e1e38e20a9 Alexey Zhokhov <alexey@zhokhov.com> 1789654514 +0700	commit: feat(usage): host surfaces for new providers plus broker cadence
+09de3ff045f9b9f44ef8ba03b40443e1e38e20a9 37bf0ce37e11a8dd9d7f84ddf546ef867724fa82 Alexey Zhokhov <alexey@zhokhov.com> 1789654523 +0700	commit: feat(console): account kinds, auth panels, and baselines for 6 new runtimes
+37bf0ce37e11a8dd9d7f84ddf546ef867724fa82 5057a52c1a1777b7f89f14e0a64f099d433998c9 Alexey Zhokhov <alexey@zhokhov.com> 1789654523 +0700	commit: feat(telemetry): registry and schema entries for new agents and providers
+5057a52c1a1777b7f89f14e0a64f099d433998c9 7dd3999e284ade12ca6492c9e2f7b29142de56ab Alexey Zhokhov <alexey@zhokhov.com> 1789654548 +0700	commit: docs(multi-account): ledger S1/T10/C04/provD/broker rows
+7dd3999e284ade12ca6492c9e2f7b29142de56ab b7250ecf9c3ef333db66f2cf4798237a40cf8b22 Alexey Zhokhov <alexey@zhokhov.com> 1789658444 +0700	commit: feat(multi-account): S2 schema, provider lanes D+E, broker lanes, review fixes
+b7250ecf9c3ef333db66f2cf4798237a40cf8b22 8a957639e2ca47c535ebfd58e1ee227c6c64edbc Alexey Zhokhov <alexey@zhokhov.com> 1789658452 +0700	commit: chore(multi-account): gate budgets for catalog growth
+8a957639e2ca47c535ebfd58e1ee227c6c64edbc 3c8071445dea6555cbc47e7f11e32e6d7a56c967 Alexey Zhokhov <alexey@zhokhov.com> 1789658458 +0700	commit: fix(gates): T20 harness clippy/telemetry compliance
+3c8071445dea6555cbc47e7f11e32e6d7a56c967 6f0280c4b0f1bc2e7196f2d276cf6262542f37ff Alexey Zhokhov <alexey@zhokhov.com> 1789662034 +0700	commit: feat(multi-account): S3 instance-keyed credential transport spine
+6f0280c4b0f1bc2e7196f2d276cf6262542f37ff 6f0280c4b0f1bc2e7196f2d276cf6262542f37ff Alexey Zhokhov <alexey@zhokhov.com> 1789663329 +0700	reset: moving to HEAD
+6f0280c4b0f1bc2e7196f2d276cf6262542f37ff b1bf7610a3912a5a37d6167d94983e907ee44e94 Alexey Zhokhov <alexey@zhokhov.com> 1789668136 +0700	commit: feat(multi-account): S4 discovery/Settings/launch/usage/Capsule lanes + integration
+b1bf7610a3912a5a37d6167d94983e907ee44e94 685c61f4a83ac916dd50222997d8931151e5a80c Alexey Zhokhov <alexey@zhokhov.com> 1789678147 +0700	commit: Multi-account tracer: per-instance slots, launch gates, live A/B/C proof
+685c61f4a83ac916dd50222997d8931151e5a80c 06b64e2032fa39e8fd50662331c9ec4b519ffe89 Alexey Zhokhov <alexey@zhokhov.com> 1789679206 +0700	commit: Discovery: accept live Kimi per-env grant over drained base file
+06b64e2032fa39e8fd50662331c9ec4b519ffe89 865f6d3e6e97a71623ee5b8f4d9c51d3c1d81d3e Alexey Zhokhov <alexey@zhokhov.com> 1789686514 +0700	commit: fix(gates): E0063 all-features tests, lint trio, stale workflow links, brand, map, UI audit flake
+865f6d3e6e97a71623ee5b8f4d9c51d3c1d81d3e e36d24586b79d116691d8294f39391fec7dde37b Alexey Zhokhov <alexey@zhokhov.com> 1789687943 +0700	commit: docs(ledger): refresh provider matrix, tracer split/resize, gate outcomes
+e36d24586b79d116691d8294f39391fec7dde37b 0acc3f8b2488dfa0a481195906b9ab5344896abd Alexey Zhokhov <alexey@zhokhov.com> 1789690282 +0700	commit: fix(config): serialize OpenRouter as canonical openrouter slug
+0acc3f8b2488dfa0a481195906b9ab5344896abd 9cc2d67534b296f11033386a02b17d3ee8d06695 Alexey Zhokhov <alexey@zhokhov.com> 1789700842 +0700	commit: fix(launch): resolve_launch honors committed agent and per-agent bindings
+9cc2d67534b296f11033386a02b17d3ee8d06695 a219c97e6cee87b01dff0a4f380cf97d2a7e4d68 Alexey Zhokhov <alexey@zhokhov.com> 1789703609 +0700	commit: fix(launch): provision inputs use committed agent, not CLI override
+a219c97e6cee87b01dff0a4f380cf97d2a7e4d68 ee10f3c877331eb05043e3a964763ffd5d38e42f Alexey Zhokhov <alexey@zhokhov.com> 1789706516 +0700	commit: docs(ledger): full CI green, desktop-test-ui blocked on locked Mac
+ee10f3c877331eb05043e3a964763ffd5d38e42f 471992897ca2e1a3393243c754075c62b25560fe Alexey Zhokhov <alexey@zhokhov.com> 1789721158 +0700	commit: fix(gates): UI retry locator, AX shadow, scroll focus-steal, broker join race
+471992897ca2e1a3393243c754075c62b25560fe 0a66b7a919ad69a8ee5d2e723369d6a86cdefb93 Alexey Zhokhov <alexey@zhokhov.com> 1789722579 +0700	commit: fix(harness): restore blocking mode on accepted fixture sockets
+0a66b7a919ad69a8ee5d2e723369d6a86cdefb93 2a318440ce2e02a15a76530812f375ee4998a0f3 Alexey Zhokhov <alexey@zhokhov.com> 1789926476 +0700	merge origin/feat/multi-account-support: Fast-forward
+2a318440ce2e02a15a76530812f375ee4998a0f3 a493073515caa4ecc9f8575390ce614b2a81884c Alexey Zhokhov <alexey@zhokhov.com> 1789927991 +0700	commit (merge): chore(merge): synchronize multi-account work with main
+a493073515caa4ecc9f8575390ce614b2a81884c 411b29fc96b73fd8bfa6dfbecc7844699c845bd3 Alexey Zhokhov <alexey@zhokhov.com> 1789928359 +0700	commit: fix(accounts): centralize credential environment boundaries
+411b29fc96b73fd8bfa6dfbecc7844699c845bd3 b196b719858210a5cb8349dd2b01c74be8f72f38 Alexey Zhokhov <alexey@zhokhov.com> 1789928359 +0700	commit: wip(usage): retain canonical projection in Console state
+b196b719858210a5cb8349dd2b01c74be8f72f38 59df3fa65980171684214f94e801cfa95f7694b9 Alexey Zhokhov <alexey@zhokhov.com> 1789928359 +0700	commit: test(capsule): cover separate same-agent instance bindings
+59df3fa65980171684214f94e801cfa95f7694b9 109f1a1472a88221c7a2063f7aa05fdedac60f01 Alexey Zhokhov <alexey@zhokhov.com> 1789928412 +0700	commit: docs(accounts): record current audit and unfinished acceptance gates
+109f1a1472a88221c7a2063f7aa05fdedac60f01 31428386fd9c11d3d720d1d7a26b0a25d9195409 Alexey Zhokhov <alexey@zhokhov.com> 1789928831 +0700	commit: ci: regenerate workflows from pinned main inputs
+31428386fd9c11d3d720d1d7a26b0a25d9195409 fb84635a8b22dce79a6d1d3eb9a90f282edc1b56 Alexey Zhokhov <alexey@zhokhov.com> 1789928838 +0700	commit: chore(runtime): checkpoint private config publisher
+fb84635a8b22dce79a6d1d3eb9a90f282edc1b56 6a68e6197c958d24d382966ee5a5775d1e51dedc Alexey Zhokhov <alexey@zhokhov.com> 1789928847 +0700	commit: test(console): checkpoint canonical usage fixtures
+6a68e6197c958d24d382966ee5a5775d1e51dedc 81ed457c3dc45e4927ce74592bdf16a745c7af21 Alexey Zhokhov <alexey@zhokhov.com> 1789928847 +0700	commit: chore(usage): checkpoint store failure recovery
+81ed457c3dc45e4927ce74592bdf16a745c7af21 81ed457c3dc45e4927ce74592bdf16a745c7af21 Alexey Zhokhov <alexey@zhokhov.com> 1789929690 +0700	checkout: moving from feat/multi-account-support to refactor/holla-parity
+81ed457c3dc45e4927ce74592bdf16a745c7af21 afdc35b5a46022ff0457b21946d66a74a1a0e5c1 Alexey Zhokhov <alexey@zhokhov.com> 1789929709 +0700	commit: fix(console): repair canonical usage borrows
+afdc35b5a46022ff0457b21946d66a74a1a0e5c1 23b7f59e4fea8b93d3d612959d1ececa259929df Alexey Zhokhov <alexey@zhokhov.com> 1789929709 +0700	commit: chore(auth): checkpoint credential publication repair
+23b7f59e4fea8b93d3d612959d1ececa259929df 42314f2c0336a51511036b5f23c4859d4e68fc6c Alexey Zhokhov <alexey@zhokhov.com> 1789929709 +0700	commit: chore(runtime): checkpoint private config wiring
+42314f2c0336a51511036b5f23c4859d4e68fc6c 7fb17f2791f757588104cb8ac61da4fe075e6fdf Alexey Zhokhov <alexey@zhokhov.com> 1789929709 +0700	commit: test(usage): checkpoint store failure regressions
+7fb17f2791f757588104cb8ac61da4fe075e6fdf ad92c88556b59e53d62e02eeb76acda8998a1b46 Alexey Zhokhov <alexey@zhokhov.com> 1789929710 +0700	commit: docs: hand off accounts work and verification gaps
+ad92c88556b59e53d62e02eeb76acda8998a1b46 278cdbe517164564fc7206f37becff0e2b92b0b2 Alexey Zhokhov <alexey@zhokhov.com> 1789937730 +0700	checkout: moving from refactor/holla-parity to main
+278cdbe517164564fc7206f37becff0e2b92b0b2 fce94cea8a15de0c2db3bb4ff880d741baf5c00a Alexey Zhokhov <alexey@zhokhov.com> 1789937735 +0700	pull: Fast-forward
+fce94cea8a15de0c2db3bb4ff880d741baf5c00a fce94cea8a15de0c2db3bb4ff880d741baf5c00a Alexey Zhokhov <alexey@zhokhov.com> 1789938939 +0700	checkout: moving from main to cicd/integration
+fce94cea8a15de0c2db3bb4ff880d741baf5c00a bd81909969e28e5360f2caabd54f2ea9a32f6b42 Muse Code <muse@spark.meta> 1789938939 +0700	commit: test(diagnostics): make wire-count mismatches actionable
+bd81909969e28e5360f2caabd54f2ea9a32f6b42 b8767616cdd5d83314be181a48d410b00d234e1e Muse Code <muse@spark.meta> 1789938968 +0700	commit: docs(cicd): record PR 1014 slice and attempt-2 verdict
+b8767616cdd5d83314be181a48d410b00d234e1e 1f12d1a563e5d6668dca157fe97ad1da9ff16c4c Muse Code <muse@spark.meta> 1789939336 +0700	commit: test(diagnostics): satisfy clippy::panic in wire-count helper
+1f12d1a563e5d6668dca157fe97ad1da9ff16c4c ccbbebf407f3ff5a16df72e24f86de95512a5b6d Alexey Zhokhov <alexey@zhokhov.com> 1789940358 +0700	commit: docs(cicd): record Policy generated-tree root cause and clippy lesson
+ccbbebf407f3ff5a16df72e24f86de95512a5b6d 6474f6fbb1e195ab8927028f4e26acce93ff8020 Alexey Zhokhov <alexey@zhokhov.com> 1789940383 +0700	commit: ci: regenerate ownership state with pinned velnor-workflow 4fa7a3a
+6474f6fbb1e195ab8927028f4e26acce93ff8020 8f2d72ac88d4f15b1435aae1f508fcb2d7ca5eab hk-verify <hk-verify@example.local> 1789942229 +0700	commit: test(diagnostics): assert per-request log-record distribution
+8f2d72ac88d4f15b1435aae1f508fcb2d7ca5eab d0d4ee09810eb1817f87a908580dc85fa161ae8e hk-verify <hk-verify@example.local> 1789944487 +0700	checkout: moving from cicd/integration to cicd/hooks
+d0d4ee09810eb1817f87a908580dc85fa161ae8e ae993f77e79ae9d8be4e495433a54668a91140a6 hk-verify <hk-verify@example.local> 1789944809 +0700	commit: feat(hooks): enforce fmt and Clippy pre-commit via hk
+ae993f77e79ae9d8be4e495433a54668a91140a6 a9c25d8131b9bd052f0be18c38bb83cd70b3e7a3 hk-verify <hk-verify@example.local> 1789945065 +0700	commit: docs(cicd): record #1014/#984 merges, phase review, hooks verdict, xtask-gap class
+a9c25d8131b9bd052f0be18c38bb83cd70b3e7a3 e8bb61ac5c330e287f65dc18e0d09c09f8addb1b hk-verify <hk-verify@example.local> 1789945087 +0700	commit: ci: regenerate ownership state for hooks slice (pinned 4fa7a3a)
+e8bb61ac5c330e287f65dc18e0d09c09f8addb1b 4cf0ff31ad973d74d29bf7b7eea426bdca12ad99 Alexey Zhokhov <alexey@zhokhov.com> 1789946555 +0700	commit: fix(hooks): parse raw-string and escaped literals in clippy-affected scan
+4cf0ff31ad973d74d29bf7b7eea426bdca12ad99 9280669d254746c1a018e5418320fc55ee4ac2fb Alexey Zhokhov <alexey@zhokhov.com> 1789946564 +0700	commit: docs(cicd): record S1 validation path for post-#1015 perf slice
+9280669d254746c1a018e5418320fc55ee4ac2fb fce94cea8a15de0c2db3bb4ff880d741baf5c00a Alexey Zhokhov <alexey@zhokhov.com> 1789947604 +0700	checkout: moving from cicd/hooks to main
+fce94cea8a15de0c2db3bb4ff880d741baf5c00a 799deeef907a890771f868a348e30192ecc2560a Alexey Zhokhov <alexey@zhokhov.com> 1789947608 +0700	pull --ff-only origin main: Fast-forward
+799deeef907a890771f868a348e30192ecc2560a 799deeef907a890771f868a348e30192ecc2560a Alexey Zhokhov <alexey@zhokhov.com> 1789947632 +0700	checkout: moving from main to main
+799deeef907a890771f868a348e30192ecc2560a 799deeef907a890771f868a348e30192ecc2560a Alexey Zhokhov <alexey@zhokhov.com> 1789948395 +0700	checkout: moving from main to cicd/s1-mise-desktop
+799deeef907a890771f868a348e30192ecc2560a 636276515c9768bf3ad55abc60dad20ccd96edd1 Alexey Zhokhov <alexey@zhokhov.com> 1789948395 +0700	commit: perf(ci): disable mise whole-toolset auto-install on desktop profiles
+636276515c9768bf3ad55abc60dad20ccd96edd1 b9d1d6e36b9d9d98db50b5019760f6e9b000abeb Alexey Zhokhov <alexey@zhokhov.com> 1789948982 +0700	commit: ci: regenerate ownership state after S1 slice (scan 3f777bdd->76f7f2ff)
+b9d1d6e36b9d9d98db50b5019760f6e9b000abeb 5d1ff90f645e657656b2e2c51cb649e98ec0ee7f Alexey Zhokhov <alexey@zhokhov.com> 1789951939 +0700	commit: docs(cicd): record C4 recurrence on #1017 Swift rerun + desktop baseline
+5d1ff90f645e657656b2e2c51cb649e98ec0ee7f 041a0a2c90bd9049331633010a690bcf3fea8b41 Alexey Zhokhov <alexey@zhokhov.com> 1789951939 +0700	merge origin/main: Merge made by the 'ort' strategy.
+041a0a2c90bd9049331633010a690bcf3fea8b41 17bf8abc24cf65a25c4691e4b94c0db9611d6db2 Alexey Zhokhov <alexey@zhokhov.com> 1789951994 +0700	commit: docs(cicd): record #1017 rerun-green + main-rebase regen semantics
+17bf8abc24cf65a25c4691e4b94c0db9611d6db2 799deeef907a890771f868a348e30192ecc2560a Alexey Zhokhov <alexey@zhokhov.com> 1789953298 +0700	checkout: moving from cicd/s1-mise-desktop to main
+799deeef907a890771f868a348e30192ecc2560a f664f4d3efd52d74ad7abbd03207e748b3b789f1 Alexey Zhokhov <alexey@zhokhov.com> 1789953298 +0700	reset: moving to origin/main
+f664f4d3efd52d74ad7abbd03207e748b3b789f1 f664f4d3efd52d74ad7abbd03207e748b3b789f1 Alexey Zhokhov <alexey@zhokhov.com> 1789968716 +0700	checkout: moving from main to cicd/velnor-phases
+f664f4d3efd52d74ad7abbd03207e748b3b789f1 b07a6ecb384cb7876765c2a3c64975567e8efc3b Alexey Zhokhov <alexey@zhokhov.com> 1789968716 +0700	commit: docs(ci): record Velnor phase rollout evidence through PR-B merge
+b07a6ecb384cb7876765c2a3c64975567e8efc3b d1da55bf83f3a4ce0b9f2cbfb328aef79c895d6a Alexey Zhokhov <alexey@zhokhov.com> 1789969085 +0700	commit: feat(ci): adopt Velnor pin fff18da8 with phased rust validation
+d1da55bf83f3a4ce0b9f2cbfb328aef79c895d6a 27939e77fd1a95caa8e66a82350e09754960c8ce Alexey Zhokhov <alexey@zhokhov.com> 1789969545 +0700	commit: fix(ci): refresh generator state after template relocation
+27939e77fd1a95caa8e66a82350e09754960c8ce 484d6f129e82e747f5c08a7260b6322fabc09344 Alexey Zhokhov <alexey@zhokhov.com> 1789970719 +0700	commit: docs(ci): record PR-C rollout, state-digest lesson, deferred keep-list
+484d6f129e82e747f5c08a7260b6322fabc09344 d3c73e9babc89fb3bd1ae209ae2ca5a60427f19f Alexey Zhokhov <alexey@zhokhov.com> 1789978882 +0700	commit: docs(ci): post-merge verification evidence and goal matrix
+d3c73e9babc89fb3bd1ae209ae2ca5a60427f19f fd18e95c43c65031af56aa50e281b91efd08afb9 Alexey Zhokhov <alexey@zhokhov.com> 1789979853 +0700	checkout: moving from cicd/velnor-phases to cicd/execution-record
+fd18e95c43c65031af56aa50e281b91efd08afb9 d0bdbc021350dbd7b9f5f011b8e96d2fa3858f78 Alexey Zhokhov <alexey@zhokhov.com> 1789980013 +0700	commit: docs(ci): post-merge verification evidence and goal matrix
+d0bdbc021350dbd7b9f5f011b8e96d2fa3858f78 9ee50f6a1430a274fa37c44dfe0ae6c9cb96a46f Alexey Zhokhov <alexey@zhokhov.com> 1789980054 +0700	rebase (start): checkout origin/main
+9ee50f6a1430a274fa37c44dfe0ae6c9cb96a46f 98852095c98f5e768833532049a0381e7b783608 Alexey Zhokhov <alexey@zhokhov.com> 1789980054 +0700	rebase (pick): docs(ci): post-merge verification evidence and goal matrix
+98852095c98f5e768833532049a0381e7b783608 98852095c98f5e768833532049a0381e7b783608 Alexey Zhokhov <alexey@zhokhov.com> 1789980054 +0700	rebase (finish): returning to refs/heads/cicd/execution-record
+98852095c98f5e768833532049a0381e7b783608 ee1da0c64eff098a71d5badf181ae2560feb0f55 Alexey Zhokhov <alexey@zhokhov.com> 1789981609 +0700	checkout: moving from cicd/execution-record to probe/fmt-gate
+ee1da0c64eff098a71d5badf181ae2560feb0f55 aca926371bd56d5699bc72ff53b4f55963c784dc Alexey Zhokhov <alexey@zhokhov.com> 1789981717 +0700	commit: probe: deliberate fmt defect (DO NOT MERGE)
+aca926371bd56d5699bc72ff53b4f55963c784dc ee1da0c64eff098a71d5badf181ae2560feb0f55 Alexey Zhokhov <alexey@zhokhov.com> 1789981739 +0700	checkout: moving from probe/fmt-gate to probe/clippy-gate
+ee1da0c64eff098a71d5badf181ae2560feb0f55 a1a89632a1fb0d32b259928ef18db49e3a00d1a6 Alexey Zhokhov <alexey@zhokhov.com> 1789981836 +0700	commit: probe: deliberate clippy defect (DO NOT MERGE)
+a1a89632a1fb0d32b259928ef18db49e3a00d1a6 98852095c98f5e768833532049a0381e7b783608 Alexey Zhokhov <alexey@zhokhov.com> 1789982208 +0700	checkout: moving from probe/clippy-gate to cicd/execution-record
+98852095c98f5e768833532049a0381e7b783608 ee1da0c64eff098a71d5badf181ae2560feb0f55 Alexey Zhokhov <alexey@zhokhov.com> 1789983256 +0700	checkout: moving from cicd/execution-record to fix/swift-packing-liveness
+ee1da0c64eff098a71d5badf181ae2560feb0f55 d618c15449d297a48f8be7f30327900482624b69 Alexey Zhokhov <alexey@zhokhov.com> 1789983572 +0700	commit: fix(ci): stream staticlib build ahead of boltffi pack
+d618c15449d297a48f8be7f30327900482624b69 1daf30b4eab41d11f5aac85025c7e374e9c772ad Alexey Zhokhov <alexey@zhokhov.com> 1789985274 +0700	checkout: moving from fix/swift-packing-liveness to docs/evidence-batch-2
+1daf30b4eab41d11f5aac85025c7e374e9c772ad 27a02413caaa2bfc28b215480c6443126fb790da Alexey Zhokhov <alexey@zhokhov.com> 1789985326 +0700	commit: docs(ci): probes, C4 closure, forensics evidence batch
+27a02413caaa2bfc28b215480c6443126fb790da 03d1fe8dd37fe03ab9813c5d366b402df1d166ed Alexey Zhokhov <alexey@zhokhov.com> 1789987365 +0700	checkout: moving from docs/evidence-batch-2 to probe/test-gate
+03d1fe8dd37fe03ab9813c5d366b402df1d166ed 3b3239a5c76111784f92a645b517e8cae5d58417 Alexey Zhokhov <alexey@zhokhov.com> 1789987391 +0700	commit: probe: deliberate test defect (DO NOT MERGE)
+3b3239a5c76111784f92a645b517e8cae5d58417 27a02413caaa2bfc28b215480c6443126fb790da Alexey Zhokhov <alexey@zhokhov.com> 1789987944 +0700	checkout: moving from probe/test-gate to docs/evidence-batch-2
+27a02413caaa2bfc28b215480c6443126fb790da 03d1fe8dd37fe03ab9813c5d366b402df1d166ed Alexey Zhokhov <alexey@zhokhov.com> 1789987964 +0700	checkout: moving from docs/evidence-batch-2 to docs/probe-c-evidence
+03d1fe8dd37fe03ab9813c5d366b402df1d166ed 41be41de4f4da005d04b5efeac02945b2cd05827 Alexey Zhokhov <alexey@zhokhov.com> 1789987978 +0700	commit: docs(ci): probe C completes §14 bullet 1
+41be41de4f4da005d04b5efeac02945b2cd05827 9f2513443f0cdcec956a50d601e3884b63f29637 Alexey Zhokhov <alexey@zhokhov.com> 1789988989 +0700	merge origin/main: Merge made by the 'ort' strategy.
+9f2513443f0cdcec956a50d601e3884b63f29637 6ac1b769699d1782fe8f93617e64e0863b025ffb Alexey Zhokhov <alexey@zhokhov.com> 1789989036 +0700	commit: docs(ci): assess external merges #1027/#1019, 03d1fe8d disposition
+6ac1b769699d1782fe8f93617e64e0863b025ffb eb676d7e6a029168765a4a4f8432d8c32a62eb69 Alexey Zhokhov <alexey@zhokhov.com> 1789990211 +0700	commit: docs(ci): §14 bullet 2 proven, b569b1b5 main-CI success
+eb676d7e6a029168765a4a4f8432d8c32a62eb69 3bd65bf8d81d3b66ca126f22b59b96540b4eeeb9 Alexey Zhokhov <alexey@zhokhov.com> 1789990211 +0700	merge origin/main: Merge made by the 'ort' strategy.
+3bd65bf8d81d3b66ca126f22b59b96540b4eeeb9 c54e51f33f632535f691c46e4841fb6d4b115996 Alexey Zhokhov <alexey@zhokhov.com> 1789990337 +0700	commit: docs(ci): timings + #1030 by-design verdict
+c54e51f33f632535f691c46e4841fb6d4b115996 f664f4d3efd52d74ad7abbd03207e748b3b789f1 Alexey Zhokhov <alexey@zhokhov.com> 1789992003 +0700	checkout: moving from docs/probe-c-evidence to main
+f664f4d3efd52d74ad7abbd03207e748b3b789f1 65e9dfbdba1066c29fa3a3ea88a7930cb833152b Alexey Zhokhov <alexey@zhokhov.com> 1789992003 +0700	reset: moving to origin/main
+65e9dfbdba1066c29fa3a3ea88a7930cb833152b 65e9dfbdba1066c29fa3a3ea88a7930cb833152b Alexey Zhokhov <alexey@zhokhov.com> 1789992317 +0700	checkout: moving from main to fix/clippy-affected-index
+65e9dfbdba1066c29fa3a3ea88a7930cb833152b 804046816a1142bb85cb4df926076f9c61971a82 Alexey Zhokhov <alexey@zhokhov.com> 1789992683 +0700	commit: fix(ci): clippy-affected reads index+worktree for manifests
+804046816a1142bb85cb4df926076f9c61971a82 65e9dfbdba1066c29fa3a3ea88a7930cb833152b Alexey Zhokhov <alexey@zhokhov.com> 1789992765 +0700	checkout: moving from fix/clippy-affected-index to docs/evidence-batch-3
+65e9dfbdba1066c29fa3a3ea88a7930cb833152b 59abdc5d808a35fcfe7047302808eac9aa302303 Alexey Zhokhov <alexey@zhokhov.com> 1789992819 +0700	commit: docs(ci): §14 bullets 3+5, 37/40 adjudication, 120s model, T2a/Renovate classes
+59abdc5d808a35fcfe7047302808eac9aa302303 68edddabb1a0f3b191f488cdf4d7206f3df5a381 Alexey Zhokhov <alexey@zhokhov.com> 1790006567 +0700	checkout: moving from docs/evidence-batch-3 to docs/evidence-batch-4
+68edddabb1a0f3b191f488cdf4d7206f3df5a381 1b35c1e6adce71097014ce5e2f26bc8867df9169 Alexey Zhokhov <alexey@zhokhov.com> 1790006631 +0700	commit: docs(ci): §14 bullets 4/6b/7/8/10a, merges 1036/1037/1041, D19 + 87521a95 triage
+1b35c1e6adce71097014ce5e2f26bc8867df9169 5639cdc30e93249eac6a76c6e5df451000c82f76 Alexey Zhokhov <alexey@zhokhov.com> 1790010389 +0700	checkout: moving from docs/evidence-batch-4 to docs/evidence-postscript
+5639cdc30e93249eac6a76c6e5df451000c82f76 27029c6a746c57e477702e9684d84abf79ca2d92 Alexey Zhokhov <alexey@zhokhov.com> 1790010414 +0700	commit: docs(ci): postscript — 52c5236c usage-flake triage, #1048 noted
+27029c6a746c57e477702e9684d84abf79ca2d92 17d3d69e58098c721159a4692fdb3a8eeae06973 Alexey Zhokhov <alexey@zhokhov.com> 1790012712 +0700	checkout: moving from docs/evidence-postscript to docs/carried-failures-report
+17d3d69e58098c721159a4692fdb3a8eeae06973 a4f8dd1c0a5214169e9d21bf79555c3df5e14dd2 Alexey Zhokhov <alexey@zhokhov.com> 1790012712 +0700	commit: docs(ci): carried-failures report with recommendations
+a4f8dd1c0a5214169e9d21bf79555c3df5e14dd2 f75b2c17b5cfce3a315c26e591e470210eb2ac5d Alexey Zhokhov <alexey@zhokhov.com> 1790015840 +0700	commit: chore(ci): regenerate ownership state for carried failures
+f75b2c17b5cfce3a315c26e591e470210eb2ac5d e7aa8c4bdbdc03df661298d28a634a4ee6ea63b1 Alexey Zhokhov <alexey@zhokhov.com> 1790016024 +0700	commit: docs(ci): correct carried failure status
+e7aa8c4bdbdc03df661298d28a634a4ee6ea63b1 c72e21b58aed79fb193b772d942d434d88c977ee Alexey Zhokhov <alexey@zhokhov.com> 1790017317 +0700	rebase (start): checkout origin/main
+c72e21b58aed79fb193b772d942d434d88c977ee 7251756bd3d72afe9ae64814d266c8530b283ec9 Alexey Zhokhov <alexey@zhokhov.com> 1790017317 +0700	rebase (pick): docs(ci): carried-failures report with recommendations
+7251756bd3d72afe9ae64814d266c8530b283ec9 8fbcd5f073ad2175c421c492394f901e93460af1 Alexey Zhokhov <alexey@zhokhov.com> 1790017321 +0700	rebase (pick): docs(ci): correct carried failure status
+8fbcd5f073ad2175c421c492394f901e93460af1 8fbcd5f073ad2175c421c492394f901e93460af1 Alexey Zhokhov <alexey@zhokhov.com> 1790017321 +0700	rebase (finish): returning to refs/heads/docs/carried-failures-report
+8fbcd5f073ad2175c421c492394f901e93460af1 f24974b220c9ffb42f0116a96207f34953ab5b4b Alexey Zhokhov <alexey@zhokhov.com> 1790017716 +0700	commit: docs(ci): correct Swift cache isolation guidance
+f24974b220c9ffb42f0116a96207f34953ab5b4b f24974b220c9ffb42f0116a96207f34953ab5b4b Alexey Zhokhov <alexey@zhokhov.com> 1790018287 +0700	reset: moving to HEAD
+f24974b220c9ffb42f0116a96207f34953ab5b4b 299f65c5df30b251e761fe455ec3c8a4ea3a3800 Alexey Zhokhov <alexey@zhokhov.com> 1790018286 +0700	commit: chore(ci): refresh D3 ownership state
+299f65c5df30b251e761fe455ec3c8a4ea3a3800 ead0741035da8ec7454ede0d5a0153af352a13c3 Alexey Zhokhov <alexey@zhokhov.com> 1790019148 +0700	commit: docs(ci): correct carried reliability evidence
+ead0741035da8ec7454ede0d5a0153af352a13c3 7df4083d6e5f93c51d86dd8535d86ed18c3d89d5 Alexey Zhokhov <alexey@zhokhov.com> 1790022551 +0700	rebase (start): checkout origin/main
+7df4083d6e5f93c51d86dd8535d86ed18c3d89d5 624f1db19f47b0558730b0bfedd91fae63f783ed Alexey Zhokhov <alexey@zhokhov.com> 1790022551 +0700	rebase (pick): docs(ci): carried-failures report with recommendations
+624f1db19f47b0558730b0bfedd91fae63f783ed fce89485502cdd01c29aea97a22506060bc54ba3 Alexey Zhokhov <alexey@zhokhov.com> 1790022551 +0700	rebase (pick): docs(ci): correct carried failure status
+fce89485502cdd01c29aea97a22506060bc54ba3 2fce90c8a12f9a187b5cf8a771d127b52e14913b Alexey Zhokhov <alexey@zhokhov.com> 1790022551 +0700	rebase (pick): docs(ci): correct Swift cache isolation guidance
+2fce90c8a12f9a187b5cf8a771d127b52e14913b d7289b6466ac9afb1ef4abdcf931f28370ddc53c Alexey Zhokhov <alexey@zhokhov.com> 1790022559 +0700	rebase (continue): chore(ci): refresh D3 ownership state
+d7289b6466ac9afb1ef4abdcf931f28370ddc53c 87dee0cea28dbba7278eb52bb8dbf7236a4f7b13 Alexey Zhokhov <alexey@zhokhov.com> 1790022559 +0700	rebase (pick): docs(ci): correct carried reliability evidence
+87dee0cea28dbba7278eb52bb8dbf7236a4f7b13 87dee0cea28dbba7278eb52bb8dbf7236a4f7b13 Alexey Zhokhov <alexey@zhokhov.com> 1790022559 +0700	rebase (finish): returning to refs/heads/docs/carried-failures-report
+87dee0cea28dbba7278eb52bb8dbf7236a4f7b13 5a83caf09e6b241f08a7c4dbd4f119a5ef866c5b Alexey Zhokhov <alexey@zhokhov.com> 1790022738 +0700	commit (amend): docs(ci): correct carried reliability evidence
+5a83caf09e6b241f08a7c4dbd4f119a5ef866c5b 07e290f894eccfab785c698aafbaeeaa6e1c092d Alexey Zhokhov <alexey@zhokhov.com> 1790668961 +0700	checkout: moving from docs/carried-failures-report to consolidate/local-recovery-20260929
+07e290f894eccfab785c698aafbaeeaa6e1c092d 0d191fc56ca4810a1807c373613937dab5b6479c Alexey Zhokhov <alexey@zhokhov.com> 1790669749 +0700	commit: fix(capsule): grant Claude install symlink target
+0d191fc56ca4810a1807c373613937dab5b6479c 3fb6e16a9434fdd52c242645b055915f327231ff Alexey Zhokhov <alexey@zhokhov.com> 1790669879 +0700	commit: fix(ci): derive preview package scratch path
+3fb6e16a9434fdd52c242645b055915f327231ff 9c437fd2b0b9e88a265adab9fde26b5acb523745 Alexey Zhokhov <alexey@zhokhov.com> 1790672217 +0700	commit: fix(usage): parse HTTP-date Retry-After
+9c437fd2b0b9e88a265adab9fde26b5acb523745 77ab1c418f01d9a07a8ee5f9cd64394c339812c4 Alexey Zhokhov <alexey@zhokhov.com> 1790674173 +0700	commit: docs: repair current repository guidance
+77ab1c418f01d9a07a8ee5f9cd64394c339812c4 14f8d7e48ba5b3e28787a96176c8a2201d449454 Alexey Zhokhov <alexey@zhokhov.com> 1790674188 +0700	commit: fix(xtask): read canonical pull request template
+14f8d7e48ba5b3e28787a96176c8a2201d449454 0cc634433db81f4361ab7156e27d89adfb3957da Alexey Zhokhov <alexey@zhokhov.com> 1790674212 +0700	commit: fix(docs): bound static prerender concurrency
+0cc634433db81f4361ab7156e27d89adfb3957da 65e9dfbdba1066c29fa3a3ea88a7930cb833152b Alexey Zhokhov <alexey@zhokhov.com> 1790930524 +0700	checkout: moving from consolidate/local-recovery-20260929 to main
+65e9dfbdba1066c29fa3a3ea88a7930cb833152b 310e644832193232344ca99838ccf599f28faf53 Alexey Zhokhov <alexey@zhokhov.com> 1790930530 +0700	pull: Fast-forward

@@ -1,0 +1,12 @@
+0000000000000000000000000000000000000000 07e290f894eccfab785c698aafbaeeaa6e1c092d Alexey Zhokhov <alexey@zhokhov.com> 1790676524 +0700
+07e290f894eccfab785c698aafbaeeaa6e1c092d 07e290f894eccfab785c698aafbaeeaa6e1c092d Alexey Zhokhov <alexey@zhokhov.com> 1790676525 +0700	reset: moving to HEAD
+07e290f894eccfab785c698aafbaeeaa6e1c092d 310e644832193232344ca99838ccf599f28faf53 Alexey Zhokhov <alexey@zhokhov.com> 1790678442 +0700	merge origin/main: Fast-forward
+310e644832193232344ca99838ccf599f28faf53 1c42a33b2fe22aae4b40cd6ec6fd391cfd367c7d Alexey Zhokhov <alexey@zhokhov.com> 1790679125 +0700	cherry-pick: feat(xtask): add durable CI evidence ledger
+1c42a33b2fe22aae4b40cd6ec6fd391cfd367c7d 20acaad879e89f4e5bb7d89fa095d01ad900db53 Alexey Zhokhov <alexey@zhokhov.com> 1790679132 +0700	commit (amend): feat(xtask): add durable CI evidence ledger
+20acaad879e89f4e5bb7d89fa095d01ad900db53 14bd1471616056e07c81c59d59eafc0963b16865 Alexey Zhokhov <alexey@zhokhov.com> 1790679143 +0700	cherry-pick: fix(ci): harden evidence qualification
+14bd1471616056e07c81c59d59eafc0963b16865 9a31cff477010b27fa59e3efe9e3e5b6a4c8f616 Alexey Zhokhov <alexey@zhokhov.com> 1790679147 +0700	commit (amend): fix(ci): harden evidence qualification
+9a31cff477010b27fa59e3efe9e3e5b6a4c8f616 ac6d7f317a1681e93539a9f1722c901df3311411 Alexey Zhokhov <alexey@zhokhov.com> 1790699517 +0700	commit: fix(process): bound captured output and reap on timeout
+ac6d7f317a1681e93539a9f1722c901df3311411 fb111634b3f11403aa1dfeb36d0888117b0a1ee1 Alexey Zhokhov <alexey@zhokhov.com> 1790699735 +0700	commit: chore(clippy): fix affected crate lint findings
+fb111634b3f11403aa1dfeb36d0888117b0a1ee1 770ca4f7a0aa31fe69ff004f2860eb299e95ec03 Alexey Zhokhov <alexey@zhokhov.com> 1790763069 +0700	commit: feat(ci): add advisory evidence ledger
+770ca4f7a0aa31fe69ff004f2860eb299e95ec03 7b9a7419583de40ce070d3680b1459937529b7b6 Alexey Zhokhov <alexey@zhokhov.com> 1790763100 +0700	commit: chore(ci): pin Xcode 26.6
+7b9a7419583de40ce070d3680b1459937529b7b6 2990df17e25f30afca84804d9c402abc1ce00231 Alexey Zhokhov <alexey@zhokhov.com> 1790763312 +0700	commit: fix(ci): retain workflow display labels

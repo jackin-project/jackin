@@ -1,0 +1,2 @@
+0000000000000000000000000000000000000000 7eb2105d38d5947eb99305a1564692b0fc4092f3 Alexey Zhokhov <alexey@zhokhov.com> 1789994344 +0700	branch: Created from HEAD
+7eb2105d38d5947eb99305a1564692b0fc4092f3 e412deb1aee6dac1907ff6be97b71b93aeed946c Alexey Zhokhov <alexey@zhokhov.com> 1789995637 +0700	commit: chore(ci): adopt Velnor f406baff (renovate chown unconditional)

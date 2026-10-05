@@ -1,7 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://jackin.tailrocks.com/sitemap.xml
-
-# AI-readable docs index:
-# https://jackin.tailrocks.com/llms.txt
