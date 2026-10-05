@@ -25,11 +25,77 @@ fn rec_for(repo: &Path, container_dir: &Path) -> IsolationRecord {
     }
 }
 
+fn valid_absent_worktree_listing(record: &IsolationRecord) -> String {
+    format!(
+        "worktree {}\0HEAD {}\0branch refs/heads/main\0\0",
+        record.original_src,
+        "a".repeat(40)
+    )
+}
+
 fn registered_worktree_listing(record: &IsolationRecord) -> String {
     format!(
-        "worktree {}\0HEAD abc123\0branch refs/heads/{}\0\0",
-        record.worktree_path, record.scratch_branch
+        "{}worktree {}\0HEAD {}\0branch refs/heads/{}\0\0",
+        valid_absent_worktree_listing(record),
+        record.worktree_path,
+        "b".repeat(40),
+        record.scratch_branch
     )
+}
+
+fn runner_with_absent_worktree(record: &IsolationRecord) -> FakeRunner {
+    FakeRunner::with_capture_queue([valid_absent_worktree_listing(record), String::new()])
+}
+
+#[test]
+fn worktree_inventory_matches_complete_paths_not_prefixes_or_other_fields() {
+    let target = "/repo/linked workspace\nwith newline";
+    let listing = format!(
+        "worktree /repo\0HEAD {}\0branch refs/heads/main\0\0worktree {target}\0HEAD {}\0detached\0\0",
+        "a".repeat(40),
+        "b".repeat(64)
+    );
+
+    assert!(worktree_inventory_contains_path(&listing, target).unwrap());
+    assert!(!worktree_inventory_contains_path(&listing, "/repo/linked workspace").unwrap());
+    assert!(!worktree_inventory_contains_path(&listing, "refs/heads/main").unwrap());
+}
+
+#[test]
+fn worktree_inventory_rejects_incomplete_or_unknown_records() {
+    let hash = "a".repeat(40);
+    let malformed = [
+        String::new(),
+        "garbage".to_owned(),
+        "\0\0".to_owned(),
+        format!("worktree /repo\0HEAD {hash}\0branch refs/heads/main\0"),
+        format!("worktree /repo\0HEAD short\0\0"),
+        format!("worktree /repo\0HEAD {hash}\0unknown critical value\0\0"),
+        format!("worktree /repo\0HEAD {hash}\0\0worktree /repo\0\0"),
+        format!("worktree /repo\u{FFFD}\0HEAD {hash}\0\0"),
+    ];
+
+    for listing in malformed {
+        assert!(
+            worktree_inventory_contains_path(&listing, "/repo/target").is_err(),
+            "expected inventory to be inconclusive for {listing:?}"
+        );
+    }
+}
+
+#[test]
+fn worktree_inventory_accepts_valid_absence_and_requires_the_main_record() {
+    let listing = format!(
+        "worktree /repo\0HEAD {}\0branch refs/heads/main\0\0worktree /repo/locked\0HEAD {}\0branch refs/heads/linked\0locked operator reason\0prunable stale metadata\0\0",
+        "a".repeat(40),
+        "b".repeat(64)
+    );
+    assert!(!worktree_inventory_contains_path(&listing, "/repo/target").unwrap());
+    assert!(worktree_inventory_contains_path(&listing, "/repo").unwrap());
+    assert!(worktree_inventory_contains_path(&listing, "/repo/locked").unwrap());
+
+    let bare_listing = "worktree /bare\0bare\0\0";
+    assert!(!worktree_inventory_contains_path(bare_listing, "/repo/target").unwrap());
 }
 
 #[tokio::test]
@@ -39,7 +105,7 @@ async fn force_cleanup_runs_git_and_removes_record() {
     let rec = rec_for(repo_dir.path(), container_dir.path());
     write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
 
-    let mut runner = FakeRunner::default();
+    let mut runner = runner_with_absent_worktree(&rec);
     force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
         .await
         .unwrap();
@@ -156,7 +222,7 @@ async fn force_cleanup_is_idempotent_when_worktree_already_gone() {
     std::fs::remove_dir_all(&rec.worktree_path).unwrap();
     rec.worktree_path = format!("{}-gone", rec.worktree_path);
 
-    let mut runner = FakeRunner::default();
+    let mut runner = runner_with_absent_worktree(&rec);
     force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
         .await
         .unwrap();
@@ -172,7 +238,10 @@ async fn force_cleanup_tolerates_failed_worktree_remove_when_registry_confirms_a
 
     let mut runner = FakeRunner {
         fail_on: vec!["worktree remove --force".into()],
-        capture_queue: std::collections::VecDeque::from(vec![String::new(), String::new()]),
+        capture_queue: std::collections::VecDeque::from(vec![
+            valid_absent_worktree_listing(&rec),
+            String::new(),
+        ]),
         ..Default::default()
     };
     force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
@@ -247,6 +316,46 @@ async fn force_cleanup_retains_record_when_worktree_verification_fails() {
 }
 
 #[tokio::test]
+async fn force_cleanup_retains_record_when_worktree_inventory_is_malformed() {
+    let malformed = [
+        String::new(),
+        "garbage\0\0".to_owned(),
+        format!(
+            "worktree /main\0HEAD {}\0branch refs/heads/main\0",
+            "a".repeat(40)
+        ),
+        format!("worktree /main\0HEAD invalid\0\0"),
+    ];
+
+    for inventory in malformed {
+        let repo_dir = TempDir::new().unwrap();
+        let container_dir = TempDir::new().unwrap();
+        let rec = rec_for(repo_dir.path(), container_dir.path());
+        write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+        let mut runner = FakeRunner::with_capture_queue([inventory]);
+        let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("could not verify Git worktree"),
+            "got: {err}"
+        );
+        assert!(err.to_string().contains("record retained"), "got: {err}");
+        assert_eq!(read_records(container_dir.path()).unwrap().len(), 1);
+        assert!(Path::new(&rec.worktree_path).is_dir());
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|command| command.contains("branch -D")),
+            "branch deletion must wait until a complete inventory proves absence"
+        );
+    }
+}
+
+#[tokio::test]
 async fn force_cleanup_retains_record_when_worktree_remove_succeeds_but_registry_lists_it() {
     let repo_dir = TempDir::new().unwrap();
     let container_dir = TempDir::new().unwrap();
@@ -284,7 +393,12 @@ async fn purge_isolated_for_container_runs_force_cleanup_for_each_record() {
     let records = vec![r1, r2];
     write_records(container_dir.path(), &records).unwrap();
 
-    let mut runner = FakeRunner::default();
+    let mut runner = FakeRunner::with_capture_queue([
+        valid_absent_worktree_listing(&records[0]),
+        String::new(),
+        valid_absent_worktree_listing(&records[1]),
+        String::new(),
+    ]);
     purge_isolated_for_container(container_dir.path(), &mut runner)
         .await
         .unwrap();
@@ -331,7 +445,10 @@ async fn force_cleanup_tolerates_branch_already_deleted_when_verify_says_absent(
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into()],
         // Worktree registry and branch listing both confirm absence.
-        capture_queue: std::collections::VecDeque::from(vec![String::new(), String::new()]),
+        capture_queue: std::collections::VecDeque::from(vec![
+            valid_absent_worktree_listing(&rec),
+            String::new(),
+        ]),
         ..Default::default()
     };
     force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
@@ -358,7 +475,7 @@ async fn force_cleanup_retains_record_when_branch_delete_fails_and_branch_still_
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into()],
         capture_queue: std::collections::VecDeque::from(vec![
-            String::new(),
+            valid_absent_worktree_listing(&rec),
             "  jackin/scratch/x\n".to_owned(),
         ]),
         ..Default::default()
@@ -413,9 +530,9 @@ async fn purge_isolated_for_container_bails_when_any_record_fails() {
     let mut runner = FakeRunner {
         // r1's verify returns "still present"; r2's verify returns empty.
         capture_queue: std::collections::VecDeque::from(vec![
-            String::new(),
+            valid_absent_worktree_listing(&r1),
             "  jackin/scratch/x\n".to_owned(),
-            String::new(),
+            valid_absent_worktree_listing(&r2),
             String::new(),
         ]),
         // Only r1's specific branch fails. Substring match avoids
@@ -455,6 +572,7 @@ async fn force_cleanup_retains_record_when_branch_verification_fails() {
     // deletion and its verification fail, so branch absence is unknown.
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into(), "branch --list".into()],
+        capture_queue: std::collections::VecDeque::from(vec![valid_absent_worktree_listing(&rec)]),
         ..Default::default()
     };
     let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
@@ -478,7 +596,7 @@ async fn force_cleanup_retains_record_when_branch_remove_succeeds_but_branch_rem
 
     let mut runner = FakeRunner {
         capture_queue: std::collections::VecDeque::from(vec![
-            String::new(),
+            valid_absent_worktree_listing(&rec),
             "  jackin/scratch/x\n".to_owned(),
         ]),
         ..Default::default()
@@ -507,7 +625,7 @@ async fn force_cleanup_error_message_mentions_record_retention() {
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into()],
         capture_queue: std::collections::VecDeque::from(vec![
-            String::new(),
+            valid_absent_worktree_listing(&rec),
             "jackin/scratch/x".to_owned(),
         ]),
         ..Default::default()

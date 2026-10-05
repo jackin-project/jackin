@@ -15,6 +15,7 @@
 
 use crate::state::{IsolationRecord, remove_record};
 use jackin_core::CommandRunner;
+use std::collections::HashSet;
 use std::path::Path;
 
 /// Force-delete an isolated worktree and its scratch branch, then remove
@@ -215,11 +216,146 @@ async fn worktree_is_registered(
             None,
         )
         .await?;
-    Ok(output.split('\0').any(|field| {
-        field
-            .strip_prefix("worktree ")
-            .is_some_and(|path| path == worktree_path)
-    }))
+    worktree_inventory_contains_path(&output, worktree_path)
+}
+
+/// Parse Git's complete `worktree list --porcelain -z` inventory and report
+/// whether it contains the exact path. Git emits the main worktree first,
+/// separates records with an empty NUL field, and NUL-terminates the final
+/// record too. Treat malformed or lossy output as inconclusive: cleanup must
+/// not interpret a partial inventory as proof that a worktree is absent.
+fn worktree_inventory_contains_path(output: &str, expected_path: &str) -> anyhow::Result<bool> {
+    if output.is_empty() {
+        anyhow::bail!("Git worktree inventory is empty");
+    }
+    if !output.ends_with("\0\0") {
+        anyhow::bail!("Git worktree inventory is not terminated at a record boundary");
+    }
+    // CommandRunner returns UTF-8 text using a lossy conversion. If Git emitted
+    // invalid path bytes, U+FFFD makes exact byte comparison impossible.
+    if output.contains('\u{FFFD}') {
+        anyhow::bail!("Git worktree inventory contains lossy path text");
+    }
+
+    let records = output.split("\0\0").collect::<Vec<_>>();
+    if records.last() != Some(&"") {
+        anyhow::bail!("Git worktree inventory has no final record separator");
+    }
+    let records = &records[..records.len() - 1];
+    if records.is_empty() {
+        anyhow::bail!("Git worktree inventory has no main worktree record");
+    }
+
+    let mut paths = HashSet::with_capacity(records.len());
+    let mut expected_registered = false;
+    for (record_index, record) in records.iter().enumerate() {
+        if record.is_empty() {
+            anyhow::bail!("Git worktree inventory contains an empty record");
+        }
+        let fields = record.split('\0').collect::<Vec<_>>();
+        if fields.iter().any(|field| field.is_empty()) {
+            anyhow::bail!("Git worktree inventory contains an empty field");
+        }
+        let Some(path) = fields[0].strip_prefix("worktree ") else {
+            anyhow::bail!(
+                "Git worktree inventory record {} does not start with a worktree path",
+                record_index + 1
+            );
+        };
+        if path.is_empty() {
+            anyhow::bail!("Git worktree inventory contains an empty worktree path");
+        }
+        if !paths.insert(path) {
+            anyhow::bail!("Git worktree inventory repeats a worktree path");
+        }
+        expected_registered |= path == expected_path;
+
+        let mut saw_head = false;
+        let mut saw_branch = false;
+        let mut saw_detached = false;
+        let mut saw_bare = false;
+        let mut saw_locked = false;
+        let mut saw_prunable = false;
+        for field in fields.iter().skip(1) {
+            if let Some(head) = field.strip_prefix("HEAD ") {
+                if saw_head || !valid_full_object_id(head) {
+                    anyhow::bail!(
+                        "Git worktree inventory record {} has an invalid HEAD field",
+                        record_index + 1
+                    );
+                }
+                saw_head = true;
+            } else if let Some(branch) = field.strip_prefix("branch ") {
+                if saw_branch
+                    || !branch.starts_with("refs/heads/")
+                    || branch.len() == "refs/heads/".len()
+                    || branch.bytes().any(|byte| byte.is_ascii_whitespace())
+                {
+                    anyhow::bail!(
+                        "Git worktree inventory record {} has an invalid branch field",
+                        record_index + 1
+                    );
+                }
+                saw_branch = true;
+            } else if *field == "detached" {
+                if saw_detached {
+                    anyhow::bail!(
+                        "Git worktree inventory record {} repeats detached state",
+                        record_index + 1
+                    );
+                }
+                saw_detached = true;
+            } else if *field == "bare" {
+                if saw_bare {
+                    anyhow::bail!(
+                        "Git worktree inventory record {} repeats bare state",
+                        record_index + 1
+                    );
+                }
+                saw_bare = true;
+            } else if *field == "locked" || field.starts_with("locked ") {
+                if saw_locked || field.strip_prefix("locked ").is_some_and(str::is_empty) {
+                    anyhow::bail!(
+                        "Git worktree inventory record {} has an invalid locked field",
+                        record_index + 1
+                    );
+                }
+                saw_locked = true;
+            } else if *field == "prunable" || field.starts_with("prunable ") {
+                if saw_prunable || field.strip_prefix("prunable ").is_some_and(str::is_empty) {
+                    anyhow::bail!(
+                        "Git worktree inventory record {} has an invalid prunable field",
+                        record_index + 1
+                    );
+                }
+                saw_prunable = true;
+            } else {
+                anyhow::bail!(
+                    "Git worktree inventory record {} has an unknown field",
+                    record_index + 1
+                );
+            }
+        }
+        if saw_bare {
+            if saw_head || saw_branch || saw_detached {
+                anyhow::bail!(
+                    "Git worktree inventory record {} has conflicting bare state",
+                    record_index + 1
+                );
+            }
+        } else if !saw_head || saw_branch == saw_detached {
+            anyhow::bail!(
+                "Git worktree inventory record {} has invalid or incomplete HEAD state",
+                record_index + 1
+            );
+        }
+    }
+
+    Ok(expected_registered)
+}
+
+fn valid_full_object_id(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 /// Check whether the branch remains. A failed capture is an error because
