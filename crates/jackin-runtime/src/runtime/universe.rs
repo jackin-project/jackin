@@ -215,7 +215,7 @@ pub enum StartKind {
 pub struct EntryClaim {
     kind: StartKind,
     pending_file: Option<PathBuf>,
-    _pending_lease: std::sync::Mutex<Option<std::fs::File>>,
+    pending_lease: std::sync::Mutex<Option<std::fs::File>>,
 }
 
 impl PartialEq for EntryClaim {
@@ -243,12 +243,12 @@ impl EntryClaim {
         Self {
             kind,
             pending_file: None,
-            _pending_lease: std::sync::Mutex::new(None),
+            pending_lease: std::sync::Mutex::new(None),
         }
     }
 
     fn release_pending_lease(&self) {
-        if let Ok(mut lease) = self._pending_lease.lock() {
+        if let Ok(mut lease) = self.pending_lease.lock() {
             drop(lease.take());
         }
     }
@@ -436,7 +436,7 @@ fn register_pending_entry_locked(
         pending_file: pending_lease
             .as_ref()
             .map(|_| pending_path(authority, &token)),
-        _pending_lease: std::sync::Mutex::new(pending_lease),
+        pending_lease: std::sync::Mutex::new(pending_lease),
     })
 }
 
