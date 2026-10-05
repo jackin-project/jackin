@@ -74,6 +74,12 @@ const OMP_REUSED_STALE_SUFFIX_DB: &[u8] =
 #[cfg(unix)]
 const OMP_REUSED_STALE_SUFFIX_WAL: &[u8] =
     include_bytes!("tests/fixtures/omp-reused-stale-suffix.db-wal");
+#[cfg(unix)]
+const OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-uncommitted-stale-suffix.db");
+#[cfg(unix)]
+const OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL: &[u8] =
+    include_bytes!("tests/fixtures/omp-reused-uncommitted-stale-suffix.db-wal");
 
 #[cfg(unix)]
 fn omp_test_checksum(bytes: &[u8], mut checksum: (u32, u32), little_endian: bool) -> (u32, u32) {
@@ -220,6 +226,14 @@ fn omp_current_salt_prefix_count(wal: &[u8]) -> usize {
 }
 
 #[cfg(unix)]
+fn omp_current_salt_prefix_commit_count(wal: &[u8]) -> usize {
+    let frame_size = read_fixture_u32(wal, 8) as usize + 24;
+    (0..omp_current_salt_prefix_count(wal))
+        .filter(|index| read_fixture_u32(wal, 32 + *index * frame_size + 4) > 0)
+        .count()
+}
+
+#[cfg(unix)]
 fn sync_omp_source(source: &Path, home: &Path) -> (PathBuf, Vec<u8>) {
     let target = home.join("role/omp/agent/agent.db");
     std::fs::create_dir_all(target.parent().unwrap()).unwrap();
@@ -355,6 +369,54 @@ fn omp_sync_ignores_stale_old_generation_frames_after_current_commit() {
         &materialized,
         b"fixture-db-reused-base"
     ));
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_sync_ignores_stale_suffix_after_uncommitted_current_generation_frames() {
+    let total_frames = (OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL.len() - 32)
+        / (read_fixture_u32(OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL, 8) as usize + 24);
+    let current_frames = omp_current_salt_prefix_count(OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL);
+    assert!(current_frames > 0 && current_frames < total_frames);
+    assert_eq!(
+        omp_current_salt_prefix_commit_count(OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL),
+        0,
+        "current-generation spill frames must remain uncommitted"
+    );
+    assert!(byte_image_contains(
+        OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB,
+        b"fixture-main-selected-token"
+    ));
+    assert!(byte_image_contains(
+        OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL,
+        b"fixture-uncommitted-marker"
+    ));
+
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    write_omp_fixture_source(
+        &source,
+        OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB,
+        OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL,
+    );
+    let (target, materialized) = sync_omp_source(&source, temp.path());
+    assert!(byte_image_contains(
+        &materialized,
+        b"fixture-main-selected-token"
+    ));
+    assert!(
+        !byte_image_contains(&materialized, b"fixture-uncommitted-marker"),
+        "uncommitted spill pages must not replace the checkpointed main database"
+    );
+    let discovered = jackin_config::discover_account_directory(
+        Agent::Omp,
+        target.parent().unwrap().parent().unwrap(),
+        temp.path(),
+    )
+    .unwrap()
+    .expect("checkpointed main database remains discoverable");
+    assert_eq!(discovered.provider, Some(AiProvider::OpenAi));
+    assert_eq!(discovered.source_selector, Some(omp_test_selector()));
 }
 
 #[cfg(unix)]

@@ -3653,6 +3653,7 @@ fn apply_committed_omp_wal(
         .checked_add(complete_frames)
         .ok_or_else(|| anyhow::anyhow!("omp WAL page count overflow"))?;
     let mut last_commit = None;
+    let mut validated_current_frame = false;
     let mut previous_checksum = header_checksum;
     for index in 0..complete_frames {
         let frame_at = 32_usize
@@ -3701,8 +3702,8 @@ fn apply_committed_omp_wal(
                 "omp WAL frame salts do not match its header"
             );
             anyhow::ensure!(
-                last_commit.is_some(),
-                "omp WAL has an old-generation frame before any valid committed frame"
+                validated_current_frame,
+                "omp WAL has an old-generation frame before any valid current-generation frame"
             );
             break;
         }
@@ -3719,6 +3720,7 @@ fn apply_committed_omp_wal(
             "omp WAL frame checksum is invalid"
         );
         previous_checksum = computed_checksum;
+        validated_current_frame = true;
         let committed_pages = read_omp_u32(wal, frame_at + 4)?;
         if committed_pages > 0 {
             let committed_pages = usize::try_from(committed_pages)
