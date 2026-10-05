@@ -1,6 +1,6 @@
 # Debian Results
 
-Status: Static route and CLI checks complete; source review pending; Jackin runtime route NOT RUN.
+Status: Route source review PASS; synthetic CLI checks complete; Jackin runtime route NOT RUN.
 
 ## Host
 
@@ -20,9 +20,9 @@ Status: Static route and CLI checks complete; source review pending; Jackin runt
 
 - At initial main `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, Jackin's Codex discovery targeted `~/.codex`, mapped it to `default-codex`, and ignored `CODEX_HOME`.
 - Task commit `0556ce39b1abb9cd6b387583d932e1556ca9dfd4` changes Jackin discovery to honor `CODEX_HOME`; an unset value selects `~/.codex`, while an empty value reports an issue without fallback.
-- Follow-up commit `688057f40173d32dda04a55bff1e3868c219710d` updates discovery parity. Exact-head source review remains pending.
-- This host has no Jackin executable or default configuration.
-- Account registration, workspace selection, and launch forwarding are therefore NOT RUN.
+- Follow-up commit `688057f40173d32dda04a55bff1e3868c219710d` updates the explicit `CODEX_HOME` source and injection route. Commit `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a` adds only a test-only scan seam attribute. Exact-source review PASS across these commits; review found no production change in the follow-up.
+- The MBX-private `jackin` binary was built from base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, before the route commits. It does not validate them. No default Jackin configuration exists.
+- Account registration, workspace selection, and launch forwarding are NOT RUN.
 - No live role response was requested.
 
 ## Synthetic `CODEX_HOME` checks
@@ -75,7 +75,7 @@ Valid cases also emitted a benign warning about refusing PATH aliases under `/tm
 - The owner removed the fixture root. `test ! -e /tmp/jackin-codex-route.sYgjX4` passed.
 - No separate raw transcript was retained. The commands, fixture, and summarized result record came from `debian_codex_route`.
 
-## Empty-configuration preflight
+## Rejected MCP-list preflight
 
 The host-probe owner reports a separate synthetic MCP listing with empty home and config paths. It redirected `CODEX_SQLITE_HOME` to another empty fixture. The original temporary path was not retained.
 
@@ -88,10 +88,12 @@ mkdir -m 700 "$probe/home" "$probe/codex" "$probe/sqlite"
 /usr/bin/env -i HOME="$probe/home" CODEX_HOME="$probe/codex" CODEX_SQLITE_HOME="$probe/sqlite" PATH=/usr/bin:/bin LANG=C.UTF-8 /usr/bin/timeout 10s /root/.local/bin/codex mcp list --json --disable plugins
 ```
 
-This block gives a safe reproduction recipe. The host-probe owner reported exit 0 and a JSON configured-server count of 0. The output contained no server names or details. The command read no fixture config or auth files. The empty tree remained unchanged. The owner removed logs and temporary files. This was not a live-account request.
+The owner reported exit 0 and a JSON configured-server count of 0. The output contained no server names or details. The empty tree remained unchanged. The owner removed logs and temporary files. Sol rejected this command as a general profile preflight because auth-status discovery may contact configured MCP endpoints. The synthetic empty-home result does not validate a real profile. No real profile or model request ran.
+
+The replacement uses schema-verified app-server `config/read` with synthetic empty-home input. Its response returned `system`, `user`, and `sessionFlags` layers. `ConfigReadResponse.layers[].config` is generic JSON. The wrapper must inspect raw `mcp_servers` values and fail closed if configuration is enabled or incomplete. This replacement awaits implementation and independent review.
 
 ## Owner
 
-`debian_codex_route` completed static route inspection and local CLI path checks. Exact-head source review of commit `688057f40173d32dda04a55bff1e3868c219710d` remains pending. Jackin runtime confirmation remains NOT RUN because the executable and configuration are absent, and this checkpoint prohibits live requests.
+`debian_codex_route` completed static route inspection, source review, and local CLI path checks. Exact-source review PASS covers commits `688057f40173d32dda04a55bff1e3868c219710d` and `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`. Jackin runtime confirmation remains NOT RUN because the available MBX binary predates these changes and no default configuration exists. Live requests remain NOT RUN.
 
 See [crate plan](crate-plan.md) and [reviews](reviews.md).

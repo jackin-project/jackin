@@ -25,6 +25,12 @@ Work agents are tool-assigned Luna/max. Runtime confirmation remains pending. De
 - Current root settings are Sol/medium; task section 2.1 requires Luna/max.
 - Runtime confirmation of agent settings remains pending.
 
+### Endpoint-free Codex configuration probe
+
+Sol rejected `codex mcp list --json --disable plugins` as a general profile preflight. Auth-status discovery can contact configured MCP endpoints. The earlier synthetic empty-home run returned zero configured servers, but it does not approve use against a real profile. No real profile or model request ran.
+
+The route owner is replacing this probe with schema-verified app-server `config/read`. Its synthetic response exposed `system`, `user`, and `sessionFlags` layers. `ConfigReadResponse.layers[].config` is generic JSON. The wrapper must inspect raw `mcp_servers` values and fail closed when configuration is enabled or incomplete. Implementation and independent review remain pending.
+
 ## Preliminary security requirements
 
 The preliminary review sets these gates:
@@ -35,7 +41,7 @@ The preliminary review sets these gates:
 - Do not copy the complete Codex home.
 - Record MBX cache and object provenance before compilation.
 
-The `unprivileged_exec_design` owner is still working. The preliminary security review is complete, but execution remains gated.
+The preliminary security review is complete. Final security approval remains pending. One Sol-reviewed build-only proof was separately authorized. See [MBX execution evidence](#main-source-compiler-image-attempt).
 
 ## Jackin redaction review
 
@@ -67,6 +73,16 @@ Sol rejected Jackin redaction commit `63d5ef9046d4948a3cddb239e891db49be654d34` 
 | `push_line` resets per-call state. | Cover suppression state across calls. |
 
 The correction owner is `consolidation_review`. Provide one architecture-level replacement and request exact-head Sol re-review. This review does not approve the redaction implementation.
+
+### Nested PEM and current correction
+
+Sol rejected `69b82de1a48cc18add3933e1995028c8aa2722e8` at its exact head. The nested `PRIVATE KEY` and `RSA PRIVATE KEY` marker sequence leaked `nested-pem-canary` in whole text, streaming output, and build-log snapshots.
+
+Commit `c2a80a7dc0618007840533e956b06f4af3458a70` fixed the nested structure but failed exact-head review. Two `map_or` calls at `redact.rs:950-952` and `975-977` trigger Clippy's denied `unnecessary_map_or` lint. Sol also requested a positive sequential marker-block regression.
+
+Follow-up `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578` replaces those calls and adds sequential marker-block tests for whole-text and `StreamRedactor` paths. Exact-head Sol source review PASS. The marker fixture does not test cryptographic PEM parsing. Pinned rustfmt and `git diff --check` passed. Clippy and Cargo tests remain NOT RUN. Runtime and test acceptance remain pending.
+
+Earlier source-revision transcriptions contained an incorrect final character and a malformed 39-character route reference. Neither is a source revision. The corrected redaction commit `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578` and route commit `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a` resolve as local commit objects. Validate each full SHA as 40 hexadecimal characters and a resolvable local or remote object. Final review must revalidate source claims.
 
 ## CI workflow review
 
@@ -103,6 +119,20 @@ The review used Velnor main `0c40d077fcad5450521351f497ce003c69915eff`. A later 
 
 Before generator implementation, a later fetch recorded Velnor `origin/main` at `d9f3f3be03d67021748fd6adb4a18684d046e5e7` at `2026-10-05T01:09:24Z`. The commit timestamp was `2026-10-05T07:52:37+07:00`. The work branch was rebased onto that head before edits. Run the final generator review after upstream fixes merge.
 
+The separate optional setup-factoring proposal used Velnor main `6180ccebc7eff8b8f40f988eea2cf948bb235c9d` and PR head `d10472a32b227e98ac09180feba0ca6f8899ccf8`. Its design disposition is FAIL pending redesign. Extraction would hide `steps.mbx.outputs` and `steps.mbx-bundle.outputs` from outer export/save logic in `mbx_bundle.rs`. A composite has no `id` or outputs. `document.rs:219-260` also derives credential scrubbing, `RUSTUP_TOOLCHAIN`, and acquisition provenance from remaining steps. Compute these properties from original steps. These are proposal findings, not defects in PR #55.
+
+Hosted jobs use an unqualified shell. Scale-set jobs use `bash -e {0}`. Explicit Bash can change `pipefail` behavior.
+
+Preserve metadata and environment. Preserve expanded steps and external `steps.*` references. Preserve cache election and pull-request versus push trust. Check out before using a local action. Pin action versions immutably. Use fixed safe paths. Avoid token interpolation. Preserve Required IDs, dependencies, and verdicts. Reject renderer drift. Test the full 27-Rust and 3-verification graph repeatedly under the byte cap.
+
+The 375–380 KB estimate is not measured. No generator code or tests passed this design review.
+
+### Velnor PR #55 source security review
+
+Sol source review PASS at PR head `6baa3a1f729d45a764fd4250d1300cf17fa196e6` against main `6180ccebc7eff8b8f40f988eea2cf948bb235c9d`. The review accepts fixes for typed-job Mise environment true/unset handling, a workflow-wide byte guard, UTF-8 accounting, and no-partial/in-place tests. It rejects the untrusted-cache-writer allegation because cache saves are push-only.
+
+Final approval remains pending stale general and issue-comment dispositions, P13, T24, and all required checks. The source review does not approve a merge.
+
 ## Account consolidation review
 
 The account-consolidation branch at `18bc09e9536d9b662876d2fb4205357a829caa9a` contains commit `455526b92a2a4350476bb192455e5e3414f7ab9a`, titled `feat(op): persist canonical section identifiers`. Four later commits retain the fixture defect.
@@ -138,13 +168,19 @@ The change updates only `jackin.role.toml`. It changes the manifest from v1alpha
 
 DCO, Actionlint, Plan, Required, and Sonar pass at that head. Publish baseline is skipped by its main-only condition. This is not merge approval.
 
-`jackin-role validate`, repository validation, and the live role route remain NOT RUN. Validation awaits reviewed MBX. Maintained CI support for real roles belongs to the generator.
+Parser and local repository contract checks ran with MBX-built binary SHA-256 `e899a8e5f51ebb5f20fce5a379a3f4de4555911549e743ca625efb4a3988c2ac`, built from Jackin base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. `jackin role validate --help` exited 0. `jackin role validate /tmp/architect-contract-base-DMcKHD` exited 1 as expected: the v1alpha5 fixture manifest SHA-256 `52ca2ec67a40888c0da73e738d69ede8fb18f4efc952e798e4f335ea153db135` rejects `providers` as an unknown field; it allows `model`, `marketplaces`, and `plugins`.
+
+The current role manifest SHA-256 is `eb08cf89aa32971c17db9875ec633ac22fe609927abf23fd18182756819e7fca`. `validate_role_repo` returned success after local strict-manifest, Dockerfile, and hook-structure checks at PR head `0592d0deeaeaa5b785fa67a43d23d3b627552720`. Full `jackin role validate /root/Projects/tailrocks/jackin-project/jackin-the-architect-task` exited 1 after an unauthenticated GET of `https://raw.githubusercontent.com/tailrocks/tailrocks-skills/HEAD/.claude-plugin/marketplace.json` returned 404. Sanitized stderr: `fetching Claude marketplace manifest from https://raw.githubusercontent.com/tailrocks/tailrocks-skills/HEAD/.claude-plugin/marketplace.json returned 404 Not Found`. Stdout contained only a redacted telemetry invocation line; it did not print `Role repository is valid`. No authentication, container, hook, or role load occurred. Parser and local contract checks PASS; full validation FAIL pending authoritative marketplace identity and path investigation.
+
+Read-only GitHub metadata later confirmed that [`tailrocks/asd-ste100-skill`](https://github.com/tailrocks/asd-ste100-skill) is a separate private repository at main `0572839a13afc145083535b3e29c79b78489af40`. It contains `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`, but no `.claude-plugin/marketplace.json`; it is not a marketplace substitute. The public [`tailrocks-skills`](https://github.com/tailrocks/tailrocks-skills) README lists eight independent repositories. Sol's design review PASS recommends only public `tailrocks-rust-skills` and `tailrocks-roadmap-skills` as marketplace sources matching the role's advertised capabilities. It does not claim a one-to-one replacement for the prior eight-repository set. The Architect owner is preparing a manifest change. Full validator execution remains pending.
+
+The command runs used task-private environment paths, working directory `/`, and disabled OpenTelemetry. The available binary predates the Architect manifest update. Live role loading remains NOT RUN. Maintained CI support for actual roles belongs to the generator.
 
 ## MBX provenance
 
 The activation worker reports immutable MBX `1.21.0` release commit `201b9df3d18e8e96831bee631035f6b7c7ae20e0` and GNU checksum `1ed3fd18da0decc106a6242d1b724e6a4b8d0f6173b8abe4d4d68c929ed47120`.
 
-No local provenance transcript was saved. Artifact installation and activation remain IN PROGRESS. Security review must finish before compilation.
+No local release-provenance transcript was saved. Selected registration and acquisition phases passed by owner report. A Sol-reviewed isolated launcher completed one source build. This does not complete final security review, cache provenance, or activation for repeated measurements. See [build results](build-results.md#reviewed-linker-v2-source-proof).
 
 ### Launcher preflight
 
@@ -164,20 +200,32 @@ The `register-rust` phase failed when Mise tried to resolve its version list onl
 
 The `unprivileged_exec_design` owner is checking supported offline `mise link` behavior. The exact command and output remain pending. Do not mark MBX activation PASS.
 
+### Main-source compiler image attempt
+
+At source `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, the Sol-reviewed launcher SHA `d31315193da05f29746509b3e395aca1394c6b7160c39b8bb075782c9998c748` reached `mbx build --locked --offline -p jackin`. It exited 101 because `/usr/bin/cc` points to absent `/etc/alternatives` in the private chroot. MBX attempted four crates, recorded zero hits, zero misses, and six bypasses. It wrote 88.9 KiB of local metadata and uploaded no compiler outputs. No successful source compilation occurred. See [build evidence](build-results.md#first-main-source-attempt).
+
+Direct-linker candidate `9fe5f1143587373d0ab5df821ff68e6abcc72280f642bdea986df02d1d0e85d4` failed review before execution. Its environment checker rejects exported `CC`, `AR`, and Cargo linker variables before stage creation updates that checker. No phase executed.
+
+Sol reviewed bounded build-only launcher hash `9d94884ac525c91f5a2e7c5abb6f068cdb814ef0780097fa840d35b57c212851` PASS. One proof succeeded. It does not authorize cache or performance claims.
+
+The bypass investigation attributes 109 `unportable-native-link` bypasses to MBX rejecting an explicit non-Clang native linker. The task environment exports a Cargo GCC linker. The 495 `unknown-codegen-option` attribution remains plausible but is not traced to packages. The owner is preparing a rootfs-only `/etc/alternatives/cc` link to verified GCC, removing linker environment exports, and recording bypass logs and statistics. Host `/etc` remains unchanged. Require exact Sol review before another build.
+
+Diagnostic candidate `a56a1822bbec56025fc2cd499de3a09be57c888a87ce40ba56eef70e99a3f671` is HOLD and withdrawn. `mbx explain --last` diagnoses MISS events, not the BYPASS events from this run. No phase ran. Metadata snapshots alone do not prove file contents stayed unchanged or exclude atime and private-home writes. The security reviewer requires stronger filesystem evidence before further execution. A new immutable artifact and exact Sol review are pending.
+
 ## Review owners
 
 | Owner | Work | State |
 |---|---|---|
 | `preflight_security_review` | Initial security gate | Initial review complete; follow-up pending |
-| `unprivileged_exec_design` | Execution boundary and MBX launcher | IN PROGRESS; launcher correction pending; activation NOT RUN |
+| `unprivileged_exec_design` | Execution boundary and MBX launcher | One build-only proof passed; cache investigation and full security validation remain IN PROGRESS |
 | `codex_schema_runtime` | Agent settings confirmation | IN PROGRESS |
-| `branches` | Source disposition matrix | Complete; selected integration remains pending |
+| `branches` | Source disposition matrix | Exact source paths and dependency gates remain IN PROGRESS |
 | `baseline_method_review` | PR #1108 exact-head source review | Complete; final build-performance review NOT STARTED |
-| `execution_crosscheck` | Consolidation source review and final gates | OMP source review complete; route source review pending; final correctness review NOT STARTED |
+| `execution_crosscheck` | Consolidation source review and final gates | OMP and route source reviews complete; final correctness review NOT STARTED |
 | `consolidation_review` | Migration fixtures and redaction correction | IN PROGRESS; redaction tests NOT RUN pending MBX |
 | `jackin_ci_consumer` | Collector and Mise/MBX integration | IN PROGRESS |
 | `omp` | Account database and WAL root fix | Source review PASS at `1638522184ef45f0cd51fa5601a5e80c7fd89762`; stale-comment follow-up; Cargo tests NOT RUN |
-| `debian_codex_route` | Codex account discovery route | Source review pending at `688057f40173d32dda04a55bff1e3868c219710d`; runtime route NOT RUN |
+| `debian_codex_route` | Codex account discovery route | Source review PASS across `688057f40173d32dda04a55bff1e3868c219710d` and `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`; runtime route NOT RUN |
 | `jackin_cli` | Launch prompt cleanup | Source review PASS at `640b33f9598307a360484526a46c9c20bd068f4e`; Cargo tests NOT RUN pending MBX |
 | `architect_schema_review` | Independent runtime-performance review | NOT STARTED; exact runtime evidence pending |
 
@@ -188,6 +236,12 @@ The `architect_manifest_fix` owner supplied the exact-head review. The `velnor_r
 Source review PASS at commit `640b33f9598307a360484526a46c9c20bd068f4e` (`refactor(load): remove unsupported initial prompt option`). The change removes `LoadOptions.prompt` and its current-role reuse and explicit-restore checks in `crates/jackin-runtime/src/runtime/launch.rs` and `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs`.
 
 Cargo tests remain NOT RUN pending reviewed MBX activation. This record reports source review only.
+
+## Account route and restore source reviews
+
+The `CODEX_HOME` source change in `688057f40173d32dda04a55bff1e3868c219710d` passed exact-source review with follow-up commit `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`. The follow-up adds only `#[cfg(test)]` to a test-only scan seam. Production discovery remains unchanged by that follow-up. Both commits are source-review evidence only.
+
+Restore commit `234fc0ea3813d8cabe579a8a8e0a0b1162eb5230` and prompt-removal commit `640b33f9598307a360484526a46c9c20bd068f4e` passed source review. Cargo tests remain NOT RUN. Host discovery, account refresh and selection, workspace launch, and live Codex requests remain NOT RUN.
 
 ## Final review ownership
 

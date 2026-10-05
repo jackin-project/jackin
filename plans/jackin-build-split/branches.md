@@ -10,6 +10,7 @@
 - Task worktree: `/root/Projects/tailrocks/jackin-project/jackin-refactor-build-split`.
 - Task branch: `refactor/build-split`.
 - Initial task worktree state: clean at the base SHA.
+- Source head before this evidence update: `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578`; local and remote branch refs matched.
 - No PR was opened for this task during the documentation checkpoint.
 
 ## Preserved original worktree state
@@ -23,7 +24,7 @@
 
 ## Exact branch and PR inventory
 
-This is the 2026-10-05 branch audit. Counts use `origin/main` at `0aa821a088e1bacf3d4d85a4c9faaa67faa85132` as the base. Keep the complete PR branches out of the merge path until selected changes pass their listed gates.
+This is the 2026-10-05 branch audit. Counts use `origin/main` at `0aa821a088e1bacf3d4d85a4c9faaa67faa85132` as the base. Selected changes remain gated. No complete branch is approved for merge.
 
 | Ref | Exact SHA and delta from main | Inventory status |
 |---|---|---|
@@ -51,18 +52,43 @@ The exact `origin/main..origin/codex/credential-routing-recovery-20260930` graph
 | Disposition | Commit group | Evidence or gate |
 |---|---|---|
 | ALREADY PRESENT; no-op | Sync merges `c256792e`, `0fb305e` | Preserve history only when needed; do not merge the branch for these commits. |
-| ALREADY PRESENT; no-op | Usage discovery/coordinator: `f09c716`, `793663f`, `e3ff5d4`, `3664233` | For each commit's touched paths, `git diff origin/main..3a28c199f17da335ecd9abd8dd67ebf1aecc0421 -- <touched-paths>` is empty. Sol independently verified the net-zero result. |
-| ALREADY PRESENT; no-op | Process, broker, CI, and hooks: `6b0fb2c`, `8a9ec7e`, `5eb3bc7`, `02b0c57`, `1e822df`, `1433c6a`, `3e1bb81`, `81a26f7` | The same per-commit touched-path comparison against current main is empty; Sol independently verified. |
-| ALREADY PRESENT; no-op | Broker Arc test `a6c85ba8a154ccce224dce80d1ed5ef8fa03bc6e`; TODO and usage-evidence docs `dd1aa569678134e0d81301ec5131edf6f110d7ce` | Both have empty per-commit touched-path diffs against current main. Sol independently verified. |
+| ALREADY PRESENT; no-op | Usage discovery/coordinator: `f09c716`, `793663f`, `e3ff5d4`, `3664233` | The usage auditor reports no final-head diff on these commits' touched paths. Sol independently verified the net-zero result. |
+| ALREADY PRESENT; no-op | Process, broker, CI, and hooks: `6b0fb2c`, `8a9ec7e`, `5eb3bc7`, `02b0c57`, `1e822df`, `1433c6a`, `3e1bb81`, `81a26f7` | The usage auditor reports no final-head diff on these commits' touched paths. Sol independently verified. |
+| ALREADY PRESENT; no-op | Broker Arc test `a6c85ba8a154ccce224dce80d1ed5ef8fa03bc6e`; TODO and usage-evidence docs `dd1aa569678134e0d81301ec5131edf6f110d7ce` | Final-head per-path checks against main returned exit 0: one touched path for `a6c85ba8a154ccce224dce80d1ed5ef8fa03bc6e`, two for `dd1aa569678134e0d81301ec5131edf6f110d7ce`. Sol independently verified. |
 | SELECT; pending integration | Private config, account authority, and authentication: `37c18b0`, `b349e1c`, `7f5ed14`, `0a98671`, `4830237`, `e426186`, `3a28c19` | Select only the private-config and authority changes. Treat usage-path hunks already present on main as no-ops. Require exact security review. |
-| SELECT; pending integration | Runtime identity, workspace, and typed IDs: `7db8266`, `2610c9c`, `5375756` | Review as a cohesive runtime change and verify consumers. |
+| SELECT; pending integration | Runtime identity, workspace, and typed IDs: `7db8266`, `2610c9c` | Review as a cohesive runtime change and verify consumers. |
 | SELECT; pending integration | Joined Console usage refresh: `53da175`, `cd119a39`, `ed5e240` | Keep the joined refresh and its documented persistence behavior together. |
 | SELECT; pending integration | Durable config persistence and editor behavior: `1ea072f`, `60f7d661` | Review as a group with its affected schema consumers. |
 | SELECT; pending integration | TUI facade and documentation: `e51b2b9`, `e901fa1`, `8bf933c`, `38db68d` | Recheck links and claims against current source before integration. |
+| SELECT; pending prerequisites | Mixed account, identity, workspace, Console, and CLI commit `5375756fe301ba6a33d52040435b96bae6be9171` | Keep the commit attributed and intact. Require account and authority prerequisites. Do not duplicate its shared `account_config`, orchestration, or Console paths. |
 | SELECT; pending scope decision | Codex subagent settings: `0a252f3`, `5344167` | Include only if the build-split task requires those settings. |
 | REPLACE | Broad formatting and type changes: `3c33f29` | Do not port wholesale. Reapply only a separately justified fix against current source. |
 
-These rows account for 36 non-merge commits and two sync merges. The audit also found no-op changes inside otherwise selected commit paths. This is source triage, not integration approval. Do not merge the full #1111 branch. Integrate selected groups only after their dependencies and final gates pass.
+These rows account for 36 non-merge commits and two sync merges. The audit also found no-op changes inside otherwise selected commit paths. The source path and dependency matrix remains IN PROGRESS. Do not merge the full #1111 branch. Integrate selected groups only after their dependencies and final gates pass.
+
+The exact comparison enumerated each commit's changed paths, then compared those paths between main and the final PR head. Both comparisons returned exit `0`.
+
+```python
+import subprocess
+
+base = "0aa821a088e1bacf3d4d85a4c9faaa67faa85132"
+head = "3a28c199f17da335ecd9abd8dd67ebf1aecc0421"
+commits = (
+    "a6c85ba8a154ccce224dce80d1ed5ef8fa03bc6e",
+    "dd1aa569678134e0d81301ec5131edf6f110d7ce",
+)
+for commit in commits:
+    paths = subprocess.run(
+        ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", commit],
+        check=True, text=True, capture_output=True,
+    ).stdout.splitlines()
+    result = subprocess.run(
+        ["git", "diff", "--quiet", f"{base}..{head}", "--", *paths]
+    )
+    print(f"{commit}: {len(paths)} touched paths; diff exit {result.returncode}")
+```
+
+Output: `a6c85ba8a154ccce224dce80d1ed5ef8fa03bc6e: 1 touched paths; diff exit 0`; `dd1aa569678134e0d81301ec5131edf6f110d7ce: 2 touched paths; diff exit 0`.
 
 #### Selected independent units and focused test scope
 
@@ -72,11 +98,14 @@ The path groups below preserve unit boundaries. Run the listed focused checks on
 |---|---|---|
 | Credential capture and account authority | `crates/jackin-runtime/src/runtime/launch/account_config.rs` and its `tests.rs`, `tests/bounds.rs`, `authority_tests.rs`; `crates/jackin-instance/src/auth.rs`, `auth/tests.rs`, `selected_source_tests.rs`; `crates/jackin-core/src/launch_selection.rs`; `crates/jackin-config/src/editor/accounts.rs`, `schema.rs`; Console `tui/screens/editor/model/state_impl/workspace.rs`; runtime `coordination.rs`, `launch.rs`, `attach.rs`, `cleanup.rs`, `usage_relay.rs`; `crates/jackin-protocol/src/control.rs`. | Account-config bounds/authority; auth/selected-source; `launch_runtime/tests.rs`, `attach/tests.rs`, `cleanup/tests.rs`, `apple_container/coordination_tests.rs`, `usage_relay/tests.rs`, and cross-platform configuration. |
 | Typed identity and runtime consumers | `crates/jackin-core/src/container_id.rs`, `session_id.rs`, and `launch_selection.rs`; `crates/jackin-instance/src/manifest.rs`; runtime attach, cleanup, and launch phases. | `container_id/tests.rs`, `session_id/tests.rs`, `manifest/tests.rs`, `runtime/attach/tests.rs`, `runtime/cleanup/tests.rs`, `launch_phases/tests.rs`, and `crates/jackin/tests/per_mount_isolation_e2e.rs`. Avoid duplicate auth/runtime paths. |
+| Mixed identity/auth/workspace commit `5375756fe301ba6a33d52040435b96bae6be9171` | Console service launch and TUI console/input/list/message/prompts; core launch selection; instance auth; runtime identity/workspace/coordination/attach/cleanup/launch/account config/restore/mounts/programmatic; usage relay; CLI load/prune/console adapter. | Authority tests: instance auth/selected-source and runtime account-config; identity tests: core launch-selection and runtime coordination/attach/cleanup/launch; consumer tests: Console/CLI and `load_options_e2e.rs`. |
 | Joined Console usage refresh | `crates/jackin-console/src/tui/screens/usage.rs`, `tui/input/list.rs`, `tui/state.rs`, `tui/state/manager.rs`; `crates/jackin/src/console/adapter/run.rs`; Console command and operator-console docs. | `tui/screens/usage/tests.rs`, `tui/input/list/tests.rs`, and `crates/jackin/src/console/adapter/run/tests.rs`. No host provider changes are selected. |
 | Config journal and editor | `crates/jackin-config/src/persist.rs`, `persist/tests.rs`, `editor/accounts.rs`, `schema.rs`; Console workspace editor state and tests. | Journal publication, recovery, and workspace editor tests. Keep separate from later schema migration. |
 | TUI facade, docs, and defaults | `crates/jackin-tui/src/runtime.rs` and README; `crates/jackin-capsule/src/tui/runtime.rs`; TUI architecture and code-map docs; `.codex/config.toml` for model-default commits. | Check facade consumers and source links. Include model defaults only if this task requires them. |
 
 Security-doc paths include `docs/content/(public)/(role-authoring)/developing/construct-image.mdx`, `docs/content/(public)/(role-authoring)/guides/role-repos.mdx`, `docs/content/(public)/getting-started/concepts.mdx`, `docs/content/(public)/getting-started/why.mdx`, and `docs/content/(public)/guides/security-model.mdx`. Recheck every claim against current code before integration.
+
+Keep `5375756fe301ba6a33d52040435b96bae6be9171` intact and attributed. If cherry-picked, preserve provenance with `git cherry-pick -x`. Do not split shared account-config, orchestration, or Console hunks.
 
 ### Account and capsule consolidation matrix
 
@@ -87,11 +116,12 @@ The consolidation ref adds eleven commits after #1111. Its review does not appro
 | `c2c7154c02de16ba6eac9f3682fc8d5275910451` | REJECT | Do not bring brand changes into this consolidation. |
 | `7102f0afd4546b6b47b87814df16782a1cbf998c` | REPLACE | Recheck documentation against current source and rewrite stale claims. |
 | `72aa9142b2d176db7dcf3f0a463dd95432e2c246`, `ae634df85896a15a724b5af9563a440f9f7a6055` | SELECT | Review profile and security documentation against current behavior. |
-| `7cbbbdf736c70a94961d3adb1176d1994a47d43e` | REPLACE | Use the architecture-level redaction correction under review. The current patch remains rejected. |
+| `7cbbbdf736c70a94961d3adb1176d1994a47d43e` | REPLACE | Use reviewed architecture-level correction `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578`. Exact-source review passed; Clippy and Cargo tests remain NOT RUN. Keep integration pending. |
 | `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | SELECT after fix | Require ordered fsync and recovery correction before integration. |
 | `455526b92a2a4350476bb192455e5e3414f7ab9a` | SELECT after fixtures | Add predecessor directories and schema, metadata, and golden fixtures. Run migration tests and schema checks under reviewed MBX. |
 | `cd3ced4189fb19624359da8c0eec5684ef1bacd8` | SELECT | Review profile material proofs with their consumers. |
-| `c72e25d384ce2d8a80cf584457ec4b28e619980b`, `e4bcb842bd151c608691a72c7af8fc6e765a3105` | SELECT as a pair | Review status and OSC changes together. |
+| `c72e25d384ce2d8a80cf584457ec4b28e619980b` | REVIEW; not selected | Next candidate. Sol must verify dependencies, equivalence, and security. After approval, Luna selects it with `git cherry-pick -x`. Then run focused tests under MBX. |
+| `e4bcb842bd151c608691a72c7af8fc6e765a3105` | HOLD after `c72e25d` review | Keep OSC and capsule session changes together. Do not integrate before rule-bundle review. |
 | `18bc09e9536d9b662876d2fb4205357a829caa9a` | SELECT as one linked unit | Keep protocol, core, capsule, runtime, status, and isolation changes together across 20 paths. Do not select the transport type alone. |
 
 These eleven commit dispositions remain pending integration. Migration, transaction, and redaction gates are documented in [review findings](reviews.md#account-consolidation-review).
@@ -100,13 +130,26 @@ These eleven commit dispositions remain pending integration. Migration, transact
 
 | Commit group | Paths and focused tests | Dependency gate |
 |---|---|---|
-| `455526b92a2a4350476bb192455e5e3414f7ab9a` | Config `accounts.rs`/`migrations.rs`; core, env, oppicker, Console, runtime launch helpers, CLI config, and schema/security docs. Focus migration compatibility tests. | Add predecessor directories and schema, metadata, and golden fixtures. Run migration checks under reviewed MBX. |
-| `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | Core workspace/isolation records; isolation `cleanup.rs`, `state_io.rs`, `ref_transaction.rs`, `safe_remove.rs`; runtime cleanup/restore; `crates/jackin/tests/per_mount_isolation_e2e.rs`. Focus cleanup, ref, recovery, restore, and per-mount failure tests. | Fix durable ordering before integration. Verify ordered fsync and recovery behavior. |
-| `cd3ced4189fb19624359da8c0eec5684ef1bacd8` | `crates/jackin-core/src/profile_material.rs`, core exports, Cargo metadata, and fuzz lockfiles. Focus proof creation and invalidation tests. | Review proof consumers and fuzz dependency changes. |
-| `c72e25d384ce2d8a80cf584457ec4b28e619980b` + `e4bcb842bd151c608691a72c7af8fc6e765a3105` | Agent-status rules and signed bundles; `crates/jackin-agent-status/src/osc.rs`; capsule session parser. Focus rule verification, OSC parsing, and session framing tests. | Keep rule-bundle validation and OSC session decoding together. |
-| `18bc09e9536d9b662876d2fb4205357a829caa9a` | 20 paths: capsule attach protocol/client/client tests/daemon tests/exec/main/socket/TUI; core status; isolation finalize; protocol transport/lib; runtime Apple container/attach/attach tests/host attach/session control/snapshot; CLI status; persistence/reattach E2E. | Focus protocol, capsule client/daemon, persistence/reattach, runtime attach, and isolation finalization tests. Integrate as one linked consumer change. |
+| `455526b92a2a4350476bb192455e5e3414f7ab9a` | Config: `crates/jackin-config/src/accounts.rs`, `accounts/zshrc.rs`, `editor.rs`, `editor/tests.rs`, `migrations.rs`, `versions.rs`. Console: `crates/jackin-console/src/tui/auth_config.rs`, `tui/components/op_picker/lines.rs`, `tui/components/op_picker/tests.rs`, `tui/input/global_mounts/auth/tests.rs`, `tui/op_breadcrumb.rs`, `tui/op_picker.rs`, `tui/op_picker/tests.rs`, `tui/update/tests.rs`. Core: `crates/jackin-core/src/env_value.rs`, `env_value/tests.rs`, `op_cache.rs`, `op_reference.rs`, `op_types.rs`. Environment: `crates/jackin-env/src/op_cli.rs`, `op_runner.rs`, `op_struct.rs`, `picker.rs`, `resolve.rs`, `resolve/tests.rs`. Picker: `crates/jackin-oppicker/src/input.rs`, `lib.rs`, `load.rs`, `state.rs`. Runtime: `crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core/orchestrate/helpers.rs`. CLI: `crates/jackin/src/app/config_cmd.rs`, `crates/jackin/tests/manager_flow/secrets.rs`. Docs: `docs/content/reference/developer-reference/specs/op-picker.mdx`, `docs/content/reference/runtime/configuration.mdx`, `docs/content/reference/runtime/schema-versions.mdx`, `docs/content/research/platform/security/credential-exposure/jackin-exec-design.mdx`, `docs/content/research/platform/security/isolation-architecture/agent-isolation-architecture/01-threat-and-platform-evidence.mdx`. | Focus migration compatibility and schema checks. Add config `from-v1alpha12` and workspace `from-v1alpha10` predecessor directories, metadata, schema, and golden files. Include `docs/content/reference/crates/meta.json` from separate commit `38db68d6b41fa57b090224b360a643a0b5436024` only if review proves the dependency. |
+| `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | `Cargo.toml`, `Cargo.lock`; `crates/jackin-core/src/isolation_record.rs`, `workspace_label.rs`, `workspace_name.rs`, `workspace_name/tests.rs`; `crates/jackin-isolation/Cargo.toml`, `README.md`, `src/cleanup.rs`, `cleanup/tests.rs`, `error.rs`, `finalize/tests.rs`, `lib.rs`, `materialize.rs`, `materialize/tests.rs`, `ref_transaction.rs`, `ref_transaction/tests.rs`, `safe_remove.rs`, `safe_remove/tests.rs`, `state.rs`, `state/tests.rs`, `state_io.rs`, `state_io/tests.rs`; `crates/jackin-runtime/src/runtime/drift/tests.rs`, `runtime/launch/launch_pipeline/launch_core/orchestrate.rs`, `runtime/launch/restore.rs`, `runtime/launch/restore/tests.rs`, `runtime/launch/tests.rs`; `crates/jackin/tests/per_mount_isolation_e2e.rs`. | Keep this full unit. First supply and independently review an ordered-fsync recovery fix. Search for `sync_all`, `sync_data`, `fsync`, and `ordered-sync` found only this commit; no later first-parent fix or linked PR was found. No fix owner is assigned in the audited refs. Then run cleanup, ref, recovery, restore, and per-mount failure tests. |
+| `cd3ced4189fb19624359da8c0eec5684ef1bacd8` | `crates/jackin-config/fuzz/Cargo.lock`, `crates/jackin-core/Cargo.toml`, `crates/jackin-core/src/{lib.rs,profile_material.rs}`, `crates/jackin-env/fuzz/Cargo.lock`, `crates/jackin-manifest/fuzz/Cargo.lock`, `crates/jackin-protocol/fuzz/Cargo.lock`. | Add focused proof-creation and proof-invalidation tests. Review proof consumers and fuzz dependency changes before integration. |
+| `c72e25d384ce2d8a80cf584457ec4b28e619980b` | `crates/jackin-agent-status/src/rules.rs`, `rules/tests.rs`, and `crates/jackin-agent-status/tests/signed_bundle.rs`. | Keep the unit. Run rule and signed-bundle verification tests. |
+| `e4bcb842bd151c608691a72c7af8fc6e765a3105` | `crates/jackin-agent-status/src/{lib.rs,osc.rs,tests.rs}`, `crates/jackin-capsule/src/session.rs`, and `session/tests.rs`. | Integrate after `c72e25d`. Run decoder, session framing, and ingestion tests. |
+| `18bc09e9536d9b662876d2fb4205357a829caa9a` | Full 20-path unit: capsule `attach_protocol.rs`, `client.rs`, `client/tests.rs`, `daemon/tests.rs`, `exec.rs`, `main.rs`, `socket.rs`, `tui/run.rs`, `tests/persistence_and_reattach.rs`; core `status.rs`; isolation `finalize.rs`; protocol `capsule_transport.rs`, `lib.rs`; runtime `apple_container.rs`, `attach.rs`, `attach/tests.rs`, `host_attach.rs`, `session_control.rs`, `snapshot.rs`; CLI `crates/jackin/src/cli/status.rs`. | Keep every consumer linked. Integrate after OSC and preferably cleanup. Run protocol, capsule client/daemon, persistence/reattach, runtime attach, and isolation-finalization tests together. |
 
 These test lists define review scope. They do not record test execution or acceptance.
+
+#### Fixing and integration gates
+
+| Order | Work owner | Required predecessor or fix | State |
+|---|---|---|---|
+| 1 | Unassigned | Supply and review ordered-fsync recovery behavior before importing `78e38612824c4e6d69ffb9d01a834a75537e7c5a`. | IN PROGRESS; no fix ref found in the audited refs. |
+| 2 | `consolidation_review` | Add predecessor, schema, metadata, and golden fixtures for `455526b92a2a4350476bb192455e5e3414f7ab9a`. | IN PROGRESS; migration tests NOT RUN. |
+| 3 | `consolidation_review` | Add profile proof creation and invalidation coverage for `cd3ced4189fb19624359da8c0eec5684ef1bacd8`. | IN PROGRESS; tests NOT RUN. |
+| 4 | `execution_crosscheck` | Review `c72e25d384ce2d8a80cf584457ec4b28e619980b` for exact dependencies, equivalence, and security. Review `e4bcb842bd151c608691a72c7af8fc6e765a3105` afterward. | IN PROGRESS; neither commit is selected; tests NOT RUN. |
+| 5 | `execution_crosscheck` | Review the complete 20-path transport consumer unit after its predecessors. | IN PROGRESS; integration tests NOT RUN. |
+
+The dependency order is `78e386…` → `455526…` → `cd3ced…` → `c72e25…` → `e4bcb…` → `18bc09…`. The ordered-fsync fix must precede cleanup import. The mixed PR #1111 commit `5375756fe301ba6a33d52040435b96bae6be9171` remains a separate attributed unit. It depends on the account and authority prerequisites above. The redaction replacement remains owned by `consolidation_review`; the linked capsule transport group must not be reduced to a protocol-type-only pick.
 
 ### Recovery ref disposition
 
@@ -161,7 +204,7 @@ GitHub reported PR #1108 as conflicting and dirty against current main. Its late
 
 In the PR source, `crates/jackin-process/src/lib.rs:489-555` waits for a bounded-output child without closing unused child stdin. The unbounded path closes it at `:355-358`. A child such as `cat` can wait for input indefinitely.
 
-Add a one-second regression test. Preserve child exit and signal results. Do not mark the test as run; builds and tests remain outside this documentation task.
+Add a one-second regression test. Preserve child exit and signal results. That regression test remains NOT RUN at the reviewed PR head.
 
 #### Artifact permission
 
@@ -224,6 +267,6 @@ Fetch status: PASS for ref synchronization only. The earlier branch auditor also
 
 ## Owner
 
-`branches` completed the source disposition matrix. Selected integration and dependency gates remain IN PROGRESS. This record does not approve whole-branch integration or merging.
+`branches` recorded the inventory and source dispositions. Exhaustive path accounting and fixing dependencies remain IN PROGRESS. This record does not approve whole-branch integration or merging.
 
 See the [checklist](checklist.md) and [reviews](reviews.md).
