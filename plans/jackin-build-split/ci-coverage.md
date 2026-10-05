@@ -133,6 +133,10 @@ Replacement run `37289881948` completed on `7b6ea934490b6ef0d867a43def527e29caa3
 
 After docs-only evidence commit `edde91c92d64d9c04211f20012d271d8b1b28cf3`, run `37290996910` completed at that exact head with the same result: DCO-2 and Actionlint PASS; Plan FAIL on `tasks: unknown_config_field`; Required FAIL because Plan produced no artifact; all 25 Rust jobs and Publish baseline SKIPPED. The Plan log confirms the same Velnor `0.1.0` invocation. REST and GraphQL feedback refreshes at `edde91c` found zero inline comments, reviews, issue comments, or review threads. The docs-only commit did not change executable source; tests remain unrun on this task branch.
 
+At the current source head `e17a5dd5c0ef8a34ed20b1837534b851d38e78d1` (tree `5e07bdacd3cdbf4dc24071f9e5ef88c2be53f595`), run `37300944505` completed with DCO and Actionlint PASS, Plan and Required FAIL, all 27 Rust jobs SKIPPED, and Publish baseline SKIPPED. Plan still fails during generated-workflow comparison because Velnor `0.1.0` rejects `.velnor/config.toml`'s `workflow.tasks`; this is a generator/configuration failure, not a Rust or native test result.
+
+The maintained workflow inventory has six active workflows. Only `.github/workflows/ci.yml` is the project CI workflow, and all of its jobs use `ubuntu-26.04`; it has no Swift/native job and no `workflow_dispatch` trigger. The current `.velnor/config.toml` declares macOS format and SwiftLint verification tasks, but the failed Plan prevents their creation or execution. It declares no SwiftPM test task. Jackin's native project requires macOS 26/Xcode 26.6 and `native/Package.swift` targets macOS 26. The generator's current verification-task contract is standalone and compile-free, so the existing task mechanism cannot run the Rust-backed XCFramework producer and Swift tests together. A supported native CI path remains required; no manual workflow run or local Swift test was available on this Linux host.
+
 ## Task invocation gate
 
 At Jackin base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, the `mise.toml` build, test, and lint root tasks call `cargo xtask` directly.
