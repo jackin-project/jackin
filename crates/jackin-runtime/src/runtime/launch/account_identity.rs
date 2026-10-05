@@ -19,8 +19,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const ACCOUNT_FINGERPRINT_FILE: &str = "account-config.sha256";
 const ACCOUNT_ADMISSION_FILE: &str = "account-admission.sha256";
+const ACCOUNT_MARKER_TRANSACTION_FILE: &str = ".account-markers-transaction";
+const ACCOUNT_MARKER_TRANSACTION_VERSION: u8 = 1;
+const ACCOUNT_MARKER_STAGE_PREFIX: &str = ".account-marker-stage-";
 const CREDENTIAL_TRANSACTION_FILE: &str = ".credentials-transaction";
 const CREDENTIAL_TRANSACTION_VERSION: u8 = 1;
+const CREDENTIAL_STAGE_PREFIX: &str = ".credentials-stage-";
 
 #[derive(Debug)]
 pub(crate) struct GenerationLeaseViolation(String);
@@ -100,6 +104,31 @@ impl AccountConfigRevision {
     pub(crate) fn ensure_current(&self, paths: &jackin_core::JackinPaths) -> anyhow::Result<()> {
         self.current_snapshot(paths).map(drop)
     }
+
+    /// Hold the generation read lease across an awaited operation and validate
+    /// again after it completes. Cooperative config writers cannot commit while
+    /// this future owns the read guard; the post-check closes direct-writer and
+    /// crash/reconnect races that bypass that protocol.
+    pub(crate) async fn run_with_lease<T, F>(
+        &self,
+        paths: &jackin_core::JackinPaths,
+        operation: F,
+    ) -> anyhow::Result<T>
+    where
+        F: std::future::Future<Output = anyhow::Result<T>>,
+    {
+        self.ensure_current(paths)?;
+        let operation_result = operation.await;
+        let lease_result = self.ensure_current(paths);
+        match (operation_result, lease_result) {
+            (Ok(value), Ok(())) => Ok(value),
+            (Err(operation_error), Ok(())) => Err(operation_error),
+            (Ok(_), Err(lease_error)) => Err(lease_error),
+            (Err(operation_error), Err(lease_error)) => Err(lease_error.context(format!(
+                "Docker operation failed while generation lease was invalid: {operation_error:#}"
+            ))),
+        }
+    }
 }
 
 /// Validate a generation after an awaited container start/run. A direct writer
@@ -155,6 +184,23 @@ fn verified_config_snapshot(
 }
 
 static CREDENTIAL_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]
+enum AccountMarkerPhase {
+    Prepared,
+    SelectedPublished,
+    AdmissionPublished,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug)]
+struct AccountMarkerTransaction {
+    schema_version: u8,
+    phase: AccountMarkerPhase,
+    selected_tmp: String,
+    admission_tmp: String,
+    previous_selected: Option<Vec<u8>>,
+    previous_admission: Option<Vec<u8>>,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CredentialWriteFailure {
@@ -246,6 +292,46 @@ fn unique_credential_sibling(root: &Path, prefix: &str) -> anyhow::Result<std::p
         }
     }
     anyhow::bail!("could not allocate a unique private credential staging path")
+}
+
+fn is_valid_credential_stage_name(name: &str) -> bool {
+    let Some(suffix) = name.strip_prefix(CREDENTIAL_STAGE_PREFIX) else {
+        return false;
+    };
+    let mut parts = suffix.split('-');
+    matches!(
+        (parts.next(), parts.next(), parts.next()),
+        (Some(pid), Some(sequence), None)
+            if !pid.is_empty()
+                && !sequence.is_empty()
+                && pid.bytes().all(|byte| byte.is_ascii_digit())
+                && sequence.bytes().all(|byte| byte.is_ascii_digit())
+    )
+}
+
+/// Remove only private, daemon-created staging directories left without a
+/// transaction. Symlinks and malformed names are deliberately left alone.
+fn sweep_orphan_credential_staging(root: &Path, active: Option<&str>) -> anyhow::Result<()> {
+    let mut removed = false;
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if active == Some(name.as_str()) || !is_valid_credential_stage_name(&name) {
+            continue;
+        }
+        let metadata = std::fs::symlink_metadata(entry.path())?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            continue;
+        }
+        std::fs::remove_dir_all(entry.path())?;
+        removed = true;
+    }
+    if removed {
+        sync_directory(root)?;
+    }
+    Ok(())
 }
 
 fn sync_directory(path: &Path) -> std::io::Result<()> {
@@ -498,7 +584,12 @@ fn rollback_credential_swap(
 }
 
 fn recover_credential_swap(root: &Path) -> anyhow::Result<()> {
-    let Some(mut transaction) = load_credential_transaction(root)? else {
+    let transaction = load_credential_transaction(root)?;
+    sweep_orphan_credential_staging(
+        root,
+        transaction.as_ref().and_then(|value| value.staged.as_deref()),
+    )?;
+    let Some(mut transaction) = transaction else {
         return Ok(());
     };
     let directory = root.join("credentials");
@@ -665,6 +756,136 @@ pub fn account_configuration_fingerprint(
     Ok(encoded)
 }
 
+fn account_marker_transaction_entry(root: &Path, name: &str) -> anyhow::Result<std::path::PathBuf> {
+    let path = Path::new(name);
+    anyhow::ensure!(
+        !name.is_empty()
+            && name.starts_with(ACCOUNT_MARKER_STAGE_PREFIX)
+            && path.components().count() == 1
+            && matches!(
+                path.components().next(),
+                Some(std::path::Component::Normal(_))
+            ),
+        "invalid account marker staging entry: {name:?}"
+    );
+    Ok(root.join(path))
+}
+
+fn validate_account_marker_transaction(
+    transaction: &AccountMarkerTransaction,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        transaction.schema_version == ACCOUNT_MARKER_TRANSACTION_VERSION,
+        "unsupported account marker transaction version: {}",
+        transaction.schema_version
+    );
+    account_marker_transaction_entry(Path::new("."), &transaction.selected_tmp)?;
+    account_marker_transaction_entry(Path::new("."), &transaction.admission_tmp)?;
+    Ok(())
+}
+
+fn persist_account_marker_transaction(
+    root: &Path,
+    transaction: &AccountMarkerTransaction,
+) -> anyhow::Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+
+    validate_account_marker_transaction(transaction)?;
+    let mut file = tempfile::NamedTempFile::new_in(root)?;
+    file.as_file()
+        .set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    file.write_all(&serde_json::to_vec(transaction)?)?;
+    file.as_file().sync_all()?;
+    file.persist(root.join(ACCOUNT_MARKER_TRANSACTION_FILE))
+        .map_err(|error| error.error)?;
+    sync_directory(root)?;
+    Ok(())
+}
+
+fn load_account_marker_transaction(
+    root: &Path,
+) -> anyhow::Result<Option<AccountMarkerTransaction>> {
+    let path = root.join(ACCOUNT_MARKER_TRANSACTION_FILE);
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let transaction: AccountMarkerTransaction = serde_json::from_slice(&bytes)
+        .with_context(|| format!("invalid account marker transaction: {}", path.display()))?;
+    validate_account_marker_transaction(&transaction)?;
+    Ok(Some(transaction))
+}
+
+fn clear_account_marker_transaction(root: &Path) -> anyhow::Result<()> {
+    match std::fs::remove_file(root.join(ACCOUNT_MARKER_TRANSACTION_FILE)) {
+        Ok(()) => sync_directory(root)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+fn write_account_marker_stage(path: &Path, value: &[u8]) -> anyhow::Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    file.write_all(value)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+fn remove_account_marker_stage(root: &Path, name: &str) -> anyhow::Result<()> {
+    let path = account_marker_transaction_entry(root, name)?;
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.file_type().is_file() && !metadata.file_type().is_symlink(),
+                "account marker staging entry is not a regular file: {}",
+                path.display()
+            );
+            std::fs::remove_file(path)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+fn write_account_marker_atomically(
+    root: &Path,
+    path: &Path,
+    value: &[u8],
+) -> anyhow::Result<()> {
+    let stage = unique_credential_sibling(root, "account-marker-stage")?;
+    write_account_marker_stage(&stage, value)?;
+    if let Err(error) = std::fs::rename(&stage, path) {
+        drop(std::fs::remove_file(&stage));
+        return Err(error.into());
+    }
+    sync_directory(root)?;
+    Ok(())
+}
+
+fn recover_account_marker_transaction(root: &Path) -> anyhow::Result<()> {
+    let Some(transaction) = load_account_marker_transaction(root)? else {
+        return Ok(());
+    };
+    let selected_path = root.join(ACCOUNT_FINGERPRINT_FILE);
+    let admission_path = root.join(ACCOUNT_ADMISSION_FILE);
+    restore_marker(root, &selected_path, transaction.previous_selected.as_deref())?;
+    restore_marker(root, &admission_path, transaction.previous_admission.as_deref())?;
+    remove_account_marker_stage(root, &transaction.selected_tmp)?;
+    remove_account_marker_stage(root, &transaction.admission_tmp)?;
+    clear_account_marker_transaction(root)
+}
+
 /// Whether an existing instance was provisioned under current account admission.
 /// An absent identity belongs to an unverified pre-account container.
 ///
@@ -676,6 +897,7 @@ pub fn account_configuration_matches(
     workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> anyhow::Result<bool> {
+    recover_account_marker_transaction(root)?;
     let stored = match std::fs::read_to_string(root.join(ACCOUNT_FINGERPRINT_FILE)) {
         Ok(value) => value,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
@@ -741,36 +963,58 @@ fn publish_account_fingerprints(
     selected_fingerprint: &str,
     admission_fingerprint: &str,
 ) -> anyhow::Result<()> {
+    recover_account_marker_transaction(root)?;
     let selected_path = root.join(ACCOUNT_FINGERPRINT_FILE);
     let admission_path = root.join(ACCOUNT_ADMISSION_FILE);
-    let selected_tmp = root.join(format!(
-        ".{ACCOUNT_FINGERPRINT_FILE}.{}.tmp",
-        CREDENTIAL_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let admission_tmp = root.join(format!(
-        ".{ACCOUNT_ADMISSION_FILE}.{}.tmp",
-        CREDENTIAL_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
+    let selected_tmp = unique_credential_sibling(root, "account-marker-stage")?;
+    let admission_tmp = unique_credential_sibling(root, "account-marker-stage")?;
+    let selected_tmp_name = selected_tmp
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("account marker staging path is not valid UTF-8")?
+        .to_owned();
+    let admission_tmp_name = admission_tmp
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("account marker staging path is not valid UTF-8")?
+        .to_owned();
     let previous_selected = read_marker(&selected_path)?;
     let previous_admission = read_marker(&admission_path)?;
 
+    let mut transaction = AccountMarkerTransaction {
+        schema_version: ACCOUNT_MARKER_TRANSACTION_VERSION,
+        phase: AccountMarkerPhase::Prepared,
+        selected_tmp: selected_tmp_name,
+        admission_tmp: admission_tmp_name,
+        previous_selected,
+        previous_admission,
+    };
+    persist_account_marker_transaction(root, &transaction)?;
+
     let publish_result = (|| -> anyhow::Result<()> {
-        std::fs::write(&selected_tmp, selected_fingerprint)?;
-        std::fs::write(&admission_tmp, admission_fingerprint)?;
+        write_account_marker_stage(&selected_tmp, selected_fingerprint.as_bytes())?;
+        write_account_marker_stage(&admission_tmp, admission_fingerprint.as_bytes())?;
         std::fs::rename(&selected_tmp, &selected_path)?;
+        sync_directory(root)?;
+        transaction.phase = AccountMarkerPhase::SelectedPublished;
+        persist_account_marker_transaction(root, &transaction)?;
         std::fs::rename(&admission_tmp, &admission_path)?;
+        sync_directory(root)?;
+        transaction.phase = AccountMarkerPhase::AdmissionPublished;
+        persist_account_marker_transaction(root, &transaction)?;
         revision.ensure_current(paths)?;
         Ok(())
     })();
 
     if let Err(error) = publish_result {
-        drop(std::fs::remove_file(&selected_tmp));
-        drop(std::fs::remove_file(&admission_tmp));
-        restore_marker(&selected_path, previous_selected.as_deref())?;
-        restore_marker(&admission_path, previous_admission.as_deref())?;
-        return Err(error);
+        return match recover_account_marker_transaction(root) {
+            Ok(()) => Err(error),
+            Err(recovery_error) => Err(error.context(format!(
+                "account marker publication failed and recovery failed: {recovery_error:#}"
+            ))),
+        };
     }
-    Ok(())
+    clear_account_marker_transaction(root)
 }
 
 fn read_marker(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
@@ -781,11 +1025,11 @@ fn read_marker(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
     }
 }
 
-fn restore_marker(path: &Path, previous: Option<&[u8]>) -> anyhow::Result<()> {
+fn restore_marker(root: &Path, path: &Path, previous: Option<&[u8]>) -> anyhow::Result<()> {
     match previous {
-        Some(bytes) => std::fs::write(path, bytes)?,
+        Some(bytes) => write_account_marker_atomically(root, path, bytes)?,
         None => match std::fs::remove_file(path) {
-            Ok(()) => {}
+            Ok(()) => sync_directory(root)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         },
@@ -804,6 +1048,7 @@ pub fn account_admission_matches(
     workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> anyhow::Result<bool> {
+    recover_account_marker_transaction(root)?;
     let stored = match std::fs::read_to_string(root.join(ACCOUNT_ADMISSION_FILE)) {
         Ok(value) => value,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
@@ -872,31 +1117,11 @@ pub(super) fn write_account_credentials(
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    // The caller holds the role/container lock while this runs. Build a fully
-    // private replacement beside the live directory, then swap directory
-    // names. Readers therefore observe either the old complete set or the new
-    // complete set; they never observe delete-then-write intermediates.
-    let staged_directory = tempfile::Builder::new()
-        .prefix(".credentials-stage-")
-        .tempdir_in(root)?;
-    std::fs::set_permissions(
-        staged_directory.path(),
-        std::fs::Permissions::from_mode(0o700),
-    )?;
-    for (index, (instance, bytes)) in payloads.iter().enumerate() {
-        let mut file = tempfile::NamedTempFile::new_in(staged_directory.path())?;
-        file.as_file()
-            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
-        file.write_all(bytes)?;
-        file.as_file().sync_all()?;
-        file.persist(staged_directory.path().join(instance))
-            .map_err(|error| error.error)?;
-        maybe_inject_credential_write_failure(CredentialWriteFailure::StagedFile(index))?;
-    }
-    sync_directory(staged_directory.path())?;
-
-    let staged_name = staged_directory
-        .path()
+    // Allocate and journal the private replacement path before creating it.
+    // A crash can therefore leave only a recoverable journaled path, never an
+    // unowned credential staging directory.
+    let staged_path = unique_credential_sibling(root, "credentials-stage")?;
+    let staged_name = staged_path
         .file_name()
         .and_then(|name| name.to_str())
         .context("private credential staging path is not valid UTF-8")?
@@ -923,6 +1148,49 @@ pub(super) fn write_account_credentials(
     };
     persist_credential_transaction(root, &transaction)?;
 
+    // The caller holds the role/container lock while this runs. Build a fully
+    // private replacement beside the live directory, then swap directory
+    // names. Readers therefore observe either the old complete set or the new
+    // complete set; they never observe delete-then-write intermediates.
+    if let Err(error) = std::fs::create_dir(&staged_path) {
+        return rollback_credential_swap(root, &mut transaction, false, error.into());
+    }
+    if let Err(error) = std::fs::set_permissions(
+        &staged_path,
+        std::fs::Permissions::from_mode(0o700),
+    ) {
+        return rollback_credential_swap(root, &mut transaction, false, error.into());
+    }
+    for (index, (instance, bytes)) in payloads.iter().enumerate() {
+        let mut file = match tempfile::NamedTempFile::new_in(&staged_path) {
+            Ok(file) => file,
+            Err(error) => {
+                return rollback_credential_swap(root, &mut transaction, false, error.into());
+            }
+        };
+        if let Err(error) = file
+            .as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))
+        {
+            return rollback_credential_swap(root, &mut transaction, false, error.into());
+        }
+        if let Err(error) = file.write_all(bytes) {
+            return rollback_credential_swap(root, &mut transaction, false, error.into());
+        }
+        if let Err(error) = file.as_file().sync_all() {
+            return rollback_credential_swap(root, &mut transaction, false, error.into());
+        }
+        if let Err(error) = file.persist(staged_path.join(instance)) {
+            return rollback_credential_swap(root, &mut transaction, false, error.error.into());
+        }
+        if let Err(error) = maybe_inject_credential_write_failure(CredentialWriteFailure::StagedFile(index)) {
+            return rollback_credential_swap(root, &mut transaction, false, error);
+        }
+    }
+    if let Err(error) = sync_directory(&staged_path) {
+        return rollback_credential_swap(root, &mut transaction, false, error.into());
+    }
+
     if let Some(previous_name) = transaction.previous.as_deref() {
         let previous_directory = credential_transaction_entry(root, previous_name)?;
         if let Err(error) = std::fs::rename(&directory, previous_directory) {
@@ -939,7 +1207,7 @@ pub(super) fn write_account_credentials(
         return rollback_credential_swap(root, &mut transaction, false, error);
     }
 
-    if let Err(error) = std::fs::rename(staged_directory.path(), &directory) {
+    if let Err(error) = std::fs::rename(&staged_path, &directory) {
         return rollback_credential_swap(root, &mut transaction, false, error.into());
     }
     transaction.staged = None;
