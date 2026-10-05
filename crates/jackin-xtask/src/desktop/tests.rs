@@ -1,9 +1,8 @@
 use super::{
-    DesktopCommand, MIN_OS, SwiftTestArgs, XunitTotals, assert_broker_version,
-    assert_executable_file, assert_native_broker_archs, broker_path, minos_matches_target,
-    normalize_generated_text, parse_dwarf_uuid, parse_swift_jobs, parse_xctest_summary,
-    parse_xunit_totals, swift_build_args, swift_test_args, tree_differences, validate_build,
-    validate_version,
+    DesktopCommand, MIN_OS, XunitTotals, assert_broker_version, assert_executable_file,
+    assert_native_broker_archs, broker_path, minos_matches_target, normalize_generated_text,
+    parse_dwarf_uuid, parse_swift_jobs, parse_xctest_summary, parse_xunit_totals, swift_build_args,
+    swift_test_args, tree_differences, validate_build, validate_version,
 };
 
 #[test]
