@@ -18,11 +18,19 @@
 
 Status: IN PROGRESS.
 
-The [PR](https://github.com/tailrocks/velnor-new/pull/55) targets `7fb8367d7daa67f13ccaa7c76caae47d55d6262b`. Its focused branch head is `68f969bb4b9c71be8ff2126f04f6a2bcebe38a78`. The earlier owner report said it was mergeable; refresh the final PR state.
+The [PR](https://github.com/tailrocks/velnor-new/pull/55) targets `7fb8367d7daa67f13ccaa7c76caae47d55d6262b`. The current reported head is `2cb1b4ea5ffcb6c6fd54b25e78197f392bbfdae3`. Its earlier head was `68f969bb4b9c71be8ff2126f04f6a2bcebe38a78`.
 
 At check run `37254450133`, Actionlint passed. The orchestrator job `111589804766`, CLI job `111589804784`, and workflow-renderer job `111589804869` failed. The remaining matrix is in progress. Logs are unavailable until the run completes. Do not infer a cause or claim a passing run.
 
 An earlier Plan failure at head `260f17c` reported helper compile errors `E0432` and `E0425`. Commit `68f969b` fixes all eleven old-name references. Do not claim that upstream merged the PR or that local tests passed.
+
+### Focused renderer run
+
+At run `37256105661` and head `2cb1b4ea5ffcb6c6fd54b25e78197f392bbfdae3`, renderer job `111593988338` passed 339 unit and integration tests with zero skipped. Format, Clippy, executable tests, doctests, and documentation checks passed under verified Mise and MBX.
+
+Named unit regressions cover case-insensitive extensions, the inclusive 500000-byte boundary, and UTF-8 marked-byte accounting. Integration cases cover the base boundary and `+1`, direct CI/release/schema-2/freshness renderers, and an extra release workflow. Typed-task tests `emitted_verification_job_scrubs_credentials_without_disabling_mise_config` and `task_job_is_unconditional_cache_off_and_credential_scrubbed` passed.
+
+The orchestrator failure-preservation job `111593988311` is still running. The PR run remains incomplete. Do not report an overall pass or merge readiness.
 
 ## Coverage questions
 

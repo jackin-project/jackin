@@ -32,7 +32,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | HOST-01 | Record Debian host inventory and repository identity. | PASS | `task_records` | Initial memory sample is historical. | Keep timestamped command evidence. | [Host results](debian-results.md); [host command](#host-inventory-command) |
 | REPO-01 | Record base SHA, task worktree, and branch. | PASS | `task_records` | Clean task worktree | Match initial `main` SHA. | Starting state above; [branches](branches.md) |
 | LOCK-01 | Record the initial dirty lock hash and preserve it. | PASS | `task_records` | Original and task worktrees | Hashes remain unchanged. | Starting state above; [branches](branches.md) |
-| BRANCH-01 | Inventory branch and PR scenario; record branch interface and owners. | IN PROGRESS | `branches` | Fetched refs and PR review | Ref fetch passed; dispositions remain pending. | [Branch record](branches.md) |
+| BRANCH-01 | Inventory branch and PR scenario; record branch interface and owners. | IN PROGRESS | `branches` | Fetched refs and PR review | Matrix dispositions are recorded; selected integration and dependency gates remain pending. | [Branch record](branches.md) |
 | CRATE-01 | Inspect crate boundaries and build metadata statically. | IN PROGRESS | `crate_design` | Build evidence | Approve no split from static facts alone. | [Crate plan](crate-plan.md) |
 | BUILD-01 | Measure baseline before extraction and compare after extraction. | NOT RUN | `build_baseline` | Security gate and implementation | Record both builds and MBX provenance. | [Build results](build-results.md) |
 | CI-01 | Inspect generator and CI scenario; preserve required-job interface. | IN PROGRESS | `velnor_recon` and `jackin_generator_config` | Current generator refs | Complete coverage review. | [CI coverage](ci-coverage.md) |
@@ -42,6 +42,8 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | ARCH-03 | Run the actual role through Jackin. | NOT RUN | `architect_contract` | Security approval and Jackin runtime | Record the live role response. | [Architect review](reviews.md#architect-integration-review) |
 | ACCOUNT-01 | Complete runtime account discovery through workspace launch. | IN PROGRESS | `debian_codex_route` | Jackin binary, config, security gate | CLI path checks are complete; Jackin runtime registration and launch remain NOT RUN. | [Debian results](debian-results.md#account-route) |
 | ACCOUNT-02 | Review the current `CODEX_HOME` source correction. | IN PROGRESS | `execution_crosscheck` | Exact commit `688057f40173d32dda04a55bff1e3868c219710d` | Exact-head source review is pending. | [Debian results](debian-results.md#account-route) |
+| CLI-01 | Review removal of the unsupported initial prompt option. | PASS | `execution_crosscheck` | Commit `640b33f9598307a360484526a46c9c20bd068f4e` | Source review PASS. Cargo tests remain NOT RUN pending MBX. | [CLI prompt cleanup](reviews.md#cli-prompt-cleanup) |
+| CLI-02 | Run focused launch and restore tests after prompt removal. | NOT RUN | `jackin_cli` | Reviewed MBX activation | Cargo tests remain NOT RUN. | [CLI prompt cleanup](reviews.md#cli-prompt-cleanup) |
 | SEC-01 | Review execution boundary, container, auth, and cache provenance. | IN PROGRESS | `preflight_security_review` and `unprivileged_exec_design` | Exact execution design | Resolve every preliminary gate. | [Security review](reviews.md) |
 | REDACT-01 | Fix and re-review the Jackin redaction findings. | IN PROGRESS | `consolidation_review` | Architecture-level replacement and reviewed MBX activation | Cover the initial canaries and current P1 findings. Obtain exact-head Sol re-review. | [Redaction review](reviews.md#jackin-redaction-review) |
 | REDACT-02 | Fix the five P1 findings from the exact-head redaction review. | IN PROGRESS | `consolidation_review` | Architecture-level replacement | Fix all five findings from rejected commit `63d5ef9046d4948a3cddb239e891db49be654d34`; obtain exact-head review. | [Redaction follow-up](reviews.md#redaction-follow-up-review) |
@@ -69,7 +71,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | BUILD-11 | Measure workspace verification. | NOT RUN | `build_baseline` | Security gate and implementation | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
 | BUILD-12 | Measure the required release build. | NOT RUN | `build_baseline` | Release design, security gate, and implementation | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
 | CI-03 | Complete two consecutive compatible CI runs. | NOT RUN | `velnor_recon` and `jackin_generator_config` | Coverage gaps closed and task PR exists | Pass both consecutive runs. Repeat comparable runs at least three times. | [CI review](reviews.md#ci-workflow-review) |
-| CI-04 | Track Velnor PR #55 checks at its exact head. | IN PROGRESS | `velnor_recon` | Head `68f969bb4b9c71be8ff2126f04f6a2bcebe38a78`, run `37254450133` | Actionlint passed; orchestrator, CLI, and workflow-renderer failed; remaining matrix is in progress. Logs are unavailable until the run completes. | [Velnor PR #55](ci-coverage.md#velnor-pr-55) |
+| CI-04 | Track Velnor PR #55 checks at its exact head. | IN PROGRESS | `velnor_recon` | Head `2cb1b4ea5ffcb6c6fd54b25e78197f392bbfdae3`, run `37256105661` | Renderer job passed; orchestrator job `111593988311` is still running. Overall run remains incomplete. | [Velnor PR #55](ci-coverage.md#velnor-pr-55) |
 | TASK-01 | Route build, test, and lint tasks through the reviewed Mise and MBX boundary. | IN PROGRESS | `jackin_ci_consumer` and `jackin_generator_config` | Rust-MBX design and activation review | Remove the plain `cargo xtask` bypass before CI acceptance. | [Task invocation gate](branches.md#task-invocation-gate) |
 | PR1108-01 | Record independent source-review dispositions for PR #1108. | PASS | `baseline_method_review` | Exact PR head `2990df17e25f30afca84804d9c402abc1ce00231` | Keep REJECT, ALREADY PRESENT, SELECT, and REPLACE scopes distinct. | [Sol review](branches.md#independent-sol-review-disposition) |
 | PR1108-02 | Fix collector permissions, validation, and failure reporting. | IN PROGRESS | `jackin_ci_consumer` | Current collector owner and generated workflow | Limit `actions: read` and validation changes to collector jobs. | [Collector review](branches.md#artifact-permission) |
@@ -110,7 +112,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 
 | Owner | Area | State |
 |---|---|---|
-| `branches` | Branch and PR inventory | Inventory complete; full diff review pending |
+| `branches` | Branch and PR inventory | Matrix recorded; selected integration pending |
 | `build_baseline` | Build measurements | IN PROGRESS; measurements not run |
 | `crate_design` | Crate and dependency analysis | IN PROGRESS |
 | `architect_contract` | Architect manifest contract | IN PROGRESS |
@@ -120,6 +122,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | `omp` | Account database and WAL root fix | Source review PASS; stale-comment follow-up; Cargo tests NOT RUN |
 | `execution_crosscheck` | Independent Sol/medium correctness reviewer | OMP review complete; route source review pending; final correctness review NOT STARTED |
 | `codex_schema_runtime` | Codex schema and runtime settings | IN PROGRESS |
+| `jackin_cli` | Launch prompt cleanup | Source review PASS at `640b33f9598307a360484526a46c9c20bd068f4e`; Cargo tests NOT RUN pending MBX |
 | `unprivileged_exec_design` | Execution boundary and MBX launcher | IN PROGRESS; checking offline `mise link`; activation NOT RUN |
 | `preflight_security_review` | Sol/medium security reviewer | Preliminary review complete; final review NOT STARTED |
 | `baseline_method_review` | Sol/medium build-performance reviewer | PR #1108 review complete; final build review NOT STARTED |
