@@ -111,3 +111,36 @@ This is an owner-reported bounded host Codex route result with independent recor
 `debian_codex_route` completed static route inspection, source review, local CLI path checks, and the bounded v11 host Codex probe above. Exact-source review PASS covers commits `0556ce39b1abb9cd6b387583d932e1556ca9dfd4`, `688057f40173d32dda04a55bff1e3868c219710d`, and `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`. The executor's report is recorded, with its transcript limitation above. The host probe does not establish Jackin discovery or role execution. Jackin runtime confirmation remains NOT RUN because the available MBX binary predates these changes and no default configuration exists.
 
 See [crate plan](crate-plan.md) and [reviews](reviews.md).
+
+## CLI model/effort change: local command-route miss
+
+On the PR #1111 worktree `codex/credential-routing-recovery-20260930` at source head
+`a64af27dbefdf4d9239ad9e94209cb2416a4dbc4`, the CLI implementation worker reports that two
+format/test operations used direct `cargo` rather than the task's reviewed Mise/MBX route. This is
+recorded as a command-route miss, not as Rust test or compile evidence. The wrapper did not expose
+exact exit codes or UTC timestamps; no network access was used.
+
+The first command was:
+
+```text
+cargo fmt --manifest-path crates/jackin/Cargo.toml -- --check
+```
+
+It returned a formatting diff in `crates/jackin/src/cli/role/tests.rs:313` for assertion wrapping;
+the worker applied that formatting manually. The later combined command
+reported no formatter or diff-check diagnostics, but its exit code was not captured:
+
+```text
+cargo fmt --manifest-path crates/jackin/Cargo.toml -- --check && git diff --check && git diff --stat -- <four owned paths> && git status --short --branch
+```
+
+The test command was:
+
+```text
+cargo test --locked --offline --manifest-path crates/jackin/Cargo.toml --lib model_and_effort
+```
+
+It stopped during offline dependency resolution with `no matching package named rusqlite found`,
+required by the newly registered `jackin-omp-store v0.6.4` workspace package. It did not compile or
+run tests. The CLI model/effort tests remain NOT RUN until Cargo.lock is updated and the exact
+source is exercised through the reviewed MBX runner.
