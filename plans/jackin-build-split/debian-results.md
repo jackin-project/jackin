@@ -24,6 +24,25 @@ Status: Static review complete; runtime route NOT RUN.
 - Account registration, workspace selection, and launch forwarding are therefore NOT RUN.
 - No live role response was requested.
 
+## Synthetic `CODEX_HOME` checks
+
+The route owner reports local CLI path checks in a private synthetic root. These checks do not validate Jackin's runtime route.
+
+The command used a 10-second timeout, an empty environment, and a synthetic home:
+
+```sh
+timeout 10s env -i HOME=<fixture>/home PATH=/root/.local/bin:/usr/bin:/bin [CODEX_HOME value] /root/.local/bin/codex login status
+```
+
+The tested values were unset, empty, relative, existing absolute, missing, and a regular file. The working directory was `<fixture>/cwd` for the relative case.
+
+- Unset and empty values warn and use `<fixture>/home/.codex`.
+- A relative value uses `<fixture>/cwd/relative-home`.
+- Unset, empty, relative, and existing absolute paths exit 1 with `Not logged in`.
+- A missing path reports that `CODEX_HOME` points to a path that does not exist.
+- A regular file reports that `CODEX_HOME` is not a directory.
+- The run used no credentials. It made no enrollment, network request, or config write.
+
 ## Owner
 
 `debian_codex_route` completed static route inspection. Runtime confirmation remains NOT RUN because the executable and configuration are absent, and this checkpoint prohibits live requests.
