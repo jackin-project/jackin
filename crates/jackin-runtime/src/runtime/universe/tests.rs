@@ -35,6 +35,102 @@ fn seed_marker(paths: &JackinPaths, kind: StartKind) {
 }
 
 #[cfg(unix)]
+#[test]
+fn child_process_holds_pending_entry_for_crash_test() {
+    let Some(root) = std::env::var_os("JACKIN_TEST_PENDING_CHILD_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(root);
+    let paths = JackinPaths::for_tests(&root);
+    paths.ensure_base_dirs().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let claim = runtime.block_on(claim_entry(&paths, &FakeDockerClient::default()));
+    assert!(claim.pending_file.is_some());
+    {
+        use std::io::Write as _;
+        let stdout = std::io::stdout();
+        let mut output = stdout.lock();
+        writeln!(output, "PENDING_CLAIM_READY").unwrap();
+        output.flush().unwrap();
+    }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the bounded child fixture holds its pending lease until the parent inspects and kills this owned process"
+    )]
+    std::thread::sleep(Duration::from_secs(60));
+}
+
+#[cfg(unix)]
+#[test]
+fn killed_owner_releases_pending_claim_and_exit_can_recover() {
+    use std::io::{BufRead as _, BufReader};
+    use std::process::{Command, Stdio};
+    use std::sync::mpsc;
+
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    seed_marker(&paths, StartKind::FreshConstruct);
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .arg("--exact")
+        .arg("runtime::universe::tests::child_process_holds_pending_entry_for_crash_test")
+        .arg("--nocapture")
+        .env_clear()
+        .env("JACKIN_TEST_PENDING_CHILD_ROOT", temp.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let stdout = BufReader::new(child.stdout.take().unwrap());
+    let (ready_sender, ready_receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let ready = stdout
+            .lines()
+            .map_while(Result::ok)
+            .any(|line| line.contains("PENDING_CLAIM_READY"));
+        let _ignored_send = ready_sender.send(ready);
+    });
+    let ready = ready_receiver
+        .recv_timeout(Duration::from_secs(20))
+        .unwrap_or(false);
+    if !ready {
+        let _ignored_kill_result = child.kill();
+        let _ignored_wait_result = child.wait();
+        panic!("child process did not establish an owned pending claim");
+    }
+
+    let pending_while_child_live = count_pending_claims(&authority(&paths));
+    let exit_while_child_live = take_exit_claim(&paths);
+    let marker_survived_live_owner = marker_path(&authority(&paths)).exists();
+
+    child.kill().unwrap();
+    assert!(
+        !child.wait().unwrap().success(),
+        "the child must be killed before its EntryClaim destructor runs"
+    );
+    assert_eq!(
+        pending_while_child_live,
+        Some(1),
+        "a live process's locked lease cannot be reaped"
+    );
+    assert_eq!(
+        exit_while_child_live,
+        ExitClaim::Missing,
+        "a live owner's pending lease blocks the exit claim"
+    );
+    assert!(
+        marker_survived_live_owner,
+        "the blocked exit retains its marker"
+    );
+    assert_eq!(count_pending_claims(&authority(&paths)), Some(0));
+    assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
+    assert!(!marker_path(&authority(&paths)).exists());
+}
+
+#[cfg(unix)]
 #[tokio::test]
 async fn universe_auxiliary_symlinks_cannot_redirect_state_operations() {
     for key in ["universe-generation", "universe-since", "universe-pending"] {

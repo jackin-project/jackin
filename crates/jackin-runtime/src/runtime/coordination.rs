@@ -280,7 +280,14 @@ pub(crate) fn open_state_in_namespace(
     open_state_at(&parent, key, create)
 }
 
-fn open_state_at(parent: &std::fs::File, key: &str, create: bool) -> io::Result<std::fs::File> {
+/// Open a validated state leaf relative to an already pinned namespace
+/// descriptor. Callers that also remove the entry can keep validation and
+/// unlinking bound to the same directory inode.
+pub(crate) fn open_state_at(
+    parent: &std::fs::File,
+    key: &str,
+    create: bool,
+) -> io::Result<std::fs::File> {
     validate_key(key)?;
     #[cfg(unix)]
     {

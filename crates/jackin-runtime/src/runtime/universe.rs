@@ -207,13 +207,25 @@ pub enum StartKind {
 ///
 /// Pending claims cover the short window before a role container exists. They
 /// prevent concurrent launches from both playing the two-screen intro, and let
-/// an early failed launch release only its own pending entry. The claim owns
-/// its pending file and removes it when the launch ends, including early errors.
-#[derive(Debug, PartialEq, Eq)]
+/// an early failed launch release only its own pending entry. Each private
+/// claim file is locked for the launch lifetime; a later boundary scan reaps
+/// entries whose owner process exited before cleanup could run.
+#[derive(Debug)]
 pub struct EntryClaim {
     kind: StartKind,
     pending_file: Option<PathBuf>,
+    // The advisory lock is the liveness lease. It stays open through the
+    // launch and is released by process exit even when Drop cannot run.
+    _pending_lock: Option<std::fs::File>,
 }
+
+impl PartialEq for EntryClaim {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.pending_file == other.pending_file
+    }
+}
+
+impl Eq for EntryClaim {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ExitClaim {
@@ -232,6 +244,7 @@ impl EntryClaim {
         Self {
             kind,
             pending_file: None,
+            _pending_lock: None,
         }
     }
 
@@ -386,7 +399,8 @@ fn register_pending_entry_locked(
     allow_fresh: bool,
 ) -> std::io::Result<EntryClaim> {
     let token = claim_token();
-    let wrote_claim = write_pending_claim(authority, &token);
+    let pending_lock = write_pending_claim(authority, &token);
+    let wrote_claim = pending_lock.is_some();
     let pending_count = count_pending_claims(authority).unwrap_or(usize::MAX);
     let kind = if allow_fresh && wrote_claim && pending_count <= 1 {
         StartKind::FreshConstruct
@@ -402,6 +416,7 @@ fn register_pending_entry_locked(
     Ok(EntryClaim {
         kind,
         pending_file: wrote_claim.then(|| pending_path(authority, &token)),
+        _pending_lock: pending_lock,
     })
 }
 
@@ -438,40 +453,35 @@ pub async fn release_entry_if_idle(docker: &impl DockerApi, claim: &EntryClaim) 
     claim.release_if_idle(docker).await;
 }
 
-fn write_pending_claim(authority: &Path, token: &str) -> bool {
+fn write_pending_claim(authority: &Path, token: &str) -> Option<std::fs::File> {
     let dir = pending_dir(authority);
     let Ok(parent) = super::coordination::open_directory_in_namespace(&dir, true) else {
-        return false;
+        return None;
     };
     #[cfg(unix)]
     {
         use nix::fcntl::{OFlag, openat};
-        let flags = OFlag::O_WRONLY
+        let flags = OFlag::O_RDWR
             | OFlag::O_CREAT
             | OFlag::O_EXCL
             | OFlag::O_NOFOLLOW
             | OFlag::O_CLOEXEC
             | OFlag::O_NONBLOCK;
-        let Ok(fd) = openat(
+        let fd = openat(
             &parent,
             token,
             flags,
             nix::sys::stat::Mode::from_bits_truncate(0o600),
-        ) else {
-            return false;
-        };
-        let mut file = std::fs::File::from(fd);
-        if file.write_all(now_millis().to_string().as_bytes()).is_err() {
-            let _ignored_unlink_result =
-                nix::unistd::unlinkat(&parent, token, nix::unistd::UnlinkatFlags::NoRemoveDir);
-            return false;
-        }
-        true
+        )
+        .ok()?;
+        let file = std::fs::File::from(fd);
+        file.try_lock().ok()?;
+        Some(file)
     }
     #[cfg(not(unix))]
     {
         let _ = (parent, token);
-        false
+        None
     }
 }
 
@@ -484,11 +494,26 @@ fn count_pending_claims(authority: &Path) -> Option<usize> {
     };
     #[cfg(unix)]
     {
-        let mut entries = nix::dir::Dir::from_fd(parent.into()).ok()?;
-        entries.iter().try_fold(0, |count, entry| {
+        let mut entries = nix::dir::Dir::from_fd(parent.try_clone().ok()?.into()).ok()?;
+        let mut count = 0;
+        for entry in entries.iter() {
             let entry = entry.ok()?;
-            Some(count + usize::from(!matches!(entry.file_name().to_bytes(), b"." | b"..")))
-        })
+            let name = entry.file_name();
+            if matches!(name.to_bytes(), b"." | b"..") {
+                continue;
+            }
+            let key = name.to_str().ok()?;
+            let file = super::coordination::open_state_at(&parent, key, false).ok()?;
+            if file.try_lock().is_ok() {
+                // Pending creators/removers hold the boundary lock too, so
+                // only a crashed owner can leave an unlocked entry here.
+                nix::unistd::unlinkat(&parent, name, nix::unistd::UnlinkatFlags::NoRemoveDir)
+                    .ok()?;
+            } else {
+                count += 1;
+            }
+        }
+        Some(count)
     }
     #[cfg(not(unix))]
     {
