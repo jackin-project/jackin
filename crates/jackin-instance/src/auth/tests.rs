@@ -5,8 +5,8 @@
 #[cfg(unix)]
 use super::auth_directory::{
     FailurePoint, TreeEntryKind, classify_tree_entry_for_removal, inject_failure,
-    lock_source_dir_for_test, set_hermes_snapshot_hook, set_source_open_hook,
-    target_lock_key_for_test,
+    lock_source_dir_for_test, set_hermes_snapshot_hook, set_omp_after_database_read_hook,
+    set_source_open_hook, target_lock_key_for_test,
 };
 use super::{
     Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState, capture_selected_source,
@@ -50,6 +50,34 @@ fn claude_keychain_service_name_matches_claude_scheme() {
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
 
 #[cfg(unix)]
+const OMP_CURRENT_DB: &[u8] = include_bytes!("tests/fixtures/omp-real-current.db");
+#[cfg(unix)]
+const OMP_CURRENT_WAL: &[u8] = include_bytes!("tests/fixtures/omp-real-current.db-wal");
+#[cfg(unix)]
+const OMP_CHECKPOINTED_DB: &[u8] = include_bytes!("tests/fixtures/omp-real-checkpointed.db");
+
+#[cfg(unix)]
+fn omp_test_selector() -> ProfileSelector {
+    ProfileSelector {
+        entry: "openai".to_owned(),
+        profile: Some("work".to_owned()),
+    }
+}
+
+#[cfg(unix)]
+fn write_omp_source(source: &Path, wal: &[u8]) {
+    let agent = source.join("agent");
+    std::fs::create_dir_all(&agent).unwrap();
+    std::fs::write(agent.join("agent.db"), OMP_CURRENT_DB).unwrap();
+    std::fs::write(agent.join("agent.db-wal"), wal).unwrap();
+}
+
+#[cfg(unix)]
+fn contains_bytes(bytes: &[u8], needle: &[u8]) -> bool {
+    bytes.windows(needle.len()).any(|window| window == needle)
+}
+
+#[cfg(unix)]
 fn private_snapshot_parent(temp: &tempfile::TempDir) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
 
@@ -57,6 +85,134 @@ fn private_snapshot_parent(temp: &tempfile::TempDir) -> std::path::PathBuf {
     std::fs::create_dir_all(&parent).unwrap();
     std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).unwrap();
     parent
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_selected_snapshot_and_provision_include_only_committed_wal_state() {
+    assert!(contains_bytes(OMP_CURRENT_DB, b"fixture-db-stale-token"));
+    assert!(contains_bytes(
+        OMP_CURRENT_WAL,
+        b"fixture-wal-current-token"
+    ));
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    write_omp_source(&source, OMP_CURRENT_WAL);
+    let source_agent = source.join("agent");
+    let snapshot_parent = private_snapshot_parent(&temp);
+    let selector = omp_test_selector();
+
+    let snapshot = capture_selected_source(
+        Agent::Omp,
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+        &source,
+        temp.path(),
+        &snapshot_parent,
+    )
+    .unwrap()
+    .expect("selected OMP source should be captured");
+    let snapshot_db = snapshot.materialized_source_dir().join("agent/agent.db");
+    let snapshot_bytes = std::fs::read(&snapshot_db).unwrap();
+    assert!(contains_bytes(
+        &snapshot_bytes,
+        b"fixture-wal-current-token"
+    ));
+    assert!(!contains_bytes(&snapshot_bytes, b"fixture-db-stale-token"));
+    assert!(!snapshot_db.with_file_name("agent.db-wal").exists());
+    assert_eq!(snapshot.descriptor().selector.as_ref(), Some(&selector));
+
+    let target = temp.path().join("role/omp/agent/agent.db");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    let (outcome, mounted) = RoleState::provision_omp_auth_from_source_dir(
+        &target,
+        AuthForwardMode::Sync,
+        &source,
+        Some(AiProvider::OpenAi),
+        Some(&selector),
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(target.as_path()));
+    let provisioned = std::fs::read(&target).unwrap();
+    assert_eq!(provisioned, snapshot_bytes);
+    assert_eq!(
+        std::fs::read(source_agent.join("agent.db")).unwrap(),
+        OMP_CURRENT_DB,
+        "snapshotting must not checkpoint or rewrite the source database"
+    );
+    assert_eq!(
+        std::fs::read(source_agent.join("agent.db-wal")).unwrap(),
+        OMP_CURRENT_WAL,
+        "snapshotting must not truncate or rewrite the source WAL"
+    );
+    assert!(!source_agent.join("agent.db-shm").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_sync_fails_closed_when_the_current_wal_commit_checksum_is_corrupt() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    let mut wal = OMP_CURRENT_WAL.to_vec();
+    let page_size = u32::from_be_bytes(wal[8..12].try_into().unwrap()) as usize;
+    let frame_size = page_size + 24;
+    let final_frame = 32 + ((wal.len() - 32) / frame_size - 1) * frame_size;
+    wal[final_frame + 16] ^= 1;
+    write_omp_source(&source, &wal);
+    let target = temp.path().join("role/omp/agent/agent.db");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    let error = RoleState::provision_omp_auth_from_source_dir(
+        &target,
+        AuthForwardMode::Sync,
+        &source,
+        Some(AiProvider::OpenAi),
+        Some(&omp_test_selector()),
+    )
+    .expect_err("a torn committed WAL image must fail closed");
+
+    assert!(
+        format!("{error:#}").contains("WAL frame checksum is invalid"),
+        "unexpected OMP checksum failure: {error:#}"
+    );
+    assert!(
+        !target.exists(),
+        "corrupt WAL must not provision stale credentials"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_snapshot_retries_when_sqlite_checkpoints_between_database_and_wal_reads() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    write_omp_source(&source, OMP_CURRENT_WAL);
+    let agent = source.join("agent");
+    let checkpoint_agent = agent.clone();
+    set_omp_after_database_read_hook(Box::new(move || {
+        std::thread::spawn(move || {
+            std::fs::write(checkpoint_agent.join("agent.db"), OMP_CHECKPOINTED_DB).unwrap();
+            std::fs::write(checkpoint_agent.join("agent.db-wal"), []).unwrap();
+        })
+        .join()
+        .unwrap();
+    }));
+    let target = temp.path().join("role/omp/agent/agent.db");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+
+    let (outcome, _) = RoleState::provision_omp_auth_from_source_dir(
+        &target,
+        AuthForwardMode::Sync,
+        &source,
+        Some(AiProvider::OpenAi),
+        Some(&omp_test_selector()),
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    let provisioned = std::fs::read(target).unwrap();
+    assert!(contains_bytes(&provisioned, b"fixture-wal-current-token"));
+    assert!(!contains_bytes(&provisioned, b"fixture-db-stale-token"));
 }
 
 #[cfg(unix)]
