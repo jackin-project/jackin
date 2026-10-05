@@ -106,6 +106,58 @@ fn stream_holds_multiline_quoted_and_structured_values_until_closed() {
 }
 
 #[test]
+fn stream_redacts_authorization_bearer_as_one_value() {
+    let mut redactor = StreamRedactor::default();
+    assert_eq!(
+        redactor.push_bytes(b"Authorization=Bearer canary\n"),
+        vec!["<redacted>"]
+    );
+    assert_eq!(redactor.push_bytes(b"Authorization=Bearer\n"), vec!["<redacted>"]);
+    assert!(redactor
+        .push_bytes(b"split-bearer-canary\nvisible-but-suppressed\n")
+        .is_empty());
+    assert_eq!(
+        redact_text("Authorization=Bearer canary"),
+        "<redacted>"
+    );
+}
+
+#[test]
+fn stream_holds_triple_quoted_values_until_the_full_delimiter() {
+    let mut redactor = StreamRedactor::default();
+    assert_eq!(
+        redactor.push_bytes(b"token = \"\"\"\n"),
+        vec!["<redacted>"]
+    );
+    assert!(redactor.push_bytes(b"canary\n").is_empty());
+    assert_eq!(
+        redactor.push_bytes(b"\"\"\"\nvisible: retained\n"),
+        vec!["visible: retained"]
+    );
+    assert_eq!(redact_text("token = \"\"\"\ncanary\n\"\"\""), "<redacted>");
+}
+
+#[test]
+fn buildkit_block_secret_stays_bound_to_its_step() {
+    let mut redactor = StreamRedactor::default();
+    let mut output = Vec::new();
+    for chunk in [
+        b"#7 0.1 api_key: |\r".as_slice(),
+        b"\n#7 0.2   canary\r\n".as_slice(),
+        b"#8 0.1 harmless-other-step\r\n".as_slice(),
+        b"#7 0.3   canary-continuation\r\n".as_slice(),
+        b"#7 0.4 next-safe-record\r\n".as_slice(),
+    ] {
+        output.extend(redactor.push_bytes(chunk));
+        assert!(!output.join("\n").contains("canary"));
+    }
+    assert_eq!(
+        output,
+        vec!["#7 0.1 <redacted>", "#7 0.4 next-safe-record"]
+    );
+}
+
+#[test]
 fn stream_fails_closed_on_eof_and_unbounded_lines() {
     let mut unterminated = StreamRedactor::default();
     assert_eq!(

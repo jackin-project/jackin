@@ -31,7 +31,7 @@ impl Default for StreamRedactor {
 #[derive(Debug)]
 enum StreamMode {
     Normal,
-    Pem,
+    Pem { step: Option<String> },
     Block(BlockState),
     Indented(IndentedState),
     Quoted(QuotedState),
@@ -43,18 +43,22 @@ enum StreamMode {
 struct BlockState {
     header_indent: usize,
     body_indent: Option<usize>,
+    step: Option<String>,
 }
 
 #[derive(Debug)]
 struct IndentedState {
     header_indent: usize,
     body_indent: Option<usize>,
+    step: Option<String>,
 }
 
 #[derive(Debug)]
 struct QuotedState {
     quote: u8,
+    delimiter_len: usize,
     escaped: bool,
+    step: Option<String>,
 }
 
 #[derive(Debug)]
@@ -63,6 +67,14 @@ struct StructuredState {
     in_string: Option<u8>,
     escaped: bool,
     malformed: bool,
+    step: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+struct BuildKitLine<'a> {
+    prefix: &'a str,
+    payload: &'a str,
+    step: Option<&'a str>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -70,6 +82,7 @@ struct Assignment {
     start: usize,
     value_start: usize,
     separator: u8,
+    is_authorization: bool,
 }
 
 impl StreamRedactor {
@@ -115,70 +128,116 @@ impl StreamRedactor {
     }
 
     fn process_line(&mut self, line: &str) -> Vec<String> {
+        let buildkit = split_buildkit_line(line);
+        if let Some(expected_step) = active_step(&self.mode)
+            && expected_step.as_deref() != buildkit.step
+        {
+            // BuildKit interleaves records from separate steps on one pipe.
+            // A record from another step cannot close this secret's envelope;
+            // suppress it and keep the open state for its owning step.
+            return Vec::new();
+        }
         let mode = std::mem::replace(&mut self.mode, StreamMode::Normal);
         match mode {
-            StreamMode::Normal => self.process_normal_line(line),
-            StreamMode::Pem => {
-                if let Some(end) = private_key_footer_end(line) {
-                    self.process_suffix(&line[end..])
+            StreamMode::Normal => self.process_normal_line(
+                buildkit.payload,
+                buildkit.prefix,
+                buildkit.step.map(str::to_owned),
+            ),
+            StreamMode::Pem { step } => {
+                if let Some(end) = private_key_footer_end(buildkit.payload) {
+                    self.process_suffix(
+                        &buildkit.payload[end..],
+                        buildkit.prefix,
+                        buildkit.step.map(str::to_owned),
+                    )
                 } else {
-                    self.mode = StreamMode::Pem;
+                    self.mode = StreamMode::Pem { step };
                     Vec::new()
                 }
             }
             StreamMode::Block(mut block) => {
-                if line.trim().is_empty() {
+                if buildkit.payload.trim().is_empty() {
                     self.mode = StreamMode::Block(block);
                     Vec::new()
                 } else {
-                    let indent = leading_spaces(line);
+                    let indent = leading_spaces(buildkit.payload);
                     match block.body_indent {
                         Some(body_indent) if indent >= body_indent => {
                             self.mode = StreamMode::Block(block);
                             Vec::new()
                         }
-                        Some(_) => self.process_normal_line(line),
+                        Some(_) => self.process_normal_line(
+                            buildkit.payload,
+                            buildkit.prefix,
+                            buildkit.step.map(str::to_owned),
+                        ),
                         None if indent > block.header_indent => {
                             block.body_indent = Some(indent);
                             self.mode = StreamMode::Block(block);
                             Vec::new()
                         }
-                        None => self.process_normal_line(line),
+                        None => {
+                            // A block header with no provable body indentation
+                            // is ambiguous. Keep the stream closed rather than
+                            // treating a possibly misframed value as safe.
+                            self.mode = StreamMode::FailedClosed;
+                            Vec::new()
+                        }
                     }
                 }
             }
             StreamMode::Indented(mut block) => {
-                if line.trim().is_empty() {
+                if buildkit.payload.trim().is_empty() {
                     self.mode = StreamMode::Indented(block);
                     Vec::new()
                 } else {
-                    let indent = leading_spaces(line);
+                    let indent = leading_spaces(buildkit.payload);
                     match block.body_indent {
                         Some(body_indent) if indent >= body_indent => {
                             self.mode = StreamMode::Indented(block);
                             Vec::new()
                         }
-                        Some(_) => self.process_normal_line(line),
+                        Some(_) => self.process_normal_line(
+                            buildkit.payload,
+                            buildkit.prefix,
+                            buildkit.step.map(str::to_owned),
+                        ),
                         None if indent > block.header_indent => {
                             block.body_indent = Some(indent);
                             self.mode = StreamMode::Indented(block);
                             Vec::new()
                         }
-                        None => self.process_normal_line(line),
+                        None => {
+                            self.mode = StreamMode::FailedClosed;
+                            Vec::new()
+                        }
                     }
                 }
             }
             StreamMode::Quoted(mut quoted) => {
-                if let Some(end) = quoted_value_end(line.as_bytes(), 0, &mut quoted) {
-                    self.process_suffix(&line[end..])
+                if let Some(end) =
+                    quoted_value_end(buildkit.payload.as_bytes(), 0, &mut quoted)
+                {
+                    self.process_suffix(
+                        &buildkit.payload[end..],
+                        buildkit.prefix,
+                        buildkit.step.map(str::to_owned),
+                    )
                 } else {
                     self.mode = StreamMode::Quoted(quoted);
                     Vec::new()
                 }
             }
             StreamMode::Structured(mut structured) => {
-                if let Some(end) = structured_value_end(line.as_bytes(), 0, &mut structured) {
-                    self.process_suffix(&line[end..])
+                if let Some(end) =
+                    structured_value_end(buildkit.payload.as_bytes(), 0, &mut structured)
+                {
+                    self.process_suffix(
+                        &buildkit.payload[end..],
+                        buildkit.prefix,
+                        buildkit.step.map(str::to_owned),
+                    )
                 } else if structured.malformed {
                     self.mode = StreamMode::FailedClosed;
                     Vec::new()
@@ -194,22 +253,35 @@ impl StreamRedactor {
         }
     }
 
-    fn process_normal_line(&mut self, line: &str) -> Vec<String> {
+    fn process_normal_line(
+        &mut self,
+        line: &str,
+        line_prefix: &str,
+        step: Option<String>,
+    ) -> Vec<String> {
         if let Some(begin) = private_key_begin(line) {
             if let Some(end) = private_key_footer_end(&line[begin..]) {
                 let end = begin + end;
-                let mut output = redact_text(&line[..begin]).into_owned();
+                let mut output = line_prefix.to_owned();
+                output.push_str(&redact_text(&line[..begin]));
                 output.push_str(REDACTED);
                 if !line[end..].is_empty() {
-                    output.push_str(&self.process_normal_line(&line[end..]).join("\n"));
+                    output.push_str(
+                        &self
+                            .process_normal_line(&line[end..], "", step)
+                            .join("\n"),
+                    );
                 }
                 return vec![output];
             }
-            self.mode = StreamMode::Pem;
-            return vec![format!("{}{REDACTED}", redact_prefix(&line[..begin]))];
+            self.mode = StreamMode::Pem { step };
+            return vec![format!(
+                "{line_prefix}{}{REDACTED}",
+                redact_prefix(&line[..begin])
+            )];
         }
 
-        let mut output = String::new();
+        let mut output = line_prefix.to_owned();
         let mut cursor = 0;
         while cursor < line.len() {
             let remaining = &line[cursor..];
@@ -226,29 +298,41 @@ impl StreamRedactor {
                 self.mode = StreamMode::Indented(IndentedState {
                     header_indent: leading_spaces(line),
                     body_indent: None,
+                    step: step.clone(),
                 });
                 output.push_str(REDACTED);
                 return vec![output];
             }
 
             let value = bytes[value_start];
+            if assignment.is_authorization && is_bare_bearer(bytes, value_start) {
+                output.push_str(REDACTED);
+                self.mode = StreamMode::FailedClosed;
+                return vec![output];
+            }
             if matches!(value, b'|' | b'>')
                 && is_yaml_block_indicator(bytes, value_start, assignment.separator)
             {
                 self.mode = StreamMode::Block(BlockState {
                     header_indent: leading_spaces(line),
                     body_indent: None,
+                    step: step.clone(),
                 });
                 output.push_str(REDACTED);
                 return vec![output];
             }
 
             if matches!(value, b'\'' | b'"') {
+                let delimiter_len = quote_delimiter_len(bytes, value_start);
                 let mut quoted = QuotedState {
                     quote: value,
+                    delimiter_len,
                     escaped: false,
+                    step: step.clone(),
                 };
-                if let Some(end) = quoted_value_end(bytes, value_start + 1, &mut quoted) {
+                if let Some(end) =
+                    quoted_value_end(bytes, value_start + delimiter_len, &mut quoted)
+                {
                     output.push_str(REDACTED);
                     cursor += end;
                     continue;
@@ -264,6 +348,7 @@ impl StreamRedactor {
                     in_string: None,
                     escaped: false,
                     malformed: false,
+                    step: step.clone(),
                 };
                 if let Some(end) = structured_value_end(bytes, value_start, &mut structured) {
                     output.push_str(REDACTED);
@@ -279,7 +364,12 @@ impl StreamRedactor {
                 return vec![output];
             }
 
-            let end = plain_value_end(remaining, value_start, assignment.separator);
+            let end = plain_value_end(
+                remaining,
+                value_start,
+                assignment.separator,
+                assignment.is_authorization,
+            );
             output.push_str(REDACTED);
             if assignment.separator == b':'
                 && !remaining[..assignment.start].contains('{')
@@ -288,6 +378,7 @@ impl StreamRedactor {
                 self.mode = StreamMode::Indented(IndentedState {
                     header_indent: leading_spaces(line),
                     body_indent: None,
+                    step,
                 });
                 return vec![output];
             }
@@ -296,11 +387,16 @@ impl StreamRedactor {
         vec![output]
     }
 
-    fn process_suffix(&mut self, suffix: &str) -> Vec<String> {
+    fn process_suffix(
+        &mut self,
+        suffix: &str,
+        line_prefix: &str,
+        step: Option<String>,
+    ) -> Vec<String> {
         if suffix.is_empty() {
             Vec::new()
         } else {
-            self.process_normal_line(suffix)
+            self.process_normal_line(suffix, line_prefix, step)
         }
     }
 }
@@ -349,7 +445,7 @@ fn redaction_patterns() -> &'static [Regex] {
         [
             r"(?is)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
             r"(?i)\bauthorization\b\s*[:=]\s*bearer\s+[^\s,'\x22}\]]+",
-            r#"(?is)["']?[A-Z0-9_-]*(?:authorization|bearer|token|secret|password|passwd|credential|api[_-]?key|access[_-]?key|private[_-]?key)[A-Z0-9_-]*["']?\s*[:=]\s*(?:"(?:\\.|[^"])*(?:"|$)|'(?:\\.|[^'])*(?:'|$)|[^\s,'"}\]]+)"#,
+            r#"(?is)["']?[A-Z0-9_-]*(?:authorization|bearer|token|secret|password|passwd|credential|api[_-]?key|access[_-]?key|private[_-]?key)[A-Z0-9_-]*["']?\s*[:=]\s*(?:"{3}.*?(?:"{3}|$)|'{3}.*?(?:'{3}|$)|"(?:\\.|[^"])*(?:"|$)|'(?:\\.|[^'])*(?:'|$)|[^\s,'"}\]]+)"#,
             r"\bgithub_pat_[A-Za-z0-9_]{20,}\b",
             r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b",
             r"\bsk-[A-Za-z0-9_-]{20,}\b",
@@ -379,15 +475,95 @@ fn secret_assignment(line: &str) -> Option<Assignment> {
     let found = matcher.find(line)?;
     let matched = &line[found.start()..found.end()];
     let separator_offset = matched.find(|character| matches!(character, ':' | '='))?;
+    let key = &matched[..separator_offset];
     Some(Assignment {
         start: found.start(),
         value_start: found.end(),
         separator: matched.as_bytes()[separator_offset],
+        is_authorization: key.to_ascii_lowercase().contains("authorization"),
     })
+}
+
+fn split_buildkit_line(line: &str) -> BuildKitLine<'_> {
+    let bytes = line.as_bytes();
+    if bytes.first() != Some(&b'#') {
+        return BuildKitLine {
+            prefix: "",
+            payload: line,
+            step: None,
+        };
+    }
+
+    let mut index = 1;
+    let step_start = index;
+    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+        index += 1;
+    }
+    if index == step_start || !bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        return BuildKitLine {
+            prefix: "",
+            payload: line,
+            step: None,
+        };
+    }
+    let step_end = index;
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+
+    let timestamp_start = index;
+    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+        index += 1;
+    }
+    if index == timestamp_start || bytes.get(index) != Some(&b'.') {
+        return BuildKitLine {
+            prefix: "",
+            payload: line,
+            step: None,
+        };
+    }
+    index += 1;
+    let fraction_start = index;
+    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+        index += 1;
+    }
+    if index == fraction_start || !bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        return BuildKitLine {
+            prefix: "",
+            payload: line,
+            step: None,
+        };
+    }
+    index += 1;
+
+    BuildKitLine {
+        prefix: &line[..index],
+        payload: &line[index..],
+        step: Some(&line[step_start..step_end]),
+    }
+}
+
+fn active_step(mode: &StreamMode) -> Option<&Option<String>> {
+    match mode {
+        StreamMode::Normal | StreamMode::FailedClosed => None,
+        StreamMode::Pem { step }
+        | StreamMode::Block(BlockState { step, .. })
+        | StreamMode::Indented(IndentedState { step, .. })
+        | StreamMode::Quoted(QuotedState { step, .. })
+        | StreamMode::Structured(StructuredState { step, .. }) => Some(step),
+    }
 }
 
 fn is_yaml_comment(bytes: &[u8], value_start: usize, separator: u8) -> bool {
     separator == b':' && bytes.get(value_start) == Some(&b'#')
+}
+
+fn is_bare_bearer(bytes: &[u8], value_start: usize) -> bool {
+    let value = &bytes[value_start..];
+    value
+        .get(..6)
+        .is_some_and(|word| word.eq_ignore_ascii_case(b"Bearer"))
+        && value[6..].iter().all(u8::is_ascii_whitespace)
 }
 
 fn is_yaml_block_indicator(bytes: &[u8], start: usize, separator: u8) -> bool {
@@ -410,8 +586,11 @@ fn is_yaml_block_indicator(bytes: &[u8], start: usize, separator: u8) -> bool {
     index == bytes.len() || bytes.get(index) == Some(&b'#')
 }
 
-fn plain_value_end(line: &str, start: usize, separator: u8) -> usize {
+fn plain_value_end(line: &str, start: usize, separator: u8, is_authorization: bool) -> usize {
     let bytes = line.as_bytes();
+    if is_authorization {
+        return bytes.len();
+    }
     if separator == b':' {
         let json_like = line[..start].contains('{') || line[..start].contains('"');
         for (offset, &byte) in bytes[start..].iter().enumerate() {
@@ -431,21 +610,41 @@ fn plain_value_end(line: &str, start: usize, separator: u8) -> usize {
     bytes.len()
 }
 
+fn quote_delimiter_len(bytes: &[u8], start: usize) -> usize {
+    let quote = bytes[start];
+    let count = bytes[start..]
+        .iter()
+        .take_while(|byte| **byte == quote)
+        .count();
+    if count >= 3 { 3 } else { 1 }
+}
+
 fn quoted_value_end(bytes: &[u8], start: usize, state: &mut QuotedState) -> Option<usize> {
-    for (offset, &byte) in bytes[start..].iter().enumerate() {
-        let index = start + offset;
+    let mut index = start;
+    while index < bytes.len() {
+        let byte = bytes[index];
         if state.escaped {
             state.escaped = false;
         } else if byte == b'\\' {
             state.escaped = true;
         } else if byte == state.quote {
-            if state.quote == b'\'' && bytes.get(index + 1) == Some(&state.quote) {
+            let quote_count = bytes[index..]
+                .iter()
+                .take_while(|quote| **quote == state.quote)
+                .count();
+            if state.delimiter_len == 1
+                && state.quote == b'\''
+                && quote_count >= 2
+            {
                 // YAML single-quoted scalars escape a quote by doubling it.
-                state.escaped = true;
+                index += 2;
                 continue;
             }
-            return Some(index + 1);
+            if quote_count >= state.delimiter_len {
+                return Some(index + state.delimiter_len);
+            }
         }
+        index += 1;
     }
     // A physical newline is part of a multiline quoted scalar; retain a
     // trailing escape so a following quote cannot accidentally end the span.

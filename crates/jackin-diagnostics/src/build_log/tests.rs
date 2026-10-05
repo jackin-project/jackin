@@ -69,3 +69,18 @@ fn direct_line_push_is_redacted_before_snapshot() {
     assert_eq!(lines, vec!["<redacted> visible"]);
     end();
 }
+
+#[test]
+fn direct_multiline_push_redacts_buildkit_prefixed_blocks() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    begin();
+    push_line(
+        "#7 0.1 api_key: |\n#7 0.2   direct-buildkit-canary\n#7 0.3 visible record",
+    );
+    let lines = snapshot();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].contains("<redacted>"));
+    assert!(lines[0].contains("#7 0.3 visible record"));
+    assert!(!lines[0].contains("direct-buildkit-canary"));
+    end();
+}

@@ -18,6 +18,7 @@ use crate::redact;
 /// Cap on retained lines. A long `BuildKit` run is bounded so the buffer
 /// cannot grow without limit; the oldest lines drop first.
 const MAX_LINES: usize = 5000;
+const MAX_PUSH_BYTES: usize = 64 * 1024;
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static LINES: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
@@ -48,12 +49,19 @@ pub fn is_active() -> bool {
 
 /// Append one output line, dropping the oldest when the cap is reached.
 pub fn push_line(line: &str) {
-    let line = redact::redact_text(line);
+    let line = if line.len() > MAX_PUSH_BYTES {
+        "<redacted>".to_owned()
+    } else {
+        let mut redactor = redact::StreamRedactor::default();
+        let mut safe_lines = redactor.push_bytes(line.as_bytes());
+        safe_lines.extend(redactor.finish());
+        safe_lines.join("\n")
+    };
     if let Ok(mut lines) = LINES.lock() {
         if lines.len() >= MAX_LINES {
             lines.pop_front();
         }
-        lines.push_back(line.into_owned());
+        lines.push_back(line);
     }
 }
 
