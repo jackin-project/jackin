@@ -10,7 +10,7 @@
 - The Rust stack uses MBX as its compile driver.
 - The current generated workflow pins MBX `1.21.0`.
 - No ambient MBX setup was reported on the host.
-- Host inventory reports 96 CPUs, 125 GiB RAM, and 3.5 TiB disk.
+- Host inventory reports 96 logical processors, 125 GiB RAM, and 3.5 TiB disk.
 
 These facts do not establish a build duration or cache hit.
 

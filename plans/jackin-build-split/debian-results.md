@@ -7,9 +7,11 @@ Status: Static review complete; runtime route NOT RUN.
 - Host: `bastion`, Debian 13.7, x86_64.
 - Kernel: `6.12.94`.
 - User: root, UID 0.
-- CPU: 96 cores.
-- Memory: 125 GiB total, 117 GiB available at inventory time.
+- CPU: 96 logical processors.
+- Memory: 125 GiB total, 117 GiB available at initial inventory time.
+- A repeat at `2026-10-05T02:37:32+02:00` showed 113 GiB available.
 - Disk: 3.5 TiB total, 3.5 TiB free at inventory time.
+- The read-only host command and repeat output are in [checklist](checklist.md#host-inventory-command).
 - Codex CLI reports version `0.160.0` and “Logged in using ChatGPT.”
 - `HOME` is `/root`. `CODEX_HOME` is unset.
 - Auth-file metadata reports mode `0600`. No auth contents were read or copied.
