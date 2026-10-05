@@ -1,7 +1,7 @@
 # Build Results
 
 - Status: IN PROGRESS
-- Main-source build proof: PASS for one run.
+- Main-source proof: one complete reviewed build passed. A later v6 cold-1 inner build passed, but collection failed.
 - Comparable performance baseline: NOT RUN.
 
 ## Static setup
@@ -73,16 +73,20 @@ Source inspection attributes 109 `unportable-native-link` bypasses to MBX reject
 
 ## Measurement launcher review sequence
 
-These reviews and guard probes did not run a build or measurement matrix.
+The v3 and v4 reviews produced no build result. The v5 guard stopped before compilation. V6 produced one partial cold-1 result; the measurement matrix remains incomplete.
 
 | Version | Evidence | Result | Scope |
 |---|---|---|---|
 | v3 | Timing method review passed; security review found intermediate `work/out` symlink traversal. | FAIL | Do not use this launcher. No matrix result. |
-| v4 | Launcher SHA-256 `5c730c2c80283adbcd3a22d170f3bf2e246eb04132772e341f212ab2232dfe0e`. | NOT RUN | Artifact was not frozen or reviewed. No phase ran. |
+| v4 | Launcher `2d1c6ce45fa163b0bfed598af3f8b6ada424c5486654132d7c675520578f27d9`; timer `fbae0a31d6ba3138153ee64398082203f15446593a74d846228d28176cba1e1b`; diff `26c9a2a7c8edc6e0cfc29a06cb5c8cc596b5259c329112504f56715891e7f81b`. | SECURITY FAIL; METHOD NOT RUN | Sol found a FIFO leaf can block on `O_RDONLY` before `fstat`. Ancestor traversal was fixed. No phase ran. |
 | v5 | Launcher SHA-256 `460341e26528da42b7aae5be0449a3438868bf0fe21a2588b55bdbaad264a804`; timer SHA-256 `31560b177eb620665dc91ef28c5bf44aac42c6e024223a85f827542d0d675e08`; diff SHA-256 `caa6ecf17631048f2dad8d099bce60565d9915054185ad5ba004bbc0b14416a3`. | REVIEW PASS; GUARD FAIL | Both Sol reviews approved the exact artifacts. `prepare-linker` passed in 102.038 ms for GCC SHA-256 `a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f`. `verify-linker` exited 1 before compilation because its version check expected the target basename before GCC's version text. |
-| v6 | No frozen launcher hash is recorded. | NOT RUN | No independent review, phase, compile, or measurement matrix ran. |
+| v6 | Launcher `9040ccad259d81b4c8705c687b10fbe174a0c3ef34612cc1c055672df0d3c856`; timer `d3789bf2bc38616eb0b6adb594ea8c8f4a724f9af40ce973350085cf278776e9`; diff `f75ef4f90c0c842e8120465f75d420890df7ab37173759131532f2e2867f0547`. | REVIEW PASS; PARTIAL RUN | Security and method reviews passed. `verify-linker` passed. Cold-1 build exited 0 in 90.373 s. The collector failed before cold-2. |
 
-The v5 prepare phase used a rootfs-only `cc` symlink. The guard failure is not a compiler result. Do not rerun v5. Cache reuse and performance remain unproved.
+The v5 prepare phase used a rootfs-only `cc` symlink. Its guard failure is not a compiler result. Do not rerun v5.
+
+The v6 cold-1 inner build completed, but its collector failed before cold-2. Cargo 1.97 wrote one HTML output with `st_nlink=2`: canonical and timestamped names share a hard link. The file was owner 65534, mode `0600`, and 540,739 bytes. The owner salvaged MBX statistics through a validated no-follow directory descriptor.
+
+The partial statistics report zero hits, zero misses, 1,086 unconsulted commands, 55 bypass rows, 596,324,893 ns permit wait, 90,716,606 ns flight wait, and 4.27 GB stored. This is not cache reuse or a repeated scenario. Do not count it as a valid baseline. The matrix stopped. A reviewed collector correction is required. Do not treat a warm target as cold.
 
 ## Required measurements
 
@@ -109,4 +113,4 @@ Do not set numeric split targets before measurements show build variation. Each 
 
 The `build_baseline` owner must record commands, elapsed time, resource use, cache state, and output hashes in a later authorized execution phase.
 
-Further cache and performance runs require MBX cache and object provenance. See [reviews](reviews.md). Tests, workspace verification, release builds, post-extraction builds, and cache-behavior scenarios remain NOT RUN.
+Further cache and performance runs require MBX cache and object provenance. See [reviews](reviews.md). Tests, workspace verification, release builds, post-extraction builds, and valid repeated cache-behavior scenarios remain NOT RUN.

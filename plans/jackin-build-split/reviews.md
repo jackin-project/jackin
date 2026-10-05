@@ -194,13 +194,19 @@ Architect image prefix `ad3b0069` predates the merged role content and has no so
 
 The v3 timing method passed review. The security review failed because an intermediate `work/out` path permits symlink traversal. Do not use it.
 
-The v4 launcher candidate has SHA-256 `5c730c2c80283adbcd3a22d170f3bf2e246eb04132772e341f212ab2232dfe0e`. It was not frozen or reviewed. No phase ran.
+The frozen v4 launcher SHA-256 is `2d1c6ce45fa163b0bfed598af3f8b6ada424c5486654132d7c675520578f27d9`. Its timer SHA-256 is `fbae0a31d6ba3138153ee64398082203f15446593a74d846228d28176cba1e1b`; diff SHA-256 is `26c9a2a7c8edc6e0cfc29a06cb5c8cc596b5259c329112504f56715891e7f81b`. Sol security review FAIL: opening a FIFO leaf with `O_RDONLY` can block before `fstat`. Ancestor traversal was fixed. The timing method was NOT RUN, and no phase ran.
 
 The v5 launcher SHA-256 is `460341e26528da42b7aae5be0449a3438868bf0fe21a2588b55bdbaad264a804`. Its timer SHA-256 is `31560b177eb620665dc91ef28c5bf44aac42c6e024223a85f827542d0d675e08`. Its diff SHA-256 is `caa6ecf17631048f2dad8d099bce60565d9915054185ad5ba004bbc0b14416a3`. Security and measurement-method reviews passed these exact artifacts.
 
 The v5 `prepare-linker` phase passed in 102.038 ms using the rootfs-only GCC link. `verify-linker` failed before compilation. It matched the resolved compiler path and hash, but expected the target basename at the start of version output. No source compiled. Do not rerun v5.
 
-No v6 launcher hash is recorded. It remains unfrozen and unreviewed. No v6 phase, compile, or measurement matrix ran. The earlier single source build remains proof-only; it does not establish cache reuse or a performance baseline.
+The v6 launcher SHA-256 is `9040ccad259d81b4c8705c687b10fbe174a0c3ef34612cc1c055672df0d3c856`; timer SHA-256 is `d3789bf2bc38616eb0b6adb594ea8c8f4a724f9af40ce973350085cf278776e9`; diff SHA-256 is `f75ef4f90c0c842e8120465f75d420890df7ab37173759131532f2e2867f0547`. Security and method reviews passed. `verify-linker` passed. The cold-1 inner build exited 0 in 90.373 seconds, but collection failed before cold-2. A Cargo 1.97 HTML output had `st_nlink=2` because its canonical and timestamped names were hard links. The collector stopped before further measurements. The owner salvaged MBX statistics with a validated no-follow directory descriptor. The partial run is not a cache or performance result. A collector correction requires new review. See [build results](build-results.md#measurement-launcher-review-sequence).
+
+## Tokenless BuildKit source review
+
+Disposition: FAIL at exact task-branch commit `a67ef88d5d9889a94696d306fffcfc5249e74ceb`. The commit changes `crates/jackin-runtime/src/runtime/image/build.rs`, `tests.rs`, and `version.rs` to stop forwarding ambient GitHub tokens to BuildKit.
+
+The review requires removal of an obsolete detector API, its re-export, and its tests. Unix-only imports also require `cfg(unix)` gating. A correction is active, but the owner name and fixing commit are not recorded. No tests or post-fix source review ran. Keep this change pending.
 
 ## MBX provenance
 
@@ -265,7 +271,7 @@ Cargo tests remain NOT RUN pending reviewed MBX activation. This record reports 
 
 ## Account route and restore source reviews
 
-The `CODEX_HOME` source change in `688057f40173d32dda04a55bff1e3868c219710d` passed exact-source review with follow-up commit `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`. The follow-up adds only `#[cfg(test)]` to a test-only scan seam. Production discovery remains unchanged by that follow-up. Both commits are source-review evidence only.
+The `CODEX_HOME` source change in `0556ce39b1abb9cd6b387583d932e1556ca9dfd4` and follow-up `688057f40173d32dda04a55bff1e3868c219710d` passed exact-source review with lint follow-up `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`. The follow-up adds only `#[cfg(test)]` to a test-only scan seam. Production discovery remains unchanged by that follow-up. Both commits are source-review evidence only.
 
 Restore commit `234fc0ea3813d8cabe579a8a8e0a0b1162eb5230` and prompt-removal commit `640b33f9598307a360484526a46c9c20bd068f4e` passed source review. Cargo tests remain NOT RUN. Host discovery, account refresh and selection, workspace launch, and live Codex requests remain NOT RUN.
 

@@ -10,8 +10,42 @@
 - Task worktree: `/root/Projects/tailrocks/jackin-project/jackin-refactor-build-split`.
 - Task branch: `refactor/build-split`.
 - Initial task worktree state: clean at the base SHA.
-- Source head before this evidence update: `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578`; local and remote branch refs matched.
-- No PR was opened for this task during the documentation checkpoint.
+- Audited source snapshot: `a67ef88d5d9889a94696d306fffcfc5249e74ceb`; local and remote task refs matched.
+- `git rev-list` from the base to this snapshot contains 35 commits: 22 source/test/config commits and 13 documentation commits. It contains no merge commit.
+- No PR was open for this Jackin task at the snapshot.
+
+## Current task-branch source inventory
+
+At source snapshot `a67ef88d5d9889a94696d306fffcfc5249e74ceb`, both `git rev-list --count base..HEAD` and `git rev-list --count --no-merges base..HEAD` returned 35. The table accounts for all 22 source, test, and configuration commits. Each listed task commit is its own destination on `refactor/build-split`, except the attributed `c72e25d` source and `c8d20fb` destination. Source presence does not mean tests passed. Direct MBX tests remain pending unless stated otherwise.
+
+| Commit | Unique change or hunk | Source and test status |
+|---|---|---|
+| `491999cb4e839bae7739573a235fb53aac320b36` | Adds generated-workflow and Architect fixture contracts in `.velnor/config.toml`, manifest tests, `ci_contract.rs`, and desktop tests. | Source on branch. Cargo tests NOT RUN. |
+| `3f58f7c2c2504f821a37f5c989ac86d5940d56fb` | Binds native CI assertions to generated job inventory in desktop and CI-contract tests. | Source on branch. Cargo tests NOT RUN. |
+| `9a147fba7786ce5bdaa8ac669061097e3e2413c4` | Makes coverage-contract tests return structured errors. | Source on branch. Cargo tests NOT RUN. |
+| `69f96830549fd74110fc56caa614ca4028b9e55f` | Updates JSON contract test APIs. | Source on branch. Cargo tests NOT RUN. |
+| `08135f1ae010c63cec1bd7ff3a8125036a5c1576` | Adds per-stream multiline diagnostic redaction. | REJECTED by exact Sol review. Superseded by later redaction commits. |
+| `63d5ef9046d4948a3cddb239e891db49be654d34` | Adds redaction for multiline diagnostic envelopes. | REJECTED by exact Sol review for five P1 findings. Superseded. |
+| `42c6f8ed91571e68c080c2ed7c6ac62a045d6553` | Adds task-scoped model and effort flags in CLI load and role commands. | Source on branch. Focused Cargo tests NOT RUN. |
+| `0556ce39b1abb9cd6b387583d932e1556ca9dfd4` | Honors `CODEX_HOME` during account discovery. | Reviewed with follow-ups `688057f` and `45fbb65`; runtime and Cargo tests NOT RUN. |
+| `688057f40173d32dda04a55bff1e3868c219710d` | Aligns account discovery and editor paths with Codex home resolution. | Reviewed with route fix. Runtime and Cargo tests NOT RUN. |
+| `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a` | Marks the test-only discovery seam `cfg(test)`; production discovery is unchanged. | Exact source review PASS. Cargo tests NOT RUN. |
+| `f0f376f87317fd7b241c359d502e4a476351054d` | Adds OMP database and WAL capture fixtures and snapshot logic. | Source on branch. Snapshot tests NOT RUN. |
+| `1638522184ef45f0cd51fa5601a5e80c7fd89762` | Handles an uncommitted OMP WAL reset suffix with a focused fixture. | Exact source review PASS; stale-comment follow-up and Cargo tests remain pending. |
+| `8dac3d6eb651c4515ffedeefa3f616b64b07e1bf` | Carries task model and effort through runtime launch, capsule setup, dry run, and restore paths. | Source on branch. Focused Cargo tests NOT RUN; no exact independent approval is recorded here. |
+| `234fc0ea3813d8cabe579a8a8e0a0b1162eb5230` | Preserves stored agent identity during restore. | Exact source review PASS. Restore tests NOT RUN. |
+| `640b33f9598307a360484526a46c9c20bd068f4e` | Removes the unsupported initial-prompt option from runtime launch. | Exact source review PASS. Cargo tests NOT RUN. |
+| `69b82de1a48cc18add3933e1995028c8aa2722e8` | Retains multiline secret context in diagnostic redaction. | REJECTED: nested PEM markers leaked. Superseded. |
+| `c2a80a7dc0618007840533e956b06f4af3458a70` | Adds fail-closed nested PEM marker handling. | REJECTED: Clippy blocker and missing sequential valid-marker regression. Superseded. |
+| `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578` | Replaces denied `map_or` calls and adds sequential marker-block tests. | Exact source review PASS. Clippy and Cargo tests NOT RUN. Marker fixtures are not cryptographic PEM tests. |
+| Source `c72e25d384ce2d8a80cf584457ec4b28e619980b`; destination `c8d20fb3a9660e1ed7819d53b3fbef410be43610` | Changes agent-status rule validation, its unit tests, and signed-bundle integration test. Cherry-pick attribution is preserved. | Exact source review PASS. Focused `jackin-agent-status` MBX tests NOT RUN. |
+| `07f5ce7efe38c6c608fb975013df43e770d92b2b` | Updates the immutable Architect role fixture, digest provenance, and consumer contract. | Consumer source review PASS. Tests remain NOT RUN. |
+| `41265a7550dda498c2e32126a9e68d4733215da5` | Sorts configured Velnor tasks by ID and updates the CI contract. | Source on branch. Current Plan fails against pinned Velnor `0.1.0`; see [consumer CI result](ci-coverage.md#current-jackin-consumer-check). |
+| `a67ef88d5d9889a94696d306fffcfc5249e74ceb` | Attempts to stop forwarding ambient GitHub tokens to BuildKit; changes image build, version detection, and tests. | Exact review FAIL. Correction pending for obsolete detector API/re-export/tests and Unix-only imports. Tests NOT RUN. |
+
+The 13 documentation-only commits at this snapshot change files under `plans/jackin-build-split/` (including the parent snapshot `8d311ac656c68d83999f9ac2e1cb439056745199`): `34c32ca31e58b5e3dac71e88892778568f6f70d1`, `a65c1e705a002dfdec7a5f6b44a91b27a95a4e6d`, `504b7d484c3a7f00f6395dcb1a69dbc1fe32c51a`, `d194b71af4333f396b8e5e6b280823f363f3c4a7`, `9982fac76b6a3309adce28233d70007e8c102aac`, `8f21df367299af8cc22ac09954ddbfab982b6af4`, `b536e14324dfaea33201310f2727e4d2dee2dad1`, `c47114738fc1ee79715f7a53cab68daf5ed0839d`, `21fd2d73ed31f4118a1ee70b3844796a1abcd8f4`, `6fee4e9154cdec281d381edd9cd6848f5cd25660`, `2fbae01f477c61fc8bb6cf5c8f67de75eff566da`, `0bfac67e5b977a6a218a944f62f3bc92a1016d59`, and `8d311ac656c68d83999f9ac2e1cb439056745199`.
+
+Model and effort fanout candidate `0007a691708b4af89aeb659805e829d34b69acb1` exists as a Git object but is not reachable from the task branch snapshot. `git branch --contains` lists unrelated PR refs only. It has no task destination. Do not call this fanout integrated. The task branch separately contains `42c6f8e` CLI flags and `8dac3d6` restore propagation. Root will decide whether a replacement is needed.
 
 ## Preserved original worktree state
 
@@ -144,10 +178,25 @@ These test lists define review scope. They do not record test execution or accep
 | Order | Work owner | Required predecessor or fix | State |
 |---|---|---|---|
 | 1 | Unassigned | Supply and review ordered-fsync recovery behavior before importing `78e38612824c4e6d69ffb9d01a834a75537e7c5a`. | IN PROGRESS; no fix ref found in the audited refs. |
-| 2 | `consolidation_review` | Add predecessor, schema, metadata, and golden fixtures for `455526b92a2a4350476bb192455e5e3414f7ab9a`. | IN PROGRESS; migration tests NOT RUN. |
-| 3 | `consolidation_review` | Add profile proof creation and invalidation coverage for `cd3ced4189fb19624359da8c0eec5684ef1bacd8`. | IN PROGRESS; tests NOT RUN. |
+| 2 | Unassigned | Add predecessor, schema, metadata, golden, and ambiguity fixtures for `455526b92a2a4350476bb192455e5e3414f7ab9a`. | IN PROGRESS; migration tests NOT RUN. |
+| 3 | Unassigned | Add profile proof creation and invalidation coverage for `cd3ced4189fb19624359da8c0eec5684ef1bacd8`. | IN PROGRESS; tests NOT RUN. |
 | 4 | `consolidation_review` | Verify the `c72e25d384ce2d8a80cf584457ec4b28e619980b` cherry-pick provenance and run its focused tests. Review `e4bcb842bd151c608691a72c7af8fc6e765a3105` after the test gate. | Integrated at `c8d20fb3a9660e1ed7819d53b3fbef410be43610`; tests NOT RUN pending controlled MBX scheduling. |
 | 5 | `execution_crosscheck` | Review the complete 20-path transport consumer unit after its predecessors. | IN PROGRESS; integration tests NOT RUN. |
+
+### Unfinished fixes and destinations
+
+The following items remain source candidates or incomplete root fixes. No listed correction has a task destination or a passing test result. Future work owners remain unassigned until root assigns them.
+
+| Source or scope | Required correction | Destination, owner, and gate |
+|---|---|---|
+| `455526b92a2a4350476bb192455e5e3414f7ab9a` | Add config/workspace version predecessors, schema and metadata, golden output, and ambiguity fixtures. | No task destination. Future owner unassigned. Run migration compatibility and schema tests under reviewed MBX. |
+| `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | `ref_transaction` unlinks a candidate before parent fsync. Replace it with a shared ordered-cleanup helper. Add fault-injection and persisted-state recovery tests. | No task destination. Future owner unassigned. Hold the full unit until exact-source review and tests pass. |
+| Kimi full-tree snapshot | Replace overcapture with projection-only data. | Source ref and destination not supplied. Future owner unassigned. Review the exact path set before integration. |
+| Non-Unix source traversal | Fail closed on TOCTOU, or use handle-bound traversal. | Source ref and destination not supplied. Future owner unassigned. Add platform-specific race coverage. |
+| Permanent namespace session leases | Add liveness-aware crash recovery for pending leases. | Source ref and destination not supplied. Future owner unassigned. Add restart and stale-lease tests. |
+| OMP commits `f0f376f87317fd7b241c359d502e4a476351054d` and `1638522184ef45f0cd51fa5601a5e80c7fd89762` | The optimistic database/WAL pair reread is not a full SQLite snapshot or refresh-race proof. Add WAL-only committed-token and concurrent-writer replacement fixtures, or provide a proof-backed SQLite backup. | Source commits are on the task branch. The stronger proof or fix has no destination. Future owner unassigned. Tests NOT RUN. |
+
+The redaction source replacement is `69b82de1a48cc18add3933e1995028c8aa2722e8`, `c2a80a7dc0618007840533e956b06f4af3458a70`, and reviewed `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578`. It replaces rejected source `7cbbbdf736c70a94961d3adb1176d1994a47d43e` for selection purposes. The task branch contains the replacement commits. Clippy and Cargo tests remain NOT RUN, so final acceptance is pending.
 
 The earlier candidate sequence is provisional. The `c72e25d` rule-bundle unit was selected and imported independently; its test gate remains open. The ordered-fsync fix must precede cleanup import. Migration fixtures must precede `455526…`, and proof-creation/invalidation coverage must precede `cd3ced…`. Keep the OSC and capsule-session pair `e4bcb…` after the `c72e25d` test gate, then review the linked transport group `18bc09…` as a whole. The mixed PR #1111 commit `5375756fe301ba6a33d52040435b96bae6be9171` remains a separate attributed unit and depends on account and authority prerequisites. The redaction replacement remains owned by `consolidation_review`.
 

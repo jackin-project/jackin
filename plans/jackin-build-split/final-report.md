@@ -19,11 +19,12 @@ The first main-source MBX attempt failed because the private chroot lacked `/etc
 - The account snapshot root-fix plan remains IN PROGRESS. Fixtures and tests are pending reviewed MBX. See [reviews](reviews.md#account-snapshot-follow-up).
 - Redaction source correction passed exact-head Sol review at `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578`; Clippy and Cargo tests remain NOT RUN. See [reviews](reviews.md#nested-pem-and-current-correction).
 - Velnor PR #55 merged at head `f17ebbc992da8549197f63d2aaaf1c317ed57426` via `3ec6f32b5bafa5fa34ce9aa22afd7cfe2e797132`; PR run `37260546503` and post-merge run `37261457091` succeeded. The latter had 20/20 jobs. The current later main SHA has no checked run. See [CI coverage](ci-coverage.md#velnor-pr-55).
-- One MBX source-build proof succeeded with 626 cache bypasses; cache causes remain under investigation. Measurement launcher v5 passed exact-artifact review but failed its compiler-version guard before any compile. No performance matrix ran. See [build results](build-results.md#reviewed-linker-v2-source-proof).
+- One MBX source-build proof succeeded with 626 cache bypasses. V5 failed its compiler-version guard before compilation. V6 passed both reviews and linker verification; its cold-1 inner build exited 0 in 90.373 seconds, but the collector stopped before cold-2. No valid performance matrix or cache-reuse result exists. See [build results](build-results.md#measurement-launcher-review-sequence).
 - Crate names, consumers, dependency boundaries, and measured build targets remain IN PROGRESS. See [crate plan](crate-plan.md#usage-crate-naming-proposals).
 - Codex route, restore-identity, and prompt source reviews passed; their Cargo tests and runtime route remain NOT RUN. See [reviews](reviews.md#account-route-and-restore-source-reviews).
 - Rule-bundle source `c72e25d384ce2d8a80cf584457ec4b28e619980b` was cherry-picked with attribution as `c8d20fb3a9660e1ed7819d53b3fbef410be43610`, changing three `jackin-agent-status` files. Focused tests remain NOT RUN pending controlled MBX scheduling. See [branch matrix](branches.md#account-and-capsule-consolidation-matrix).
 - Consumer source review passed at Jackin `07f5ce7`; the sorted-task fix is at `41265a7`. CI still fails because pinned Velnor rejects the task configuration and generated CI lacks task jobs. No Jackin task PR is reported as merged.
+- The current task-branch source head is `a67ef88d5d9889a94696d306fffcfc5249e74ceb`. Its tokenless BuildKit change failed exact review; correction and tests remain pending. Velnor PR #59 is open at `81e65fee08edc3b73839d9ff810cb7da6a170a65`; heavy generation and self-CI work has one assigned owner, `architect_manifest_fix`, and no MBX/Cargo run is recorded.
 
 ## Open records
 
