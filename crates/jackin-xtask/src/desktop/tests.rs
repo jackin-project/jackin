@@ -213,6 +213,70 @@ fn xunit_totals_sum_every_testsuite() {
 }
 
 #[test]
+fn xunit_accepts_xml_whitespace_comments_and_processing_instructions() {
+    let source = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n",
+        "<!-- prolog comment --><?xml-stylesheet href=\"report.xsl\"?>\n",
+        "<testsuites>\n",
+        "  <!-- suite list -->\n",
+        "  <testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\">",
+        "<?inside report?>before &amp; after &#x9;<![CDATA[raw text]]>",
+        "</testsuite>\n",
+        "</testsuites>\r\n<!-- epilog comment --><?tail report?>\n"
+    );
+    assert_eq!(
+        parse_xunit_totals(source).unwrap(),
+        XunitTotals {
+            tests: 1,
+            failures: 0,
+            errors: 0,
+        }
+    );
+}
+
+#[test]
+fn xunit_rejects_outside_root_content_and_misplaced_prolog_markup() {
+    let report = "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>";
+    let invalid = [
+        format!("prefix{report}"),
+        format!("{report}suffix"),
+        format!("<![CDATA[outside]]>{report}"),
+        format!("{report}<![CDATA[outside]]>"),
+        format!("&#32;{report}"),
+        format!("{report}&#32;"),
+        format!("<!DOCTYPE testsuites>{report}"),
+        format!("{report}<!DOCTYPE testsuites>"),
+        format!("{report}<?xml version=\"1.0\"?>"),
+        format!("{report}{report}"),
+        format!("<?xml version=\"1.0\"?> <?xml version=\"1.0\"?>{report}"),
+        format!("<!-- too early --><?xml version=\"1.0\"?>{report}"),
+        format!("<?XML version=\"1.0\"?>{report}"),
+        format!("<?xml encoding=\"UTF-8\" version=\"1.0\"?>{report}"),
+        format!("<?xml version=\"1.0\" encoding=\"UTF-8\" encoding=\"UTF-8\"?>{report}"),
+        format!("<?xml version=\"1.0\" standalone=\"maybe\"?>{report}"),
+        format!("<?xml version=\"1.0\" extra=\"x\"?>{report}"),
+        format!("\u{000b}{report}"),
+        "<testsuites><unexpected/></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"outer\" tests=\"1\" failures=\"0\" errors=\"0\"><testsuite name=\"inner\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuite></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"><1bad/></testsuite></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\" notes=\"&#x1;\"/></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"&custom;\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\">&custom;</testsuite></testsuites>".to_owned(),
+        "<testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\">&#x1;</testsuite></testsuites>".to_owned(),
+        "<!-- invalid -- comment --><testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+        "<?xml version=\"1.1\"?><testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+        "<?xml version=\"1.0\" encoding=\"UTF-16\"?><testsuites><testsuite name=\"unit\" tests=\"1\" failures=\"0\" errors=\"0\"/></testsuites>".to_owned(),
+    ];
+    for source in invalid {
+        assert!(
+            parse_xunit_totals(&source).is_err(),
+            "accepted malformed XML: {source:?}"
+        );
+    }
+}
+
+#[test]
 fn parallel_xctest_xunit_counts_every_worker_suite() {
     let source = concat!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",

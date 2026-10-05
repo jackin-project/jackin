@@ -19,7 +19,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
-use quick_xml::{Decoder, XmlVersion, events::Event, reader::Reader};
+use quick_xml::{
+    Decoder, XmlVersion,
+    events::{BytesDecl, BytesRef, BytesStart, Event},
+    reader::Reader,
+};
 
 use crate::cmd;
 use crate::docs;
@@ -325,11 +329,18 @@ struct XunitTotals {
     errors: u64,
 }
 
-/// Sum `tests`/`failures`/`errors` across every `<testsuite>` element.
+/// Sum `tests`/`failures`/`errors` across direct `<testsuite>` children.
+/// The token reader is state-checked as an XML document; unsupported DTDs,
+/// malformed prologs, content outside the root, and missing reports fail closed.
 /// Missing elements or attributes are corruption, never zero.
 fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
+    anyhow::ensure!(
+        source.chars().all(is_xml_char),
+        "corrupt xUnit: input contains a character forbidden by XML 1.0"
+    );
     let mut reader = Reader::from_str(source);
     reader.config_mut().check_end_names = true;
+    reader.config_mut().check_comments = true;
     let mut totals = XunitTotals {
         tests: 0,
         failures: 0,
@@ -339,17 +350,36 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
     let mut depth = 0_usize;
     let mut root_seen = false;
     let mut root_closed = false;
+    let mut declaration_seen = false;
+    let mut prolog_started = false;
     loop {
         match reader.read_event() {
             Ok(Event::Start(element)) => {
+                anyhow::ensure!(
+                    is_xml_name(element.name().as_ref()),
+                    "corrupt xUnit: invalid XML element name"
+                );
+                validate_xunit_attributes(&element, reader.decoder())?;
                 if depth == 0 {
                     anyhow::ensure!(
-                        !root_seen && element.name().as_ref() == b"testsuites",
+                        !root_seen && !root_closed && element.name().as_ref() == b"testsuites",
                         "corrupt xUnit: expected one testsuites document root"
                     );
                     root_seen = true;
+                } else if depth == 1 {
+                    anyhow::ensure!(
+                        element.name().as_ref() == b"testsuite",
+                        "corrupt xUnit: testsuites may contain only testsuite elements"
+                    );
                 } else {
-                    anyhow::ensure!(!root_closed, "corrupt xUnit: content after document root");
+                    anyhow::ensure!(
+                        element.name().as_ref() != b"testsuites"
+                            && element.name().as_ref() != b"testsuite",
+                        "corrupt xUnit: nested test suite element"
+                    );
+                }
+                if depth == 0 {
+                    prolog_started = true;
                 }
                 if element.name().as_ref() == b"testsuite" {
                     add_xunit_suite(&element, reader.decoder(), &mut totals)?;
@@ -362,13 +392,32 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
                     .context("corrupt xUnit: element nesting overflow")?;
             }
             Ok(Event::Empty(element)) => {
+                anyhow::ensure!(
+                    is_xml_name(element.name().as_ref()),
+                    "corrupt xUnit: invalid XML element name"
+                );
+                validate_xunit_attributes(&element, reader.decoder())?;
                 if depth == 0 {
                     anyhow::ensure!(
-                        !root_seen && element.name().as_ref() == b"testsuites",
+                        !root_seen && !root_closed && element.name().as_ref() == b"testsuites",
                         "corrupt xUnit: expected one testsuites document root"
                     );
                     root_seen = true;
                     root_closed = true;
+                } else if depth == 1 {
+                    anyhow::ensure!(
+                        element.name().as_ref() == b"testsuite",
+                        "corrupt xUnit: testsuites may contain only testsuite elements"
+                    );
+                } else {
+                    anyhow::ensure!(
+                        element.name().as_ref() != b"testsuites"
+                            && element.name().as_ref() != b"testsuite",
+                        "corrupt xUnit: nested test suite element"
+                    );
+                }
+                if depth == 0 {
+                    prolog_started = true;
                 }
                 if element.name().as_ref() == b"testsuite" {
                     add_xunit_suite(&element, reader.decoder(), &mut totals)?;
@@ -400,11 +449,49 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
             }
             Ok(Event::Text(text)) if depth == 0 => {
                 anyhow::ensure!(
-                    text.as_ref().iter().all(u8::is_ascii_whitespace),
+                    text.as_ref().iter().all(is_xml_whitespace),
                     "corrupt xUnit: character data outside document root"
                 );
+                if !root_seen {
+                    prolog_started = true;
+                }
             }
-            Ok(_) => {}
+            Ok(Event::Text(_)) => {}
+            Ok(Event::CData(_)) if depth > 0 => {}
+            Ok(Event::CData(_)) => bail!("corrupt xUnit: CDATA outside document root"),
+            Ok(Event::GeneralRef(reference)) if depth > 0 => {
+                validate_xml_reference(&reference)?;
+            }
+            Ok(Event::GeneralRef(_)) => {
+                bail!("corrupt xUnit: entity reference outside document root");
+            }
+            Ok(Event::Comment(_)) => {
+                if !root_seen {
+                    prolog_started = true;
+                }
+            }
+            Ok(Event::PI(instruction)) => {
+                anyhow::ensure!(
+                    is_xml_name(instruction.target())
+                        && !instruction.target().eq_ignore_ascii_case(b"xml"),
+                    "corrupt xUnit: invalid or reserved processing-instruction target"
+                );
+                if !root_seen {
+                    prolog_started = true;
+                }
+            }
+            Ok(Event::Decl(declaration)) => {
+                anyhow::ensure!(
+                    !declaration_seen && !prolog_started && !root_seen && depth == 0,
+                    "corrupt xUnit: XML declaration must be the first document item"
+                );
+                validate_xunit_declaration(&declaration)?;
+                declaration_seen = true;
+                prolog_started = true;
+            }
+            Ok(Event::DocType(_)) => {
+                bail!("corrupt xUnit: document type declarations are unsupported");
+            }
             Err(error) => bail!("corrupt xUnit at byte {}: {error}", reader.error_position()),
         }
     }
@@ -412,6 +499,139 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
         bail!("corrupt xUnit: no testsuite elements");
     }
     Ok(totals)
+}
+
+fn is_xml_char(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF
+    )
+}
+
+fn is_xml_name(name: &[u8]) -> bool {
+    let Ok(name) = std::str::from_utf8(name) else {
+        return false;
+    };
+    let mut characters = name.chars();
+    let Some(first) = characters.next() else {
+        return false;
+    };
+    is_xml_name_start(first) && characters.all(is_xml_name_char)
+}
+
+fn is_xml_name_start(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x3A
+            | 0x41..=0x5A
+            | 0x5F
+            | 0x61..=0x7A
+            | 0xC0..=0xD6
+            | 0xD8..=0xF6
+            | 0xF8..=0x2FF
+            | 0x370..=0x37D
+            | 0x37F..=0x1FFF
+            | 0x200C..=0x200D
+            | 0x2070..=0x218F
+            | 0x2C00..=0x2FEF
+            | 0x3001..=0xD7FF
+            | 0xF900..=0xFDCF
+            | 0xFDF0..=0xFFFD
+            | 0x10000..=0xEFFFF
+    )
+}
+
+fn is_xml_name_char(character: char) -> bool {
+    is_xml_name_start(character)
+        || matches!(
+            character as u32,
+            0x2D | 0x2E | 0x30..=0x39 | 0xB7 | 0x300..=0x36F | 0x203F..=0x2040
+        )
+}
+
+fn is_xml_whitespace(byte: &u8) -> bool {
+    matches!(*byte, b' ' | b'\t' | b'\n' | b'\r')
+}
+
+fn validate_xml_reference(reference: &BytesRef<'_>) -> Result<()> {
+    if let Some(character) = reference
+        .resolve_char_ref()
+        .context("decoding xUnit character reference")?
+    {
+        anyhow::ensure!(
+            is_xml_char(character),
+            "corrupt xUnit: character reference is forbidden by XML 1.0"
+        );
+        return Ok(());
+    }
+    let entity = reference.as_ref();
+    anyhow::ensure!(
+        entity == b"amp"
+            || entity == b"lt"
+            || entity == b"gt"
+            || entity == b"apos"
+            || entity == b"quot",
+        "corrupt xUnit: undeclared entity reference"
+    );
+    Ok(())
+}
+
+fn validate_xunit_declaration(declaration: &BytesDecl<'_>) -> Result<()> {
+    let content =
+        std::str::from_utf8(declaration.as_ref()).context("decoding xUnit XML declaration")?;
+    let element = BytesStart::from_content(content, b"xml".len());
+    let mut attributes = element.attributes();
+    attributes.with_checks(true);
+    let mut position = 0;
+    for attribute in attributes {
+        let attribute = attribute.context("parsing xUnit XML declaration attribute")?;
+        match attribute.key.as_ref() {
+            b"version" => {
+                anyhow::ensure!(
+                    position == 0 && attribute.value.as_ref() == b"1.0",
+                    "corrupt xUnit: declaration must begin with XML version 1.0"
+                );
+            }
+            b"encoding" => {
+                anyhow::ensure!(
+                    position == 1 && attribute.value.as_ref().eq_ignore_ascii_case(b"utf-8"),
+                    "corrupt xUnit: only UTF-8 XML declarations are supported"
+                );
+            }
+            b"standalone" => {
+                anyhow::ensure!(
+                    (position == 1 || position == 2)
+                        && (attribute.value.as_ref() == b"yes"
+                            || attribute.value.as_ref() == b"no"),
+                    "corrupt xUnit: standalone must follow version/encoding and be yes or no"
+                );
+            }
+            _ => bail!("corrupt xUnit: unknown XML declaration attribute"),
+        }
+        position += 1;
+    }
+    anyhow::ensure!(position > 0, "corrupt xUnit: declaration lacks a version");
+    Ok(())
+}
+
+fn validate_xunit_attributes(element: &BytesStart<'_>, decoder: Decoder) -> Result<()> {
+    let mut attributes = element.attributes();
+    attributes.with_checks(true);
+    for attribute in attributes {
+        let attribute = attribute.context("parsing xUnit element attribute")?;
+        anyhow::ensure!(
+            is_xml_name(attribute.key.as_ref()),
+            "corrupt xUnit: invalid XML attribute name"
+        );
+        let value = attribute
+            .decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
+            .context("decoding xUnit attribute value")?;
+        anyhow::ensure!(
+            value.chars().all(is_xml_char),
+            "corrupt xUnit: attribute contains a character forbidden by XML 1.0"
+        );
+    }
+    Ok(())
 }
 
 fn add_xunit_suite(
