@@ -104,7 +104,26 @@ The exact v8/v9/v10 launcher sequence was reviewed for its specific phases. The 
 
 Three cold builds completed at 90.373, 91.055, and 98.997 seconds. They reported zero cache hits and misses. The series is contended. Cold-1 had unrelated compilers active. Cold-2 has an after-snapshot Rust compiler without a captured start time. Cold-3 had elevated host load and heavy Codex processes. The roughly 9.5% span and contention prevent an uncontended timing claim. Cold-1's recovered MBX stats recorded 1,086 unconsulted commands, 55 bypass rows, 596.325 ms permit wait, 90.717 ms flight wait, and 4.27 GB stored. These runs do not prove cache reuse.
 
-The warm-store run used a fresh target and produced 1,046 MBX lookups, 865 hits, 181 misses, and 2 unconsulted commands. It restored 1,956 files totaling 4,223,186,799 bytes. One `aws-lc-sys` miss remains unexplained. This is a single warm-cache observation, not a repeated scenario or proof that every output was restored correctly.
+The warm-store scenario now has three reviewed fresh-target repetitions on source `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, using Mise `2026.10.1`, Rust `1.97.1`, and MBX `1.21.0`. Each reported 1,046 MBX lookups, 865 hits, 181 misses, 2 unconsulted commands, and 25 bypasses. Each restored 1,956 files totaling 4,223,186,799 bytes. Each still has an unexplained `aws-lc-sys` build-script miss.
+
+The separate seed invocation completed in 90.657478281 seconds. Its counters show 0 hits, 0 misses, 0 restored files or bytes, and 1,086 unconsulted commands. Do not count it as a warm-cache repetition or evidence that the cache was populated.
+
+| Warm run | Inner / outer seconds | Largest child RSS | Permit / flight wait | Host observation |
+|---|---:|---:|---:|---|
+| 1 | 24.213847621 / 24.590943702 | 591,460 KiB | 49.924 / 30.648 ms | Five Codex processes above 256 MiB; 1-minute load 13.23 before, 32.56 after. |
+| 2 | 17.828313209 / 18.082065420 | 604,368 KiB | 39.833 / 13.819 ms | Five Codex processes above 256 MiB; 1-minute load 22.80 before, 17.48 after. |
+| 3 | 17.275419153 / 17.517525327 | 595,468 KiB | 38.222 / 14.546 ms | Five Codex processes above 256 MiB; 1-minute load 12.93 before, 10.36 after. |
+
+Inner duration median/minimum/maximum was 17.828313209 / 17.275419153 / 24.213847621 seconds. Outer duration median/minimum/maximum was 18.082065420 / 17.517525327 / 24.590943702 seconds. Largest-child RSS median/minimum/maximum was 595,468 / 591,460 / 604,368 KiB. RSS is Linux `RUSAGE_CHILDREN` for the largest child with waited-descendant accounting; it is not aggregate build-tree RSS. The snapshots show varying host load and five large Codex processes. Keep these as repeated cache observations, not an uncontended build-performance baseline.
+
+Private evidence remains under `/root/.velnor-work/mbx-review.uXg3BZsJ/`; build logs, stats, and Cargo timing reports remain under `/opt/.jackin-mbx-review.uXg3BZsJ/work/out/`.
+
+- Seed: timer `3b3b27f204a017ae4375e98fe398fb62934ddefff1f83c750dc3d2107bec2153`; stats `c225851ba58a2218a0684f8ae05b4051cb441b0ff75060886be2b1d93eb8fae2`.
+- Warm-1: timer `dc6282e4b3782e40ad5f88cd77f27a24b7939febd69285bdf220fc512c2cac22`; stats `7714dba88812528c28c4e9cc921b307f437188429bd9536838cded5ae9069dd1`; log `b0bbbed3434f5c25afd12eedd2e0ac8d3949f9ddac93e7094fb73aeea33999a3`; HTML `896fa9d349855eb062fe60c6664c566a02dc7f2d88e1c2383a3681ca848ed442`.
+- Warm-2: timer `5b0fa9e198c39fc726d17d45f6ec16ccbc8af1ea83fde41907a6557853752e44`; stats `d8ed994f2987a96fb959dbf666a0dfba4eaa8e65717ff6fa8f16d79c1fdde85a`; log `a73affd506e15b81de06e9dd8ad625b17fa9d8d4e97295a34c98117440cb549b`; HTML `384fcde045c9630783bcb1c6dfae09a7a9fe5c8cee7c5668b6514794628777b8`.
+- Warm-3: timer `ad9ce2643db04bdd8fa4a7b1af8b8259ddbfb037b15731477aeb5e899e007429`; stats `529d6a807fda530214e959b7b4f1bec597d2678df48f5be84b5e41705b2de112`; log `b0c2624b603a5a1336401c1dbf62f030768a87d4e1f0d7759f426fa9e4abcdd6`; HTML `c7677fa60d0767ec0448524df66bc5b7133b3478dffc3ef257928cfb08bbd261`.
+
+The seed timer is `timed-warm-seed.json`. The three repeat timers are `timed-warm-1.json`, `timed-warm-2.json`, and `timed-warm-3.json`. Each timer includes before/after load, memory, PSI, and heavy-process snapshots. All three warm runs had five Codex processes above 256 MiB, but their host load differed. The method reviewer checked the exact timer contents and hashes. The RSS measure is per-run largest-child RSS; it does not report aggregate process-tree memory.
 
 The three validated no-op runs used the same source and existing target. Their inner/outer durations were `0.888005191/1.136232634 s`, `0.694005454/1.273673344 s`, and `0.697539470/1.086162425 s`; the medians are `0.697539470 s` inner and `1.136232634 s` outer. Each run had zero compiler actions and zero MBX lookups, hits, or misses. Scheduler wait fields were absent and are represented as unobserved, not zero. Cargo wrote a new timing HTML report on each run, so the target was not physically unchanged. Host snapshots show five to seven heavy Codex processes, a `zizmor` process during nochange-6, and a Rust compiler during nochange-7; the last run's load rose from 33.01 to 42.86. Treat these values as narrow no-op collection evidence, not a performance baseline.
 
@@ -123,7 +142,7 @@ Every comparable build scenario requires at least three repetitions. Report medi
 | Scenario | Status | Reason |
 |---|---|---|
 | Empty target with an isolated empty MBX store | NARROW PASS | Three cold observations completed, but contention prevents an uncontended comparable baseline or performance claim. |
-| Fresh target with a warm MBX store | NOT RUN | One warm-cache observation; three repetitions and the `aws-lc-sys` miss disposition are outstanding. |
+| Fresh target with a warm MBX store | NARROW PASS | Three repeated cache observations passed method review; the `aws-lc-sys` miss remains unexplained, and varying host load prevents a performance claim. |
 | Unchanged source with an existing target | NARROW PASS | Three no-op runs passed the collector gate; contention and timing-report writes prevent a performance or immutable-target claim. |
 | Private change in one small crate | NOT RUN | Extraction and security review are pending. |
 | Shared account-types change | NOT RUN | Extraction and security review are pending. |
