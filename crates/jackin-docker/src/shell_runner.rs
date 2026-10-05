@@ -186,9 +186,9 @@ where
 {
     let mut captured = Vec::new();
     let mut buf = [0u8; 8192];
-    // Partial line carried across reads so the build-log tee only ever pushes
-    // complete lines (BuildKit emits CRLF; the trailing `\r` is trimmed).
-    let mut line_remainder: Vec<u8> = Vec::new();
+    // Each pipe owns its own redactor state. A key or PEM block split across
+    // reads (or stdout/stderr) must not reach the sink before it is complete.
+    let mut log_redactor = sink.map(|_| jackin_diagnostics::redact::StreamRedactor::default());
     loop {
         let n = pipe.read(&mut buf).await?;
         if n == 0 {
@@ -197,23 +197,16 @@ where
         if stream {
             output.write_all(&buf[..n])?;
         }
-        if let Some(s) = sink {
-            for &byte in &buf[..n] {
-                if byte == b'\n' {
-                    let line = String::from_utf8_lossy(&line_remainder);
-                    s.push_line(line.trim_end_matches('\r'));
-                    line_remainder.clear();
-                } else {
-                    line_remainder.push(byte);
-                }
+        if let (Some(s), Some(redactor)) = (sink, log_redactor.as_mut()) {
+            for line in redactor.push_bytes(&buf[..n]) {
+                s.push_line(&line);
             }
         }
         captured.extend_from_slice(&buf[..n]);
     }
-    if !line_remainder.is_empty() {
-        let line = String::from_utf8_lossy(&line_remainder);
-        if let Some(s) = sink {
-            s.push_line(line.trim_end_matches('\r'));
+    if let (Some(s), Some(redactor)) = (sink, log_redactor.as_mut()) {
+        for line in redactor.finish() {
+            s.push_line(&line);
         }
     }
     Ok(captured)
@@ -245,9 +238,12 @@ fn summarize_stderr(stderr: &[u8]) -> Option<String> {
 /// redacted so launch errors stay free of machine-specific paths.
 fn summarize_build_stderr(stderr: &[u8]) -> String {
     const MAX_CHARS: usize = 500;
-    let text = String::from_utf8_lossy(stderr);
-    let lines: Vec<&str> = text
-        .lines()
+    let mut redactor = jackin_diagnostics::redact::StreamRedactor::default();
+    let mut lines = redactor.push_bytes(stderr);
+    lines.extend(redactor.finish());
+    let lines: Vec<&str> = lines
+        .iter()
+        .map(String::as_str)
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect();
