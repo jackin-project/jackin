@@ -38,10 +38,10 @@ plugins = []
 }
 
 #[test]
-fn loads_architect_manifest_from_immutable_ci_snapshot() {
+fn loads_architect_manifest_from_immutable_ci_snapshot() -> Result<(), Box<dyn std::error::Error>> {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../jackin-xtask/tests/fixtures/architect");
-    let manifest = load_role_manifest(&fixture).expect("pinned Architect manifest is supported");
+    let manifest = load_role_manifest(&fixture)?;
 
     assert_eq!(manifest.version, jackin_core::CURRENT_MANIFEST_VERSION);
     assert_eq!(
@@ -55,6 +55,7 @@ fn loads_architect_manifest_from_immutable_ci_snapshot() {
             jackin_core::Agent::Grok,
         ]
     );
+    Ok(())
 }
 
 #[test]
