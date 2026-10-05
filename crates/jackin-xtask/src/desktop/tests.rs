@@ -359,25 +359,24 @@ fn release_workflow_invokes_canonical_mise_tasks() {
 }
 
 #[test]
-#[expect(
-    clippy::expect_used,
-    clippy::panic,
-    reason = "the maintained CI contract must fail closed on missing declarations"
-)]
-fn generated_ci_includes_configured_native_verification_tasks() {
+fn generated_ci_includes_configured_native_verification_tasks() -> anyhow::Result<()> {
+    use anyhow::Context as _;
     use std::{collections::BTreeSet, fs, path::Path};
 
     const TASK_IDS: [&str; 2] = ["native-swift-format", "native-swiftlint"];
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let config: toml::Value = toml::from_str(&repo_text(".velnor/config.toml"))
-        .expect("Velnor consumer configuration is valid TOML");
+    let config_path = root.join(".velnor/config.toml");
+    let config_text = fs::read_to_string(&config_path)
+        .with_context(|| format!("reading {}", config_path.display()))?;
+    let config: toml::Value = toml::from_str(&config_text)
+        .with_context(|| format!("parsing {}", config_path.display()))?;
     let configured_tasks = config
         .get("workflow")
         .and_then(|value| value.get("tasks"))
         .and_then(toml::Value::as_array)
-        .expect("maintained verification tasks are declared");
+        .context("maintained verification tasks are declared")?;
     for task_id in TASK_IDS {
-        assert!(
+        anyhow::ensure!(
             configured_tasks.iter().any(|task| {
                 task.get("kind").and_then(toml::Value::as_str) == Some("verification")
                     && task.get("id").and_then(toml::Value::as_str) == Some(task_id)
@@ -388,28 +387,26 @@ fn generated_ci_includes_configured_native_verification_tasks() {
 
     let workflow_dir = root.join(".github/workflows");
     let entries = fs::read_dir(&workflow_dir)
-        .unwrap_or_else(|error| panic!("reading {}: {error}", workflow_dir.display()));
+        .with_context(|| format!("reading {}", workflow_dir.display()))?;
     let mut has_required_fan_in = false;
     let mut job_ids = BTreeSet::new();
     let mut required_needs = BTreeSet::new();
     for entry in entries {
-        let path = entry
-            .unwrap_or_else(|error| panic!("reading workflow entry: {error}"))
-            .path();
+        let path = entry.context("reading workflow entry")?.path();
         if !path
             .extension()
             .is_some_and(|extension| extension == "yml" || extension == "yaml")
         {
             continue;
         }
-        let contents = fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+        let contents =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
         let workflow: serde_json::Value = serde_yaml_ng::from_str(&contents)
-            .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+            .with_context(|| format!("parsing {}", path.display()))?;
         let jobs = workflow
             .get("jobs")
             .and_then(serde_json::Value::as_object)
-            .unwrap_or_else(|| panic!("{} has no jobs mapping", path.display()));
+            .with_context(|| format!("{} has no jobs mapping", path.display()))?;
         for task_id in TASK_IDS {
             let job_id = format!("task-{task_id}");
             if jobs.contains_key(&job_id) {
@@ -421,7 +418,7 @@ fn generated_ci_includes_configured_native_verification_tasks() {
             let needs = required
                 .get("needs")
                 .and_then(serde_json::Value::as_array)
-                .unwrap_or_else(|| panic!("{} Required.needs must be a sequence", path.display()));
+                .with_context(|| format!("{} Required.needs must be a sequence", path.display()))?;
             required_needs.extend(
                 needs
                     .iter()
@@ -430,13 +427,17 @@ fn generated_ci_includes_configured_native_verification_tasks() {
             );
         }
     }
-    assert!(has_required_fan_in, "generated CI has no Required fan-in job");
+    anyhow::ensure!(
+        has_required_fan_in,
+        "generated CI has no Required fan-in job"
+    );
     for task_id in TASK_IDS {
         let job_id = format!("task-{task_id}");
-        assert!(job_ids.contains(&job_id), "generated CI omits {job_id}");
-        assert!(
+        anyhow::ensure!(job_ids.contains(&job_id), "generated CI omits {job_id}");
+        anyhow::ensure!(
             required_needs.contains(&job_id),
             "generated Required.needs omits {job_id}"
         );
     }
+    Ok(())
 }
