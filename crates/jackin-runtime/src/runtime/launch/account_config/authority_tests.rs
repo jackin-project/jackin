@@ -64,6 +64,7 @@ fn writable_agent_home_cannot_exchange_publication_staging_names() {
         &slot,
         Some("k3-256k"),
         None,
+        &BTreeSet::new(),
         |point| {
             if matches!(point, private_config_fs::PublishPoint::BeforeInstall(_)) {
                 // This attacker can write only the directory mounted into its
@@ -185,6 +186,7 @@ fn provider_authority_rejects_symlink_into_writable_agent_home() {
         &slot,
         Some("k3-256k"),
         None,
+        &BTreeSet::new(),
     )
     .unwrap_err();
     assert!(format!("{error:#}").contains("private account config directory"));

@@ -5,7 +5,7 @@ use super::*;
 
 #[path = "tests/bounds.rs"]
 mod bounds;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 #[cfg(target_os = "macos")]
@@ -615,6 +615,92 @@ fn codex_instances_keep_slot_config_and_credential_identity() {
         assert_eq!(envelope.agent, "codex");
         assert_eq!(envelope.account_id, account_id);
         assert_eq!(envelope.env.get(env_key).map(String::as_str), Some(secret));
+    }
+}
+
+#[test]
+fn codex_api_key_overlays_include_trust_for_each_workspace_mount_and_slot() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "work".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Work".into(),
+            provider: AiProvider::Moonshot,
+            credential: AccountCredential::ApiKey {
+                value: "work-secret".into(),
+                base_url: None,
+                model: Some("k3-256k".into()),
+            },
+        },
+    );
+    config.accounts.insert(
+        "personal".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Personal".into(),
+            provider: AiProvider::Zai,
+            credential: AccountCredential::ApiKey {
+                value: "personal-secret".into(),
+                base_url: None,
+                model: Some("glm-5.3".into()),
+            },
+        },
+    );
+    let instances = [
+        instance("codex-work", Agent::Codex, "work", Some("k3-256k"), None),
+        instance(
+            "codex-personal",
+            Agent::Codex,
+            "personal",
+            Some("glm-5.3"),
+            None,
+        ),
+    ];
+    let slots = slots_for(&instances);
+    let trusted_paths = BTreeSet::from(["/workspace".to_owned(), "/workspace/repo".to_owned()]);
+    let mounts = configure_accounts_with_trusted_project_paths(
+        temp.path(),
+        &config,
+        &instances,
+        &slots,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &trusted_paths,
+    )
+    .unwrap();
+
+    for (config_id, secret, expected_env) in [
+        ("codex-work", "work-secret", "KIMI_API_KEY"),
+        ("codex-personal", "personal-secret", "OPENAI_API_KEY"),
+    ] {
+        let slot = &slots[config_id];
+        let target = format!("{}/config.toml", slot.folder_target);
+        let (source, mounted_target) = mounts
+            .iter()
+            .find(|(_, mount_target)| mount_target == &target)
+            .expect("Codex's selected config has an immutable overlay");
+        assert!(source.starts_with(temp.path().join("provider-config")));
+        assert_eq!(mounted_target, &target);
+        let contents = std::fs::read_to_string(source).unwrap();
+        let document: toml::Value = toml::from_str(&contents).unwrap();
+        for path in &trusted_paths {
+            assert_eq!(
+                document["projects"][path]["trust_level"].as_str(),
+                Some("trusted"),
+                "workspace trust must be present in the actual mounted source"
+            );
+        }
+        assert_eq!(
+            document["model_providers"]["jackin_account"]["env_key"].as_str(),
+            Some(expected_env)
+        );
+        assert!(
+            !contents.contains(secret),
+            "provider key leaked into config overlay"
+        );
+        assert!(target.contains(&slot.container_home_rel));
     }
 }
 

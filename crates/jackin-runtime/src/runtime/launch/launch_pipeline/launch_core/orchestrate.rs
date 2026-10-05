@@ -681,6 +681,7 @@ struct RoleStatePreparation {
     agent: jackin_core::Agent,
     model_override: Option<String>,
     effort: Option<jackin_core::ReasoningEffort>,
+    trusted_project_paths: std::collections::BTreeSet<String>,
 }
 
 async fn prepare_role_state(
@@ -697,6 +698,7 @@ async fn prepare_role_state(
         agent,
         model_override,
         effort,
+        trusted_project_paths,
     } = input;
     jackin_telemetry::spawn::joined_blocking(move || {
         let bindings =
@@ -725,13 +727,14 @@ async fn prepare_role_state(
             &instances, agent, effort,
         );
         prepared.0.provider_config_mounts =
-            super::super::super::account_config::configure_accounts(
+            super::super::super::account_config::configure_accounts_with_trusted_project_paths(
                 &prepared.0.root,
                 &config,
                 &instances,
                 &prepared.0.auth.slots,
                 &models,
                 &efforts,
+                &trusted_project_paths,
             )?;
         Ok(prepared)
     })
@@ -774,6 +777,8 @@ where
     let github_ctx_owned = configured.github_ctx.clone();
     let model_override_owned = opts.model.clone();
     let effort_owned = opts.effort;
+    let trusted_project_paths =
+        super::super::super::trust::workspace_trusted_project_paths(workspace);
     let provision = resolve_provision_inputs(
         config,
         configured.workspace_opt.as_ref(),
@@ -816,6 +821,7 @@ where
         agent,
         model_override: model_override_owned,
         effort: effort_owned,
+        trusted_project_paths,
     });
     let mut role_state_future = std::pin::pin!(role_state_future);
     let select_role_state = async {

@@ -109,6 +109,18 @@ pub(super) async fn handle_load(
             .as_deref()
             .map(jackin_core::WorkspaceName::parse)
             .transpose()?;
+        // The image half resolves and validates the role manifest. Reuse that
+        // exact manifest for the launch's shared effective model projection.
+        let image_plan = runtime::resolve_launch_image_plan(
+            paths,
+            config,
+            &class,
+            &docker,
+            runner,
+            rebuild,
+            role_branch.as_deref(),
+        )
+        .await?;
         let scoped;
         let plan_config = if let Some(id) = &account {
             scoped = runtime::with_account_selection(
@@ -122,29 +134,21 @@ pub(super) async fn handle_load(
         } else {
             &*config
         };
-        // Canonical identity resolution: the same admission call launch
-        // provisions from, so dry-run and launch cannot disagree (F4).
+        // Canonical admission and model/effort projection: launch and dry-run
+        // now use the same admitted slots, validated role manifest, and CLI
+        // overrides (F4, D-078).
         let identity = runtime::resolve_dry_run_identity(
             plan_config,
+            &image_plan.manifest,
             selected_agent,
             workspace_name.as_ref(),
             &class.to_string(),
             account.is_some(),
+            runtime::DryRunOverrides {
+                model: model.as_deref(),
+                effort,
+            },
         )?;
-        // The image half of the plan is only knowable after the role manifest
-        // is read: `published_image` is a manifest field and the
-        // reuse-vs-build decision derives from it. Resolving it here is what
-        // makes `--dry-run` the resolved plan rather than a guess (D-078).
-        let image_plan = runtime::resolve_launch_image_plan(
-            paths,
-            config,
-            &class,
-            &docker,
-            runner,
-            rebuild,
-            role_branch.as_deref(),
-        )
-        .await?;
         let plan_identity = DryRunPlan {
             agent: selected_agent,
             identity: &identity,
@@ -160,7 +164,7 @@ pub(super) async fn handle_load(
             role_branch.as_deref(),
             rebuild,
             &format,
-            &image_plan,
+            &image_plan.image,
         );
     }
 
@@ -772,7 +776,7 @@ fn dry_run_plan_json(
             "agent": agent_slug,
             "rebuild": rebuild,
             "model_override": overrides.model,
-            "effort": overrides.effort.map(jackin_core::ReasoningEffort::as_str),
+            "effort_override": overrides.effort.map(jackin_core::ReasoningEffort::as_str),
             "mounts": mounts,
             "image_decision": image_plan.to_json(),
             "published_image": image_plan.published_image,
@@ -790,6 +794,11 @@ pub(crate) fn apply_dry_run_identity_json(
 ) {
     plan["data"]["account"] = serde_json::json!(identity.account_id);
     plan["data"]["model"] = serde_json::json!(identity.model);
+    plan["data"]["effective_effort"] = if identity.account_id.is_some() {
+        serde_json::json!(identity.efforts.values().next())
+    } else {
+        serde_json::Value::Null
+    };
     plan["data"]["instances"] = serde_json::json!(
         identity
             .instances
@@ -800,6 +809,7 @@ pub(crate) fn apply_dry_run_identity_json(
                 "account": instance.account_id,
                 "label": instance.label,
                 "model": instance.model,
+                "effort": identity.efforts.get(&instance.config_id),
             }))
             .collect::<Vec<_>>()
     );
@@ -861,21 +871,33 @@ fn print_dry_run_plan(
         println!("Role:       {role_display}");
         println!("Agent:      {agent_slug}");
         println!("Account:    {}", account_id.unwrap_or("none"));
+        if let Some(model) = identity.model.as_deref() {
+            println!("Effective model: {model}");
+        }
+        if let Some(effort) = identity.efforts.values().next() {
+            println!("Effective effort: {effort}");
+        }
         if let Some(model) = plan_identity.overrides.model {
             println!("Model override: {model}");
         }
         if let Some(effort) = plan_identity.overrides.effort {
-            println!("Effort:     {effort}");
+            println!("Effort override: {effort}");
         }
         if !instances.is_empty() {
             println!("Instances ({}):", instances.len());
             for instance in instances {
                 println!(
-                    "  {} [{}] account={} label={}",
+                    "  {} [{}] account={} label={} model={} effort={}",
                     instance.config_id,
                     instance.agent.slug(),
                     instance.account_id,
-                    instance.label
+                    instance.label,
+                    instance.model.as_deref().unwrap_or("none"),
+                    identity
+                        .efforts
+                        .get(&instance.config_id)
+                        .map(String::as_str)
+                        .unwrap_or("none")
                 );
             }
         }

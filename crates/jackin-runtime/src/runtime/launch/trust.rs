@@ -7,7 +7,7 @@ use anyhow::Context;
 
 pub(crate) const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
 
-fn workspace_trusted_project_paths(
+pub(super) fn workspace_trusted_project_paths(
     workspace: &jackin_config::ResolvedWorkspace,
 ) -> std::collections::BTreeSet<String> {
     let mut paths = std::collections::BTreeSet::new();
@@ -80,6 +80,18 @@ pub(crate) fn seed_codex_project_trust(
         .values()
         .filter(|slot| slot.agent == jackin_core::Agent::Codex)
     {
+        let overlay_target = format!("/home/agent/{}/config.toml", slot.container_home_rel);
+        if state
+            .provider_config_mounts
+            .iter()
+            .any(|(_, target)| target == &overlay_target)
+        {
+            // API-key Codex mounts an immutable authority config at this
+            // path. Its workspace trust was already included before that
+            // generation was hashed and published; writing the hidden home
+            // config would create a second, ineffective source of truth.
+            continue;
+        }
         // `container_home_rel` is the same per-slot path used by capsule
         // setup and mount construction. Never collapse secondary Codex
         // instances onto the primary `.codex` directory.

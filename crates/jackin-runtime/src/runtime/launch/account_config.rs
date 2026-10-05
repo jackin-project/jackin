@@ -4,7 +4,7 @@
 //! Publish selected API account settings in host-only provider authority.
 //! Only exact generated files cross into the capsule as read-only overlays.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
@@ -660,6 +660,26 @@ pub(super) fn configure_accounts(
     models: &BTreeMap<String, String>,
     efforts: &BTreeMap<String, String>,
 ) -> anyhow::Result<Vec<(PathBuf, String)>> {
+    configure_accounts_with_trusted_project_paths(
+        root,
+        config,
+        instances,
+        slots,
+        models,
+        efforts,
+        &BTreeSet::new(),
+    )
+}
+
+pub(super) fn configure_accounts_with_trusted_project_paths(
+    root: &Path,
+    config: &AppConfig,
+    instances: &[jackin_config::ResolvedInstance],
+    slots: &BTreeMap<String, crate::instance::ProvisionedInstanceAuth>,
+    models: &BTreeMap<String, String>,
+    efforts: &BTreeMap<String, String>,
+    trusted_project_paths: &BTreeSet<String>,
+) -> anyhow::Result<Vec<(PathBuf, String)>> {
     let mut mounts = Vec::new();
     for instance in instances {
         let Some(slot) = slots.get(&instance.config_id) else {
@@ -697,6 +717,7 @@ pub(super) fn configure_accounts(
                 slot,
                 model,
                 efforts.get(&instance.config_id).map(String::as_str),
+                trusted_project_paths,
             )?),
             Agent::Opencode => {
                 mounts.extend(configure_opencode(root, config, instance, slot, model)?);
@@ -715,8 +736,18 @@ fn configure_codex(
     slot: &crate::instance::ProvisionedInstanceAuth,
     model: Option<&str>,
     effort: Option<&str>,
+    trusted_project_paths: &BTreeSet<String>,
 ) -> anyhow::Result<Vec<(PathBuf, String)>> {
-    configure_codex_with_publish_hook(root, config, instance, slot, model, effort, |_| Ok(()))
+    configure_codex_with_publish_hook(
+        root,
+        config,
+        instance,
+        slot,
+        model,
+        effort,
+        trusted_project_paths,
+        |_| Ok(()),
+    )
 }
 
 #[cfg(not(unix))]
@@ -727,6 +758,7 @@ fn configure_codex(
     _slot: &crate::instance::ProvisionedInstanceAuth,
     _model: Option<&str>,
     _effort: Option<&str>,
+    _trusted_project_paths: &BTreeSet<String>,
 ) -> anyhow::Result<Vec<(PathBuf, String)>> {
     anyhow::bail!(
         "private Codex config publication requires Unix descriptor-relative file operations"
@@ -741,6 +773,7 @@ fn configure_codex_with_publish_hook<F>(
     slot: &crate::instance::ProvisionedInstanceAuth,
     model: Option<&str>,
     effort: Option<&str>,
+    trusted_project_paths: &BTreeSet<String>,
     mut hook: F,
 ) -> anyhow::Result<Vec<(PathBuf, String)>>
 where
@@ -802,6 +835,7 @@ where
             }
             None => toml::Table::new(),
         };
+    apply_codex_project_trust(&mut document, trusted_project_paths);
     let mut provider = toml::Table::new();
     provider.insert("name".into(), account.provider.slug().into());
     provider.insert("base_url".into(), base_url.unwrap_or(default_url).into());
@@ -894,6 +928,33 @@ where
     )
     .context("publish private Codex account configuration")?;
     Ok(mounts)
+}
+
+fn apply_codex_project_trust(document: &mut toml::Table, trusted_project_paths: &BTreeSet<String>) {
+    if trusted_project_paths.is_empty() {
+        return;
+    }
+    let projects = document
+        .entry("projects")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    if !projects.is_table() {
+        *projects = toml::Value::Table(toml::Table::new());
+    }
+    let projects = projects
+        .as_table_mut()
+        .expect("projects was just normalized to a table");
+    for path in trusted_project_paths {
+        let project = projects
+            .entry(path.clone())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        if !project.is_table() {
+            *project = toml::Value::Table(toml::Table::new());
+        }
+        project
+            .as_table_mut()
+            .expect("project entry was just normalized to a table")
+            .insert("trust_level".into(), toml::Value::String("trusted".into()));
+    }
 }
 
 fn provider_config_filename(contents: &[u8], extension: &str) -> String {

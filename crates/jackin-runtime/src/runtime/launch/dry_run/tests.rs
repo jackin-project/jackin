@@ -29,6 +29,44 @@ fn claude_profile_account(name: &str) -> AccountConfig {
     }
 }
 
+fn role_manifest(agent: Agent, model: Option<&str>) -> jackin_manifest::RoleManifest {
+    let temp = tempfile::tempdir().unwrap();
+    let model = model.map_or_else(String::new, |model| format!("model = {model:?}\n"));
+    let slug = agent.slug();
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        format!(
+            "version = \"v1alpha5\"\ndockerfile = \"Dockerfile\"\nagents = [\"{slug}\"]\n\n[{slug}]\n{model}"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    jackin_manifest::load_role_manifest(temp.path()).unwrap()
+}
+
+fn project_identity(
+    config: &AppConfig,
+    agent: Agent,
+    workspace: Option<&WorkspaceName>,
+    manifest: &jackin_manifest::RoleManifest,
+    explicit_account_pick: bool,
+    overrides: DryRunOverrides<'_>,
+) -> anyhow::Result<DryRunIdentity> {
+    resolve_dry_run_identity(
+        config,
+        manifest,
+        agent,
+        workspace,
+        ROLE,
+        explicit_account_pick,
+        overrides,
+    )
+}
+
 fn configuration(agent: Agent, account: &str) -> AgentConfiguration {
     AgentConfiguration {
         agent,
@@ -83,7 +121,15 @@ fn set_role_list(config: &mut AppConfig, ids: &[&str]) {
 }
 
 fn identity(config: &AppConfig, workspace: &WorkspaceName) -> anyhow::Result<DryRunIdentity> {
-    resolve_dry_run_identity(config, Agent::Claude, Some(workspace), ROLE, false)
+    let manifest = role_manifest(Agent::Claude, None);
+    project_identity(
+        config,
+        Agent::Claude,
+        Some(workspace),
+        &manifest,
+        false,
+        DryRunOverrides::default(),
+    )
 }
 
 /// The admission set the launch pipeline would provision.
@@ -325,8 +371,16 @@ fn explicit_pick_without_ambient_list_reports_single_account() {
     )
     .unwrap();
 
-    let plan =
-        resolve_dry_run_identity(&scoped, Agent::Claude, Some(&workspace), ROLE, true).unwrap();
+    let manifest = role_manifest(Agent::Claude, None);
+    let plan = project_identity(
+        &scoped,
+        Agent::Claude,
+        Some(&workspace),
+        &manifest,
+        true,
+        DryRunOverrides::default(),
+    )
+    .unwrap();
     assert_eq!(plan.account_id.as_deref(), Some("c-work"));
     assert!(plan.instances.is_empty());
 }
@@ -523,8 +577,16 @@ fn single_account_plan_carries_the_exact_pinned_model() {
         .insert(Agent::Opencode, "or-model".to_owned());
     let workspace = WorkspaceName::parse(WS).unwrap();
 
-    let plan =
-        resolve_dry_run_identity(&config, Agent::Opencode, Some(&workspace), ROLE, false).unwrap();
+    let manifest = role_manifest(Agent::Opencode, None);
+    let plan = project_identity(
+        &config,
+        Agent::Opencode,
+        Some(&workspace),
+        &manifest,
+        false,
+        DryRunOverrides::default(),
+    )
+    .unwrap();
     assert_eq!(plan.account_id.as_deref(), Some("or-model"));
     assert_eq!(plan.model.as_deref(), Some(MODEL));
     assert!(plan.instances.is_empty());

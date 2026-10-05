@@ -39,6 +39,16 @@ pub struct LaunchImagePlan {
     pub published_image: Option<String>,
 }
 
+/// The image decision and the validated role manifest it was derived from.
+/// Dry-run uses the same manifest to project launch models without resolving
+/// the role repository a second time.
+pub struct ResolvedLaunchImagePlan {
+    /// Image decision for the selected role.
+    pub image: LaunchImagePlan,
+    /// Manifest from the validated repository used to make the decision.
+    pub manifest: jackin_manifest::RoleManifest,
+}
+
 impl LaunchImagePlan {
     /// Machine-readable projection for `--dry-run --format json`.
     #[must_use]
@@ -68,7 +78,7 @@ pub async fn resolve_launch_image_plan(
     runner: &mut impl CommandRunner,
     rebuild: bool,
     role_branch: Option<&str>,
-) -> anyhow::Result<LaunchImagePlan> {
+) -> anyhow::Result<ResolvedLaunchImagePlan> {
     let (source, _is_new) = config.resolve_role_source(selector)?;
     let ttl = if rebuild {
         std::time::Duration::ZERO
@@ -92,7 +102,8 @@ pub async fn resolve_launch_image_plan(
         || Ok(false),
     )
     .await?;
-    let published_image = validated_repo.manifest.published_image.clone();
+    let manifest = validated_repo.manifest.clone();
+    let published_image = manifest.published_image.clone();
     let decision = crate::runtime::image::decide_role_image(
         paths,
         selector,
@@ -105,12 +116,10 @@ pub async fn resolve_launch_image_plan(
         runner,
     )
     .await?;
-    Ok(plan_from_decision(
-        selector,
-        role_branch,
-        &decision,
-        published_image,
-    ))
+    Ok(ResolvedLaunchImagePlan {
+        image: plan_from_decision(selector, role_branch, &decision, published_image),
+        manifest,
+    })
 }
 
 /// Project a decided image onto the plan shape. Split out from the async
