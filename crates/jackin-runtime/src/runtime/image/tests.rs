@@ -3,7 +3,9 @@
 
 //! Tests for `image`.
 use super::*;
-use jackin_core::{Agent, CommandRunner, RunOptions};
+use jackin_core::Agent;
+#[cfg(unix)]
+use jackin_core::{CommandRunner, RunOptions};
 use jackin_image::{
     LABEL_IMAGE_CAPSULE_VERSION, LABEL_IMAGE_MANIFEST_VERSION, LABEL_IMAGE_RECIPE_HASH,
     LABEL_IMAGE_RECIPE_VERSION, image_recipe::build_image_recipe,
@@ -148,6 +150,12 @@ async fn build_test_agent_image(runner: &mut BuildSecurityRunner) -> anyhow::Res
 
 static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+const IMAGE_BUILD_SOURCE: &str = include_str!("build.rs");
+const IMAGE_VERSION_SOURCE: &str = include_str!("version.rs");
+const IMAGE_MODULE_SOURCE: &str = include_str!("../image.rs");
+const SHARED_IMAGE_BUILD_SOURCE: &str =
+    include_str!("../../../../jackin-image/src/image_build.rs");
+
 struct RichSurfaceTestGuard {
     _guard: MutexGuard<'static, ()>,
 }
@@ -225,16 +233,28 @@ fn docker_info_store_parser_detects_containerd_snapshotter() {
 }
 
 #[test]
-fn dockerfile_secret_detection_only_requests_github_token_when_used() {
-    assert!(!dockerfile_body_requests_github_token_secret(
-        "FROM projectjackin/construct:0.1-trixie\nRUN echo no secrets\n"
-    ));
-    assert!(!dockerfile_body_requests_github_token_secret(
-        "FROM projectjackin/construct:0.1-trixie\n# RUN --mount=type=secret,id=github_token git ls-remote https://github.com/example/private\n"
-    ));
-    assert!(dockerfile_body_requests_github_token_secret(
-        "FROM projectjackin/construct:0.1-trixie\nRUN --mount=type=secret,id=github_token git ls-remote https://github.com/example/private\n"
-    ));
+fn image_build_sources_have_no_ambient_github_secret_contract() {
+    for forbidden in [
+        "resolve_github_token",
+        "NamedTempFile",
+        "--secret",
+        "id=github_token",
+        "gh auth token",
+    ] {
+        assert!(
+            !IMAGE_BUILD_SOURCE.contains(forbidden),
+            "runtime image builder retained forbidden ambient-secret plumbing: {forbidden}"
+        );
+    }
+    assert!(!IMAGE_VERSION_SOURCE.contains("resolve_github_token"));
+    assert!(!IMAGE_VERSION_SOURCE.contains("capture_secret"));
+    assert!(!IMAGE_VERSION_SOURCE.contains("GITHUB_TOKEN"));
+    assert!(!IMAGE_VERSION_SOURCE.contains("GH_TOKEN"));
+    for source in [IMAGE_MODULE_SOURCE, SHARED_IMAGE_BUILD_SOURCE] {
+        assert!(!source.contains("dockerfile_requests_github_token_secret"));
+        assert!(!source.contains("dockerfile_body_requests_github_token_secret"));
+        assert!(!source.contains("id=github_token"));
+    }
 }
 
 #[cfg(unix)]

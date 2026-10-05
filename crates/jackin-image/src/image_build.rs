@@ -125,20 +125,6 @@ pub fn collect_build_context_stats(
     Ok(())
 }
 
-pub fn dockerfile_requests_github_token_secret(dockerfile_path: &std::path::Path) -> bool {
-    match std::fs::read_to_string(dockerfile_path) {
-        Ok(body) => dockerfile_body_requests_github_token_secret(&body),
-        Err(_) => true,
-    }
-}
-
-pub fn dockerfile_body_requests_github_token_secret(dockerfile_body: &str) -> bool {
-    dockerfile_body
-        .lines()
-        .map(str::trim_start)
-        .any(|line| !line.starts_with('#') && line.contains("id=github_token"))
-}
-
 pub fn dockerfile_requests_role_git_sha_arg(dockerfile_path: &std::path::Path) -> bool {
     match std::fs::read_to_string(dockerfile_path) {
         Ok(body) => dockerfile_body_requests_role_git_sha_arg(&body),

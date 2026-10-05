@@ -4407,11 +4407,11 @@ plugins = []
     let recorded = runner.recorded.join("\n");
     assert!(
         !recorded.contains("gh auth token"),
-        "Dockerfiles without id=github_token must skip build-token lookup; recorded:\n{recorded}"
+        "image builds must not resolve host GitHub credentials; recorded:\n{recorded}"
     );
     assert!(
         !build_call.contains("--secret") && !build_call.contains("id=github_token"),
-        "Dockerfiles without id=github_token must not inject a BuildKit secret; got:\n{build_call}"
+        "the default image build must not forward a host credential to BuildKit; got:\n{build_call}"
     );
     assert!(!recorded.contains("id -u"));
     assert!(!recorded.contains("id -g"));
