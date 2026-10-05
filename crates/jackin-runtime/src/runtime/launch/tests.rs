@@ -6203,7 +6203,7 @@ fn task_override_current_role_fixture(
         .inspect_state_by_name
         .borrow_mut()
         .insert(current_container.clone(), state);
-    let mut runner = FakeRunner::for_load_agent([
+    let runner = FakeRunner::for_load_agent([
         "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
         String::new(),
         "main".to_owned(),
@@ -6314,7 +6314,40 @@ async fn task_scoped_overrides_bypass_stopped_current_role_reuse() {
 }
 
 #[tokio::test]
-async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
+async fn explicit_restore_rejects_agent_different_from_stored_instance() {
+    let (_temp, paths, mut config, selector, workspace, docker, mut runner, current_container) =
+        task_override_current_role_fixture(ContainerState::Running);
+    let opts = LoadOptions {
+        agent: Some(jackin_core::Agent::Claude),
+        restore_container_base: Some(current_container),
+        ..LoadOptions::default()
+    };
+
+    let error = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("does not match stored instance agent")
+    );
+    assert!(
+        docker.recorded.borrow().is_empty(),
+        "agent mismatch must fail before inspecting or starting a container"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_attaches_explicit_restore_container_with_stored_agent_before_role_repo() {
     struct FailingOpRunner;
 
     impl jackin_env::OpRunner for FailingOpRunner {
@@ -6372,6 +6405,10 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
         "main".to_owned(),
     ]);
     let opts = LoadOptions {
+        // The normal `jackin restore` path resolves this from the persisted
+        // instance manifest. It is identity for the exact target, not an
+        // incompatible agent override.
+        agent: Some(jackin_core::Agent::Claude),
         op_runner: Some(Box::new(FailingOpRunner)),
         restore_container_base: Some(container_name.to_owned()),
         role_branch: Some("restore-ref".to_owned()),
