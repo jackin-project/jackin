@@ -1,5 +1,6 @@
 #![expect(
     clippy::expect_used,
+    clippy::panic,
     reason = "maintained CI contract tests must fail with the missing declaration"
 )]
 
