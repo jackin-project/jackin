@@ -90,6 +90,23 @@ Task-order fix `41265a7550dda498c2e32126a9e68d4733215da5` sorts configured workf
 
 Jackin run `37262862647` at `41265a7550dda498c2e32126a9e68d4733215da5` failed. Actionlint passed. Plan failed during generated-file checking because pinned Velnor rejected `.velnor/config.toml` field `tasks` as unknown. Required then failed because the Plan artifact was missing. Rust jobs were skipped. No test or build result is available from this run.
 
+### PR #1112 exact-head gate snapshot
+
+Read-only refresh at `2026-10-05 08:48:25Z` found PR #1112 open, draft, and blocked. Base is `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`; head is `f4902db386e029a4a481b13767f7a29b5351af49`. The source under review is unchanged at `17b2b1be6a58a0e34af6d8308df915d110f4a785`; the later task-branch commits only update plan records. Run `37285807560` completed on the exact PR head.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Actionlint | PASS | Run `37285807560`. |
+| Plan | FAIL | Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks` as `unknown_config_field`; the generated-file step cannot run. |
+| Required | FAIL | The Plan artifact is absent after Plan failed. |
+| Rust crate jobs | NOT RUN | Every `Rust / *` job was skipped. No source test result exists for this run. |
+| Publish baseline | SKIPPED | Not run after the failed required path. |
+| DCO | ACTION REQUIRED | The current check rollup does not satisfy DCO. |
+
+The exact source has not passed Cargo tests, Clippy, generated migration-golden checks, or a complete schema check. Those are NOT RUN, not test failures. The source-review passes recorded in the branch matrix do not replace these gates.
+
+PR #1112 can proceed as soon as its own source, generated workflow, feedback, and required checks pass. It need not wait for separate live Architect-role testing, host account discovery, or the post-integration performance baseline. Record those follow-ups after the merge without treating them as PR-specific check results.
+
 ## Task invocation gate
 
 At Jackin base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, the `mise.toml` build, test, and lint root tasks call `cargo xtask` directly.
