@@ -4,8 +4,8 @@
 use crate::op_runner::OpRunner;
 use crate::op_struct::{OpItemCreateParams, OpStructRunner, OpWriteRunner};
 use crate::picker::{
-    RawOpAccount, RawOpItemDetail, RawOpVault, apply_field_edit, op_section_id,
-    resolve_edited_field_ref,
+    RawOpAccount, RawOpItemDetail, RawOpVault, apply_field_edit, matches_field_target,
+    op_section_id, resolve_edited_field_ref,
 };
 use jackin_core::OpRef;
 use jackin_core::{OpAccount, OpField, OpItem, OpVault};
@@ -669,14 +669,17 @@ impl OpStructRunner for OpCli {
         item_id: &str,
         vault_id: &str,
         account: Option<&str>,
-    ) -> anyhow::Result<Vec<OpField>> {
+    ) -> anyhow::Result<jackin_core::OpItemDetail<OpField>> {
         let mut args: Vec<&str> = vec!["item", "get", item_id, "--vault", vault_id];
         push_account_arg(&mut args, account);
         args.extend_from_slice(&["--format", "json"]);
         let bytes = run_op_json(&self.binary, &args, self.timeout)?;
         let detail: RawOpItemDetail = serde_json::from_slice(&bytes)
             .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
-        Ok(detail.fields.into_iter().map(OpField::from).collect())
+        Ok(jackin_core::OpItemDetail {
+            fields: detail.fields.into_iter().map(OpField::from).collect(),
+            sections: detail.sections.into_iter().map(Into::into).collect(),
+        })
     }
 }
 
@@ -689,6 +692,8 @@ struct RawCreatedItem {
     vault: RawCreatedItemVault,
     #[serde(default)]
     fields: Vec<RawCreatedItemField>,
+    #[serde(default)]
+    sections: Vec<RawCreatedItemSection>,
 }
 
 #[derive(serde::Deserialize)]
@@ -705,16 +710,169 @@ struct RawCreatedItemField {
     label: String,
 }
 
+#[derive(serde::Deserialize)]
+struct RawCreatedItemSection {
+    id: String,
+    #[serde(default)]
+    label: String,
+}
+
+fn created_item_reference(
+    raw: &RawCreatedItem,
+    params: &OpItemCreateParams<'_>,
+    vault_id: &str,
+    template_section_id: Option<&str>,
+    account: Option<String>,
+) -> anyhow::Result<OpRef> {
+    anyhow::ensure!(
+        raw.vault.id == vault_id,
+        "`op item create` returned vault id {:?}, expected {:?}; item id {:?}",
+        raw.vault.id,
+        vault_id,
+        raw.id
+    );
+
+    // Locate the field by case-insensitive label; `op` assigned its ID.
+    let field = raw
+        .fields
+        .iter()
+        .find(|field| field.label.eq_ignore_ascii_case(params.field_label))
+        .ok_or_else(|| {
+            let labels: Vec<&str> = raw
+                .fields
+                .iter()
+                .map(|field| field.label.as_str())
+                .collect();
+            anyhow::anyhow!(
+                "`op item create` returned no field with label {:?}; \
+                 observed labels: {labels:?}. The item was created (id {:?}) \
+                 but jackin cannot reference its field — delete by hand in \
+                 1Password and re-run setup.",
+                params.field_label,
+                raw.id,
+            )
+        })?;
+    anyhow::ensure!(
+        !field.id.is_empty(),
+        "`op item create` returned no field ID for label {:?}",
+        params.field_label
+    );
+
+    // Use the exact section ID submitted in the template, preferring the ID
+    // echoed by `op item create` when available. Keep its label in display path.
+    let section_id = match (params.section, template_section_id) {
+        (Some(label), Some(template_id)) => Some(
+            raw.sections
+                .iter()
+                .find(|section| section.id == template_id)
+                .or_else(|| raw.sections.iter().find(|section| section.label == label))
+                .map_or_else(|| template_id.to_owned(), |section| section.id.clone()),
+        ),
+        _ => None,
+    };
+    let op_uri = jackin_core::build_op_reference(
+        &raw.vault.id,
+        &raw.id,
+        section_id.as_deref(),
+        &field.id,
+    )
+    .ok_or_else(|| {
+        anyhow::anyhow!(
+            "`op item create` returned an ID that cannot be represented in the created `op://` reference; item id {:?}",
+            raw.id
+        )
+    })?;
+
+    let vault_name = if raw.vault.name.is_empty() {
+        vault_id
+    } else {
+        raw.vault.name.as_str()
+    };
+    let section_path = params
+        .section
+        .map(|label| format!("{}/", jackin_core::encode_op_breadcrumb_segment(label)))
+        .unwrap_or_default();
+    let field_label = if field.label.is_empty() {
+        params.field_label
+    } else {
+        field.label.as_str()
+    };
+    let path = format!(
+        "{}/{}/{}{}",
+        jackin_core::encode_op_breadcrumb_segment(vault_name),
+        jackin_core::encode_op_breadcrumb_segment(&raw.title),
+        section_path,
+        jackin_core::encode_op_breadcrumb_segment(field_label)
+    );
+
+    Ok(OpRef {
+        op: op_uri,
+        path,
+        account,
+        on_demand: false,
+    })
+}
+
 impl OpWriteRunner for OpCli {
     fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef> {
+        anyhow::ensure!(
+            params.section.is_none_or(|section| !section.is_empty()),
+            "section label must not be empty; cannot create a valid 1Password reference"
+        );
+        let vaults = self.vault_list(self.account.as_deref())?;
+        let vault_id = if let Some(vault) = vaults.iter().find(|vault| vault.id == params.vault_id)
+        {
+            vault.id.clone()
+        } else {
+            let matches: Vec<_> = vaults
+                .iter()
+                .filter(|vault| vault.name.eq_ignore_ascii_case(params.vault_id))
+                .collect();
+            anyhow::ensure!(
+                matches.len() == 1,
+                "vault {:?} resolved to {} vaults; select a vault by ID and retry",
+                params.vault_id,
+                matches.len()
+            );
+            matches
+                .first()
+                .map(|vault| vault.id.clone())
+                .ok_or_else(|| anyhow::anyhow!("vault {:?} was not found", params.vault_id))?
+        };
+        anyhow::ensure!(
+            jackin_core::is_valid_op_reference_path_component(&vault_id),
+            "vault id {vault_id:?} cannot be represented as one `op://` path component"
+        );
+
         // Build the JSON template. `op item create -` reads it from
         // stdin so the secret value never crosses argv. Tags and
         // notesPlain ride along inside the same template — neither
         // is sensitive but consolidating into one stdin payload
         // keeps the argv invocation deterministic and free of
         // operator-supplied content.
+        let template_section_id = params.section.map(op_section_id);
+        let template_section_id = template_section_id.as_deref();
+        anyhow::ensure!(
+            template_section_id.is_none_or(jackin_core::is_valid_op_reference_path_component),
+            "generated section ID cannot be represented as one `op://` path component"
+        );
+        // `op` assigns the new item's and field's IDs. Preflight the complete
+        // path with the resolved vault and exact submitted section ID; validate
+        // the CLI-returned generated IDs against the same builder below.
+        anyhow::ensure!(
+            jackin_core::build_op_reference(
+                &vault_id,
+                "jackin-pending-item",
+                template_section_id,
+                "jackin-pending-field"
+            )
+            .is_some(),
+            "cannot build a valid `op://` reference from the item template"
+        );
         let mut field = serde_json::json!({
-            "id": params.field_label,
+            // Ask `op` for a unique stable field ID; the label stays display
+            // metadata and never serves as canonical URI identity.
+            "id": "",
             "label": params.field_label,
             "type": "CONCEALED",
             "value": params.value,
@@ -725,8 +883,7 @@ impl OpWriteRunner for OpCli {
             "tags": params.tags,
             "notesPlain": params.notes_plain.unwrap_or(""),
         });
-        if let Some(label) = params.section {
-            let section_id = op_section_id(label);
+        if let (Some(label), Some(section_id)) = (params.section, template_section_id) {
             template["sections"] = serde_json::json!([{ "id": section_id, "label": label }]);
             field["section"] = serde_json::json!({ "id": section_id });
         }
@@ -740,7 +897,7 @@ impl OpWriteRunner for OpCli {
             "item",
             "create",
             "--vault",
-            params.vault_id,
+            vault_id.as_str(),
             "--format",
             "json",
             "-",
@@ -775,46 +932,13 @@ impl OpWriteRunner for OpCli {
                  inspect or delete by hand in 1Password)"
             )
         })?;
-
-        // Locate the field by case-insensitive label match — the
-        // template `id` we sent is what `op` echoes back as the
-        // field id, but downstream callers expect to look up by
-        // operator-visible `field_label`.
-        let field = raw
-            .fields
-            .iter()
-            .find(|f| f.label.eq_ignore_ascii_case(params.field_label))
-            .ok_or_else(|| {
-                let labels: Vec<&str> = raw.fields.iter().map(|f| f.label.as_str()).collect();
-                anyhow::anyhow!(
-                    "`op item create` returned no field with label {:?}; \
-                     observed labels: {labels:?}. The item was created (id {:?}) \
-                     but jackin cannot reference its field — delete by hand in \
-                     1Password and re-run setup.",
-                    params.field_label,
-                    raw.id,
-                )
-            })?;
-
-        // Always use UUID-based op:// so the reference is stable even if
-        // the vault, item, or field is renamed. `path` carries the
-        // human-readable names for display only — it must have the same
-        // three-segment structure as the `op` URI.
-        let op_uri = format!("op://{}/{}/{}", raw.vault.id, raw.id, field.id);
-
-        let vault_name = if raw.vault.name.is_empty() {
-            raw.vault.id.as_str()
-        } else {
-            raw.vault.name.as_str()
-        };
-        let path = format!("{}/{}/{}", vault_name, raw.title, params.field_label);
-
-        Ok(OpRef {
-            op: op_uri,
-            path,
-            account: self.account.clone(),
-            on_demand: false,
-        })
+        created_item_reference(
+            &raw,
+            &params,
+            &vault_id,
+            template_section_id,
+            self.account.clone(),
+        )
     }
 
     fn item_delete(
@@ -870,8 +994,17 @@ impl OpWriteRunner for OpCli {
         vault_id: &str,
         target: &jackin_core::FieldTarget,
         value: &str,
-        section: Option<&str>,
+        section: Option<&jackin_core::OpSectionTarget>,
     ) -> anyhow::Result<OpRef> {
+        anyhow::ensure!(
+            jackin_core::is_valid_op_reference_path_component(vault_id),
+            "vault id {vault_id:?} cannot be represented as one `op://` path component"
+        );
+        anyhow::ensure!(
+            jackin_core::is_valid_op_reference_path_component(item_id),
+            "item id {item_id:?} cannot be represented as one `op://` path component"
+        );
+
         // Step 1: fetch the full item JSON so we can modify one field
         // while preserving all other fields and metadata.
         let mut get_args: Vec<&str> = Vec::new();
@@ -887,7 +1020,30 @@ impl OpWriteRunner for OpCli {
         let mut item: serde_json::Value = serde_json::from_slice(&raw_bytes)
             .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
 
-        apply_field_edit(&mut item, target, value, section)?;
+        let edit = apply_field_edit(&mut item, target, value, section)?;
+        let edited_field_exists = item["fields"].as_array().is_some_and(|fields| {
+            fields
+                .iter()
+                .any(|field| matches_field_target(field, target, edit.section_id.as_deref()))
+        });
+        anyhow::ensure!(
+            edited_field_exists,
+            "edited field disappeared before preflight"
+        );
+        let preflight_field_id = edit
+            .existing_field_id
+            .as_deref()
+            .unwrap_or("jackin-pending-field");
+        anyhow::ensure!(
+            jackin_core::build_op_reference(
+                vault_id,
+                item_id,
+                edit.section_id.as_deref(),
+                preflight_field_id
+            )
+            .is_some(),
+            "cannot build a valid `op://` reference from the existing 1Password IDs; re-open the picker to refresh and retry"
+        );
 
         let body = serde_json::to_vec(&item)
             .map_err(|e| anyhow::anyhow!("failed to re-encode item JSON: {e}"))?;
@@ -926,6 +1082,14 @@ impl OpWriteRunner for OpCli {
         let updated: serde_json::Value = serde_json::from_slice(&out.stdout)
             .map_err(|e| anyhow::anyhow!("failed to parse `op item edit` JSON: {e}"))?;
 
-        resolve_edited_field_ref(&updated, target, vault_id, item_id, self.account.clone())
+        resolve_edited_field_ref(
+            &updated,
+            target,
+            vault_id,
+            item_id,
+            self.account.clone(),
+            &edit,
+            section,
+        )
     }
 }

@@ -95,8 +95,8 @@ This is the gap that process-level sandboxing fills. Evidence from [Zerobox](htt
 Credential exposure requires a different mechanism from VM isolation and process sandboxing: a two-tier workspace environment model and a `jackin-exec` subcommand of `jackin-capsule`.
 
 **Two env tiers — same `env` map, one new flag:**
-- `{ op = "...", path = "..." }` (default): injected into container at launch, all processes see the resolved value
-- `{ op = "...", path = "...", on_demand = true }`: NOT injected at launch, NOT visible via `printenv`; appears in a TUI picker dialog when the agent calls `jackin-exec`, operator selects which credentials to attach, host resolves via `op read` at that moment, injected ephemerally for the command duration
+- `{ op = "...", breadcrumb = { version = 1, value = "..." } }` (default): injected into container at launch, all processes see the resolved value
+- `{ op = "...", breadcrumb = { version = 1, value = "..." }, on_demand = true }`: NOT injected at launch, NOT visible via `printenv`; appears in a TUI picker dialog when the agent calls `jackin-exec`, operator selects which credentials to attach, host resolves via `op read` at that moment, injected ephemerally for the command duration
 
 **`jackin-exec` = `jackin-capsule exec`**: a symlink, not a separate binary. The agent calls `jackin-exec gh pr create`; the capsule subcommand shows the on-demand picker, resolves selected credentials via the host process, injects them as temp env vars, runs the command, scans output for leaked values, deletes temp values. Raw credential values never appear in the container's process environment.
 

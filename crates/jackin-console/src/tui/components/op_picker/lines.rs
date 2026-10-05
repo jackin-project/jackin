@@ -12,7 +12,7 @@ use ratatui::{
 
 use super::{
     FieldDisplayRow, OpPickerAccountRef, OpPickerFatalState, OpPickerFieldDisplayRef,
-    OpPickerItemRef, OpPickerStage, OpPickerVaultRef,
+    OpPickerItemRef, OpPickerStage, OpPickerVaultRef, OpSection, section_display_label,
 };
 
 /// `+ New X` creation row, styled like picker list rows.
@@ -101,14 +101,18 @@ pub fn item_choice_lines<'a>(
 /// Render section-stage rows: `(root)`, named sections, then a creation
 /// sentinel.
 pub fn section_lines(
-    choices: impl IntoIterator<Item = Option<String>>,
+    choices: impl IntoIterator<Item = Option<OpSection>>,
     _selected: Option<usize>,
 ) -> Vec<Line<'static>> {
-    let choices: Vec<Option<String>> = choices.into_iter().collect();
+    let choices: Vec<Option<OpSection>> = choices.into_iter().collect();
+    let sections = choices.iter().filter_map(Clone::clone).collect::<Vec<_>>();
     let mut lines: Vec<Line<'static>> = choices
         .into_iter()
         .map(|choice| {
-            let label = choice.unwrap_or_else(|| "(root)".to_owned());
+            let label = choice.map_or_else(
+                || "(root)".to_owned(),
+                |section| section_display_label(&section, &sections),
+            );
             Line::from(Span::styled(
                 label,
                 Style::default().fg(termrock::style::DesignSystem::default()
@@ -138,9 +142,11 @@ pub fn field_lines<'a>(
 
     rows.into_iter()
         .map(|row| match row {
-            FieldDisplayRow::SectionHeader { name, field_count } => {
-                section_header_line(&name, field_count, collapsed_sections)
-            }
+            FieldDisplayRow::SectionHeader {
+                section_id,
+                name,
+                field_count,
+            } => section_header_line(&section_id, &name, field_count, collapsed_sections),
             FieldDisplayRow::Field { field_idx } => {
                 let Some(field) = fields.get(field_idx).copied() else {
                     return Line::default();
@@ -154,11 +160,12 @@ pub fn field_lines<'a>(
 }
 
 fn section_header_line(
+    section_id: &str,
     name: &str,
     field_count: usize,
     collapsed_sections: &HashSet<String>,
 ) -> Line<'static> {
-    let arrow = if collapsed_sections.contains(name) {
+    let arrow = if collapsed_sections.contains(section_id) {
         "\u{25b6}"
     } else {
         "\u{25bc}"

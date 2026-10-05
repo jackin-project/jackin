@@ -869,7 +869,10 @@ impl ConfigEditor {
             EnvValue::OpRef(r) => {
                 let mut tbl = InlineTable::new();
                 tbl.insert("op", Value::from(r.op));
-                tbl.insert("path", Value::from(r.path));
+                let mut breadcrumb = InlineTable::new();
+                breadcrumb.insert("version", Value::from(1));
+                breadcrumb.insert("value", Value::from(r.path));
+                tbl.insert("breadcrumb", Value::InlineTable(breadcrumb));
                 // Pin the resolving account so multi-account vaults read
                 // back correctly; serialized only when set (matches the
                 // `OpRef` serde skip-when-None contract).

@@ -141,6 +141,31 @@ fn invalidate_removes_entry() {
 }
 
 #[test]
+fn section_metadata_round_trips_and_is_invalidated_with_fields() {
+    let mut cache = TestCache::default();
+    cache.put_sections(
+        Some("a1"),
+        "v1",
+        "i1",
+        vec![crate::OpSection {
+            id: "opaque-section-id".to_owned(),
+            label: "Credentials".to_owned(),
+        }],
+    );
+
+    assert_eq!(
+        cache.get_sections(Some("a1"), "v1", "i1"),
+        Some(vec![crate::OpSection {
+            id: "opaque-section-id".to_owned(),
+            label: "Credentials".to_owned(),
+        }])
+    );
+
+    cache.invalidate_fields(Some("a1"), "v1", "i1");
+    assert!(cache.get_sections(Some("a1"), "v1", "i1").is_none());
+}
+
+#[test]
 fn account_keys_are_distinct() {
     let mut cache = TestCache::default();
     cache.put_vaults(Some("a1"), vec![vault("a1-Personal")]);
