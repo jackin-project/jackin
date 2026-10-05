@@ -4700,7 +4700,7 @@ fn materialize_omp_database(database: &[u8], wal: Option<&[u8]>) -> anyhow::Resu
         output[19] = 1;
     } else {
         anyhow::ensure!(
-            wal.is_none_or(|wal| wal.is_empty()),
+            wal.is_none_or(<[u8]>::is_empty),
             "rollback-journal omp agent.db has a non-empty WAL"
         );
     }
@@ -4711,11 +4711,78 @@ fn materialize_omp_database(database: &[u8], wal: Option<&[u8]>) -> anyhow::Resu
     Ok(output)
 }
 
+struct OmpWalCommit {
+    frame_len: usize,
+    last_frame_index: usize,
+    page_count: usize,
+}
+
 fn apply_committed_omp_wal(
     database: &mut Vec<u8>,
     page_size: usize,
     wal: &[u8],
 ) -> anyhow::Result<()> {
+    let database_pages = database.len() / page_size;
+    let Some(commit) = validate_omp_wal(wal, page_size, database_pages)? else {
+        return Ok(());
+    };
+    let output_len = commit
+        .page_count
+        .checked_mul(page_size)
+        .ok_or_else(|| anyhow::anyhow!("materialized omp database size overflow"))?;
+    anyhow::ensure!(
+        output_len <= MAX_OMP_SOURCE_FILE_BYTES,
+        "materialized omp agent.db exceeds the source size limit"
+    );
+    database.resize(output_len, 0);
+    for index in 0..=commit.last_frame_index {
+        let frame_at = 32_usize
+            .checked_add(
+                index
+                    .checked_mul(commit.frame_len)
+                    .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?,
+            )
+            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
+        let page_number = usize::try_from(read_omp_u32(wal, frame_at)?)
+            .map_err(|_| anyhow::anyhow!("omp WAL frame page number is invalid"))?;
+        if page_number > commit.page_count {
+            continue;
+        }
+        let page_at = page_number
+            .checked_sub(1)
+            .and_then(|number| number.checked_mul(page_size))
+            .ok_or_else(|| anyhow::anyhow!("omp WAL output offset overflow"))?;
+        let page_end = page_at
+            .checked_add(page_size)
+            .ok_or_else(|| anyhow::anyhow!("omp WAL output offset overflow"))?;
+        let frame_page_at = frame_at
+            .checked_add(24)
+            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
+        let frame_page_end = frame_page_at
+            .checked_add(page_size)
+            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
+        let frame_page = wal
+            .get(frame_page_at..frame_page_end)
+            .ok_or_else(|| anyhow::anyhow!("omp WAL frame page is truncated"))?;
+        database
+            .get_mut(page_at..page_end)
+            .ok_or_else(|| anyhow::anyhow!("omp WAL page is outside the committed image"))?
+            .copy_from_slice(frame_page);
+    }
+    let page_count = u32::try_from(commit.page_count)
+        .map_err(|_| anyhow::anyhow!("omp WAL commit page count is invalid"))?;
+    database[28..32].copy_from_slice(&page_count.to_be_bytes());
+    let change_counter = read_omp_u32(database, 24)?.wrapping_add(1);
+    database[24..28].copy_from_slice(&change_counter.to_be_bytes());
+    database[92..96].copy_from_slice(&change_counter.to_be_bytes());
+    Ok(())
+}
+
+fn validate_omp_wal(
+    wal: &[u8],
+    page_size: usize,
+    database_pages: usize,
+) -> anyhow::Result<Option<OmpWalCommit>> {
     anyhow::ensure!(
         wal.len() <= MAX_OMP_SOURCE_FILE_BYTES,
         "omp WAL exceeds the source size limit"
@@ -4740,7 +4807,6 @@ fn apply_committed_omp_wal(
         .checked_add(24)
         .ok_or_else(|| anyhow::anyhow!("omp WAL frame size overflow"))?;
     let complete_frames = wal.len().saturating_sub(32) / frame_len;
-    let database_pages = database.len() / page_size;
     let maximum_pages = database_pages
         .checked_add(complete_frames)
         .ok_or_else(|| anyhow::anyhow!("omp WAL page count overflow"))?;
@@ -4802,9 +4868,7 @@ fn apply_committed_omp_wal(
         let page_number = read_omp_u32(wal, frame_at)?;
         anyhow::ensure!(
             page_number > 0
-                && usize::try_from(page_number)
-                    .ok()
-                    .is_some_and(|number| number <= maximum_pages),
+                && usize::try_from(page_number).is_ok_and(|number| number <= maximum_pages),
             "omp WAL frame page number is invalid"
         );
         anyhow::ensure!(
@@ -4824,58 +4888,14 @@ fn apply_committed_omp_wal(
             last_commit = Some((index, committed_pages));
         }
     }
-    let Some((last_commit_index, committed_pages)) = last_commit else {
-        return Ok(());
+    let Some((last_frame_index, page_count)) = last_commit else {
+        return Ok(None);
     };
-    let output_len = committed_pages
-        .checked_mul(page_size)
-        .ok_or_else(|| anyhow::anyhow!("materialized omp database size overflow"))?;
-    anyhow::ensure!(
-        output_len <= MAX_OMP_SOURCE_FILE_BYTES,
-        "materialized omp agent.db exceeds the source size limit"
-    );
-    database.resize(output_len, 0);
-    for index in 0..=last_commit_index {
-        let frame_at = 32_usize
-            .checked_add(
-                index
-                    .checked_mul(frame_len)
-                    .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?,
-            )
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let page_number = usize::try_from(read_omp_u32(wal, frame_at)?)
-            .map_err(|_| anyhow::anyhow!("omp WAL frame page number is invalid"))?;
-        if page_number > committed_pages {
-            continue;
-        }
-        let page_at = page_number
-            .checked_sub(1)
-            .and_then(|number| number.checked_mul(page_size))
-            .ok_or_else(|| anyhow::anyhow!("omp WAL output offset overflow"))?;
-        let page_end = page_at
-            .checked_add(page_size)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL output offset overflow"))?;
-        let frame_page_at = frame_at
-            .checked_add(24)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let frame_page_end = frame_page_at
-            .checked_add(page_size)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let frame_page = wal
-            .get(frame_page_at..frame_page_end)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame page is truncated"))?;
-        database
-            .get_mut(page_at..page_end)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL page is outside the committed image"))?
-            .copy_from_slice(frame_page);
-    }
-    let page_count = u32::try_from(committed_pages)
-        .map_err(|_| anyhow::anyhow!("omp WAL commit page count is invalid"))?;
-    database[28..32].copy_from_slice(&page_count.to_be_bytes());
-    let change_counter = read_omp_u32(database, 24)?.wrapping_add(1);
-    database[24..28].copy_from_slice(&change_counter.to_be_bytes());
-    database[92..96].copy_from_slice(&change_counter.to_be_bytes());
-    Ok(())
+    Ok(Some(OmpWalCommit {
+        frame_len,
+        last_frame_index,
+        page_count,
+    }))
 }
 
 fn omp_wal_checksum(
@@ -4887,7 +4907,7 @@ fn omp_wal_checksum(
         bytes.len().is_multiple_of(8),
         "omp WAL checksum input has an invalid length"
     );
-    for words in bytes.chunks_exact(8) {
+    for words in bytes.as_chunks::<8>().0 {
         let first: [u8; 4] = words[..4]
             .try_into()
             .map_err(|_| anyhow::anyhow!("omp WAL checksum word is malformed"))?;
