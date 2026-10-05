@@ -427,7 +427,7 @@ fn validate_versioned_op_breadcrumb(table: &dyn toml_edit::TableLike) -> crate::
     // second list of OpRef/breadcrumb keys and value types in the migrator.
     // This also ensures an unknown key is rejected before the file is stamped
     // current and later becomes unreadable by EnvValue's deny_unknown_fields.
-    let mut document = toml_edit::DocumentMut::new();
+    let mut document = DocumentMut::new();
     for (key, item) in table.iter() {
         document.as_table_mut().insert(key, item.clone());
     }
