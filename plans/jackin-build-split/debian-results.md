@@ -1,6 +1,6 @@
 # Debian Results
 
-Status: Static review complete; runtime route NOT RUN.
+Status: Static route and CLI checks complete; source review pending; Jackin runtime route NOT RUN.
 
 ## Host
 
@@ -18,33 +18,80 @@ Status: Static review complete; runtime route NOT RUN.
 
 ## Account route
 
-- Jackin's default Codex discovery targets `~/.codex` and maps it to `default-codex`.
-- The scan does not consult `CODEX_HOME`.
+- At initial main `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, Jackin's Codex discovery targeted `~/.codex`, mapped it to `default-codex`, and ignored `CODEX_HOME`.
+- Task commit `0556ce39b1abb9cd6b387583d932e1556ca9dfd4` changes Jackin discovery to honor `CODEX_HOME`; an unset value selects `~/.codex`, while an empty value reports an issue without fallback.
+- Follow-up commit `688057f40173d32dda04a55bff1e3868c219710d` updates discovery parity. Exact-head source review remains pending.
 - This host has no Jackin executable or default configuration.
 - Account registration, workspace selection, and launch forwarding are therefore NOT RUN.
 - No live role response was requested.
 
 ## Synthetic `CODEX_HOME` checks
 
-The route owner reports local CLI path checks in a private synthetic root. These checks do not validate Jackin's runtime route.
+The route owner reports local CLI path checks in a private synthetic root. These checks cover Codex CLI path handling only. They do not validate Jackin runtime discovery or a provider request.
 
-The command used a 10-second timeout, an empty environment, and a synthetic home:
+Read-only identity commands were `readlink -f /root/.local/bin/codex`, `/root/.local/bin/codex --version`, `sha256sum /root/.codex/packages/standalone/releases/0.160.0-x86_64-unknown-linux-musl/bin/codex`, and `stat -c '%s bytes, mode %a, mtime %y' /root/.codex/packages/standalone/releases/0.160.0-x86_64-unknown-linux-musl/bin/codex`. The symlink resolves to `/root/.codex/packages/standalone/releases/0.160.0-x86_64-unknown-linux-musl/bin/codex`. The binary reports `codex-cli 0.160.0`; its SHA-256 is `12eb3e81114588aca3b7998f4f19e8997b056aca08e57a7ca7c8a3ec8c652aad`. Its size is 289,101,384 bytes and its mode is `0755`.
+
+The owner used fixture root `/tmp/jackin-codex-route.sYgjX4` with owner `root:root` and mode `0700`. It created `home`, `home/.codex`, `relative-home`, and `absolute-home` directories with owner `root:root` and mode `0700`. It created `regular-file` with mode `0600`.
+
+The route owner supplied this setup:
 
 ```sh
-timeout 10s env -i HOME=<fixture>/home PATH=/root/.local/bin:/usr/bin:/bin [CODEX_HOME value] /root/.local/bin/codex login status
+umask 077
+fixture=$(mktemp -d -p /tmp jackin-codex-route.XXXXXX)
+chmod 700 "$fixture"
+mkdir -m 700 "$fixture/home" "$fixture/home/.codex" "$fixture/relative-home" "$fixture/absolute-home"
+touch "$fixture/regular-file"
+chmod 600 "$fixture/regular-file"
+cd "$fixture"
+
+# CODEX_HOME unset
+env -i HOME="$fixture/home" PATH=/usr/bin:/bin LANG=C.UTF-8 timeout 10s /root/.local/bin/codex login status
+# CODEX_HOME empty
+env -i HOME="$fixture/home" PATH=/usr/bin:/bin LANG=C.UTF-8 CODEX_HOME= timeout 10s /root/.local/bin/codex login status
+# CODEX_HOME relative
+env -i HOME="$fixture/home" PATH=/usr/bin:/bin LANG=C.UTF-8 CODEX_HOME=relative-home timeout 10s /root/.local/bin/codex login status
+# CODEX_HOME existing absolute directory
+env -i HOME="$fixture/home" PATH=/usr/bin:/bin LANG=C.UTF-8 CODEX_HOME="$fixture/absolute-home" timeout 10s /root/.local/bin/codex login status
+# CODEX_HOME missing absolute path
+env -i HOME="$fixture/home" PATH=/usr/bin:/bin LANG=C.UTF-8 CODEX_HOME="$fixture/missing" timeout 10s /root/.local/bin/codex login status
+# CODEX_HOME regular file
+env -i HOME="$fixture/home" PATH=/usr/bin:/bin LANG=C.UTF-8 CODEX_HOME="$fixture/regular-file" timeout 10s /root/.local/bin/codex login status
 ```
 
-The tested values were unset, empty, relative, existing absolute, missing, and a regular file. The working directory was `<fixture>/cwd` for the relative case.
+The working directory was `$fixture` for all six cases. Stdout was empty. Stderr paths below use `<fixture>` for the temporary root.
 
-- Unset and empty values warn and use `<fixture>/home/.codex`.
-- A relative value uses `<fixture>/cwd/relative-home`.
-- Unset, empty, relative, and existing absolute paths exit 1 with `Not logged in`.
-- A missing path reports that `CODEX_HOME` points to a path that does not exist.
-- A regular file reports that `CODEX_HOME` is not a directory.
-- The run used no credentials. It made no enrollment, network request, or config write.
+| Case | Result |
+|---|---|
+| Unset | Exits 1 with `Not logged in`; resolves to `<fixture>/home/.codex`. |
+| Empty | Exits 1 with `Not logged in`; resolves to `<fixture>/home/.codex`. |
+| Relative `relative-home` | Exits 1 with `Not logged in`; resolves to `<fixture>/relative-home`. |
+| Existing absolute `absolute-home` | Accepted; exits 1 with `Not logged in`. |
+| Missing absolute `missing` | Reports `CODEX_HOME points to <fixture>/missing, but that path does not exist`. |
+| Regular file `regular-file` | Reports `<fixture>/regular-file is not a directory`. |
+
+Valid cases also emitted a benign warning about refusing PATH aliases under `/tmp`.
+
+- The owner used no credentials. The checks made no enrollment, network request, or config write.
+- The owner removed the fixture root. `test ! -e /tmp/jackin-codex-route.sYgjX4` passed.
+- No separate raw transcript was retained. The commands, fixture, and summarized result record came from `debian_codex_route`.
+
+## Empty-configuration preflight
+
+The host-probe owner reports a separate synthetic MCP listing with empty home and config paths. It redirected `CODEX_SQLITE_HOME` to another empty fixture. The original temporary path was not retained.
+
+```sh
+set -eu
+umask 077
+probe=$(mktemp -d -p /tmp codex-mcp-preflight.XXXXXX)
+trap 'rm -rf -- "$probe"' EXIT
+mkdir -m 700 "$probe/home" "$probe/codex" "$probe/sqlite"
+/usr/bin/env -i HOME="$probe/home" CODEX_HOME="$probe/codex" CODEX_SQLITE_HOME="$probe/sqlite" PATH=/usr/bin:/bin LANG=C.UTF-8 /usr/bin/timeout 10s /root/.local/bin/codex mcp list --json --disable plugins
+```
+
+This block gives a safe reproduction recipe. The host-probe owner reported exit 0 and a JSON configured-server count of 0. The output contained no server names or details. The command read no fixture config or auth files. The empty tree remained unchanged. The owner removed logs and temporary files. This was not a live-account request.
 
 ## Owner
 
-`debian_codex_route` completed static route inspection. Runtime confirmation remains NOT RUN because the executable and configuration are absent, and this checkpoint prohibits live requests.
+`debian_codex_route` completed static route inspection and local CLI path checks. Exact-head source review of commit `688057f40173d32dda04a55bff1e3868c219710d` remains pending. Jackin runtime confirmation remains NOT RUN because the executable and configuration are absent, and this checkpoint prohibits live requests.
 
 See [crate plan](crate-plan.md) and [reviews](reviews.md).

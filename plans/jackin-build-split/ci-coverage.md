@@ -14,6 +14,16 @@
 - A later direct ref check reported `ad73ae9f0500ddd02d64aad142bbecb2122c0617` at `2026-10-05T00:39:47Z`.
 - A later fetch recorded `origin/main` at `d9f3f3be03d67021748fd6adb4a18684d046e5e7` at `2026-10-05T01:09:24Z`. The generator work branch was rebased onto that head before edits.
 
+## Velnor PR #55
+
+Status: IN PROGRESS.
+
+The [PR](https://github.com/tailrocks/velnor-new/pull/55) targets `7fb8367d7daa67f13ccaa7c76caae47d55d6262b`. Its focused branch head is `68f969bb4b9c71be8ff2126f04f6a2bcebe38a78`. The earlier owner report said it was mergeable; refresh the final PR state.
+
+At check run `37254450133`, Actionlint passed. The orchestrator job `111589804766`, CLI job `111589804784`, and workflow-renderer job `111589804869` failed. The remaining matrix is in progress. Logs are unavailable until the run completes. Do not infer a cause or claim a passing run.
+
+An earlier Plan failure at head `260f17c` reported helper compile errors `E0432` and `E0425`. Commit `68f969b` fixes all eleven old-name references. Do not claim that upstream merged the PR or that local tests passed.
+
 ## Coverage questions
 
 The current workflow inventory has no separate release, macOS Swift, Docker, Bun, or scheduled workflow files.

@@ -97,6 +97,10 @@ The Rust-MBX variant and Jackin Mise-wrapper integration remain pending design a
 
 `git cherry` found no patch-equivalent changes in the earlier inventory. Final diff review and dispositions remain IN PROGRESS.
 
+## Broad inventory refresh
+
+The coordinator reports a refresh at `2026-10-05T02:20:13Z` with 1,157 refs and 1,103 PR records. This report contains no per-ref SHA list or final feedback state. Final PR status remains NOT VERIFIED and needs a fresh query.
+
 ## Fetch record
 
 - Command time: `2026-10-05T02:29:52+02:00`.
