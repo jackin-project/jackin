@@ -133,7 +133,7 @@ The 375–380 KB estimate is not measured. No generator code or tests passed thi
 
 Sol source review PASS at PR head `6baa3a1f729d45a764fd4250d1300cf17fa196e6` against main `6180ccebc7eff8b8f40f988eea2cf948bb235c9d`. The review accepts fixes for typed-job Mise environment true/unset handling, a workflow-wide byte guard, UTF-8 accounting, and no-partial/in-place tests. It rejects the untrusted-cache-writer allegation because cache saves are push-only.
 
-Final approval remains pending stale general and issue-comment dispositions, P13, T24, and all required checks. The source review does not approve a merge.
+At the time of this source review, general and issue-comment dispositions, P13, T24, and required checks remained pending. The GitHub API later reported PR #55 merged at head `f17ebbc992da8549197f63d2aaaf1c317ed57426` via `3ec6f32b5bafa5fa34ce9aa22afd7cfe2e797132`; the PR run succeeded. The merge-commit check-runs query showed 17 successes and one orchestrator check in progress. See [CI coverage](ci-coverage.md#velnor-pr-55).
 
 ## Account consolidation review
 
@@ -172,11 +172,35 @@ DCO, Actionlint, Plan, Required, and Sonar pass at that head. Publish baseline i
 
 Parser and local repository contract checks ran with MBX-built binary SHA-256 `e899a8e5f51ebb5f20fce5a379a3f4de4555911549e743ca625efb4a3988c2ac`, built from Jackin base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. `jackin role validate --help` exited 0. `jackin role validate /tmp/architect-contract-base-DMcKHD` exited 1 as expected: the v1alpha5 fixture manifest SHA-256 `52ca2ec67a40888c0da73e738d69ede8fb18f4efc952e798e4f335ea153db135` rejects `providers` as an unknown field; it allows `model`, `marketplaces`, and `plugins`.
 
-The current role manifest SHA-256 is `eb08cf89aa32971c17db9875ec633ac22fe609927abf23fd18182756819e7fca`. `validate_role_repo` returned success after local strict-manifest, Dockerfile, and hook-structure checks at PR head `0592d0deeaeaa5b785fa67a43d23d3b627552720`. Full `jackin role validate /root/Projects/tailrocks/jackin-project/jackin-the-architect-task` exited 1 after an unauthenticated GET of `https://raw.githubusercontent.com/tailrocks/tailrocks-skills/HEAD/.claude-plugin/marketplace.json` returned 404. Sanitized stderr: `fetching Claude marketplace manifest from https://raw.githubusercontent.com/tailrocks/tailrocks-skills/HEAD/.claude-plugin/marketplace.json returned 404 Not Found`. Stdout contained only a redacted telemetry invocation line; it did not print `Role repository is valid`. No authentication, container, hook, or role load occurred. Parser and local contract checks PASS; full validation FAIL pending authoritative marketplace identity and path investigation.
+The current role manifest SHA-256 is `eb08cf89aa32971c17db9875ec633ac22fe609927abf23fd18182756819e7fca`. `validate_role_repo` returned success after local strict-manifest, Dockerfile, and hook-structure checks at PR head `0592d0deeaeaa5b785fa67a43d23d3b627552720`. Full `jackin role validate /root/Projects/tailrocks/jackin-project/jackin-the-architect-task` exited 1 after an unauthenticated GET of `https://raw.githubusercontent.com/tailrocks/tailrocks-skills/HEAD/.claude-plugin/marketplace.json` returned 404. Sanitized stderr: `fetching Claude marketplace manifest from https://raw.githubusercontent.com/tailrocks/tailrocks-skills/HEAD/.claude-plugin/marketplace.json returned 404 Not Found`. Stdout contained only a redacted telemetry invocation line; it did not print `Role repository is valid`. No authentication, container, hook, or role load occurred. Parser and local contract checks PASS; full validation FAIL on that head.
 
-Read-only GitHub metadata later confirmed that [`tailrocks/asd-ste100-skill`](https://github.com/tailrocks/asd-ste100-skill) is a separate private repository at main `0572839a13afc145083535b3e29c79b78489af40`. It contains `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`, but no `.claude-plugin/marketplace.json`; it is not a marketplace substitute. The public [`tailrocks-skills`](https://github.com/tailrocks/tailrocks-skills) README lists eight independent repositories. Sol's design review PASS recommends only public `tailrocks-rust-skills` and `tailrocks-roadmap-skills` as marketplace sources matching the role's advertised capabilities. It does not claim a one-to-one replacement for the prior eight-repository set. The Architect owner is preparing a manifest change. Full validator execution remains pending.
+Read-only GitHub metadata later confirmed that [`tailrocks/asd-ste100-skill`](https://github.com/tailrocks/asd-ste100-skill) is a separate private repository at main `0572839a13afc145083535b3e29c79b78489af40`. It contains `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`, but no `.claude-plugin/marketplace.json`; it is not a marketplace substitute. The public [`tailrocks-skills`](https://github.com/tailrocks/tailrocks-skills) README lists eight independent repositories. Sol's design review PASS recommends only public `tailrocks-rust-skills` and `tailrocks-roadmap-skills` as marketplace sources matching the role's advertised capabilities. It does not claim a one-to-one replacement for the prior eight-repository set.
+
+Architect owner reports marketplace correction commit `7db69b62f598a0971809ee4a006ad3f5477d0996`. It later merged as `7b72b38fe1d66e35c0931899c53bf3719592bbcc`. The earlier full-validator 404 remains the latest role-validation result. See the merged-source and consumer status below.
 
 The command runs used task-private environment paths, working directory `/`, and disabled OpenTelemetry. The available binary predates the Architect manifest update. Live role loading remains NOT RUN. Maintained CI support for actual roles belongs to the generator.
+
+### Merged Architect and consumer status
+
+Architect PR #479 is closed and merged. PR head `7db69b62f598a0971809ee4a006ad3f5477d0996` merged as `7b72b38fe1d66e35c0931899c53bf3719592bbcc` at `2026-10-05T04:10:07Z`. The automated Codex summary completed at `04:11:05Z`, after merge. Pre-merge feedback timing is therefore NOT PASS.
+
+Post-merge Sonar check run `111612018729` failed at the merge SHA. The reported S8264 finding concerns workflow-level `actions: read`. The PR merged despite this later failed main check; record it as an unresolved main-quality finding.
+
+Jackin consumer source review PASS at `07f5ce7efe38c6c608fb975013df43e770d92b2b`. It updates the immutable role snapshot to manifest SHA-256 `b38e506587c98137d0a1a88247fb68afc9f9f215c8104c838df251933a917ae5`. The subsequent Plan run fails against pinned Velnor `0.1.0`; generated CI still lacks configured task jobs. Consumer tests remain NOT RUN.
+
+Architect image prefix `ad3b0069` predates the merged role content and has no source match. No live Codex profile probe, role request, or role launch ran. Codex environment evidence is synthetic-fixture-only.
+
+### Measurement launcher reviews
+
+The v3 timing method passed review. The security review failed because an intermediate `work/out` path permits symlink traversal. Do not use it.
+
+The v4 launcher candidate has SHA-256 `5c730c2c80283adbcd3a22d170f3bf2e246eb04132772e341f212ab2232dfe0e`. It was not frozen or reviewed. No phase ran.
+
+The v5 launcher SHA-256 is `460341e26528da42b7aae5be0449a3438868bf0fe21a2588b55bdbaad264a804`. Its timer SHA-256 is `31560b177eb620665dc91ef28c5bf44aac42c6e024223a85f827542d0d675e08`. Its diff SHA-256 is `caa6ecf17631048f2dad8d099bce60565d9915054185ad5ba004bbc0b14416a3`. Security and measurement-method reviews passed these exact artifacts.
+
+The v5 `prepare-linker` phase passed in 102.038 ms using the rootfs-only GCC link. `verify-linker` failed before compilation. It matched the resolved compiler path and hash, but expected the target basename at the start of version output. No source compiled. Do not rerun v5.
+
+No v6 launcher hash is recorded. It remains unfrozen and unreviewed. No v6 phase, compile, or measurement matrix ran. The earlier single source build remains proof-only; it does not establish cache reuse or a performance baseline.
 
 ## MBX provenance
 

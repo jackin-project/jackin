@@ -71,6 +71,19 @@ This run proves the source builds once through the reviewed launcher. It is not 
 
 Source inspection attributes 109 `unportable-native-link` bypasses to MBX rejecting the explicit non-Clang linker. The 495 `unknown-codegen-option` attribution remains plausible but lacks package-level tracing. Diagnostic candidate `a56a1822bbec56025fc2cd499de3a09be57c888a87ce40ba56eef70e99a3f671` was withdrawn because `mbx explain --last` diagnoses misses, not bypasses. It was not executed. Further runs remain held pending rootfs-only compiler setup, stronger filesystem evidence, and exact Sol review.
 
+## Measurement launcher review sequence
+
+These reviews and guard probes did not run a build or measurement matrix.
+
+| Version | Evidence | Result | Scope |
+|---|---|---|---|
+| v3 | Timing method review passed; security review found intermediate `work/out` symlink traversal. | FAIL | Do not use this launcher. No matrix result. |
+| v4 | Launcher SHA-256 `5c730c2c80283adbcd3a22d170f3bf2e246eb04132772e341f212ab2232dfe0e`. | NOT RUN | Artifact was not frozen or reviewed. No phase ran. |
+| v5 | Launcher SHA-256 `460341e26528da42b7aae5be0449a3438868bf0fe21a2588b55bdbaad264a804`; timer SHA-256 `31560b177eb620665dc91ef28c5bf44aac42c6e024223a85f827542d0d675e08`; diff SHA-256 `caa6ecf17631048f2dad8d099bce60565d9915054185ad5ba004bbc0b14416a3`. | REVIEW PASS; GUARD FAIL | Both Sol reviews approved the exact artifacts. `prepare-linker` passed in 102.038 ms for GCC SHA-256 `a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f`. `verify-linker` exited 1 before compilation because its version check expected the target basename before GCC's version text. |
+| v6 | No frozen launcher hash is recorded. | NOT RUN | No independent review, phase, compile, or measurement matrix ran. |
+
+The v5 prepare phase used a rootfs-only `cc` symlink. The guard failure is not a compiler result. Do not rerun v5. Cache reuse and performance remain unproved.
+
 ## Required measurements
 
 Every comparable build scenario requires at least three repetitions. Report median, minimum, maximum, peak memory when measurable, timing output, and MBX cache hits, misses, and bypasses. Record object provenance for every MBX run.
