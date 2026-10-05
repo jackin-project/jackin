@@ -393,7 +393,9 @@ async fn cancelled_worker_result_drops_its_owned_pending_entry() {
         let claim = {
             let _lock = boundary_lock(authority_dir)?;
             advance_generation(authority_dir)?;
-            register_pending_entry_locked(authority_dir, true)?
+            register_pending_entry_locked(authority_dir, true)?.ok_or_else(|| {
+                std::io::Error::other("fresh pending registration requested a retry")
+            })?
         };
         created_tx.send(()).unwrap();
         // Hold the completed owned value outside the file lock until the
@@ -597,7 +599,7 @@ fn live_pending_owner_is_not_pruned_or_claimed_for_exit() {
     let observed_generation = generation(&directory).unwrap();
     {
         let _lock = boundary_lock(&directory).unwrap();
-        prune_stale_pending_claims(&directory).unwrap();
+        assert!(!prune_stale_pending_claims(&directory).unwrap());
     }
     assert!(pending.exists(), "live pending token must be preserved");
     assert_eq!(take_exit_claim(&paths), ExitClaim::Missing);
@@ -639,14 +641,131 @@ async fn killed_pending_owner_is_recovered_before_exit_claim() {
     assert!(pending.exists(), "SIGKILL must leave the pending inode");
     assert_eq!(generation(&directory).unwrap(), observed_generation);
 
-    assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
+    assert_eq!(take_exit_claim(&paths), ExitClaim::Missing);
     assert!(!pending.exists(), "next exit must reclaim the orphan token");
     assert_eq!(count_pending_claims(&directory), Some(0));
+    assert!(marker_path(&directory).exists());
+    assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
 
     let next_claim = claim_entry(&paths, &FakeDockerClient::default()).await;
     assert_eq!(next_claim.start_kind(), StartKind::FreshConstruct);
     drop(next_claim);
     assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn observe_exit_rechecks_docker_after_reclaiming_dead_owner() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut owner = spawn_pending_owner(tmp.path());
+    wait_for_fixture_path(
+        &tmp.path().join("pending-owner-ready"),
+        "pending owner did not create its claim",
+    );
+
+    let directory = authority(&paths);
+    let pending = only_pending_claim(&directory);
+    let previous_generation = generation(&directory).unwrap();
+    owner.0.kill().unwrap();
+    assert!(!owner.0.wait().unwrap().success());
+    assert!(pending.exists(), "SIGKILL leaves the pending inode");
+
+    // Script an empty stale snapshot followed by a live container. The same
+    // observe_exit call must list Docker again after reclaiming the token.
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
+            vec![],
+            vec![ContainerRow {
+                name: "jk-running".to_owned(),
+                id: "container-id".to_owned(),
+                labels: HashMap::new(),
+            }],
+        ])),
+        ..Default::default()
+    };
+
+    let (running, claim) = observe_exit(&paths, &docker).await.unwrap();
+
+    assert_eq!(running, vec!["jk-running".to_owned()]);
+    assert_eq!(claim, ExitClaim::Missing);
+    assert_eq!(docker.recorded.borrow().len(), 2);
+    assert!(!pending.exists(), "stale token was reclaimed");
+    assert_eq!(count_pending_claims(&directory), Some(0));
+    assert_ne!(generation(&directory).unwrap(), previous_generation);
+    assert!(marker_path(&directory).exists(), "live marker is preserved");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn observe_exit_claims_after_recovery_when_fresh_docker_view_is_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut owner = spawn_pending_owner(tmp.path());
+    wait_for_fixture_path(
+        &tmp.path().join("pending-owner-ready"),
+        "pending owner did not create its claim",
+    );
+
+    let directory = authority(&paths);
+    let pending = only_pending_claim(&directory);
+    owner.0.kill().unwrap();
+    assert!(!owner.0.wait().unwrap().success());
+
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![], vec![]])),
+        ..Default::default()
+    };
+
+    let (running, claim) = observe_exit(&paths, &docker).await.unwrap();
+
+    assert!(running.is_empty());
+    assert!(matches!(claim, ExitClaim::Claimed { .. }));
+    assert_eq!(docker.recorded.borrow().len(), 2);
+    assert!(!pending.exists());
+    assert_eq!(count_pending_claims(&directory), Some(0));
+    assert!(!marker_path(&directory).exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn entry_rechecks_docker_after_reclaiming_dead_owner() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut owner = spawn_pending_owner(tmp.path());
+    wait_for_fixture_path(
+        &tmp.path().join("pending-owner-ready"),
+        "pending owner did not create its claim",
+    );
+
+    let directory = authority(&paths);
+    let stale_pending = only_pending_claim(&directory);
+    owner.0.kill().unwrap();
+    assert!(!owner.0.wait().unwrap().success());
+
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
+            vec![],
+            vec![ContainerRow {
+                name: "jk-running".to_owned(),
+                id: "container-id".to_owned(),
+                labels: HashMap::new(),
+            }],
+        ])),
+        ..Default::default()
+    };
+
+    let claim = claim_entry(&paths, &docker).await;
+
+    assert_eq!(claim.start_kind(), StartKind::ResumeExisting);
+    assert_eq!(docker.recorded.borrow().len(), 2);
+    assert!(!stale_pending.exists(), "stale token was reclaimed");
+    assert_eq!(count_pending_claims(&directory), Some(1));
+    assert!(marker_path(&directory).exists());
+    drop(claim);
 }
 
 #[test]
