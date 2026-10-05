@@ -28,6 +28,24 @@ fn redacts_private_key_blocks() {
 }
 
 #[test]
+fn sequential_complete_pem_blocks_keep_their_individual_boundaries() {
+    let input = concat!(
+        "-----BEGIN PRIVATE KEY-----first-body-----END PRIVATE KEY-----",
+        " safe text ",
+        "-----BEGIN RSA PRIVATE KEY-----second-body-----END RSA PRIVATE KEY-----",
+        " visible text",
+    );
+    let expected = "<redacted> safe text <redacted> visible text";
+    assert_eq!(redact_text(input), expected);
+
+    let mut redactor = StreamRedactor::default();
+    assert_eq!(
+        redactor.push_bytes(format!("{input}\n").as_bytes()),
+        vec![expected]
+    );
+}
+
+#[test]
 fn nested_and_mismatched_pem_markers_fail_closed_in_whole_text_sinks() {
     let nested = concat!(
         "-----BEGIN PRIVATE KEY-----\n",

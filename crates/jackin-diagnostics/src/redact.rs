@@ -947,9 +947,8 @@ fn scan_pem_block(input: &str) -> PemScan {
     {
         return PemScan::Malformed;
     }
-    let nested_precedes_footer = nested_begin.map_or(false, |nested_begin| {
-        footer.map_or(true, |footer| nested_begin.start < footer.start)
-    });
+    let nested_precedes_footer = nested_begin
+        .is_some_and(|nested_begin| footer.is_none_or(|footer| nested_begin.start < footer.start));
     if nested_precedes_footer {
         return PemScan::Malformed;
     }
@@ -972,9 +971,8 @@ fn scan_pem_continuation(input: &str, expected_label: &str) -> PemContinuation {
     {
         return PemContinuation::Malformed;
     }
-    let nested_precedes_footer = nested_begin.map_or(false, |nested_begin| {
-        footer.map_or(true, |footer| nested_begin.start < footer.start)
-    });
+    let nested_precedes_footer = nested_begin
+        .is_some_and(|nested_begin| footer.is_none_or(|footer| nested_begin.start < footer.start));
     if nested_precedes_footer {
         return PemContinuation::Malformed;
     }
