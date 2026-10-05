@@ -541,11 +541,7 @@ fn prune_stale_pending_claims(authority: &Path) -> std::io::Result<()> {
             };
             match file.try_lock() {
                 Ok(()) => {
-                    nix::unistd::unlinkat(
-                        &parent,
-                        key,
-                        nix::unistd::UnlinkatFlags::NoRemoveDir,
-                    )?;
+                    nix::unistd::unlinkat(&parent, key, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
                 }
                 Err(std::fs::TryLockError::WouldBlock) => {}
                 Err(std::fs::TryLockError::Error(error)) => return Err(error),

@@ -585,12 +585,9 @@ fn live_pending_owner_is_not_pruned_or_claimed_for_exit() {
     let directory = authority(&paths);
     let pending = only_pending_claim(&directory);
     let key = pending.file_name().unwrap().to_str().unwrap();
-    let probe = super::super::coordination::open_state_in_namespace(
-        &pending_dir(&directory),
-        key,
-        false,
-    )
-    .unwrap();
+    let probe =
+        super::super::coordination::open_state_in_namespace(&pending_dir(&directory), key, false)
+            .unwrap();
     assert!(
         matches!(probe.try_lock(), Err(std::fs::TryLockError::WouldBlock)),
         "live owner must hold its pending lease"
@@ -627,12 +624,9 @@ async fn killed_pending_owner_is_recovered_before_exit_claim() {
     let directory = authority(&paths);
     let pending = only_pending_claim(&directory);
     let key = pending.file_name().unwrap().to_str().unwrap();
-    let probe = super::super::coordination::open_state_in_namespace(
-        &pending_dir(&directory),
-        key,
-        false,
-    )
-    .unwrap();
+    let probe =
+        super::super::coordination::open_state_in_namespace(&pending_dir(&directory), key, false)
+            .unwrap();
     assert!(
         matches!(probe.try_lock(), Err(std::fs::TryLockError::WouldBlock)),
         "claim should be owned before killing its process"
