@@ -13,6 +13,8 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::redact;
+
 /// Cap on retained lines. A long `BuildKit` run is bounded so the buffer
 /// cannot grow without limit; the oldest lines drop first.
 const MAX_LINES: usize = 5000;
@@ -46,11 +48,12 @@ pub fn is_active() -> bool {
 
 /// Append one output line, dropping the oldest when the cap is reached.
 pub fn push_line(line: &str) {
+    let line = redact::redact_text(line);
     if let Ok(mut lines) = LINES.lock() {
         if lines.len() >= MAX_LINES {
             lines.pop_front();
         }
-        lines.push_back(line.to_owned());
+        lines.push_back(line.into_owned());
     }
 }
 
