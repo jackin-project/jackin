@@ -9,7 +9,7 @@ use jackin_protocol::control::{
 use jackin_usage::host::{
     HostAccountDescriptor, HostDesktopInventory, HostDesktopProjection, HostDesktopProviderGroup,
     HostDesktopProviderProjection, HostDesktopProviderState, HostEventBatch, HostOverviewRow,
-    HostSurfaceDescriptor, HostUsageEvent, UsageDiscoveryDiagnostic,
+    HostSelectedAccountRoute, HostSurfaceDescriptor, HostUsageEvent, UsageDiscoveryDiagnostic,
 };
 use jackin_usage::usage::{PercentStyle, ResetStyle, UsageFormatPrefs, estimate_caption};
 
@@ -358,8 +358,19 @@ pub struct DesktopInventoryDto {
 #[boltffi::data]
 pub struct DesktopProviderProjectionDto {
     pub group: DesktopProviderGroupDto,
-    pub selected_account_key: Option<String>,
+    pub selected_account_route: SelectedAccountRouteDto,
     pub selected_usage: UsageViewDto,
+}
+
+/// Provider-scoped selected-account route with a validated status/key/notice shape.
+#[derive(Debug, Clone)]
+#[boltffi::data]
+pub struct SelectedAccountRouteDto {
+    /// `unselected` | `resolving` | `available` | `unavailable`.
+    pub status: String,
+    pub account_key: Option<String>,
+    /// Present only for `unavailable`; Rust-owned fixed notice copy.
+    pub notice: Option<String>,
 }
 
 /// Complete immutable native Desktop state for one runtime generation.
@@ -420,7 +431,13 @@ pub(crate) fn desktop_projection_dto(projection: HostDesktopProjection) -> Deskt
 fn desktop_provider_projection_dto(
     projection: HostDesktopProviderProjection,
 ) -> DesktopProviderProjectionDto {
-    let account = projection.selected_account_key.as_deref().and_then(|key| {
+    let account_key = match &projection.selected_account_route {
+        HostSelectedAccountRoute::Unselected => None,
+        HostSelectedAccountRoute::Resolving { account_key }
+        | HostSelectedAccountRoute::Available { account_key }
+        | HostSelectedAccountRoute::Unavailable { account_key, .. } => Some(account_key.as_str()),
+    };
+    let account = account_key.and_then(|key| {
         projection
             .group
             .accounts
@@ -429,12 +446,39 @@ fn desktop_provider_projection_dto(
     });
     DesktopProviderProjectionDto {
         group: desktop_provider_group_dto(projection.group.clone()),
-        selected_account_key: projection.selected_account_key,
+        selected_account_route: selected_account_route_dto(projection.selected_account_route),
         selected_usage: view_dto_with_context(
             projection.selected_usage,
             projection.identity,
             account,
         ),
+    }
+}
+
+fn selected_account_route_dto(route: HostSelectedAccountRoute) -> SelectedAccountRouteDto {
+    match route {
+        HostSelectedAccountRoute::Unselected => SelectedAccountRouteDto {
+            status: "unselected".to_owned(),
+            account_key: None,
+            notice: None,
+        },
+        HostSelectedAccountRoute::Resolving { account_key } => SelectedAccountRouteDto {
+            status: "resolving".to_owned(),
+            account_key: Some(account_key),
+            notice: None,
+        },
+        HostSelectedAccountRoute::Available { account_key } => SelectedAccountRouteDto {
+            status: "available".to_owned(),
+            account_key: Some(account_key),
+            notice: None,
+        },
+        HostSelectedAccountRoute::Unavailable { account_key, notice } => {
+            SelectedAccountRouteDto {
+                status: "unavailable".to_owned(),
+                account_key: Some(account_key),
+                notice: Some(notice.to_owned()),
+            }
+        }
     }
 }
 
@@ -771,4 +815,53 @@ pub(crate) fn to_host_config(
             operator_home,
         },
     })
+}
+
+#[cfg(test)]
+mod selected_account_route_tests {
+    use super::*;
+
+    #[test]
+    fn selected_account_route_dto_preserves_each_typed_state() {
+        let cases = [
+            (
+                HostSelectedAccountRoute::Unselected,
+                "unselected",
+                None,
+                None,
+            ),
+            (
+                HostSelectedAccountRoute::Resolving {
+                    account_key: "persisted-key".to_owned(),
+                },
+                "resolving",
+                Some("persisted-key"),
+                None,
+            ),
+            (
+                HostSelectedAccountRoute::Available {
+                    account_key: "persisted-key".to_owned(),
+                },
+                "available",
+                Some("persisted-key"),
+                None,
+            ),
+            (
+                HostSelectedAccountRoute::Unavailable {
+                    account_key: "persisted-key".to_owned(),
+                    notice: jackin_usage::host::SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
+                },
+                "unavailable",
+                Some("persisted-key"),
+                Some(jackin_usage::host::SELECTED_ACCOUNT_UNAVAILABLE_NOTICE),
+            ),
+        ];
+
+        for (route, expected_status, expected_key, expected_notice) in cases {
+            let dto = selected_account_route_dto(route);
+            assert_eq!(dto.status, expected_status);
+            assert_eq!(dto.account_key.as_deref(), expected_key);
+            assert_eq!(dto.notice.as_deref(), expected_notice);
+        }
+    }
 }

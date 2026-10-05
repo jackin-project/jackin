@@ -120,6 +120,11 @@ public struct UsageWindowModel: Equatable, Sendable {
         case provider(String)
     }
 
+    public struct AccountRouteNotice: Equatable, Sendable {
+        public let surfaceId: String
+        public let message: String
+    }
+
     /// Selected provider content (nil for Overview / empty).
     public struct Content: Equatable, Sendable {
         public let surfaceId: String
@@ -132,7 +137,7 @@ public struct UsageWindowModel: Equatable, Sendable {
         public let identity: PresentationStore.IdentityRow
         public let detail: UsageDetailPresentation
         public let accounts: [PresentationStore.AccountRow]
-        public let selectedAccountKey: String?
+        public let selectedAccountRoute: PresentationStore.SelectedAccountRoute
 
         public init(
             surfaceId: String,
@@ -143,7 +148,7 @@ public struct UsageWindowModel: Equatable, Sendable {
             identity: PresentationStore.IdentityRow,
             detail: UsageDetailPresentation,
             accounts: [PresentationStore.AccountRow],
-            selectedAccountKey: String?
+            selectedAccountRoute: PresentationStore.SelectedAccountRoute
         ) {
             self.surfaceId = surfaceId
             self.displayLabel = displayLabel
@@ -153,15 +158,22 @@ public struct UsageWindowModel: Equatable, Sendable {
             self.identity = identity
             self.detail = detail
             self.accounts = accounts
-            self.selectedAccountKey = selectedAccountKey
+            self.selectedAccountRoute = selectedAccountRoute
         }
 
-        /// Exact account for the detail-head subtitle; else the provider-selected account.
-        public var headAccount: PresentationStore.AccountRow? {
-            if let selectedAccountKey {
-                return accounts.first(where: { $0.accountKey == selectedAccountKey })
+        /// Exact account resolved by the Rust route, with no sibling inference.
+        public var selectedAccountKey: String? {
+            if case .available(let accountKey) = selectedAccountRoute {
+                return accountKey
             }
-            return accounts.first(where: \.selected) ?? accounts.first
+            return nil
+        }
+
+        /// Exact account for the detail-head subtitle; unresolved routes show no sibling.
+        public var headAccount: PresentationStore.AccountRow? {
+            selectedAccountKey.flatMap { key in
+                accounts.first(where: { $0.accountKey == key })
+            }
         }
     }
 
@@ -169,6 +181,7 @@ public struct UsageWindowModel: Equatable, Sendable {
     public let sidebar: [PresentationStore.GlanceProviderRow]
     public let selection: Selection
     public let content: Content?
+    public let routeNotice: AccountRouteNotice?
     /// No providers detected → the empty-state hint.
     public let isEmpty: Bool
 
@@ -180,8 +193,7 @@ public struct UsageWindowModel: Equatable, Sendable {
         surfaces: [PresentationStore.SurfaceRow],
         accounts: [PresentationStore.AccountRow],
         providerGroups: [PresentationStore.ProviderGroupRow] = [],
-        selection surfaceId: String?,
-        accountSelection: String? = nil
+        selection surfaceId: String?
     ) {
         sidebar = glanceRows
         isEmpty = glanceRows.isEmpty
@@ -190,17 +202,51 @@ public struct UsageWindowModel: Equatable, Sendable {
         if let surfaceId,
             let surface = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
         {
-            let surfaceAccounts = accounts.filter { $0.surfaceId == surfaceId }
-            if let accountSelection,
-                !surfaceAccounts.contains(where: { $0.accountKey == accountSelection })
-            {
+            let group = providerGroups.first(where: { $0.surfaceId == surfaceId })
+            let surfaceAccounts = group?.accounts ?? accounts.filter { $0.surfaceId == surfaceId }
+            let route: PresentationStore.SelectedAccountRoute? = group == nil
+                ? .unselected : group?.selectedAccountRoute
+            guard let route else {
                 selection = .overview
                 content = nil
+                routeNotice = nil
                 return
             }
+            switch route {
+            case .unselected:
+                break
+            case .resolving(let accountKey):
+                guard !surfaceAccounts.contains(where: { $0.accountKey == accountKey }) else {
+                    selection = .overview
+                    content = nil
+                    routeNotice = nil
+                    return
+                }
+            case .available(let accountKey):
+                guard surfaceAccounts.contains(where: { $0.accountKey == accountKey }) else {
+                    selection = .overview
+                    content = nil
+                    routeNotice = nil
+                    return
+                }
+            case .unavailable(let accountKey, let notice):
+                guard !surfaceAccounts.contains(where: { $0.accountKey == accountKey }),
+                    !notice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else {
+                    selection = .overview
+                    content = nil
+                    routeNotice = nil
+                    return
+                }
+                selection = .overview
+                content = nil
+                routeNotice = AccountRouteNotice(surfaceId: surfaceId, message: notice)
+                return
+            }
+
             selection = .provider(surfaceId)
+            routeNotice = nil
             let glance = glanceRows.first(where: { $0.surfaceId == surfaceId })
-            let group = providerGroups.first(where: { $0.surfaceId == surfaceId })
             if let identity = surface.identity {
                 content = Content(
                     surfaceId: surfaceId,
@@ -211,7 +257,7 @@ public struct UsageWindowModel: Equatable, Sendable {
                     identity: identity,
                     detail: surface.detailPresentation,
                     accounts: surfaceAccounts,
-                    selectedAccountKey: accountSelection
+                    selectedAccountRoute: route
                 )
             } else {
                 content = nil
@@ -219,6 +265,7 @@ public struct UsageWindowModel: Equatable, Sendable {
         } else {
             selection = .overview
             content = nil
+            routeNotice = nil
         }
     }
 }
