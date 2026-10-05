@@ -15,6 +15,8 @@ The first main-source MBX attempt failed because the private chroot lacked `/etc
 
 ## Current evidence state
 
+- The 2026-10-05 runtime/Velnor checkpoint records Python-only rootfs staging and an exact historical Velnor CI helper build, while preserving the unrun Cargo/generator, current-main, release-protection, and ARM gates. See [runtime and Velnor checkpoint](evidence/runtime-and-velnor-checkpoint-2026-10-05.md).
+
 - The initial Velnor workflow review remains NOT APPROVED for unresolved Jackin coverage gaps. PR #55 merged; run `37261457091` passed all 20 jobs at the merge commit. A later current-main SHA has no verified CI run. See [CI coverage](ci-coverage.md#velnor-pr-55).
 - Architect PR [#479](https://github.com/jackin-project/jackin-the-architect/pull/479) merged at `7b72b38fe1d66e35c0931899c53bf3719592bbcc`. The post-merge Sonar check failed, and the automated review summary completed after merge. The Jackin consumer source review passed, but Plan fails against pinned Velnor 0.1.0. Full role validation and role loading remain NOT RUN. See [reviews](reviews.md#merged-architect-and-consumer-status).
 - The selected operation-ID migration now has source-review PASS at Jackin `17b2b1be6a58a0e34af6d8308df915d110f4a785`. The two immediate-predecessor input fixtures and an ignored rebake writer are committed. Generated goldens, writer execution, migration tests, and schema checks remain NOT RUN pending the exact MBX 1.22.0 sandbox review. See [migration fixture checkpoint](reviews.md#current-migration-source-and-fixture-checkpoint).
