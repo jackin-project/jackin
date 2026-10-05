@@ -1,0 +1,2 @@
+0000000000000000000000000000000000000000 65e9dfbdba1066c29fa3a3ea88a7930cb833152b Alexey Zhokhov <alexey@zhokhov.com> 1789992317 +0700	branch: Created from origin/main
+65e9dfbdba1066c29fa3a3ea88a7930cb833152b 804046816a1142bb85cb4df926076f9c61971a82 Alexey Zhokhov <alexey@zhokhov.com> 1789992683 +0700	commit: fix(ci): clippy-affected reads index+worktree for manifests

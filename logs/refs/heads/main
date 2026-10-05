@@ -1,0 +1,6 @@
+0000000000000000000000000000000000000000 278cdbe517164564fc7206f37becff0e2b92b0b2 Alexey Zhokhov <alexey@zhokhov.com> 1789648708 +0700	clone: from github.com:jackin-project/jackin.git
+278cdbe517164564fc7206f37becff0e2b92b0b2 fce94cea8a15de0c2db3bb4ff880d741baf5c00a Alexey Zhokhov <alexey@zhokhov.com> 1789937735 +0700	pull: Fast-forward
+fce94cea8a15de0c2db3bb4ff880d741baf5c00a 799deeef907a890771f868a348e30192ecc2560a Alexey Zhokhov <alexey@zhokhov.com> 1789947608 +0700	pull --ff-only origin main: Fast-forward
+799deeef907a890771f868a348e30192ecc2560a f664f4d3efd52d74ad7abbd03207e748b3b789f1 Alexey Zhokhov <alexey@zhokhov.com> 1789953298 +0700	reset: moving to origin/main
+f664f4d3efd52d74ad7abbd03207e748b3b789f1 65e9dfbdba1066c29fa3a3ea88a7930cb833152b Alexey Zhokhov <alexey@zhokhov.com> 1789992003 +0700	reset: moving to origin/main
+65e9dfbdba1066c29fa3a3ea88a7930cb833152b 310e644832193232344ca99838ccf599f28faf53 Alexey Zhokhov <alexey@zhokhov.com> 1790930530 +0700	pull: Fast-forward

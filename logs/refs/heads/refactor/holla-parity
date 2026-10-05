@@ -1,0 +1,6 @@
+0000000000000000000000000000000000000000 81ed457c3dc45e4927ce74592bdf16a745c7af21 Alexey Zhokhov <alexey@zhokhov.com> 1789929690 +0700	branch: Created from HEAD
+81ed457c3dc45e4927ce74592bdf16a745c7af21 afdc35b5a46022ff0457b21946d66a74a1a0e5c1 Alexey Zhokhov <alexey@zhokhov.com> 1789929709 +0700	commit: fix(console): repair canonical usage borrows
+afdc35b5a46022ff0457b21946d66a74a1a0e5c1 23b7f59e4fea8b93d3d612959d1ececa259929df Alexey Zhokhov <alexey@zhokhov.com> 1789929709 +0700	commit: chore(auth): checkpoint credential publication repair
+23b7f59e4fea8b93d3d612959d1ececa259929df 42314f2c0336a51511036b5f23c4859d4e68fc6c Alexey Zhokhov <alexey@zhokhov.com> 1789929709 +0700	commit: chore(runtime): checkpoint private config wiring
+42314f2c0336a51511036b5f23c4859d4e68fc6c 7fb17f2791f757588104cb8ac61da4fe075e6fdf Alexey Zhokhov <alexey@zhokhov.com> 1789929709 +0700	commit: test(usage): checkpoint store failure regressions
+7fb17f2791f757588104cb8ac61da4fe075e6fdf ad92c88556b59e53d62e02eeb76acda8998a1b46 Alexey Zhokhov <alexey@zhokhov.com> 1789929710 +0700	commit: docs: hand off accounts work and verification gaps

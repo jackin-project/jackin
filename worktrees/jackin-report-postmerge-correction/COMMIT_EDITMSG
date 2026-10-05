@@ -1,0 +1,6 @@
+docs(ci): record post-1053 live results
+
+Record the 40-unit fail-closed state-sidecar selection and the 22m01/35m01 Apple results without recoloring the 120-second, reuse, or no-work findings.
+
+Co-authored-by: Codex <codex@openai.com>
+Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
