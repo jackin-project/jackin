@@ -13,7 +13,7 @@ Work agents are tool-assigned Luna/max. Runtime confirmation remains pending. De
 - The official [Codex configuration reference](https://developers.openai.com/codex/config-reference) defines `model_reasoning_effort` as a string.
 - Supported reasoning levels depend on the selected model.
 - Codex CLI is `0.160.0`. The command was `codex app-server generate-json-schema --experimental --out /tmp/codex-schema.jOAb5D`.
-- The v2 bundle is `/tmp/codex-schema.jOAb5D/codex_app_server_protocol.v2.schemas.json`. Its recorded generation time is `2026-10-05 03:44:00.610074727 +0200`.
+- The v2 bundle is `/tmp/codex-schema.jOAb5D/codex_app_server_protocol.v2.schemas.json`. `stat` reported its filesystem mtime as `2026-10-05 03:44:00.610074727 +0200`; this is not the command start time.
 - The bundle SHA-256 is `e77b7d1436a78f431a74b2cb263a862e92ae40d70411bc63835b47ab2168827c`.
 - `v2/ThreadStartResponse.json#/properties/model` and `v2/ThreadStartResponse.json#/properties/reasoningEffort` expose response fields.
 - `v2/ThreadResumeResponse.json#/properties/model` and `v2/ThreadResumeResponse.json#/properties/reasoningEffort` expose response fields.
@@ -51,6 +51,22 @@ The Sol review rejected Jackin redaction commit `08135f1ae010c63cec1bd7ff3a81250
 | Interleaved BuildKit records cross stream suppression. | Interleave records across stream-suppression boundaries. |
 
 The correction owner is `consolidation_review`. Tests remain NOT RUN pending MBX review and activation. This source rejection does not complete the final security review.
+
+## Redaction follow-up review
+
+Disposition: REJECT.
+
+Sol rejected Jackin redaction commit `63d5ef9046d4948a3cddb239e891db49be654d34` at that exact head. The review reports five P1 findings:
+
+| Finding | Required coverage |
+|---|---|
+| BuildKit records can interleave across stream suppression. | Cover interleaved records in both streams. |
+| YAML block scalar indentation `|2` is not handled. | Cover the explicit indentation indicator. |
+| A PEM value nested inside triple-quoted text leaks. | Cover nested PEM and triple-quote boundaries. |
+| Whole-text Basic Authorization values and block scalars leak. | Cover both complete-value forms. |
+| `push_line` resets per-call state. | Cover suppression state across calls. |
+
+The correction owner is `consolidation_review`. Provide one architecture-level replacement and request exact-head Sol re-review. This review does not approve the redaction implementation.
 
 ## CI workflow review
 
@@ -106,11 +122,11 @@ Add both predecessor fixture directories. Update successful fixture metadata and
 
 ## Account snapshot follow-up
 
-The `omp` worker's root-fix plan is IN PROGRESS. It proposes a bounded database and WAL snapshot under a source-directory pin, a committed token for WAL-only state, and provider-and-selector revalidation.
+Sol source review PASS at Jackin commit `1638522184ef45f0cd51fa5601a5e80c7fd89762`. The change handles stale WAL suffixes after uncommitted current-generation frames and adds a focused fixture and test.
 
-The planned fixtures cover WAL-only replacement and a concurrent writer. The plan awaits SQLite-native backup or a proof-backed stable capture. Review any provider-heavy dependency before adoption.
+The review leaves a stale-comment follow-up. Cargo tests remain NOT RUN pending MBX activation. This source review does not report test results.
 
-Tests remain NOT RUN until MBX provenance and activation are reviewed. This plan does not establish an implemented fix or passing test result.
+The earlier root-fix plan called for a bounded database and WAL snapshot under a source-directory pin, a committed token for WAL-only state, and provider-and-selector revalidation. Review any provider-heavy dependency before adoption.
 
 ## Architect integration review
 
@@ -130,19 +146,38 @@ The activation worker reports immutable MBX `1.21.0` release commit `201b9df3d18
 
 No local provenance transcript was saved. Artifact installation and activation remain IN PROGRESS. Security review must finish before compilation.
 
+### Launcher preflight
+
+Disposition: FAIL at launcher SHA `3bb10a21339c0aab3e7fc10f11ee57f97fc6d98a37e4972aa9fcac10ad6ef8c6`.
+
+The `register-rust` phase used unsupported `/usr/bin/mount --remount,bind,ro` syntax. Installed `mount` help requires `mount -o remount,bind,ro <target>`.
+
+The guarded namespace exited. Read-only checks found no task mount and no UID 65534 process. The script hash remained unchanged. No artifact download or build occurred.
+
+The owner corrected this syntax in launcher SHA `1388fb22db4b61de44f3fa18fec9159ea7da57f6ab7f5c577d34068fde21d112`. Sol approved that script. The separate offline runtime failure is recorded below. MBX activation remains NOT RUN.
+
+### Offline launcher attempt
+
+Disposition: FAIL at Sol-reviewed script SHA `1388fb22db4b61de44f3fa18fec9159ea7da57f6ab7f5c577d34068fde21d112`.
+
+The `register-rust` phase failed when Mise tried to resolve its version list online inside the offline namespace. No compilation or toolchain acquisition occurred.
+
+The `unprivileged_exec_design` owner is checking supported offline `mise link` behavior. The exact command and output remain pending. Do not mark MBX activation PASS.
+
 ## Review owners
 
 | Owner | Work | State |
 |---|---|---|
 | `preflight_security_review` | Initial security gate | Initial review complete; follow-up pending |
-| `unprivileged_exec_design` | Execution boundary | IN PROGRESS |
+| `unprivileged_exec_design` | Execution boundary and MBX launcher | IN PROGRESS; launcher correction pending; activation NOT RUN |
 | `codex_schema_runtime` | Agent settings confirmation | IN PROGRESS |
 | `branches` | Fetch passed; full diff review | IN PROGRESS |
 | `baseline_method_review` | PR #1108 exact-head source review | Complete; final build-performance review NOT STARTED |
-| `execution_crosscheck` | Consolidation source review and final gates | Consolidation review complete; final correctness review NOT STARTED |
+| `execution_crosscheck` | Consolidation source review and final gates | OMP source review complete; route source review pending; final correctness review NOT STARTED |
 | `consolidation_review` | Migration fixtures and redaction correction | IN PROGRESS; redaction tests NOT RUN pending MBX |
 | `jackin_ci_consumer` | Collector and Mise/MBX integration | IN PROGRESS |
-| `omp` | Account database and WAL root-fix plan | IN PROGRESS; tests NOT RUN |
+| `omp` | Account database and WAL root fix | Source review PASS at `1638522184ef45f0cd51fa5601a5e80c7fd89762`; stale-comment follow-up; Cargo tests NOT RUN |
+| `debian_codex_route` | Codex account discovery route | Source review pending at `688057f40173d32dda04a55bff1e3868c219710d`; runtime route NOT RUN |
 | `architect_schema_review` | Independent runtime-performance review | NOT STARTED; exact runtime evidence pending |
 
 The `architect_manifest_fix` owner supplied the exact-head review. The `velnor_recon` owners supplied generator history and workflow evidence.

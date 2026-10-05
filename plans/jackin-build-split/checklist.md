@@ -40,12 +40,16 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | ARCH-01 | Review Architect manifest at the exact PR head. | PASS | `architect_contract` | Head `0592d0deeaeaa5b785fa67a43d23d3b627552720` | Static review only. | [Architect review](reviews.md#architect-integration-review) |
 | ARCH-02 | Run role parser and repository validation. | NOT RUN | `architect_contract` | Reviewed MBX and local role checkout | Record validator output. | [Architect review](reviews.md#architect-integration-review) |
 | ARCH-03 | Run the actual role through Jackin. | NOT RUN | `architect_contract` | Security approval and Jackin runtime | Record the live role response. | [Architect review](reviews.md#architect-integration-review) |
-| ACCOUNT-01 | Complete runtime account discovery through workspace launch. | IN PROGRESS | `debian_codex_route` | Jackin binary, config, security gate | Static route inspection is complete; registration and launch remain NOT RUN. | [Debian results](debian-results.md) |
+| ACCOUNT-01 | Complete runtime account discovery through workspace launch. | IN PROGRESS | `debian_codex_route` | Jackin binary, config, security gate | CLI path checks are complete; Jackin runtime registration and launch remain NOT RUN. | [Debian results](debian-results.md#account-route) |
+| ACCOUNT-02 | Review the current `CODEX_HOME` source correction. | IN PROGRESS | `execution_crosscheck` | Exact commit `688057f40173d32dda04a55bff1e3868c219710d` | Exact-head source review is pending. | [Debian results](debian-results.md#account-route) |
 | SEC-01 | Review execution boundary, container, auth, and cache provenance. | IN PROGRESS | `preflight_security_review` and `unprivileged_exec_design` | Exact execution design | Resolve every preliminary gate. | [Security review](reviews.md) |
-| REDACT-01 | Fix and re-review the Jackin redaction findings. | IN PROGRESS | `consolidation_review` | Fixing commit and reviewed MBX activation before tests | Cover all four canaries. Obtain exact-head Sol re-review. | [Redaction review](reviews.md#jackin-redaction-review) |
+| REDACT-01 | Fix and re-review the Jackin redaction findings. | IN PROGRESS | `consolidation_review` | Architecture-level replacement and reviewed MBX activation | Cover the initial canaries and current P1 findings. Obtain exact-head Sol re-review. | [Redaction review](reviews.md#jackin-redaction-review) |
+| REDACT-02 | Fix the five P1 findings from the exact-head redaction review. | IN PROGRESS | `consolidation_review` | Architecture-level replacement | Fix all five findings from rejected commit `63d5ef9046d4948a3cddb239e891db49be654d34`; obtain exact-head review. | [Redaction follow-up](reviews.md#redaction-follow-up-review) |
 | CODEX-01 | Record official configuration schema and local model catalog. | IN PROGRESS | `codex_schema_runtime` | Active-agent runtime confirmation | Confirm settings at runtime. | [Official reference](https://developers.openai.com/codex/config-reference); [catalog command](#codex-catalog-command) |
 | CODEX-02 | Record configured model and effort fields in the app-server schema. | PASS | `codex_schema_runtime` | Generated v2 schema bundle evidence | Record schema exposure; confirm active settings separately. | [Codex schema evidence](reviews.md#codex-schema-and-catalog) |
 | MBX-01 | Verify official MBX artifact provenance and activation. | IN PROGRESS | `unprivileged_exec_design` | Security review | Verify before compilation. | [Security review](reviews.md#mbx-provenance) |
+| MBX-02 | Validate the initial `register-rust` launcher syntax. | FAIL | `unprivileged_exec_design` | Launcher SHA `3bb10a21339c0aab3e7fc10f11ee57f97fc6d98a37e4972aa9fcac10ad6ef8c6` | This SHA failed; approved SHA `1388fb2` fixed the mount syntax. | [Launcher preflight](reviews.md#launcher-preflight) |
+| MBX-03 | Run the Sol-reviewed MBX launcher inside the offline namespace. | FAIL | `unprivileged_exec_design` | Supported offline Mise setup and exact Sol review | Runtime tried online version-list resolution; no compilation or acquisition occurred. | [Offline launcher attempt](reviews.md#offline-launcher-attempt) |
 | PRIV-01 | Avoid credential or auth-content disclosure. | PASS | `task_records` | None | Do not read or copy auth contents. | [Debian results](debian-results.md) |
 | SOURCE-01 | Leave source and `mise.lock` unchanged. | PASS | `task_records` | Documentation-only edits | Commit contains only task records. | Commit `34c32ca31e58b5e3dac71e88892778568f6f70d1` |
 | BUILD-02 | Keep builds and compilation unrun in this checkpoint. | NOT RUN | `build_baseline` | Later execution authorization | No build commands. | [Build results](build-results.md) |
@@ -65,6 +69,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | BUILD-11 | Measure workspace verification. | NOT RUN | `build_baseline` | Security gate and implementation | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
 | BUILD-12 | Measure the required release build. | NOT RUN | `build_baseline` | Release design, security gate, and implementation | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
 | CI-03 | Complete two consecutive compatible CI runs. | NOT RUN | `velnor_recon` and `jackin_generator_config` | Coverage gaps closed and task PR exists | Pass both consecutive runs. Repeat comparable runs at least three times. | [CI review](reviews.md#ci-workflow-review) |
+| CI-04 | Track Velnor PR #55 checks at its exact head. | IN PROGRESS | `velnor_recon` | Head `68f969bb4b9c71be8ff2126f04f6a2bcebe38a78`, run `37254450133` | Actionlint passed; orchestrator, CLI, and workflow-renderer failed; remaining matrix is in progress. Logs are unavailable until the run completes. | [Velnor PR #55](ci-coverage.md#velnor-pr-55) |
 | TASK-01 | Route build, test, and lint tasks through the reviewed Mise and MBX boundary. | IN PROGRESS | `jackin_ci_consumer` and `jackin_generator_config` | Rust-MBX design and activation review | Remove the plain `cargo xtask` bypass before CI acceptance. | [Task invocation gate](branches.md#task-invocation-gate) |
 | PR1108-01 | Record independent source-review dispositions for PR #1108. | PASS | `baseline_method_review` | Exact PR head `2990df17e25f30afca84804d9c402abc1ce00231` | Keep REJECT, ALREADY PRESENT, SELECT, and REPLACE scopes distinct. | [Sol review](branches.md#independent-sol-review-disposition) |
 | PR1108-02 | Fix collector permissions, validation, and failure reporting. | IN PROGRESS | `jackin_ci_consumer` | Current collector owner and generated workflow | Limit `actions: read` and validation changes to collector jobs. | [Collector review](branches.md#artifact-permission) |
@@ -95,10 +100,11 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | MAIN-01 | Verify the final change on the default branch. | NOT RUN | `execution_crosscheck` | Authorized merge and final main SHA | Re-fetch main and verify the merged commit and checks. | [Final report](final-report.md) |
 | CONSOL-01 | Fix and review the account-consolidation migration fixtures. | IN PROGRESS | `consolidation_review` and `execution_crosscheck` | Required predecessor, golden, and meta fixtures; verified MBX | Do not accept or merge before fixture checks and exact-head review pass. | [Consolidation review](reviews.md#account-consolidation-review) |
 | VELNOR-01 | Record the generator design decision and remaining coverage. | IN PROGRESS | `velnor_recon` and `jackin_generator_config` | Current generator head review | Keep release signing separate and close required CI gaps. | [Velnor design review](reviews.md#velnor-design-review) |
-| SNAPSHOT-01 | Review the account database and WAL snapshot root-fix plan. | IN PROGRESS | `omp` | SQLite-native backup or proof-backed stable capture | Add WAL-only replacement and concurrent-writer fixtures before tests. | [Snapshot follow-up](reviews.md#account-snapshot-follow-up) |
+| SNAPSHOT-01 | Complete the account database and WAL snapshot root fix. | IN PROGRESS | `omp` | Reviewed MBX activation | Source review passed; address the stale-comment follow-up and run Cargo tests. | [Snapshot follow-up](reviews.md#account-snapshot-follow-up) |
+| SNAPSHOT-02 | Review the OMP WAL fix at its exact source head. | PASS | `execution_crosscheck` | Commit `1638522184ef45f0cd51fa5601a5e80c7fd89762` | Source review PASS; Cargo tests remain NOT RUN. | [Snapshot follow-up](reviews.md#account-snapshot-follow-up) |
 | MD-01 | Check every local link, path, and Markdown structure. | PASS | `task_records` | Eight task records | Resolve paths and validate tables and ticks. | [Records](final-report.md) |
 | GIT-01 | Commit and push documentation progress. | PASS | `task_records` | Task branch | Push without opening a PR. | Commit and branch in [final report](final-report.md) |
-| PR-01 | Do not open or merge a PR in this checkpoint. | PASS | `task_records` | Documentation-only scope | No task PR exists. | [Branch record](branches.md) |
+| PR-01 | Merge ready task PRs after every gate passes. | IN PROGRESS | `coordinator` | Final reviews, required checks, and resolved feedback for each PR | Architect and Velnor PRs are open; no merge is approved by this checkpoint. Re-fetch feedback at each final head before merge. | [Branch record](branches.md) |
 
 ## Active owners
 
@@ -111,14 +117,14 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | `velnor_recon` / `jackin_generator_config` | Generator and CI coverage | IN PROGRESS |
 | `jackin_ci_consumer` | Current CI collector and Mise/MBX integration | IN PROGRESS |
 | `consolidation_review` | Migration fixture and redaction correction | IN PROGRESS; redaction tests NOT RUN pending MBX |
-| `omp` | Account database and WAL root-fix plan | IN PROGRESS; tests NOT RUN |
-| `execution_crosscheck` | Independent Sol/medium correctness reviewer | Earlier source reviews complete; final correctness review NOT STARTED |
+| `omp` | Account database and WAL root fix | Source review PASS; stale-comment follow-up; Cargo tests NOT RUN |
+| `execution_crosscheck` | Independent Sol/medium correctness reviewer | OMP review complete; route source review pending; final correctness review NOT STARTED |
 | `codex_schema_runtime` | Codex schema and runtime settings | IN PROGRESS |
-| `unprivileged_exec_design` | Execution boundary | IN PROGRESS |
+| `unprivileged_exec_design` | Execution boundary and MBX launcher | IN PROGRESS; checking offline `mise link`; activation NOT RUN |
 | `preflight_security_review` | Sol/medium security reviewer | Preliminary review complete; final review NOT STARTED |
 | `baseline_method_review` | Sol/medium build-performance reviewer | PR #1108 review complete; final build review NOT STARTED |
 | `architect_schema_review` | Sol/medium runtime-performance reviewer | Final review NOT STARTED; runtime evidence pending |
-| `debian_codex_route` | Debian account route | Static review complete; runtime route NOT RUN |
+| `debian_codex_route` | Debian account route | Source commit `688057f40173d32dda04a55bff1e3868c219710d` review pending; runtime route NOT RUN |
 
 ## Records
 
