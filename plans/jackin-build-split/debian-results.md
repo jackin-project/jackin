@@ -183,3 +183,28 @@ plan helper from `handle_load`, with no lint suppression. The exact commit has n
 source-bound MBX verification. Its new GitHub run `37355227790` is still in progress: DCO and
 Actionlint succeeded, while Plan was running at the last query (`2026-10-05T18:20:47Z`). The
 24b8 archive above is historical for this new source head; the immutable c7 archive is pending.
+
+## Historical Velnor 86 source-index semantic revalidation
+
+The frozen source manifest
+`/root/.velnor-generator-preview-20261005/main-source-86f-manifest.json` (SHA-256
+`f12e0de7c5c22c5dc69e4f141d38d704a94f50494448dee3e896ea499a3e61b3`) binds Velnor commit
+`86f864aabc2192a9f8ccd3f01f2e25b7858c3f20`, tree `1e16a9270f3ea99b04e68521cfc876fa19db67ac`,
+repository `https://github.com/tailrocks/velnor-new.git`, and original Git-index digest
+`b60394dee2640d075d013df7f5d3fbc47d6092aaa28f7e6a632e6f718672eb6a`. The source fetch log SHA is
+`e64bc5b742a797b1e4e1f07658d1ea32aa8e469e4e4741a9fbbf2c64d9e82226`. The current materialized
+source index at `/root/.velnor-generator-preview-20261005/main-source-86f/.git/index` has SHA-256
+`50ad81de6e038c3d5bf179442518709faf18f182cca35b4f8bd514e7f161e226`, mode 0644, size 204,634;
+it differs bytewise from the digest recorded in the frozen manifest. The owner reports a separate
+bounded parser check found a checksum-valid v2 index with 1,599 stage-0 entries plus a TREE
+extension and semantic equality of tracked path/mode/object-ID tuples. No cause is inferred, no
+byte-identity is claimed, and the original source manifest is unchanged. The parser run's separate
+result artifact was not retained, so this semantic check is owner-reported rather than independently
+replayed here.
+
+The materialization result JSON SHA-256 is
+`e1d0f8638b6beb15a004ebda64c26ec4924246ff4895431de3f59b03f90efe76`; its log SHA-256 is
+`fb2095624d47c5c9092a8f471c9d4f9cfb529ec23a9d6031209cc2d9b7f3aa32`. A sanitized minimal Git
+capsule has not yet been created; the owner is preparing a separate exact identity record from the
+immutable raw-tree manifest. No Cargo cache was inspected and no Cargo/helper/generator execution
+occurred in this index review.
