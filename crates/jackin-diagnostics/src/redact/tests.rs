@@ -1,5 +1,6 @@
 use super::{
-    MAX_ACTIVE_ENVELOPES, MAX_STREAM_LINE_BYTES, StreamRedactor, redact_and_cap, redact_text,
+    MAX_ACTIVE_ENVELOPES, MAX_PEM_LABEL_BYTES, MAX_STREAM_LINE_BYTES, StreamRedactor,
+    redact_and_cap, redact_text,
 };
 
 #[test]
@@ -24,6 +25,70 @@ fn redacts_private_key_blocks() {
     let redacted = redact_text(input);
 
     assert_eq!(redacted, "before <redacted>\n after");
+}
+
+#[test]
+fn nested_and_mismatched_pem_markers_fail_closed_in_whole_text_sinks() {
+    let nested = concat!(
+        "-----BEGIN PRIVATE KEY-----\n",
+        "-----BEGIN RSA PRIVATE KEY-----\n",
+        "-----END RSA PRIVATE KEY-----\n",
+        "nested-pem-canary\n",
+        "-----END PRIVATE KEY-----\n",
+    );
+    assert!(!redact_text(nested).contains("nested-pem-canary"));
+    assert!(!redact_and_cap(nested, 4096).contains("nested-pem-canary"));
+
+    let same_line = concat!(
+        "-----BEGIN PRIVATE KEY----------BEGIN RSA PRIVATE KEY----------END RSA PRIVATE KEY-----",
+        "same-line-pem-canary",
+        "-----END PRIVATE KEY-----",
+    );
+    assert!(!redact_text(same_line).contains("same-line-pem-canary"));
+
+    let mismatched = concat!(
+        "-----BEGIN PRIVATE KEY-----\n",
+        "-----END RSA PRIVATE KEY-----\n",
+        "mismatched-footer-canary\n",
+        "-----END PRIVATE KEY-----\n",
+    );
+    assert!(!redact_text(mismatched).contains("mismatched-footer-canary"));
+    assert!(!redact_and_cap(mismatched, 4096).contains("mismatched-footer-canary"));
+}
+
+#[test]
+fn quote_and_pem_contexts_cannot_close_each_other() {
+    let quote_inside_pem = concat!(
+        "-----BEGIN PRIVATE KEY-----\n",
+        "token = \"\"\"\n",
+        "-----END PRIVATE KEY-----\n",
+        "quote-inside-pem-canary\n",
+        "\"\"\"\n",
+        "-----END PRIVATE KEY-----\n",
+    );
+    assert!(!redact_text(quote_inside_pem).contains("quote-inside-pem-canary"));
+
+    let pem_inside_quote = concat!(
+        "token = \"\"\"\n",
+        "-----BEGIN PRIVATE KEY-----\n",
+        "pem-inside-quote-body\n",
+        "-----END PRIVATE KEY-----\n",
+        "pem-inside-quote-canary\n",
+        "\"\"\"\n",
+        "visible: retained\n",
+    );
+    let redacted = redact_text(pem_inside_quote);
+    assert!(!redacted.contains("pem-inside-quote-body"));
+    assert!(!redacted.contains("pem-inside-quote-canary"));
+    assert!(redacted.contains("visible: retained"));
+}
+
+#[test]
+fn pem_label_overflow_fails_closed() {
+    let label = format!("{}PRIVATE KEY", "A".repeat(MAX_PEM_LABEL_BYTES + 1));
+    let input = format!("-----BEGIN {label}-----\noverflow-label-canary\n-----END {label}-----\n");
+    assert!(!redact_text(&input).contains("overflow-label-canary"));
+    assert!(!redact_and_cap(&input, 4096).contains("overflow-label-canary"));
 }
 
 #[test]
@@ -106,6 +171,55 @@ fn stream_hides_pem_body_until_footer_after_arbitrary_splits() {
         assert!(!output.join("\n").contains("second-secret-line"));
     }
     assert_eq!(output, vec!["prefix <redacted>", " suffix", "visible"]);
+}
+
+#[test]
+fn stream_pem_fails_closed_on_nested_and_mismatched_markers() {
+    let mut nested = StreamRedactor::default();
+    let mut output = Vec::new();
+    for line in [
+        b"-----BEGIN PRIVATE KEY-----\n".as_slice(),
+        b"-----BEGIN RSA PRIVATE KEY-----\n".as_slice(),
+        b"-----END RSA PRIVATE KEY-----\n".as_slice(),
+        b"nested-stream-pem-canary\n".as_slice(),
+        b"-----END PRIVATE KEY-----\n".as_slice(),
+    ] {
+        output.extend(nested.push_bytes(line));
+        assert!(!output.join("\n").contains("nested-stream-pem-canary"));
+    }
+    assert_eq!(output, vec!["<redacted>"]);
+
+    let mut same_line = StreamRedactor::default();
+    let output = same_line.push_bytes(concat!(
+        "-----BEGIN PRIVATE KEY----------BEGIN RSA PRIVATE KEY----------END RSA PRIVATE KEY-----",
+        "same-line-stream-canary",
+        "-----END PRIVATE KEY-----\n",
+    ).as_bytes());
+    assert_eq!(output, vec!["<redacted>"]);
+    assert!(!output.join("\n").contains("same-line-stream-canary"));
+
+    let mut mismatched = StreamRedactor::default();
+    let output = mismatched.push_bytes(
+        concat!(
+            "-----BEGIN PRIVATE KEY-----\n",
+            "-----END RSA PRIVATE KEY-----\n",
+            "mismatched-stream-canary\n",
+        )
+        .as_bytes(),
+    );
+    assert_eq!(output, vec!["<redacted>"]);
+    assert!(!output.join("\n").contains("mismatched-stream-canary"));
+}
+
+#[test]
+fn stream_fails_closed_when_pem_label_exceeds_its_bound() {
+    let label = format!("{}PRIVATE KEY", "A".repeat(MAX_PEM_LABEL_BYTES + 1));
+    let input =
+        format!("-----BEGIN {label}-----\noverflow-stream-pem-canary\n-----END {label}-----\n");
+    let mut redactor = StreamRedactor::default();
+    let output = redactor.push_bytes(input.as_bytes());
+    assert_eq!(output, vec!["<redacted>"]);
+    assert!(!output.join("\n").contains("overflow-stream-pem-canary"));
 }
 
 #[test]

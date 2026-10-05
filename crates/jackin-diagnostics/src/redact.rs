@@ -8,6 +8,7 @@ const REDACTED: &str = "<redacted>";
 const MAX_STREAM_LINE_BYTES: usize = 64 * 1024;
 const MAX_STRUCTURED_DEPTH: usize = 256;
 const MAX_ACTIVE_ENVELOPES: usize = 64;
+const MAX_PEM_LABEL_BYTES: usize = 128;
 
 /// Incremental redactor for one output stream.
 ///
@@ -36,7 +37,7 @@ impl Default for StreamRedactor {
 #[derive(Debug)]
 enum StreamMode {
     Normal,
-    Pem,
+    Pem { label: String },
     Block(BlockState),
     Indented(IndentedState),
     Quoted(QuotedState),
@@ -76,6 +77,25 @@ struct BuildKitLine<'a> {
     prefix: &'a str,
     payload: &'a str,
     step: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+struct PemMarker<'a> {
+    start: usize,
+    end: usize,
+    label: &'a str,
+}
+
+enum PemScan {
+    Complete(usize),
+    Incomplete(String),
+    Malformed,
+}
+
+enum PemContinuation {
+    Complete(usize),
+    Open,
+    Malformed,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -214,14 +234,19 @@ impl StreamRedactor {
         let current = std::mem::replace(mode, StreamMode::Normal);
         match current {
             StreamMode::Normal => self.process_normal_line(line, line_prefix, mode),
-            StreamMode::Pem => {
-                if let Some(end) = private_key_footer_end(line) {
+            StreamMode::Pem { label } => match scan_pem_continuation(line, &label) {
+                PemContinuation::Complete(end) => {
                     self.process_suffix(&line[end..], line_prefix, mode)
-                } else {
-                    *mode = StreamMode::Pem;
+                }
+                PemContinuation::Open => {
+                    *mode = StreamMode::Pem { label };
                     Vec::new()
                 }
-            }
+                PemContinuation::Malformed => {
+                    *mode = StreamMode::FailedClosed;
+                    Vec::new()
+                }
+            },
             StreamMode::Block(mut block) => {
                 if line.trim().is_empty() {
                     *mode = StreamMode::Block(block);
@@ -340,21 +365,28 @@ impl StreamRedactor {
             let pem_begin = private_key_begin(remaining);
             let assignment = secret_assignment(remaining);
             let pem_precedes_assignment = match (pem_begin, assignment) {
-                (Some(begin), Some(assignment)) => begin < assignment.start,
+                (Some(begin), Some(assignment)) => begin.start < assignment.start,
                 (Some(_), None) => true,
                 _ => false,
             };
             if pem_precedes_assignment {
                 let begin = pem_begin.expect("PEM marker precedes any assignment");
-                output.push_str(&redact_unstructured_text(&remaining[..begin]));
-                if let Some(end) = private_key_footer_end(&remaining[begin..]) {
-                    output.push_str(REDACTED);
-                    cursor += begin + end;
-                    continue;
-                }
+                output.push_str(&redact_unstructured_text(&remaining[..begin.start]));
                 output.push_str(REDACTED);
-                *mode = StreamMode::Pem;
-                return vec![output];
+                match scan_pem_block(&remaining[begin.start..]) {
+                    PemScan::Complete(end) => {
+                        cursor += begin.start + end;
+                        continue;
+                    }
+                    PemScan::Incomplete(label) => {
+                        *mode = StreamMode::Pem { label };
+                        return vec![output];
+                    }
+                    PemScan::Malformed => {
+                        *mode = StreamMode::FailedClosed;
+                        return vec![output];
+                    }
+                }
             }
             let Some(assignment) = assignment else {
                 output.push_str(&redact_unstructured_text(remaining));
@@ -445,14 +477,22 @@ impl StreamRedactor {
             }
 
             if let Some(begin) = private_key_begin(&remaining[value_start..]) {
-                let begin = value_start + begin;
+                let begin = value_start + begin.start;
                 output.push_str(REDACTED);
-                if let Some(end) = private_key_footer_end(&remaining[begin..]) {
-                    cursor += begin + end;
-                    continue;
+                match scan_pem_block(&remaining[begin..]) {
+                    PemScan::Complete(end) => {
+                        cursor += begin + end;
+                        continue;
+                    }
+                    PemScan::Incomplete(label) => {
+                        *mode = StreamMode::Pem { label };
+                        return vec![output];
+                    }
+                    PemScan::Malformed => {
+                        *mode = StreamMode::FailedClosed;
+                        return vec![output];
+                    }
                 }
-                *mode = StreamMode::Pem;
-                return vec![output];
             }
 
             let end = plain_value_end(
@@ -867,22 +907,90 @@ fn structured_value_end(bytes: &[u8], start: usize, state: &mut StructuredState)
     None
 }
 
-fn private_key_begin(input: &str) -> Option<usize> {
-    private_key_begin_matcher()
-        .find(input)
-        .map(|found| found.start())
+fn private_key_begin(input: &str) -> Option<PemMarker<'_>> {
+    let captures = private_key_begin_matcher().captures(input)?;
+    let marker = captures.get(0)?;
+    let label = captures.get(1)?;
+    Some(PemMarker {
+        start: marker.start(),
+        end: marker.end(),
+        label: label.as_str(),
+    })
 }
 
-fn private_key_footer_end(input: &str) -> Option<usize> {
-    private_key_footer_matcher()
-        .find(input)
-        .map(|found| found.end())
+fn private_key_footer(input: &str) -> Option<PemMarker<'_>> {
+    let captures = private_key_footer_matcher().captures(input)?;
+    let marker = captures.get(0)?;
+    let label = captures.get(1)?;
+    Some(PemMarker {
+        start: marker.start(),
+        end: marker.end(),
+        label: label.as_str(),
+    })
+}
+
+fn scan_pem_block(input: &str) -> PemScan {
+    let Some(begin) = private_key_begin(input) else {
+        return PemScan::Malformed;
+    };
+    if begin.label.len() > MAX_PEM_LABEL_BYTES {
+        return PemScan::Malformed;
+    }
+
+    let body = &input[begin.end..];
+    let nested_begin = private_key_begin(body);
+    let footer = private_key_footer(body);
+    let body_end = footer.map_or(body.len(), |footer| footer.start);
+    if body.as_bytes()[..body_end]
+        .iter()
+        .any(|byte| matches!(byte, b'\'' | b'"'))
+    {
+        return PemScan::Malformed;
+    }
+    let nested_precedes_footer = nested_begin.map_or(false, |nested_begin| {
+        footer.map_or(true, |footer| nested_begin.start < footer.start)
+    });
+    if nested_precedes_footer {
+        return PemScan::Malformed;
+    }
+    let Some(footer) = footer else {
+        return PemScan::Incomplete(begin.label.to_owned());
+    };
+    if footer.label != begin.label {
+        return PemScan::Malformed;
+    }
+    PemScan::Complete(begin.end + footer.end)
+}
+
+fn scan_pem_continuation(input: &str, expected_label: &str) -> PemContinuation {
+    let nested_begin = private_key_begin(input);
+    let footer = private_key_footer(input);
+    let body_end = footer.map_or(input.len(), |footer| footer.start);
+    if input.as_bytes()[..body_end]
+        .iter()
+        .any(|byte| matches!(byte, b'\'' | b'"'))
+    {
+        return PemContinuation::Malformed;
+    }
+    let nested_precedes_footer = nested_begin.map_or(false, |nested_begin| {
+        footer.map_or(true, |footer| nested_begin.start < footer.start)
+    });
+    if nested_precedes_footer {
+        return PemContinuation::Malformed;
+    }
+    let Some(footer) = footer else {
+        return PemContinuation::Open;
+    };
+    if footer.label != expected_label {
+        return PemContinuation::Malformed;
+    }
+    PemContinuation::Complete(footer.end)
 }
 
 fn private_key_begin_matcher() -> &'static Regex {
     static MATCHER: OnceLock<Regex> = OnceLock::new();
     MATCHER.get_or_init(|| {
-        Regex::new(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
+        Regex::new(r"-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----")
             .expect("valid private key begin matcher")
     })
 }
@@ -890,7 +998,7 @@ fn private_key_begin_matcher() -> &'static Regex {
 fn private_key_footer_matcher() -> &'static Regex {
     static MATCHER: OnceLock<Regex> = OnceLock::new();
     MATCHER.get_or_init(|| {
-        Regex::new(r"-----END [A-Z0-9 ]*PRIVATE KEY-----")
+        Regex::new(r"-----END ([A-Z0-9 ]*PRIVATE KEY)-----")
             .expect("valid private key footer matcher")
     })
 }

@@ -120,3 +120,46 @@ fn capture_end_resets_open_context_before_later_sink_calls() {
     assert_eq!(snapshot(), vec!["#7 0.3 visible-after-begin"]);
     end();
 }
+
+#[test]
+fn snapshots_suppress_nested_and_mismatched_pem_contexts() {
+    let _guard = TEST_LOCK.lock().unwrap();
+
+    begin();
+    for line in [
+        "-----BEGIN PRIVATE KEY-----",
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "-----END RSA PRIVATE KEY-----",
+        "snapshot-nested-pem-canary",
+        "-----END PRIVATE KEY-----",
+    ] {
+        push_line(line);
+        assert!(!snapshot().join("\n").contains("snapshot-nested-pem-canary"));
+    }
+    end();
+
+    begin();
+    push_line(concat!(
+        "-----BEGIN PRIVATE KEY----------BEGIN RSA PRIVATE KEY----------END RSA PRIVATE KEY-----",
+        "snapshot-same-line-pem-canary",
+        "-----END PRIVATE KEY-----",
+    ));
+    assert!(
+        !snapshot()
+            .join("\n")
+            .contains("snapshot-same-line-pem-canary")
+    );
+    end();
+
+    begin();
+    push_line("-----BEGIN PRIVATE KEY-----");
+    push_line("-----END RSA PRIVATE KEY-----");
+    push_line("snapshot-mismatched-pem-canary");
+    push_line("-----END PRIVATE KEY-----");
+    assert!(
+        !snapshot()
+            .join("\n")
+            .contains("snapshot-mismatched-pem-canary")
+    );
+    end();
+}
