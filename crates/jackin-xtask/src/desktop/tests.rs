@@ -359,16 +359,84 @@ fn release_workflow_invokes_canonical_mise_tasks() {
 }
 
 #[test]
-fn generated_ci_delegates_the_native_lane() {
-    let ci = repo_text(".github/workflows/ci-pr.yml");
-    assert!(
-        ci.contains("ci-unit-swift.yml"),
-        "generated ci-pr.yml must dispatch the Swift units to the unit workflow"
-    );
-    for hand_restated in ["swift test", "cargo xtask desktop", "xcodebuild"] {
+#[expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "the maintained CI contract must fail closed on missing declarations"
+)]
+fn generated_ci_includes_configured_native_verification_tasks() {
+    use std::{collections::BTreeSet, fs, path::Path};
+
+    const TASK_IDS: [&str; 2] = ["native-swift-format", "native-swiftlint"];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config: toml::Value = toml::from_str(&repo_text(".velnor/config.toml"))
+        .expect("Velnor consumer configuration is valid TOML");
+    let configured_tasks = config
+        .get("workflow")
+        .and_then(|value| value.get("tasks"))
+        .and_then(toml::Value::as_array)
+        .expect("maintained verification tasks are declared");
+    for task_id in TASK_IDS {
         assert!(
-            !ci.contains(hand_restated),
-            "generated ci-pr.yml must not hand-restate native step `{hand_restated}`"
+            configured_tasks.iter().any(|task| {
+                task.get("kind").and_then(toml::Value::as_str) == Some("verification")
+                    && task.get("id").and_then(toml::Value::as_str) == Some(task_id)
+            }),
+            "Velnor config must declare native task {task_id}"
+        );
+    }
+
+    let workflow_dir = root.join(".github/workflows");
+    let entries = fs::read_dir(&workflow_dir)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", workflow_dir.display()));
+    let mut has_required_fan_in = false;
+    let mut job_ids = BTreeSet::new();
+    let mut required_needs = BTreeSet::new();
+    for entry in entries {
+        let path = entry
+            .unwrap_or_else(|error| panic!("reading workflow entry: {error}"))
+            .path();
+        if !path
+            .extension()
+            .is_some_and(|extension| extension == "yml" || extension == "yaml")
+        {
+            continue;
+        }
+        let contents = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+        let workflow: serde_json::Value = serde_yaml_ng::from_str(&contents)
+            .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+        let jobs = workflow
+            .get("jobs")
+            .and_then(serde_json::Value::as_object)
+            .unwrap_or_else(|| panic!("{} has no jobs mapping", path.display()));
+        for task_id in TASK_IDS {
+            let job_id = format!("task-{task_id}");
+            if jobs.contains_key(&job_id) {
+                job_ids.insert(job_id);
+            }
+        }
+        if let Some(required) = jobs.get("required") {
+            has_required_fan_in = true;
+            let needs = required
+                .get("needs")
+                .and_then(serde_json::Value::as_array)
+                .unwrap_or_else(|| panic!("{} Required.needs must be a sequence", path.display()));
+            required_needs.extend(
+                needs
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_owned),
+            );
+        }
+    }
+    assert!(has_required_fan_in, "generated CI has no Required fan-in job");
+    for task_id in TASK_IDS {
+        let job_id = format!("task-{task_id}");
+        assert!(job_ids.contains(&job_id), "generated CI omits {job_id}");
+        assert!(
+            required_needs.contains(&job_id),
+            "generated Required.needs omits {job_id}"
         );
     }
 }
