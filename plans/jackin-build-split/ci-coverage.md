@@ -16,13 +16,13 @@
 
 ## Velnor PR #55
 
-Status: IN PROGRESS.
+Status: MERGED; post-merge verification is IN PROGRESS.
 
-The [PR](https://github.com/tailrocks/velnor-new/pull/55) targets `7fb8367d7daa67f13ccaa7c76caae47d55d6262b`. The current reported head is `2cb1b4ea5ffcb6c6fd54b25e78197f392bbfdae3`. Its earlier head was `68f969bb4b9c71be8ff2126f04f6a2bcebe38a78`.
+The [PR](https://github.com/tailrocks/velnor-new/pull/55) targeted `7fb8367d7daa67f13ccaa7c76caae47d55d6262b`. Earlier checks below are historical snapshots.
 
 At check run `37254450133`, Actionlint passed. The orchestrator job `111589804766`, CLI job `111589804784`, and workflow-renderer job `111589804869` failed. The remaining matrix is in progress. Logs are unavailable until the run completes. Do not infer a cause or claim a passing run.
 
-An earlier Plan failure at head `260f17c` reported helper compile errors `E0432` and `E0425`. Commit `68f969b` fixes all eleven old-name references. Do not claim that upstream merged the PR or that local tests passed.
+An earlier Plan failure at head `260f17c` reported helper compile errors `E0432` and `E0425`. Commit `68f969b` fixes all eleven old-name references.
 
 ### Focused renderer run
 
@@ -40,13 +40,13 @@ At `2026-10-05 03:19:19Z`, job `111599377218` failed. Unit and integration tests
 
 The owner reports `impl_perf_p13::generate_scales_with_crate_count` failed because the test expected the ten-crate workflow to exceed the cap. Earlier run `37256105661` showed ten crates succeed. Current test progress reported `778/1060`; totals were 780 passed, 1 failed, and 279 not run. The first rejection assertion failed before the 100-crate rejection log. A one-crate success reported prepare `47 ms`, generate `343 ms`, and four files. This single timing is not a performance comparison. No correction or retry is verified.
 
-The corrected source expects one, ten, and forty crates to succeed and 100 crates to reject above the byte cap. These cases have not run at the new head. The owner reports pinned rustfmt and `git diff --check` PASS; Cargo tests NOT RUN. The exact correction content is in `a81566e17d055716780dcf3e5abf02ea7665c7ce`. Remote PR head `6baa3a1f729d45a764fd4250d1300cf17fa196e6` is a sync merge with parents `a81566e17d055716780dcf3e5abf02ea7665c7ce` and `d10472a32b227e98ac09180feba0ca6f8899ccf8`. The owner reports that the merge commit tree matches the corrected parent tree. Its delta from d104 is 57 paths, `+1,386/-615`; the 2cb-to-6baa common-base delta is 57 paths, `+1,393/-592`.
+The corrected source expects one, ten, and forty crates to succeed and 100 crates to reject above the byte cap. At the d104 snapshot, these corrected cases had not run. The correction is in `a81566e17d055716780dcf3e5abf02ea7665c7ce`. Remote PR head `6baa3a1f729d45a764fd4250d1300cf17fa196e6` is a sync merge with parents `a81566e17d055716780dcf3e5abf02ea7665c7ce` and `d10472a32b227e98ac09180feba0ca6f8899ccf8`. The owner reports that the merge commit tree matches the corrected parent tree. Its delta from d104 is 57 paths, `+1,386/-615`; the 2cb-to-6baa common-base delta is 57 paths, `+1,393/-592`.
 
 The owner also reports an unpushed local sync merge with the same tree. Its full SHA was not supplied. At `2026-10-05 03:32:27Z`, run `37259299811` had 17 checks passed, 2 in progress, and 0 failed. The orchestrator remained pending at that observation. The run had no P13 result then.
 
-The [PR page](https://github.com/tailrocks/velnor-new/pull/55) later reported all required jobs passed for run `37259299811` on pre-sync head `6baa3a1f729d45a764fd4250d1300cf17fa196e6`. At the latest page refresh, PR #55 was open at head `f17ebbc992da8549197f63d2aaaf1c317ed57426`; run `37260546503` was still running. Do not infer its final result from the prior head.
+The GitHub API reported PR #55 closed and merged at head `f17ebbc992da8549197f63d2aaaf1c317ed57426`, using merge commit `3ec6f32b5bafa5fa34ce9aa22afd7cfe2e797132`. Run `37260546503` completed with conclusion `success`; its `Required` job also succeeded. This supersedes the earlier running snapshot. The Velnor main branch currently points to merge commit `3ec6f32b5bafa5fa34ce9aa22afd7cfe2e797132`. Post-merge workflow run `37261457091` is in progress. Its check-runs response contained 18 checks: 17 completed successfully and `Rust / velnor-actions-orchestrator` remained in progress. Post-merge verification remains IN PROGRESS.
 
-Sol's Velnor security source review passed at PR head `6baa3a1f729d45a764fd4250d1300cf17fa196e6` against main `6180ccebc7eff8b8f40f988eea2cf948bb235c9d`. The source review records fixes for typed-job Mise environment true/unset behavior, a workflow-wide byte guard, UTF-8 accounting, and no-partial/in-place tests. It rejects the untrusted-cache-writer allegation because cache saves remain push-only. Final approval still waits for stale general and issue-comment dispositions, P13 and T24 results at the final head, and all required CI checks at that head.
+Sol's Velnor security source review passed at PR head `6baa3a1f729d45a764fd4250d1300cf17fa196e6` against main `6180ccebc7eff8b8f40f988eea2cf948bb235c9d`. The review records fixes for typed-job Mise environment true/unset behavior, a workflow-wide byte guard, UTF-8 accounting, and no-partial/in-place tests. It rejects the untrusted-cache-writer allegation because cache saves remain push-only. The later merge and successful PR run are recorded above. The source review remains bounded to `6baa3a1`; post-merge main verification is IN PROGRESS.
 
 ### Separate optional Rust setup-factoring proposal
 
