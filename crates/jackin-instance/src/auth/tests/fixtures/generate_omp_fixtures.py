@@ -171,6 +171,77 @@ def main() -> None:
         )
         reused_connection.close()
 
+        # Checkpoint a selected credential into the main DB while retaining a
+        # previous generation in the WAL. A cache-limited uncommitted writer
+        # spills frames into a reset generation; old frames remain after its
+        # current uncommitted prefix. SQLite readers must keep the committed
+        # main-DB value and ignore both frame groups.
+        spill_database = root / "omp-reused-uncommitted.db"
+        spill_connection = connect(spill_database)
+        spill_connection.execute(
+            "CREATE TABLE credentials (provider TEXT PRIMARY KEY, value TEXT, profile TEXT)"
+        )
+        spill_connection.execute(
+            "INSERT INTO credentials VALUES (?, ?, ?)",
+            ("openai", "fixture-db-spill-base-token", "work"),
+        )
+        spill_connection.execute("CREATE TABLE filler (id INTEGER PRIMARY KEY, payload TEXT)")
+        spill_connection.executemany(
+            "INSERT INTO filler(payload) VALUES (?)",
+            [(f"base-{index}-" + "b" * 400,) for index in range(500)],
+        )
+        checkpoint(spill_connection, "TRUNCATE")
+        spill_connection.execute("BEGIN IMMEDIATE")
+        spill_connection.execute(
+            "UPDATE credentials SET value=? WHERE provider=?",
+            ("fixture-old-generation-token", "openai"),
+        )
+        spill_connection.execute(
+            "UPDATE filler SET payload='old-generation-' || id || 'x' || substr(payload,1,400)"
+        )
+        spill_connection.commit()
+        spill_connection.execute(
+            "UPDATE credentials SET value=? WHERE provider=?",
+            ("fixture-main-selected-token", "openai"),
+        )
+        spill_connection.commit()
+        checkpoint(spill_connection, "FULL")
+        old_generation_wal = Path(f"{spill_database}-wal").read_bytes()
+        old_generation_salts = struct.unpack_from(">II", old_generation_wal, 16)
+        spill_connection.execute("PRAGMA cache_size=2")
+        spill_connection.execute("BEGIN IMMEDIATE")
+        spill_connection.execute(
+            "UPDATE filler SET payload='fixture-uncommitted-marker-' || id || substr(payload,1,400)"
+        )
+        spill_db, spill_wal = save_pair(
+            spill_database, "omp-reused-uncommitted-stale-suffix"
+        )
+        spill_page_size = struct.unpack_from(">I", spill_wal, 8)[0]
+        spill_frame_size = spill_page_size + 24
+        spill_frame_count = (len(spill_wal) - 32) // spill_frame_size
+        spill_salts = struct.unpack_from(">II", spill_wal, 16)
+        spill_current_frames = 0
+        spill_current_commits = 0
+        for index in range(spill_frame_count):
+            frame_at = 32 + index * spill_frame_size
+            if struct.unpack_from(">II", spill_wal, frame_at + 8) != spill_salts:
+                break
+            spill_current_frames += 1
+            if struct.unpack_from(">I", spill_wal, frame_at + 4)[0] > 0:
+                spill_current_commits += 1
+        if old_generation_salts == spill_salts:
+            raise RuntimeError("SQLite did not reset WAL salts for uncommitted spill fixture")
+        if not 0 < spill_current_frames < spill_frame_count:
+            raise RuntimeError("uncommitted spill fixture has no stale old-generation suffix")
+        if spill_current_commits != 0:
+            raise RuntimeError("uncommitted spill fixture unexpectedly contains a commit")
+        if b"fixture-main-selected-token" not in spill_db:
+            raise RuntimeError("uncommitted spill fixture main DB lost the selected token")
+        if b"fixture-uncommitted-marker" not in spill_wal:
+            raise RuntimeError("uncommitted spill fixture did not spill payload pages to WAL")
+        spill_connection.rollback()
+        spill_connection.close()
+
     # The host SQLite emits 0x377f0682 on little-endian systems. Re-encode the
     # actual multi-commit WAL with the separately specified 0x377f0683 byte
     # order so both checksum branches use real SQLite page/frame content.
@@ -185,6 +256,10 @@ def main() -> None:
         ("omp-real-checkpointed", "fixture-wal-current-token"),
         ("omp-schema-wal-only", "fixture-schema-wal-token"),
         ("omp-reused-stale-suffix", "fixture-reused-current-token"),
+        (
+            "omp-reused-uncommitted-stale-suffix",
+            "fixture-main-selected-token",
+        ),
         ("omp-real-current-big-endian", "fixture-wal-current-token"),
     ]:
         verify_pair(
