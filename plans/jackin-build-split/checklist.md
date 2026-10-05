@@ -47,6 +47,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | ARCH-07 | Revalidate the current Architect image against merged role source. | NOT RUN | `architect_contract` | Merged role head `7db69b62f598a0971809ee4a006ad3f5477d0996` | Image prefix `ad3b0069` predates the role content and has no source match. | [Architect review](reviews.md#architect-integration-review) |
 | ACCOUNT-01 | Complete runtime account discovery through workspace launch. | IN PROGRESS | `debian_codex_route` | Jackin binary, config, security gate | CLI path checks are complete; Jackin runtime registration and launch remain NOT RUN. | [Debian results](debian-results.md#account-route) |
 | ACCOUNT-02 | Review the current `CODEX_HOME` source correction. | PASS | `execution_crosscheck` | Commits `0556ce39b1abb9cd6b387583d932e1556ca9dfd4`, `688057f40173d32dda04a55bff1e3868c219710d`, and `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a` | Exact-source review PASS; Cargo tests and runtime route remain NOT RUN. | [Debian results](debian-results.md#account-route) |
+| ACCOUNT-03 | Run the bounded existing-profile Codex probe. | PASS | `debian_codex_route` | Exact-reviewed v11 wrapper and notification fixture | The host probe passed; it does not prove Jackin discovery or role execution. | [Host probe](debian-results.md#bounded-host-codex-route-probe) |
 | CLI-01 | Review removal of the unsupported initial prompt option. | PASS | `execution_crosscheck` | Commit `640b33f9598307a360484526a46c9c20bd068f4e` | Source review PASS. Cargo tests remain NOT RUN pending MBX. | [CLI prompt cleanup](reviews.md#cli-prompt-cleanup) |
 | CLI-02 | Run focused launch and restore tests after prompt removal. | NOT RUN | `jackin_cli` | Reviewed MBX activation | Cargo tests remain NOT RUN. | [CLI prompt cleanup](reviews.md#cli-prompt-cleanup) |
 | RESTORE-01 | Review identity-preserving restore source change. | PASS | `execution_crosscheck` | Commit `234fc0ea3813d8cabe579a8a8e0a0b1162eb5230` | Source review PASS; restore tests remain NOT RUN. | [Route and restore review](reviews.md#account-route-and-restore-source-reviews) |
@@ -74,15 +75,15 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | MBX-12 | Review and verify the v6 measurement launcher. | PASS | `preflight_security_review` and `baseline_method_review` | Launcher SHA `9040ccad259d81b4c8705c687b10fbe174a0c3ef34612cc1c055672df0d3c856` | Both reviews and `verify-linker` passed. Cold-1 collection failed before cold-2; see BUILD-13. | [MBX review](reviews.md#measurement-launcher-reviews) |
 | BUILD-13 | Complete a valid v6 cold-1 measurement record. | FAIL | `unprivileged_exec_design` | Timer SHA `d3789bf2bc38616eb0b6adb594ea8c8f4a724f9af40ce973350085cf278776e9` | The inner build passed, but the collector stopped on a hard-linked Cargo HTML output before cold-2. Do not count the partial run. | [Build results](build-results.md#measurement-launcher-review-sequence) |
 | PRIV-01 | Avoid credential or auth-content disclosure. | PASS | `task_records` | None | Do not read or copy auth contents. | [Debian results](debian-results.md) |
-| SOURCE-01 | Keep this update limited to task records. | PASS | `task_records` | Documentation-only edits | This update changes task records only. It does not change source or `mise.lock`. | [Branch inventory](branches.md#current-task-branch-source-inventory) |
+| SOURCE-01 | Keep the initial evidence-record commit separate from implementation. | PASS | `task_records` | Initial record commit | The initial record commit changed task records only; later implementation commits have separate source attribution. | [Branch inventory](branches.md#current-task-branch-source-inventory) |
 | BUILD-02 | Complete the initial main-source build through MBX. | PASS | `build_baseline` | Reviewed linker-v2 launcher | One build completed at the base SHA. Comparable baseline remains NOT RUN. | [Build proof](build-results.md#reviewed-linker-v2-source-proof) |
 | TEST-01 | Keep tests unrun in this checkpoint. | NOT RUN | `build_baseline` | Later execution authorization | No test commands. | [Build results](build-results.md) |
-| LIVE-01 | Keep provider, account, and role requests unrun. | NOT RUN | `debian_codex_route` | Binary, config, security review | No live runtime requests. | [Debian results](debian-results.md) |
+| LIVE-01 | Keep Jackin provider, account, and role requests unrun. | NOT RUN | `debian_codex_route` | Jackin binary, config, and security review | The host Codex probe does not exercise Jackin discovery, provider, workspace, or role paths. | [Debian results](debian-results.md) |
 | REVIEW-01 | Complete implementation acceptance review. | NOT RUN | `execution_crosscheck` | Proposed implementation | Review an exact implementation SHA. | No implementation change exists. |
 | CACHE-01 | Measure cold and warm MBX cache behavior. | NOT RUN | `build_baseline` | Investigate bypass causes; security review and reviewed MBX artifact | One proof recorded zero hits and misses, but source/cache coldness and reuse were not established. | [Build matrix](build-results.md#scenario-matrix) |
-| BUILD-03 | Compare an empty target with an isolated empty MBX store. | NOT RUN | `build_baseline` | Security gate and reviewed MBX artifact | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
-| BUILD-04 | Compare a fresh target with a warm MBX store. | NOT RUN | `build_baseline` | Security gate and reviewed MBX artifact | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
-| BUILD-05 | Measure unchanged source with an existing target. | NOT RUN | `build_baseline` | Security gate and reviewed MBX artifact | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
+| BUILD-03 | Compare an empty target with an isolated empty MBX store. | NARROW PASS | `build_baseline` | Reviewed v8 MBX sequence | Three observations completed; contention prevents an uncontended baseline or performance claim. | [Build matrix](build-results.md#scenario-matrix) |
+| BUILD-04 | Compare a fresh target with a warm MBX store. | NOT RUN | `build_baseline` | Reviewed v8 MBX sequence | One warm observation exists; three repetitions and the unexplained `aws-lc-sys` miss remain open. | [Build matrix](build-results.md#scenario-matrix) |
+| BUILD-05 | Measure unchanged source with an existing target. | NARROW PASS | `build_baseline` | Reviewed v10 no-op sequence | Three no-op runs passed collection; contention and timing-report writes preclude performance or immutable-target claims. | [Build matrix](build-results.md#scenario-matrix) |
 | BUILD-06 | Measure a private change in one small crate. | NOT RUN | `build_baseline` | Security gate, extraction, and reviewed MBX artifact | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
 | BUILD-07 | Measure a shared account-types change. | NOT RUN | `build_baseline` | Security gate, extraction, and reviewed MBX artifact | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
 | BUILD-08 | Measure a Codex discovery or authentication change. | NOT RUN | `build_baseline` | Security gate, extraction, and reviewed MBX artifact | Run at least three repetitions. | [Build matrix](build-results.md#scenario-matrix) |
@@ -125,7 +126,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | FINAL-04 | Complete final runtime-performance review. | NOT RUN | `architect_schema_review` (Sol/medium) | Role and host evidence from `architect_contract` and `debian_codex_route` at final heads | Not started until role restart and host account recheck evidence exist. Worker evidence is not approval. | [Debian results](debian-results.md); [Architect review](reviews.md#architect-integration-review); [review ownership](reviews.md#final-review-ownership) |
 | MERGE-01 | Merge only after feedback and required checks close. | NOT RUN | `coordinator` | Four final reviews and task PR | Re-fetch feedback at final head and close every thread. | [Branch record](branches.md) |
 | MAIN-01 | Verify the final change on the default branch. | NOT RUN | `execution_crosscheck` | Authorized merge and final main SHA | Re-fetch main and verify the merged commit and checks. | [Final report](final-report.md) |
-| CONSOL-01 | Fix and review the account-consolidation migration fixtures. | IN PROGRESS | `consolidation_review` and `execution_crosscheck` | Required predecessor, golden, and meta fixtures; verified MBX | Do not accept or merge before fixture checks and exact-head review pass. | [Consolidation review](reviews.md#account-consolidation-review) |
+| CONSOL-01 | Fix and review the account-consolidation migration fixtures. | IN PROGRESS | `coordinator` and `execution_crosscheck` | Predecessor inputs are source-reviewed; generated goldens and verified MBX execution remain pending. | Source PASS at `17b2b1be`; rebake writer and migration tests have NOT RUN. | [Migration fixture checkpoint](reviews.md#current-migration-source-and-fixture-checkpoint) |
 | CONSOL-02 | Select rule-bundle commit `c72e25d384ce2d8a80cf584457ec4b28e619980b` for integration. | PASS | `execution_crosscheck` | Exact source commit and three-file unit | Selected and integrated with source attribution preserved. | [Integration gates](branches.md#fixing-and-integration-gates) |
 | CONSOL-03 | Integrate the rule-bundle unit with provenance. | PASS | `consolidation_review` | Destination commit `c8d20fb3a9660e1ed7819d53b3fbef410be43610` | `git cherry-pick -x` trailer names source `c72e25d384ce2d8a80cf584457ec4b28e619980b`; changed paths are `rules.rs`, `rules/tests.rs`, and `signed_bundle.rs`. | [Branch matrix](branches.md#account-and-capsule-consolidation-matrix) |
 | CONSOL-04 | Run focused agent-status rule and signed-bundle tests. | NOT RUN | `build_baseline` | Controlled MBX schedule and approved Mise/MBX environment | Planned command: `mise exec -- mbx test --locked -p jackin-agent-status`. Include default, all-feature, and integration coverage as applicable. | [Branch matrix](branches.md#account-and-capsule-consolidation-matrix) |
@@ -134,19 +135,19 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | SNAPSHOT-02 | Review the OMP WAL fix at its exact source head. | PASS | `execution_crosscheck` | Commit `1638522184ef45f0cd51fa5601a5e80c7fd89762` | Source review PASS; Cargo tests remain NOT RUN. | [Snapshot follow-up](reviews.md#account-snapshot-follow-up) |
 | MD-01 | Check every local link, path, and Markdown structure. | PASS | `task_records` | Eight task records | Resolve paths and validate tables and ticks. | [Records](final-report.md) |
 | GIT-01 | Commit and push documentation progress. | PASS | `task_records` | Task branch | Push without opening a PR. | Commit and branch in [final report](final-report.md) |
-| PR-01 | Merge ready task PRs after every gate passes. | IN PROGRESS | `coordinator` | Final reviews, required checks, and resolved feedback for each PR | Architect PR #479 merged with pre-merge feedback timing unproven and a failed post-merge Sonar check; Velnor PR #55 merged. Re-fetch feedback at each Jackin task PR head before merge. | [Branch record](branches.md) |
+| PR-01 | Merge ready task PRs after every gate passes. | IN PROGRESS | `coordinator` | Final reviews, required checks, and resolved feedback for each PR | Velnor PR #59 permission fix merged at reported main `7ccc761`; PR #65 remains draft with source PASS but failed generated-workflow CI. No Jackin task PR is accepted by these upstream results. | [CI coverage](ci-coverage.md#velnor-pr-59); [branch record](branches.md) |
 
 ## Active owners
 
 | Owner | Area | State |
 |---|---|---|
 | `branches` | Branch and PR inventory | Path/disposition matrix in progress; integration pending |
-| `build_baseline` | Build measurements | IN PROGRESS; measurements not run |
+| `build_baseline` | Build measurements | Narrow initial-main cold and no-op sequences recorded; no split benefit or post-integration baseline accepted |
 | `crate_design` | Crate and dependency analysis | IN PROGRESS |
 | `architect_contract` | Architect manifest contract | IN PROGRESS |
 | `velnor_recon` / `jackin_generator_config` | Generator and CI coverage | IN PROGRESS |
 | `jackin_ci_consumer` | Current CI collector and Mise/MBX integration | IN PROGRESS |
-| `consolidation_review` | Migration fixture and redaction correction | IN PROGRESS; redaction tests NOT RUN pending MBX |
+| `coordinator` / `execution_crosscheck` | Migration fixture and redaction correction | Migration source PASS at `17b2b1be`; rebake/test execution NOT RUN; redaction tests NOT RUN pending MBX |
 | `omp` | Account database and WAL root fix | Source review PASS; stale-comment follow-up; Cargo tests NOT RUN |
 | `execution_crosscheck` | Independent Sol/medium correctness reviewer | OMP and route source reviews complete; final correctness review NOT STARTED |
 | `codex_schema_runtime` | Codex schema and runtime settings | IN PROGRESS |
@@ -155,7 +156,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | `preflight_security_review` | Sol/medium security reviewer | Preliminary review complete; final review NOT STARTED |
 | `baseline_method_review` | Sol/medium build-performance reviewer | PR #1108 review complete; final build review NOT STARTED |
 | `architect_schema_review` | Sol/medium runtime-performance reviewer | Final review NOT STARTED; runtime evidence pending |
-| `debian_codex_route` | Debian account route | Source review PASS across `688057f40173d32dda04a55bff1e3868c219710d` and `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`; runtime route NOT RUN |
+| `debian_codex_route` | Debian account route | Source review PASS; bounded host Codex probe PASS; Jackin discovery and role route NOT RUN |
 
 ## Records
 

@@ -158,6 +158,18 @@ The useful source hunks are coupled: schema-version bumps and recursive migratio
 
 Add both predecessor fixture directories. Update successful fixture metadata and goldens. Cover breadcrumb transformations and malformed-input preservation.
 
+### Current migration source and fixture checkpoint
+
+The selected `455526b92a2a4350476bb192455e5e3414f7ab9a` behavior is now ported on `refactor/build-split` as a coherent current-source change. Migration commits `20cb8f7054ef6322c653b5c92bec7ad8f826d810` and `17b2b1be6a58a0e34af6d8308df915d110f4a785` have exact-source Sol review PASS. The migration correction routes legacy and versioned OpRefs through the same strict validator before writes or version stamping. The new source fixtures reject malformed inputs without changing their bytes.
+
+The two required immediate-predecessor directories are committed. Their `before.toml` and `meta.toml` files use controlled four-segment OpRef values with section metadata, percent escapes, query data, and non-secret account and on-demand fields. Commit `17b2b1be6a58a0e34af6d8308df915d110f4a785` also makes the rebake test fail if either input directory is missing. Exact source review confirms the output checks require a real legacy-to-versioned transformation. The archive does not include generated `after.toml` output for these predecessors, and no generated golden has been accepted.
+
+The ignored rebake writer is `crates/jackin/tests/support/migration_fixture_rebake.rs`. Its source review accepts execution only beneath a task-exclusive private output parent. The MBX owner is preparing a separate 1.22.0-bound sandbox. The rebake writer, migration tests, schema checks, Rust compilation, Clippy, and generated-golden review remain NOT RUN.
+
+The source archive is `/root/.velnor-work/jackin-migration-17b2b1b/source.tar.gz` with SHA-256 `97c2f22da3425734086bb3445778674c7d9e54d236c9705702824c2c562091da`. The execution packet is `/root/.velnor-work/jackin-migration-17b2b1b/execution-packet.md` with SHA-256 `550f7f050e218666511345ae3a172de8478da1ed8ac92a3543bbdd11614dade3`.
+
+The intended focused invocation is `JACKIN_MIGRATION_FIXTURE_OUTPUT_DIR=/work/out/migration-fixtures mise exec --locked -- mbx test --locked --offline -p jackin --test migration_fixtures rebake_migration_fixtures_to_output_dir -- --ignored`. It must run only after the exact sandbox launcher passes independent review. Keep generated output separate until it has a source and byte-level review.
+
 ## Account snapshot follow-up
 
 Sol source review PASS at Jackin commit `1638522184ef45f0cd51fa5601a5e80c7fd89762`. The change handles stale WAL suffixes after uncommitted current-generation frames and adds a focused fixture and test.
