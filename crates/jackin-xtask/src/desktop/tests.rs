@@ -253,6 +253,18 @@ fn xunit_totals_reject_corrupt_or_incomplete_reports() {
         "<testsuites><testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\"></testsuites>",
     )
     .unwrap_err();
+    parse_xunit_totals(
+        "<testsuites><testsuite name=\"worker\" tests=\"7\" failures=\"0\" errors=\"0\"/>",
+    )
+    .unwrap_err();
+    parse_xunit_totals(concat!(
+        "<testsuites><testsuite name=\"a\" tests=\"1\" failures=\"0\" errors=\"0\"/>",
+        "</testsuites><testsuites><testsuite name=\"b\" tests=\"1\" failures=\"0\" errors=\"0\"/>",
+        "</testsuites>"
+    ))
+    .unwrap_err();
+    parse_xunit_totals("<testsuite name=\"worker\" tests=\"7\" failures=\"0\" errors=\"0\"/>")
+        .unwrap_err();
 }
 
 #[test]

@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
-use quick_xml::{XmlVersion, events::Event, reader::Reader};
+use quick_xml::{Decoder, XmlVersion, events::Event, reader::Reader};
 
 use crate::cmd;
 use crate::docs;
@@ -329,63 +329,81 @@ struct XunitTotals {
 /// Missing elements or attributes are corruption, never zero.
 fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
     let mut reader = Reader::from_str(source);
+    reader.config_mut().check_end_names = true;
     let mut totals = XunitTotals {
         tests: 0,
         failures: 0,
         errors: 0,
     };
     let mut suites = 0_u64;
+    let mut depth = 0_usize;
+    let mut root_seen = false;
+    let mut root_closed = false;
     loop {
         match reader.read_event() {
-            Ok(Event::Start(element) | Event::Empty(element))
-                if element.name().as_ref() == b"testsuite" =>
-            {
-                let mut suite = XunitTotals {
-                    tests: 0,
-                    failures: 0,
-                    errors: 0,
-                };
-                let mut found_tests = false;
-                let mut found_failures = false;
-                let mut found_errors = false;
-                for attribute in element.attributes() {
-                    let attribute = attribute.context("parsing xUnit testsuite attribute")?;
-                    let value = attribute
-                        .decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
-                        .context("decoding xUnit testsuite attribute")?;
-                    let (slot, found) = match attribute.key.as_ref() {
-                        b"tests" => (&mut suite.tests, &mut found_tests),
-                        b"failures" => (&mut suite.failures, &mut found_failures),
-                        b"errors" => (&mut suite.errors, &mut found_errors),
-                        _ => continue,
-                    };
-                    *slot = value.parse().with_context(|| {
-                        format!(
-                            "corrupt xUnit: non-numeric {} attribute",
-                            String::from_utf8_lossy(attribute.key.as_ref())
-                        )
-                    })?;
-                    *found = true;
+            Ok(Event::Start(element)) => {
+                if depth == 0 {
+                    anyhow::ensure!(
+                        !root_seen && element.name().as_ref() == b"testsuites",
+                        "corrupt xUnit: expected one testsuites document root"
+                    );
+                    root_seen = true;
+                } else {
+                    anyhow::ensure!(!root_closed, "corrupt xUnit: content after document root");
                 }
-                anyhow::ensure!(
-                    found_tests && found_failures && found_errors,
-                    "corrupt xUnit: testsuite must have tests, failures, and errors attributes"
-                );
-                totals.tests = totals
-                    .tests
-                    .checked_add(suite.tests)
-                    .context("corrupt xUnit: tests total overflow")?;
-                totals.failures = totals
-                    .failures
-                    .checked_add(suite.failures)
-                    .context("corrupt xUnit: failures total overflow")?;
-                totals.errors = totals
-                    .errors
-                    .checked_add(suite.errors)
-                    .context("corrupt xUnit: errors total overflow")?;
-                suites += 1;
+                if element.name().as_ref() == b"testsuite" {
+                    add_xunit_suite(&element, reader.decoder(), &mut totals)?;
+                    suites = suites
+                        .checked_add(1)
+                        .context("corrupt xUnit: testsuite count overflow")?;
+                }
+                depth = depth
+                    .checked_add(1)
+                    .context("corrupt xUnit: element nesting overflow")?;
             }
-            Ok(Event::Eof) => break,
+            Ok(Event::Empty(element)) => {
+                if depth == 0 {
+                    anyhow::ensure!(
+                        !root_seen && element.name().as_ref() == b"testsuites",
+                        "corrupt xUnit: expected one testsuites document root"
+                    );
+                    root_seen = true;
+                    root_closed = true;
+                }
+                if element.name().as_ref() == b"testsuite" {
+                    add_xunit_suite(&element, reader.decoder(), &mut totals)?;
+                    suites = suites
+                        .checked_add(1)
+                        .context("corrupt xUnit: testsuite count overflow")?;
+                }
+            }
+            Ok(Event::End(element)) => {
+                anyhow::ensure!(
+                    depth > 0,
+                    "corrupt xUnit: closing tag without an open element"
+                );
+                depth -= 1;
+                if depth == 0 {
+                    anyhow::ensure!(
+                        element.name().as_ref() == b"testsuites",
+                        "corrupt xUnit: testsuites document root closed unexpectedly"
+                    );
+                    root_closed = true;
+                }
+            }
+            Ok(Event::Eof) => {
+                anyhow::ensure!(
+                    root_seen && root_closed && depth == 0,
+                    "corrupt xUnit: truncated document or missing testsuites root"
+                );
+                break;
+            }
+            Ok(Event::Text(text)) if depth == 0 => {
+                anyhow::ensure!(
+                    text.as_ref().iter().all(u8::is_ascii_whitespace),
+                    "corrupt xUnit: character data outside document root"
+                );
+            }
             Ok(_) => {}
             Err(error) => bail!("corrupt xUnit at byte {}: {error}", reader.error_position()),
         }
@@ -394,6 +412,54 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
         bail!("corrupt xUnit: no testsuite elements");
     }
     Ok(totals)
+}
+
+fn add_xunit_suite(
+    element: &quick_xml::events::BytesStart<'_>,
+    decoder: Decoder,
+    totals: &mut XunitTotals,
+) -> Result<()> {
+    let mut suite = XunitTotals {
+        tests: 0,
+        failures: 0,
+        errors: 0,
+    };
+    let mut found_tests = false;
+    let mut found_failures = false;
+    let mut found_errors = false;
+    for attribute in element.attributes() {
+        let attribute = attribute.context("parsing xUnit testsuite attribute")?;
+        let value = attribute
+            .decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
+            .context("decoding xUnit testsuite attribute")?;
+        let (slot, found, name) = match attribute.key.as_ref() {
+            b"tests" => (&mut suite.tests, &mut found_tests, "tests"),
+            b"failures" => (&mut suite.failures, &mut found_failures, "failures"),
+            b"errors" => (&mut suite.errors, &mut found_errors, "errors"),
+            _ => continue,
+        };
+        *slot = value
+            .parse()
+            .with_context(|| format!("corrupt xUnit: non-numeric {name} attribute"))?;
+        *found = true;
+    }
+    anyhow::ensure!(
+        found_tests && found_failures && found_errors,
+        "corrupt xUnit: testsuite must have tests, failures, and errors attributes"
+    );
+    totals.tests = totals
+        .tests
+        .checked_add(suite.tests)
+        .context("corrupt xUnit: tests total overflow")?;
+    totals.failures = totals
+        .failures
+        .checked_add(suite.failures)
+        .context("corrupt xUnit: failures total overflow")?;
+    totals.errors = totals
+        .errors
+        .checked_add(suite.errors)
+        .context("corrupt xUnit: errors total overflow")?;
+    Ok(())
 }
 
 fn read_xunit_totals(path: &Path, framework: &str) -> Result<XunitTotals> {
