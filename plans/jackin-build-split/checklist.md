@@ -27,7 +27,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | DOC-01 | Create eight task records in `plans/jackin-build-split/`. | PASS | `task_records` | Assigned worktree | All eight files exist and link. | [Records](final-report.md) |
 | STYLE-01 | Apply ASD-STE100 to descriptions and procedural sentences. | PASS | `task_records` | None | Descriptions ≤25 words; imperatives ≤20 words. | All eight Markdown records. |
 | FACT-01 | Record evidence and mark unknown outcomes with reasons. | IN PROGRESS | `coordinator` and work owners | Static and execution reviews | No unverified result is complete. | Records linked below. |
-| MODEL-01 | Check coordinator model prerequisite for section 2.1. | FAIL | `coordinator` | Active root process settings | Required model is Luna/max. | [Codex review](reviews.md) |
+| MODEL-01 | Use the root model required by the latest user instruction. | PASS | `coordinator` | Root `turn_context` record | Root uses gpt-6.1-sol/medium and delegates substantive work. | [Codex review](reviews.md#coordinator-prerequisite) |
 | MODEL-02 | Confirm work-agent runtime settings. | IN PROGRESS | `codex_schema_runtime` | Runtime evidence | Confirm every active agent. | [Catalog result](#codex-catalog-command); [Codex review](reviews.md) |
 | HOST-01 | Record Debian host inventory and repository identity. | PASS | `task_records` | Initial memory sample is historical. | Keep timestamped command evidence. | [Host results](debian-results.md); [host command](#host-inventory-command) |
 | REPO-01 | Record base SHA, task worktree, and branch. | PASS | `task_records` | Clean task worktree | Match initial `main` SHA. | Starting state above; [branches](branches.md) |
