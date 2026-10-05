@@ -477,6 +477,7 @@ impl ConfigEditor {
     /// [`scan_for_accounts`](Self::scan_for_accounts) with explicit
     /// discovery inputs (deterministic seam for tests; production passes
     /// the live home directory and process environment).
+    #[cfg(test)]
     fn scan_for_accounts_with(
         &mut self,
         home: &Path,
