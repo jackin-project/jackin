@@ -799,13 +799,14 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
     // Pre-fix: that bail would propagate via `?` and the second
     // record would never be prompted.
     let mut runner = FakeRunner {
-        // Capture queue: status for r1, status for r2, then verify
-        // capture for r1 (says branch IS present — triggers bail),
-        // then verify capture for r2 (says branch absent — proceed).
+        // Capture queue: status for r1/r2, then for each cleanup attempt
+        // a worktree-registry result followed by branch verification.
         capture_queue: VecDeque::from([
             " M f1\n".to_owned(),
             " M f2\n".to_owned(),
+            String::new(),
             "  jackin/scratch/x-a\n".to_owned(),
+            String::new(),
             String::new(),
         ]),
         // git branch -D for r1's branch fails; r2's branch -D succeeds.

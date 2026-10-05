@@ -20,16 +20,10 @@ use std::path::Path;
 /// Force-delete an isolated worktree and its scratch branch, then remove
 /// the corresponding `isolation.json` record.
 ///
-/// Tolerates the idempotent paths (worktree already removed externally,
-/// branch already deleted, host repo missing) without surfacing them as
-/// errors. Real failures (worktree dir still present after both git and
-/// `rm -rf`, or scratch branch still present after `branch -D`) bail
-/// **without** removing the record so the operator can investigate and
-/// re-run `jackin purge` once the underlying issue is resolved. Removing
-/// the record on a failed cleanup would leave orphan git admin entries
-/// (`git worktree list` showing stale paths) and orphan branches with no
-/// jackin-side reference, which can only be reclaimed by manually running
-/// `git worktree prune` and `git branch -D` on the host repo.
+/// Treats already-removed worktrees and branches as idempotent only after Git
+/// inventory confirms their exact absence. If a command fails and the follow-up
+/// inventory is present or inconclusive, the isolation record remains so the
+/// operator can investigate and re-run `jackin purge`.
 // verify-and-bail flow has lots of small steps; splitting hurts readability
 pub async fn force_cleanup_isolated(
     record: &IsolationRecord,
@@ -40,57 +34,98 @@ pub async fn force_cleanup_isolated(
         return force_cleanup_clone(record, container_state_dir);
     }
 
-    let host_repo_exists = Path::new(&record.original_src).exists();
-
-    if host_repo_exists {
-        drop(
-            runner
-                .run(
-                    "git",
-                    &[
-                        "-C",
-                        &record.original_src,
-                        "worktree",
-                        "remove",
-                        "--force",
-                        &record.worktree_path,
-                    ],
-                    None,
-                    &jackin_core::RunOptions {
-                        quiet: true,
-                        ..Default::default()
-                    },
-                )
-                .await,
+    if !Path::new(&record.original_src).exists() {
+        anyhow::bail!(
+            "host repo `{}` is missing; cannot verify Git worktree/branch cleanup for `{}`; \
+             isolation record retained at `{}`",
+            record.original_src,
+            record.mount_dst,
+            container_state_dir.display(),
         );
-        drop(
-            runner
-                .run(
-                    "git",
-                    &[
-                        "-C",
-                        &record.original_src,
-                        "branch",
-                        "-D",
-                        &record.scratch_branch,
-                    ],
-                    None,
-                    &jackin_core::RunOptions {
-                        quiet: true,
-                        ..Default::default()
-                    },
-                )
-                .await,
-        );
+    }
 
-        // Verify the branch is actually gone. If `branch -D` errored
-        // because the branch was already deleted, the verification
-        // succeeds and we proceed; if it errored because the branch is
-        // still checked out somewhere or we lack permission, the verify
-        // fails and we bail without forgetting the record.
-        if branch_still_present(runner, &record.original_src, &record.scratch_branch).await
-            == Some(true)
-        {
+    let worktree_remove = runner
+        .run(
+            "git",
+            &[
+                "-C",
+                &record.original_src,
+                "worktree",
+                "remove",
+                "--force",
+                &record.worktree_path,
+            ],
+            None,
+            &jackin_core::RunOptions {
+                quiet: true,
+                ..Default::default()
+            },
+        )
+        .await;
+    let worktree_registered =
+        worktree_is_registered(runner, &record.original_src, &record.worktree_path)
+            .await
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "could not verify Git worktree registration for `{}`: {error:#}; \
+             isolation record retained at `{}`",
+                    record.worktree_path,
+                    container_state_dir.display(),
+                )
+            })?;
+    match (worktree_remove, worktree_registered) {
+        (Ok(()), false) => {}
+        // The command may fail for an already-removed worktree. Accept that
+        // idempotent result only because the independent registry query proved
+        // this exact path is absent.
+        (Err(_), false) => {}
+        (Ok(()), true) => anyhow::bail!(
+            "Git worktree registration for `{}` remains after removal; \
+             isolation record retained at `{}`",
+            record.worktree_path,
+            container_state_dir.display(),
+        ),
+        (Err(error), true) => anyhow::bail!(
+            "git worktree remove failed: {error:#}; Git worktree registration for `{}` \
+             remains; isolation record retained at `{}`",
+            record.worktree_path,
+            container_state_dir.display(),
+        ),
+    }
+
+    let branch_remove = runner
+        .run(
+            "git",
+            &[
+                "-C",
+                &record.original_src,
+                "branch",
+                "-D",
+                &record.scratch_branch,
+            ],
+            None,
+            &jackin_core::RunOptions {
+                quiet: true,
+                ..Default::default()
+            },
+        )
+        .await;
+    let branch_present = branch_still_present(runner, &record.original_src, &record.scratch_branch)
+        .await
+        .map_err(|error| {
+            anyhow::anyhow!(
+                "could not verify scratch branch `{}` was removed: {error:#}; \
+                 isolation record retained at `{}`",
+                record.scratch_branch,
+                container_state_dir.display(),
+            )
+        })?;
+    match (branch_remove, branch_present) {
+        (Ok(()), false) => {}
+        // An already-deleted branch is idempotent only after branch listing
+        // independently confirms that the exact branch is gone.
+        (Err(_), false) => {}
+        (Ok(()), true) => {
             return Err(crate::IsolationError::ScratchBranchRemains {
                 branch: record.scratch_branch.clone(),
                 repo: record.original_src.clone(),
@@ -98,15 +133,16 @@ pub async fn force_cleanup_isolated(
             }
             .into());
         }
-    } else {
-        eprintln!(
-            "[jackin] warning: host repo `{src}` no longer exists; \
-             cannot run git cleanup for `{dst}`. The orphan admin entry under \
-             `<host_repo>/.git/worktrees/` will be reclaimed by `git worktree prune` \
-             next time you visit the (moved?) host repo.",
-            src = record.original_src,
-            dst = record.mount_dst,
-        );
+        (Err(error), true) => {
+            return Err(anyhow::anyhow!(
+                "git branch -D failed: {error:#}; {}",
+                crate::IsolationError::ScratchBranchRemains {
+                    branch: record.scratch_branch.clone(),
+                    repo: record.original_src.clone(),
+                    state_dir: container_state_dir.to_path_buf(),
+                }
+            ));
+        }
     }
 
     // Belt-and-suspenders: nuke the worktree directory if git left
@@ -165,22 +201,38 @@ fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> 
     Ok(())
 }
 
-/// Best-effort check: is `branch` still present on `repo`? Returns
-/// `Some(true)` if confirmed present, `Some(false)` if confirmed absent,
-/// `None` if we couldn't tell (e.g., `git branch --list` itself errored).
-/// Callers treat `None` as "couldn't verify, don't bail" — the cost of
-/// a false negative here (orphan branch left behind) is much lower than
-/// the cost of a false positive (operator stuck unable to purge).
+/// Check whether the exact worktree path still appears in Git's registry.
+/// `-z` makes path comparison unambiguous even when a path contains whitespace.
+async fn worktree_is_registered(
+    runner: &mut impl CommandRunner,
+    repo: &str,
+    worktree_path: &str,
+) -> anyhow::Result<bool> {
+    let output = runner
+        .capture(
+            "git",
+            &["-C", repo, "worktree", "list", "--porcelain", "-z"],
+            None,
+        )
+        .await?;
+    Ok(output.split('\0').any(|field| {
+        field
+            .strip_prefix("worktree ")
+            .is_some_and(|path| path == worktree_path)
+    }))
+}
+
+/// Check whether the branch remains. A failed capture is an error because
+/// callers must not remove the isolation record without proving absence.
 async fn branch_still_present(
     runner: &mut impl CommandRunner,
     repo: &str,
     branch: &str,
-) -> Option<bool> {
+) -> anyhow::Result<bool> {
     let output = runner
         .capture("git", &["-C", repo, "branch", "--list", branch], None)
-        .await
-        .ok()?;
-    Some(!output.trim().is_empty())
+        .await?;
+    Ok(!output.trim().is_empty())
 }
 
 /// Force-cleanup every record in a container's isolation.json. Used by purge.

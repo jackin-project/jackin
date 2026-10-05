@@ -25,6 +25,13 @@ fn rec_for(repo: &Path, container_dir: &Path) -> IsolationRecord {
     }
 }
 
+fn registered_worktree_listing(record: &IsolationRecord) -> String {
+    format!(
+        "worktree {}\0HEAD abc123\0branch refs/heads/{}\0\0",
+        record.worktree_path, record.scratch_branch
+    )
+}
+
 #[tokio::test]
 async fn force_cleanup_runs_git_and_removes_record() {
     let repo_dir = TempDir::new().unwrap();
@@ -48,6 +55,13 @@ async fn force_cleanup_runs_git_and_removes_record() {
             .run_recorded
             .iter()
             .any(|c| c.contains("branch -D jackin/scratch/x"))
+    );
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("worktree list --porcelain -z")),
+        "cleanup must verify the Git worktree registry"
     );
     assert!(read_records(container_dir.path()).unwrap().is_empty());
 }
@@ -110,7 +124,7 @@ async fn force_cleanup_clone_does_not_follow_planted_symlinks() {
 }
 
 #[tokio::test]
-async fn force_cleanup_tolerates_missing_host_repo() {
+async fn force_cleanup_retains_record_when_host_repo_is_missing() {
     let container_dir = TempDir::new().unwrap();
     let rec = IsolationRecord {
         original_src: "/nonexistent/path".into(),
@@ -119,14 +133,17 @@ async fn force_cleanup_tolerates_missing_host_repo() {
     write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
 
     let mut runner = FakeRunner::default();
-    force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+    let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
         .await
-        .unwrap();
+        .unwrap_err();
+    assert!(err.to_string().contains("cannot verify Git"), "got: {err}");
+    assert!(err.to_string().contains("record retained"), "got: {err}");
     assert!(
         runner.run_recorded.is_empty(),
-        "should skip git when src missing"
+        "must not attempt Git cleanup when the host repo is missing"
     );
-    assert!(read_records(container_dir.path()).unwrap().is_empty());
+    assert_eq!(read_records(container_dir.path()).unwrap().len(), 1);
+    assert!(Path::new(&rec.worktree_path).is_dir());
 }
 
 #[tokio::test]
@@ -144,6 +161,113 @@ async fn force_cleanup_is_idempotent_when_worktree_already_gone() {
         .await
         .unwrap();
     assert!(read_records(container_dir.path()).unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn force_cleanup_tolerates_failed_worktree_remove_when_registry_confirms_absent() {
+    let repo_dir = TempDir::new().unwrap();
+    let container_dir = TempDir::new().unwrap();
+    let rec = rec_for(repo_dir.path(), container_dir.path());
+    write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+    let mut runner = FakeRunner {
+        fail_on: vec!["worktree remove --force".into()],
+        capture_queue: std::collections::VecDeque::from(vec![String::new(), String::new()]),
+        ..Default::default()
+    };
+    force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+        .await
+        .unwrap();
+
+    assert!(read_records(container_dir.path()).unwrap().is_empty());
+    assert!(!Path::new(&rec.worktree_path).exists());
+}
+
+#[tokio::test]
+async fn force_cleanup_retains_record_when_worktree_remove_fails_and_registry_lists_it() {
+    let repo_dir = TempDir::new().unwrap();
+    let container_dir = TempDir::new().unwrap();
+    let rec = rec_for(repo_dir.path(), container_dir.path());
+    write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+    let mut runner = FakeRunner {
+        fail_on: vec!["worktree remove --force".into()],
+        capture_queue: std::collections::VecDeque::from(vec![registered_worktree_listing(&rec)]),
+        ..Default::default()
+    };
+    let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+        .await
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("worktree registration"),
+        "got: {err}"
+    );
+    assert!(err.to_string().contains("record retained"), "got: {err}");
+    assert_eq!(read_records(container_dir.path()).unwrap().len(), 1);
+    assert!(Path::new(&rec.worktree_path).is_dir());
+    assert!(
+        !runner
+            .run_recorded
+            .iter()
+            .any(|command| command.contains("branch -D")),
+        "branch deletion must wait until worktree absence is verified"
+    );
+}
+
+#[tokio::test]
+async fn force_cleanup_retains_record_when_worktree_verification_fails() {
+    let repo_dir = TempDir::new().unwrap();
+    let container_dir = TempDir::new().unwrap();
+    let rec = rec_for(repo_dir.path(), container_dir.path());
+    write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+    let mut runner = FakeRunner {
+        fail_on: vec!["worktree list --porcelain -z".into()],
+        ..Default::default()
+    };
+    let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+        .await
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("could not verify Git worktree"),
+        "got: {err}"
+    );
+    assert!(err.to_string().contains("record retained"), "got: {err}");
+    assert_eq!(read_records(container_dir.path()).unwrap().len(), 1);
+    assert!(Path::new(&rec.worktree_path).is_dir());
+    assert!(
+        !runner
+            .run_recorded
+            .iter()
+            .any(|command| command.contains("branch -D")),
+        "branch deletion must wait until worktree absence is verified"
+    );
+}
+
+#[tokio::test]
+async fn force_cleanup_retains_record_when_worktree_remove_succeeds_but_registry_lists_it() {
+    let repo_dir = TempDir::new().unwrap();
+    let container_dir = TempDir::new().unwrap();
+    let rec = rec_for(repo_dir.path(), container_dir.path());
+    write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+    let mut runner = FakeRunner {
+        capture_queue: std::collections::VecDeque::from(vec![registered_worktree_listing(&rec)]),
+        ..Default::default()
+    };
+    let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+        .await
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("worktree registration"),
+        "got: {err}"
+    );
+    assert!(err.to_string().contains("record retained"), "got: {err}");
+    assert_eq!(read_records(container_dir.path()).unwrap().len(), 1);
+    assert!(Path::new(&rec.worktree_path).is_dir());
 }
 
 #[tokio::test]
@@ -206,8 +330,8 @@ async fn force_cleanup_tolerates_branch_already_deleted_when_verify_says_absent(
     // capture returns empty → confirms branch is absent → proceed.
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into()],
-        // capture queue: empty result for `git branch --list <branch>`
-        capture_queue: std::collections::VecDeque::from(vec![String::new()]),
+        // Worktree registry and branch listing both confirm absence.
+        capture_queue: std::collections::VecDeque::from(vec![String::new(), String::new()]),
         ..Default::default()
     };
     force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
@@ -233,7 +357,10 @@ async fn force_cleanup_retains_record_when_branch_delete_fails_and_branch_still_
     // `git branch -D` fails; verify capture says branch IS present.
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into()],
-        capture_queue: std::collections::VecDeque::from(vec!["  jackin/scratch/x\n".to_owned()]),
+        capture_queue: std::collections::VecDeque::from(vec![
+            String::new(),
+            "  jackin/scratch/x\n".to_owned(),
+        ]),
         ..Default::default()
     };
     let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
@@ -286,7 +413,9 @@ async fn purge_isolated_for_container_bails_when_any_record_fails() {
     let mut runner = FakeRunner {
         // r1's verify returns "still present"; r2's verify returns empty.
         capture_queue: std::collections::VecDeque::from(vec![
+            String::new(),
             "  jackin/scratch/x\n".to_owned(),
+            String::new(),
             String::new(),
         ]),
         // Only r1's specific branch fails. Substring match avoids
@@ -313,35 +442,55 @@ async fn purge_isolated_for_container_bails_when_any_record_fails() {
     assert_eq!(recs[0].mount_dst, "/workspace/jackin");
 }
 
-/// `branch_still_present` returns `None` when the verify capture
-/// itself errors (e.g., host `.git` corrupted between `branch -D`
-/// and `branch --list`). The doc comment on the helper says
-/// "callers treat None as 'couldn't verify, don't bail'" — pin
-/// that contract so a refactor to `unwrap_or(true)` (the "safer"
-/// reading) doesn't break purge for any verify failure.
+/// A failed branch verification cannot prove removal, so cleanup must
+/// retain the record even after `git branch -D` itself returned an error.
 #[tokio::test]
-async fn force_cleanup_proceeds_when_verify_capture_itself_errors() {
+async fn force_cleanup_retains_record_when_branch_verification_fails() {
     let repo_dir = TempDir::new().unwrap();
     let container_dir = TempDir::new().unwrap();
     let rec = rec_for(repo_dir.path(), container_dir.path());
     write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
 
-    // `git branch -D` fails AND `git branch --list` (the verify
-    // capture) ALSO fails. branch_still_present returns None →
-    // proceed (don't bail) → record removed.
+    // The worktree registry query succeeds and says absent. Both branch
+    // deletion and its verification fail, so branch absence is unknown.
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into(), "branch --list".into()],
         ..Default::default()
     };
-    force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+    let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
         .await
-        .unwrap();
+        .unwrap_err();
     assert!(
-        read_records(container_dir.path()).unwrap().is_empty(),
-        "record should be removed when verify is inconclusive (None) — \
-             cost of false negative (orphan branch) is lower than cost of \
-             false positive (operator stuck unable to purge)"
+        err.to_string().contains("could not verify scratch branch"),
+        "got: {err}"
     );
+    assert!(err.to_string().contains("record retained"), "got: {err}");
+    assert_eq!(read_records(container_dir.path()).unwrap().len(), 1);
+    assert!(Path::new(&rec.worktree_path).is_dir());
+}
+
+#[tokio::test]
+async fn force_cleanup_retains_record_when_branch_remove_succeeds_but_branch_remains() {
+    let repo_dir = TempDir::new().unwrap();
+    let container_dir = TempDir::new().unwrap();
+    let rec = rec_for(repo_dir.path(), container_dir.path());
+    write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+    let mut runner = FakeRunner {
+        capture_queue: std::collections::VecDeque::from(vec![
+            String::new(),
+            "  jackin/scratch/x\n".to_owned(),
+        ]),
+        ..Default::default()
+    };
+    let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
+        .await
+        .unwrap_err();
+
+    assert!(err.to_string().contains("scratch branch"), "got: {err}");
+    assert!(err.to_string().contains("record retained"), "got: {err}");
+    assert_eq!(read_records(container_dir.path()).unwrap().len(), 1);
+    assert!(Path::new(&rec.worktree_path).is_dir());
 }
 
 #[tokio::test]
@@ -357,7 +506,10 @@ async fn force_cleanup_error_message_mentions_record_retention() {
     write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
     let mut runner = FakeRunner {
         fail_on: vec!["branch -D".into()],
-        capture_queue: std::collections::VecDeque::from(vec!["jackin/scratch/x".to_owned()]),
+        capture_queue: std::collections::VecDeque::from(vec![
+            String::new(),
+            "jackin/scratch/x".to_owned(),
+        ]),
         ..Default::default()
     };
     let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner)
