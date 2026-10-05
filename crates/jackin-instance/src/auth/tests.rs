@@ -1605,6 +1605,7 @@ fn sync_mode_overwrites_existing() {
     // Update host credentials
     let updated_creds = r#"{"claudeAiOauth":{"accessToken":"new","refreshToken":"new"}}"#;
     std::fs::write(temp.path().join(".claude/.credentials.json"), updated_creds).unwrap();
+    drop(state);
 
     // Second run: should overwrite with host content
     let (state2, outcome2) = RoleState::prepare(
@@ -1652,6 +1653,7 @@ fn switching_from_sync_to_ignore_revokes_forwarded_credentials() {
     )
     .unwrap();
     assert!(state.claude_credentials_json().unwrap().exists());
+    drop(state);
 
     // Operator switches to ignore — credentials must be wiped
     let (state2, _) = RoleState::prepare(
@@ -1743,6 +1745,7 @@ fn api_key_mode_wipes_credentials_and_writes_empty_json() {
         state.claude_credentials_json().unwrap().exists(),
         "precondition: sync seeded .credentials.json"
     );
+    drop(state);
 
     let (state2, outcome) = RoleState::prepare(
         &paths,
@@ -1792,6 +1795,7 @@ fn switching_from_sync_to_token_revokes_forwarded_credentials() {
     )
     .unwrap();
     assert!(state.claude_credentials_json().unwrap().exists());
+    drop(state);
 
     // Operator switches to token — credentials must be wiped and
     // .claude.json reset to skeleton so Claude Code skips the login
@@ -1842,6 +1846,7 @@ fn switching_from_token_to_sync_forwards_fresh_host_creds() {
         std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
         r#"{"hasCompletedOnboarding":true}"#
     );
+    drop(state);
 
     // Operator switches to sync — host auth must now be forwarded
     let (state2, outcome) = RoleState::prepare(
@@ -1942,6 +1947,7 @@ fn sync_mode_preserves_container_auth_when_host_file_missing() {
     // Container may have its own auth by now (from manual login inside)
     let container_auth = r#"{"oauthAccount":{"emailAddress":"container@example.com"}}"#;
     std::fs::write(state.claude_account_json().unwrap(), container_auth).unwrap();
+    drop(state);
 
     // Second run: host auth missing — container auth must be preserved
     let (state2, outcome) = RoleState::prepare(
@@ -2041,6 +2047,7 @@ fn sync_repairs_permissions_on_legacy_permissive_file() {
         .unwrap()
         .permissions();
     assert_eq!(perms.mode() & 0o777, 0o644, "precondition: file is 0644");
+    drop(state);
 
     // A subsequent sync must tighten permissions back to 0600.
     let (state2, _) = RoleState::prepare(
@@ -2106,6 +2113,7 @@ fn sync_repairs_permissions_when_host_auth_missing() {
     std::fs::remove_file(temp.path().join(".claude/.credentials.json")).unwrap();
 
     // Second run: host auth missing — files preserved but permissions repaired
+    drop(state);
     let (state2, outcome) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -2169,6 +2177,7 @@ fn rejects_symlink_at_claude_json() {
     std::fs::write(&decoy, "original").unwrap();
     std::fs::remove_file(state.claude_account_json().unwrap()).unwrap();
     std::os::unix::fs::symlink(&decoy, state.claude_account_json().unwrap()).unwrap();
+    drop(state);
 
     // Sync should refuse to write through the symlink
     let err = RoleState::prepare(
@@ -2222,6 +2231,7 @@ fn rejects_symlink_at_credentials_json() {
     let creds_path = state.claude_credentials_json().unwrap();
     std::fs::remove_file(creds_path).unwrap();
     std::os::unix::fs::symlink(&decoy, creds_path).unwrap();
+    drop(state);
 
     // Sync should refuse to write through the symlink
     let err = RoleState::prepare(
@@ -4024,6 +4034,7 @@ fn claude_metadata_persists_inside_directory_and_supports_atomic_replacement() {
         let replacement = directory.join(".claude.json.tmp");
         std::fs::write(&replacement, r#"{"onboarding":true}"#).unwrap();
         std::fs::rename(replacement, &metadata).unwrap();
+        drop(state);
         RoleState::prepare(
             &paths,
             "jk-metadata",

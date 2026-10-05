@@ -195,19 +195,16 @@ fn forwarded_credential_mount_paths(
         )];
     }
 
-    let include_missing_credentials = agent != jackin_core::Agent::Claude;
     slot.credential_paths
         .iter()
         .filter_map(|path| {
             let file_name = path.file_name()?.to_str()?;
-            (include_missing_credentials || path.exists()).then(|| {
-                format!(
-                    "{}/{}/{}",
-                    jackin_core::container_paths::JACKIN_ROOT,
-                    slot.container_store_rel,
-                    file_name
-                )
-            })
+            Some(format!(
+                "{}/{}/{}",
+                jackin_core::container_paths::JACKIN_ROOT,
+                slot.container_store_rel,
+                file_name
+            ))
         })
         .collect()
 }
