@@ -1,7 +1,9 @@
 use super::{
-    MIN_OS, XunitTotals, assert_broker_version, assert_executable_file, assert_native_broker_archs,
-    broker_path, minos_matches_target, normalize_generated_text, parse_dwarf_uuid,
-    parse_xctest_summary, parse_xunit_totals, tree_differences, validate_build, validate_version,
+    DesktopCommand, MIN_OS, SwiftTestArgs, XunitTotals, assert_broker_version,
+    assert_executable_file, assert_native_broker_archs, broker_path, minos_matches_target,
+    normalize_generated_text, parse_dwarf_uuid, parse_swift_jobs, parse_xctest_summary,
+    parse_xunit_totals, swift_build_args, swift_test_args, tree_differences, validate_build,
+    validate_version,
 };
 
 #[test]
@@ -221,6 +223,69 @@ fn xunit_totals_reject_corrupt_reports() {
 }
 
 #[test]
+fn swift_job_limit_cli_defaults_and_enforces_one_through_eight() {
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct Cli {
+        #[command(subcommand)]
+        command: DesktopCommand,
+    }
+
+    let defaults = Cli::try_parse_from(["xtask", "test-swift"]).unwrap();
+    match defaults.command {
+        DesktopCommand::TestSwift(args) => assert_eq!(args.jobs, 2),
+        _ => panic!("expected test-swift command"),
+    }
+
+    let maximum = Cli::try_parse_from(["xtask", "test-swift", "--jobs", "8"]).unwrap();
+    match maximum.command {
+        DesktopCommand::TestSwift(args) => assert_eq!(args.jobs, 8),
+        _ => panic!("expected test-swift command"),
+    }
+
+    for invalid in ["0", "9", "nope", "2\n--parallel"] {
+        assert!(
+            Cli::try_parse_from(["xtask", "test-swift", "--jobs", invalid]).is_err(),
+            "accepted invalid jobs value {invalid:?}"
+        );
+    }
+    assert_eq!(parse_swift_jobs("1").unwrap(), 1);
+    assert_eq!(parse_swift_jobs("8").unwrap(), 8);
+}
+
+#[test]
+fn swiftpm_build_and_test_arguments_share_a_bounded_worker_limit() {
+    assert_eq!(
+        swift_build_args(3).unwrap(),
+        ["build", "-c", "release", "--jobs", "3"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        swift_test_args(3, std::path::Path::new("/tmp/native package/tests.xml")).unwrap(),
+        [
+            "test",
+            "-c",
+            "release",
+            "--jobs",
+            "3",
+            "--parallel",
+            "--num-workers",
+            "3",
+            "--xunit-output",
+            "/tmp/native package/tests.xml",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>()
+    );
+    assert!(swift_build_args(0).is_err());
+    assert!(swift_test_args(9, std::path::Path::new("tests.xml")).is_err());
+}
+
+#[test]
 fn xctest_summary_reads_last_all_tests_block() {
     let log = concat!(
         "Test Suite 'PlatformLaneTests' started\n",
@@ -337,10 +402,27 @@ fn cargo_wrapper_routes_native_commands_through_mbx() {
     );
 
     let desktop_ci = task_block(&mise, "desktop-ci");
-    assert!(desktop_ci.contains("cargo xtask desktop test-swift"));
+    assert!(desktop_ci.contains("cargo xtask desktop test-swift --jobs 2"));
     assert!(
         !desktop_ci.contains("mbx build"),
         "do not nest explicit MBX builds inside the transparent Cargo wrapper"
+    );
+}
+
+#[test]
+fn standalone_native_package_ci_uses_counted_bounded_swift_driver() {
+    let task = task_block(&repo_text("mise.toml"), "swift-package-native-ci");
+    assert_subsequence(
+        task,
+        &[
+            "mise run desktop-xcframework",
+            "cargo xtask desktop test-swift --jobs 2",
+        ],
+        "swift-package-native-ci",
+    );
+    assert!(
+        !task.contains("swift build") && !task.contains("swift test"),
+        "native CI must use the counted xtask driver for all SwiftPM build/test work"
     );
 }
 

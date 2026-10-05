@@ -40,6 +40,8 @@ const FFI_CRATE: &str = "jackin-usage-ffi";
 /// Symbol-rich release lane for the desktop static library (see workspace
 /// `[profile.desktop-release]`); release CI archives its unstripped bytes.
 const DESKTOP_PROFILE: &str = "desktop-release";
+const DEFAULT_SWIFT_JOBS: usize = 2;
+const MAX_SWIFT_JOBS: usize = 8;
 
 pub(super) fn progress(msg: impl AsRef<str>) {
     #[expect(
@@ -68,7 +70,7 @@ pub(crate) enum DesktopCommand {
     /// Run host + pure Swift parity harnesses (OpenUsage/CodexBar limits-only matrix).
     Test,
     /// Counted `SwiftPM` unit tests: parse the xUnit report, reject zero/corrupt results.
-    TestSwift,
+    TestSwift(SwiftTestArgs),
     /// Developer ID sign + notarize + staple + final release ZIP.
     SignNotarize(sign_notarize::SignNotarizeArgs),
     /// Independent publication state (`KEY=value` lines for `GITHUB_OUTPUT`).
@@ -122,6 +124,13 @@ pub(crate) struct RunArgs {
     verify: bool,
 }
 
+#[derive(Args)]
+pub(crate) struct SwiftTestArgs {
+    /// Maximum SwiftPM build jobs and parallel test workers (1–8).
+    #[arg(long, default_value_t = DEFAULT_SWIFT_JOBS, value_parser = parse_swift_jobs)]
+    jobs: usize,
+}
+
 pub(crate) fn run(command: DesktopCommand) -> Result<()> {
     match command {
         DesktopCommand::Bindings(args) => generate_bindings(&docs::repo_root()?, &args.profile),
@@ -132,7 +141,7 @@ pub(crate) fn run(command: DesktopCommand) -> Result<()> {
             build_app(&docs::repo_root()?, &version, &build)
         }
         DesktopCommand::Test => run_desktop_tests(&docs::repo_root()?),
-        DesktopCommand::TestSwift => run_swift_unit_tests(&docs::repo_root()?),
+        DesktopCommand::TestSwift(args) => run_swift_unit_tests(&docs::repo_root()?, args.jobs),
         DesktopCommand::Verify(args) => {
             let release = args.release || env_truthy("RELEASE_MODE");
             let app = resolve_app_path(&args.app)?;
@@ -219,7 +228,7 @@ fn run_desktop_tests(root: &Path) -> Result<()> {
 /// the runner's `All tests` summary line in the captured log. Both halves
 /// must be present and nonzero — a mistyped selector, crashed runner, or
 /// missing report can never look green.
-fn run_swift_unit_tests(root: &Path) -> Result<()> {
+fn run_swift_unit_tests(root: &Path, jobs: usize) -> Result<()> {
     require_macos("desktop test-swift")?;
     let native = root.join("native");
     let log = native.join(".build/swift-unit-tests.log");
@@ -231,15 +240,19 @@ fn run_swift_unit_tests(root: &Path) -> Result<()> {
                 .with_context(|| format!("removing stale report {}", stale.display()))?;
         }
     }
-    progress("==> swift test -c release (counted)");
+
+    progress(format!("==> swift build -c release --jobs {jobs}"));
+    let mut build = cmd::command("swift");
+    build.current_dir(&native).args(swift_build_args(jobs)?);
+    cmd::run_streaming(&mut build)?;
+
+    progress(format!(
+        "==> swift test -c release --jobs {jobs} --parallel (counted)"
+    ));
     let mut swift = cmd::command("swift");
-    swift.current_dir(&native).args([
-        "test",
-        "-c",
-        "release",
-        "--xunit-output",
-        xunit_base.to_str().context("xunit path utf-8")?,
-    ]);
+    swift
+        .current_dir(&native)
+        .args(swift_test_args(jobs, &xunit_base)?);
     let run = cmd::run_stdout_file(&mut swift, &log);
     if run.is_err() {
         let tail = fs::read_to_string(&log)
@@ -287,6 +300,46 @@ fn run_swift_unit_tests(root: &Path) -> Result<()> {
         xctest.tests, swift_testing.tests
     ));
     Ok(())
+}
+
+fn parse_swift_jobs(value: &str) -> std::result::Result<usize, String> {
+    let jobs = value
+        .parse::<usize>()
+        .map_err(|_| "jobs must be an integer from 1 through 8".to_owned())?;
+    if !(1..=MAX_SWIFT_JOBS).contains(&jobs) {
+        return Err("jobs must be from 1 through 8".to_owned());
+    }
+    Ok(jobs)
+}
+
+fn swift_build_args(jobs: usize) -> Result<Vec<String>> {
+    let jobs = parse_swift_jobs(&jobs.to_string()).map_err(anyhow::Error::msg)?;
+    Ok(vec![
+        "build".to_owned(),
+        "-c".to_owned(),
+        "release".to_owned(),
+        "--jobs".to_owned(),
+        jobs.to_string(),
+    ])
+}
+
+fn swift_test_args(jobs: usize, xunit_report: &Path) -> Result<Vec<String>> {
+    let jobs = parse_swift_jobs(&jobs.to_string()).map_err(anyhow::Error::msg)?;
+    Ok(vec![
+        "test".to_owned(),
+        "-c".to_owned(),
+        "release".to_owned(),
+        "--jobs".to_owned(),
+        jobs.to_string(),
+        "--parallel".to_owned(),
+        "--num-workers".to_owned(),
+        jobs.to_string(),
+        "--xunit-output".to_owned(),
+        xunit_report
+            .to_str()
+            .context("xunit path utf-8")?
+            .to_owned(),
+    ])
 }
 
 /// Extract the final `XCTest` `All tests` summary from captured runner output.
