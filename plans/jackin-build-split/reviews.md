@@ -12,6 +12,8 @@ Work agents are tool-assigned Luna/max. Runtime confirmation remains pending. De
 
 - The official [Codex configuration reference](https://developers.openai.com/codex/config-reference) defines `model_reasoning_effort` as a string.
 - Supported reasoning levels depend on the selected model.
+- Codex CLI is `0.160.0`. The generated app-server v2 schema bundle SHA-256 is `e77b7d1436a78f431a74b2cb263a862e92ae40d70411bc63835b47ab2168827c`.
+- Thread start and resume notifications expose the configured model and reasoning effort. Turn notifications do not expose per-turn model or effort.
 - The filtered local catalog output is recorded in [checklist](checklist.md#codex-catalog-command).
 - Luna supports `low`, `medium`, `high`, `xhigh`, and `max`.
 - Sol supports those levels and `ultra`.
@@ -29,6 +31,21 @@ The preliminary review sets these gates:
 - Record MBX cache and object provenance before compilation.
 
 The `unprivileged_exec_design` owner is still working. The preliminary security review is complete, but execution remains gated.
+
+## Jackin redaction review
+
+Disposition: REJECT.
+
+The Sol review rejected Jackin redaction commit `08135f1ae010c63cec1bd7ff3a8125036a5c1576` at that exact head.
+
+| Finding | Reported canary |
+|---|---|
+| `Authorization=Bearer` leaks the token suffix. | Exercise the bearer suffix case. |
+| A token body in triple quotes leaks. | Exercise the triple-quoted token body. |
+| A BuildKit-prefixed block scalar leaks. | Exercise the prefixed block-scalar case. |
+| Interleaved BuildKit records cross stream suppression. | Interleave records across stream-suppression boundaries. |
+
+The correction owner is `consolidation_review`. Tests remain NOT RUN pending MBX review and activation. This source rejection does not complete the final security review.
 
 ## CI workflow review
 
@@ -118,7 +135,7 @@ No local provenance transcript was saved. Artifact installation and activation r
 | `branches` | Fetch passed; full diff review | IN PROGRESS |
 | `baseline_method_review` | PR #1108 exact-head source review | Complete; final build-performance review NOT STARTED |
 | `execution_crosscheck` | Consolidation source review and final gates | Consolidation review complete; final correctness review NOT STARTED |
-| `consolidation_review` | Migration fixture correction | IN PROGRESS |
+| `consolidation_review` | Migration fixtures and redaction correction | IN PROGRESS; redaction tests NOT RUN pending MBX |
 | `jackin_ci_consumer` | Collector and Mise/MBX integration | IN PROGRESS |
 | `omp` | Account database and WAL root-fix plan | IN PROGRESS; tests NOT RUN |
 | `architect_schema_review` | Independent runtime-performance review | NOT STARTED; exact runtime evidence pending |

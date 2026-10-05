@@ -40,9 +40,11 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | ARCH-01 | Review Architect manifest at the exact PR head. | PASS | `architect_contract` | Head `0592d0deeaeaa5b785fa67a43d23d3b627552720` | Static review only. | [Architect review](reviews.md#architect-integration-review) |
 | ARCH-02 | Run role parser and repository validation. | NOT RUN | `architect_contract` | Reviewed MBX and local role checkout | Record validator output. | [Architect review](reviews.md#architect-integration-review) |
 | ARCH-03 | Run the actual role through Jackin. | NOT RUN | `architect_contract` | Security approval and Jackin runtime | Record the live role response. | [Architect review](reviews.md#architect-integration-review) |
-| ACCOUNT-01 | Trace Codex account discovery through workspace launch. | NOT RUN | `debian_codex_route` | Jackin binary, config, security gate | Complete registration and launch route. | [Debian results](debian-results.md) |
+| ACCOUNT-01 | Complete runtime account discovery through workspace launch. | IN PROGRESS | `debian_codex_route` | Jackin binary, config, security gate | Static route inspection is complete; registration and launch remain NOT RUN. | [Debian results](debian-results.md) |
 | SEC-01 | Review execution boundary, container, auth, and cache provenance. | IN PROGRESS | `preflight_security_review` and `unprivileged_exec_design` | Exact execution design | Resolve every preliminary gate. | [Security review](reviews.md) |
+| REDACT-01 | Fix and re-review the Jackin redaction findings. | IN PROGRESS | `consolidation_review` | Fixing commit and reviewed MBX activation before tests | Cover all four canaries. Obtain exact-head Sol re-review. | [Redaction review](reviews.md#jackin-redaction-review) |
 | CODEX-01 | Record official configuration schema and local model catalog. | IN PROGRESS | `codex_schema_runtime` | Active-agent runtime confirmation | Confirm settings at runtime. | [Official reference](https://developers.openai.com/codex/config-reference); [catalog command](#codex-catalog-command) |
+| CODEX-02 | Record model and effort fields in app-server notifications. | PASS | `codex_schema_runtime` | Generated v2 schema bundle evidence | Record only schema exposure; confirm active settings separately. | [Codex schema evidence](reviews.md#codex-schema-and-catalog) |
 | MBX-01 | Verify official MBX artifact provenance and activation. | IN PROGRESS | `unprivileged_exec_design` | Security review | Verify before compilation. | [Security review](reviews.md#mbx-provenance) |
 | PRIV-01 | Avoid credential or auth-content disclosure. | PASS | `task_records` | None | Do not read or copy auth contents. | [Debian results](debian-results.md) |
 | SOURCE-01 | Leave source and `mise.lock` unchanged. | PASS | `task_records` | Documentation-only edits | Commit contains only task records. | Commit `34c32ca31e58b5e3dac71e88892778568f6f70d1` |
@@ -108,7 +110,7 @@ The IDs below map each assigned outcome to its scenario, interface, gate, owner,
 | `architect_contract` | Architect manifest contract | IN PROGRESS |
 | `velnor_recon` / `jackin_generator_config` | Generator and CI coverage | IN PROGRESS |
 | `jackin_ci_consumer` | Current CI collector and Mise/MBX integration | IN PROGRESS |
-| `consolidation_review` | Migration fixture correction | IN PROGRESS; Sol review found missing fixtures |
+| `consolidation_review` | Migration fixture and redaction correction | IN PROGRESS; redaction tests NOT RUN pending MBX |
 | `omp` | Account database and WAL root-fix plan | IN PROGRESS; tests NOT RUN |
 | `execution_crosscheck` | Independent Sol/medium correctness reviewer | Earlier source reviews complete; final correctness review NOT STARTED |
 | `codex_schema_runtime` | Codex schema and runtime settings | IN PROGRESS |
