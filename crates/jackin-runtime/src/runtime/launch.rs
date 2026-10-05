@@ -184,9 +184,6 @@ pub struct LoadOptions {
     /// launch only, mirroring repeated `--mount` on the CLI.
     pub extra_mounts: Vec<jackin_config::MountConfig>,
 
-    /// Initial prompt handed to the agent's first session.
-    pub prompt: Option<String>,
-
     /// Slot the launch writes its claimed instance identity into.
     pub identity_sink: Option<IdentitySink>,
 
