@@ -147,7 +147,28 @@ run = "cargo xtask desktop bindings-check"
 
 [tasks.desktop-xcframework]
 description = "Build the arm64 static JackinUsageFFI XCFramework"
-run = "cargo xtask desktop xcframework"
+# The Swift reusable workflow installs cargo:sccache before it invokes this
+# task. Keep the wrapper task-local so the installer never inherits it; the
+# command still works locally when sccache is not installed. The local disk
+# backend is the safe default; GHA is opt-in only with an explicit runtime.
+run = '''
+set -euo pipefail
+run_with_sccache() {
+  if ! command -v sccache >/dev/null 2>&1; then
+    "$@"
+    return
+  fi
+  sccache_gha_enabled=off
+  if [ "${SCCACHE_GHA_ENABLED:-}" = "true" ] \
+    && [ -n "${ACTIONS_CACHE_URL:-}" ] \
+    && [ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]; then
+    sccache_gha_enabled=true
+  fi
+  CARGO_INCREMENTAL=0 RUSTC_WRAPPER=sccache \
+    SCCACHE_GHA_ENABLED="$sccache_gha_enabled" "$@"
+}
+run_with_sccache cargo xtask desktop xcframework
+'''
 
 [tasks.swift-package-native-ci]
 description = "CI gate for native SwiftPM package (xcframework then build/test)"
@@ -235,14 +256,30 @@ run = "cargo xtask desktop test"
 description = "PR cadence: full nonmutating jackin❯ desktop gate graph"
 run = '''
 set -euo pipefail
-mise run desktop-bindings-check
+# Keep sccache task-local. Without an explicit Actions runtime, use its
+# backend-neutral local mode so hosted and local wrappers cannot abort Cargo.
+run_with_sccache() {
+  if ! command -v sccache >/dev/null 2>&1; then
+    "$@"
+    return
+  fi
+  sccache_gha_enabled=off
+  if [ "${SCCACHE_GHA_ENABLED:-}" = "true" ] \
+    && [ -n "${ACTIONS_CACHE_URL:-}" ] \
+    && [ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]; then
+    sccache_gha_enabled=true
+  fi
+  CARGO_INCREMENTAL=0 RUSTC_WRAPPER=sccache \
+    SCCACHE_GHA_ENABLED="$sccache_gha_enabled" "$@"
+}
+run_with_sccache mise run desktop-bindings-check
 mise run desktop-generate
 mise run desktop-format-check
 mise run desktop-lint
-mise run desktop-test
-mise run desktop-build
-cargo xtask desktop test-swift
-mise run desktop-verify
+run_with_sccache mise run desktop-test
+run_with_sccache mise run desktop-build
+run_with_sccache cargo xtask desktop test-swift
+run_with_sccache mise run desktop-verify
 '''
 
 [tasks.desktop-merge]
