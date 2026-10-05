@@ -61,7 +61,7 @@ Sol rejected Jackin redaction commit `63d5ef9046d4948a3cddb239e891db49be654d34` 
 | Finding | Required coverage |
 |---|---|
 | BuildKit records can interleave across stream suppression. | Cover interleaved records in both streams. |
-| YAML block scalar indentation `|2` is not handled. | Cover the explicit indentation indicator. |
+| YAML block scalar with explicit indentation indicator `2` is not handled. | Cover the explicit indentation indicator. |
 | A PEM value nested inside triple-quoted text leaks. | Cover nested PEM and triple-quote boundaries. |
 | Whole-text Basic Authorization values and block scalars leak. | Cover both complete-value forms. |
 | `push_line` resets per-call state. | Cover suppression state across calls. |
