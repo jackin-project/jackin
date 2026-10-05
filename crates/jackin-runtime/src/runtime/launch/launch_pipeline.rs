@@ -1750,7 +1750,7 @@ pub(crate) async fn load_role_with(
 
 /// Whether an existing current-role container can satisfy this launch intent.
 /// Any option that changes the effective runtime, credentials, image, mounts,
-/// environment, or initial session must reach the normal launch pipeline so
+/// or environment must reach the normal launch pipeline so
 /// it cannot be silently dropped by a restore/start fast path.
 fn current_role_reuse_is_compatible(opts: &super::LoadOptions) -> bool {
     !opts.rebuild
@@ -1765,7 +1765,6 @@ fn current_role_reuse_is_compatible(opts: &super::LoadOptions) -> bool {
         && opts.env.is_empty()
         && opts.on_demand_bindings.is_empty()
         && opts.extra_mounts.is_empty()
-        && opts.prompt.is_none()
         && opts.op_runner.is_none()
         && opts.host_env.is_none()
         && opts.restore_role_source_git.is_none()
@@ -1794,8 +1793,7 @@ fn validate_explicit_restore_options(
             && opts.effort.is_none()
             && opts.env.is_empty()
             && opts.on_demand_bindings.is_empty()
-            && opts.extra_mounts.is_empty()
-            && opts.prompt.is_none(),
+            && opts.extra_mounts.is_empty(),
         "an explicit restore container cannot apply rebuild, account, configuration, model, effort, profile, environment, credential, or mount overrides; its selected agent must match the stored instance; start a fresh role instance instead"
     );
     if let Some(requested_agent) = opts.agent {
