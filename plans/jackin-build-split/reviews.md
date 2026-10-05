@@ -4,9 +4,9 @@ Status: IN PROGRESS
 
 ## Coordinator prerequisite
 
-The coordinator model prerequisite is FAIL. Task section 2.1 explicitly supersedes older instructions and requires Luna/max. The active root process uses Sol/medium.
+The root model prerequisite is PASS under the latest user `AGENTS.md`, which assigns the root session Sol/medium and requires it to delegate substantive work. The root rollout `turn_context` at `2026-10-05T02:02:06.083Z` confirms gpt-6.1-sol/medium.
 
-Work agents are tool-assigned Luna/max. Runtime confirmation remains pending. Delegation does not clear the coordinator failure.
+The coordinator work session's `turn_context` at `2026-10-05T03:04:08.357Z` confirms Luna/max. The reviewer session's `turn_context` at `2026-10-05T03:47:30.181Z` confirms Sol/medium. These records do not map every active agent and nested session. Runtime confirmation remains IN PROGRESS; no config edit or runtime model change is claimed.
 
 ## Codex schema and catalog
 
@@ -22,8 +22,8 @@ Work agents are tool-assigned Luna/max. Runtime confirmation remains pending. De
 - The filtered local catalog output is recorded in [checklist](checklist.md#codex-catalog-command).
 - Luna supports `low`, `medium`, `high`, `xhigh`, and `max`.
 - Sol supports those levels and `ultra`.
-- Current root settings are Sol/medium; task section 2.1 requires Luna/max.
-- Runtime confirmation of agent settings remains pending.
+- The root session uses Sol/medium as required by the latest user instruction. The coordinator work session uses Luna/max; the independent reviewer uses Sol/medium.
+- Runtime confirmation and mapping of every active agent and nested session remain pending.
 
 ### Endpoint-free Codex configuration probe
 
