@@ -4,6 +4,8 @@
 //! Role-base + agent derived-image build orchestration.
 //!
 //! Owns cache-bust minting, local role-base ensure, and `build_agent_image`.
+//! Host GitHub auth is not forwarded to BuildKit; no explicit build-secret API
+//! exists, so Dockerfile-requested credentials are not supplied by Jackin.
 
 use std::sync::Arc;
 
@@ -28,12 +30,11 @@ use crate::runtime::naming::{
 use crate::runtime::progress::{LaunchProgress, LaunchStage};
 
 use super::{
-    PreparedRuntimeBinaries, docker_build_env, dockerfile_body_requests_github_token_secret,
-    dockerfile_body_requests_role_git_sha_arg, dockerfile_requests_github_token_secret,
-    dockerfile_requests_role_git_sha_arg, emit_build_context_snapshot, emit_compact_image_warning,
-    emit_image_build_source, emit_non_containerd_image_store_note, local_image_build_args,
+    PreparedRuntimeBinaries, docker_build_env, dockerfile_body_requests_role_git_sha_arg,
+    dockerfile_requests_role_git_sha_arg, emit_build_context_snapshot, emit_image_build_source,
+    emit_non_containerd_image_store_note, local_image_build_args,
     local_image_output_arg, local_role_base_labels_match, record_built_agent_version,
-    resolve_github_token, role_git_sha_for_recipe, should_stream_build_output,
+    role_git_sha_for_recipe, should_stream_build_output,
 };
 
 pub(crate) fn should_mint_fresh_cache_bust(
@@ -196,23 +197,6 @@ pub(crate) async fn ensure_local_role_base(
         args.extend(["--build-arg", &build_arg_role_git_sha]);
     }
 
-    let needs_token = dockerfile_requests_github_token_secret(&build.dockerfile_path);
-    let github_token = if needs_token {
-        resolve_github_token(runner).await
-    } else {
-        None
-    };
-    let secret_file: Option<tempfile::NamedTempFile> = github_token.as_ref().and_then(|token| {
-        let mut f = tempfile::NamedTempFile::new().ok()?;
-        std::io::Write::write_all(&mut f, token.as_bytes()).ok()?;
-        Some(f)
-    });
-    let secret_arg = secret_file
-        .as_ref()
-        .map(|f| format!("id=github_token,src={}", f.path().display()));
-    if let Some(ref s) = secret_arg {
-        args.extend(["--secret", s.as_str()]);
-    }
     let output_arg = local_image_output_arg(&base_name);
     args.extend([
         "--output",
@@ -388,9 +372,8 @@ pub(crate) async fn build_agent_image(
     drop(repo_lock);
 
     // Read the rendered Dockerfile once and drive every downstream decision
-    // (debug dump, ROLE_GIT_SHA arg, github_token secret) off the in-memory
-    // body instead of re-reading the file 2–3× per build. On read error fall
-    // back to each predicate's conservative default (token=true, sha=false).
+    // (debug dump and ROLE_GIT_SHA arg) off the in-memory body instead of
+    // re-reading the file 2–3× per build.
     let dockerfile_body = std::fs::read_to_string(&build.dockerfile_path).ok();
     if debug {
         let rendered = dockerfile_body.as_deref().unwrap_or("<read failed>");
@@ -405,9 +388,6 @@ pub(crate) async fn build_agent_image(
     let requests_role_git_sha = dockerfile_body
         .as_deref()
         .is_some_and(dockerfile_body_requests_role_git_sha_arg);
-    let requests_github_token = dockerfile_body
-        .as_deref()
-        .is_none_or(dockerfile_body_requests_github_token_secret);
     let image = local_image_name.clone();
 
     let build_arg_role_git_sha =
@@ -510,56 +490,6 @@ pub(crate) async fn build_agent_image(
         &dockerfile_path,
         &context_dir,
     ]);
-
-    jackin_diagnostics::active_timing_started(
-        jackin_diagnostics::DiagnosticStage::DerivedImage,
-        "resolve_github_token",
-        None,
-    );
-    let github_token = if requests_github_token {
-        resolve_github_token(runner).await
-    } else {
-        None
-    };
-    jackin_diagnostics::active_timing_done(
-        jackin_diagnostics::DiagnosticStage::DerivedImage,
-        "resolve_github_token",
-        if !requests_github_token {
-            Some("skipped")
-        } else if github_token.is_some() {
-            Some("token")
-        } else {
-            Some("none")
-        },
-    );
-    let secret_file: Option<tempfile::NamedTempFile> =
-        github_token
-            .as_ref()
-            .and_then(|token| match tempfile::NamedTempFile::new() {
-                Err(e) => {
-                    emit_compact_image_warning(&format!(
-                        "failed to create tempfile for GitHub token: {e}; build will use unauthenticated GitHub API"
-                    ),
-                    );
-                    None
-                }
-                Ok(mut f) => match std::io::Write::write_all(&mut f, token.as_bytes()) {
-                    Err(e) => {
-                        emit_compact_image_warning(&format!(
-                            "failed to write GitHub token to tempfile: {e}; build will use unauthenticated GitHub API"
-                        ),
-                        );
-                        None
-                    }
-                    Ok(()) => Some(f),
-                },
-            });
-    let secret_arg = secret_file
-        .as_ref()
-        .map(|f| format!("id=github_token,src={}", f.path().display()));
-    if let Some(ref s) = secret_arg {
-        build_args.extend(["--secret", s.as_str()]);
-    }
 
     if let Some(ref mut p) = progress {
         p.stage_progress(LaunchStage::DerivedImage, "Building Docker image");
