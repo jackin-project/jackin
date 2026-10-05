@@ -507,7 +507,28 @@ def assert_single_session(
 
 
 def expected_version(output: str, component: str, version: str) -> bool:
+    if component == "mise":
+        pattern = (
+            rf"(?:mise\s+)?{re.escape(version)}"
+            r"(?:\s+linux-[a-zA-Z0-9_-]+(?:\s+\(\d{4}-\d{2}-\d{2}\))?)?"
+        )
+        return re.fullmatch(pattern, output.strip()) is not None
     return re.search(rf"\b{re.escape(component)}\s+{re.escape(version)}(?:\b|$)", output) is not None
+
+
+def assert_version_parser_fixtures() -> None:
+    fixtures = (
+        ("2026.10.1 linux-x64 (2026-10-03)\n", "mise", "2026.10.1", True),
+        ("mise 2026.10.1 linux-x64 (2026-10-03)\n", "mise", "2026.10.1", True),
+        ("2026.10.10 linux-x64 (2026-10-03)\n", "mise", "2026.10.1", False),
+        ("mise 2026.10.1 linux-x64 (2026-10-03)\nextra\n", "mise", "2026.10.1", False),
+        ("mbx 1.22.0\n", "mbx", "1.22.0", True),
+        ("mbx 1.22.1\n", "mbx", "1.22.0", False),
+    )
+    require(
+        all(expected_version(output, component, version) is expected for output, component, version, expected in fixtures),
+        "version-parser-fixtures-failed",
+    )
 
 
 def make_env(temp_root: Path, fixture: Path, fake_bin: Path, mbx_bin: Path, event_log: Path) -> dict[str, str]:
@@ -561,6 +582,7 @@ def make_env(temp_root: Path, fixture: Path, fake_bin: Path, mbx_bin: Path, even
 def execute_harness(arguments: argparse.Namespace) -> None:
     require(os.name == "posix", "requires-posix")
     require(sys.version_info >= (3, 11), "python-311-required")
+    assert_version_parser_fixtures()
     assert_production_contract()
 
     mise_bin = require_immutable_executable(Path(arguments.mise_bin), "mise")
