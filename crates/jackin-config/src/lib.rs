@@ -54,6 +54,10 @@ pub use accounts::{
     BootstrapState, ProfileSelector, ResolvedCredentialDescriptor, ResolvedInstance, WrapperSpec,
     XdgRoots, resolve_account, resolve_launch, validate_account_id,
 };
+pub use jackin_omp_store::{
+    MAX_STANDALONE_DATABASE_BYTES, OmpAccount, OmpError, OmpSelectedAccount, OmpSelector,
+    OmpSnapshot,
+};
 pub use error::{ConfigError, ConfigResult};
 
 #[cfg(any(test, feature = "test-support"))]

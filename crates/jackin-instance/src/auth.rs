@@ -24,11 +24,15 @@ use super::{
 };
 use crate::{InstanceError, SyncSourceValidationError};
 use anyhow::Context;
-use jackin_config::{AiProvider, AuthForwardMode, GithubAuthMode, ProfileSelector};
+use jackin_config::{
+    AiProvider, AuthForwardMode, GithubAuthMode, MAX_STANDALONE_DATABASE_BYTES,
+    OmpSelectedAccount, OmpSelector, OmpSnapshot, ProfileSelector,
+};
 use jackin_core::Agent;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use zeroize::Zeroizing;
 
 static AUTH_DIRECTORY_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -40,10 +44,6 @@ const MAX_AUTH_SOURCE_FILE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_AUTH_SOURCE_TREE_BYTES: usize = 32 * 1024 * 1024;
 /// Maximum entries copied from one selected directory source.
 const MAX_AUTH_SOURCE_TREE_ENTRIES: usize = 4096;
-/// Match the OMP store reader's independent database and WAL bounds.
-const MAX_OMP_SOURCE_FILE_BYTES: usize = 8 * 1024 * 1024;
-/// Retry a source pair when OMP changes it during the bounded snapshot read.
-const OMP_SOURCE_CAPTURE_ATTEMPTS: usize = 3;
 
 /// Secret-free identity for one selected profile source.
 ///
@@ -464,9 +464,9 @@ fn capture_locked_source(
             auth_directory::snapshot_source(&source.root, &snapshot)
         }
         Agent::Omp => {
-            let content = capture_omp_database_snapshot(&source.root, source_dir)?;
-            write_snapshot_bytes(snapshot_root, Path::new("agent/agent.db"), &content)?;
-            validate_omp_store_content(&content, provider, selector)
+            let content = capture_omp_database_snapshot(&source.root, provider, selector)?;
+            write_snapshot_bytes(snapshot_root, Path::new("agent/agent.db"), content.as_slice())?;
+            Ok(())
         }
         Agent::Hermes => {
             let snapshot = auth_directory::open_directory_path(snapshot_root)?;
@@ -620,10 +620,10 @@ fn capture_unixless_source(
             Ok(())
         }
         Agent::Omp => {
-            let bytes = capture_omp_database_snapshot_from_paths(source_dir)?
+            let bytes = capture_omp_database_snapshot_from_paths(source_dir, provider, selector)?
                 .ok_or_else(|| anyhow::anyhow!("omp agent.db is missing"))?;
-            write_snapshot_bytes(snapshot_root, Path::new("agent/agent.db"), &bytes)?;
-            validate_omp_store_content(&bytes, provider, selector)
+            write_snapshot_bytes(snapshot_root, Path::new("agent/agent.db"), bytes.as_slice())?;
+            Ok(())
         }
         Agent::Opencode => {
             let content = read_source_text(&source_dir.join("auth.json"), "OpenCode auth.json")?
@@ -988,11 +988,8 @@ fn validate_locked_store_source_dir(
     host_home: &Path,
 ) -> Result<(), SyncSourceValidationError> {
     if agent == Agent::Omp {
-        let content = capture_omp_database_snapshot(&source.root, source_dir).map_err(|error| {
+        return validate_omp_source_selection(&source.root, provider, selector).map_err(|error| {
             SyncSourceValidationError::new(format!("OMP source snapshot failed: {error:#}"))
-        })?;
-        return validate_omp_store_content(&content, provider, selector).map_err(|error| {
-            SyncSourceValidationError::new(format!("OMP source rejected: {error:#}"))
         });
     }
     // The source lock remains held while discovery reads the descriptor. The
@@ -2149,8 +2146,6 @@ mod auth_directory {
     thread_local! {
         static HERMES_SNAPSHOT_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
             const { std::cell::RefCell::new(None) };
-        static OMP_AFTER_DATABASE_READ_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
-            const { std::cell::RefCell::new(None) };
         static SOURCE_OPEN_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
             const { std::cell::RefCell::new(None) };
     }
@@ -2161,11 +2156,6 @@ mod auth_directory {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_omp_after_database_read_hook(hook: Box<dyn FnOnce()>) {
-        OMP_AFTER_DATABASE_READ_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
-    }
-
-    #[cfg(test)]
     pub(crate) fn set_source_open_hook(hook: Box<dyn FnOnce()>) {
         SOURCE_OPEN_HOOK.with(|slot| *slot.borrow_mut() = Some(hook));
     }
@@ -2173,13 +2163,6 @@ mod auth_directory {
     pub(crate) fn run_hermes_snapshot_hook() {
         #[cfg(test)]
         if let Some(hook) = HERMES_SNAPSHOT_HOOK.with(|slot| slot.borrow_mut().take()) {
-            hook();
-        }
-    }
-
-    pub(crate) fn run_omp_after_database_read_hook() {
-        #[cfg(test)]
-        if let Some(hook) = OMP_AFTER_DATABASE_READ_HOOK.with(|slot| slot.borrow_mut().take()) {
             hook();
         }
     }
@@ -4330,8 +4313,8 @@ impl RoleState {
         if mode == AuthForwardMode::Sync {
             let content = match auth_directory::lock_source_dir(source_dir)? {
                 Some(source) => {
-                    let content = capture_omp_database_snapshot(&source.root, source_dir)?;
-                    validate_omp_store_content(&content, provider, selector)?;
+                    let content =
+                        capture_omp_database_snapshot(&source.root, provider, selector)?;
                     Some(content)
                 }
                 None => None,
@@ -4346,10 +4329,8 @@ impl RoleState {
         }
         #[cfg(not(unix))]
         if mode == AuthForwardMode::Sync {
-            let content = capture_omp_database_snapshot_from_paths(source_dir)?;
-            if let Some(content) = content.as_deref() {
-                validate_omp_store_content(content, provider, selector)?;
-            }
+            let content =
+                capture_omp_database_snapshot_from_paths(source_dir, provider, selector)?;
             return provision_single_blob_credential_from_content(
                 agent_db,
                 mode,
@@ -4602,397 +4583,72 @@ fn read_source_bytes(path: &Path, label: &str) -> anyhow::Result<Option<Vec<u8>>
 #[cfg(unix)]
 fn capture_omp_database_snapshot(
     source: &std::fs::File,
-    source_dir: &Path,
-) -> anyhow::Result<Vec<u8>> {
-    for _ in 0..OMP_SOURCE_CAPTURE_ATTEMPTS {
-        let first = read_omp_source_pair(source)
-            .with_context(|| format!("capturing OMP source {}", source_dir.display()))?;
-        let second = read_omp_source_pair(source)
-            .with_context(|| format!("capturing OMP source {}", source_dir.display()))?;
-        if first == second {
-            return materialize_omp_database(&first.database, first.wal.as_deref());
-        }
-    }
-    anyhow::bail!(
-        "OMP source {} changed during {} bounded credential snapshot attempts",
-        source_dir.display(),
-        OMP_SOURCE_CAPTURE_ATTEMPTS
-    )
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct OmpSourcePair {
-    database: Vec<u8>,
-    wal: Option<Vec<u8>>,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+    let Some(mut snapshot) = OmpSnapshot::capture_from_root(source)? else {
+        anyhow::bail!("OMP credential source is unavailable");
+    };
+    capture_omp_snapshot_bytes(&mut snapshot, provider, selector)
 }
 
 #[cfg(unix)]
-fn read_omp_source_pair(source: &std::fs::File) -> anyhow::Result<OmpSourcePair> {
-    let database = auth_directory::read_locked_source_file_bounded(
-        source,
-        &["agent", "agent.db"],
-        "omp agent.db",
-        MAX_OMP_SOURCE_FILE_BYTES,
-    )?
-    .ok_or_else(|| anyhow::anyhow!("OMP source has no agent/agent.db"))?;
-    auth_directory::run_omp_after_database_read_hook();
-    let wal = auth_directory::read_locked_source_file_bounded(
-        source,
-        &["agent", "agent.db-wal"],
-        "omp agent.db-wal",
-        MAX_OMP_SOURCE_FILE_BYTES,
-    )?;
-    Ok(OmpSourcePair { database, wal })
-}
-
-/// Fold committed WAL frames into `database`, returning a bounded standalone
-/// image suitable for the existing single-file OMP bind mount.
-///
-/// Frame validation follows SQLite's WAL checksum chain as well as salts,
-/// page numbers, and commit boundaries. A checksum discontinuity caused by a
-/// stale old-generation suffix is ignored only after a valid current-generation
-/// commit; malformed current-generation frames fail closed. An incomplete
-/// trailing frame is ignored because it cannot contain a validated commit.
-fn materialize_omp_database(database: &[u8], wal: Option<&[u8]>) -> anyhow::Result<Vec<u8>> {
-    anyhow::ensure!(
-        database.len() <= MAX_OMP_SOURCE_FILE_BYTES,
-        "omp agent.db exceeds the source size limit"
-    );
-    anyhow::ensure!(
-        database.get(..16) == Some(b"SQLite format 3\0"),
-        "omp agent.db is not a SQLite database"
-    );
-    let raw_page_size = u16::from_be_bytes(
-        database
-            .get(16..18)
-            .ok_or_else(|| anyhow::anyhow!("omp agent.db header is truncated"))?
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("omp agent.db page size is malformed"))?,
-    );
-    let page_size = if raw_page_size == 1 {
-        65_536_usize
-    } else {
-        usize::from(raw_page_size)
-    };
-    anyhow::ensure!(
-        page_size.is_power_of_two() && (512..=65_536).contains(&page_size),
-        "omp agent.db page size is invalid"
-    );
-    anyhow::ensure!(
-        !database.is_empty() && database.len().is_multiple_of(page_size),
-        "omp agent.db has an invalid page layout"
-    );
-    let read_version = database[18];
-    let write_version = database[19];
-    anyhow::ensure!(
-        (read_version == 1 && write_version == 1) || (read_version == 2 && write_version == 2),
-        "omp agent.db has unsupported journal-mode header bytes"
-    );
-
-    let mut output = database.to_vec();
-    if read_version == 2 {
-        if let Some(wal) = wal.filter(|wal| !wal.is_empty()) {
-            apply_committed_omp_wal(&mut output, page_size, wal)?;
-        }
-        // The merged image no longer needs a WAL sidecar. Mark it as a
-        // rollback-journal database before the one-file mount is published.
-        output[18] = 1;
-        output[19] = 1;
-    } else {
-        anyhow::ensure!(
-            wal.is_none_or(<[u8]>::is_empty),
-            "rollback-journal omp agent.db has a non-empty WAL"
-        );
-    }
-    anyhow::ensure!(
-        output.len() <= MAX_OMP_SOURCE_FILE_BYTES,
-        "materialized omp agent.db exceeds the source size limit"
-    );
-    Ok(output)
-}
-
-struct OmpWalCommit {
-    frame_len: usize,
-    last_frame_index: usize,
-    page_count: usize,
-}
-
-fn apply_committed_omp_wal(
-    database: &mut Vec<u8>,
-    page_size: usize,
-    wal: &[u8],
-) -> anyhow::Result<()> {
-    let database_pages = database.len() / page_size;
-    let Some(commit) = validate_omp_wal(wal, page_size, database_pages)? else {
-        return Ok(());
-    };
-    let output_len = commit
-        .page_count
-        .checked_mul(page_size)
-        .ok_or_else(|| anyhow::anyhow!("materialized omp database size overflow"))?;
-    anyhow::ensure!(
-        output_len <= MAX_OMP_SOURCE_FILE_BYTES,
-        "materialized omp agent.db exceeds the source size limit"
-    );
-    database.resize(output_len, 0);
-    for index in 0..=commit.last_frame_index {
-        let frame_at = 32_usize
-            .checked_add(
-                index
-                    .checked_mul(commit.frame_len)
-                    .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?,
-            )
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let page_number = usize::try_from(read_omp_u32(wal, frame_at)?)
-            .map_err(|_| anyhow::anyhow!("omp WAL frame page number is invalid"))?;
-        if page_number > commit.page_count {
-            continue;
-        }
-        let page_at = page_number
-            .checked_sub(1)
-            .and_then(|number| number.checked_mul(page_size))
-            .ok_or_else(|| anyhow::anyhow!("omp WAL output offset overflow"))?;
-        let page_end = page_at
-            .checked_add(page_size)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL output offset overflow"))?;
-        let frame_page_at = frame_at
-            .checked_add(24)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let frame_page_end = frame_page_at
-            .checked_add(page_size)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let frame_page = wal
-            .get(frame_page_at..frame_page_end)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame page is truncated"))?;
-        database
-            .get_mut(page_at..page_end)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL page is outside the committed image"))?
-            .copy_from_slice(frame_page);
-    }
-    let page_count = u32::try_from(commit.page_count)
-        .map_err(|_| anyhow::anyhow!("omp WAL commit page count is invalid"))?;
-    database[28..32].copy_from_slice(&page_count.to_be_bytes());
-    let change_counter = read_omp_u32(database, 24)?.wrapping_add(1);
-    database[24..28].copy_from_slice(&change_counter.to_be_bytes());
-    database[92..96].copy_from_slice(&change_counter.to_be_bytes());
-    Ok(())
-}
-
-fn validate_omp_wal(
-    wal: &[u8],
-    page_size: usize,
-    database_pages: usize,
-) -> anyhow::Result<Option<OmpWalCommit>> {
-    anyhow::ensure!(
-        wal.len() <= MAX_OMP_SOURCE_FILE_BYTES,
-        "omp WAL exceeds the source size limit"
-    );
-    anyhow::ensure!(wal.len() >= 32, "omp WAL header is truncated");
-    let magic = read_omp_u32(wal, 0)?;
-    anyhow::ensure!(
-        matches!(magic, 0x377F_0682 | 0x377F_0683)
-            && read_omp_u32(wal, 4)? == 3_007_000
-            && usize::try_from(read_omp_u32(wal, 8)?).ok() == Some(page_size),
-        "omp WAL header does not match agent.db"
-    );
-    let checksum_little_endian = magic == 0x377F_0682;
-    let header_checksum = omp_wal_checksum(&wal[..24], (0, 0), checksum_little_endian)?;
-    anyhow::ensure!(
-        header_checksum == (read_omp_u32(wal, 24)?, read_omp_u32(wal, 28)?),
-        "omp WAL header checksum is invalid"
-    );
-    let salt_one = read_omp_u32(wal, 16)?;
-    let salt_two = read_omp_u32(wal, 20)?;
-    let frame_len = page_size
-        .checked_add(24)
-        .ok_or_else(|| anyhow::anyhow!("omp WAL frame size overflow"))?;
-    let complete_frames = wal.len().saturating_sub(32) / frame_len;
-    let maximum_pages = database_pages
-        .checked_add(complete_frames)
-        .ok_or_else(|| anyhow::anyhow!("omp WAL page count overflow"))?;
-    let mut last_commit = None;
-    let mut validated_current_frame = false;
-    let mut previous_checksum = header_checksum;
-    for index in 0..complete_frames {
-        let frame_at = 32_usize
-            .checked_add(
-                index
-                    .checked_mul(frame_len)
-                    .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?,
-            )
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let frame_header_end = frame_at
-            .checked_add(8)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let frame_page_at = frame_at
-            .checked_add(24)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let frame_page_end = frame_page_at
-            .checked_add(page_size)
-            .ok_or_else(|| anyhow::anyhow!("omp WAL frame offset overflow"))?;
-        let checksum_after_header = omp_wal_checksum(
-            wal.get(frame_at..frame_header_end)
-                .ok_or_else(|| anyhow::anyhow!("omp WAL frame header is truncated"))?,
-            previous_checksum,
-            checksum_little_endian,
-        )?;
-        let computed_checksum = omp_wal_checksum(
-            wal.get(frame_page_at..frame_page_end)
-                .ok_or_else(|| anyhow::anyhow!("omp WAL frame page is truncated"))?,
-            checksum_after_header,
-            checksum_little_endian,
-        )?;
-        let stored_checksum = (
-            read_omp_u32(wal, frame_at + 16)?,
-            read_omp_u32(wal, frame_at + 20)?,
-        );
-        let salts_match = read_omp_u32(wal, frame_at + 8)? == salt_one
-            && read_omp_u32(wal, frame_at + 12)? == salt_two;
-        if !salts_match {
-            // SQLite may reuse a checkpointed WAL without truncating it. Old
-            // suffix frames have old salts and a checksum chain disconnected
-            // from the current header/prefix. If their payload checksum does
-            // follow the current chain, the salts themselves were corrupted
-            // in a current frame, so fail closed instead of falling back to a
-            // prior credential commit.
-            anyhow::ensure!(
-                computed_checksum != stored_checksum,
-                "omp WAL frame salts do not match its header"
-            );
-            anyhow::ensure!(
-                validated_current_frame,
-                "omp WAL has an old-generation frame before any valid current-generation frame"
-            );
-            break;
-        }
-        let page_number = read_omp_u32(wal, frame_at)?;
-        anyhow::ensure!(
-            page_number > 0
-                && usize::try_from(page_number).is_ok_and(|number| number <= maximum_pages),
-            "omp WAL frame page number is invalid"
-        );
-        anyhow::ensure!(
-            computed_checksum == stored_checksum,
-            "omp WAL frame checksum is invalid"
-        );
-        previous_checksum = computed_checksum;
-        validated_current_frame = true;
-        let committed_pages = read_omp_u32(wal, frame_at + 4)?;
-        if committed_pages > 0 {
-            let committed_pages = usize::try_from(committed_pages)
-                .map_err(|_| anyhow::anyhow!("omp WAL commit page count is invalid"))?;
-            anyhow::ensure!(
-                committed_pages > 0 && committed_pages <= maximum_pages,
-                "omp WAL commit page count is invalid"
-            );
-            last_commit = Some((index, committed_pages));
-        }
-    }
-    let Some((last_frame_index, page_count)) = last_commit else {
-        return Ok(None);
-    };
-    Ok(Some(OmpWalCommit {
-        frame_len,
-        last_frame_index,
-        page_count,
-    }))
-}
-
-fn omp_wal_checksum(
-    bytes: &[u8],
-    mut checksum: (u32, u32),
-    little_endian: bool,
-) -> anyhow::Result<(u32, u32)> {
-    anyhow::ensure!(
-        bytes.len().is_multiple_of(8),
-        "omp WAL checksum input has an invalid length"
-    );
-    for words in bytes.as_chunks::<8>().0 {
-        let first: [u8; 4] = words[..4]
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("omp WAL checksum word is malformed"))?;
-        let second: [u8; 4] = words[4..]
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("omp WAL checksum word is malformed"))?;
-        let (first, second) = if little_endian {
-            (u32::from_le_bytes(first), u32::from_le_bytes(second))
-        } else {
-            (u32::from_be_bytes(first), u32::from_be_bytes(second))
-        };
-        checksum.0 = checksum.0.wrapping_add(first).wrapping_add(checksum.1);
-        checksum.1 = checksum.1.wrapping_add(second).wrapping_add(checksum.0);
-    }
-    Ok(checksum)
-}
-
-fn read_omp_u32(bytes: &[u8], offset: usize) -> anyhow::Result<u32> {
-    let end = offset
-        .checked_add(4)
-        .ok_or_else(|| anyhow::anyhow!("omp SQLite offset overflow"))?;
-    let value: [u8; 4] = bytes
-        .get(offset..end)
-        .ok_or_else(|| anyhow::anyhow!("omp SQLite image is truncated"))?
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("omp SQLite integer is malformed"))?;
-    Ok(u32::from_be_bytes(value))
-}
-
-fn validate_omp_store_content(
-    content: &[u8],
+fn validate_omp_source_selection(
+    source: &std::fs::File,
     provider: Option<AiProvider>,
     selector: Option<&ProfileSelector>,
 ) -> anyhow::Result<()> {
-    let snapshot = tempfile::tempdir().context("creating OMP source snapshot")?;
-    std::fs::create_dir_all(snapshot.path().join("agent"))?;
-    std::fs::write(snapshot.path().join("agent/agent.db"), content)?;
-    validate_store_source_dir(
-        Agent::Omp,
-        provider,
-        selector,
-        snapshot.path(),
-        snapshot.path(),
-    )
-    .map_err(anyhow::Error::from)
+    let Some(mut snapshot) = OmpSnapshot::capture_from_root(source)? else {
+        anyhow::bail!("OMP credential source is unavailable");
+    };
+    drop(select_omp_snapshot_account(&mut snapshot, provider, selector)?);
+    Ok(())
+}
+
+fn select_omp_snapshot_account(
+    snapshot: &mut OmpSnapshot,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+) -> anyhow::Result<OmpSelectedAccount<'_>> {
+    // The current launch contract copies the whole OMP database. Until a
+    // selected-row-only SQLite image is supported, more than one usable row
+    // would expose a sibling account to the role and is therefore unavailable.
+    if snapshot.accounts().len() != 1 {
+        anyhow::bail!("OMP account selection is missing or ambiguous");
+    }
+    let selector = selector.map(|selector| OmpSelector {
+        entry: selector.entry.clone(),
+        profile: selector.profile.clone(),
+    });
+    snapshot
+        .select(provider.map(AiProvider::slug), selector.as_ref())
+        .map_err(anyhow::Error::new)
+}
+
+fn capture_omp_snapshot_bytes(
+    snapshot: &mut OmpSnapshot,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+    let selected = select_omp_snapshot_account(snapshot, provider, selector)?;
+    let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_STANDALONE_DATABASE_BYTES));
+    selected
+        .write_standalone_database(&mut *bytes)
+        .map_err(anyhow::Error::new)?;
+    Ok(bytes)
 }
 
 /// Bounded fallback for platforms without descriptor-relative Unix traversal.
 #[cfg(not(unix))]
-fn capture_omp_database_snapshot_from_paths(source_dir: &Path) -> anyhow::Result<Option<Vec<u8>>> {
-    for _ in 0..OMP_SOURCE_CAPTURE_ATTEMPTS {
-        let Some(first) = read_omp_source_pair_from_paths(source_dir)? else {
-            return Ok(None);
-        };
-        let Some(second) = read_omp_source_pair_from_paths(source_dir)? else {
-            continue;
-        };
-        if first == second {
-            return materialize_omp_database(&first.database, first.wal.as_deref()).map(Some);
-        }
-    }
-    anyhow::bail!(
-        "OMP source changed during {} bounded credential snapshot attempts",
-        OMP_SOURCE_CAPTURE_ATTEMPTS
-    )
-}
-
-#[cfg(not(unix))]
-fn read_omp_source_pair_from_paths(source_dir: &Path) -> anyhow::Result<Option<OmpSourcePair>> {
-    let Some(database) = read_source_bytes(&source_dir.join("agent/agent.db"), "omp agent.db")?
-    else {
+fn capture_omp_database_snapshot_from_paths(
+    source_dir: &Path,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+) -> anyhow::Result<Option<Zeroizing<Vec<u8>>>> {
+    let Some(mut snapshot) = OmpSnapshot::capture_from_directory(source_dir)? else {
         return Ok(None);
     };
-    anyhow::ensure!(
-        database.len() <= MAX_OMP_SOURCE_FILE_BYTES,
-        "omp agent.db exceeds its source size limit"
-    );
-    let wal = read_source_bytes(&source_dir.join("agent/agent.db-wal"), "omp agent.db-wal")?;
-    if let Some(wal) = wal.as_ref() {
-        anyhow::ensure!(
-            wal.len() <= MAX_OMP_SOURCE_FILE_BYTES,
-            "omp WAL exceeds its source size limit"
-        );
-    }
-    Ok(Some(OmpSourcePair { database, wal }))
+    capture_omp_snapshot_bytes(&mut snapshot, provider, selector).map(Some)
 }
 
 fn read_source_text(path: &Path, label: &str) -> anyhow::Result<Option<String>> {
@@ -5019,7 +4675,7 @@ fn provision_single_blob_credential(
     agent_name: &str,
 ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
     let content = if mode == AuthForwardMode::Sync {
-        read_source_bytes(host_path, &format!("{agent_name} {label}"))?
+        read_source_bytes(host_path, &format!("{agent_name} {label}"))?.map(Zeroizing::new)
     } else {
         None
     };
@@ -5029,7 +4685,7 @@ fn provision_single_blob_credential(
 fn provision_single_blob_credential_from_content(
     target: &Path,
     mode: AuthForwardMode,
-    content: Option<Vec<u8>>,
+    content: Option<Zeroizing<Vec<u8>>>,
     label: &str,
     agent_name: &str,
 ) -> anyhow::Result<(AuthProvisionOutcome, Option<PathBuf>)> {
@@ -5064,7 +4720,7 @@ fn provision_single_blob_credential_from_content(
                 AuthProvisionOutcome::HostMissing
             }
             Some(content) => {
-                write_private_bytes(target, &content).with_context(|| {
+                write_private_bytes(target, content.as_slice()).with_context(|| {
                     format!(
                         "failed to write {agent_name} role-state {label} at {}",
                         target.display()

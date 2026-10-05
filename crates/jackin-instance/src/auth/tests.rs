@@ -5,7 +5,7 @@
 #[cfg(unix)]
 use super::auth_directory::{
     FailurePoint, TreeEntryKind, classify_tree_entry_for_removal, inject_failure,
-    lock_source_dir_for_test, set_hermes_snapshot_hook, set_omp_after_database_read_hook,
+    lock_source_dir_for_test, set_hermes_snapshot_hook,
     set_source_open_hook, target_lock_key_for_test,
 };
 use super::{
@@ -48,13 +48,13 @@ fn claude_keychain_service_name_matches_claude_scheme() {
 }
 
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
+#[cfg(unix)]
+const OMP_TEST_FILE_LIMIT: usize = 8 * 1024 * 1024;
 
 #[cfg(unix)]
 const OMP_CURRENT_DB: &[u8] = include_bytes!("tests/fixtures/omp-real-current.db");
 #[cfg(unix)]
 const OMP_CURRENT_WAL: &[u8] = include_bytes!("tests/fixtures/omp-real-current.db-wal");
-#[cfg(unix)]
-const OMP_CHECKPOINTED_DB: &[u8] = include_bytes!("tests/fixtures/omp-real-checkpointed.db");
 #[cfg(unix)]
 const OMP_CURRENT_BIG_ENDIAN_DB: &[u8] =
     include_bytes!("tests/fixtures/omp-real-current-big-endian.db");
@@ -145,34 +145,19 @@ fn append_omp_uncommitted_frame(wal: &mut Vec<u8>) {
 }
 
 #[cfg(unix)]
-fn omp_commit_count(wal: &[u8]) -> usize {
-    let frame_size = read_fixture_u32(wal, 8) as usize + 24;
-    (0..(wal.len() - 32) / frame_size)
-        .filter(|index| read_fixture_u32(wal, 32 + index * frame_size + 4) > 0)
-        .count()
-}
-
-#[cfg(unix)]
-fn omp_current_salt_prefix_count(wal: &[u8]) -> usize {
-    let frame_size = read_fixture_u32(wal, 8) as usize + 24;
-    let salts = (read_fixture_u32(wal, 16), read_fixture_u32(wal, 20));
-    (0..(wal.len() - 32) / frame_size)
-        .take_while(|index| {
-            let frame_at = 32 + *index * frame_size;
-            (
-                read_fixture_u32(wal, frame_at + 8),
-                read_fixture_u32(wal, frame_at + 12),
-            ) == salts
-        })
-        .count()
-}
-
-#[cfg(unix)]
-fn omp_current_salt_prefix_commit_count(wal: &[u8]) -> usize {
-    let frame_size = read_fixture_u32(wal, 8) as usize + 24;
-    (0..omp_current_salt_prefix_count(wal))
-        .filter(|index| read_fixture_u32(wal, 32 + index * frame_size + 4) > 0)
-        .count()
+fn assert_omp_sync_rejected(source: &Path, target: &Path, database: &[u8], wal: &[u8]) {
+    write_omp_source(source, database, wal);
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    let error = RoleState::provision_omp_auth_from_source_dir(
+        target,
+        AuthForwardMode::Sync,
+        source,
+        Some(AiProvider::OpenAi),
+        Some(&omp_test_selector()),
+    )
+    .expect_err("invalid OMP snapshots must fail closed");
+    assert!(!target.exists(), "invalid source must not be provisioned");
+    assert!(!format!("{error:#}").contains("fixture-"));
 }
 
 #[cfg(unix)]
@@ -266,68 +251,27 @@ fn omp_selected_snapshot_and_provision_include_only_committed_wal_state() {
 
 #[cfg(unix)]
 #[test]
-fn omp_sync_fails_closed_when_the_current_wal_commit_checksum_is_corrupt() {
+fn omp_sync_rejects_checksum_and_joint_salt_checksum_corruption() {
     let temp = tempdir().unwrap();
     let source = temp.path().join("omp-source");
-    let mut wal = OMP_CURRENT_WAL.to_vec();
-    let page_size = u32::from_be_bytes(wal[8..12].try_into().unwrap()) as usize;
-    let frame_size = page_size + 24;
-    let final_frame = 32 + ((wal.len() - 32) / frame_size - 1) * frame_size;
-    wal[final_frame + 16] ^= 1;
-    write_omp_source(&source, OMP_CURRENT_DB, &wal);
-    let target = temp.path().join("role/omp/agent/agent.db");
-    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-    let error = RoleState::provision_omp_auth_from_source_dir(
-        &target,
-        AuthForwardMode::Sync,
-        &source,
-        Some(AiProvider::OpenAi),
-        Some(&omp_test_selector()),
-    )
-    .expect_err("a torn committed WAL image must fail closed");
-
-    assert!(
-        format!("{error:#}").contains("WAL frame checksum is invalid"),
-        "unexpected OMP checksum failure: {error:#}"
-    );
-    assert!(
-        !target.exists(),
-        "corrupt WAL must not provision stale credentials"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn omp_snapshot_retries_when_sqlite_checkpoints_between_database_and_wal_reads() {
-    let temp = tempdir().unwrap();
-    let source = temp.path().join("omp-source");
-    write_omp_source(&source, OMP_CURRENT_DB, OMP_CURRENT_WAL);
-    let agent = source.join("agent");
-    let checkpoint_agent = agent.clone();
-    set_omp_after_database_read_hook(Box::new(move || {
-        std::thread::spawn(move || {
-            std::fs::write(checkpoint_agent.join("agent.db"), OMP_CHECKPOINTED_DB).unwrap();
-            std::fs::write(checkpoint_agent.join("agent.db-wal"), []).unwrap();
-        })
-        .join()
-        .unwrap();
-    }));
-    let target = temp.path().join("role/omp/agent/agent.db");
-    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-
-    let (outcome, _) = RoleState::provision_omp_auth_from_source_dir(
-        &target,
-        AuthForwardMode::Sync,
-        &source,
-        Some(AiProvider::OpenAi),
-        Some(&omp_test_selector()),
-    )
-    .unwrap();
-
-    assert_eq!(outcome, AuthProvisionOutcome::Synced);
-    let provisioned = std::fs::read(target).unwrap();
-    assert!(contains_bytes(&provisioned, b"fixture-wal-current-token"));
-    assert!(!contains_bytes(&provisioned, b"fixture-db-stale-token"));
+    let frame_size = read_fixture_u32(OMP_CURRENT_WAL, 8) as usize + 24;
+    let frame_count = (OMP_CURRENT_WAL.len() - 32) / frame_size;
+    let last_commit = (0..frame_count)
+        .rev()
+        .find(|index| read_fixture_u32(OMP_CURRENT_WAL, 32 + index * frame_size + 4) > 0)
+        .expect("synthetic WAL fixture has a committed frame");
+    let final_frame = 32 + last_commit * frame_size;
+    for (name, corrupt_salt) in [("checksum", false), ("joint", true)] {
+        let mut wal = OMP_CURRENT_WAL.to_vec();
+        if corrupt_salt {
+            wal[final_frame + 8] ^= 1;
+        }
+        wal[final_frame + 16] ^= 1;
+        let target = temp
+            .path()
+            .join(format!("role-{name}/omp/agent/agent.db"));
+        assert_omp_sync_rejected(&source, &target, OMP_CURRENT_DB, &wal);
+    }
 }
 
 #[cfg(unix)]
@@ -337,7 +281,6 @@ fn omp_sync_supports_little_and_big_endian_wal_checksums() {
         (OMP_CURRENT_DB, OMP_CURRENT_WAL),
         (OMP_CURRENT_BIG_ENDIAN_DB, OMP_CURRENT_BIG_ENDIAN_WAL),
     ] {
-        assert_eq!(omp_commit_count(wal), 2);
         let temp = tempdir().unwrap();
         let source = temp.path().join("omp-source");
         write_omp_source(&source, database, wal);
@@ -377,100 +320,37 @@ fn omp_sync_materializes_schema_and_credentials_from_wal_only_pages() {
 
 #[cfg(unix)]
 #[test]
-fn omp_sync_ignores_stale_old_generation_frames_after_current_commit() {
-    let total_frames = (OMP_REUSED_STALE_SUFFIX_WAL.len() - 32)
-        / (read_fixture_u32(OMP_REUSED_STALE_SUFFIX_WAL, 8) as usize + 24);
-    let current_frames = omp_current_salt_prefix_count(OMP_REUSED_STALE_SUFFIX_WAL);
-    assert!(current_frames > 0 && current_frames < total_frames);
-    let frame_size = read_fixture_u32(OMP_REUSED_STALE_SUFFIX_WAL, 8) as usize + 24;
-    assert!(
-        (0..current_frames).any(|index| read_fixture_u32(
-            OMP_REUSED_STALE_SUFFIX_WAL,
-            32 + index * frame_size + 4
-        ) > 0)
-    );
-
-    let temp = tempdir().unwrap();
-    let source = temp.path().join("omp-source");
-    write_omp_source(
-        &source,
-        OMP_REUSED_STALE_SUFFIX_DB,
-        OMP_REUSED_STALE_SUFFIX_WAL,
-    );
-    let (_, materialized) = sync_omp_source(&source, temp.path());
-    assert!(contains_bytes(
-        &materialized,
-        b"fixture-reused-current-token"
-    ));
-    assert!(!contains_bytes(&materialized, b"fixture-db-reused-base"));
-}
-
-#[cfg(unix)]
-#[test]
-fn omp_sync_ignores_new_uncommitted_frames_before_stale_generation_suffix() {
-    let total_frames = (OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL.len() - 32)
-        / (read_fixture_u32(OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL, 8) as usize + 24);
-    let current_frames = omp_current_salt_prefix_count(OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL);
-    assert!(current_frames > 0 && current_frames < total_frames);
-    assert_eq!(
-        omp_current_salt_prefix_commit_count(OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL),
-        0,
-        "current-generation spill frames must remain uncommitted"
-    );
-    assert!(contains_bytes(
-        OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB,
-        b"fixture-main-selected-token"
-    ));
-    assert!(contains_bytes(
-        OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL,
-        b"fixture-uncommitted-marker"
-    ));
-
-    let temp = tempdir().unwrap();
-    let source = temp.path().join("omp-source");
-    write_omp_source(
-        &source,
-        OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB,
-        OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL,
-    );
-    let (target, materialized) = sync_omp_source(&source, temp.path());
-    assert!(contains_bytes(
-        &materialized,
-        b"fixture-main-selected-token"
-    ));
-    assert!(!contains_bytes(
-        &materialized,
-        b"fixture-uncommitted-marker"
-    ));
-    let discovered = jackin_config::discover_account_directory(
-        Agent::Omp,
-        target.parent().unwrap().parent().unwrap(),
-        temp.path(),
-    )
-    .unwrap()
-    .expect("checkpointed main database remains discoverable");
-    assert_eq!(discovered.provider, Some(AiProvider::OpenAi));
-    assert_eq!(discovered.source_selector, Some(omp_test_selector()));
-}
-
-#[cfg(unix)]
-#[test]
-fn omp_sync_ignores_partial_and_valid_uncommitted_wal_suffixes() {
-    for suffix_kind in ["partial", "uncommitted"] {
-        let mut wal = OMP_CURRENT_WAL.to_vec();
-        if suffix_kind == "partial" {
-            let mut complete_frame = wal.clone();
-            append_omp_uncommitted_frame(&mut complete_frame);
-            wal.extend_from_slice(&complete_frame[OMP_CURRENT_WAL.len()..][..19]);
-        } else {
-            append_omp_uncommitted_frame(&mut wal);
-        }
+fn omp_sync_rejects_reused_wal_generations_instead_of_falling_back_to_old_state() {
+    for (name, database, wal) in [
+        ("stale-committed-tail", OMP_REUSED_STALE_SUFFIX_DB, OMP_REUSED_STALE_SUFFIX_WAL),
+        (
+            "stale-after-uncommitted-spill",
+            OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_DB,
+            OMP_REUSED_UNCOMMITTED_STALE_SUFFIX_WAL,
+        ),
+    ] {
         let temp = tempdir().unwrap();
         let source = temp.path().join("omp-source");
-        write_omp_source(&source, OMP_CURRENT_DB, &wal);
-        let (_, materialized) = sync_omp_source(&source, temp.path());
-        assert!(contains_bytes(&materialized, b"fixture-wal-current-token"));
+        let target = temp.path().join(format!("role-{name}/omp/agent/agent.db"));
+        assert_omp_sync_rejected(&source, &target, database, wal);
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn omp_sync_accepts_a_complete_uncommitted_tail_but_rejects_a_partial_frame() {
+    let mut complete = OMP_CURRENT_WAL.to_vec();
+    append_omp_uncommitted_frame(&mut complete);
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("omp-source");
+    write_omp_source(&source, OMP_CURRENT_DB, &complete);
+    let (_, materialized) = sync_omp_source(&source, temp.path());
+    assert!(contains_bytes(&materialized, b"fixture-wal-current-token"));
+
+    let mut partial = complete;
+    partial.extend_from_slice(&[0; 19]);
+    let target = temp.path().join("partial/omp/agent/agent.db");
+    assert_omp_sync_rejected(&source, &target, OMP_CURRENT_DB, &partial);
 }
 
 #[cfg(unix)]
@@ -488,11 +368,16 @@ fn omp_sync_rejects_bad_page_headers_salts_and_file_size_bounds() {
         Some(AiProvider::OpenAi),
         Some(&omp_test_selector()),
     )
-    .expect_err("invalid SQLite page size must be rejected");
-    assert!(format!("{error:#}").contains("page size is invalid"));
+        .expect_err("invalid SQLite page size must be rejected");
+    assert_eq!(error.to_string(), "OMP credential source is unavailable");
 
     let frame_size = read_fixture_u32(OMP_CURRENT_WAL, 8) as usize + 24;
-    let last_frame = 32 + (omp_commit_count(OMP_CURRENT_WAL) - 1) * frame_size;
+    let frame_count = (OMP_CURRENT_WAL.len() - 32) / frame_size;
+    let last_commit = (0..frame_count)
+        .rev()
+        .find(|index| read_fixture_u32(OMP_CURRENT_WAL, 32 + index * frame_size + 4) > 0)
+        .expect("synthetic WAL fixture has a committed frame");
+    let last_frame = 32 + last_commit * frame_size;
     let mut bad_salt = OMP_CURRENT_WAL.to_vec();
     bad_salt[last_frame + 8] ^= 1;
     write_omp_source(&source, OMP_CURRENT_DB, &bad_salt);
@@ -504,16 +389,16 @@ fn omp_sync_rejects_bad_page_headers_salts_and_file_size_bounds() {
         Some(&omp_test_selector()),
     )
     .expect_err("a mismatched current-generation salt must fail closed");
-    assert!(format!("{error:#}").contains("salts do not match"));
+    assert_eq!(error.to_string(), "OMP credential source is unavailable");
 
     for oversized in ["database", "wal"] {
         let database = if oversized == "database" {
-            vec![0; super::MAX_OMP_SOURCE_FILE_BYTES + 1]
+            vec![0; OMP_TEST_FILE_LIMIT + 1]
         } else {
             OMP_CURRENT_DB.to_vec()
         };
         let wal = if oversized == "wal" {
-            vec![0; super::MAX_OMP_SOURCE_FILE_BYTES + 1]
+            vec![0; OMP_TEST_FILE_LIMIT + 1]
         } else {
             OMP_CURRENT_WAL.to_vec()
         };
@@ -528,7 +413,7 @@ fn omp_sync_rejects_bad_page_headers_salts_and_file_size_bounds() {
             Some(&omp_test_selector()),
         )
         .expect_err("oversized OMP source files must be rejected");
-        assert!(format!("{error:#}").contains("size limit"), "{error:#}");
+        assert_eq!(error.to_string(), "OMP credential source exceeds a resource limit");
     }
 }
 

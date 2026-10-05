@@ -16,7 +16,10 @@ fn exit_claim_recovery_export_is_bodyless() {
         assert!(!export.contains_log_text(private));
     }
 }
-use jackin_docker::docker_client::ContainerRow;
+use jackin_docker::docker_client::{
+    ContainerHandle, ContainerInspection, ContainerRow, ContainerSpec, ContainerState, DockerApi,
+    NetworkRow, RemoveImageOutcome,
+};
 use jackin_test_support::FakeDockerClient;
 use std::collections::{HashMap, VecDeque};
 
@@ -552,6 +555,70 @@ fn only_pending_claim(authority: &Path) -> PathBuf {
 }
 
 #[cfg(unix)]
+macro_rules! forward_docker_api_methods {
+    ($($method:ident($($argument:ident: $argument_type:ty),*) -> $output:ty),* $(,)?) => {
+        $(
+            async fn $method(&self $(, $argument: $argument_type)*) -> $output {
+                self.fake.$method($($argument),*).await
+            }
+        )*
+    };
+}
+
+#[cfg(unix)]
+struct CausalInterleavingDocker {
+    fake: FakeDockerClient,
+    current_containers: std::sync::Arc<std::sync::Mutex<Vec<ContainerRow>>>,
+    observations: std::sync::Arc<std::sync::Mutex<Vec<Vec<ContainerRow>>>>,
+    first_observation: std::sync::mpsc::Sender<()>,
+    release_first_observation: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+#[cfg(unix)]
+impl DockerApi for CausalInterleavingDocker {
+    async fn list_containers(
+        &self,
+        _label_filters: &[&str],
+        _all: bool,
+    ) -> anyhow::Result<Vec<ContainerRow>> {
+        let snapshot = self.current_containers.lock().unwrap().clone();
+        let call_number = {
+            let mut observations = self.observations.lock().unwrap();
+            observations.push(snapshot.clone());
+            observations.len()
+        };
+        if call_number == 1 {
+            self.first_observation.send(()).unwrap();
+            self.release_first_observation
+                .lock()
+                .unwrap()
+                .recv()
+                .unwrap();
+        }
+        Ok(snapshot)
+    }
+
+    forward_docker_api_methods! {
+        ping() -> anyhow::Result<()>,
+        inspect_container_by_name(name: &str) -> ContainerInspection,
+        inspect_container_by_id(container: &ContainerHandle) -> ContainerState,
+        remove_container_by_id(container: &ContainerHandle) -> anyhow::Result<()>,
+        create_container(name: &str, spec: ContainerSpec) -> anyhow::Result<ContainerHandle>,
+        start_container_by_id(container: &ContainerHandle) -> anyhow::Result<()>,
+        remove_volume(name: &str) -> anyhow::Result<()>,
+        create_network(name: &str, labels: HashMap<String, String>, internal: bool) -> anyhow::Result<()>,
+        remove_network(name: &str) -> anyhow::Result<()>,
+        list_networks(label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>>,
+        inspect_network(name: &str) -> anyhow::Result<Option<NetworkRow>>,
+        list_image_tags(reference_filter: &str) -> anyhow::Result<Vec<String>>,
+        remove_image(name: &str) -> anyhow::Result<RemoveImageOutcome>,
+        inspect_image_labels(image: &str) -> anyhow::Result<HashMap<String, String>>,
+        pull_image(image: &str) -> anyhow::Result<()>,
+        exec_capture_by_id(container: &ContainerHandle, cmd: &[&str]) -> anyhow::Result<String>,
+    }
+}
+
+#[cfg(unix)]
 #[test]
 fn pending_owner_process_worker() {
     let Some(root) = std::env::var_os("JACKIN_TEST_PENDING_OWNER_ROOT") else {
@@ -766,6 +833,110 @@ async fn entry_rechecks_docker_after_reclaiming_dead_owner() {
     assert_eq!(count_pending_claims(&directory), Some(1));
     assert!(marker_path(&directory).exists());
     drop(claim);
+}
+
+#[cfg(unix)]
+#[test]
+fn entry_reobserves_container_started_after_stale_empty_snapshot_before_owner_kill() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut owner = spawn_pending_owner(tmp.path());
+    wait_for_fixture_path(
+        &tmp.path().join("pending-owner-ready"),
+        "pending owner did not create its claim",
+    );
+
+    let directory = authority(&paths);
+    let stale_pending = only_pending_claim(&directory);
+    let marker_before = std::fs::read_to_string(marker_path(&directory)).unwrap();
+    let (first_observation_tx, first_observation_rx) = std::sync::mpsc::channel();
+    let (release_first_observation_tx, release_first_observation_rx) = std::sync::mpsc::channel();
+    let current_containers = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observations = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let docker = CausalInterleavingDocker {
+        fake: FakeDockerClient::default(),
+        current_containers: std::sync::Arc::clone(&current_containers),
+        observations: std::sync::Arc::clone(&observations),
+        first_observation: first_observation_tx,
+        release_first_observation: std::sync::Mutex::new(release_first_observation_rx),
+    };
+
+    let entrant = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime.block_on(claim_entry(&paths, &docker))
+    });
+
+    first_observation_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("entrant did not capture its first Docker snapshot");
+    let pending_key = stale_pending.file_name().unwrap().to_str().unwrap();
+    let live_lease = super::super::coordination::open_state_in_namespace(
+        &pending_dir(&directory),
+        pending_key,
+        false,
+    )
+    .unwrap();
+    assert!(
+        matches!(
+            live_lease.try_lock(),
+            Err(std::fs::TryLockError::WouldBlock)
+        ),
+        "the stale empty snapshot must be captured while the pending owner is live"
+    );
+    drop(live_lease);
+
+    *current_containers.lock().unwrap() = vec![ContainerRow {
+        name: "jk-running".to_owned(),
+        id: "container-id".to_owned(),
+        labels: HashMap::new(),
+    }];
+    owner.0.kill().unwrap();
+    assert!(!owner.0.wait().unwrap().success());
+    assert!(stale_pending.exists(), "SIGKILL leaves the pending inode");
+    release_first_observation_tx.send(()).unwrap();
+
+    let entrant = entrant.join().unwrap();
+    assert_eq!(entrant.start_kind(), StartKind::ResumeExisting);
+    assert!(
+        entrant.pending_file.as_ref().unwrap().exists(),
+        "the reobserving entrant owns its pending lease"
+    );
+    assert!(!stale_pending.exists(), "the orphan token was reclaimed");
+    assert_eq!(count_pending_claims(&directory), Some(1));
+    let observations = observations.lock().unwrap();
+    assert_eq!(
+        observations.len(),
+        2,
+        "Docker must be queried again after reclaim"
+    );
+    assert!(
+        observations[0].is_empty(),
+        "first observation is stale and empty"
+    );
+    assert_eq!(
+        observations[1]
+            .iter()
+            .map(|container| container.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["jk-running"],
+        "fresh observation sees the container started after the first snapshot"
+    );
+    drop(observations);
+    assert_eq!(
+        std::fs::read_to_string(marker_path(&directory)).unwrap(),
+        marker_before,
+        "recovery must preserve the marker for the running construct"
+    );
+
+    drop(entrant);
+    assert_eq!(count_pending_claims(&directory), Some(0));
+    assert_eq!(
+        std::fs::read_to_string(marker_path(&directory)).unwrap(),
+        marker_before
+    );
 }
 
 #[test]
