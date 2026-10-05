@@ -44,6 +44,7 @@
     reason = "developer build helper emits shell snippets/progress and fails fast on workspace discovery invariants"
 )]
 
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -57,10 +58,6 @@ use jackin_image::capsule_binary::REQUIRED_VERSION;
 const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 fn main() -> Result<()> {
-    debug_assert_eq!(
-        jackin::lifecycle_policy(jackin::BinaryKind::BuildCapsuleDeveloperTool),
-        jackin::LifecyclePolicy::DeveloperExcluded,
-    );
     jackin::install_default_tls_provider();
 
     let Args {
@@ -316,7 +313,7 @@ fn target_triple(arch: &str) -> &'static str {
     }
 }
 
-fn check_zigbuild_installed() -> Result<()> {
+fn check_zigbuild_installed(workspace: &Path) -> Result<()> {
     // The `cargo zigbuild` subcommand has dropped `--version` / `-V` in
     // recent cargo-zigbuild releases (only `-h/--help` and build flags
     // survive), so probing the subcommand exits non-zero even when the
@@ -325,8 +322,10 @@ fn check_zigbuild_installed() -> Result<()> {
     // contract.
     const INSTALL_HINT: &str = "Install the pinned toolchain from mise.toml with:\n  \
                                 mise install zig cargo:cargo-zigbuild";
-    let mut command = process::Command::new("cargo-zigbuild");
-    command.arg("--version");
+    let mut command = process::Command::new("mise");
+    command
+        .args(["exec", "--", "cargo-zigbuild", "--version"])
+        .current_dir(workspace);
     #[expect(
         clippy::disallowed_methods,
         reason = "capsule build helper is a standalone build utility, not a render/runtime thread"
@@ -334,12 +333,14 @@ fn check_zigbuild_installed() -> Result<()> {
     match command.output() {
         Ok(out) if out.status.success() => Ok(()),
         Ok(out) => anyhow::bail!(
-            "cargo-zigbuild rejected `--version` (exit {}): {}\n{INSTALL_HINT}",
+            "mise could not run cargo-zigbuild `--version` (exit {}): {}\n{INSTALL_HINT}",
             out.status,
             String::from_utf8_lossy(&out.stderr).trim()
         ),
         Err(e) => {
-            anyhow::bail!("cargo-zigbuild not reachable on PATH: {e}\n{INSTALL_HINT}")
+            anyhow::bail!(
+                "failed to run `mise exec -- cargo-zigbuild --version`: {e}\n{INSTALL_HINT}"
+            )
         }
     }
 }
@@ -374,42 +375,31 @@ fn build_via_zigbuild(
     features: &[String],
     dest: &Path,
 ) -> Result<()> {
-    check_zigbuild_installed()?;
+    check_zigbuild_installed(workspace)?;
     ensure_rustup_target(target_triple(arch))?;
 
     let target = zigbuild_target(arch);
     let cargo_profile = profile.cargo_profile_arg();
+    let target_dir = target_directory(workspace, std::env::var_os("CARGO_TARGET_DIR").as_deref());
     eprintln!(
-        "[build] cargo zigbuild --profile {cargo_profile} -p jackin-capsule --target {target} ({REQUIRED_VERSION})\n\
+        "[build] mise exec -- mbx zigbuild --profile {cargo_profile} -p jackin-capsule --target {target} ({REQUIRED_VERSION})\n\
          [build] first build ~2-3 min; subsequent builds incremental via cargo cache"
     );
 
-    let cargo_args = [
-        "zigbuild",
-        "--profile",
-        cargo_profile,
-        "-p",
-        "jackin-capsule",
-        "--target",
-        target,
-    ];
-    let mut command = cargo_command_with_fd_limit(&cargo_args);
-    if !features.is_empty() {
-        command.arg("--features").arg(features.join(","));
-    }
+    let mbx_args = mbx_zigbuild_args(target, cargo_profile, features, &target_dir);
+    let mut command = mise_command_with_fd_limit(OsStr::new("mise"), &mbx_args);
 
     let status = command
         .current_dir(workspace)
         .status()
-        .with_context(|| "failed to spawn `cargo zigbuild`")?;
+        .with_context(|| "failed to spawn `mise exec -- mbx zigbuild`")?;
 
     anyhow::ensure!(
         status.success(),
-        "cargo zigbuild failed for target {target}"
+        "mise exec -- mbx zigbuild failed for target {target}"
     );
 
-    let built = workspace
-        .join("target")
+    let built = target_dir
         .join(target_triple(arch))
         .join(profile.target_subdir())
         .join("jackin-capsule");
@@ -427,20 +417,64 @@ fn build_via_zigbuild(
     Ok(())
 }
 
-fn cargo_command_with_fd_limit(args: &[&str]) -> process::Command {
+fn target_directory(workspace: &Path, configured: Option<&OsStr>) -> PathBuf {
+    let Some(configured) = configured.filter(|path| !path.is_empty()) else {
+        return workspace.join("target");
+    };
+    let configured = PathBuf::from(configured);
+    if configured.is_absolute() {
+        configured
+    } else {
+        workspace.join(configured)
+    }
+}
+
+fn mbx_zigbuild_args(
+    target: &str,
+    cargo_profile: &str,
+    features: &[String],
+    target_dir: &Path,
+) -> Vec<OsString> {
+    let mut args = [
+        "mbx",
+        "zigbuild",
+        "--profile",
+        cargo_profile,
+        "-p",
+        "jackin-capsule",
+        "--target",
+        target,
+        "--locked",
+        "--target-dir",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect::<Vec<_>>();
+    args.push(target_dir.as_os_str().to_owned());
+    if !features.is_empty() {
+        args.push(OsString::from("--features"));
+        args.push(OsString::from(features.join(",")));
+    }
+    args
+}
+
+fn mise_command_with_fd_limit(mise: &OsStr, args: &[OsString]) -> process::Command {
     #[cfg(unix)]
     {
         let mut command = process::Command::new("sh");
         command
             .arg("-c")
-            .arg("ulimit -n 20480 2>/dev/null || true; exec cargo \"$@\"")
-            .arg("cargo")
+            .arg("ulimit -n 20480 2>/dev/null || true; exec \"$@\"")
+            .arg("build-jackin-capsule")
+            .arg(mise)
+            .args(["exec", "--"])
             .args(args);
         command
     }
     #[cfg(not(unix))]
     {
-        let mut command = process::Command::new("cargo");
+        let mut command = process::Command::new(mise);
+        command.args(["exec", "--"]);
         command.args(args);
         command
     }
