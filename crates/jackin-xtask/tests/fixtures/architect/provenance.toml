@@ -1,0 +1,7 @@
+# Immutable source for jackin.role.toml.
+schema = 1
+repository = "jackin-project/jackin-the-architect"
+commit = "0592d0deeaeaa5b785fa67a43d23d3b627552720"
+path = "jackin.role.toml"
+sha256 = "eb08cf89aa32971c17db9875ec633ac22fe609927abf23fd18182756819e7fca"
+url = "https://github.com/jackin-project/jackin-the-architect/blob/0592d0deeaeaa5b785fa67a43d23d3b627552720/jackin.role.toml"

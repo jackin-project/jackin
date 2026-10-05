@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+version = "v1alpha7"
+dockerfile = "Dockerfile"
+published_image = "docker.io/projectjackin/jackin-the-architect:latest"
+agents = ["claude", "codex", "amp", "opencode", "kimi", "grok"]
+
+[identity]
+name = "The Architect"
+
+[claude]
+model = "claude-sonnet-4-6"
+plugins = [
+  "code-review@claude-plugins-official",
+  "code-simplifier@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "commit-commands@claude-plugins-official",
+  "github@claude-plugins-official",
+  "claude-md-management@claude-plugins-official",
+  "security-guidance@claude-plugins-official",
+  "pr-review-toolkit@claude-plugins-official",
+  "rust-analyzer-lsp@claude-plugins-official",
+  "jackin-dev@jackin-marketplace",
+  "tailrocks-skills@tailrocks-skills",
+  "caveman@caveman",
+]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+
+[[claude.marketplaces]]
+source = "tailrocks/tailrocks-skills"
+
+[[claude.marketplaces]]
+source = "JuliusBrussee/caveman"
+
+[codex]
+
+[amp]
+
+[opencode]
+model = "zai/glm-5.2"
+
+[kimi]
+
+[grok]
+model = "grok-build"
+
+[hooks]
+preflight = "hooks/preflight.sh"
+
+[env.CLAUDE_CODE_NO_FLICKER]
+default = "1"
+
+[env.CLAUDE_CODE_MAX_OUTPUT_TOKENS]
+default = "64000"
+
+# Non-interactive CONTEXT7 (default empty, set via host env).
+[env.CONTEXT7_API_KEY]
+default = ""
+
+[env.CAVEMAN_DEFAULT_MODE]
+default = "ultra"
