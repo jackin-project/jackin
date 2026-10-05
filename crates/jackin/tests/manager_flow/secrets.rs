@@ -545,6 +545,7 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
                 });
                 picker.fields = vec![OpField {
                     id: "password".into(),
+                    section_id: None,
                     label: "password".into(),
                     field_type: "concealed".into(),
                     concealed: true,
@@ -648,6 +649,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
                 });
                 picker.fields = vec![OpField {
                     id: "credential".into(),
+                    section_id: None,
                     label: "credential".into(),
                     field_type: "concealed".into(),
                     concealed: true,
@@ -1091,6 +1093,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
                 });
                 picker.fields = vec![OpField {
                     id: "password".into(),
+                    section_id: None,
                     label: "password".into(),
                     field_type: "concealed".into(),
                     concealed: true,

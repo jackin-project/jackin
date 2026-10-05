@@ -33,7 +33,7 @@ The `on_demand` flag on `EnvValue` changes when and whether a value is injected 
 [env]
 PUBLIC_ENDPOINT = "https://api.example.com"                                  # plain literal
 BUILD_ENV       = "${BUILD_ENV}"                                              # host env expansion
-ADMIN_KEY       = { op = "op://abc.../def.../fld...", path = "Work/Admin/key" }  # 1Password
+ADMIN_KEY       = { op = "op://abc.../def.../fld...", breadcrumb = { version = 1, value = "Work/Admin/key" } }  # 1Password
 ```
 
 Injected into the container at `docker run` time. Agent sees via `printenv`. Current behavior.
@@ -46,18 +46,18 @@ Add `on_demand = true` to any env value. The env var is **not** injected at laun
 [env]
 # Always available:
 PUBLIC_ENDPOINT = "https://api.example.com"
-ADMIN_KEY       = { op = "op://abc.../def.../fld...", path = "Work/Admin/key" }
+ADMIN_KEY       = { op = "op://abc.../def.../fld...", breadcrumb = { version = 1, value = "Work/Admin/key" } }
 
 # On-demand — not in container env, only via picker:
-API_KEY  = { op = "op://abc.../def.../fld...", path = "Work/Anthropic/api key", on_demand = true }
-SSH_KEY  = { op = "op://abc.../def.../fld...", path = "Personal/SSH/key",        on_demand = true }
+API_KEY  = { op = "op://abc.../def.../fld...", breadcrumb = { version = 1, value = "Work/Anthropic/api key" }, on_demand = true }
+SSH_KEY  = { op = "op://abc.../def.../fld...", breadcrumb = { version = 1, value = "Personal/SSH/key" }, on_demand = true }
 GH_TOKEN = { value = "$GH_TOKEN",             on_demand = true }
 STG_URL  = { value = "https://staging.internal", on_demand = true }
 ```
 
 **Toggle behavior**: when the operator sets `on_demand = false` (or removes it) via the TUI config editor, jackin❯ serializes back to the compact plain form:
 - `{ value = "https://staging.internal", on_demand = false }` → `"https://staging.internal"`
-- `{ op = "...", path = "...", on_demand = false }` → `{ op = "...", path = "..." }`
+- `{ op = "...", breadcrumb = { version = 1, value = "..." }, on_demand = false }` → `{ op = "...", breadcrumb = { version = 1, value = "..." } }`
 
 When toggled to `on_demand = true`, jackin❯ serializes to the table form. This conversion happens in the config editor.
 
@@ -157,7 +157,7 @@ On-demand vars are still read from the workspace config (to build `JACKIN_EXEC_B
 ```rust
 pub struct OpRef {
     pub op: String,
-    pub path: String,
+    pub path: String, // runtime value; TOML stores a versioned `breadcrumb` object
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -184,7 +184,7 @@ Every `jackin-exec` call triggers the picker. No pre-selection, no patterns. All
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-`OpRef` values show `path` (human-readable display). `Extended` values show their `value` string. No credential values are shown — display is always the label or source, not the resolved secret.
+`OpRef` values show the decoded `path` breadcrumb (human-readable display). `Extended` values show their `value` string. No credential values are shown — display is always the label or source, not the resolved secret.
 
 After Enter: capsule sends the selected refs to the host process → host resolves via `op read` for each selected 1Password ref, or reads host env for `$VAR` refs → values sent back to capsule → injected as env vars on the spawned command's `CommandBuilder` → command runs → output scanned for leaked values → process exits (env vars die with it, no explicit cleanup needed).
 
