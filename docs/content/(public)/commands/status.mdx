@@ -9,7 +9,7 @@ description: "Show a fleet overview — workspaces, instances, and agents"
 jackin status [WORKSPACE [INSTANCE_ID]] [OPTIONS]
 ```
 
-Three-level fleet overview. Each level reveals more detail; the default view always fits one screen.
+Three-level fleet overview. Each level reveals more detail. Add `--detail` to a human summary for full detail on every selected instance.
 
 `jackin ps` is an alias for `jackin status`.
 
@@ -21,7 +21,7 @@ Three-level fleet overview. Each level reveals more detail; the default view alw
 jackin status
 ```
 
-One row per workspace. Shows instance count and running/stopped state. No branch, PR, or agent detail at this level.
+One row per workspace. Shows instance count and counts for each container state. Add `--detail` to append branch, PR, CI, and agent detail for every selected instance.
 
 ```
   jackin❯
@@ -34,11 +34,10 @@ fleet status
   backend-api      2           2 running
   infra-tools      3           2 running · 1 stopped
 
-  3 workspaces · 7 instances running · 1 stopped
+  3 workspaces, 8 instances
 
   jackin status <workspace>           show instances
   jackin status <workspace> <id>      show full detail
-  jackin status --detail              include per-instance agent counts
 ```
 
 ### Level 1 — instance list
@@ -47,16 +46,16 @@ fleet status
 jackin status <WORKSPACE>
 ```
 
-One row per instance in the workspace. Shows role, state, and PR number.
+One row per instance in the workspace. Shows role, state, PR number, and PR title when available.
 
 ```
 myproj   3 instances · 2 running
 
-  instance         role              state    uptime    pr
+  instance         role              state        pr
   ─────────────────────────────────────────────────────────
-  jk-k7p9m2xq     the-architect     running   2h 14m   #142
-  jk-x3n1q8vz     agent-smith       running   47m      #138
-  jk-p2q8r5v      agent-smith       stopped   —        —
+  jk-k7p9m2xq     the-architect     running      #142  Refactor JWT authentication layer
+  jk-x3n1q8vz     agent-smith       running      #138  Fix workspace setup
+  jk-p2q8r5v      agent-smith       stopped exit:0  —
 ```
 
 ### Level 2 — instance detail
@@ -81,21 +80,26 @@ jk-k7p9m2xq   myproj / the-architect   running
   falcon     claude    anthropic     10:32:15   —          active
 ```
 
-Agent data comes from `jackin-capsule agents` inside the running container. Stopped instances show `agents   —`. Instances whose capsule socket is not yet reachable show `agents   pending`.
+Agent data comes from `jackin-capsule agents` inside the running container. Stopped instances show `agents   stopped`. A missing capsule socket or restarting container shows `agents   pending`. Failed queries, invalid registry data, paused containers, and unavailable inspections show `agents   unavailable`. Missing branch, PR, or CI information appears as `—`.
+
+Instance state includes exit codes or OOM termination when stopped. Full human detail also includes the reason when inspection is unavailable.
 
 ## Options
 
 | Option | Description |
 |---|---|
-| `--detail` | At Level 0, adds an agent-count column by querying each running container (adds latency proportional to fleet size). At Level 1, adds the full per-agent table rows. |
-| `--state <running\|stopped>` | Filter by instance state at any level. |
-| `--filter <KEY=VALUE>` | Filter by agent type at any level (e.g. `--filter agent=claude`). |
+| `--detail` | Append full instance detail to Level 0 or Level 1 human summaries. Level 2 already shows full detail. |
+| `--state <STATE>` | Filter individual instances at any level. States: `running`, `stopped`, `paused`, `restarting`, `removing`, `created`, `dead`, `missing`, `unavailable`. |
 | `--format <human\|json>` | Output format. `json` is always fully expanded regardless of level. |
 | `--debug` | Enable operator troubleshooting output. |
 
 ## JSON output
 
-`--format json` always returns the complete workspace → instance → agent tree regardless of which level was requested:
+`--format json` includes branch, PR, CI, and agent data for every selected instance, regardless of level or `--detail`. Workspace, instance, and state selections apply before rendering in both formats. Queries run inside running containers, so collection time grows with fleet size.
+
+Level 0 groups instances under `workspaces`. Level 1 returns `workspace` and `instances`; Level 2 returns `instances`. Each envelope includes `schema_version`. Unavailable branch and PR data are `null`. `agents` is an array when ready and `null` otherwise; `agents_status` distinguishes `ready`, `pending`, `unavailable`, and `stopped`.
+
+Level 0 example:
 
 ```json
 {
@@ -106,6 +110,8 @@ Agent data comes from `jackin-capsule agents` inside the running container. Stop
       "instances": [
         {
           "instance_id": "jk-k7p9m2xq",
+          "container_base": "jk-k7p9m2xq",
+          "workspace": "myproj",
           "role": "the-architect",
           "state": "running",
           "branch": "feat/auth-refactor",
@@ -116,6 +122,7 @@ Agent data comes from `jackin-capsule agents` inside the running container. Stop
             "ci_status": "passing",
             "ci_failing_check": null
           },
+          "agents_status": "ready",
           "agents": [
             {"codename": "badger", "agent": "claude", "provider": "anthropic",
              "started_at": "2026-06-04T10:15:02Z", "exited_at": null,
@@ -140,7 +147,7 @@ jackin status myproj
 # Full detail for one instance
 jackin status myproj jk-k7p9m2xq
 
-# Include agent counts at Level 0
+# Append full detail for every instance
 jackin status --detail
 
 # Filter running instances only

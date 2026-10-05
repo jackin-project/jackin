@@ -385,8 +385,12 @@ public enum VisualQAFixtures: Sendable {
             dimmed: account.dimmed || statusWord != nil,
             accessibilityLabel: [account.accessibilityLabel, effectiveError]
                 .compactMap { $0 }
-                .joined(separator: ", ")
-        )
+                .joined(separator: ", "),
+            countQuota: nil,
+            resetsAt: nil,
+            usedMoney: nil,
+            limitMoney: nil,
+            remainingMoney: nil)
     }
 
     private static func selectedDetail(
@@ -563,7 +567,7 @@ public enum VisualQAFixtures: Sendable {
         error: String?,
         detail: UsageDetailPresentation
     ) -> VisualQAFixture {
-        let selected = accounts.first(where: \.selected) ?? accounts.first
+        let selected = accounts.first(where: \.selected)
         let provider = Provider(rawValue: surfaceId)
         let glance = glance(
             surfaceId: surfaceId,
@@ -853,8 +857,12 @@ public enum VisualQAFixtures: Sendable {
             lastError: nil,
             dimmed: status != "fresh",
             accessibilityLabel:
-                "\(providerLabel), \(label), \(planOrStatusLabel), \(remainingLabel), \(resetDisplayLabel)"
-        )
+                "\(providerLabel), \(label), \(planOrStatusLabel), \(remainingLabel), \(resetDisplayLabel)",
+            countQuota: nil,
+            resetsAt: nil,
+            usedMoney: nil,
+            limitMoney: nil,
+            remainingMoney: nil)
     }
 
     private static func glance(

@@ -3,7 +3,8 @@
 
 //! Container-local usage socket bridged over a host-started stdio tunnel.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+use std::os::fd::{AsFd as _, OwnedFd};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,7 +14,7 @@ use anyhow::{Context as _, Result, bail};
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, UsageAccountCapability, UsageBrokerOperation, UsageBrokerRequest,
     UsageBrokerResponse, UsageCoordinationError, UsageCoordinationErrorKind,
-    UsageRelayTunnelRequest, UsageRelayTunnelResponse,
+    UsageRelayTunnelMessage, UsageRelayTunnelRequest, UsageRelayTunnelResponse,
 };
 use jackin_protocol::{CapsuleConfig, SessionIdentity};
 use tokio::io::{
@@ -21,7 +22,9 @@ use tokio::io::{
     AsyncWriteExt as _, BufReader,
 };
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{Mutex, Semaphore, mpsc, oneshot};
+use tokio::task::JoinSet;
+use tokio::time::Instant;
 
 const TUNNEL_CAPACITY: usize = 128;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(35);
@@ -92,11 +95,11 @@ fn parse_proc_stat_start_time(stat: &str) -> Option<u64> {
 
 /// Immutable capability binding loaded from the host-validated Capsule config.
 /// Session peers get exactly one capability through their kernel UID/GID; the
-/// root Capsule supervisor may use the launch-wide set for daemon refreshes.
+/// root Capsule supervisor must select an exact launched instance.
 #[derive(Debug, Clone, Default)]
 struct UsageRelayAuthorization {
-    by_peer: BTreeMap<(u32, u32), UsageAccountCapability>,
-    launch_capabilities: BTreeSet<UsageAccountCapability>,
+    by_peer: BTreeMap<(u32, u32), (String, UsageAccountCapability)>,
+    by_instance: BTreeMap<String, UsageAccountCapability>,
 }
 
 impl UsageRelayAuthorization {
@@ -121,38 +124,88 @@ impl UsageRelayAuthorization {
             anyhow::ensure!(
                 authorization
                     .by_peer
-                    .insert((peer.uid, peer.gid), capability.clone())
+                    .insert((peer.uid, peer.gid), (instance.clone(), capability.clone()))
                     .is_none(),
                 "multiple usage instances share Unix identity {peer:?}"
             );
-            authorization.launch_capabilities.insert(capability.clone());
+            authorization
+                .by_instance
+                .insert(instance.clone(), capability.clone());
         }
         Ok(authorization)
     }
 
+    /// Authorize and stamp the request with its kernel-bound instance.
+    /// `Some(None)` is reserved for the supervisor's inventory request.
+    fn stamp_operation(
+        &self,
+        supervisor: SupervisorIdentity,
+        peer: Option<PeerIdentity>,
+        operation: &mut UsageBrokerOperation,
+    ) -> Option<Option<String>> {
+        let peer = peer?;
+        if matches!(operation, UsageBrokerOperation::CurrentProjectionForSurface) {
+            return supervisor.matches(peer).then_some(None);
+        }
+        let capability = operation_capability(operation)?;
+        let instance = if supervisor.matches(peer) {
+            let instance = match &*operation {
+                UsageBrokerOperation::CurrentForCapability { instance_id, .. }
+                | UsageBrokerOperation::RefreshForCapability { instance_id, .. }
+                | UsageBrokerOperation::JoinForCapability { instance_id, .. } => instance_id,
+                _ => return None,
+            };
+            if self.by_instance.get(instance) != Some(capability) {
+                return None;
+            }
+            instance.clone()
+        } else {
+            let (instance, bound_capability) = self.by_peer.get(&(peer.uid, peer.gid))?;
+            if bound_capability != capability {
+                return None;
+            }
+            match &*operation {
+                UsageBrokerOperation::CurrentForCapability { instance_id, .. }
+                | UsageBrokerOperation::RefreshForCapability { instance_id, .. }
+                | UsageBrokerOperation::JoinForCapability { instance_id, .. }
+                    if instance_id != instance =>
+                {
+                    return None;
+                }
+                _ => {}
+            }
+            instance.clone()
+        };
+        match operation {
+            UsageBrokerOperation::CurrentForCapability { instance_id, .. }
+            | UsageBrokerOperation::RefreshForCapability { instance_id, .. }
+            | UsageBrokerOperation::JoinForCapability { instance_id, .. } => {
+                *instance_id = instance.clone();
+            }
+            _ => {}
+        }
+        Some(Some(instance))
+    }
+
+    #[cfg(test)]
     fn authorizes(
         &self,
         supervisor: SupervisorIdentity,
         peer: Option<PeerIdentity>,
         operation: &UsageBrokerOperation,
     ) -> bool {
-        let Some(capability) = operation_capability(operation) else {
-            return false;
-        };
-        let Some(peer) = peer else {
-            return false;
-        };
-        if supervisor.matches(peer) {
-            return self.launch_capabilities.contains(capability);
-        }
-        self.by_peer.get(&(peer.uid, peer.gid)) == Some(capability)
+        self.stamp_operation(supervisor, peer, &mut operation.clone())
+            .is_some()
     }
 
     #[cfg(test)]
     fn for_peer(peer: PeerIdentity, capability: UsageAccountCapability) -> Self {
         Self {
-            by_peer: BTreeMap::from([((peer.uid, peer.gid), capability.clone())]),
-            launch_capabilities: BTreeSet::from([capability]),
+            by_peer: BTreeMap::from([(
+                (peer.uid, peer.gid),
+                ("session-a".to_owned(), capability.clone()),
+            )]),
+            by_instance: BTreeMap::from([("session-a".to_owned(), capability)]),
         }
     }
 }
@@ -170,7 +223,7 @@ impl From<SessionIdentity> for PeerIdentity {
 
 fn operation_capability(operation: &UsageBrokerOperation) -> Option<&UsageAccountCapability> {
     match operation {
-        UsageBrokerOperation::CurrentForCapability { capability }
+        UsageBrokerOperation::CurrentForCapability { capability, .. }
         | UsageBrokerOperation::RefreshForCapability { capability, .. }
         | UsageBrokerOperation::JoinForCapability { capability, .. }
         | UsageBrokerOperation::Current { capability }
@@ -299,53 +352,121 @@ where
     let authorization = Arc::new(authorization);
     let pending: Pending = Arc::new(Mutex::new(BTreeMap::new()));
     let request_ids = Arc::new(AtomicU64::new(1));
-    let (requests, mut request_rx) = mpsc::channel::<UsageRelayTunnelRequest>(TUNNEL_CAPACITY);
+    let (requests, mut request_rx) =
+        mpsc::channel::<(Instant, UsageRelayTunnelRequest)>(TUNNEL_CAPACITY);
+    let (cancellations, mut cancellation_rx) = mpsc::channel::<u64>(TUNNEL_CAPACITY);
+    let (failed_cancellation, mut failed_cancellation_rx) = mpsc::channel::<()>(1);
+    let admission = Arc::new(Semaphore::new(TUNNEL_CAPACITY));
+    let mut local_tasks = JoinSet::new();
+    let writer_pending = Arc::clone(&pending);
 
-    let mut writer = jackin_telemetry::spawn::spawn_stream("usage_relay.writer", async move {
-        let mut output = output;
-        while let Some(request) = request_rx.recv().await {
-            write_frame(&mut output, &request).await?;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-    let response_pending = Arc::clone(&pending);
-    let mut reader = jackin_telemetry::spawn::spawn_stream("usage_relay.reader", async move {
-        let mut input = BufReader::new(input);
-        loop {
-            let response = read_frame::<_, UsageRelayTunnelResponse>(&mut input).await?;
-            if let Some(waiter) = response_pending.lock().await.remove(&response.request_id) {
-                drop(waiter.send(response.response));
+    let mut writer = AbortOnDrop(jackin_telemetry::spawn::spawn_stream(
+        "usage_relay.writer",
+        async move {
+            let mut output = output;
+            loop {
+                let next = tokio::select! {
+                    biased;
+                    cancellation = cancellation_rx.recv() => {
+                        let Some(request_id) = cancellation else { break; };
+                        // A cancellation cannot wait behind a blocked writer.
+                        // If its frame cannot be written immediately, closing
+                        // the tunnel cancels all host request owners instead.
+                        tokio::time::timeout_at(Instant::now(), write_frame(
+                            &mut output, &UsageRelayTunnelMessage::Cancel { request_id },
+                        )).await.context("usage relay cancellation delivery stalled")??;
+                        continue;
+                    }
+                    request = request_rx.recv() => request,
+                };
+                let Some((deadline, request)) = next else {
+                    break;
+                };
+                if Instant::now() >= deadline
+                    || !writer_pending
+                        .lock()
+                        .await
+                        .contains_key(&request.request_id)
+                {
+                    continue;
+                }
+                let frame = UsageRelayTunnelMessage::Request {
+                    request: Box::new(request),
+                };
+                tokio::select! {
+                    biased;
+                    _ = cancellation_rx.recv() => {
+                        bail!("usage relay cancellation interrupted a blocked request frame");
+                    }
+                    result = run_before_deadline(deadline, write_frame(&mut output, &frame)) => {
+                        result.context("usage relay request deadline expired")??;
+                    }
+                }
             }
-        }
-    });
+            Ok::<(), anyhow::Error>(())
+        },
+    ));
+    let response_pending = Arc::clone(&pending);
+    let mut reader = AbortOnDrop(jackin_telemetry::spawn::spawn_stream(
+        "usage_relay.reader",
+        async move {
+            let mut input = BufReader::new(input);
+            loop {
+                let response = read_frame::<_, UsageRelayTunnelResponse>(&mut input).await?;
+                if let Some(waiter) = response_pending.lock().await.remove(&response.request_id) {
+                    drop(waiter.send(response.response));
+                }
+            }
+        },
+    ));
 
     loop {
+        while let Some(result) = local_tasks.try_join_next() {
+            result.context("usage relay local request task panicked")?;
+        }
         tokio::select! {
+            result = local_tasks.join_next(), if !local_tasks.is_empty() => {
+                if let Some(result) = result {
+                    result.context("usage relay local request task panicked")?;
+                }
+            }
             accepted = listener.accept() => {
                 let (stream, _) = accepted?;
+                let deadline = Instant::now() + RESPONSE_TIMEOUT;
+                if local_tasks.len() >= TUNNEL_CAPACITY {
+                    drop(stream);
+                    continue;
+                }
+                let Ok(permit) = Arc::clone(&admission).try_acquire_owned() else {
+                    // Overload closes before parsing or forwarding any provider operation.
+                    drop(stream);
+                    continue;
+                };
                 let requests = requests.clone();
                 let pending = Arc::clone(&pending);
+                let cancellations = cancellations.clone();
+                let failed_cancellation = failed_cancellation.clone();
                 let authorization = Arc::clone(&authorization);
                 let peer = forced_peer.or_else(|| peer_identity(&stream));
                 let request_id = request_ids.fetch_add(1, Ordering::Relaxed);
-                drop(jackin_telemetry::spawn::spawn_stream(
-                    "usage_relay.local_request",
+                local_tasks.spawn(async move {
+                    let _permit = permit;
                     handle_local(
-                        stream,
-                        request_id,
-                        requests,
-                        pending,
-                        supervisor,
-                        authorization,
-                        peer,
-                    ),
-                ));
+                        stream, LocalRequestOwner {
+                            request_id, requests, pending, supervisor, authorization,
+                            peer, deadline, cancellations, failed_cancellation,
+                        },
+                    ).await;
+                });
             }
-            result = &mut reader => {
+            _ = failed_cancellation_rx.recv() => {
+                bail!("usage relay cancellation queue is unavailable");
+            }
+            result = &mut reader.0 => {
                 fail_pending(&pending).await;
                 return result.context("usage relay response task panicked")?;
             }
-            result = &mut writer => {
+            result = &mut writer.0 => {
                 fail_pending(&pending).await;
                 return result.context("usage relay request task panicked")?;
             }
@@ -353,47 +474,161 @@ where
     }
 }
 
-async fn handle_local(
-    mut stream: UnixStream,
+fn request_expiry_unix_ms(deadline: Instant) -> u64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    u64::try_from((now + deadline.saturating_duration_since(Instant::now())).as_millis())
+        .unwrap_or(u64::MAX)
+}
+
+async fn run_before_deadline<F>(deadline: Instant, future: F) -> Option<F::Output>
+where
+    F: std::future::Future,
+{
+    tokio::pin!(future);
+    let guarded = std::future::poll_fn(|context| {
+        if Instant::now() >= deadline {
+            return std::task::Poll::Ready(None);
+        }
+        future.as_mut().poll(context).map(Some)
+    });
+    tokio::time::timeout_at(deadline, guarded)
+        .await
+        .ok()
+        .flatten()
+}
+
+async fn wait_peer_owner_loss(monitor: &tokio::io::unix::AsyncFd<OwnedFd>) -> std::io::Result<()> {
+    loop {
+        let mut ready = monitor.writable().await?;
+        match ready.try_io(|descriptor| {
+            let mut descriptors = [nix::poll::PollFd::new(
+                descriptor.get_ref().as_fd(),
+                nix::poll::PollFlags::POLLOUT,
+            )];
+            nix::poll::poll(&mut descriptors, nix::poll::PollTimeout::ZERO)
+                .map_err(|error| std::io::Error::from_raw_os_error(error as i32))?;
+            let flags = descriptors[0].revents().unwrap_or_default();
+            if flags.intersects(
+                nix::poll::PollFlags::POLLHUP
+                    | nix::poll::PollFlags::POLLERR
+                    | nix::poll::PollFlags::POLLNVAL,
+            ) {
+                Ok(())
+            } else {
+                Err(std::io::ErrorKind::WouldBlock.into())
+            }
+        }) {
+            Ok(Err(error)) if error.kind() == std::io::ErrorKind::Interrupted => {
+                // Signal interruption is not peer loss. Yield before retrying
+                // so the accepted deadline can still cancel a signal storm.
+                tokio::task::yield_now().await;
+            }
+            Ok(result) => return result,
+            Err(_) => {}
+        }
+    }
+}
+
+struct LocalRequestOwner {
     request_id: u64,
-    requests: mpsc::Sender<UsageRelayTunnelRequest>,
+    requests: mpsc::Sender<(Instant, UsageRelayTunnelRequest)>,
     pending: Pending,
     supervisor: SupervisorIdentity,
     authorization: Arc<UsageRelayAuthorization>,
     peer: Option<PeerIdentity>,
-) {
-    let request = {
-        let mut reader = BufReader::new(&mut stream);
-        read_frame::<_, UsageBrokerRequest>(&mut reader).await
+    deadline: Instant,
+    cancellations: mpsc::Sender<u64>,
+    failed_cancellation: mpsc::Sender<()>,
+}
+
+async fn handle_local(mut stream: UnixStream, owner: LocalRequestOwner) {
+    let LocalRequestOwner {
+        request_id,
+        requests,
+        pending,
+        supervisor,
+        authorization,
+        peer,
+        deadline,
+        cancellations,
+        failed_cancellation,
+    } = owner;
+    // Duplicate registration preserves the response writer's readiness.
+    // POLLHUP distinguishes full owner loss from a legitimate write half-close.
+    let Ok(descriptor) = stream.as_fd().try_clone_to_owned() else {
+        return;
     };
-    let supervisor_ok = supervisor_peer_allows(supervisor, peer);
-    let response = match request {
-        Ok(request)
-            if supervisor_ok && authorization.authorizes(supervisor, peer, &request.operation) =>
-        {
-            let (response_tx, response_rx) = oneshot::channel();
-            pending.lock().await.insert(request_id, response_tx);
-            let tunneled = UsageRelayTunnelRequest {
-                request_id,
-                request,
-            };
-            if requests.send(tunneled).await.is_err() {
-                pending.lock().await.remove(&request_id);
-                unavailable_response()
-            } else if let Ok(Ok(response)) =
-                tokio::time::timeout(RESPONSE_TIMEOUT, response_rx).await
-            {
-                response
-            } else {
-                pending.lock().await.remove(&request_id);
-                unavailable_response()
-            }
+    let Ok(monitor) =
+        tokio::io::unix::AsyncFd::with_interest(descriptor, tokio::io::Interest::WRITABLE)
+    else {
+        return;
+    };
+    let exchange = async {
+        let mut cancel = false;
+        let request = {
+            let mut reader = BufReader::new(&mut stream);
+            read_frame::<_, UsageBrokerRequest>(&mut reader).await
+        };
+        if Instant::now() >= deadline {
+            return true;
         }
-        Ok(_) if supervisor_ok => capability_unauthorized_response(),
-        Ok(_) => supervisor_unauthorized_response(),
-        Err(_) => protocol_response(),
+        let supervisor_ok = supervisor_peer_allows(supervisor, peer);
+        let response = match request {
+            Ok(mut request) if supervisor_ok => {
+                let Some(instance_id) =
+                    authorization.stamp_operation(supervisor, peer, &mut request.operation)
+                else {
+                    drop(write_frame(&mut stream, &capability_unauthorized_response()).await);
+                    return false;
+                };
+                if Instant::now() >= deadline {
+                    return true;
+                }
+                let (response_tx, response_rx) = oneshot::channel();
+                pending.lock().await.insert(request_id, response_tx);
+                let tunneled = UsageRelayTunnelRequest {
+                    request_id,
+                    instance_id,
+                    expires_at_unix_ms: request_expiry_unix_ms(deadline),
+                    request,
+                };
+                if requests.send((deadline, tunneled)).await.is_err() {
+                    pending.lock().await.remove(&request_id);
+                    unavailable_response()
+                } else {
+                    match response_rx.await {
+                        Ok(response) => response,
+                        Err(_) => {
+                            cancel = true;
+                            unavailable_response()
+                        }
+                    }
+                }
+            }
+            Ok(_) => supervisor_unauthorized_response(),
+            Err(_) => protocol_response(),
+        };
+        if Instant::now() >= deadline {
+            return true;
+        }
+        drop(write_frame(&mut stream, &response).await);
+        cancel
     };
-    drop(write_frame(&mut stream, &response).await);
+    let outcome = run_before_deadline(deadline, async {
+        tokio::select! {
+            biased;
+            _ = wait_peer_owner_loss(&monitor) => true,
+            cancel = exchange => cancel,
+        }
+    })
+    .await;
+    pending.lock().await.remove(&request_id);
+    if outcome.unwrap_or(true) && cancellations.try_send(request_id).is_err() {
+        // Refusing cancellation must revoke the complete tunnel owner.
+        drop(failed_cancellation.try_send(()));
+    }
 }
 
 fn capability_unauthorized_response() -> UsageBrokerResponse {
@@ -468,6 +703,15 @@ fn supervisor_unauthorized_response() -> UsageBrokerResponse {
             kind: UsageCoordinationErrorKind::Unauthorized,
             message: "usage relay peer is not the Capsule supervisor".to_owned(),
         },
+    }
+}
+
+// The tunnel tasks belong to the socket owner even when its future is cancelled.
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
 

@@ -12,7 +12,6 @@ use serde::Deserialize;
 
 use crate::git_context::GH_PULL_REQUEST_COMMAND_TIMEOUT;
 use crate::pull_request::{PullRequestChecks, PullRequestInfo};
-use crate::util::{WaitOutcome, wait_child_with_timeout};
 use termrock::text::sanitize_terminal_title;
 
 use std::sync::Arc;
@@ -282,106 +281,54 @@ pub(crate) fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
 /// Differences from `command_stdout_trimmed_with_timeout`:
 /// - stdin is set to `Stdio::null()` so a misbehaving subprocess never
 ///   blocks reading from the daemon's stdin awaiting a prompt.
-/// - stderr is drained into a bounded buffer solely to prevent child blocking;
-///   it is never retained in errors or telemetry.
+/// - both streams and the leader share one finite deadline under process-group
+///   ownership; excess output rejects the response rather than truncating it.
+/// - stderr is captured solely to prevent child blocking; it is never retained
+///   in errors or telemetry.
 fn run_command_capturing_output(
     request: &jackin_process::ExecRequest,
     timeout: Duration,
     accepted_statuses: &[i32],
 ) -> Result<Option<String>, LookupError> {
-    let Ok((operation, mut child)) = crate::process_telemetry::spawn_sync(request) else {
-        return Err(LookupError::Spawn);
-    };
-    let Some(stdout) = child.stdout.take() else {
-        operation.complete_io_failure();
-        return Err(LookupError::Io);
-    };
-    let Some(stderr) = child.stderr.take() else {
-        operation.complete_io_failure();
-        return Err(LookupError::Io);
-    };
-    let stdout_reader = read_pipe_bounded(stdout, 64 * 1024);
-    let stderr_reader = read_pipe_bounded(stderr, 4 * 1024);
-    let status = match wait_child_with_timeout(&mut child, timeout) {
-        WaitOutcome::Exited(status) => Some(status),
-        WaitOutcome::Reaped => None,
-        WaitOutcome::TimedOut => {
-            drop(stdout_reader.join());
-            drop(stderr_reader.join());
-            operation.complete_timeout();
-            return Err(LookupError::Timeout);
-        }
-        WaitOutcome::Failed => {
-            drop(stdout_reader.join());
-            drop(stderr_reader.join());
-            operation.complete_io_failure();
-            return Err(LookupError::Io);
-        }
-    };
-    let Ok(Ok(stdout_bytes)) = stdout_reader.join() else {
-        operation.complete_io_failure();
-        return Err(LookupError::Io);
-    };
-    let Ok(Ok(stderr_bytes)) = stderr_reader.join() else {
-        operation.complete_io_failure();
-        return Err(LookupError::Io);
-    };
-    let status_success = status.as_ref().map(|status| {
-        status
-            .code()
-            .is_some_and(|code| accepted_statuses.contains(&code))
-    });
-    let result = command_output_or_lookup_error("gh", status_success, &stdout_bytes, &stderr_bytes);
-    match status {
-        Some(status) => operation.complete_status(status, accepted_statuses),
-        None if result.is_ok() => operation.complete_reaped(),
-        None => operation.complete_io_failure(),
+    let mut request = request.clone().timeout(timeout);
+    request.retry = jackin_process::RetryPolicy::none();
+    request.stdin = None;
+    request.stdin_mode = jackin_process::StdioMode::Null;
+    request.stdout_mode = jackin_process::StdioMode::Capture;
+    request.stderr_mode = jackin_process::StdioMode::Capture;
+    // Retain the existing response budgets, but reject excess bytes rather
+    // than silently truncating JSON and then draining indefinitely.
+    request.stdout_limit = Some(64 * 1024);
+    request.stderr_limit = Some(4 * 1024);
+    let output = crate::process_telemetry::exec_sync_accepted(&request, accepted_statuses)
+        .map_err(
+            |error| match error.downcast_ref::<jackin_process::ExecStage>() {
+                Some(jackin_process::ExecStage::Spawn) => LookupError::Spawn,
+                _ => LookupError::Io,
+            },
+        )?;
+    if output.timed_out {
+        return Err(LookupError::Timeout);
     }
-    result
+    let status_success = output
+        .code
+        .is_some_and(|code| accepted_statuses.contains(&code));
+    command_output_or_lookup_error("gh", Some(status_success), &output.stdout, &output.stderr)
 }
 
 pub(crate) fn command_output_or_lookup_error(
     _program: &str,
     status_success: Option<bool>,
     stdout_bytes: &[u8],
-    stderr_bytes: &[u8],
+    _stderr_bytes: &[u8],
 ) -> Result<Option<String>, LookupError> {
-    let stderr_nonempty = stderr_bytes.iter().any(|b| !b.is_ascii_whitespace());
     let value = String::from_utf8_lossy(stdout_bytes).trim().to_owned();
     match status_success {
         Some(false) => Err(LookupError::Nonzero),
-        None if value.is_empty() && stderr_nonempty => Err(LookupError::Io),
+        None => Err(LookupError::Io),
         _ if value.is_empty() => Ok(None),
         _ => Ok(Some(value)),
     }
-}
-
-fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
-    mut pipe: R,
-    cap: usize,
-) -> std::thread::JoinHandle<std::io::Result<Vec<u8>>> {
-    jackin_telemetry::spawn::thread_stream(
-        "pr_context.stdout",
-        move || -> std::io::Result<Vec<u8>> {
-            let mut bytes = Vec::with_capacity(cap.min(16 * 1024));
-            let mut buf = [0u8; 4096];
-            loop {
-                let n = pipe.read(&mut buf)?;
-                if n == 0 {
-                    break;
-                }
-                let take = (cap - bytes.len()).min(n);
-                bytes.extend_from_slice(&buf[..take]);
-                if bytes.len() >= cap {
-                    // Cap reached; drain remaining bytes so the writer
-                    // doesn't block on SIGPIPE waiting for us.
-                    while pipe.read(&mut buf)? > 0 {}
-                    break;
-                }
-            }
-            Ok(bytes)
-        },
-    )
 }
 
 #[cfg(test)]

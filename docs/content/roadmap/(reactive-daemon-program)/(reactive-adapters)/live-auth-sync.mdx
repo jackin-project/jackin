@@ -4,22 +4,36 @@ title: "Live Bidirectional Auth Sync"
 
 **Status**: Deferred
 
-**Current state**: design proposal, blocked on [jackin❯ daemon](/roadmap/jackin-daemon/) production lifecycle/socket foundation. Plan 042 deliberately did not prototype live auth sync because it carries credentials and needs the daemon's redaction, coredump, version-skew, and lifecycle posture proven first; no implementation work has begun.
+**Current state**: design proposal for live bidirectional credential reconciliation. The [host daemon foundation](/commands/daemon/) exists, but this feature's watchers, shared credential store, host writeback, and conflict protocol remain unimplemented. Plan 042 did not prototype live sync; credential-specific redaction, coredump, version-skew, and lifecycle validation remain prerequisites for its adapters.
 
 ## Shipped facts
 
-jackin❯'s `sync` auth mode (`AuthMode::Sync` in <RepoFile path="crates/jackin-console/src/tui/auth.rs" />) reads the host login once per container launch, copies the token into the role-state directory, and bind-mounts it. That covers the first-launch convenience case only: a host token rotated while a container is running is never picked up, an in-container refresh never flows back to the host or to sibling containers, and two parallel containers sharing an account can invalidate each other's OAuth grant. Capsule's session-local usage/account snapshots are already flock-protected where they share state (Phase 2 of the [auth reliability program](/roadmap/auth-reliability-program/)), but that is launch-time and single-container scope, not live cross-process reconciliation.
+Named profile accounts select authorized host credential directories at launch;
+Capsule seeds durable agent homes from forwarded material without overwriting
+credentials already refreshed in-container when a later tab opens. The old
+per-agent `sync_source_dir` policy has been replaced by the
+[account registry](/guides/authentication/agents/).
 
-This item is Phase 4 of the [auth reliability and convenience program](/roadmap/auth-reliability-program/) and depends entirely on the [jackin❯ daemon](/roadmap/jackin-daemon/), which does not exist yet — there is no long-running jackin❯ host process today. No adapter, shared store, or container-side watcher described below has been built.
+There is no live bidirectional credential reconciliation: host rotation is not
+propagated into running agent homes, and an in-container rotation is not written
+back to the host or sibling containers. Parallel containers sharing an OAuth
+account can still invalidate each other's grant. The independent usage broker's
+account refresh and Capsule's usage projection do not implement credential
+writeback or conflict resolution.
+
+This remains Phase 4 of the [auth reliability program](/roadmap/auth-reliability-program/).
+`jackin daemon` already supplies a long-running per-user host process and control
+socket; no auth adapter, shared credential store, or container-side watcher
+proposed below has been built.
 
 ## Remaining work
 
-1. **jackin❯ daemon Phase 1** must ship first (lifecycle, install, control socket, log redaction, no watchers). This item cannot start before that. See [jackin❯ daemon](/roadmap/jackin-daemon/).
+1. **Credential adapter readiness** — use the shipped daemon lifecycle/control socket, then prove credential-specific redaction, coredump handling, restart, and version-skew behavior before enabling auth watchers. See [jackin❯ daemon](/roadmap/jackin-daemon/).
 2. **Per-axis adapter** on the daemon's plug-in surface for `gh`, Claude, Codex, and future axes (Amp, etc.) — watches host token stores (inotify on Linux, polling on macOS) and reconciles a flock-protected shared store.
 3. **Container-side watcher** — small static binary in the construct image, inotify on agent credential paths, pushes in-container refreshes to the shared store bind-mount.
 4. **macOS Keychain bridge** — write refreshed tokens back to Keychain via `security add-generic-password -U` so the host user's normal `gh` / `claude` workflow stays consistent.
 5. **Conflict resolution** — last-writer-wins by `(mtime, checksum)`, with in-container rotation winning over a stale host poll landing in the same window; surfaced via `jackin auth status` (tracked under [Auth health and operator visibility](/roadmap/auth-health-and-visibility/)).
-6. **Naming decision** — `sync` mode's current name describes launch-time snapshot behaviour, not the bidirectional meaning the word implies; a rename (candidates: `forward` or `snapshot`) should land in the same PR series as the live mode, not before.
+6. **Account source contract** — expose live reconciliation as an explicit account capability with operator consent; preserve the distinction between launch-time profile forwarding and bidirectional host writes. Historical `sync` naming alternatives remain in the design rationale.
 
 Full architecture sketch, naming options, and host-write rationale: [Live bidirectional auth sync — design rationale](/research/agents/authentication/live-auth-sync-design/).
 
@@ -32,8 +46,8 @@ Full architecture sketch, naming options, and host-write rationale: [Live bidire
 ## Related work
 
 - [Auth reliability and convenience program](/roadmap/auth-reliability-program/) — umbrella program that places live sync as Phase 4 in the complete auth fix sequence.
-- [jackin❯ daemon](/roadmap/jackin-daemon/) — umbrella item that introduces the long-running jackin❯ process this feature depends on.
-- [GitHub CLI authentication strategy](/roadmap/github-cli-auth-strategy/) — current `sync` mode lives here; "Bidirectional shared-store sync" was previously listed as a follow-up under that item, replaced by this dedicated roadmap item.
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — shipped lifecycle foundation and remaining adapter program.
+- [GitHub CLI authentication strategy](/roadmap/github-cli-auth-strategy/) — the separate GitHub axis retains its own `sync` mode; this does not restore removed per-agent policy tables. "Bidirectional shared-store sync" was previously listed there as a follow-up, replaced by this item.
 - [Auth health and operator visibility](/roadmap/auth-health-and-visibility/) — owns the `jackin auth status` subcommand this item's conflict surfacing depends on.
 - [Credential source pattern](/roadmap/credential-source-pattern/) — future unified credential resolver; the daemon's per-axis adapter trait should be expressible inside it.
 - Research: [Live bidirectional auth sync — design rationale](/research/agents/authentication/live-auth-sync-design/) — naming analysis, architecture sketch, conflict resolution, host-write rationale.

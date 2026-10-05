@@ -20,6 +20,7 @@ path = "src/lib.rs"
 default = []
 
 [dependencies]
+jackin-process = { workspace = true }
 jackin-core = { workspace = true }
 jackin-config = { workspace = true }
 jackin-protocol = { workspace = true }
@@ -33,9 +34,9 @@ icu_locale = { workspace = true }
 nix = { workspace = true, features = ["fs", "signal", "term", "user"] }
 reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
 sha2 = { workspace = true }
-tokio = { workspace = true, features = ["rt", "sync", "macros", "time", "net"] }
+tokio = { workspace = true, features = ["rt", "sync", "macros", "time", "net", "io-util"] }
 tower = { workspace = true }
 tracing = { workspace = true }
 turso = { workspace = true }
@@ -54,7 +55,7 @@ jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-otlp-testbed = { workspace = true }
 ratatui = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 tracing = { workspace = true }
 
 [[bench]]

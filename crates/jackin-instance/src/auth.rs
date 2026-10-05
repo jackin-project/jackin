@@ -24,13 +24,28 @@ use super::{
 };
 use crate::{InstanceError, SyncSourceValidationError};
 use anyhow::Context;
-use jackin_config::{AiProvider, AuthForwardMode, GithubAuthMode, ProfileSelector};
-use jackin_core::Agent;
+use jackin_config::{
+    AiProvider, AuthForwardMode, GithubAuthMode, KimiRuntimeAuthSlot, ProfileSelector,
+};
+use jackin_core::{Agent, ProfileCredentialSourceMaterial};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 static AUTH_DIRECTORY_SWAP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+mod profile_material;
+
+/// Runtime contract needed to select the exact Kimi OAuth file consumed by
+/// the chosen image. Callers obtain `cli_version` from that image's immutable
+/// Jackin version label and pass only environment values admitted to the
+/// agent process.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KimiRuntimeAuthContext {
+    pub cli_version: String,
+    pub environment: BTreeMap<String, String>,
+}
 
 /// Maximum bytes read from one selected credential file while it is captured
 /// for launch. Credential sources are operator-owned input, so every read
@@ -60,6 +75,8 @@ struct SelectedAuthSourceSnapshotInner {
     descriptor: AuthSourceDescriptor,
     materialized_source: SelectedSourceDirectory,
     content_revision: String,
+    profile_material: Option<ProfileCredentialSourceMaterial>,
+    kimi_auth_slot: Option<KimiRuntimeAuthSlot>,
 }
 
 /// Owned materialized source tree. Unix keeps the parent directory descriptor
@@ -93,6 +110,7 @@ impl std::fmt::Debug for SelectedAuthSourceSnapshot {
         f.debug_struct("SelectedAuthSourceSnapshot")
             .field("descriptor", &self.inner.descriptor)
             .field("content_revision", &self.inner.content_revision)
+            .field("profile_material", &self.inner.profile_material)
             .finish_non_exhaustive()
     }
 }
@@ -112,6 +130,69 @@ impl SelectedAuthSourceSnapshot {
     pub(crate) fn content_revision(&self) -> &str {
         &self.inner.content_revision
     }
+
+    /// Typed proof derived from the captured primary credential bytes.
+    pub(crate) fn profile_material(&self) -> Option<ProfileCredentialSourceMaterial> {
+        self.inner.profile_material.clone()
+    }
+
+    /// Verify the provisioned Kimi handoff still contains this snapshot's
+    /// exact route config and selected credential bytes before it is mounted.
+    pub(crate) fn verify_kimi_provisioned_source(
+        &self,
+        provisioned_dir: &Path,
+    ) -> anyhow::Result<()> {
+        use sha2::Digest as _;
+
+        let slot = self
+            .inner
+            .kimi_auth_slot
+            .as_ref()
+            .context("captured Kimi auth slot is missing")?;
+        let proof = self
+            .inner
+            .profile_material
+            .as_ref()
+            .context("captured Kimi profile proof is missing")?;
+        let source_dir = self.materialized_source_dir();
+        let source_config = read_bounded_local_file(&source_dir.join("config.toml"))?;
+        let (materialized_slot, canonical_config) = jackin_config::kimi_runtime_auth_config(
+            &source_config,
+            &slot.cli_version,
+            &BTreeMap::new(),
+        )?;
+        anyhow::ensure!(
+            materialized_slot == *slot
+                && canonical_config == source_config
+                && slot.runtime_config_sha256 == hex::encode(sha2::Sha256::digest(&source_config)),
+            "captured Kimi runtime config differs from its admitted projection"
+        );
+        let provisioned_config = read_bounded_local_file(&provisioned_dir.join("config.toml"))?;
+        anyhow::ensure!(
+            source_config == provisioned_config,
+            "provisioned Kimi config differs from the captured source"
+        );
+        let source_credential =
+            read_bounded_local_file(&source_dir.join(&slot.credential_relative_path))?;
+        let provisioned_credential =
+            read_bounded_local_file(&provisioned_dir.join(&slot.credential_relative_path))?;
+        anyhow::ensure!(
+            source_credential == provisioned_credential,
+            "provisioned Kimi credential differs from the selected captured slot"
+        );
+        let material_revision =
+            jackin_core::profile_credential_material_revision(Agent::Kimi, &provisioned_credential)
+                .map_err(anyhow::Error::msg)?;
+        anyhow::ensure!(
+            proof.material_revision == material_revision,
+            "provisioned Kimi credential does not match the captured profile proof"
+        );
+        anyhow::ensure!(
+            snapshot_content_revision(provisioned_dir)? == self.inner.content_revision,
+            "provisioned Kimi source tree differs from the captured snapshot"
+        );
+        Ok(())
+    }
 }
 
 fn finish_source_snapshot(
@@ -119,9 +200,23 @@ fn finish_source_snapshot(
     provider: Option<AiProvider>,
     selector: Option<&ProfileSelector>,
     source_dir: &Path,
+    effective_source_dir: &Path,
+    kimi_auth_slot: Option<&KimiRuntimeAuthSlot>,
     materialized_source: SelectedSourceDirectory,
 ) -> anyhow::Result<SelectedAuthSourceSnapshot> {
+    if agent == Agent::Kimi {
+        let slot = kimi_auth_slot.context("captured Kimi auth slot is missing")?;
+        materialize_kimi_runtime_profile(materialized_source.path(), slot)?;
+    }
     let content_revision = snapshot_content_revision(materialized_source.path())?;
+    let profile_material = profile_material::captured_profile_material(
+        agent,
+        provider,
+        selector,
+        effective_source_dir,
+        kimi_auth_slot,
+        materialized_source.path(),
+    )?;
     Ok(SelectedAuthSourceSnapshot {
         inner: Arc::new(SelectedAuthSourceSnapshotInner {
             descriptor: AuthSourceDescriptor {
@@ -132,8 +227,102 @@ fn finish_source_snapshot(
             },
             materialized_source,
             content_revision,
+            profile_material,
+            kimi_auth_slot: kimi_auth_slot.cloned(),
         }),
     })
+}
+
+fn materialize_kimi_runtime_profile(
+    snapshot_root: &Path,
+    admitted_slot: &KimiRuntimeAuthSlot,
+) -> anyhow::Result<()> {
+    let config_path = snapshot_root.join("config.toml");
+    let config = read_bounded_local_file(&config_path)?;
+    let route_environment = BTreeMap::from([
+        (
+            "KIMI_CODE_BASE_URL".to_owned(),
+            admitted_slot.base_url.clone(),
+        ),
+        (
+            "KIMI_CODE_OAUTH_HOST".to_owned(),
+            admitted_slot.oauth_host.clone(),
+        ),
+    ]);
+    let (resolved_slot, canonical_config) = jackin_config::kimi_runtime_auth_config(
+        &config,
+        &admitted_slot.cli_version,
+        &route_environment,
+    )?;
+    anyhow::ensure!(
+        resolved_slot == *admitted_slot,
+        "captured Kimi route differs from the admitted runtime slot"
+    );
+    write_private_bytes(&config_path, &canonical_config)?;
+    prune_kimi_credential_siblings(snapshot_root, admitted_slot)?;
+
+    // The route is now explicit in the canonical config, so resolving it with
+    // an empty environment must produce the same proof descriptor.
+    let (canonical_slot, canonical_again) = jackin_config::kimi_runtime_auth_config(
+        &canonical_config,
+        &admitted_slot.cli_version,
+        &BTreeMap::new(),
+    )?;
+    anyhow::ensure!(
+        canonical_slot == *admitted_slot && canonical_again == canonical_config,
+        "canonical Kimi runtime config is not stable"
+    );
+    Ok(())
+}
+
+fn prune_kimi_credential_siblings(
+    snapshot_root: &Path,
+    admitted_slot: &KimiRuntimeAuthSlot,
+) -> anyhow::Result<()> {
+    let mut components = admitted_slot.credential_relative_path.components();
+    let first = components.next();
+    let second = components.next();
+    let extra = components.next();
+    anyhow::ensure!(
+        first.is_some_and(|component| {
+            matches!(component, std::path::Component::Normal(name) if name == "credentials")
+        }) && second
+            .is_some_and(|component| { matches!(component, std::path::Component::Normal(_)) })
+            && extra.is_none(),
+        "admitted Kimi credential path is invalid"
+    );
+    let selected_name = second
+        .map(|component| component.as_os_str().to_owned())
+        .context("admitted Kimi credential filename is missing")?;
+    let credentials = snapshot_root.join("credentials");
+    let metadata = std::fs::symlink_metadata(&credentials)?;
+    anyhow::ensure!(
+        metadata.is_dir() && !metadata.file_type().is_symlink(),
+        "captured Kimi credentials path is not a real directory"
+    );
+    let selected = credentials.join(&selected_name);
+    let selected_metadata = std::fs::symlink_metadata(&selected)?;
+    anyhow::ensure!(
+        selected_metadata.is_file() && !selected_metadata.file_type().is_symlink(),
+        "selected captured Kimi credential is not a regular file"
+    );
+    let mut entries = std::fs::read_dir(&credentials)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        if entry.file_name() == selected_name {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = std::fs::symlink_metadata(&path)?;
+        if metadata.file_type().is_symlink() || metadata.is_file() {
+            std::fs::remove_file(path)?;
+        } else if metadata.is_dir() {
+            std::fs::remove_dir_all(path)?;
+        } else {
+            anyhow::bail!("captured Kimi credential sibling has an unsupported file type");
+        }
+    }
+    Ok(())
 }
 
 fn claude_source_missing_error(source_dir: &Path) -> anyhow::Error {
@@ -293,6 +482,7 @@ pub(crate) fn validate_sync_source_dir_for_selection(
 /// not mounted into the capsule. A missing source directory returns
 /// `Ok(None)`; a source that exists but no longer contains the selected
 /// credential fails closed.
+#[cfg(test)]
 pub(crate) fn capture_selected_source(
     agent: Agent,
     provider: Option<AiProvider>,
@@ -301,15 +491,39 @@ pub(crate) fn capture_selected_source(
     host_home: &Path,
     snapshot_parent: &Path,
 ) -> anyhow::Result<Option<SelectedAuthSourceSnapshot>> {
+    capture_selected_source_for_runtime(
+        agent,
+        provider,
+        selector,
+        source_dir,
+        host_home,
+        snapshot_parent,
+        None,
+    )
+}
+
+pub(crate) fn capture_selected_source_for_runtime(
+    agent: Agent,
+    provider: Option<AiProvider>,
+    selector: Option<&ProfileSelector>,
+    source_dir: &Path,
+    host_home: &Path,
+    snapshot_parent: &Path,
+    kimi_runtime: Option<&KimiRuntimeAuthContext>,
+) -> anyhow::Result<Option<SelectedAuthSourceSnapshot>> {
     #[cfg(unix)]
     {
-        let source = if agent == Agent::Amp {
-            lock_amp_source_dir(source_dir)?
+        let (source, effective_source_dir) = if agent == Agent::Amp {
+            let Some((effective_source_dir, source)) = lock_amp_source_dir_with_path(source_dir)?
+            else {
+                return Ok(None);
+            };
+            (source, effective_source_dir)
         } else {
-            auth_directory::lock_source_dir(source_dir)?
-        };
-        let Some(source) = source else {
-            return Ok(None);
+            let Some(source) = auth_directory::lock_source_dir(source_dir)? else {
+                return Ok(None);
+            };
+            (source, source_dir.to_path_buf())
         };
         let snapshot = create_source_snapshot_dir(snapshot_parent)?;
         capture_locked_source(
@@ -320,8 +534,26 @@ pub(crate) fn capture_selected_source(
             host_home,
             &source,
             snapshot.path(),
+            kimi_runtime,
         )?;
-        finish_source_snapshot(agent, provider, selector, source_dir, snapshot).map(Some)
+        let kimi_auth_slot = if agent == Agent::Kimi {
+            let runtime = kimi_runtime.ok_or_else(|| {
+                anyhow::anyhow!("selected Kimi image auth-slot contract is required")
+            })?;
+            Some(select_kimi_auth_slot_snapshot(snapshot.path(), runtime)?)
+        } else {
+            None
+        };
+        return finish_source_snapshot(
+            agent,
+            provider,
+            selector,
+            source_dir,
+            &effective_source_dir,
+            kimi_auth_slot.as_ref(),
+            snapshot,
+        )
+        .map(Some);
     }
 
     #[cfg(not(unix))]
@@ -337,24 +569,88 @@ pub(crate) fn capture_selected_source(
             source_dir.display()
         );
         let snapshot = create_source_snapshot_dir(snapshot_parent)?;
+        let effective_source_dir = if agent == Agent::Amp {
+            amp_credentials_dir(source_dir)
+        } else {
+            source_dir.to_path_buf()
+        };
         capture_unixless_source(
             agent,
             provider,
             selector,
-            source_dir,
+            &effective_source_dir,
             host_home,
             snapshot.path(),
+            kimi_runtime,
         )?;
-        finish_source_snapshot(agent, provider, selector, source_dir, snapshot).map(Some)
+        let kimi_auth_slot = if agent == Agent::Kimi {
+            let runtime = kimi_runtime.ok_or_else(|| {
+                anyhow::anyhow!("selected Kimi image auth-slot contract is required")
+            })?;
+            Some(select_kimi_auth_slot_snapshot(snapshot.path(), runtime)?)
+        } else {
+            None
+        };
+        finish_source_snapshot(
+            agent,
+            provider,
+            selector,
+            source_dir,
+            &effective_source_dir,
+            kimi_auth_slot.as_ref(),
+            snapshot,
+        )
+        .map(Some)
     }
+}
+
+fn select_kimi_auth_slot_snapshot(
+    snapshot_root: &Path,
+    runtime: &KimiRuntimeAuthContext,
+) -> anyhow::Result<KimiRuntimeAuthSlot> {
+    let config_bytes = read_bounded_local_file(&snapshot_root.join("config.toml"))?;
+    let slot = jackin_config::kimi_runtime_auth_slot(
+        &config_bytes,
+        &runtime.cli_version,
+        &runtime.environment,
+    )?;
+    anyhow::ensure!(
+        slot.credential_relative_path.is_relative()
+            && slot.credential_relative_path.components().count() == 2
+            && slot
+                .credential_relative_path
+                .components()
+                .next()
+                .is_some_and(|component| { component.as_os_str() == "credentials" }),
+        "resolved Kimi credential path is outside credentials/"
+    );
+    let selected_path = snapshot_root.join(&slot.credential_relative_path);
+    let metadata = std::fs::symlink_metadata(&selected_path)
+        .context("opening selected Kimi credentials from captured snapshot")?;
+    anyhow::ensure!(
+        metadata.is_file() && !metadata.file_type().is_symlink(),
+        "selected Kimi credentials are not a regular captured file"
+    );
+    validate_kimi_credential_bytes(&read_bounded_local_file(&selected_path)?)?;
+    Ok(slot)
+}
+
+fn validate_kimi_credential_bytes(bytes: &[u8]) -> anyhow::Result<()> {
+    let value = serde_json::from_slice::<serde_json::Value>(bytes)
+        .context("selected Kimi credentials are malformed")?;
+    anyhow::ensure!(
+        jackin_config::kimi_credentials_value_has_access_token(&value),
+        "selected Kimi credentials have no access token"
+    );
+    Ok(())
 }
 
 fn create_source_snapshot_dir(parent: &Path) -> anyhow::Result<SelectedSourceDirectory> {
     #[cfg(unix)]
     {
-        Ok(SelectedSourceDirectory {
+        return Ok(SelectedSourceDirectory {
             owner: auth_directory::create_snapshot_directory(parent)?,
-        })
+        });
     }
 
     #[cfg(not(unix))]
@@ -401,6 +697,7 @@ fn capture_locked_source(
     host_home: &Path,
     source: &auth_directory::LockedSource,
     snapshot_root: &Path,
+    kimi_runtime: Option<&KimiRuntimeAuthContext>,
 ) -> anyhow::Result<()> {
     match agent {
         Agent::Claude => capture_locked_claude_source(source, source_dir, host_home, snapshot_root),
@@ -447,18 +744,15 @@ fn capture_locked_source(
             "Muse auth.json",
             snapshot_root,
         ),
-        Agent::Amp => capture_locked_single_file_source(
+        Agent::Amp => capture_locked_amp_source(source, snapshot_root),
+        Agent::Kimi => capture_locked_kimi_source(
             source,
-            "secrets.json",
-            "secrets.json",
-            "Amp secrets.json",
+            source_dir,
             snapshot_root,
+            kimi_runtime.ok_or_else(|| {
+                anyhow::anyhow!("selected Kimi image auth-slot contract is required")
+            })?,
         ),
-        Agent::Kimi => {
-            validate_kimi_locked_source(source, source_dir)?;
-            let snapshot = auth_directory::open_directory_path(snapshot_root)?;
-            auth_directory::snapshot_source(&source.root, &snapshot)
-        }
         Agent::Omp => {
             let content = auth_directory::read_locked_source_file(
                 &source.root,
@@ -485,6 +779,53 @@ fn capture_locked_source(
             .map_err(anyhow::Error::from)
         }
     }
+}
+
+#[cfg(unix)]
+fn capture_locked_kimi_source(
+    source: &auth_directory::LockedSource,
+    source_dir: &Path,
+    snapshot_root: &Path,
+    runtime: &KimiRuntimeAuthContext,
+) -> anyhow::Result<()> {
+    let config = auth_directory::read_locked_source_file(
+        &source.root,
+        &["config.toml"],
+        "Kimi config.toml",
+    )?
+    .ok_or_else(|| anyhow::anyhow!("Kimi source {} has no config.toml", source_dir.display()))?;
+    let slot =
+        jackin_config::kimi_runtime_auth_slot(&config, &runtime.cli_version, &runtime.environment)?;
+    let relative = &slot.credential_relative_path;
+    anyhow::ensure!(
+        relative.is_relative()
+            && relative.components().count() == 2
+            && relative
+                .components()
+                .next()
+                .is_some_and(|component| { component.as_os_str() == "credentials" }),
+        "resolved Kimi credential path is outside credentials/"
+    );
+    let file_name = relative
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow::anyhow!("resolved Kimi credential filename is invalid"))?;
+    let credentials = auth_directory::read_locked_source_file(
+        &source.root,
+        &["credentials", file_name],
+        "selected Kimi credentials",
+    )?
+    .ok_or_else(|| anyhow::anyhow!("selected Kimi credentials are missing"))?;
+    validate_kimi_credential_bytes(&credentials)?;
+
+    write_snapshot_bytes(snapshot_root, Path::new("config.toml"), &config)?;
+    write_snapshot_bytes(snapshot_root, relative, &credentials)?;
+    if let Some(device_id) =
+        auth_directory::read_locked_source_file(&source.root, &["device_id"], "Kimi device_id")?
+    {
+        write_snapshot_bytes(snapshot_root, Path::new("device_id"), &device_id)?;
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -558,6 +899,28 @@ fn capture_locked_single_file_source(
 }
 
 #[cfg(unix)]
+fn capture_locked_amp_source(
+    source: &auth_directory::LockedSource,
+    snapshot_root: &Path,
+) -> anyhow::Result<()> {
+    let bytes = auth_directory::read_locked_source_file(
+        &source.root,
+        &["secrets.json"],
+        "Amp secrets.json",
+    )?
+    .ok_or_else(|| anyhow::anyhow!("Amp secrets.json is missing"))?;
+    let text = String::from_utf8(bytes).context("Amp secrets.json is not valid UTF-8")?;
+    anyhow::ensure!(!text.trim().is_empty(), "Amp secrets.json is empty");
+    let value = serde_json::from_str::<serde_json::Value>(&text)
+        .context("Amp secrets.json is malformed")?;
+    let payload = jackin_core::amp_profile_credential_payload(&value)
+        .map_err(anyhow::Error::msg)
+        .context("Amp secrets.json has no usable canonical credential")?;
+    let bytes = serde_json::to_vec(&payload).context("serializing Amp credential")?;
+    write_snapshot_bytes(snapshot_root, Path::new("secrets.json"), &bytes)
+}
+
+#[cfg(unix)]
 fn capture_locked_opencode_source(
     source: &auth_directory::LockedSource,
     provider: Option<AiProvider>,
@@ -591,6 +954,7 @@ fn capture_unixless_source(
     source_dir: &Path,
     host_home: &Path,
     snapshot_root: &Path,
+    kimi_runtime: Option<&KimiRuntimeAuthContext>,
 ) -> anyhow::Result<()> {
     match agent {
         Agent::Claude => {
@@ -606,22 +970,18 @@ fn capture_unixless_source(
             )?;
             write_snapshot_bytes(snapshot_root, Path::new(".claude.json"), account.as_bytes())
         }
-        Agent::Amp => capture_unixless_single_file_source(
-            &amp_credentials_dir(source_dir),
-            "secrets.json",
-            "secrets.json",
-            "Amp secrets.json",
+        Agent::Amp => capture_unixless_amp_source(source_dir, snapshot_root),
+        Agent::Kimi => capture_unixless_kimi_source(
+            source_dir,
             snapshot_root,
+            kimi_runtime.ok_or_else(|| {
+                anyhow::anyhow!("selected Kimi image auth-slot contract is required")
+            })?,
         ),
-        Agent::Kimi | Agent::Hermes => {
+        Agent::Hermes => {
             copy_unixless_source_tree(source_dir, snapshot_root)?;
-            if agent == Agent::Kimi {
-                validate_kimi_source_dir_unixless(snapshot_root)?;
-            } else {
-                validate_store_source_dir(agent, provider, selector, snapshot_root, snapshot_root)
-                    .map_err(anyhow::Error::from)?;
-            }
-            Ok(())
+            validate_store_source_dir(agent, provider, selector, snapshot_root, snapshot_root)
+                .map_err(anyhow::Error::from)
         }
         Agent::Omp => {
             let bytes = read_source_bytes(&source_dir.join("agent/agent.db"), "omp agent.db")?
@@ -689,6 +1049,58 @@ fn capture_unixless_source(
 }
 
 #[cfg(not(unix))]
+fn capture_unixless_kimi_source(
+    source_dir: &Path,
+    snapshot_root: &Path,
+    runtime: &KimiRuntimeAuthContext,
+) -> anyhow::Result<()> {
+    let config = read_regular_local_file(&source_dir.join("config.toml"), "Kimi config.toml")?;
+    let slot =
+        jackin_config::kimi_runtime_auth_slot(&config, &runtime.cli_version, &runtime.environment)?;
+    let relative = &slot.credential_relative_path;
+    anyhow::ensure!(
+        relative.is_relative()
+            && relative.components().count() == 2
+            && relative
+                .components()
+                .next()
+                .is_some_and(|component| { component.as_os_str() == "credentials" }),
+        "resolved Kimi credential path is outside credentials/"
+    );
+    let credentials =
+        read_regular_local_file(&source_dir.join(relative), "selected Kimi credentials")?;
+    validate_kimi_credential_bytes(&credentials)?;
+
+    write_snapshot_bytes(snapshot_root, Path::new("config.toml"), &config)?;
+    write_snapshot_bytes(snapshot_root, relative, &credentials)?;
+    let device_id_path = source_dir.join("device_id");
+    match std::fs::symlink_metadata(&device_id_path) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.is_file() && !metadata.file_type().is_symlink(),
+                "Kimi device_id is not a regular file"
+            );
+            let device_id = read_bounded_local_file(&device_id_path)?;
+            write_snapshot_bytes(snapshot_root, Path::new("device_id"), &device_id)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn read_regular_local_file(path: &Path, label: &str) -> anyhow::Result<Vec<u8>> {
+    let metadata = std::fs::symlink_metadata(path)
+        .with_context(|| format!("opening {label} at {}", path.display()))?;
+    anyhow::ensure!(
+        metadata.is_file() && !metadata.file_type().is_symlink(),
+        "{label} is not a regular file"
+    );
+    read_bounded_local_file(path)
+}
+
+#[cfg(not(unix))]
 fn capture_unixless_single_file_source(
     source_dir: &Path,
     source_name: &str,
@@ -701,6 +1113,21 @@ fn capture_unixless_single_file_source(
     let text = String::from_utf8(bytes).with_context(|| format!("{label} is not valid UTF-8"))?;
     anyhow::ensure!(!text.trim().is_empty(), "{label} is empty");
     write_snapshot_bytes(snapshot_root, Path::new(snapshot_name), text.as_bytes())
+}
+
+#[cfg(not(unix))]
+fn capture_unixless_amp_source(source_dir: &Path, snapshot_root: &Path) -> anyhow::Result<()> {
+    let bytes = read_source_bytes(&source_dir.join("secrets.json"), "Amp secrets.json")?
+        .ok_or_else(|| anyhow::anyhow!("Amp secrets.json is missing"))?;
+    let text = String::from_utf8(bytes).context("Amp secrets.json is not valid UTF-8")?;
+    anyhow::ensure!(!text.trim().is_empty(), "Amp secrets.json is empty");
+    let value = serde_json::from_str::<serde_json::Value>(&text)
+        .context("Amp secrets.json is malformed")?;
+    let payload = jackin_core::amp_profile_credential_payload(&value)
+        .map_err(anyhow::Error::msg)
+        .context("Amp secrets.json has no usable canonical credential")?;
+    let bytes = serde_json::to_vec(&payload).context("serializing Amp credential")?;
+    write_snapshot_bytes(snapshot_root, Path::new("secrets.json"), &bytes)
 }
 
 fn write_snapshot_bytes(root: &Path, relative: &Path, bytes: &[u8]) -> anyhow::Result<()> {
@@ -738,7 +1165,7 @@ fn hash_snapshot_tree(
     budget: &mut SnapshotHashBudget,
 ) -> anyhow::Result<()> {
     let mut entries = std::fs::read_dir(root)?.collect::<Result<Vec<_>, _>>()?;
-    entries.sort_by_key(std::fs::DirEntry::file_name);
+    entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
         budget.entries = budget.entries.saturating_add(1);
         anyhow::ensure!(
@@ -755,7 +1182,7 @@ fn hash_snapshot_tree(
             anyhow::bail!("selected auth snapshot contains a symlink");
         }
         if metadata.is_dir() {
-            digest.update(*b"d");
+            digest.update([b'd']);
             hash_snapshot_tree(&entry.path(), &child_relative, digest, budget)?;
         } else if metadata.is_file() {
             let bytes = read_bounded_local_file(&entry.path())?;
@@ -764,7 +1191,7 @@ fn hash_snapshot_tree(
                 budget.bytes <= MAX_AUTH_SOURCE_TREE_BYTES,
                 "selected auth source exceeds the size limit"
             );
-            digest.update(*b"f");
+            digest.update([b'f']);
             digest.update((bytes.len() as u64).to_be_bytes());
             digest.update(bytes);
         } else {
@@ -776,10 +1203,6 @@ fn hash_snapshot_tree(
 
 fn read_bounded_local_file(path: &Path) -> anyhow::Result<Vec<u8>> {
     use std::io::Read;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "bounded auth reads run in joined blocking launch/prewarm workers or scoped provisioning OS threads"
-    )]
     let file = std::fs::File::open(path)?;
     let mut bytes = Vec::new();
     file.take((MAX_AUTH_SOURCE_FILE_BYTES + 1) as u64)
@@ -795,7 +1218,7 @@ fn read_bounded_local_file(path: &Path) -> anyhow::Result<Vec<u8>> {
 #[cfg(not(unix))]
 fn copy_unixless_source_tree(source: &Path, destination: &Path) -> anyhow::Result<()> {
     let mut budget = SnapshotHashBudget::default();
-    copy_unixless_source_tree_inner(source, destination, &mut budget)
+    copy_unixless_source_tree_inner(source, destination, &mut budget, false)
 }
 
 #[cfg(not(unix))]
@@ -803,6 +1226,7 @@ fn copy_unixless_source_tree_inner(
     source: &Path,
     destination: &Path,
     budget: &mut SnapshotHashBudget,
+    preserve_file_mtime: bool,
 ) -> anyhow::Result<()> {
     std::fs::create_dir_all(destination)?;
     let mut entries = std::fs::read_dir(source)?.collect::<Result<Vec<_>, _>>()?;
@@ -820,7 +1244,12 @@ fn copy_unixless_source_tree_inner(
             anyhow::bail!("selected auth source contains a symlink");
         }
         if metadata.is_dir() {
-            copy_unixless_source_tree_inner(&source_path, &destination_path, budget)?;
+            copy_unixless_source_tree_inner(
+                &source_path,
+                &destination_path,
+                budget,
+                preserve_file_mtime,
+            )?;
         } else if metadata.is_file() {
             let bytes = read_bounded_local_file(&source_path)?;
             budget.bytes = budget.bytes.saturating_add(bytes.len());
@@ -829,21 +1258,14 @@ fn copy_unixless_source_tree_inner(
                 "selected auth source exceeds the size limit"
             );
             write_snapshot_bytes(destination, Path::new(&entry.file_name()), &bytes)?;
+            if preserve_file_mtime {
+                std::fs::File::open(&destination_path)?
+                    .set_times(std::fs::FileTimes::new().set_modified(metadata.modified()?))?;
+            }
         } else {
             anyhow::bail!("selected auth source contains a special file");
         }
     }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn validate_kimi_source_dir_unixless(source_dir: &Path) -> anyhow::Result<()> {
-    let config = source_dir.join("config.toml");
-    let credentials = source_dir.join("credentials");
-    let config_bytes = read_bounded_local_file(&config)?;
-    String::from_utf8(config_bytes).context("Kimi config.toml is not valid UTF-8")?;
-    let metadata = std::fs::symlink_metadata(credentials)?;
-    anyhow::ensure!(metadata.is_dir() && !metadata.file_type().is_symlink());
     Ok(())
 }
 
@@ -935,12 +1357,12 @@ fn validate_locked_credential_file(
                     "{agent} credential {name} is not valid UTF-8: {error}"
                 ))
             })?;
-            if text.trim().is_empty() {
+            if !text.trim().is_empty() {
+                Ok(())
+            } else {
                 Err(SyncSourceValidationError::new(format!(
                     "{agent} credential {name} is empty."
                 )))
-            } else {
-                Ok(())
             }
         }
         None => Err(SyncSourceValidationError::new(format!(
@@ -1171,20 +1593,27 @@ fn usable_opencode_auth_entry(entry: &serde_json::Value) -> bool {
 
 #[cfg(not(unix))]
 pub(super) fn amp_credentials_dir(source: &Path) -> PathBuf {
-    let nested = source.join("data/amp");
-    if nested.is_dir() {
-        nested
-    } else {
-        source.to_path_buf()
-    }
+    jackin_config::amp_credentials_path(source)
+        .parent()
+        .unwrap_or(source)
+        .to_path_buf()
 }
 
 #[cfg(unix)]
 fn lock_amp_source_dir(source: &Path) -> anyhow::Result<Option<auth_directory::LockedSource>> {
-    match auth_directory::lock_source_dir(&source.join("data/amp"))? {
-        Some(source) => Ok(Some(source)),
-        None => auth_directory::lock_source_dir(source),
-    }
+    Ok(lock_amp_source_dir_with_path(source)?.map(|(_, source)| source))
+}
+
+#[cfg(unix)]
+fn lock_amp_source_dir_with_path(
+    source: &Path,
+) -> anyhow::Result<Option<(PathBuf, auth_directory::LockedSource)>> {
+    let effective_source_dir = jackin_config::amp_credentials_path(source)
+        .parent()
+        .unwrap_or(source)
+        .to_path_buf();
+    Ok(auth_directory::lock_source_dir(&effective_source_dir)?
+        .map(|locked| (effective_source_dir, locked)))
 }
 
 /// Require a non-empty credential file named `name` directly inside `dir`.
@@ -2548,8 +2977,13 @@ mod auth_directory {
     ) -> anyhow::Result<Vec<u8>> {
         validate_owned_stat(stat, label, SFlag::S_IFREG)?;
         let file = open_source_file(source, name, stat, label)?;
+        read_open_source_file(&file, label)
+    }
+
+    fn read_open_source_file(file: &File, label: &str) -> anyhow::Result<Vec<u8>> {
         let mut bytes = Vec::new();
-        Read::by_ref(&mut &file)
+        let mut source_file = file;
+        Read::by_ref(&mut source_file)
             .take((MAX_AUTH_SOURCE_FILE_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
             .with_context(|| format!("reading {label}"))?;
@@ -2590,7 +3024,8 @@ mod auth_directory {
         validate_owned_stat(&stat, label, SFlag::S_IFREG)?;
         let file = open_source_file_with_hook(&directory, &file_name, &stat, label, true)?;
         let mut bytes = Vec::new();
-        Read::by_ref(&mut &file)
+        let mut source_file = file;
+        Read::by_ref(&mut source_file)
             .take((MAX_AUTH_SOURCE_FILE_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
             .with_context(|| format!("reading {label}"))?;
@@ -2658,6 +3093,24 @@ mod auth_directory {
         Ok(())
     }
 
+    fn set_private_file_mtime_at(
+        directory: &File,
+        name: &CStr,
+        modified: std::time::SystemTime,
+        label: &str,
+    ) -> anyhow::Result<()> {
+        let fd = openat(
+            directory,
+            name,
+            OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|error| nix_error(error, label))?;
+        owned_fd(fd)
+            .set_times(std::fs::FileTimes::new().set_modified(modified))
+            .with_context(|| format!("preserving captured mtime for {label}"))
+    }
+
     fn source_name(name: &str) -> anyhow::Result<CString> {
         CString::new(name).context("auth source name contains NUL")
     }
@@ -2685,11 +3138,20 @@ mod auth_directory {
     }
 
     fn copy_tree(source: &File, destination: &File, label: &str) -> anyhow::Result<()> {
+        copy_tree_with_mtime(source, destination, label, false)
+    }
+
+    fn copy_tree_with_mtime(
+        source: &File,
+        destination: &File,
+        label: &str,
+        preserve_mtime: bool,
+    ) -> anyhow::Result<()> {
         let mut budget = CopyBudget {
             bytes: 0,
             entries: 0,
         };
-        copy_tree_with_budget(source, destination, label, &mut budget)
+        copy_tree_with_budget(source, destination, label, &mut budget, preserve_mtime)
     }
 
     fn copy_tree_with_budget(
@@ -2697,6 +3159,7 @@ mod auth_directory {
         destination: &File,
         label: &str,
         budget: &mut CopyBudget,
+        preserve_mtime: bool,
     ) -> anyhow::Result<()> {
         validate_directory(source, label, false)?;
         fchmod(destination, Mode::from_bits_truncate(0o700))
@@ -2740,17 +3203,26 @@ mod auth_directory {
                 let child = open_directory_at(destination, &name, &entry_label)?;
                 validate_directory(&child, &entry_label, true)?;
                 let source_child = open_source_directory_at(source, &name, &stat, &entry_label)?;
-                copy_tree_with_budget(&source_child, &child, &entry_label, budget)?;
+                copy_tree_with_budget(&source_child, &child, &entry_label, budget, preserve_mtime)?;
                 fsync_directory(&child)?;
             } else if kind.contains(SFlag::S_IFREG) {
                 validate_owned_stat(&stat, &entry_label, SFlag::S_IFREG)?;
-                let bytes = read_source_file(source, &name, &stat, &entry_label)?;
+                let source_file = open_source_file(source, &name, &stat, &entry_label)?;
+                let modified = if preserve_mtime {
+                    Some(source_file.metadata()?.modified()?)
+                } else {
+                    None
+                };
+                let bytes = read_open_source_file(&source_file, &entry_label)?;
                 budget.bytes = budget.bytes.saturating_add(bytes.len());
                 anyhow::ensure!(
                     budget.bytes <= MAX_AUTH_SOURCE_TREE_BYTES,
                     "{label} exceeds the credential source size limit"
                 );
                 write_private_file_at(destination, &name, &bytes, &entry_label)?;
+                if let Some(modified) = modified {
+                    set_private_file_mtime_at(destination, &name, modified, &entry_label)?;
+                }
             } else {
                 anyhow::bail!("{entry_label} is a special file; refusing to sync it");
             }
@@ -2871,10 +3343,6 @@ mod auth_directory {
                             "timed out waiting {timeout:?} for the source auth directory lock"
                         );
                     }
-                    #[expect(
-                        clippy::disallowed_methods,
-                        reason = "source lock polling runs in blocking launch/prewarm/console validation workers or provisioning OS threads"
-                    )]
                     std::thread::sleep(
                         SOURCE_LOCK_POLL.min(deadline.saturating_duration_since(now)),
                     );
@@ -4308,35 +4776,6 @@ impl RoleState {
     }
 }
 
-#[cfg(unix)]
-fn create_hermes_source_snapshot(
-    hermes_dir: &Path,
-    source_dir: &Path,
-) -> anyhow::Result<auth_directory::SnapshotDirectory> {
-    let source_parent = source_dir
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty());
-    let source_parent_error = if let Some(parent) = source_parent {
-        match auth_directory::create_snapshot_directory(parent) {
-            Ok(snapshot) => return Ok(snapshot),
-            Err(error) => Some(error),
-        }
-    } else {
-        None
-    };
-    let sidecar_parent = hermes_dir
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("Hermes target has no protected parent"))?
-        .join(".jackin-auth-source-snapshots");
-    auth_directory::create_snapshot_directory(&sidecar_parent).with_context(|| {
-        source_parent_error.map_or_else(
-            || "creating Hermes source snapshot".to_owned(),
-            |error| format!("creating Hermes source snapshot (source parent failed: {error:#})"),
-        )
-    })
-}
-
 impl RoleState {
     /// Provision Hermes's host-side `~/.hermes/` dir per the chosen mode.
     ///
@@ -4377,7 +4816,38 @@ impl RoleState {
             // `source-snapshots` parent captured for this launch. Reuse that
             // parent for the validation copy; legacy callers fall back to a
             // private sidecar beneath the role target instead of ambient /tmp.
-            let snapshot = create_hermes_source_snapshot(hermes_dir, source_dir)?;
+            let snapshot = if let Some(source_parent) = source_dir
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
+                match auth_directory::create_snapshot_directory(source_parent) {
+                    Ok(snapshot) => snapshot,
+                    Err(source_parent_error) => {
+                        let sidecar_parent = hermes_dir
+                            .parent()
+                            .filter(|parent| !parent.as_os_str().is_empty())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("Hermes target has no protected parent")
+                            })?
+                            .join(".jackin-auth-source-snapshots");
+                        auth_directory::create_snapshot_directory(&sidecar_parent).with_context(
+                            || {
+                                format!(
+                                    "creating Hermes source snapshot (source parent failed: {source_parent_error:#})"
+                                )
+                            },
+                        )?
+                    }
+                }
+            } else {
+                let sidecar_parent = hermes_dir
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .ok_or_else(|| anyhow::anyhow!("Hermes target has no protected parent"))?
+                    .join(".jackin-auth-source-snapshots");
+                auth_directory::create_snapshot_directory(&sidecar_parent)
+                    .context("creating Hermes source snapshot")?
+            };
             let snapshot_root = auth_directory::open_directory_path(snapshot.path())?;
             auth_directory::snapshot_source(&source.root, &snapshot_root)?;
             validate_store_source_dir(

@@ -56,6 +56,9 @@ pub const LABEL_IMAGE_RECIPE_VERSION: &str = "jackin.image.recipe.version";
 /// Diagnostic — not part of the recipe hash.
 pub const LABEL_IMAGE_AGENT_VERSION_PREFIX: &str = "jackin.agent";
 
+/// Kimi auth-slot contract version verified against the installed `kimi --version`.
+pub const LABEL_IMAGE_KIMI_AUTH_SLOT_CONTRACT: &str = "jackin.agent.kimi.auth-slot-contract";
+
 /// Capsule binary version baked into the derived image. Lifted from
 /// `jackin-runtime::runtime::image::LABEL_IMAGE_CAPSULE_VERSION` as
 /// part of the D1 PART E `image_recipe` carve — it's an

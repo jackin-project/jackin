@@ -46,6 +46,13 @@ pub(crate) fn control_request_allowed(
         return false;
     };
 
+    // Canonical membership is an authenticated host/operator inventory surface.
+    // Session or arbitrary non-admitted UIDs cannot turn its read-only rows
+    // into host cache membership authority.
+    if matches!(message, ClientMsg::UsageAccountList) {
+        return peer_uid == 0;
+    }
+
     // The in-container MCP/`jackin-exec` path has no target session field in
     // its wire shape. Infer exactly one authorized session from the kernel
     // peer UID plus its daemon-issued capability; never let a session peer
@@ -280,7 +287,18 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             }
         }
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
-            accounts: mux.usage.cache().account_snapshot_views(),
+            membership: if mux.usage.canonical_projection_revoked {
+                jackin_protocol::control::UsageAccountMembershipV1::Revoked
+            } else if mux.usage_projection_error().is_none() {
+                match mux.usage_projection_snapshot().filter(|projection| jackin_protocol::control::UsageAccountMembershipV1::validate_current_projection(projection).is_ok()) {
+                    Some(projection) => jackin_protocol::control::UsageAccountMembershipV1::Current {
+                        projection: Box::new(projection.clone()),
+                    },
+                    None => jackin_protocol::control::UsageAccountMembershipV1::Unavailable,
+                }
+            } else {
+                jackin_protocol::control::UsageAccountMembershipV1::Unavailable
+            },
         },
         ClientMsg::ExecCommand { .. } => {
             // Defensive only: `ExecCommand` is intercepted by the control loop

@@ -8,10 +8,8 @@ pub mod coordinator;
 pub mod host;
 pub mod logging;
 pub mod output;
-/// Turso `SQLite` import chokepoint for this crate **and** host-binary usage
-/// caches. External callers (host CLI) must open connections only through
-/// [`store_backend::connect_local`] so a turso version bump stays one file.
-pub mod store_backend;
+/// Private SQLite custody boundary. Host callers use typed store operations.
+mod store_backend;
 pub mod telemetry;
 pub mod token_monitor;
 pub mod usage;

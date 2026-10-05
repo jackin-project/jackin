@@ -8,12 +8,15 @@ Approved on: 2026-08-20
 
 - Deployment target: macOS 26 only; no older-appearance or compatibility lane.
 - Design verification baseline: macOS 26.5.2, Xcode 26.6, macOS SDK 26.5,
-  Retina 2×. The final gate repeats on the newest stable macOS 26/Xcode 26
-  available when implementation lands.
+  Retina 2×. This historical design baseline is unchanged. Current shipping
+  qualification uses the exact stable Xcode 27.0/SDK 27.0/Swift 6.4 tuple
+  in the native README, on macOS 27.0 arm64; fresh final gates remain required.
 - Linked-SDK behavior is intentional: system AppKit and SwiftUI components own
   Liquid Glass. No fallback implementation or custom material is designed.
 - APIs introduced after the deployment floor require an availability entry in
-  the native component map before use. Beta macOS 27 APIs are out of scope.
+  the native component map before use. Stable macOS 27 APIs remain above
+  the 26.0 floor: require availability guards, decided native fallback, and
+  the minimum-target bump that removes the guard.
 
 ## User
 

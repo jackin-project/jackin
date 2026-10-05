@@ -13,13 +13,6 @@ const DIRECTORY: &str = ".jackin-coordination";
 /// Resolve a pathname through its nearest existing ancestor. Never invent an
 /// identity after permission/I/O errors or ambiguous missing symlink/`..` tails.
 fn resolve(path: &Path) -> io::Result<PathBuf> {
-    resolve_with(path, |ancestor| std::fs::canonicalize(ancestor))
-}
-
-fn resolve_with(
-    path: &Path,
-    mut canonicalize: impl FnMut(&Path) -> io::Result<PathBuf>,
-) -> io::Result<PathBuf> {
     let absolute = if path.is_absolute() {
         path.to_owned()
     } else {
@@ -28,7 +21,7 @@ fn resolve_with(
     let mut ancestor = absolute.as_path();
     let mut tail = Vec::new();
     loop {
-        match canonicalize(ancestor) {
+        match std::fs::canonicalize(ancestor) {
             Ok(mut resolved) => {
                 for component in tail.into_iter().rev() {
                     resolved.push(component);
@@ -38,15 +31,6 @@ fn resolve_with(
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 // A dangling symlink has an inode but cannot be canonicalized.
                 match std::fs::symlink_metadata(ancestor) {
-                    Ok(metadata) if !metadata.file_type().is_symlink() => {
-                        // Creation may have completed after the failed syscall.
-                        // Retry once for this real inode; further errors remain errors.
-                        let mut resolved = canonicalize(ancestor)?;
-                        for component in tail.into_iter().rev() {
-                            resolved.push(component);
-                        }
-                        return Ok(resolved);
-                    }
                     Ok(_) => return Err(error),
                     Err(missing) if missing.kind() == io::ErrorKind::NotFound => {}
                     Err(other) => return Err(other),
@@ -288,7 +272,7 @@ fn open_state_at(parent: &std::fs::File, key: &str, create: bool) -> io::Result<
         use nix::fcntl::{AtFlags, OFlag, openat};
         use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
         use std::os::unix::fs::MetadataExt as _;
-        let existing_identity = || match fstatat(parent, key, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        let before = match fstatat(parent, key, AtFlags::AT_SYMLINK_NOFOLLOW) {
             Ok(stat) => {
                 if SFlag::from_bits_truncate(stat.st_mode) != SFlag::S_IFREG
                     || stat.st_uid != nix::unistd::geteuid().as_raw()
@@ -300,30 +284,24 @@ fn open_state_at(parent: &std::fs::File, key: &str, create: bool) -> io::Result<
                         "existing coordination state must be a private owned regular inode",
                     ));
                 }
-                Ok(Some((stat.st_dev, stat.st_ino)))
+                Some((stat.st_dev, stat.st_ino))
             }
-            Err(Errno::ENOENT) => Ok(None),
-            Err(error) => Err(io::Error::from(error)),
+            Err(Errno::ENOENT) => None,
+            Err(error) => return Err(error.into()),
         };
-        let mut before = existing_identity()?;
-        let flags = OFlag::O_RDWR | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK;
-        let mode = Mode::from_bits_truncate(0o600);
-        let fd = if create && before.is_none() {
-            // Concurrent nonexclusive O_CREAT opens can return ENOENT on macOS.
-            // Elect exactly one creator; contenders validate and open its inode.
-            match openat(parent, key, flags | OFlag::O_CREAT | OFlag::O_EXCL, mode) {
-                Ok(fd) => fd,
-                Err(Errno::EEXIST) => {
-                    before = Some(existing_identity()?.ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::NotFound, "coordination inode disappeared")
-                    })?);
-                    openat(parent, key, flags, Mode::empty())?
-                }
-                Err(error) => return Err(error.into()),
-            }
-        } else {
-            openat(parent, key, flags, Mode::empty())?
-        };
+        let fd = openat(
+            parent,
+            key,
+            (if create {
+                OFlag::O_CREAT
+            } else {
+                OFlag::empty()
+            }) | OFlag::O_RDWR
+                | OFlag::O_NOFOLLOW
+                | OFlag::O_CLOEXEC
+                | OFlag::O_NONBLOCK,
+            Mode::from_bits_truncate(0o600),
+        )?;
         let file = std::fs::File::from(fd);
         let metadata = file.metadata()?;
         let after = fstat(&file)?;
@@ -354,126 +332,6 @@ fn open_state_at(parent: &std::fs::File, key: &str, create: bool) -> io::Result<
 mod tests {
     use super::*;
     use std::os::unix::fs::{MetadataExt as _, symlink};
-
-    #[expect(
-        clippy::unwrap_used,
-        reason = "filesystem race fixture must fail immediately if the expected syscall boundary is absent"
-    )]
-    fn canonicalize_with_appearing_directory(
-        ancestor: &Path,
-        raced: &Path,
-        retry_calls: &mut usize,
-    ) -> io::Result<PathBuf> {
-        let result = std::fs::canonicalize(ancestor);
-        if ancestor == raced {
-            *retry_calls += 1;
-            if *retry_calls == 1 {
-                assert_eq!(result.as_ref().unwrap_err().kind(), io::ErrorKind::NotFound);
-                // Actual filesystem creation at the vulnerable syscall boundary.
-                std::fs::create_dir(raced).unwrap();
-            }
-        }
-        result
-    }
-
-    fn open_after_barrier(
-        barrier: &std::sync::Barrier,
-        directory: &Path,
-        key: &str,
-    ) -> io::Result<std::fs::File> {
-        barrier.wait();
-        open_in_namespace(directory, key)
-    }
-
-    #[test]
-    fn resolution_accepts_real_directory_created_after_canonicalization_miss() {
-        for missing_tail in [false, true] {
-            let temp = tempfile::tempdir().unwrap();
-            let raced = temp.path().join("created-between-syscalls");
-            let selected = if missing_tail {
-                raced.join("still-missing")
-            } else {
-                raced.clone()
-            };
-            let mut retry_calls = 0;
-            let resolved = resolve_with(&selected, |ancestor| {
-                canonicalize_with_appearing_directory(ancestor, &raced, &mut retry_calls)
-            })
-            .unwrap();
-            let expected = std::fs::canonicalize(&raced).unwrap();
-            assert_eq!(
-                resolved,
-                if missing_tail {
-                    expected.join("still-missing")
-                } else {
-                    expected
-                }
-            );
-            assert_eq!(
-                retry_calls, 2,
-                "one bounded retry for the appeared real inode"
-            );
-            assert!(!raced.join("still-missing").exists());
-        }
-    }
-
-    #[test]
-    fn resolution_rejects_dangling_symlink_without_retry_or_creation() {
-        let temp = tempfile::tempdir().unwrap();
-        let target = temp.path().join("absent-target");
-        let link = temp.path().join("dangling-link");
-        symlink(&target, &link).unwrap();
-        let mut calls = 0;
-        let error = resolve_with(&link, |ancestor| {
-            calls += 1;
-            std::fs::canonicalize(ancestor)
-        })
-        .unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::NotFound);
-        assert_eq!(calls, 1);
-        assert!(!target.exists());
-        assert!(
-            std::fs::symlink_metadata(link)
-                .unwrap()
-                .file_type()
-                .is_symlink()
-        );
-    }
-
-    #[test]
-    fn concurrent_first_lock_opens_all_share_one_inode() {
-        use std::sync::{Arc, Barrier};
-        let temp = tempfile::tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let directory = universe_dir(&paths).unwrap();
-        drop(open_directory_in_namespace(&directory, true).unwrap());
-        for round in 0..40 {
-            let barrier = Arc::new(Barrier::new(8));
-            let key = format!("concurrent-first-{round}");
-            let files = std::thread::scope(|scope| {
-                let workers: Vec<_> = (0..8)
-                    .map(|_| {
-                        let barrier = Arc::clone(&barrier);
-                        let directory = &directory;
-                        let key = &key;
-                        scope.spawn(move || open_after_barrier(&barrier, directory, key))
-                    })
-                    .collect();
-                workers
-                    .into_iter()
-                    .map(|worker| worker.join().unwrap().unwrap())
-                    .collect::<Vec<_>>()
-            });
-            let first = files[0].metadata().unwrap();
-            for file in &files {
-                let metadata = file.metadata().unwrap();
-                assert_eq!((metadata.dev(), metadata.ino()), (first.dev(), first.ino()));
-            }
-            let pathname = directory.join(format!("{key}.lock"));
-            let metadata = std::fs::symlink_metadata(pathname).unwrap();
-            assert_eq!((metadata.dev(), metadata.ino()), (first.dev(), first.ino()));
-        }
-    }
 
     #[test]
     fn existing_only_namespace_and_state_opens_create_nothing_and_never_truncate() {

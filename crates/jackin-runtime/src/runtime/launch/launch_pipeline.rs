@@ -352,6 +352,7 @@ pub(super) async fn teardown_recreate_container(
     known_role_handle: Option<&ContainerHandle>,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
+    crate::isolation::state::read_records(&paths.data_dir.join(container))?;
     let (resources, role_handle, dind_handle) =
         crate::runtime::cleanup::resolve_cleanup_handles_for_state(
             paths,
@@ -360,6 +361,11 @@ pub(super) async fn teardown_recreate_container(
             docker,
         )
         .await?;
+    let shared = crate::runtime::cleanup::resolve_shared_cleanup_for_state(
+        paths, container, &resources, docker,
+    )
+    .await?;
+    crate::runtime::cleanup::ensure_shared_plan_current(paths, &shared, docker).await?;
     if let Some(handle) = role_handle.as_ref() {
         docker.remove_container_by_id(handle).await?;
     }
@@ -368,8 +374,11 @@ pub(super) async fn teardown_recreate_container(
     {
         docker.remove_container_by_id(handle).await?;
     }
-    if role_handle.is_some() || dind_handle.is_some() {
-        docker.remove_network(&resources.network).await?;
+    if let Some(volume) = shared.volume {
+        docker.remove_volume(&volume).await?;
+    }
+    if let Some(network) = shared.network {
+        docker.remove_network_by_id(&network).await?;
     }
     Ok(())
 }

@@ -92,7 +92,7 @@ fn usage_focused_roundtrips() {
 }
 
 #[test]
-fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
+fn usage_provider_tab_id_roundtrips_and_rejects_missing_identity() {
     let tab = UsageProviderTab {
         id: "sha256:abc".to_owned(),
         label: "Anthropic".to_owned(),
@@ -105,14 +105,10 @@ fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
     let decoded: UsageProviderTab =
         serde_json::from_str(&serde_json::to_string(&tab).unwrap()).unwrap();
     assert_eq!(decoded, tab);
-    // Tabs persisted before the id field decode with an empty id rather than
-    // failing; the producer always stamps real ids.
-    let legacy: UsageProviderTab = serde_json::from_str(
+    let missing = serde_json::from_str::<UsageProviderTab>(
         r#"{"label":"Anthropic","status_label":"fresh","account_label":"a@example.com","plan_label":null,"source_label":null,"active":true}"#,
-    )
-    .unwrap();
-    assert_eq!(legacy.id, "");
-    assert_eq!(legacy.label, "Anthropic");
+    );
+    assert!(missing.is_err());
 }
 
 #[test]
@@ -152,30 +148,10 @@ fn token_usage_roundtrips_present_and_absent() {
 
 #[test]
 fn usage_account_list_roundtrips() {
-    let accounts = vec![AccountUsageSnapshotView {
-        provider: "Codex".to_owned(),
-        account_label: "alexey@example.com".to_owned(),
-        source: "cli".to_owned(),
-        confidence: "authoritative".to_owned(),
-        window_kind: "Session".to_owned(),
-        used_amount: Some(63),
-        used_unit: Some("percent".to_owned()),
-        limit_amount: Some(100),
-        limit_unit: Some("percent".to_owned()),
-        resets_at: Some(1_781_190_720),
-        fetched_at: 1_781_185_560,
-        expires_at: Some(1_781_185_860),
-        status: "fresh".to_owned(),
-        last_error: None,
-    }];
-    let json = serde_json::to_string(&ServerMsg::UsageAccounts {
-        accounts: accounts.clone(),
-    })
-    .unwrap();
-    let decoded: ServerMsg = serde_json::from_str(&json).unwrap();
-    match decoded {
-        ServerMsg::UsageAccounts { accounts: decoded } => assert_eq!(decoded, accounts),
-        other => panic!("unexpected variant {other:?}"),
+    for membership in [UsageAccountMembershipV1::Unavailable, UsageAccountMembershipV1::Revoked] {
+        let json = serde_json::to_string(&ServerMsg::UsageAccounts { membership }).unwrap();
+        let decoded: ServerMsg = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), serde_json::from_str::<serde_json::Value>(&json).unwrap());
     }
 }
 
@@ -184,7 +160,6 @@ fn money_scales_minor_units_by_exponent() {
     // 5331 minor @ exponent 2 = 53.31 major — the value that, mis-scaled as
     // major units, produced the 100×-too-large spend bug.
     let usd = Money::new(5331, "USD", 2);
-    assert!((usd.major() - 53.31).abs() < 1e-9);
     assert_eq!(usd.to_string(), "$53.31");
     assert_eq!(usd.format_compact(), "$53");
 }
@@ -221,8 +196,7 @@ fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
         Money::new(0, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
         Some(0)
     );
-    // Incompatible denominations, a non-positive cap, and overflow saturate
-    // to no representation instead of a wrapped or fabricated value.
+    // Currency mismatch, a non-positive cap, or raw overflow has no representation.
     assert_eq!(
         Money::new(50_00, "USD", 2).raw_percent_of(&Money::new(10_000, "SGD", 2)),
         None
@@ -233,7 +207,7 @@ fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
     );
     assert_eq!(
         Money::new(i64::MAX, "USD", 2).raw_percent_of(&Money::new(1, "USD", 2)),
-        Some(i32::MAX)
+        None
     );
 }
 
@@ -252,6 +226,7 @@ fn status_slot_daily_serializes_as_daily() {
 
 fn placeholder_sample_bucket() -> QuotaBucketView {
     QuotaBucketView {
+        count_quota: None,
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
@@ -263,6 +238,7 @@ fn placeholder_sample_bucket() -> QuotaBucketView {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }
 }
@@ -275,6 +251,11 @@ fn refreshing_placeholder_accepts_constructor_and_surface_decoration() {
     view.focused_agent = Some("codex".to_owned());
     view.focused_provider = Some("OpenAI / Codex".to_owned());
     view.account.provider_label = "OpenAI / Codex".to_owned();
+    view.account_identity = Some(UsageAccountIdentity {
+        account_id: "account-cold".into(),
+        surface_id: "codex".into(),
+        source_revision: None,
+    });
     assert!(view.is_refreshing_placeholder());
 }
 
@@ -446,4 +427,125 @@ fn state_changed_carries_the_working_transition_the_host_waits_on() {
             previous: AgentState::Idle
         }
     ));
+}
+
+#[test]
+fn count_bucket_rejects_monetary_representation() {
+    let mut bucket = placeholder_sample_bucket();
+    bucket.count_quota = Some(CountQuota {
+        used: Some(u64::MAX),
+        limit: Some(1000),
+        remaining: Some(1),
+        unit: CountQuotaUnit::Requests,
+        period: CountQuotaPeriod::UtcDaily,
+        provenance: CountQuotaProvenance::ProviderReported,
+    });
+    assert!(bucket.validate_count_representation().is_ok());
+    bucket.used_money = Some(Money::new(1, "requests", 0));
+    assert!(bucket.validate_count_representation().is_err());
+    bucket.used_money = None;
+    bucket.limit_money = Some(Money::new(1000, "USD", 2));
+    assert!(bucket.validate_count_representation().is_err());
+}
+
+// Private literal tests to append inside protocol control/tests.rs.
+#[test]
+fn money_exact_large_coefficient_and_negative_minimum() {
+    assert_eq!(Money::new(9_007_199_254_740_993, "USD", 2).to_string(), "$90071992547409.93");
+    assert_eq!(Money::new(i64::MIN, "USD", 0).to_string(), "$-9223372036854775808");
+    assert_eq!(Money::new(i64::MIN, "USD", 2).to_string(), "$-92233720368547758.08");
+    assert_eq!(Money::new(i64::MAX, "USD", 0).format_compact_amount(), "9223372036854775807");
+}
+
+#[test]
+fn money_compact_never_erases_nonzero_subcent_value() {
+    assert_eq!(Money::new(1, "USD", 3).to_string(), "$0.001");
+    assert_eq!(Money::new(1, "USD", 3).format_compact(), "$0.001");
+    assert_eq!(Money::new(1, "USD", 255).format_compact(), "$1e-255");
+    assert_eq!(Money::new(-1, "USD", 255).format_compact(), "$-1e-255");
+    assert_eq!(Money::new(10, "USD", 255).format_compact(), "$1e-254");
+    assert_eq!(Money::new(0, "USD", 255).format_compact(), "$0");
+    assert_eq!(Money::new(1, "USD", 255).to_string(), format!("$0.{}1", "0".repeat(254)));
+}
+
+#[test]
+fn money_compare_handles_all_scales_and_signs() {
+    use std::cmp::Ordering;
+    assert_eq!(Money::new(1, "USD", 0).exact_cmp(&Money::new(4, "USD", 3)), Some(Ordering::Greater));
+    assert_eq!(Money::new(1, "USD", 0).exact_cmp(&Money::new(1000, "USD", 3)), Some(Ordering::Equal));
+    assert_eq!(Money::new(-1, "USD", 0).exact_cmp(&Money::new(-4, "USD", 3)), Some(Ordering::Less));
+    assert_eq!(Money::new(1, "USD", 255).exact_cmp(&Money::new(0, "USD", 0)), Some(Ordering::Greater));
+    assert_eq!(Money::new(i64::MIN, "USD", 255).exact_cmp(&Money::new(i64::MIN, "USD", 0)), Some(Ordering::Greater));
+    assert_eq!(Money::new(1, "USD", 0).exact_cmp(&Money::new(1, "SGD", 0)), None);
+}
+
+#[test]
+fn money_checked_arithmetic_aligns_normalizes_and_returns_overflow() {
+    assert_eq!(Money::new(1, "USD", 0).checked_sub(&Money::new(4, "USD", 3)), Some(Money::new(996, "USD", 3)));
+    assert_eq!(Money::new(1, "USD", 0).checked_add(&Money::new(4, "USD", 3)), Some(Money::new(1004, "USD", 3)));
+    assert_eq!(Money::new(10, "USD", 2).checked_add(&Money::new(10, "USD", 2)), Some(Money::new(2, "USD", 1)));
+    assert_eq!(Money::new(0, "USD", 255).checked_add(&Money::new(1, "USD", 0)), Some(Money::new(1, "USD", 0)));
+    assert_eq!(Money::new(1, "USD", 255).checked_sub(&Money::new(1, "USD", 255)), Some(Money::new(0, "USD", 0)));
+    assert_eq!(Money::new(i64::MAX, "USD", 0).checked_sub(&Money::new(i64::MIN, "USD", 0)), None);
+    assert_eq!(Money::new(1, "USD", 0).checked_add(&Money::new(1, "USD", 255)), None);
+    assert_eq!(Money::new(1, "USD", 0).checked_sub(&Money::new(1, "SGD", 0)), None);
+}
+
+#[test]
+fn money_ratio_uses_exact_scaled_coefficients() {
+    assert_eq!(Money::new(i64::MAX, "USD", 2).raw_percent_of(&Money::new(i64::MAX, "USD", 2)), Some(100));
+    assert_eq!(Money::new(1, "USD", 0).raw_percent_of(&Money::new(4, "USD", 3)), Some(25_000));
+    assert_eq!(Money::new(4, "USD", 3).raw_percent_of(&Money::new(1, "USD", 0)), Some(0));
+    assert_eq!(Money::new(1, "USD", 0).raw_percent_of(&Money::new(1, "USD", 255)), None);
+    assert_eq!(Money::new(1, "USD", 255).raw_percent_of(&Money::new(1, "USD", 0)), Some(0));
+    assert_eq!(Money::new(i64::MAX, "USD", 0).raw_percent_of(&Money::new(1, "USD", 0)), None);
+    assert_eq!(Money::new(-21_474_836_480, "USD", 3).raw_percent_of(&Money::new(1, "USD", 0)), Some(i32::MIN));
+    assert_eq!(Money::new(1, "USD", 0).raw_percent_of(&Money::new(0, "USD", 255)), None);
+}
+
+
+#[test]
+fn count_bucket_rejects_remaining_money_representation() {
+    let mut bucket = placeholder_sample_bucket();
+    bucket.count_quota = Some(CountQuota {
+        used: None, limit: Some(1000), remaining: Some(1),
+        unit: CountQuotaUnit::Requests, period: CountQuotaPeriod::UtcDaily,
+        provenance: CountQuotaProvenance::ProviderReported,
+    });
+    bucket.remaining_money = Some(Money::new(1, "USD", 3));
+    assert!(bucket.validate_count_representation().is_err());
+}
+
+
+#[test]
+fn money_remaining_geometry_uses_exact_sign_and_comparison() {
+    let tiny_positive = Money::new(1, "USD", 255);
+    let cap = Money::new(1, "USD", 0);
+    assert_eq!(tiny_positive.remaining_percent_of(&cap), Some(0));
+    assert_eq!(tiny_positive.exact_cmp(&Money::new(0, "USD", 0)), Some(std::cmp::Ordering::Greater));
+    assert_eq!(Money::new(-1, "USD", 0).remaining_percent_of(&Money::new(1, "USD", 10)), Some(0));
+    assert_eq!(Money::new(i64::MAX, "USD", 0).remaining_percent_of(&Money::new(1, "USD", 255)), Some(100));
+    assert_eq!(Money::new(1, "USD", 2).remaining_percent_of(&Money::new(1, "USD", 2)), Some(100));
+    assert_eq!(Money::new(57, "USD", 2).remaining_percent_of(&Money::new(1, "USD", 0)), Some(57));
+    assert_eq!(tiny_positive.remaining_percent_of(&Money::new(0, "USD", 255)), None);
+    assert_eq!(tiny_positive.remaining_percent_of(&Money::new(-1, "USD", 255)), None);
+    assert_eq!(tiny_positive.remaining_percent_of(&Money::new(1, "SGD", 0)), None);
+}
+
+
+#[test]
+fn money_percent_threshold_comparison_preserves_fractional_boundary() {
+    use std::cmp::Ordering;
+    let cap = Money::new(1, "USD", 0);
+    assert_eq!(Money::new(201, "USD", 3).percent_cmp(&cap, 20), Some(Ordering::Greater));
+    assert_eq!(Money::new(200, "USD", 3).percent_cmp(&cap, 20), Some(Ordering::Equal));
+    assert_eq!(Money::new(199, "USD", 3).percent_cmp(&cap, 20), Some(Ordering::Less));
+    assert_eq!(Money::new(1, "USD", 255).percent_cmp(&cap, 0), Some(Ordering::Greater));
+    assert_eq!(Money::new(i64::MAX, "USD", 255).percent_cmp(&Money::new(i64::MAX, "USD", 0), 20), Some(Ordering::Less));
+    assert_eq!(Money::new(i64::MAX, "USD", 0).percent_cmp(&Money::new(i64::MAX, "USD", 255), 255), Some(Ordering::Greater));
+    assert_eq!(Money::new(i64::MAX, "USD", 3).percent_cmp(&Money::new(i64::MAX, "USD", 3), 100), Some(Ordering::Equal));
+    assert_eq!(Money::new(i64::MIN, "USD", 0).percent_cmp(&Money::new(1, "USD", 255), 0), Some(Ordering::Less));
+    assert_eq!(Money::new(0, "USD", 255).percent_cmp(&cap, 0), Some(Ordering::Equal));
+    assert_eq!(Money::new(1, "USD", 3).percent_cmp(&Money::new(0, "USD", 3), 20), None);
+    assert_eq!(Money::new(1, "USD", 3).percent_cmp(&Money::new(1, "SGD", 3), 20), None);
 }

@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use jackin_core::{ContainerHandle, ContainerState};
+use jackin_core::{ContainerHandle, ContainerId, ContainerState, JackinPaths};
 use jackin_docker::docker_client::DockerApi;
 
 use crate::runtime::progress::launch_output;
@@ -39,13 +39,16 @@ pub(crate) fn write_if_changed_atomic(
 /// Coordinates Docker resource teardown for a failed or completed launch.
 #[derive(Debug)]
 pub struct LoadCleanup {
+    trusted_paths: JackinPaths,
     container_name: String,
     dind: String,
     role_handle_slot: std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>>,
     dind_handle_slot: std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>>,
+    network_id_slot: std::sync::Arc<std::sync::Mutex<Option<jackin_core::NetworkId>>>,
+    shared_custody:
+        std::sync::Mutex<Option<std::sync::Arc<super::launch_dind::SharedDockerCreationCustody>>>,
     dind_required: std::sync::atomic::AtomicBool,
     certs_volume: String,
-    network: String,
     /// Host-side bind-mount dir (`~/.jackin/sockets/<container>/`).
     /// Removed only when `armed` is true AND the cleanup fires on the
     /// launch-failure path — `clean_socket_dir` distinguishes that from
@@ -62,26 +65,47 @@ pub struct LoadCleanup {
 
 impl LoadCleanup {
     /// Arm cleanup for the named role container + `DinD` + network + certs volume.
-    #[must_use]
     pub fn new(
+        paths: &JackinPaths,
         container_name: String,
         dind: String,
         certs_volume: String,
-        network: String,
-        socket_dir: PathBuf,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        let container_id = ContainerId::parse(&container_name)?;
+        anyhow::ensure!(
+            matches!(
+                Path::new(container_id.as_str()).components().next(),
+                Some(std::path::Component::Normal(_))
+            ),
+            "cleanup role must be a normal path component"
+        );
+        let socket_dir = paths
+            .jackin_home
+            .join("sockets")
+            .join(container_id.as_str());
+        Ok(Self {
+            trusted_paths: paths.clone(),
             container_name,
             dind,
             role_handle_slot: std::sync::Arc::new(std::sync::Mutex::new(None)),
             dind_handle_slot: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            network_id_slot: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            shared_custody: std::sync::Mutex::new(None),
             dind_required: std::sync::atomic::AtomicBool::new(false),
             certs_volume,
-            network,
             socket_dir,
             clean_socket_dir: true,
             armed: true,
-        }
+        })
+    }
+
+    pub(crate) fn trusted_paths(&self) -> &JackinPaths {
+        &self.trusted_paths
+    }
+
+    #[cfg(test)]
+    pub(crate) fn socket_dir(&self) -> &Path {
+        &self.socket_dir
     }
 
     pub(crate) const fn disarm(&mut self) {
@@ -97,11 +121,44 @@ impl LoadCleanup {
         self.clean_socket_dir = false;
     }
 
+    pub(crate) fn bind_shared_custody(
+        &self,
+        custody: std::sync::Arc<super::launch_dind::SharedDockerCreationCustody>,
+    ) {
+        *self
+            .shared_custody
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(custody);
+    }
+
+    pub(crate) fn shared_custody_handle(
+        &self,
+    ) -> Option<std::sync::Arc<super::launch_dind::SharedDockerCreationCustody>> {
+        self.shared_custody
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     /// Share the sidecar identity sink with the concurrent sidecar launch.
     pub(crate) fn dind_handle_slot(
         &self,
     ) -> std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>> {
         std::sync::Arc::clone(&self.dind_handle_slot)
+    }
+
+    /// Share the immutable network identity returned by the creating daemon call.
+    pub(crate) fn network_id_slot(
+        &self,
+    ) -> std::sync::Arc<std::sync::Mutex<Option<jackin_core::NetworkId>>> {
+        std::sync::Arc::clone(&self.network_id_slot)
+    }
+
+    pub(crate) fn set_network_id(&self, network: jackin_core::NetworkId) {
+        *self
+            .network_id_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(network);
     }
 
     /// Share the role identity sink with the launch that owns this cleanup.
@@ -179,7 +236,7 @@ impl LoadCleanup {
             return;
         }
 
-        let role_handle = self
+        let mut role_handle = self
             .role_handle_slot
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -188,6 +245,120 @@ impl LoadCleanup {
         let dind_required = self
             .dind_required
             .load(std::sync::atomic::Ordering::Acquire);
+        let mut dind_handle = self
+            .dind_handle_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let captured_network = self
+            .network_id_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let custody = self.shared_custody_handle();
+        let admission: anyhow::Result<_> = async {
+            anyhow::ensure!(
+                role_handle
+                    .as_ref()
+                    .is_none_or(|handle| handle.name() == self.container_name),
+                "captured role differs from rollback owner"
+            );
+            anyhow::ensure!(
+                dind_handle
+                    .as_ref()
+                    .is_none_or(|handle| handle.name() == self.dind),
+                "captured DinD differs from rollback owner"
+            );
+            let socket =
+                if !preserve_role_evidence && self.clean_socket_dir {
+                    Some(
+                        crate::runtime::cleanup::admit_socket_removal(
+                            self.trusted_paths(),
+                            &self.container_name,
+                        )
+                        .await?,
+                    )
+                } else {
+                    None
+                };
+            let shared_plan = if let Some(custody) = custody.as_ref() {
+                let lifetime = custody.admitted_snapshot()?;
+                let plan = crate::runtime::cleanup::reconcile_shared_lifetime(
+                    self.trusted_paths(),
+                    lifetime,
+                    docker,
+                )
+                .await?;
+                custody.replace_snapshot(plan.lifetime.clone())?;
+                anyhow::ensure!(plan.lifetime.owner() == self.container_name,
+                    "rollback owner differs from shared lifetime");
+                anyhow::ensure!(plan.lifetime.dind_container_name().is_none_or(|name| name == self.dind),
+                    "rollback DinD name differs from shared lifetime");
+                anyhow::ensure!(plan.lifetime.certs_volume_name().is_none_or(|name| name == self.certs_volume),
+                    "rollback certificate volume differs from shared lifetime");
+                anyhow::ensure!(dind_required == plan.lifetime.dind_container_name().is_some(),
+                    "rollback DinD requirement differs from durable lifetime");
+                anyhow::ensure!(captured_network.as_ref().is_none_or(|id| Some(id) == plan.lifetime.network_id()),
+                    "captured network differs from durable lifetime");
+                if let Some(handle) = role_handle.as_ref() {
+                    anyhow::ensure!(plan.role.as_ref().is_some_and(|owned| owned.id() == handle.id()),
+                        "captured role differs from reconciled lifetime");
+                }
+                if let Some(handle) = dind_handle.as_ref() {
+                    anyhow::ensure!(plan.dind.as_ref().is_some_and(|owned| owned.id() == handle.id()),
+                        "captured DinD differs from reconciled lifetime");
+                }
+                Some(plan)
+            } else {
+                anyhow::ensure!(
+                    !dind_required,
+                    "certificate volume ownership is unavailable; retaining Docker custody"
+                );
+                None
+            };
+            let (volume, network) = shared_plan.as_ref().map_or((None, captured_network), |plan| {
+                (plan.volume.clone(), plan.network.clone())
+            });
+            if let Some(plan) = shared_plan.as_ref() {
+                crate::runtime::cleanup::ensure_shared_plan_current(self.trusted_paths(), plan, docker).await?;
+            }
+            Ok((shared_plan, volume, network, socket))
+        }
+        .await;
+        let (mut shared_plan, volume, network, socket) = match admission {
+            Ok(admitted) => admitted,
+            Err(error) => {
+                record_cleanup_teardown_failure("cleanup admission failed");
+                launch_output().step_fail(&format!("cleanup retained Docker custody: {error}"));
+                return;
+            }
+        };
+        if let Some(plan) = shared_plan.as_ref() {
+            role_handle = plan.role.clone();
+            dind_handle = plan.dind.clone();
+        }
+        if !preserve_role_evidence
+            && let Some(plan) = shared_plan.as_mut()
+        {
+            let retirement = plan.lifetime.begin_retirement(self.trusted_paths());
+            match retirement {
+                Ok(lifetime) => plan.lifetime = lifetime,
+                Err(error) => {
+                    record_cleanup_teardown_failure("cleanup retirement admission failed");
+                    launch_output().step_fail(&format!("cleanup retained Docker custody: {error}"));
+                    return;
+                }
+            }
+            if let Err(error) = crate::runtime::cleanup::ensure_shared_plan_current(
+                self.trusted_paths(), plan, docker,
+            )
+            .await
+            {
+                record_cleanup_teardown_failure("cleanup retirement verification failed");
+                launch_output().step_fail(&format!("cleanup retained Docker custody: {error}"));
+                return;
+            }
+        }
 
         jackin_diagnostics::active_timing_started(
             jackin_diagnostics::DiagnosticStage::Cleanup,
@@ -198,12 +369,14 @@ impl LoadCleanup {
             run.compact("cleanup", "cancel cleanup started");
         }
 
+        let mut container_cleanup_failed = false;
         if !preserve_role_evidence {
             let result = match role_handle.as_ref() {
                 Some(container) => Some(docker.remove_container_by_id(container).await),
                 None => None,
             };
             if let Some(Err(e)) = result {
+                container_cleanup_failed = true;
                 if let Some(run) = jackin_diagnostics::active_run() {
                     run.compact("cleanup", &format!("cleanup failed (container): {e}"));
                 }
@@ -211,11 +384,6 @@ impl LoadCleanup {
                 launch_output().step_fail(&format!("cleanup failed (container): {e}"));
             }
         }
-        let dind_handle = self
-            .dind_handle_slot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
         let dind_result = if dind_required {
             match dind_handle.as_ref() {
                 Some(container) => Some(docker.remove_container_by_id(container).await),
@@ -225,52 +393,75 @@ impl LoadCleanup {
             Some(Ok(()))
         };
         if let Some(Err(e)) = dind_result {
+            container_cleanup_failed = true;
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.compact("cleanup", &format!("cleanup failed (dind): {e}"));
             }
             record_cleanup_teardown_failure("cleanup failed (dind)");
             launch_output().step_fail(&format!("cleanup failed (dind): {e}"));
         }
-        // `dind_required` is set only after this launch has admitted the
-        // sidecar resource set. That ownership marker remains valid even when
-        // create fails before Docker can return a sidecar ID; it authorizes
-        // shared-resource cleanup but never authorizes a container operation.
-        let resource_cleanup_authorized =
-            role_handle.is_some() || dind_handle.is_some() || dind_required;
-        if resource_cleanup_authorized {
-            if let Err(e) = docker.remove_volume(&self.certs_volume).await {
+        if container_cleanup_failed {
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Cleanup,
+                "cancel_cleanup",
+                None,
+            );
+            return;
+        }
+        if preserve_role_evidence {
+            // A stopped role may be restarted by hardline. Keep its network,
+            // DinD, certificates, socket, and active lifetime together; a
+            // partial teardown would leave the preserved container unusable.
+            jackin_diagnostics::active_timing_done(
+                jackin_diagnostics::DiagnosticStage::Cleanup,
+                "cancel_cleanup",
+                None,
+            );
+            return;
+        }
+        let mut shared_cleanup_failed = false;
+        if let Some(volume) = volume {
+            if let Err(e) = docker.remove_volume(&volume).await {
+                shared_cleanup_failed = true;
                 if let Some(run) = jackin_diagnostics::active_run() {
                     run.compact("cleanup", &format!("cleanup failed (certs volume): {e}"));
                 }
                 record_cleanup_teardown_failure("cleanup failed (certs volume)");
                 launch_output().step_fail(&format!("cleanup failed (certs volume): {e}"));
+            } else {
+                match docker.inspect_volume_by_name(&volume).await {
+                    Ok(None) => {}
+                    Ok(Some(_)) => {
+                        shared_cleanup_failed = true;
+                        record_cleanup_teardown_failure("cleanup failed (certs volume verification)");
+                        launch_output().step_fail(&format!("cleanup failed: certificate volume {volume} remains after removal"));
+                    }
+                    Err(error) => {
+                        shared_cleanup_failed = true;
+                        record_cleanup_teardown_failure("cleanup failed (certs volume verification)");
+                        launch_output().step_fail(&format!("cleanup failed verifying certificate volume {volume}: {error}"));
+                    }
+                }
             }
-            if let Err(e) = docker.remove_network(&self.network).await {
+        }
+        // A captured network creation identity owns rollback independently
+        // of whether either container creation reached its identity sink.
+        if let Some(network) = network {
+            if let Err(error) = docker.remove_network_by_id(&network).await {
+                shared_cleanup_failed = true;
                 if let Some(run) = jackin_diagnostics::active_run() {
-                    run.compact("cleanup", &format!("cleanup failed (network): {e}"));
+                    run.compact("cleanup", &format!("cleanup failed (network): {error}"));
                 }
                 record_cleanup_teardown_failure("cleanup failed (network)");
-                launch_output().step_fail(&format!("cleanup failed (network): {e}"));
+                launch_output().step_fail(&format!("cleanup failed (network): {error}"));
             }
-        } else if let Some(run) = jackin_diagnostics::active_run() {
-            let missing_identity = if dind_required && dind_handle.is_none() {
-                format!(
-                    "role and DinD identities for {} / {}",
-                    self.container_name, self.dind
-                )
-            } else {
-                format!("role identity for {}", self.container_name)
-            };
-            run.compact(
-                "cleanup",
-                &format!("cleanup skipped (resources): no captured Docker {missing_identity}"),
-            );
         }
-        if !preserve_role_evidence && self.clean_socket_dir && role_handle.is_some() {
-            match std::fs::remove_dir_all(&self.socket_dir) {
+        let mut socket_cleanup_failed = false;
+        if let Some(socket) = socket.filter(|_| !shared_cleanup_failed) {
+            match crate::runtime::cleanup::remove_admitted_socket(socket).await {
                 Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => {
+                    socket_cleanup_failed = true;
                     record_cleanup_teardown_failure("cleanup failed (socket dir)");
                     if let Some(run) = jackin_diagnostics::active_run() {
                         run.compact(
@@ -286,6 +477,19 @@ impl LoadCleanup {
                         self.socket_dir.display()
                     ));
                 }
+            }
+        }
+        if !preserve_role_evidence
+            && !container_cleanup_failed
+            && !shared_cleanup_failed
+            && !socket_cleanup_failed
+            && let Some(plan) = shared_plan.as_ref()
+        {
+            if let Err(error) = plan.lifetime.retire(self.trusted_paths()) {
+                record_cleanup_teardown_failure("cleanup lifetime retirement failed");
+                launch_output().step_fail(&format!(
+                    "cleanup completed but custody remains retiring: {error}"
+                ));
             }
         }
         jackin_diagnostics::active_timing_done(

@@ -254,6 +254,7 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
             &["docs", "repo-links"],
             "docs",
         ));
+        steps.push(cargo_xtask("docs brand", &["docs", "brand"], "docs"));
         steps.push(cargo_xtask(
             "research check",
             &["research", "check"],

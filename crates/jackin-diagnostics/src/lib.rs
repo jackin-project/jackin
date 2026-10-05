@@ -48,14 +48,15 @@ pub use observability_test_support::TestSpanSnapshot;
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
     active_subprocess_done, active_timing_done, active_timing_started, emit_panic_crash,
-    install_host_panic_hook, mint_session_id,
+    install_host_panic_hook, mint_session_id, write_redacted_panic_to_stderr,
 };
 pub use screen::current_screen_name;
 pub use secret_scrub::scrub_secrets;
 pub use stage::DiagnosticStage;
 pub use terminal::{
-    host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
-    set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,
+    TerminalOwnershipGuard, claim_external_terminal, claim_host_screen, claim_rich_surface,
+    enter_host_screen, enter_rich_surface, host_screen_owned, reassert_alt_screen,
+    rich_surface_active, rich_terminal_owned, set_terminal_title, shorten_home,
 };
 
 #[cfg(test)]

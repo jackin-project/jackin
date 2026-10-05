@@ -1513,6 +1513,39 @@ fn preview_shows_unscoped_global_mounts_without_role_ambiguity_text() {
     assert!(joined.contains("+1 role mounts"), "{joined}");
 }
 
+#[test]
+fn preview_keeps_global_mounts_when_selected_workspace_config_disappears() {
+    let mut config = AppConfig::default();
+    config
+        .workspaces
+        .insert("demo".into(), WorkspaceConfig::default());
+    config.add_mount(
+        "cache",
+        MountConfig {
+            src: "/host/cache".into(),
+            dst: "/shared-cache".into(),
+            readonly: true,
+            isolation: jackin_config::MountIsolation::Shared,
+        },
+        None,
+    );
+    let cwd = std::path::Path::new("/tmp");
+    let mut state = ManagerState::from_config(&config, cwd);
+    state.selected = 1;
+    config.workspaces.remove("demo");
+
+    let area = Rect::new(0, 0, 100, 30);
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal
+        .draw(|frame| render_list_body(frame, area, &state, &config, cwd))
+        .unwrap();
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(rendered.contains("Global mounts"), "{rendered}");
+    assert!(rendered.contains("/shared-cache"), "{rendered}");
+    assert!(rendered.contains("/host/cache"), "{rendered}");
+    assert_eq!(state.selected_row(), ManagerListRow::SavedWorkspace(0));
+}
+
 /// The Environments block appears as soon as ANY env entry exists
 /// at the workspace level, even if no per-role override is set.
 #[test]

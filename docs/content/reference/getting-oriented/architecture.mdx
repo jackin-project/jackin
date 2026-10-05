@@ -253,9 +253,9 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │       ├── amp/                   # Amp auth handoff (provisioned when Amp is the active agent)
 │       │   └── secrets.json       # Amp API key or OAuth token (synced from host ~/.local/share/amp/secrets.json under a profile account)
 │       ├── kimi-code/             # Kimi auth handoff (provisioned when Kimi is the active agent)
-│       │   ├── config.toml        # Kimi config (synced from host ~/.kimi-code/config.toml under a profile account)
-│       │   ├── credentials/       # Kimi credentials (synced from host ~/.kimi-code/credentials under a profile account)
-│       │   └── device_id          # Kimi device id (synced from host ~/.kimi-code/device_id under a profile account)
+│       │   ├── config.toml        # Route-checked Kimi config projection from a profile account
+│       │   ├── credentials/       # Only the OAuth file selected by the effective Kimi route
+│       │   └── device_id          # Optional Kimi device id from the profile account
 │       ├── opencode/              # OpenCode auth handoff (provisioned when OpenCode is the active agent)
 │       │   └── auth.json          # OpenCode provider credentials (synced from host ~/.local/share/opencode/auth.json under a profile account)
 │       ├── home/                  # Durable agent home state mounted into the container
@@ -263,7 +263,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │       │   ├── .claude.json       # Claude Code account metadata inside the durable home
 │       │   ├── .codex/            # Codex conversation history, runtime-local config, login state
 │       │   ├── .local/share/amp/  # Amp conversation history, runtime-local config, login state
-│       │   ├── .kimi-code/        # Kimi runtime-local config and login state
+│       │   ├── .kimi-code[-<slot>]/ # Per-instance Kimi config and login state; KIMI_CODE_HOME target
 │       │   └── .local/share/opencode/  # OpenCode provider credentials, model preferences
 │       ├── state/                 # jackin runtime markers mounted at /jackin/state
 │       ├── .config/gh/            # GitHub CLI authentication (agent-neutral)

@@ -58,6 +58,24 @@ pub struct RoleManifest {
     /// Optional `[grok]` agent table.
     #[serde(default)]
     pub grok: Option<GrokConfig>,
+    /// Native `antigravity` CLI enablement; no role model/provider overrides.
+    #[serde(default)]
+    pub antigravity: Option<NativeAgentConfig>,
+    /// Native `gemini` CLI enablement; no role model/provider overrides.
+    #[serde(default)]
+    pub gemini: Option<NativeAgentConfig>,
+    /// Native `cursor` CLI enablement; no role model/provider overrides.
+    #[serde(default)]
+    pub cursor: Option<NativeAgentConfig>,
+    /// Native `muse` CLI enablement; no role model/provider overrides.
+    #[serde(default)]
+    pub muse: Option<NativeAgentConfig>,
+    /// Native `omp` CLI enablement; no role model/provider overrides.
+    #[serde(default)]
+    pub omp: Option<NativeAgentConfig>,
+    /// Native `hermes` CLI enablement; no role model/provider overrides.
+    #[serde(default)]
+    pub hermes: Option<NativeAgentConfig>,
     /// Optional lifecycle hook scripts.
     #[serde(default)]
     pub hooks: Option<HooksConfig>,
@@ -115,14 +133,12 @@ impl RoleManifest {
             Agent::Kimi => self.kimi.is_some(),
             Agent::Opencode => self.opencode.is_some(),
             Agent::Grok => self.grok.is_some(),
-            // No `[<agent>]` manifest tables exist for the catalog
-            // additions yet; they land with the agent-map schema bump.
-            Agent::Antigravity
-            | Agent::Gemini
-            | Agent::Cursor
-            | Agent::Muse
-            | Agent::Omp
-            | Agent::Hermes => false,
+            Agent::Antigravity => self.antigravity.is_some(),
+            Agent::Gemini => self.gemini.is_some(),
+            Agent::Cursor => self.cursor.is_some(),
+            Agent::Muse => self.muse.is_some(),
+            Agent::Omp => self.omp.is_some(),
+            Agent::Hermes => self.hermes.is_some(),
         }
     }
 
@@ -149,6 +165,12 @@ impl RoleManifest {
         }
     }
 }
+
+/// Native CLI enablement table. These agents use their own configuration and
+/// auth stores; role-level model/provider overrides are not supported.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeAgentConfig {}
 
 /// Per-role Codex configuration.
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -38,6 +38,7 @@ use crate::runtime::progress::launch_output;
 pub(crate) struct LaunchContext<'a, 'manifest> {
     pub(crate) container_name: &'a str,
     pub(crate) ownership: &'a DockerLaunchOwnership<'manifest>,
+    pub(crate) shared_custody: &'a super::launch_dind::SharedDockerCreationCustody,
     pub(crate) role_handle_slot:
         &'a std::sync::Arc<std::sync::Mutex<Option<jackin_core::ContainerHandle>>>,
     pub(crate) image: &'a str,
@@ -92,11 +93,21 @@ pub(crate) struct DockerLaunchOwnership<'a> {
     pub(crate) resources: crate::instance::DockerResources,
     pub(crate) dind_handle_slot:
         std::sync::Arc<std::sync::Mutex<Option<jackin_core::ContainerHandle>>>,
+    pub(crate) network_id_slot: std::sync::Arc<std::sync::Mutex<Option<jackin_core::NetworkId>>>,
     pub(crate) paths: &'a JackinPaths,
     pub(crate) state_dir: &'a std::path::Path,
 }
 
 impl DockerLaunchOwnership<'_> {
+    pub(crate) fn persist_with_custody(
+        &self,
+        role: &jackin_core::ContainerHandle,
+        custody: &super::launch_dind::SharedDockerCreationCustody,
+    ) -> anyhow::Result<()> {
+        custody.capture_container(false, role.id())?;
+        self.persist(role)
+    }
+
     pub(crate) fn persist(&self, role: &jackin_core::ContainerHandle) -> anyhow::Result<()> {
         let dind = self
             .dind_handle_slot
@@ -112,6 +123,15 @@ impl DockerLaunchOwnership<'_> {
             (None, None) => {}
             _ => anyhow::bail!("launch sidecar ownership was not captured"),
         }
+        let network_id = self
+            .network_id_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        anyhow::ensure!(
+            self.resources.network.is_empty() == network_id.is_none(),
+            "launch network ownership was not captured or contradicts disabled networking"
+        );
         let mut manifest = self
             .manifest
             .lock()
@@ -120,6 +140,7 @@ impl DockerLaunchOwnership<'_> {
         manifest.docker_identity = Some(crate::instance::DockerIdentity {
             role_container_id: role.id().to_owned(),
             dind_container_id: dind.map(|handle| handle.id().to_owned()),
+            network_id,
         });
         manifest.backend = None;
         let status = manifest.status;
@@ -222,6 +243,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     container_name: &str,
     prewarm: &SiblingAuthPrewarm<'_>,
     selected_agent: jackin_core::Agent,
+    kimi_runtime: Option<&jackin_instance::KimiRuntimeAuthContext>,
 ) -> Option<tokio::task::JoinHandle<()>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
     let sibling_agents = prewarm
@@ -250,6 +272,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         .iter()
         .map(ToString::to_string)
         .collect::<Vec<_>>();
+    let kimi_runtime = kimi_runtime.cloned();
     if let Some(run) = &active_run {
         run.compact(
             "sibling_auth_prewarm_started",
@@ -319,11 +342,12 @@ pub(crate) fn spawn_sibling_auth_prewarm(
                 ));
             }
         }
-        let result = RoleState::prewarm_auth_for_bindings(
+        let result = RoleState::prewarm_auth_for_bindings_with_kimi_runtime(
             &paths_owned,
             &container_name,
             &bindings,
             &home_dir,
+            kimi_runtime.as_ref(),
         );
         let timing_done = match &result {
             Ok(count) => format!("{count} slots"),
@@ -422,6 +446,7 @@ pub(crate) async fn launch_role_runtime(
     let LaunchContext {
         container_name,
         ownership,
+        shared_custody,
         role_handle_slot,
         image,
         network,
@@ -1119,19 +1144,6 @@ pub(crate) async fn launch_role_runtime(
     prepare_socket_dir_result?;
     // The single usage-relay preparation runs before agent.toml serialization
     // above, so canonical per-instance authorities land in the mounted config.
-    // Start the jackin-exec host credential resolver for this container's
-    // on-demand bindings. Its socket lands in the dir just prepared (bind-
-    // mounted to /jackin/run), so the in-container capsule reaches it at
-    // /jackin/run/host.sock. Spawned detached: the task runs independently of
-    // this handle, for the host process's lifetime alongside the interactive
-    // attach. No-op when the workspace declares no on-demand credentials.
-    if !ctx.capsule_config.exec_bindings.is_empty() {
-        drop(crate::exec_host::start_for_container(
-            &ctx.paths.jackin_home,
-            ctx.container_name,
-            &ctx.capsule_config.exec_bindings,
-        ));
-    }
     let socket_mount = crate::usage_relay::docker_runtime_mount(&socket_dir)?;
     run_args.extend_from_slice(&["-v", &socket_mount]);
     // Mount the host UID/GID entries where libnss-extrausers reads them.
@@ -1199,6 +1211,7 @@ pub(crate) async fn launch_role_runtime(
             .ok_or_else(|| anyhow::anyhow!("invalid Docker label {label:?}"))?;
         container_labels.insert(key.to_owned(), value.to_owned());
     }
+    container_labels.extend(shared_custody.labels());
     if workspace.keep_awake_enabled {
         let (key, value) = crate::runtime::naming::LABEL_KEEP_AWAKE
             .split_once('=')
@@ -1258,6 +1271,7 @@ pub(crate) async fn launch_role_runtime(
     container_binds.extend(mount_strings.iter().cloned());
     container_binds.push(socket_mount.clone());
     container_binds.extend(extrausers_mounts.iter().cloned());
+    super::mounts::ensure_provider_authority_not_writable(state, &container_binds)?;
     let container_spec = jackin_core::ContainerSpec {
         image: (*image).to_owned(),
         hostname: Some((*container_name).to_owned()),
@@ -1291,16 +1305,16 @@ pub(crate) async fn launch_role_runtime(
     );
     account_revision.ensure_current(paths)?;
     let run_role_result = {
-        let created = with_admitted_final_docker_spec(paths, state, container_spec, |spec| {
-            docker.create_container(container_name, spec)
-        })?
-        .await;
+        let created = docker
+            .create_container(container_name, container_spec)
+            .await;
         match created {
             Ok(container) => {
                 *role_handle_slot
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(container.clone());
-                ownership.persist(&container)?;
+                ownership.persist_with_custody(&container, shared_custody)?;
+                prepared_usage_relay.persist_for_container(&container)?;
                 async {
                     docker.start_container_by_id(&container).await?;
                     if let Some(claim) = entry_claim {
@@ -1340,6 +1354,18 @@ pub(crate) async fn launch_role_runtime(
     }
     run_role_observation?;
     let role_container = run_role_result?;
+    if !ctx.capsule_config.exec_bindings.is_empty() {
+        drop(
+            crate::exec_host::start_for_container(
+                docker,
+                &ctx.paths.jackin_home,
+                &role_container,
+                &ctx.capsule_config.exec_bindings,
+            )
+            .await?,
+        );
+    }
+
     super::ensure_current_or_remove_stale_container(
         account_revision,
         paths,
@@ -1530,9 +1556,11 @@ pub(crate) async fn launch_role_runtime(
             docker,
             runner,
             &role_container,
+            Some(&_usage_relay_guard),
             None,
         )
         .await;
+    _usage_relay_guard.shutdown().await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
     if let Err(err) = session_result {
@@ -1739,18 +1767,3 @@ pub(crate) const fn capsule_otlp_allowlist_host(
 
 #[cfg(test)]
 mod tests;
-
-/// Final complete-spec admission boundary, immediately before Docker creation.
-fn with_admitted_final_docker_spec<T>(
-    paths: &JackinPaths,
-    state: &RoleState,
-    spec: jackin_core::ContainerSpec,
-    submit: impl FnOnce(jackin_core::ContainerSpec) -> T,
-) -> anyhow::Result<T> {
-    super::mounts::ensure_provider_authority_not_writable(
-        state,
-        &spec.binds,
-        &[paths.home_dir.join(".jackin-coordination")],
-    )?;
-    Ok(submit(spec))
-}

@@ -22,9 +22,11 @@ anyhow = { workspace = true }
 tokio = { workspace = true, features = ["process", "time", "io-util", "rt", "macros"] }
 
 [target.'cfg(unix)'.dependencies]
+jackin-process-directory = { workspace = true }
 nix = { workspace = true, features = ["signal", "process"] }
 
 [dev-dependencies]
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
 
 [lints]

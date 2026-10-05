@@ -11,7 +11,7 @@
 //! the rest of the codebase applies to `BuildLogSink`, the operator notice sink,
 //! and `OperatorNoticeSink`.
 //!
-//! The renderer only needs [`LaunchHostTerminal::is_debug_mode`] during
+//! The renderer acquires shared terminal ownership and reads debug mode during
 //! the standalone dialog path — `reveal_file` / `open_file` are only
 //! called from the live launch UI, never from the post-attach surface —
 //! so the embedded host terminal here forwards a minimal subset and a
@@ -27,17 +27,18 @@ use crate::progress::standalone_exit_dialog_with_inspect;
 
 /// Inline [`LaunchHostTerminal`] used inside the standalone dialog sink.
 ///
-/// Only `is_debug_mode` is consulted by the standalone dialog renderers;
-/// the other methods exist to satisfy the trait and are not invoked by
-/// the post-attach / cancellation paths.
+/// Terminal ownership and debug policy share the diagnostics authority used
+/// by console sessions and launch renderers.
 #[derive(Debug)]
 struct SinkHostTerminal;
 
 impl LaunchHostTerminal for SinkHostTerminal {
-    fn set_rich_surface_active(&self, _active: bool) {}
+    fn acquire_rich_surface(&self) -> std::io::Result<jackin_core::TerminalOwnershipGuard> {
+        jackin_diagnostics::enter_rich_surface()
+    }
 
     fn host_screen_owned(&self) -> bool {
-        false
+        jackin_diagnostics::host_screen_owned()
     }
 
     fn is_debug_mode(&self) -> bool {

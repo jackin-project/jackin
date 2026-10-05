@@ -53,3 +53,57 @@ pub fn classify_executable(program: &Path) -> ProcessExecutableName {
 
 #[cfg(test)]
 mod tests;
+
+/// Awaited subprocess span whose dropped future records honest cancellation.
+/// Normal completion remains explicit; unwinding records a panic.
+#[derive(Debug)]
+#[must_use]
+pub struct ProcessOperationGuard {
+    operation: crate::OperationGuard,
+    completed: bool,
+}
+
+impl ProcessOperationGuard {
+    /// Own an operation across subprocess awaits.
+    pub const fn new(operation: crate::OperationGuard) -> Self {
+        Self {
+            operation,
+            completed: false,
+        }
+    }
+
+    /// Record the normal terminal outcome exactly once.
+    pub fn complete(
+        mut self,
+        outcome: crate::schema::enums::OutcomeValue,
+        error_type: Option<crate::schema::enums::ErrorType>,
+    ) {
+        self.completed = true;
+        self.operation.complete_borrowed(outcome, error_type);
+    }
+}
+
+impl std::ops::Deref for ProcessOperationGuard {
+    type Target = crate::OperationGuard;
+
+    fn deref(&self) -> &Self::Target {
+        &self.operation
+    }
+}
+
+impl Drop for ProcessOperationGuard {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.completed = true;
+            if std::thread::panicking() {
+                self.operation.complete_borrowed(
+                    crate::schema::enums::OutcomeValue::Error,
+                    Some(crate::schema::enums::ErrorType::Panic),
+                );
+            } else {
+                self.operation
+                    .complete_borrowed(crate::schema::enums::OutcomeValue::Cancellation, None);
+            }
+        }
+    }
+}

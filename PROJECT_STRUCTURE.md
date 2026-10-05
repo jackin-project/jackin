@@ -73,21 +73,22 @@ For runtime behavior, see [The Construct Image](https://jackin.tailrocks.com/dev
 
 ## CI/CD (`.github/workflows/`)
 
-| Workflow | Triggers |
+Current generated inventory: [`.github/workflows/ci.yml`](.github/workflows/ci.yml),
+owned by `velnor-actions` from `tailrocks/velnor-new`. Change
+[`.velnor/config.toml`](.velnor/config.toml) or the upstream generator, then
+regenerate; [.github/AGENTS.md](.github/AGENTS.md) defines ownership.
+
+| Workflow | Triggers and coverage |
 |---|---|
-| `ci-pr.yml` | Generated pull-request validation: policy plus affected Bun, Docker, Rust, and Swift units |
-| `ci-main.yml` | Generated `main`-push validation: policy plus affected/full Bun, Docker, Rust, and Swift units |
-| `ci-policy.yml` | Pull-request-target workflow-policy and actionlint validation |
-| `ci-unit-bun.yml` | Reusable Bun unit, including the `docs/` build and test surface |
-| `ci-unit-docker.yml` | Reusable Docker image unit |
-| `ci-unit-rust.yml` | Reusable Rust unit |
-| `ci-unit-swift.yml` | Reusable Swift/Xcode unit |
-| `desktop-merge.yml` | Desktop merge cadence on pushes to `main` and manual dispatch |
-| `desktop-scheduled.yml` | Weekly desktop cadence plus manual dispatch, including the dead-code scan |
-| `maintenance.yml` | Closed-PR cache cleanup and scheduled/manual maintenance |
-| `nightly.yml` | Scheduled nightly validation and manual dispatch |
-| `release.yml` | `v[0-9]*` tag signing and publication; manual dispatch runs release validation only |
-| `renovate-upstream-sources.yml` | Push, pull-request, and manual validation of Renovate upstream sources |
+| `ci.yml` | Pull requests, pushes to `main`, and merge groups; Actionlint, a Velnor plan, Rust crate tasks, and the Required aggregator. Successful main runs publish a verification baseline. |
+
+Discovery currently excludes `native/**`, `docs/**`, `docker/**`, and fuzz paths.
+The workflow has no Swift/macOS, docs-site, construct, Docker E2E, preview,
+product-release, or scheduled hygiene jobs. Those accepted verification and
+publication requirements remain outstanding; Rust-only Ubuntu coverage does
+not satisfy them. See [TESTING.md](TESTING.md) for required local gates and
+[CI speed evidence](docs/content/research/engineering/ci/performance/ci-speed-roadmap.mdx)
+for explicitly historical workflow designs and measurements.
 
 ## Code ↔ docs cross-reference
 

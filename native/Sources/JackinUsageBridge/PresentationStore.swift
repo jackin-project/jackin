@@ -87,6 +87,27 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
+    /// Typed unsigned count quota.
+    ///
+    /// Strings are Rust machine values, never parsed labels.
+    public struct CountQuotaRow: Sendable, Equatable {
+        public let used: UInt64?
+        public let limit: UInt64?
+        public let remaining: UInt64?
+        public let unit: String
+        public let period: String
+        public let provenance: String
+
+        public init(dto: CountQuotaDto) {
+            used = dto.used
+            limit = dto.limit
+            remaining = dto.remaining
+            unit = dto.unit
+            period = dto.period
+            provenance = dto.provenance
+        }
+    }
+
     public struct BucketRow: Identifiable, Sendable, Equatable {
         public var id: String { label }
         public let label: String
@@ -94,6 +115,7 @@ public final class PresentationStore: ObservableObject {
         public let limitLabel: String?
         public let remainingPercent: UInt8?
         public let resetLabel: String?
+        public let resetsAt: Int64?
         public let paceLabel: String?
         public let statusSlot: String?
         public let severity: String
@@ -101,6 +123,8 @@ public final class PresentationStore: ObservableObject {
         /// Rust money fields (display-only; formatted in the shell).
         public let usedMoney: MoneyDto?
         public let limitMoney: MoneyDto?
+        public let remainingMoney: MoneyDto?
+        public let countQuota: CountQuotaRow?
         /// Rust-owned limits-only presentation (rendered verbatim; never recomputed).
         public let remainingLabel: String?
         public let displaySegments: [String]
@@ -267,6 +291,11 @@ public final class PresentationStore: ObservableObject {
         public let lastError: String?
         public let dimmed: Bool
         public let accessibilityLabel: String
+        public let countQuota: CountQuotaRow?
+        public let resetsAt: Int64?
+        public let usedMoney: MoneyDto?
+        public let limitMoney: MoneyDto?
+        public let remainingMoney: MoneyDto?
 
         public init(
             surfaceId: String,
@@ -289,7 +318,12 @@ public final class PresentationStore: ObservableObject {
             updatedLabel: String,
             lastError: String?,
             dimmed: Bool,
-            accessibilityLabel: String
+            accessibilityLabel: String,
+            countQuota: CountQuotaRow?,
+            resetsAt: Int64?,
+            usedMoney: MoneyDto?,
+            limitMoney: MoneyDto?,
+            remainingMoney: MoneyDto?
         ) {
             self.surfaceId = surfaceId
             self.providerColumnLabel = providerColumnLabel
@@ -312,6 +346,11 @@ public final class PresentationStore: ObservableObject {
             self.lastError = lastError
             self.dimmed = dimmed
             self.accessibilityLabel = accessibilityLabel
+            self.countQuota = countQuota
+            self.resetsAt = resetsAt
+            self.usedMoney = usedMoney
+            self.limitMoney = limitMoney
+            self.remainingMoney = remainingMoney
         }
     }
 
@@ -364,7 +403,20 @@ public final class PresentationStore: ObservableObject {
     @Published public private(set) var usageSelection: String?
     /// Exact account context carried by navigation into the Usage window.
     @Published public private(set) var usageAccountSelection: String?
-    /// Focused popover provider; nil lets the host select the first available provider.
+    @Published public private(set) var usageNotice: String?
+    private var selectedAccountKeys: [String: String] = [:]
+    private var unavailableSelectionNotices: [String: String] = [:]
+    private struct PendingAccountSelection {
+        let revision: UInt64
+        let destinationRevision: UInt64
+        let priorUsageSelection: String?
+        let priorUsageAccountSelection: String?
+        let overviewSelectionID: String?
+        let navigatesToUsage: Bool
+    }
+    private var pendingAccountSelections: [String: PendingAccountSelection] = [:]
+    private var usageDestinationRevision: UInt64 = 0
+    /// Focused popover provider; nil means the Overview destination.
     @Published public var popoverSelection: String?
     /// True only while an enqueued refresh request runs its bridge operation —
     /// drives the popover/footer spinner.
@@ -451,6 +503,7 @@ public final class PresentationStore: ObservableObject {
     /// so a Keychain consent sheet can never freeze the UI. `PresentationStore`
     /// itself holds no bridge reference and makes no direct `bridge.` calls.
     private let scheduler: RefreshScheduler
+    private let selectionClient: any UsageSelectionClient
     private var projectedStatusBarRows: [GlanceProviderRow] = []
     private var nextApplyRequest: UInt64 = 0
     private var lastAppliedRequest: UInt64 = 0
@@ -459,6 +512,8 @@ public final class PresentationStore: ObservableObject {
     private var eventCursor: UInt64 = 0
     private var pollTask: Task<Void, Never>?
     private var screenShareActive: Bool = false
+    private var accountSelectionRevisions: [String: UInt64] = [:]
+    private var usageNoticeSurfaceId: String?
     private var fixtureMode = false
     private var fixtureTerminalProjection: QIFixtureProjection?
     private var fixtureRefreshingProjection: QIFixtureProjection?
@@ -472,11 +527,14 @@ public final class PresentationStore: ObservableObject {
         self.init(scheduler: RefreshScheduler())
     }
 
-    /// Designated initializer.
-    ///
-    /// Tests inject a scheduler wrapping a fake bridge.
-    public init(scheduler: RefreshScheduler) {
+    /// Use the serial scheduler for every production bridge operation.
+    public convenience init(scheduler: RefreshScheduler) {
+        self.init(scheduler: scheduler, selectionClient: scheduler)
+    }
+
+    init(scheduler: RefreshScheduler, selectionClient: any UsageSelectionClient) {
         self.scheduler = scheduler
+        self.selectionClient = selectionClient
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: Self.displayModeKey),
             let mode = StatusItemDisplayMode(rawValue: raw)
@@ -664,6 +722,23 @@ public final class PresentationStore: ObservableObject {
 
     /// Select multi-account identity for a surface (Rust-persisted).
     public func setSelectedAccount(surfaceId: String, accountKey: String) {
+        setAccountSelection(surfaceId: surfaceId, accountKey: accountKey, navigateToUsage: false)
+    }
+
+    /// Notice remains available while the saved identity needs an explicit replacement.
+    public func accountSelectionReselectionNotice(surfaceId: String) -> String? {
+        unavailableSelectionNotices[surfaceId]
+    }
+
+    public func selectUsageAccount(surfaceId: String, accountKey: String) {
+        setAccountSelection(surfaceId: surfaceId, accountKey: accountKey, navigateToUsage: true)
+    }
+
+    @discardableResult
+    func setAccountSelection(
+        surfaceId: String, accountKey: String, navigateToUsage: Bool
+    ) -> Task<Void, Never>? {
+        let navigate = navigateToUsage || usageSelection == surfaceId
         if fixtureMode {
             guard
                 let projection = fixtureAccountProjections[
@@ -672,22 +747,144 @@ public final class PresentationStore: ObservableObject {
                         accountKey: accountKey
                     )]
             else {
-                return
+                return nil
             }
+            if navigate || usageNoticeSurfaceId == surfaceId { clearUsageNotice() }
             applyFixtureProjection(projection)
             fixtureTerminalProjection = projection
-            usageAccountSelection = accountKey
-            return
+            if usageSelection == surfaceId {
+                usageAccountSelection = accountKey
+            }
+            if navigate {
+                selectUsageContext(surfaceId: surfaceId, accountKey: accountKey)
+            }
+            return nil
         }
-        Task { [weak self] in
+        let priorUsageSelection = usageSelection
+        let priorUsageAccountSelection = usageAccountSelection
+        accountSelectionRevisions[surfaceId, default: 0] &+= 1
+        let accountRevision = accountSelectionRevisions[surfaceId]
+        if navigate { usageDestinationRevision &+= 1 }
+        let destinationRevision = usageDestinationRevision
+        pendingAccountSelections[surfaceId] = PendingAccountSelection(
+            revision: accountRevision,
+            destinationRevision: destinationRevision,
+            priorUsageSelection: priorUsageSelection,
+            priorUsageAccountSelection: priorUsageAccountSelection,
+            overviewSelectionID: overviewSelectionID,
+            navigatesToUsage: navigate
+        )
+        return Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.scheduler.setSelectedAccount(
+                try await self.selectionClient.setSelectedAccount(
                     surfaceId: surfaceId, accountKey: accountKey)
                 await self.applySnapshots()
+                self.completeAccountSelection(
+                    surfaceId: surfaceId,
+                    accountKey: accountKey,
+                    accountRevision: accountRevision,
+                    destinationRevision: destinationRevision,
+                    navigate: navigate)
             } catch {
+                self.failAccountSelection(
+                    surfaceId: surfaceId,
+                    accountRevision: accountRevision
+                )
                 self.report(error, userMessage: "Account selection could not be saved.")
             }
+        }
+    }
+
+    private func completeAccountSelection(
+        surfaceId: String,
+        accountKey: String,
+        accountRevision: UInt64?,
+        destinationRevision: UInt64,
+        navigate: Bool
+    ) {
+        guard accountSelectionRevisions[surfaceId] == accountRevision,
+            let pending = pendingAccountSelections[surfaceId],
+            pending.revision == accountRevision
+        else { return }
+        guard selectedAccountKeys[surfaceId] == accountKey else {
+            restoreUsageAfterAccountSelectionFailure(surfaceId: surfaceId, pending: pending)
+            return
+        }
+        pendingAccountSelections.removeValue(forKey: surfaceId)
+        let available = accounts.contains {
+            $0.surfaceId == surfaceId && $0.accountKey == accountKey && $0.selected
+        }
+        if usageNoticeSurfaceId == surfaceId {
+            if available {
+                clearUsageNotice()
+            } else if unavailableSelectionNotices[surfaceId] != nil {
+                setUnavailableUsageNotice(surfaceId)
+            }
+        }
+        if navigate, usageDestinationRevision == destinationRevision {
+            selectUsageContext(surfaceId: surfaceId, accountKey: accountKey)
+        } else {
+            // A newer navigation owns the destination. Reconcile it against
+            // the committed projection, but never redirect it to this write's
+            // account as a fallback.
+            reconcileSelections()
+        }
+    }
+
+    private func failAccountSelection(
+        surfaceId: String, accountRevision: UInt64
+    ) {
+        guard accountSelectionRevisions[surfaceId] == accountRevision,
+            let pending = pendingAccountSelections[surfaceId],
+            pending.revision == accountRevision
+        else { return }
+        restoreUsageAfterAccountSelectionFailure(surfaceId: surfaceId, pending: pending)
+    }
+
+    private func restoreUsageAfterAccountSelectionFailure(
+        surfaceId: String, pending: PendingAccountSelection
+    ) {
+        pendingAccountSelections.removeValue(forKey: surfaceId)
+        if pending.navigatesToUsage,
+            pending.priorUsageSelection == nil,
+            usageDestinationRevision == pending.destinationRevision,
+            usageSelection == nil,
+            let pendingOverviewSelection = pending.overviewSelectionID,
+            overviewSelectionID == pendingOverviewSelection
+        {
+            // SwiftUI only reports changed table selections. Clear the failed
+            // row so choosing the same account again retries the setter.
+            overviewSelectionID = nil
+        }
+        // Refreshes can suppress reconciliation while this setter is pending.
+        // Once it fails, validate whichever destination is current; a newer
+        // valid destination remains untouched, while stale provider detail
+        // returns to Overview with the unavailable-selection notice.
+        reconcileSelections()
+        guard pending.navigatesToUsage,
+            usageDestinationRevision == pending.destinationRevision,
+            pending.priorUsageSelection == surfaceId
+        else { return }
+
+        let committedKey = selectedAccountKeys[surfaceId]
+        let committedRow = committedKey.flatMap { key in
+            accounts.first {
+                $0.surfaceId == surfaceId && $0.accountKey == key && $0.selected
+            }
+        }
+        if let committedRow {
+            selectUsageContext(surfaceId: surfaceId, accountKey: committedRow.accountKey)
+        } else if let priorKey = pending.priorUsageAccountSelection,
+            accounts.contains(where: {
+                $0.surfaceId == surfaceId && $0.accountKey == priorKey && $0.selected
+            })
+        {
+            selectUsageContext(surfaceId: surfaceId, accountKey: priorKey)
+        } else {
+            usageSelection = nil
+            usageAccountSelection = nil
+            setUnavailableUsageNotice(surfaceId)
         }
     }
 
@@ -734,6 +931,7 @@ public final class PresentationStore: ObservableObject {
         overviewExpandedProviderIDs = providerIDs
         self.popoverSelection = popoverSelection
         self.usageSelection = usageSelection
+        clearUsageNotice()
         usageAccountSelection =
             accounts.first(where: {
                 $0.surfaceId == usageSelection && $0.selected
@@ -762,6 +960,7 @@ public final class PresentationStore: ObservableObject {
 
     /// Manual Refresh button — bypasses floor.
     public func refreshAll() {
+        clearUsageNotice(preservingReselection: true)
         if fixtureMode {
             runFixtureRefresh()
             return
@@ -790,6 +989,7 @@ public final class PresentationStore: ObservableObject {
     }
 
     public func refresh(surfaceId: String) {
+        clearUsageNotice(preservingReselection: true)
         if fixtureMode {
             runFixtureRefresh()
             return
@@ -865,11 +1065,16 @@ public final class PresentationStore: ObservableObject {
         let barMax = UInt32(max(1, min(statusBarMaxChips, stripMax)))
         let projection: DesktopProjectionDto
         do {
-            projection = try await scheduler.desktopProjection(statusBarMax: barMax)
+            projection = try await selectionClient.desktopProjection(statusBarMax: barMax)
         } catch {
             retainLastGoodAfterProjectionFailure(error, request: request)
             return
         }
+        applyProjection(projection, request: request)
+    }
+
+    // Production and deterministic tests replace the same complete publication.
+    func applyProjection(_ projection: DesktopProjectionDto, request: UInt64) {
         guard request >= lastAppliedRequest,
             projection.generation >= lastAppliedGeneration
         else { return }
@@ -894,6 +1099,25 @@ public final class PresentationStore: ObservableObject {
         )
         let providerBySurface = Dictionary(
             uniqueKeysWithValues: projection.providers.map { ($0.group.surfaceId, $0) }
+        )
+        selectedAccountKeys = Dictionary(
+            projection.providers.compactMap { provider in
+                provider.selectedAccountKey.map { (provider.group.surfaceId, $0) }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        unavailableSelectionNotices = Dictionary(
+            projection.providers.compactMap { provider -> (String, String)? in
+                guard let key = provider.selectedAccountKey,
+                    !provider.group.accounts.contains(where: {
+                        $0.accountKey == key && $0.selected
+                    }),
+                    provider.selectedUsage.status == "unavailable",
+                    let notice = provider.selectedUsage.lastError
+                else { return nil }
+                return (provider.group.surfaceId, notice)
+            },
+            uniquingKeysWith: { first, _ in first }
         )
         surfaces = projection.surfaces.map { surface in
             guard let provider = providerBySurface[surface.id] else {
@@ -956,6 +1180,11 @@ public final class PresentationStore: ObservableObject {
         projectedStatusBarRows = projection.statusBarGlanceRows
         surfaces = projection.surfaces
         accounts = projection.accounts
+        selectedAccountKeys = Dictionary(
+            accounts.filter(\.selected).map { ($0.surfaceId, $0.accountKey) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        unavailableSelectionNotices = [:]
         providerGroups = projection.providerGroups
         refreshVisibleStatusRows()
     }
@@ -1021,19 +1250,22 @@ public final class PresentationStore: ObservableObject {
         )
     }
 
-    private static func mapBucketDto(_ bucket: QuotaBucketDto) -> BucketRow {
+    static func mapBucketDto(_ bucket: QuotaBucketDto) -> BucketRow {
         BucketRow(
             label: bucket.label,
             usedLabel: bucket.usedLabel,
             limitLabel: bucket.limitLabel,
             remainingPercent: bucket.remainingPercent,
             resetLabel: bucket.resetLabel,
+            resetsAt: bucket.resetsAt,
             paceLabel: bucket.paceLabel,
             statusSlot: bucket.statusSlot,
             severity: bucket.severity,
             status: bucket.status,
             usedMoney: bucket.usedMoney,
             limitMoney: bucket.limitMoney,
+            remainingMoney: bucket.remainingMoney,
+            countQuota: bucket.countQuota.map(CountQuotaRow.init(dto:)),
             remainingLabel: bucket.remainingLabel,
             displaySegments: bucket.displaySegments,
             displayLabel: bucket.displayLabel,
@@ -1041,7 +1273,7 @@ public final class PresentationStore: ObservableObject {
         )
     }
 
-    private static func mapAccountDto(_ row: AccountDescriptorDto) -> AccountRow {
+    static func mapAccountDto(_ row: AccountDescriptorDto) -> AccountRow {
         AccountRow(
             surfaceId: row.surfaceId,
             providerColumnLabel: row.providerColumnLabel,
@@ -1063,7 +1295,12 @@ public final class PresentationStore: ObservableObject {
             updatedLabel: row.updatedLabel,
             lastError: row.lastError,
             dimmed: row.dimmed,
-            accessibilityLabel: row.accessibilityLabel
+            accessibilityLabel: row.accessibilityLabel,
+            countQuota: row.countQuota.map(CountQuotaRow.init(dto:)),
+            resetsAt: row.resetsAt,
+            usedMoney: row.usedMoney,
+            limitMoney: row.limitMoney,
+            remainingMoney: row.remainingMoney
         )
     }
 
@@ -1102,34 +1339,82 @@ public final class PresentationStore: ObservableObject {
 
     /// Open Usage on one exact canonical provider/account context.
     public func selectUsageContext(surfaceId: String?, accountKey: String?) {
+        usageDestinationRevision &+= 1
+        clearUsageNotice()
         guard let surfaceId else {
             usageSelection = nil
             usageAccountSelection = nil
             return
         }
         guard isNavigableSurface(surfaceId) else {
+            setUnavailableUsageNotice(surfaceId)
             usageSelection = nil
             usageAccountSelection = nil
             return
         }
+        let requestedKey = accountKey ?? selectedAccountKeys[surfaceId]
+        if let requestedKey,
+            selectedAccountKeys[surfaceId] != requestedKey
+                || !accounts.contains(where: {
+                    $0.surfaceId == surfaceId
+                        && $0.accountKey == requestedKey
+                        && $0.selected
+                })
+        {
+            usageSelection = nil
+            usageAccountSelection = nil
+            setUnavailableUsageNotice(surfaceId)
+            return
+        }
         usageSelection = surfaceId
-        usageAccountSelection = accountKey
+        usageAccountSelection = requestedKey
+    }
+
+    private func clearUsageNotice(preservingReselection: Bool = false) {
+        if preservingReselection,
+            let surfaceId = usageNoticeSurfaceId,
+            let notice = unavailableSelectionNotices[surfaceId]
+        {
+            usageNotice = notice
+            return
+        }
+        usageNotice = nil
+        usageNoticeSurfaceId = nil
+    }
+
+    private func setUnavailableUsageNotice(_ surfaceId: String) {
+        usageNotice = unavailableSelectionNotices[surfaceId]
+        usageNoticeSurfaceId = usageNotice == nil ? nil : surfaceId
     }
 
     private func reconcileSelections() {
-        if let usageSelection, !isNavigableSurface(usageSelection) {
+        if let overviewSelectionID,
+            !OverviewInventory.tree(groups: providerGroups).contains(where: {
+                $0.id == overviewSelectionID
+                    || $0.children?.contains(where: { $0.id == overviewSelectionID }) == true
+            })
+        {
+            self.overviewSelectionID = nil
+        }
+
+        if let usageSelection, pendingAccountSelections[usageSelection] != nil {
+            // Keep the current detail destination while its replacement is pending.
+        } else if let usageSelection, !isNavigableSurface(usageSelection) {
+            setUnavailableUsageNotice(usageSelection)
             self.usageSelection = nil
             usageAccountSelection = nil
         } else if let usageSelection,
-            let usageAccountSelection,
-            !accounts.contains(where: {
-                $0.surfaceId == usageSelection && $0.accountKey == usageAccountSelection
-            })
+            let accountKey = usageAccountSelection ?? selectedAccountKeys[usageSelection],
+                selectedAccountKeys[usageSelection] != accountKey
+                || !accounts.contains(where: {
+                    $0.surfaceId == usageSelection
+                        && $0.accountKey == accountKey
+                        && $0.selected
+                })
         {
-            self.usageAccountSelection =
-                accounts.first(where: {
-                    $0.surfaceId == usageSelection && $0.selected
-                })?.accountKey
+            setUnavailableUsageNotice(usageSelection)
+            self.usageSelection = nil
+            usageAccountSelection = nil
         }
         if let popoverSelection,
             !providerGlanceRows.contains(where: { $0.surfaceId == popoverSelection })
@@ -1139,8 +1424,8 @@ public final class PresentationStore: ObservableObject {
     }
 
     private func isNavigableSurface(_ surfaceId: String) -> Bool {
-        providerGlanceRows.contains(where: { $0.surfaceId == surfaceId })
-            && surfaces.contains(where: { $0.id == surfaceId && $0.enabled })
+        providerGroups.contains(where: { $0.surfaceId == surfaceId })
+            && surfaces.contains(where: { $0.id == surfaceId && $0.identity != nil })
     }
 
     private func refreshVisibleStatusRows() {

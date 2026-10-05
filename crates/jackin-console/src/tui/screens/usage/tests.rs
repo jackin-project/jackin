@@ -8,8 +8,8 @@ use super::{
     meter_line,
 };
 use jackin_protocol::usage_broker::{
-    UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageLifecycleV1, UsageQuotaStateV1,
-    UsageWindowCategoryV1,
+    UsageFreshnessPhaseV2, UsageIdentityKindV2, UsageLifecycleV2, UsageQuotaStateV2,
+    UsageWindowCategoryV2,
 };
 
 const TEST_NOW_EPOCH: i64 = 1_800_000_000;
@@ -18,7 +18,7 @@ fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
     UsageWindow {
         window_id: format!("{label}-id"),
         rank: 0,
-        category: UsageWindowCategoryV1::LongRange,
+        category: UsageWindowCategoryV2::LongRange,
         label: label.to_owned(),
         value: format!("{label} value"),
         reset: "resets soon".to_owned(),
@@ -27,8 +27,9 @@ fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
         used_percent: None,
         used_raw_percent: None,
         reset_at_epoch: Some(1_800_000_000),
-        quota_state: UsageQuotaStateV1::Available,
+        quota_state: UsageQuotaStateV2::Available,
         pace_label: None,
+        count_quota: None,
     }
 }
 
@@ -40,12 +41,12 @@ fn test_account(provider_id: &str, account_id: &str, label: &str) -> UsageAccoun
         provider: provider_id.to_owned(),
         account: label.to_owned(),
         status: "available".to_owned(),
-        lifecycle: UsageLifecycleV1::Available,
-        freshness_phase: UsageFreshnessPhaseV1::Current,
+        lifecycle: UsageLifecycleV2::Available,
+        freshness_phase: UsageFreshnessPhaseV2::Current,
         last_good_at_epoch: Some(1_799_999_000),
         retry_at_epoch: None,
         is_stale: false,
-        identity_kind: Some(UsageIdentityKindV1::ProviderStableHandle),
+        identity_kind: Some(UsageIdentityKindV2::ProviderStableHandle),
         plan_label: None,
         credential_expires_at_epoch: None,
         issues: Vec::new(),
@@ -63,17 +64,17 @@ fn summary_window_selects_first_ranked_metered_limit() {
     account.windows = vec![
         UsageWindow {
             rank: 0,
-            category: UsageWindowCategoryV1::Session,
+            category: UsageWindowCategoryV2::Session,
             ..test_window("session", Some(73))
         },
         UsageWindow {
             rank: 1,
-            category: UsageWindowCategoryV1::LongRange,
+            category: UsageWindowCategoryV2::LongRange,
             ..test_window("weekly", Some(41))
         },
         UsageWindow {
             rank: 2,
-            category: UsageWindowCategoryV1::Other,
+            category: UsageWindowCategoryV2::Other,
             ..test_window("other", Some(12))
         },
     ];
@@ -85,12 +86,12 @@ fn summary_window_selects_first_ranked_metered_limit() {
     account.windows = vec![
         UsageWindow {
             rank: 0,
-            category: UsageWindowCategoryV1::LongRange,
+            category: UsageWindowCategoryV2::LongRange,
             ..test_window("unknown", None)
         },
         UsageWindow {
             rank: 1,
-            category: UsageWindowCategoryV1::Session,
+            category: UsageWindowCategoryV2::Session,
             ..test_window("session", Some(50))
         },
     ];
@@ -395,10 +396,10 @@ fn freshness_age_label_covers_phases_and_ages() {
     let now = TEST_NOW_EPOCH;
     let mut account = test_account("openai", "a", "work");
 
-    account.freshness_phase = UsageFreshnessPhaseV1::Refreshing;
+    account.freshness_phase = UsageFreshnessPhaseV2::Refreshing;
     assert_eq!(freshness_age_label(now, &account), "refreshing…");
 
-    account.freshness_phase = UsageFreshnessPhaseV1::Current;
+    account.freshness_phase = UsageFreshnessPhaseV2::Current;
     account.last_good_at_epoch = None;
     assert_eq!(freshness_age_label(now, &account), "never updated");
 
@@ -415,7 +416,7 @@ fn freshness_age_label_covers_phases_and_ages() {
     account.last_good_at_epoch = Some(now - 300);
     assert_eq!(freshness_age_label(now, &account), "stale · updated 5m ago");
     account.is_stale = false;
-    account.freshness_phase = UsageFreshnessPhaseV1::Stale;
+    account.freshness_phase = UsageFreshnessPhaseV2::Stale;
     assert_eq!(freshness_age_label(now, &account), "stale · updated 5m ago");
 }
 
@@ -497,63 +498,68 @@ fn render_at_shares_one_epoch_between_list_and_detail() {
 #[test]
 fn projection_keeps_canonical_ids_and_freshness() {
     use jackin_protocol::usage_broker::{
-        UsageAccountV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIdentityKindV1,
-        UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1, UsagePercent,
-        UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageProviderV1,
-        UsageQuotaStateV1, UsageWindowCategoryV1,
+        UsageAccountV2, UsageFreshnessPhaseV2, UsageFreshnessV2, UsageIdentityKindV2,
+        UsageLifecycleV2, UsageLimitWindowV2, UsageMembershipStateV2, UsagePercent,
+        UsageProjectionRefreshStateV2, UsageProjectionSchemaV2, UsageProjectionV2, UsageProviderV2,
+        UsageQuotaStateV2, UsageWindowCategoryV2,
     };
 
-    let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+    let projection = UsageProjectionV2 {
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "p".to_owned(),
         generated_at_epoch: 1_800_000_000,
         discovery_revision: "d".to_owned(),
         broker_instance_id: "b".to_owned(),
         broker_generation: 1,
-        refresh_state: UsageProjectionRefreshStateV1::Idle,
-        providers: vec![UsageProviderV1 {
+        refresh_state: UsageProjectionRefreshStateV2::Idle,
+        providers: vec![UsageProviderV2 {
             provider_id: "openai".to_owned(),
             display_name: "OpenAI".to_owned(),
             rank: 0,
-            membership_state: UsageMembershipStateV1::Current,
-            freshness: UsageFreshnessV1 {
+            membership_state: UsageMembershipStateV2::Current,
+            freshness: UsageFreshnessV2 {
                 generation: 1,
-                phase: UsageFreshnessPhaseV1::Current,
+                phase: UsageFreshnessPhaseV2::Current,
                 last_good_at_epoch: None,
                 retry_at_epoch: None,
                 is_stale: false,
             },
-            accounts: vec![UsageAccountV1 {
+            accounts: vec![UsageAccountV2 {
                 canonical_account_id: "canon-1".to_owned(),
-                identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+                refresh_capabilities: Vec::new(),
+                identity_kind: UsageIdentityKindV2::ProviderStableHandle,
                 rank: 0,
                 display_label: "work@example.test".to_owned(),
+                username: None,
+                auth_origin: None,
                 plan_label: None,
                 status_label: None,
-                lifecycle: UsageLifecycleV1::Available,
-                freshness: UsageFreshnessV1 {
+                lifecycle: UsageLifecycleV2::Available,
+                freshness: UsageFreshnessV2 {
                     generation: 1,
-                    phase: UsageFreshnessPhaseV1::Stale,
+                    phase: UsageFreshnessPhaseV2::Stale,
                     last_good_at_epoch: Some(1_799_000_000),
                     retry_at_epoch: None,
                     is_stale: true,
                 },
                 provenance_count: 1,
-                windows: vec![UsageLimitWindowV1 {
+                windows: vec![UsageLimitWindowV2 {
                     window_id: "weekly".to_owned(),
                     rank: 0,
-                    category: UsageWindowCategoryV1::LongRange,
+                    category: UsageWindowCategoryV2::LongRange,
                     label: "weekly".to_owned(),
                     value_label: "73% left".to_owned(),
                     reset_label: "resets tomorrow".to_owned(),
                     remaining_percent: None,
                     used_percent: Some(UsagePercent::new(27).expect("valid percent")),
                     reset_at_epoch: Some(1_800_100_000),
-                    quota_state: UsageQuotaStateV1::Available,
+                    quota_state: UsageQuotaStateV2::Available,
                     pace_label: None,
                     runs_out_label: None,
                     remaining_raw_percent: None,
                     used_raw_percent: Some(27),
+
+                    count_quota: None,
                 }],
                 issues: Vec::new(),
                 metric_groups: Vec::new(),
@@ -562,6 +568,7 @@ fn projection_keeps_canonical_ids_and_freshness() {
             issues: Vec::new(),
         }],
         unresolved: Vec::new(),
+        unresolved_grants: Vec::new(),
         issues: Vec::new(),
     };
 
@@ -572,8 +579,8 @@ fn projection_keeps_canonical_ids_and_freshness() {
     assert_eq!(account.canonical_account_id, "canon-1");
     assert!(!account.unresolved);
     assert_eq!(account.stable_id(), "openai:canon-1");
-    assert_eq!(account.lifecycle, UsageLifecycleV1::Available);
-    assert_eq!(account.freshness_phase, UsageFreshnessPhaseV1::Stale);
+    assert_eq!(account.lifecycle, UsageLifecycleV2::Available);
+    assert_eq!(account.freshness_phase, UsageFreshnessPhaseV2::Stale);
     assert_eq!(account.last_good_at_epoch, Some(1_799_000_000));
     assert!(account.is_stale);
     assert_eq!(account.status, "stale");
@@ -588,63 +595,68 @@ fn projection_keeps_canonical_ids_and_freshness() {
 #[test]
 fn projection_keeps_provider_accounts_once_and_preserves_window_order() {
     use jackin_protocol::usage_broker::{
-        UsageAccountV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIdentityKindV1,
-        UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1, UsagePercent,
-        UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageProviderV1,
-        UsageQuotaStateV1, UsageWindowCategoryV1,
+        UsageAccountV2, UsageFreshnessPhaseV2, UsageFreshnessV2, UsageIdentityKindV2,
+        UsageLifecycleV2, UsageLimitWindowV2, UsageMembershipStateV2, UsagePercent,
+        UsageProjectionRefreshStateV2, UsageProjectionSchemaV2, UsageProjectionV2, UsageProviderV2,
+        UsageQuotaStateV2, UsageWindowCategoryV2,
     };
 
-    let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+    let projection = UsageProjectionV2 {
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "p".to_owned(),
         generated_at_epoch: 0,
         discovery_revision: "d".to_owned(),
         broker_instance_id: "b".to_owned(),
         broker_generation: 1,
-        refresh_state: UsageProjectionRefreshStateV1::Idle,
-        providers: vec![UsageProviderV1 {
+        refresh_state: UsageProjectionRefreshStateV2::Idle,
+        providers: vec![UsageProviderV2 {
             provider_id: "openai".to_owned(),
             display_name: "OpenAI".to_owned(),
             rank: 0,
-            membership_state: UsageMembershipStateV1::Current,
-            freshness: UsageFreshnessV1 {
+            membership_state: UsageMembershipStateV2::Current,
+            freshness: UsageFreshnessV2 {
                 generation: 1,
-                phase: UsageFreshnessPhaseV1::Current,
+                phase: UsageFreshnessPhaseV2::Current,
                 last_good_at_epoch: None,
                 retry_at_epoch: None,
                 is_stale: false,
             },
-            accounts: vec![UsageAccountV1 {
+            accounts: vec![UsageAccountV2 {
                 canonical_account_id: "a".to_owned(),
-                identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+                refresh_capabilities: Vec::new(),
+                identity_kind: UsageIdentityKindV2::ProviderStableHandle,
                 rank: 0,
                 display_label: "work@example.test".to_owned(),
+                username: None,
+                auth_origin: None,
                 plan_label: None,
                 status_label: None,
-                lifecycle: UsageLifecycleV1::Available,
-                freshness: UsageFreshnessV1 {
+                lifecycle: UsageLifecycleV2::Available,
+                freshness: UsageFreshnessV2 {
                     generation: 1,
-                    phase: UsageFreshnessPhaseV1::Current,
+                    phase: UsageFreshnessPhaseV2::Current,
                     last_good_at_epoch: None,
                     retry_at_epoch: None,
                     is_stale: false,
                 },
                 provenance_count: 1,
-                windows: vec![UsageLimitWindowV1 {
+                windows: vec![UsageLimitWindowV2 {
                     window_id: "weekly".to_owned(),
                     rank: 0,
-                    category: UsageWindowCategoryV1::LongRange,
+                    category: UsageWindowCategoryV2::LongRange,
                     label: "weekly".to_owned(),
                     value_label: "73% left".to_owned(),
                     reset_label: "resets tomorrow".to_owned(),
                     remaining_percent: Some(UsagePercent::new(73).expect("valid percent")),
                     used_percent: None,
                     reset_at_epoch: None,
-                    quota_state: UsageQuotaStateV1::Available,
+                    quota_state: UsageQuotaStateV2::Available,
                     pace_label: None,
                     runs_out_label: None,
                     remaining_raw_percent: Some(73),
                     used_raw_percent: None,
+
+                    count_quota: None,
                 }],
                 issues: Vec::new(),
                 metric_groups: Vec::new(),
@@ -653,6 +665,7 @@ fn projection_keeps_provider_accounts_once_and_preserves_window_order() {
             issues: Vec::new(),
         }],
         unresolved: Vec::new(),
+        unresolved_grants: Vec::new(),
         issues: Vec::new(),
     };
 
@@ -666,43 +679,46 @@ fn projection_keeps_provider_accounts_once_and_preserves_window_order() {
 #[test]
 fn projection_includes_unresolved_accounts_and_groups_by_provider() {
     use jackin_protocol::usage_broker::{
-        UsageAccountV1, UsageFreshnessV1, UsageIdentityKindV1, UsageIssueRecoverabilityV1,
-        UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1, UsageMembershipStateV1,
-        UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageProviderV1,
-        UsageUnresolvedV1,
+        UsageAccountV2, UsageFreshnessV2, UsageIdentityKindV2, UsageIssueRecoverabilityV2,
+        UsageIssueScopeV2, UsageIssueV2, UsageLifecycleV2, UsageMembershipStateV2,
+        UsageProjectionRefreshStateV2, UsageProjectionSchemaV2, UsageProjectionV2, UsageProviderV2,
+        UsageUnresolvedV2,
     };
 
-    let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+    let projection = UsageProjectionV2 {
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "p".to_owned(),
         generated_at_epoch: 0,
         discovery_revision: "d".to_owned(),
         broker_instance_id: "b".to_owned(),
         broker_generation: 1,
-        refresh_state: UsageProjectionRefreshStateV1::Idle,
-        providers: vec![UsageProviderV1 {
+        refresh_state: UsageProjectionRefreshStateV2::Idle,
+        providers: vec![UsageProviderV2 {
             provider_id: "openai".to_owned(),
             display_name: "OpenAI".to_owned(),
             rank: 0,
-            membership_state: UsageMembershipStateV1::Current,
-            freshness: UsageFreshnessV1 {
+            membership_state: UsageMembershipStateV2::Current,
+            freshness: UsageFreshnessV2 {
                 generation: 1,
-                phase: UsageFreshnessPhaseV1::Current,
+                phase: UsageFreshnessPhaseV2::Current,
                 last_good_at_epoch: None,
                 retry_at_epoch: None,
                 is_stale: false,
             },
-            accounts: vec![UsageAccountV1 {
+            accounts: vec![UsageAccountV2 {
                 canonical_account_id: "a".to_owned(),
-                identity_kind: UsageIdentityKindV1::ProviderStableHandle,
+                refresh_capabilities: Vec::new(),
+                identity_kind: UsageIdentityKindV2::ProviderStableHandle,
                 rank: 0,
                 display_label: "work@example.test".to_owned(),
+                username: None,
+                auth_origin: None,
                 plan_label: None,
                 status_label: None,
-                lifecycle: UsageLifecycleV1::Available,
-                freshness: UsageFreshnessV1 {
+                lifecycle: UsageLifecycleV2::Available,
+                freshness: UsageFreshnessV2 {
                     generation: 1,
-                    phase: UsageFreshnessPhaseV1::Current,
+                    phase: UsageFreshnessPhaseV2::Current,
                     last_good_at_epoch: None,
                     retry_at_epoch: None,
                     is_stale: false,
@@ -715,25 +731,26 @@ fn projection_includes_unresolved_accounts_and_groups_by_provider() {
             }],
             issues: Vec::new(),
         }],
+        unresolved_grants: Vec::new(),
         unresolved: vec![
-            UsageUnresolvedV1 {
+            UsageUnresolvedV2 {
                 provider_id: "anthropic".to_owned(),
                 capability_id: "anthropic:key".to_owned(),
                 configuration_count: 1,
-                state: UsageLifecycleV1::NeedsLogin,
-                issues: vec![UsageIssueV1 {
+                state: UsageLifecycleV2::NeedsLogin,
+                issues: vec![UsageIssueV2 {
                     code: "auth_required".to_owned(),
-                    scope: UsageIssueScopeV1::Account,
-                    recoverability: UsageIssueRecoverabilityV1::ActionRequired,
+                    scope: UsageIssueScopeV2::Account,
+                    recoverability: UsageIssueRecoverabilityV2::ActionRequired,
                     message: "authentication required".to_owned(),
                     retry_at_epoch: None,
                 }],
             },
-            UsageUnresolvedV1 {
+            UsageUnresolvedV2 {
                 provider_id: "openai".to_owned(),
                 capability_id: "openai:second".to_owned(),
                 configuration_count: 1,
-                state: UsageLifecycleV1::NeedsLogin,
+                state: UsageLifecycleV2::NeedsLogin,
                 issues: Vec::new(),
             },
         ],
@@ -778,7 +795,7 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
         UsageWindow {
             window_id: "session".to_owned(),
             rank: 0,
-            category: UsageWindowCategoryV1::Session,
+            category: UsageWindowCategoryV2::Session,
             label: "5h session".to_owned(),
             value: "10% left".to_owned(),
             reset: "resets in 2h".to_owned(),
@@ -787,13 +804,15 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
             used_percent: None,
             used_raw_percent: None,
             reset_at_epoch: None,
-            quota_state: UsageQuotaStateV1::Available,
+            quota_state: UsageQuotaStateV2::Available,
             pace_label: None,
+
+            count_quota: None,
         },
         UsageWindow {
             window_id: "weekly".to_owned(),
             rank: 1,
-            category: UsageWindowCategoryV1::LongRange,
+            category: UsageWindowCategoryV2::LongRange,
             label: "weekly".to_owned(),
             value: "80% left".to_owned(),
             reset: "resets in 5d".to_owned(),
@@ -802,15 +821,17 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
             used_percent: None,
             used_raw_percent: None,
             reset_at_epoch: None,
-            quota_state: UsageQuotaStateV1::Available,
+            quota_state: UsageQuotaStateV2::Available,
             pace_label: None,
+
+            count_quota: None,
         },
     ];
     let mut claude = test_account("anthropic", "claude:key", "Unresolved (claude:key)");
     claude.provider = "Anthropic / Claude".to_owned();
     claude.unresolved = true;
     claude.status = "needs login · authentication required".to_owned();
-    claude.lifecycle = UsageLifecycleV1::NeedsLogin;
+    claude.lifecycle = UsageLifecycleV2::NeedsLogin;
     claude.last_good_at_epoch = None;
     claude.windows = Vec::new();
     let state = UsageScreenState {
@@ -935,7 +956,7 @@ fn render_unknown_window_shows_value_without_fabricated_bar() {
     account.windows = vec![UsageWindow {
         window_id: "mystery".to_owned(),
         rank: 0,
-        category: UsageWindowCategoryV1::Other,
+        category: UsageWindowCategoryV2::Other,
         label: "mystery window".to_owned(),
         value: "provider did not report".to_owned(),
         reset: String::new(),
@@ -944,8 +965,10 @@ fn render_unknown_window_shows_value_without_fabricated_bar() {
         used_percent: None,
         used_raw_percent: None,
         reset_at_epoch: None,
-        quota_state: UsageQuotaStateV1::Unknown,
+        quota_state: UsageQuotaStateV2::Unknown,
         pace_label: None,
+
+        count_quota: None,
     }];
     manager.usage.screen = Some(UsageScreenState {
         accounts: vec![account],
@@ -972,26 +995,26 @@ fn render_unknown_window_shows_value_without_fabricated_bar() {
 fn metric_group_fixture(
     group_id: &str,
     rank: u32,
-    kind: jackin_protocol::usage_broker::UsageMetricGroupKindV1,
+    kind: jackin_protocol::usage_broker::UsageMetricGroupKindV2,
     label: &str,
-    value: jackin_protocol::usage_broker::UsageMetricValueV1,
+    value: jackin_protocol::usage_broker::UsageMetricValueV2,
     now: i64,
-) -> jackin_protocol::usage_broker::UsageMetricGroupV1 {
+) -> jackin_protocol::usage_broker::UsageMetricGroupV2 {
     use jackin_protocol::usage_broker::{
-        UsageFreshnessPhaseV1, UsageMetricScopeV1, UsageQuotaStateV1,
+        UsageFreshnessPhaseV2, UsageMetricScopeV2, UsageQuotaStateV2,
     };
-    jackin_protocol::usage_broker::UsageMetricGroupV1 {
+    jackin_protocol::usage_broker::UsageMetricGroupV2 {
         group_id: group_id.to_owned(),
         rank,
         kind,
         label: label.to_owned(),
-        scope: UsageMetricScopeV1::default(),
+        scope: UsageMetricScopeV2::default(),
         observed_at_epoch: None,
         fetched_at_epoch: now - 10,
         last_success_at_epoch: None,
-        phase: UsageFreshnessPhaseV1::Current,
+        phase: UsageFreshnessPhaseV2::Current,
         is_stale: false,
-        quota_state: UsageQuotaStateV1::Available,
+        quota_state: UsageQuotaStateV2::Available,
         value,
         reset_at_epoch: None,
         renews_at_epoch: None,
@@ -1009,16 +1032,16 @@ struct MetricGroupEpochs {
 /// Canonical projection carrying `Balance` + `SpendCap` + `Plan` groups at the
 /// same fixed epoch used by the renderer tests.
 fn metric_group_projection_fixture() -> (
-    jackin_protocol::usage_broker::UsageProjectionV1,
+    jackin_protocol::usage_broker::UsageProjectionV2,
     MetricGroupEpochs,
 ) {
     use jackin_protocol::control::Money;
     use jackin_protocol::usage_broker::{
-        UsageAccountV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIdentityKindV1,
-        UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1,
-        UsageLimitWindowV1, UsageMembershipStateV1, UsageMetricGroupKindV1, UsageMetricValueV1,
-        UsagePercent, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1,
-        UsageProviderV1, UsageQuotaStateV1, UsageWindowCategoryV1,
+        UsageAccountV2, UsageFreshnessPhaseV2, UsageFreshnessV2, UsageIdentityKindV2,
+        UsageIssueRecoverabilityV2, UsageIssueScopeV2, UsageIssueV2, UsageLifecycleV2,
+        UsageLimitWindowV2, UsageMembershipStateV2, UsageMetricGroupKindV2, UsageMetricValueV2,
+        UsagePercent, UsageProjectionRefreshStateV2, UsageProjectionSchemaV2, UsageProjectionV2,
+        UsageProviderV2, UsageQuotaStateV2, UsageWindowCategoryV2,
     };
 
     let now = TEST_NOW_EPOCH;
@@ -1029,16 +1052,16 @@ fn metric_group_projection_fixture() -> (
         renews_at: now + 5 * 86_400,
     };
 
-    let issue = |code: &str, scope, message: &str| UsageIssueV1 {
+    let issue = |code: &str, scope, message: &str| UsageIssueV2 {
         code: code.to_owned(),
         scope,
-        recoverability: UsageIssueRecoverabilityV1::Retryable,
+        recoverability: UsageIssueRecoverabilityV2::Retryable,
         message: message.to_owned(),
         retry_at_epoch: None,
     };
-    let freshness = || UsageFreshnessV1 {
+    let freshness = || UsageFreshnessV2 {
         generation: 1,
-        phase: UsageFreshnessPhaseV1::Current,
+        phase: UsageFreshnessPhaseV2::Current,
         last_good_at_epoch: Some(now - 300),
         retry_at_epoch: None,
         is_stale: false,
@@ -1047,9 +1070,9 @@ fn metric_group_projection_fixture() -> (
     let mut balance = metric_group_fixture(
         "balance",
         0,
-        UsageMetricGroupKindV1::Balance,
+        UsageMetricGroupKindV2::Balance,
         "Balance",
-        UsageMetricValueV1::Balance {
+        UsageMetricValueV2::Balance {
             amount: Money::new(4_250, "USD", 2),
             expires_at_epoch: None,
         },
@@ -1059,15 +1082,15 @@ fn metric_group_projection_fixture() -> (
     balance.last_success_at_epoch = Some(now - 300);
     balance.issues = vec![issue(
         "bal_delay",
-        UsageIssueScopeV1::Group,
+        UsageIssueScopeV2::Group,
         "balance delayed",
     )];
     let mut spend = metric_group_fixture(
         "spend",
         1,
-        UsageMetricGroupKindV1::SpendCap,
+        UsageMetricGroupKindV2::SpendCap,
         "Spend cap",
-        UsageMetricValueV1::SpendCap {
+        UsageMetricValueV2::SpendCap {
             cap: Some(Money::new(30_000, "USD", 2)),
             spent: Some(Money::new(5_331, "USD", 2)),
             remaining: None,
@@ -1078,48 +1101,51 @@ fn metric_group_projection_fixture() -> (
     let mut plan = metric_group_fixture(
         "plan",
         2,
-        UsageMetricGroupKindV1::Plan,
+        UsageMetricGroupKindV2::Plan,
         "Plan",
-        UsageMetricValueV1::Plan {
+        UsageMetricValueV2::Plan {
             plan_label: Some("Pro".to_owned()),
             tier: None,
         },
         now,
     );
-    plan.quota_state = UsageQuotaStateV1::NotApplicable;
+    plan.quota_state = UsageQuotaStateV2::NotApplicable;
     plan.renews_at_epoch = Some(epochs.renews_at);
 
-    let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+    let projection = UsageProjectionV2 {
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "p".to_owned(),
         generated_at_epoch: now,
         discovery_revision: "d".to_owned(),
         broker_instance_id: "b".to_owned(),
         broker_generation: 1,
-        refresh_state: UsageProjectionRefreshStateV1::Idle,
-        providers: vec![UsageProviderV1 {
+        refresh_state: UsageProjectionRefreshStateV2::Idle,
+        providers: vec![UsageProviderV2 {
             provider_id: "openai".to_owned(),
             display_name: "OpenAI".to_owned(),
             rank: 0,
-            membership_state: UsageMembershipStateV1::Current,
+            membership_state: UsageMembershipStateV2::Current,
             freshness: freshness(),
-            accounts: vec![UsageAccountV1 {
+            accounts: vec![UsageAccountV2 {
                 canonical_account_id: "canon-1".to_owned(),
-                identity_kind: UsageIdentityKindV1::ProviderAccountId,
+                refresh_capabilities: Vec::new(),
+                identity_kind: UsageIdentityKindV2::ProviderAccountId,
                 rank: 0,
                 display_label: "work".to_owned(),
+                username: None,
+                auth_origin: None,
                 plan_label: Some("Scale".to_owned()),
                 status_label: None,
-                lifecycle: UsageLifecycleV1::Available,
-                freshness: UsageFreshnessV1 {
+                lifecycle: UsageLifecycleV2::Available,
+                freshness: UsageFreshnessV2 {
                     retry_at_epoch: Some(epochs.retry_at),
                     ..freshness()
                 },
                 provenance_count: 1,
-                windows: vec![UsageLimitWindowV1 {
+                windows: vec![UsageLimitWindowV2 {
                     window_id: "weekly".to_owned(),
                     rank: 0,
-                    category: UsageWindowCategoryV1::LongRange,
+                    category: UsageWindowCategoryV2::LongRange,
                     label: "weekly".to_owned(),
                     value_label: "120% used".to_owned(),
                     reset_label: "resets at midnight".to_owned(),
@@ -1128,28 +1154,31 @@ fn metric_group_projection_fixture() -> (
                     used_percent: Some(UsagePercent::new(100).expect("valid percent")),
                     used_raw_percent: Some(120),
                     reset_at_epoch: None,
-                    quota_state: UsageQuotaStateV1::Warning,
+                    quota_state: UsageQuotaStateV2::Warning,
                     pace_label: Some("on pace".to_owned()),
                     runs_out_label: None,
+
+                    count_quota: None,
                 }],
                 metric_groups: vec![balance, spend, plan],
                 credential_expires_at_epoch: Some(epochs.credential_expires_at),
                 issues: vec![issue(
                     "quota_degraded",
-                    UsageIssueScopeV1::Account,
+                    UsageIssueScopeV2::Account,
                     "quota degraded",
                 )],
             }],
             issues: vec![issue(
                 "prov_maint",
-                UsageIssueScopeV1::Provider,
+                UsageIssueScopeV2::Provider,
                 "provider maintenance",
             )],
         }],
         unresolved: Vec::new(),
+        unresolved_grants: Vec::new(),
         issues: vec![issue(
             "proj_wide",
-            UsageIssueScopeV1::Projection,
+            UsageIssueScopeV2::Projection,
             "projection wide fault",
         )],
     };
@@ -1160,7 +1189,7 @@ fn metric_group_projection_fixture() -> (
 #[test]
 fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values() {
     use jackin_protocol::control::Money;
-    use jackin_protocol::usage_broker::{UsageMetricGroupKindV1, UsageMetricValueV1};
+    use jackin_protocol::usage_broker::{UsageMetricGroupKindV2, UsageMetricValueV2};
 
     let (projection, epochs) = metric_group_projection_fixture();
 
@@ -1171,7 +1200,7 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     assert_eq!(account.plan_label, Some("Scale".to_owned()));
     assert_eq!(
         account.identity_kind,
-        Some(UsageIdentityKindV1::ProviderAccountId)
+        Some(UsageIdentityKindV2::ProviderAccountId)
     );
     assert_eq!(
         account.credential_expires_at_epoch,
@@ -1188,7 +1217,7 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     let window = &account.windows[0];
     assert_eq!(window.used_percent, Some(100));
     assert_eq!(window.used_raw_percent, Some(120));
-    assert_eq!(window.quota_state, UsageQuotaStateV1::Warning);
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Warning);
     assert_eq!(window.pace_label, Some("on pace".to_owned()));
 
     assert_eq!(account.metric_groups.len(), 3);
@@ -1197,20 +1226,20 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
         &account.metric_groups[1],
         &account.metric_groups[2],
     );
-    assert_eq!(balance.kind, UsageMetricGroupKindV1::Balance);
+    assert_eq!(balance.kind, UsageMetricGroupKindV2::Balance);
     assert_eq!(
         balance.value,
-        UsageMetricValueV1::Balance {
+        UsageMetricValueV2::Balance {
             amount: Money::new(4_250, "USD", 2),
             expires_at_epoch: None,
         }
     );
     assert_eq!(balance.issues.len(), 1);
     assert_eq!(balance.meter_percent(), None);
-    assert_eq!(spend.kind, UsageMetricGroupKindV1::SpendCap);
+    assert_eq!(spend.kind, UsageMetricGroupKindV2::SpendCap);
     assert_eq!(
         spend.value,
-        UsageMetricValueV1::SpendCap {
+        UsageMetricValueV2::SpendCap {
             cap: Some(Money::new(30_000, "USD", 2)),
             spent: Some(Money::new(5_331, "USD", 2)),
             remaining: None,
@@ -1219,7 +1248,7 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     assert_eq!(spend.reset_at_epoch, Some(epochs.reset_at));
     assert_eq!(spend.renews_at_epoch, None);
     assert_eq!(spend.meter_percent(), None);
-    assert_eq!(plan.kind, UsageMetricGroupKindV1::Plan);
+    assert_eq!(plan.kind, UsageMetricGroupKindV2::Plan);
     assert_eq!(plan.reset_at_epoch, None);
     assert_eq!(plan.renews_at_epoch, Some(epochs.renews_at));
     assert_eq!(plan.meter_percent(), None);
@@ -1356,7 +1385,7 @@ fn assert_overview_group_rows(overview: &str) {
 fn metric_group_meter_only_for_window_kind() {
     use super::UsageMetricGroup;
     use jackin_protocol::usage_broker::{
-        UsageMetricGroupKindV1, UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1,
+        UsageMetricGroupKindV2, UsageMetricPeriodV2, UsageMetricScopeV2, UsageMetricValueV2,
         UsagePercent,
     };
 
@@ -1365,13 +1394,13 @@ fn metric_group_meter_only_for_window_kind() {
         rank: 0,
         kind,
         label: "g".to_owned(),
-        scope: UsageMetricScopeV1::default(),
+        scope: UsageMetricScopeV2::default(),
         observed_at_epoch: None,
         fetched_at_epoch: 0,
         last_success_at_epoch: None,
-        phase: UsageFreshnessPhaseV1::Current,
+        phase: UsageFreshnessPhaseV2::Current,
         is_stale: false,
-        quota_state: UsageQuotaStateV1::Available,
+        quota_state: UsageQuotaStateV2::Available,
         value,
         reset_at_epoch: None,
         renews_at_epoch: None,
@@ -1379,27 +1408,31 @@ fn metric_group_meter_only_for_window_kind() {
     };
 
     let window = group(
-        UsageMetricGroupKindV1::Window,
-        UsageMetricValueV1::Window {
+        UsageMetricGroupKindV2::Window,
+        UsageMetricValueV2::Window {
             remaining_percent: None,
             remaining_raw_percent: None,
             used_percent: Some(UsagePercent::new(30).expect("valid percent")),
             used_raw_percent: Some(30),
-            period: UsageMetricPeriodV1::Unknown,
+            period: UsageMetricPeriodV2::Unknown,
             unit: None,
+
+            count_quota: None,
         },
     );
     assert_eq!(window.meter_percent(), Some(70));
 
     let unknown = group(
-        UsageMetricGroupKindV1::Window,
-        UsageMetricValueV1::Window {
+        UsageMetricGroupKindV2::Window,
+        UsageMetricValueV2::Window {
             remaining_percent: None,
             remaining_raw_percent: None,
             used_percent: None,
             used_raw_percent: None,
-            period: UsageMetricPeriodV1::Unknown,
+            period: UsageMetricPeriodV2::Unknown,
             unit: None,
+
+            count_quota: None,
         },
     );
     assert_eq!(unknown.meter_percent(), None);
@@ -1415,22 +1448,22 @@ fn meter_color_grades_by_canonical_quota_state_not_percent() {
     // accent reads the same API severity the projection maps into these
     // states, so both surfaces agree (S4/S5 parity).
     assert_eq!(
-        meter_style(UsageQuotaStateV1::Exhausted).fg,
+        meter_style(UsageQuotaStateV2::Exhausted).fg,
         Some(Color::Red)
     );
-    assert_eq!(meter_style(UsageQuotaStateV1::Error).fg, Some(Color::Red));
+    assert_eq!(meter_style(UsageQuotaStateV2::Error).fg, Some(Color::Red));
     assert_eq!(
-        meter_style(UsageQuotaStateV1::Warning).fg,
+        meter_style(UsageQuotaStateV2::Warning).fg,
         Some(Color::Yellow)
     );
     for state in [
-        UsageQuotaStateV1::Available,
-        UsageQuotaStateV1::NotStarted,
-        UsageQuotaStateV1::Unsupported,
-        UsageQuotaStateV1::Unavailable,
-        UsageQuotaStateV1::NoPermission,
-        UsageQuotaStateV1::Unknown,
-        UsageQuotaStateV1::NotApplicable,
+        UsageQuotaStateV2::Available,
+        UsageQuotaStateV2::NotStarted,
+        UsageQuotaStateV2::Unsupported,
+        UsageQuotaStateV2::Unavailable,
+        UsageQuotaStateV2::NoPermission,
+        UsageQuotaStateV2::Unknown,
+        UsageQuotaStateV2::NotApplicable,
     ] {
         assert_eq!(
             meter_style(state).fg,
@@ -1448,26 +1481,28 @@ fn window_group_summary_uses_left_like_windows_and_capsule() {
     let group = super::UsageMetricGroup {
         group_id: "g".to_owned(),
         rank: 0,
-        kind: jackin_protocol::usage_broker::UsageMetricGroupKindV1::Window,
+        kind: jackin_protocol::usage_broker::UsageMetricGroupKindV2::Window,
         label: "Weekly".to_owned(),
-        scope: jackin_protocol::usage_broker::UsageMetricScopeV1::default(),
+        scope: jackin_protocol::usage_broker::UsageMetricScopeV2::default(),
         observed_at_epoch: None,
         fetched_at_epoch: 1_800_000_000,
         last_success_at_epoch: Some(1_800_000_000),
-        phase: UsageFreshnessPhaseV1::Current,
+        phase: UsageFreshnessPhaseV2::Current,
         is_stale: false,
-        quota_state: UsageQuotaStateV1::Available,
-        value: jackin_protocol::usage_broker::UsageMetricValueV1::Window {
+        quota_state: UsageQuotaStateV2::Available,
+        value: jackin_protocol::usage_broker::UsageMetricValueV2::Window {
             remaining_percent: Some(
                 jackin_protocol::usage_broker::UsagePercent::new(73).expect("valid percent"),
             ),
             remaining_raw_percent: Some(73),
             used_percent: None,
             used_raw_percent: None,
-            period: jackin_protocol::usage_broker::UsageMetricPeriodV1::Calendar {
-                granularity: jackin_protocol::usage_broker::UsageCalendarPeriodV1::Weekly,
+            period: jackin_protocol::usage_broker::UsageMetricPeriodV2::Calendar {
+                granularity: jackin_protocol::usage_broker::UsageCalendarPeriodV2::Weekly,
             },
             unit: None,
+
+            count_quota: None,
         },
         reset_at_epoch: None,
         renews_at_epoch: None,
@@ -1522,14 +1557,14 @@ fn press_key(manager: &mut crate::tui::state::ManagerState<'_>, code: crossterm:
     );
 }
 
-fn usage_issue(code: &str, message: &str) -> jackin_protocol::usage_broker::UsageIssueV1 {
+fn usage_issue(code: &str, message: &str) -> jackin_protocol::usage_broker::UsageIssueV2 {
     use jackin_protocol::usage_broker::{
-        UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1,
+        UsageIssueRecoverabilityV2, UsageIssueScopeV2, UsageIssueV2,
     };
-    UsageIssueV1 {
+    UsageIssueV2 {
         code: code.to_owned(),
-        scope: UsageIssueScopeV1::Account,
-        recoverability: UsageIssueRecoverabilityV1::Retryable,
+        scope: UsageIssueScopeV2::Account,
+        recoverability: UsageIssueRecoverabilityV2::Retryable,
         message: message.to_owned(),
         retry_at_epoch: None,
     }
@@ -1537,28 +1572,30 @@ fn usage_issue(code: &str, message: &str) -> jackin_protocol::usage_broker::Usag
 
 fn window_metric_group(label: &str, remaining: Option<u8>, now: i64) -> super::UsageMetricGroup {
     use jackin_protocol::usage_broker::{
-        UsageMetricGroupKindV1, UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1,
-        UsagePercent, UsageQuotaStateV1,
+        UsageMetricGroupKindV2, UsageMetricPeriodV2, UsageMetricScopeV2, UsageMetricValueV2,
+        UsagePercent, UsageQuotaStateV2,
     };
     super::UsageMetricGroup {
         group_id: format!("{label}-id"),
         rank: 0,
-        kind: UsageMetricGroupKindV1::Window,
+        kind: UsageMetricGroupKindV2::Window,
         label: label.to_owned(),
-        scope: UsageMetricScopeV1::default(),
+        scope: UsageMetricScopeV2::default(),
         observed_at_epoch: None,
         fetched_at_epoch: now - 10,
         last_success_at_epoch: Some(now - 60),
-        phase: UsageFreshnessPhaseV1::Current,
+        phase: UsageFreshnessPhaseV2::Current,
         is_stale: false,
-        quota_state: UsageQuotaStateV1::Available,
-        value: UsageMetricValueV1::Window {
+        quota_state: UsageQuotaStateV2::Available,
+        value: UsageMetricValueV2::Window {
             remaining_percent: remaining.map(|p| UsagePercent::new(p).expect("valid percent")),
             remaining_raw_percent: remaining.map(i32::from),
             used_percent: None,
             used_raw_percent: None,
-            period: UsageMetricPeriodV1::Unknown,
+            period: UsageMetricPeriodV2::Unknown,
             unit: None,
+
+            count_quota: None,
         },
         reset_at_epoch: None,
         renews_at_epoch: None,
@@ -1570,7 +1607,7 @@ fn window_metric_group(label: &str, remaining: Option<u8>, now: i64) -> super::U
 fn detail_toggle_renders_summary_vs_full_bodies() {
     let mut account = test_account("openai", "a", "work");
     account.windows = vec![UsageWindow {
-        quota_state: UsageQuotaStateV1::Warning,
+        quota_state: UsageQuotaStateV2::Warning,
         pace_label: Some("on pace".to_owned()),
         ..test_window("weekly", Some(73))
     }];
@@ -1833,13 +1870,13 @@ fn labels_align_with_capsule_tab_vocabulary() {
     // exactly; `available`/`not started` are console-owned (Capsule's healthy
     // word `fresh` belongs to the freshness axis, a different concept).
     for (lifecycle, expected) in [
-        (UsageLifecycleV1::Available, "available"),
-        (UsageLifecycleV1::AgentUninitialized, "not started"),
-        (UsageLifecycleV1::NeedsLogin, "needs login"),
-        (UsageLifecycleV1::NeedsSecret, "needs secret"),
-        (UsageLifecycleV1::Unsupported, "unsupported"),
-        (UsageLifecycleV1::Unavailable, "unavailable"),
-        (UsageLifecycleV1::Error, "error"),
+        (UsageLifecycleV2::Available, "available"),
+        (UsageLifecycleV2::AgentUninitialized, "not started"),
+        (UsageLifecycleV2::NeedsLogin, "needs login"),
+        (UsageLifecycleV2::NeedsSecret, "needs secret"),
+        (UsageLifecycleV2::Unsupported, "unsupported"),
+        (UsageLifecycleV2::Unavailable, "unavailable"),
+        (UsageLifecycleV2::Error, "error"),
     ] {
         assert_eq!(lifecycle_label(lifecycle), expected);
     }
@@ -1847,16 +1884,16 @@ fn labels_align_with_capsule_tab_vocabulary() {
     // Capsule tabs carry no quota axis, so the full quota table is pinned
     // here to catch drift against the console's own render contract.
     for (state, expected) in [
-        (UsageQuotaStateV1::Available, "available"),
-        (UsageQuotaStateV1::NotStarted, "not started"),
-        (UsageQuotaStateV1::Warning, "warning"),
-        (UsageQuotaStateV1::Exhausted, "exhausted"),
-        (UsageQuotaStateV1::Unsupported, "unsupported"),
-        (UsageQuotaStateV1::Unavailable, "unavailable"),
-        (UsageQuotaStateV1::NoPermission, "no permission"),
-        (UsageQuotaStateV1::Unknown, "unknown"),
-        (UsageQuotaStateV1::NotApplicable, "n/a"),
-        (UsageQuotaStateV1::Error, "error"),
+        (UsageQuotaStateV2::Available, "available"),
+        (UsageQuotaStateV2::NotStarted, "not started"),
+        (UsageQuotaStateV2::Warning, "warning"),
+        (UsageQuotaStateV2::Exhausted, "exhausted"),
+        (UsageQuotaStateV2::Unsupported, "unsupported"),
+        (UsageQuotaStateV2::Unavailable, "unavailable"),
+        (UsageQuotaStateV2::NoPermission, "no permission"),
+        (UsageQuotaStateV2::Unknown, "unknown"),
+        (UsageQuotaStateV2::NotApplicable, "n/a"),
+        (UsageQuotaStateV2::Error, "error"),
     ] {
         assert_eq!(quota_state_label(state), expected);
     }
@@ -1885,9 +1922,9 @@ fn labels_align_with_capsule_tab_vocabulary() {
     // prefix with the same ` · ` separator.
     let now = 1_800_000_000;
     let mut account = test_account("openai", "a", "work");
-    account.freshness_phase = UsageFreshnessPhaseV1::Refreshing;
+    account.freshness_phase = UsageFreshnessPhaseV2::Refreshing;
     assert_eq!(freshness_age_label(now, &account), "refreshing…");
-    account.freshness_phase = UsageFreshnessPhaseV1::Current;
+    account.freshness_phase = UsageFreshnessPhaseV2::Current;
     account.last_good_at_epoch = None;
     assert_eq!(freshness_age_label(now, &account), "never updated");
     account.last_good_at_epoch = Some(now - 10);
@@ -2000,14 +2037,14 @@ fn s8_jk_and_arrows_traverse_and_clamp() {
 fn s8_sort_filter_constrained_keys_reanchor_by_stable_id() {
     use crossterm::event::KeyCode;
     use jackin_protocol::usage_broker::{
-        UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1,
+        UsageIssueRecoverabilityV2, UsageIssueScopeV2, UsageIssueV2,
     };
     let mut low = test_account("anthropic", "b", "home");
     low.windows = vec![test_window("weekly", Some(10))];
-    low.issues = vec![UsageIssueV1 {
+    low.issues = vec![UsageIssueV2 {
         code: "quota_degraded".to_owned(),
-        scope: UsageIssueScopeV1::Account,
-        recoverability: UsageIssueRecoverabilityV1::Retryable,
+        scope: UsageIssueScopeV2::Account,
+        recoverability: UsageIssueRecoverabilityV2::Retryable,
         message: "quota degraded".to_owned(),
         retry_at_epoch: None,
     }];
@@ -2388,7 +2425,7 @@ fn complete_publication_survives_refresh_cache_reopen_and_render() {
     assert!(!render_detail_text(state.clone()).contains("independent publication warning"));
     let mut unlimited = cleared;
     let window = &mut unlimited.providers[0].accounts[0].windows[0];
-    window.quota_state = UsageQuotaStateV1::NotApplicable;
+    window.quota_state = UsageQuotaStateV2::NotApplicable;
     window.value_label = "Independent unlimited quota".to_owned();
     window.remaining_percent = None;
     window.remaining_raw_percent = None;
@@ -2425,11 +2462,11 @@ fn empty_failed_publication_renders_diagnostics_in_both_panels() {
 
 #[test]
 fn canonical_refreshing_publication_keeps_loading_after_worker_completion() {
-    use jackin_protocol::usage_broker::UsageProjectionRefreshStateV1;
+    use jackin_protocol::usage_broker::UsageProjectionRefreshStateV2;
     let (mut projection, _) = metric_group_projection_fixture();
     projection.providers.clear();
     projection.issues.clear();
-    projection.refresh_state = UsageProjectionRefreshStateV1::Refreshing;
+    projection.refresh_state = UsageProjectionRefreshStateV2::Refreshing;
     let mut state = UsageScreenState::default();
     state.apply_refresh(
         UsageScreenState::from_projection(&projection),
@@ -2474,6 +2511,213 @@ fn filtered_accounts_cannot_hide_provider_publication_diagnostics() {
         rendered.contains("independent hidden-provider diagnostic"),
         "{rendered}"
     );
+}
+
+fn request_count_projection_fixture(
+    remaining: Option<u64>,
+    limit: Option<u64>,
+    value: &str,
+) -> jackin_protocol::usage_broker::UsageProjectionV2 {
+    use jackin_protocol::{
+        control::{CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit},
+        usage_broker::{UsageMetricGroupKindV2, UsageMetricPeriodV2, UsageMetricValueV2},
+    };
+    let count = CountQuota {
+        used: Some(500),
+        limit,
+        remaining,
+        unit: CountQuotaUnit::Requests,
+        period: CountQuotaPeriod::UtcDaily,
+        provenance: CountQuotaProvenance::ProviderReported,
+    };
+    let (mut projection, _) = metric_group_projection_fixture();
+    let account = &mut projection.providers[0].accounts[0];
+    account.issues.clear();
+    let window = &mut account.windows[0];
+    window.label = "Daily requests".to_owned();
+    window.value_label = value.to_owned();
+    window.remaining_percent = count
+        .remaining_percent()
+        .map(|p| jackin_protocol::usage_broker::UsagePercent::new(p).unwrap());
+    window.remaining_raw_percent = count.remaining_percent().map(i32::from);
+    window.used_percent = None;
+    window.used_raw_percent = None;
+    window.quota_state = match remaining {
+        Some(0) => UsageQuotaStateV2::Exhausted,
+        Some(_) => UsageQuotaStateV2::Available,
+        None => UsageQuotaStateV2::Unknown,
+    };
+    window.count_quota = Some(count.clone());
+    let mut group = metric_group_fixture(
+        "requests",
+        0,
+        UsageMetricGroupKindV2::Window,
+        "Daily requests",
+        UsageMetricValueV2::Window {
+            remaining_percent: window.remaining_percent,
+            remaining_raw_percent: window.remaining_raw_percent,
+            used_percent: None,
+            used_raw_percent: None,
+            period: UsageMetricPeriodV2::Calendar {
+                granularity: jackin_protocol::usage_broker::UsageCalendarPeriodV2::Daily,
+            },
+            unit: Some("requests".to_owned()),
+            count_quota: Some(count),
+        },
+        TEST_NOW_EPOCH,
+    );
+    group.quota_state = window.quota_state;
+    account.metric_groups = vec![group];
+    projection
+}
+
+#[test]
+fn typed_request_counts_survive_refresh_cache_and_both_panels() {
+    let projection =
+        request_count_projection_fixture(Some(500), Some(1000), "500/1000 requests left");
+    let publication = UsageScreenState::from_projection(&projection);
+    let mut state = UsageScreenState::default();
+    state.apply_refresh(publication.clone(), Instant::now());
+    let reopened = UsageScreenState::open_with_snapshot(publication);
+    assert_eq!(reopened.canonical_projection.as_ref(), Some(&projection));
+    assert_eq!(
+        state.accounts[0].windows[0]
+            .count_quota
+            .as_ref()
+            .unwrap()
+            .remaining,
+        Some(500)
+    );
+    assert_eq!(state.accounts[0].windows[0].meter_percent(), Some(50));
+    assert_eq!(state.accounts[0].metric_groups[0].meter_percent(), Some(50));
+    assert_eq!(
+        super::metric_group_value_summary(&state.accounts[0].metric_groups[0]).as_deref(),
+        Some("500 / 1000 requests used · 500 requests left · daily")
+    );
+    for rendered in [render_list_text(state), render_detail_text(reopened)] {
+        assert!(rendered.contains("500/1000 requests left"), "{rendered}");
+        assert!(!rendered.contains('$'), "{rendered}");
+        assert!(!rendered.contains("requests · requests"), "{rendered}");
+    }
+}
+
+#[test]
+fn unknown_request_remaining_renders_exact_count_without_fake_capacity() {
+    let projection = request_count_projection_fixture(None, Some(1000), "500/1000 requests used");
+    let state = UsageScreenState::from_projection(&projection);
+    assert_eq!(state.accounts[0].windows[0].meter_percent(), None);
+    assert_eq!(state.accounts[0].metric_groups[0].meter_percent(), None);
+    for rendered in [render_list_text(state.clone()), render_detail_text(state)] {
+        assert!(rendered.contains("500/1000 requests used"), "{rendered}");
+        assert!(
+            !rendered.contains("100%") && !rendered.contains('$'),
+            "{rendered}"
+        );
+        assert!(
+            !rendered.contains('█') && !rendered.contains('░'),
+            "{rendered}"
+        );
+    }
+}
+
+#[test]
+fn zero_request_cap_renders_exhausted_exact_count_without_fake_meter() {
+    let mut projection = request_count_projection_fixture(Some(0), Some(0), "0/0 requests left");
+    let account = &mut projection.providers[0].accounts[0];
+    account.windows[0].count_quota.as_mut().unwrap().used = Some(0);
+    if let jackin_protocol::usage_broker::UsageMetricValueV2::Window {
+        count_quota: Some(count),
+        ..
+    } = &mut account.metric_groups[0].value
+    {
+        count.used = Some(0);
+    }
+    let state = UsageScreenState::from_projection(&projection);
+    assert_eq!(state.accounts[0].windows[0].meter_percent(), None);
+    assert_eq!(state.accounts[0].metric_groups[0].meter_percent(), None);
+    for rendered in [render_list_text(state.clone()), render_detail_text(state)] {
+        assert!(rendered.contains("0/0 requests left"), "{rendered}");
+        assert!(rendered.contains("exhausted"), "{rendered}");
+        assert!(
+            !rendered.contains('█') && !rendered.contains('░'),
+            "{rendered}"
+        );
+    }
+}
+
+#[test]
+fn explicit_unknown_request_count_keeps_ranked_summary_without_fake_geometry() {
+    use jackin_protocol::control::CountQuotaPeriod;
+    let mut projection =
+        request_count_projection_fixture(None, None, "Request usage and limit unknown");
+    let principal = &mut projection.providers[0].accounts[0].windows[0];
+    principal.window_id = "unknown-requests".to_owned();
+    principal.category = UsageWindowCategoryV2::Other;
+    principal.rank = 0;
+    let count = principal.count_quota.as_mut().unwrap();
+    count.used = None;
+    count.period = CountQuotaPeriod::Unknown;
+    let original = UsageScreenState::from_projection(&projection);
+    assert_eq!(
+        original.accounts[0].summary_window().unwrap().window_id,
+        "unknown-requests"
+    );
+    assert_eq!(
+        original.accounts[0]
+            .summary_window()
+            .unwrap()
+            .meter_percent(),
+        None
+    );
+    let mut percentage = projection.providers[0].accounts[0].windows[0].clone();
+    percentage.window_id = "percentage".to_owned();
+    percentage.value_label = "percentage value".to_owned();
+    percentage.count_quota = None;
+    percentage.remaining_percent =
+        Some(jackin_protocol::usage_broker::UsagePercent::new(77).unwrap());
+    percentage.remaining_raw_percent = Some(77);
+    percentage.quota_state = UsageQuotaStateV2::Available;
+    percentage.rank = 1;
+    projection.providers[0].accounts[0].windows.push(percentage);
+    let with_sibling = UsageScreenState::from_projection(&projection);
+    assert_eq!(
+        with_sibling.accounts[0].summary_window().unwrap().window_id,
+        "unknown-requests"
+    );
+    for state in [original, with_sibling] {
+        let rendered = render_list_text(state);
+        assert!(
+            rendered.contains("Request usage and limit unknown"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("percentage value"), "{rendered}");
+        assert!(
+            !rendered.contains('█') && !rendered.contains('░'),
+            "{rendered}"
+        );
+    }
+}
+
+#[test]
+fn absent_spend_cap_renders_unknown_instead_of_unlimited() {
+    use jackin_protocol::{
+        control::Money,
+        usage_broker::UsageMetricValueV2,
+    };
+    for (spent, expected) in [
+        (None, "cap unknown"),
+        (Some(Money::new(5_331, "USD", 2)), "cap unknown · spent $53.31"),
+    ] {
+        let (mut projection, _) = metric_group_projection_fixture();
+        let group = &mut projection.providers[0].accounts[0].metric_groups[1];
+        group.value = UsageMetricValueV2::SpendCap { cap: None, spent, remaining: None };
+        group.quota_state = UsageQuotaStateV2::Unknown;
+        let state = UsageScreenState::from_projection(&projection);
+        assert_eq!(super::metric_group_value_summary(&state.accounts[0].metric_groups[1]).as_deref(), Some(expected));
+        let rendered = render_detail_text(state);
+        assert!(rendered.contains(expected), "{rendered}");
+        assert!(!rendered.contains("uncapped"), "{rendered}");
+    }
 }
 
 fn assert_manual_refresh_join_preserves_periodic_cadence(

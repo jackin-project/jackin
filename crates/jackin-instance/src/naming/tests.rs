@@ -48,32 +48,6 @@ fn long_container_name_fits_dind_dns_budget() {
 }
 
 #[test]
-fn class_family_matches_new_unique_names_by_visible_role_component() {
-    let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
-
-    assert!(class_family_matches(
-        &selector,
-        "jk-k7p9m2xq-chainargosproject-agentbrown"
-    ));
-    assert!(!class_family_matches(
-        &selector,
-        "jk-k7p9m2xq-chainargosproject-agentblue"
-    ));
-}
-
-#[test]
-fn class_family_matches_distinguishes_role_substrings() {
-    // A role named `brown` must not match a container whose role
-    // component is `agentbrown` (the longer name happens to end
-    // in `brown`). Important for `purge_class_data` blast radius.
-    let brown = RoleSelector::new(None, "brown");
-    assert!(!class_family_matches(&brown, "jk-k7p9m2xq-agentbrown",));
-    let agentbrown = RoleSelector::new(None, "agentbrown");
-    assert!(!class_family_matches(&agentbrown, "jk-k7p9m2xq-brown",));
-    assert!(class_family_matches(&agentbrown, "jk-k7p9m2xq-agentbrown",));
-}
-
-#[test]
 fn instance_id_from_container_base_extracts_second_component() {
     assert_eq!(
         instance_id_from_container_base("jk-k7p9m2xq-workspace-agentsmith"),
@@ -85,20 +59,6 @@ fn instance_id_from_container_base_extracts_second_component() {
     );
     assert_eq!(instance_id_from_container_base("nojkprefix-k7p9m2xq"), None);
     assert_eq!(instance_id_from_container_base("jk-noid"), None);
-}
-
-#[test]
-fn class_family_matches_workspace_and_adhoc_for_same_selector() {
-    // A single role selector must match both a workspace-scoped container
-    // (jk-<id>-<ws>-<role>) and an ad-hoc container (jk-<id>-<role>).
-    // The rsplit_once fallback path handles the no-workspace case.
-    let selector = RoleSelector::new(None, "agent-smith");
-    assert!(class_family_matches(&selector, "jk-k7p9m2xq-agentsmith")); // ad-hoc
-    assert!(class_family_matches(
-        &selector,
-        "jk-k7p9m2xq-myproject-agentsmith" // workspace-scoped
-    ));
-    assert!(!class_family_matches(&selector, "jk-k7p9m2xq-agentbrown"));
 }
 
 #[test]

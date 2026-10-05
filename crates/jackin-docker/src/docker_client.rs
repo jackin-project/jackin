@@ -10,7 +10,7 @@
 //! Not responsible for: subprocess-level `docker` CLI invocations
 //! (`shell_runner.rs`), or the launch pipeline orchestration.
 
-use std::{collections::HashMap, ffi::OsStr, future::Future, sync::OnceLock};
+use std::{collections::HashMap, ffi::OsStr, future::Future, path::PathBuf, sync::OnceLock};
 
 use crate::DockerError;
 use anyhow::Context;
@@ -19,7 +19,7 @@ use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
     ContainerCreateBody, ContainerInspectResponse, ContainerStateStatusEnum, HostConfig,
-    NetworkCreateRequest, ResourcesUlimits,
+    NetworkCreateRequest, ResourcesUlimits, VolumeCreateRequest,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, InspectContainerOptions, ListContainersOptions, ListImagesOptions,
@@ -29,8 +29,9 @@ use bollard::query_parameters::{
 use futures_util::StreamExt;
 
 pub use jackin_core::{
-    ContainerHandle, ContainerInspection, ContainerRow, ContainerSpec, ContainerState, DockerApi,
-    NetworkRow, RemoveImageOutcome,
+    ContainerHandle, ContainerInspection, ContainerRow, ContainerSpec, ContainerState, DaemonServerId, DockerApi,
+    ControllerEndpoint, ControllerTlsFiles,
+    NetworkId, NetworkRow, RemoveImageOutcome, VolumeRow,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,12 +47,15 @@ impl DockerRoute {
 }
 
 const PING: DockerRoute = DockerRoute::new("GET", "/_ping");
+const INFO: DockerRoute = DockerRoute::new("GET", "/info");
 const CONTAINER_INSPECT: DockerRoute = DockerRoute::new("GET", "/containers/{id}/json");
 const CONTAINER_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/containers/{id}");
 const CONTAINER_LIST: DockerRoute = DockerRoute::new("GET", "/containers/json");
 const CONTAINER_CREATE: DockerRoute = DockerRoute::new("POST", "/containers/create");
 const CONTAINER_START: DockerRoute = DockerRoute::new("POST", "/containers/{id}/start");
 const VOLUME_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/volumes/{name}");
+const VOLUME_CREATE: DockerRoute = DockerRoute::new("POST", "/volumes/create");
+const VOLUME_INSPECT: DockerRoute = DockerRoute::new("GET", "/volumes/{name}");
 const NETWORK_CREATE: DockerRoute = DockerRoute::new("POST", "/networks/create");
 const NETWORK_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/networks/{id}");
 const NETWORK_LIST: DockerRoute = DockerRoute::new("GET", "/networks");
@@ -119,13 +123,14 @@ async fn consume_exec_start(container: &str, start: StartExecResults) -> anyhow:
 #[derive(Debug)]
 pub struct BollardDockerClient {
     inner: Docker,
+    endpoint: ControllerEndpoint,
 }
 
 impl BollardDockerClient {
     pub fn connect() -> anyhow::Result<Self> {
-        let inner =
+        let (inner, endpoint) =
             connect_to_cli_docker_context().context("failed to connect to Docker daemon")?;
-        Ok(Self { inner })
+        Ok(Self { inner, endpoint })
     }
 }
 
@@ -248,24 +253,125 @@ struct DockerContextEndpointInspect {
 /// Deliberately uses `std::process::Command` instead of `ShellRunner::capture`:
 /// `connect()` is sync and called from `std::thread::scope` before any tokio
 /// runtime exists, while `ShellRunner` wraps `tokio::process::Command`.
-fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
-    let env_set = docker_host_env_is_set();
+fn connect_to_cli_docker_context() -> anyhow::Result<(Docker, ControllerEndpoint)> {
+    let host_env = std::env::var_os("DOCKER_HOST");
+    let env_set = docker_host_env_is_set_from(host_env.as_deref());
     // Skip the subprocess when DOCKER_HOST already wins per Docker CLI precedence.
     let ctx_endpoint = if env_set {
         None
     } else {
         cached_context_endpoint()
     };
-    match choose_connection(env_set, ctx_endpoint) {
-        ConnectionChoice::Defaults => {
-            Docker::connect_with_defaults().context("connect to Docker daemon via bollard defaults")
-        }
-        ConnectionChoice::Host(host) => Docker::connect_with_host(&host)
-            .with_context(|| format!("connect to Docker host {host}")),
+    let host = match choose_connection(env_set, ctx_endpoint) {
+        ConnectionChoice::Defaults if env_set => host_env
+            .and_then(|host| host.into_string().ok())
+            .context("DOCKER_HOST contains non-UTF-8 bytes")?,
+        ConnectionChoice::Defaults => default_controller_host().to_owned(),
+        ConnectionChoice::Host(host) => host,
         ConnectionChoice::Unsupported { reason, host } => {
-            Err(DockerError::Message(ConnectionChoice::unsupported_message(&reason, &host)).into())
+            return Err(DockerError::Message(ConnectionChoice::unsupported_message(&reason, &host)).into());
         }
+    };
+    let tls_requested = std::env::var("DOCKER_TLS_VERIFY").is_ok() || host.starts_with("https://");
+    let cert_directory = if tls_requested && !host.starts_with("unix://") {
+        Some(captured_docker_cert_directory()?)
+    } else {
+        None
+    };
+    let endpoint = capture_controller_endpoint(&host, tls_requested, cert_directory)?;
+    let inner = connect_captured_endpoint(&endpoint)?;
+    Ok((inner, endpoint))
+}
+
+fn captured_docker_cert_directory() -> anyhow::Result<PathBuf> {
+    let directory = match std::env::var("DOCKER_CERT_PATH")
+        .or_else(|_| std::env::var("DOCKER_CONFIG"))
+    {
+        Ok(path) => PathBuf::from(path),
+        Err(_) => jackin_core::JackinPaths::detect()?.home_dir.join(".docker"),
+    };
+    if directory.is_absolute() {
+        Ok(directory)
+    } else {
+        Ok(std::env::current_dir()?.join(directory))
     }
+}
+
+const fn default_controller_host() -> &'static str {
+    #[cfg(windows)]
+    { "npipe:////./pipe/docker_engine" }
+    #[cfg(not(windows))]
+    { "unix:///var/run/docker.sock" }
+}
+
+fn capture_controller_endpoint(
+    host: &str,
+    tls_requested: bool,
+    cert_directory: Option<PathBuf>,
+) -> anyhow::Result<ControllerEndpoint> {
+    let tls_requested = tls_requested || host.starts_with("https://");
+    if let Some(socket) = host.strip_prefix("unix://") {
+        let socket = PathBuf::from(socket);
+        anyhow::ensure!(socket.is_absolute(), "Docker Unix socket path must be absolute");
+        return Ok(ControllerEndpoint::Unix { socket });
+    }
+    #[cfg(windows)]
+    if host.starts_with("npipe://") {
+        return Ok(ControllerEndpoint::NamedPipe { pipe: host.to_owned() });
+    }
+    anyhow::ensure!(
+        host.starts_with("tcp://") || host.starts_with("http://") || host.starts_with("https://"),
+        "unsupported Docker controller URI: {host}"
+    );
+    let url = reqwest::Url::parse(&host.replacen("tcp://", "http://", 1))?;
+    anyhow::ensure!(
+        url.host_str().is_some() && url.username().is_empty() && url.password().is_none()
+            && url.query().is_none() && url.fragment().is_none() && matches!(url.path(), "" | "/"),
+        "Docker controller URI must contain only a network authority"
+    );
+    let tls = if tls_requested {
+        let directory = cert_directory.context("Docker TLS certificate directory was not captured")?;
+        anyhow::ensure!(directory.is_absolute(), "Docker TLS certificate directory must be absolute");
+        Some(ControllerTlsFiles {
+            key: directory.join("key.pem"),
+            cert: directory.join("cert.pem"),
+            ca: directory.join("ca.pem"),
+        })
+    } else {
+        None
+    };
+    let authority = host.replacen("http://", "tcp://", 1).replacen("https://", "tcp://", 1);
+    Ok(ControllerEndpoint::Tcp { authority, tls })
+}
+
+#[cfg(unix)]
+fn captured_unix_connector_address(socket: &std::path::Path) -> anyhow::Result<String> {
+    // Bollard removes the first `unix://` occurrence, even inside a raw path.
+    // Supply our own prefix so the captured path remains byte-for-byte intact.
+    Ok(format!(
+        "unix://{}",
+        socket.to_str().context("Docker socket contains non-UTF-8 bytes")?
+    ))
+}
+
+fn connect_captured_endpoint(endpoint: &ControllerEndpoint) -> anyhow::Result<Docker> {
+    const TIMEOUT: u64 = 120;
+    let version = bollard::API_DEFAULT_VERSION;
+    let inner = match endpoint {
+        #[cfg(unix)]
+        ControllerEndpoint::Unix { socket } => Docker::connect_with_unix(
+            &captured_unix_connector_address(socket)?, TIMEOUT, version
+        ),
+        #[cfg(not(unix))]
+        ControllerEndpoint::Unix { .. } => anyhow::bail!("Unix Docker sockets are unsupported on this host"),
+        ControllerEndpoint::Tcp { authority, tls: None } => Docker::connect_with_http(authority, TIMEOUT, version),
+        ControllerEndpoint::Tcp { authority, tls: Some(tls) } => Docker::connect_with_ssl(
+            authority, &tls.key, &tls.cert, &tls.ca, TIMEOUT, version
+        ),
+        #[cfg(windows)]
+        ControllerEndpoint::NamedPipe { pipe } => Docker::connect_with_named_pipe(pipe, TIMEOUT, version),
+    };
+    inner.context("connect to captured Docker controller endpoint")
 }
 
 fn choose_connection(
@@ -279,10 +385,6 @@ fn choose_connection(
         ConnectionChoice::Defaults,
         DockerContextEndpoint::connection_choice,
     )
-}
-
-fn docker_host_env_is_set() -> bool {
-    docker_host_env_is_set_from(std::env::var_os("DOCKER_HOST").as_deref())
 }
 
 /// Docker CLI treats an empty `DOCKER_HOST=` as unset and falls through to the
@@ -377,6 +479,39 @@ fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<Stri
     Some(map)
 }
 
+fn authenticated_container_init_pid(
+    info: &ContainerInspectResponse,
+    expected: &ContainerHandle,
+) -> anyhow::Result<u32> {
+    ensure_container_identity(info, expected)?;
+    let state = info.state.as_ref().context("runtime container state is unavailable")?;
+    anyhow::ensure!(state.running == Some(true)
+        && state.status == Some(ContainerStateStatusEnum::RUNNING),
+        "credential relay requires a running container");
+    let pid = state.pid.context("runtime container init PID is unavailable")?;
+    let pid = u32::try_from(pid).context("runtime container init PID is invalid")?;
+    anyhow::ensure!(pid > 0, "runtime container init PID is unavailable");
+    Ok(pid)
+}
+
+fn ensure_container_identity(
+    info: &ContainerInspectResponse,
+    expected: &ContainerHandle,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        info.id.as_deref() == Some(expected.id()),
+        "Docker returned a different container ID for {}",
+        expected.name()
+    );
+    let actual_name = info.name.as_deref().unwrap_or_default().trim_start_matches('/');
+    anyhow::ensure!(
+        actual_name == expected.name(),
+        "Docker returned a different container name for {}",
+        expected.name()
+    );
+    Ok(())
+}
+
 fn container_state_from_inspect(info: &ContainerInspectResponse) -> ContainerState {
     let Some(state) = info.state.as_ref() else {
         return ContainerState::InspectUnavailable("no state field".to_owned());
@@ -406,6 +541,17 @@ fn container_state_from_inspect(info: &ContainerInspectResponse) -> ContainerSta
 }
 
 impl DockerApi for BollardDockerClient {
+    fn controller_endpoint(&self) -> &ControllerEndpoint {
+        &self.endpoint
+    }
+    async fn daemon_server_id(&self) -> anyhow::Result<DaemonServerId> {
+        docker_http(INFO, async {
+            let info = self.inner.info().await.context("reading Docker daemon server identity")?;
+            let id = info.id.context("Docker /info response is missing the server ID")?;
+            DaemonServerId::parse(&id).context("validating Docker daemon server identity")
+        }).await
+    }
+
     async fn ping(&self) -> anyhow::Result<()> {
         let connection_attrs = [jackin_telemetry::Attr {
             key: jackin_telemetry::schema::attrs::CONNECTION_PEER_TYPE,
@@ -457,12 +603,15 @@ impl DockerApi for BollardDockerClient {
             },
             Ok(info) => {
                 let state = container_state_from_inspect(&info);
-                let handle = info
-                    .id
-                    .filter(|id| !id.is_empty())
+                let id = info.id.as_deref();
+                let actual_name = info.name.as_deref().unwrap_or_default().trim_start_matches('/');
+                let handle = id
+                    .filter(|_| actual_name == name)
                     .and_then(|id| ContainerHandle::new(name, id).ok());
                 let state = if handle.is_none() {
-                    ContainerState::InspectUnavailable("no container ID field".to_owned())
+                    ContainerState::InspectUnavailable(
+                        "container name or full ID did not match the requested identity".to_owned(),
+                    )
                 } else {
                     state
                 };
@@ -490,7 +639,10 @@ impl DockerApi for BollardDockerClient {
         let state = match result {
             Err(ref e) if is_http_status(e, 404) => ContainerState::NotFound,
             Err(e) => ContainerState::InspectUnavailable(e.to_string()),
-            Ok(info) => container_state_from_inspect(&info),
+            Ok(info) => match ensure_container_identity(&info, container) {
+                Ok(()) => container_state_from_inspect(&info),
+                Err(error) => ContainerState::InspectUnavailable(error.to_string()),
+            },
         };
         let failed = matches!(state, ContainerState::InspectUnavailable(_));
         operation.complete(
@@ -504,8 +656,25 @@ impl DockerApi for BollardDockerClient {
         state
     }
 
+    async fn container_init_pid_by_id(&self, container: &ContainerHandle) -> anyhow::Result<u32> {
+        docker_http(CONTAINER_INSPECT, async {
+            let info = self.inner
+                .inspect_container(container.id(), None::<InspectContainerOptions>)
+                .await?;
+            authenticated_container_init_pid(&info, container)
+        }).await
+    }
+
     async fn remove_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
         docker_http(CONTAINER_REMOVE, async {
+            match self.inner.inspect_container(container.id(), None::<InspectContainerOptions>).await {
+                Ok(info) => ensure_container_identity(&info, container)?,
+                Err(error) if is_http_status(&error, 404) => return Ok(()),
+                Err(error) => return Err(anyhow::Error::from(error).context(format!(
+                    "verifying container {} ({}) before removal",
+                    container.name(), container.id()
+                ))),
+            }
             match self
                 .inner
                 .remove_container(
@@ -517,13 +686,20 @@ impl DockerApi for BollardDockerClient {
                 )
                 .await
             {
-                Ok(()) => Ok(()),
-                Err(e) if is_http_status(&e, 404) => Ok(()),
+                Ok(()) => {}
+                Err(e) if is_http_status(&e, 404) => {}
                 Err(e) => Err(anyhow::Error::from(e).context(format!(
                     "removing container {} ({})",
                     container.name(),
                     container.id()
-                ))),
+                )))?,
+            }
+            match self.inspect_container_by_id(container).await {
+                ContainerState::NotFound => Ok(()),
+                state => anyhow::bail!(
+                    "Docker container {} ({}) remains or became ambiguous after removal: {}",
+                    container.name(), container.id(), state.inspect_label()
+                ),
             }
         })
         .await
@@ -652,6 +828,11 @@ impl DockerApi for BollardDockerClient {
 
     async fn start_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
         docker_http(CONTAINER_START, async {
+            let info = self.inner
+                .inspect_container(container.id(), None::<InspectContainerOptions>)
+                .await
+                .with_context(|| format!("verifying container {} ({}) before start", container.name(), container.id()))?;
+            ensure_container_identity(&info, container)?;
             self.inner
                 .start_container(container.id(), None::<StartContainerOptions>)
                 .await
@@ -666,6 +847,38 @@ impl DockerApi for BollardDockerClient {
         .await
     }
 
+    async fn create_volume(
+        &self,
+        name: &str,
+        labels: HashMap<String, String>,
+    ) -> anyhow::Result<VolumeRow> {
+        docker_http(VOLUME_CREATE, async {
+            let volume = self.inner.create_volume(VolumeCreateRequest {
+                name: Some(name.to_owned()),
+                driver: Some("local".to_owned()),
+                labels: Some(labels.clone()),
+                ..Default::default()
+            }).await.with_context(|| format!("creating volume {name}"))?;
+            anyhow::ensure!(volume.name == name, "Docker returned a different volume name for {name}");
+            anyhow::ensure!(volume.labels == labels, "volume {name} returned different ownership labels");
+            anyhow::ensure!(volume.driver == "local", "volume {name} returned a different storage driver");
+            Ok(VolumeRow { name: volume.name, labels: volume.labels, driver: volume.driver })
+        }).await
+    }
+
+    async fn inspect_volume_by_name(&self, name: &str) -> anyhow::Result<Option<VolumeRow>> {
+        docker_http(VOLUME_INSPECT, async {
+            match self.inner.inspect_volume(name).await {
+                Ok(volume) => {
+                    anyhow::ensure!(volume.name == name, "Docker returned a different volume name for {name}");
+                    Ok(Some(VolumeRow { name: volume.name, labels: volume.labels, driver: volume.driver }))
+                }
+                Err(e) if is_http_status(&e, 404) => Ok(None),
+                Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting volume {name}"))),
+            }
+        }).await
+    }
+
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
         docker_http(VOLUME_REMOVE, async {
             match self
@@ -678,7 +891,10 @@ impl DockerApi for BollardDockerClient {
                 Err(e) => Err(anyhow::Error::from(e).context(format!("removing volume {name}"))),
             }
         })
-        .await
+        .await?;
+        anyhow::ensure!(self.inspect_volume_by_name(name).await?.is_none(),
+            "Docker volume {name} remains after removal");
+        Ok(())
     }
 
     async fn create_network(
@@ -686,9 +902,9 @@ impl DockerApi for BollardDockerClient {
         name: &str,
         labels: HashMap<String, String>,
         internal: bool,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<NetworkId> {
         docker_http(NETWORK_CREATE, async {
-            self.inner
+            let created = self.inner
                 .create_network(NetworkCreateRequest {
                     name: name.to_owned(),
                     labels: Some(labels),
@@ -697,18 +913,30 @@ impl DockerApi for BollardDockerClient {
                 })
                 .await
                 .with_context(|| format!("creating network {name}"))?;
-            Ok(())
+            NetworkId::parse(&created.id).context("validating created network identity")
         })
         .await
     }
 
-    async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
+    async fn remove_network_by_id(&self, id: &NetworkId) -> anyhow::Result<()> {
+        // Docker accepts either an ID or name. Preflight catches a current
+        // same-string name collision; Engine exposes no conditional ID-only
+        // delete, so a race remains between this check and the delete request.
+        let Some(row) = self.inspect_network_by_id(id).await? else {
+            return Ok(());
+        };
+        anyhow::ensure!(&row.id == id, "Docker network identity is ambiguous for {id}");
         docker_http(NETWORK_REMOVE, async {
-            match self.inner.remove_network(name).await {
-                Ok(()) => Ok(()),
-                Err(e) if is_http_status(&e, 404) => Ok(()),
-                Err(e) => Err(anyhow::Error::from(e).context(format!("removing network {name}"))),
+            match self.inner.remove_network(id.as_str()).await {
+                Ok(()) => {},
+                Err(e) if is_http_status(&e, 404) => {},
+                Err(e) => return Err(anyhow::Error::from(e).context(format!("removing network {id}"))),
             }
+            anyhow::ensure!(
+                self.inspect_network_by_id(id).await?.is_none(),
+                "Docker network {id} remains after removal"
+            );
+            Ok(())
         })
         .await
     }
@@ -722,14 +950,15 @@ impl DockerApi for BollardDockerClient {
                 .await
                 .context("listing networks")?;
 
-            Ok(networks
+            networks
                 .into_iter()
-                .filter_map(|n| {
-                    let name = n.name?;
+                .map(|n| {
+                    let name = n.name.context("listed network is missing its name")?;
+                    let id = NetworkId::parse(&n.id.context("listed network is missing its ID")?)?;
                     let labels = n.labels.unwrap_or_default();
-                    Some(NetworkRow { name, labels })
+                    Ok(NetworkRow { id, name, labels })
                 })
-                .collect())
+                .collect()
         })
         .await
     }
@@ -882,7 +1111,7 @@ impl DockerApi for BollardDockerClient {
         Ok(output_buf.trim().to_owned())
     }
 
-    async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
+    async fn inspect_network_by_name(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
         docker_http(NETWORK_INSPECT, async {
             match self
                 .inner
@@ -893,9 +1122,11 @@ impl DockerApi for BollardDockerClient {
                 .await
             {
                 Ok(n) => {
-                    let net_name = n.name.unwrap_or_else(|| name.to_owned());
+                    let id = NetworkId::parse(&n.id.context("inspected network is missing its ID")?)?;
+                    let net_name = n.name.context("inspected network is missing its name")?;
                     let labels = n.labels.unwrap_or_default();
                     Ok(Some(NetworkRow {
+                        id,
                         name: net_name,
                         labels,
                     }))
@@ -905,6 +1136,14 @@ impl DockerApi for BollardDockerClient {
             }
         })
         .await
+    }
+
+    async fn inspect_network_by_id(&self, id: &NetworkId) -> anyhow::Result<Option<NetworkRow>> {
+        let row = self.inspect_network_by_name(id.as_str()).await?;
+        if let Some(row) = &row {
+            anyhow::ensure!(&row.id == id, "Docker returned a different network ID for {id}");
+        }
+        Ok(row)
     }
 }
 

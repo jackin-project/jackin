@@ -9,14 +9,14 @@ jackin❯ uses a terminal-native wordmark: the lowercase monospace word `jackin`
 
 ## One source of truth
 
-The mark is **generated**, never hand-drawn. Its geometry lives in exactly one place — <RepoFile path="docs/scripts/brand-geometry.ts" /> — and every surface is emitted from it by <RepoFile path="docs/scripts/gen-brand.ts" />:
+The mark is **generated**, never hand-drawn. The shared chevron geometry lives in <RepoFile path="docs/scripts/brand-geometry.ts" />. <RepoFile path="docs/scripts/brand-outline.ts" /> owns font outlining; <RepoFile path="docs/scripts/gen-brand.ts" /> emits canonical logo and icon assets, and <RepoFile path="docs/scripts/gen-og.ts" /> composes social cards and the README hero:
 
 ```sh
 bun run gen-brand   # DOM lockup, favicon(.svg/.ico), app icons, manifest, wordmark/monogram SVG+PNG
 bun run gen-og      # social cards + README hero (chevron from the same geometry)
 ```
 
-Never redraw the word or chevron by hand in a component, SVG, or script. To change the logo, edit `brand-geometry.ts` and regenerate — the change then propagates everywhere at once. Adding a color style or glyph variant is a new entry in `gen-brand.ts`'s `STYLES` / `VARIANTS`.
+Never redraw the word or chevron by hand in a component, SVG, or script. To change the shared chevron, edit `brand-geometry.ts` and regenerate both asset families. Word outlines, byline placement, and card composition are owned by the corresponding outline or generator recipe. Adding a color style or glyph variant is a new entry in `gen-brand.ts`'s `STYLES` / `VARIANTS`.
 
 ## Text Forms
 
@@ -33,7 +33,9 @@ Literal commands, binaries, crates, packages, environment variables, config keys
 
 ## Logo Lockup
 
-The wordmark is white `jackin` (JetBrains Mono Bold, outlined) + the green `❯` chevron, with a small grey `by tailrocks` byline centered beneath it. The byline is set in **Inter** (a sans subtext, not the mono mark face), `#9ca8a1`, and is part of the canonical wordmark — so it appears on every logo placement. The compact `j❯` monogram (square icons) omits the byline. Do not append `by tailrocks` to ordinary prose, command examples, package names, or code identifiers.
+The wordmark is white `jackin` (JetBrains Mono Bold, outlined) + the green `❯` chevron, with a small grey `by tailrocks` byline tucked beneath the letters. Its right ink edge aligns with the right ink edge of the final `n`, excluding the chevron. The byline is set in **Inter**, outlined in canonical SVG assets, at 28% of the word size and `#9ca8a1` on dark surfaces. It is part of every full canonical wordmark; the light variant uses a dark word and darker byline with the same green chevron. The compact `j❯` monogram (square icons) omits the byline. Do not append `by tailrocks` to ordinary prose, command examples, package names, or code identifiers.
+
+The social and README raster cards use their own composition recipe with an Inter byline. The static README hero SVG also outlines its Inter byline, centered within the banner composition. The canonical wordmark instead aligns its byline to the final letter’s right ink edge. Banner and wordmark layout recipes are distinct; all full-logo bylines use Inter.
 
 ## Color
 
@@ -48,7 +50,7 @@ The wordmark has a transparent background — no block. Square caps only: termin
 
 ## Type
 
-The mark uses **JetBrains Mono Bold**. In every generated asset the word is **outlined to vector paths** — never SVG `<text>` — so the logo is font-independent and renders identically as inline SVG, `<img>`, background, or raster. Supporting prose uses Inter or the system sans-serif stack.
+The mark uses **JetBrains Mono Bold**. Canonical logo SVGs render the word and Inter byline as **outlined vector paths**, so those assets do not depend on a loaded webfont. PNG logos and social cards embed their font data during raster generation. The README hero SVG outlines its main word and Inter byline; its decorative rain remains SVG `<text>`. Supporting prose uses Inter or the system sans-serif stack.
 
 ## Terminal Prompt
 
@@ -76,4 +78,4 @@ Committed brand assets live under `docs/public/`, all produced by the generators
 | `og-image.png` / `og-image-github.png` | dark social cards with the full lockup |
 | `readme-hero.svg` / `readme-hero.png` | static README hero banner |
 
-Regenerate the logo and icons with `bun run gen-brand`; regenerate social and README images with `bun run gen-og`. Both read `brand-geometry.ts`, so the mark stays identical across every surface.
+Regenerate the logo and icons with `bun run gen-brand`; regenerate social and README images with `bun run gen-og`. Both read `brand-geometry.ts` for the shared chevron; each generator owns the remaining asset layout.

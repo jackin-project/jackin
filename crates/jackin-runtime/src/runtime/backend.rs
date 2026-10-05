@@ -157,15 +157,17 @@ impl<C> ContainerBackend for AppleContainerBackend<C>
 where
     C: AppleContainerApi,
 {
-    async fn eject(&self, _paths: &JackinPaths, container_name: &str) -> Result<()> {
+    async fn eject(&self, paths: &JackinPaths, container_name: &str) -> Result<()> {
+        crate::runtime::apple_container::require_persisted_apple_authority(paths, container_name)?;
         crate::runtime::apple_container::stop_with(&self.client, container_name).await
     }
 
     async fn ensure_absent_for_purge(
         &self,
-        _paths: &JackinPaths,
+        paths: &JackinPaths,
         container_name: &str,
     ) -> Result<()> {
+        crate::runtime::apple_container::require_persisted_apple_authority(paths, container_name)?;
         crate::runtime::apple_container::ensure_absent_for_purge_with(&self.client, container_name)
             .await
     }

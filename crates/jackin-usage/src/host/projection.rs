@@ -9,16 +9,17 @@ use icu_collator::{Collator, options::CollatorOptions, options::Strength};
 use icu_locale::Locale;
 use jackin_core::account_key_hash;
 use jackin_protocol::control::{
-    Money, QuotaBucketView, StatusSlot, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
+    CountQuotaPeriod, Money, QuotaBucketView, StatusSlot, UsageConfidence, UsageSeverity,
+    UsageSnapshotStatus,
 };
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageAccountV1, UsageCalendarPeriodV1, UsageFreshnessPhaseV1,
-    UsageFreshnessV1, UsageGenerationView, UsageIdentityKindV1, UsageIssueRecoverabilityV1,
-    UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1,
-    UsageMetricGroupKindV1, UsageMetricGroupV1, UsageMetricPeriodV1, UsageMetricScopeV1,
-    UsageMetricValueV1, UsagePercent, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
-    UsageProjectionV1, UsageProviderV1, UsageQuotaStateV1, UsageUnresolvedV1,
-    UsageWindowCategoryV1,
+    UsageAccountCapability, UsageAccountV2, UsageCalendarPeriodV2, UsageFreshnessPhaseV2,
+    UsageFreshnessV2, UsageGenerationView, UsageIdentityKindV2, UsageIssueRecoverabilityV2,
+    UsageIssueScopeV2, UsageIssueV2, UsageLifecycleV2, UsageLimitWindowV2, UsageMembershipStateV2,
+    UsageMetricGroupKindV2, UsageMetricGroupV2, UsageMetricPeriodV2, UsageMetricScopeV2,
+    UsageMetricValueV2, UsagePercent, UsageProjectionRefreshStateV2, UsageProjectionSchemaV2,
+    UsageProjectionV2, UsageProviderV2, UsageQuotaStateV2, UsageUnresolvedV2,
+    UsageWindowCategoryV2,
 };
 
 use super::accounts::{AccountCatalog, AccountCatalogEntry, CanonicalAccountSubject};
@@ -57,7 +58,7 @@ pub struct NormalizedUsageDestination {
 /// Preserve a stable destination or return honestly to Overview when removed.
 #[must_use]
 pub fn normalize_destination(
-    projection: &UsageProjectionV1,
+    projection: &UsageProjectionV2,
     requested: &UsageDestination,
 ) -> NormalizedUsageDestination {
     let valid = match requested {
@@ -71,7 +72,6 @@ pub fn normalize_destination(
             canonical_account_id,
         } => projection.providers.iter().any(|provider| {
             provider.provider_id == *provider_id
-                && provider.accounts.len() > 1
                 && provider
                     .accounts
                     .iter()
@@ -92,9 +92,15 @@ pub fn normalize_destination(
 }
 
 impl HostUsageRuntime {
-    /// Build the immutable surface-neutral V1 publication from current discovery.
-    pub fn canonical_projection(&mut self, locale: &str) -> Result<UsageProjectionV1, String> {
+    /// Build the immutable surface-neutral V2 publication from current discovery.
+    pub fn canonical_projection(&mut self, locale: &str) -> Result<UsageProjectionV2, String> {
         self.require_open()?;
+        let generation = super::broker::publish::next_publication_generation(
+            self.canonical_projection_cache
+                .as_ref()
+                .map_or(0, |projection| projection.broker_generation),
+        )
+        .map_err(|error| error.message)?;
         let aliases = self
             .discovery
             .as_ref()
@@ -134,12 +140,6 @@ impl HostUsageRuntime {
                 .clone()
                 .ok_or_else(|| "canonical usage projection cache missing".to_owned());
         }
-        let generation = self
-            .canonical_projection_cache
-            .as_ref()
-            .map_or(1, |projection| {
-                projection.broker_generation.saturating_add(1)
-            });
         let projection_id = format!("{}:{generation:020}", self.canonical_instance_id);
         let projection = build_canonical_projection(
             &catalog,
@@ -165,7 +165,7 @@ pub(super) fn build_canonical_projection(
     discovery: &ValidatedUsageDiscovery,
     broker_generations: &BTreeMap<UsageAccountCapability, UsageGenerationView>,
     metadata: ProjectionMetadata<'_>,
-) -> Result<UsageProjectionV1, String> {
+) -> Result<UsageProjectionV2, String> {
     let locale = metadata
         .locale
         .parse::<Locale>()
@@ -185,6 +185,10 @@ pub(super) fn build_canonical_projection(
                 account,
             )
         })
+        .collect::<BTreeMap<_, _>>();
+    let accepted_catalog = super::broker::usage_catalog_entries(discovery)
+        .into_iter()
+        .map(|entry| (entry.capability.clone(), entry))
         .collect::<BTreeMap<_, _>>();
     let mut providers = Vec::new();
     for surface in HostSurfaceId::ALL.iter().copied() {
@@ -211,7 +215,7 @@ pub(super) fn build_canonical_projection(
             .diagnostics
             .iter()
             .filter(|diagnostic| diagnostic.surface_id.as_deref() == Some(surface.id()))
-            .map(|diagnostic| discovery_issue(diagnostic.issue, UsageIssueScopeV1::Provider))
+            .map(|diagnostic| discovery_issue(diagnostic.issue, UsageIssueScopeV2::Provider))
             .collect::<Vec<_>>();
         if entries.is_empty() && unresolved == 0 && issues.is_empty() {
             continue;
@@ -220,20 +224,115 @@ pub(super) fn build_canonical_projection(
             .into_iter()
             .enumerate()
             .map(|(rank, entry)| {
-                let mut account = project_account(entry, rank, metadata.broker_generation)?;
-                let broker_state = discovery
+                let refresh_capabilities = discovery
                     .bindings
                     .iter()
-                    .find(|binding| binding.identity.as_ref() == Some(&entry.identity))
-                    .and_then(|binding| {
-                        broker_generations.get(&super::broker::capability_for_binding(
+                    .filter(|binding| binding.identity.as_ref() == Some(&entry.identity))
+                    .map(|binding| {
+                        super::broker::capability_for_binding(
                             binding,
                             discovery.config_generation.as_deref(),
-                        ))
-                    });
+                        )
+                    })
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let states = refresh_capabilities
+                    .iter()
+                    .filter_map(|route| broker_generations.get(route))
+                    .filter(|state| {
+                        let Some(accepted) = accepted_catalog.get(&state.capability) else {
+                            return false;
+                        };
+                        state.snapshot.as_ref().is_none_or(|snapshot| {
+                            snapshot.canonical_identity == accepted.canonical_identity
+                                && snapshot.account_identity.as_ref().is_some_and(|route| {
+                                    route.account_id == accepted.capability.account_id
+                                        && route.surface_id == accepted.capability.surface_id
+                                        && (!matches!(
+                                            entry.identity.subject,
+                                            CanonicalAccountSubject::SourceCapability(_)
+                                        ) || route.source_revision.as_deref()
+                                            == Some(accepted.revision.as_str()))
+                                })
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                let broker_state = states.iter().copied().max_by_key(|state| {
+                    (
+                        state
+                            .snapshot
+                            .as_ref()
+                            .is_some_and(|view| view_is_usable(view.status)),
+                        state
+                            .snapshot
+                            .as_ref()
+                            .map(|snapshot| snapshot.fetched_at_epoch),
+                        &state.capability,
+                    )
+                });
+                let mut observation = entry.clone();
+                if let Some(state) = broker_state
+                    && let Some(view) = &state.snapshot
+                {
+                    observation.view = view.clone();
+                    observation.view.canonical_identity = Some(entry.identity.protocol_identity());
+                    if view_is_usable(observation.view.status)
+                        && accepted_catalog
+                            .get(&state.capability)
+                            .is_some_and(|accepted| {
+                                view.account_identity.as_ref().is_none_or(|route| {
+                                    route.source_revision.as_deref()
+                                        != Some(accepted.revision.as_str())
+                                })
+                            })
+                    {
+                        observation.view.status = UsageSnapshotStatus::Stale;
+                    }
+                    if let Some(error) = &state.error {
+                        observation.view.last_error = Some(error.message.clone());
+                        if view_is_usable(observation.view.status) {
+                            observation.view.status = UsageSnapshotStatus::Stale;
+                        }
+                    }
+                    observation.username = observation.view.account.username.clone();
+                    observation.plan_label = observation.view.account.plan_label.clone();
+                    observation.fetched_at_epoch = observation.view.fetched_at_epoch;
+                }
+                let mut account = project_account(&observation, rank, metadata.broker_generation)?;
+                account.provenance_count = refresh_capabilities
+                    .iter()
+                    .filter_map(|route| accepted_catalog.get(route))
+                    .map(|accepted| accepted.provenance_count)
+                    .next()
+                    .ok_or_else(|| {
+                        "canonical account has no accepted source provenance".to_owned()
+                    })?;
+                account.refresh_capabilities = refresh_capabilities;
                 if let Some(state) = broker_state {
                     apply_generation_metadata(&mut account, state);
                 }
+                for state in &states {
+                    if let Some(error) = &state.error {
+                        let issue = UsageIssueV2 {
+                            code: super::broker::publish::issue_code(error.kind),
+                            scope: UsageIssueScopeV2::Account,
+                            recoverability: super::broker::publish::issue_recoverability(
+                                error.kind,
+                            ),
+                            message: error.message.clone(),
+                            retry_at_epoch: state.retry_at_epoch,
+                        };
+                        if !account.issues.contains(&issue) {
+                            account.issues.push(issue);
+                        }
+                    }
+                }
+                if states.iter().any(|state| state.phase.is_active()) {
+                    account.freshness.phase = UsageFreshnessPhaseV2::Refreshing;
+                }
+                account.freshness.retry_at_epoch =
+                    states.iter().filter_map(|state| state.retry_at_epoch).min();
                 Ok::<_, String>(account)
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -248,50 +347,17 @@ pub(super) fn build_canonical_projection(
             ));
         }
         let freshness = provider_freshness(&accounts, metadata.broker_generation);
-        providers.push(UsageProviderV1 {
+        providers.push(UsageProviderV2 {
             provider_id: surface.provider_id().to_owned(),
             display_name: surface.label().to_owned(),
             rank: u32::try_from(providers.len()).map_err(|_| "provider rank overflow")?,
-            membership_state: UsageMembershipStateV1::Current,
+            membership_state: UsageMembershipStateV2::Current,
             freshness,
             accounts,
             issues,
         });
     }
 
-    let unresolved = project_unresolved_capabilities(discovery, broker_generations);
-    let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
-        projection_id: metadata.projection_id.to_owned(),
-        generated_at_epoch: metadata.generated_at_epoch,
-        discovery_revision: discovery
-            .config_generation
-            .clone()
-            .unwrap_or_else(|| "empty".to_owned()),
-        broker_instance_id: metadata.broker_instance_id.to_owned(),
-        broker_generation: metadata.broker_generation,
-        refresh_state: if metadata.refreshing {
-            UsageProjectionRefreshStateV1::Refreshing
-        } else {
-            UsageProjectionRefreshStateV1::Idle
-        },
-        providers,
-        unresolved,
-        issues: discovery
-            .diagnostics
-            .iter()
-            .filter(|diagnostic| diagnostic.surface_id.is_none())
-            .map(|diagnostic| discovery_issue(diagnostic.issue, UsageIssueScopeV1::Projection))
-            .collect(),
-    };
-    projection.validate()?;
-    Ok(projection)
-}
-
-fn project_unresolved_capabilities(
-    discovery: &ValidatedUsageDiscovery,
-    broker_generations: &BTreeMap<UsageAccountCapability, UsageGenerationView>,
-) -> Vec<UsageUnresolvedV1> {
     let mut unresolved = discovery
         .unresolved_capabilities()
         .map(|candidate| {
@@ -309,9 +375,9 @@ fn project_unresolved_capabilities(
                 });
             let issues = broker_state
                 .and_then(|state| {
-                    state.error.as_ref().map(|error| UsageIssueV1 {
+                    state.error.as_ref().map(|error| UsageIssueV2 {
                         code: super::broker::publish::issue_code(error.kind),
-                        scope: UsageIssueScopeV1::Provider,
+                        scope: UsageIssueScopeV2::Provider,
                         recoverability: super::broker::publish::issue_recoverability(error.kind),
                         message: error.message.clone(),
                         retry_at_epoch: state.retry_at_epoch,
@@ -319,7 +385,7 @@ fn project_unresolved_capabilities(
                 })
                 .into_iter()
                 .collect();
-            UsageUnresolvedV1 {
+            UsageUnresolvedV2 {
                 provider_id: HostSurfaceId::from_id(&candidate.surface_id).map_or_else(
                     || candidate.surface_id.clone(),
                     |surface| surface.provider_id().to_owned(),
@@ -328,9 +394,16 @@ fn project_unresolved_capabilities(
                 configuration_count: u32::try_from(candidate.provenance.len()).unwrap_or(u32::MAX),
                 state: broker_state
                     .and_then(|state| state.error.as_ref())
-                    .map_or(UsageLifecycleV1::NeedsLogin, |error| {
-                        failure_lifecycle(error.kind)
-                    }),
+                    .map_or_else(
+                        || {
+                            if discovery.candidate_is_deferred(candidate) {
+                                UsageLifecycleV2::Unavailable
+                            } else {
+                                UsageLifecycleV2::NeedsLogin
+                            }
+                        },
+                        |error| failure_lifecycle(error.kind),
+                    ),
                 issues,
             }
         })
@@ -340,7 +413,33 @@ fn project_unresolved_capabilities(
             .cmp(&provider_rank(&right.provider_id))
             .then(left.capability_id.cmp(&right.capability_id))
     });
-    unresolved
+    let projection = UsageProjectionV2 {
+        schema_version: UsageProjectionSchemaV2,
+        projection_id: metadata.projection_id.to_owned(),
+        generated_at_epoch: metadata.generated_at_epoch,
+        discovery_revision: discovery
+            .config_generation
+            .clone()
+            .unwrap_or_else(|| "empty".to_owned()),
+        broker_instance_id: metadata.broker_instance_id.to_owned(),
+        broker_generation: metadata.broker_generation,
+        refresh_state: if metadata.refreshing {
+            UsageProjectionRefreshStateV2::Refreshing
+        } else {
+            UsageProjectionRefreshStateV2::Idle
+        },
+        providers,
+        unresolved,
+        unresolved_grants: Vec::new(),
+        issues: discovery
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.surface_id.is_none())
+            .map(|diagnostic| discovery_issue(diagnostic.issue, UsageIssueScopeV2::Projection))
+            .collect(),
+    };
+    projection.validate()?;
+    Ok(projection)
 }
 
 fn provider_rank(provider_id: &str) -> usize {
@@ -354,7 +453,7 @@ fn project_account(
     entry: &AccountCatalogEntry,
     rank: usize,
     generation: u64,
-) -> Result<UsageAccountV1, String> {
+) -> Result<UsageAccountV2, String> {
     let canonical_account_id = entry.identity.canonical_id_v1();
     let lifecycle = lifecycle(entry.view.status, entry.view.confidence);
     let freshness = freshness(entry.view.status, entry.view.fetched_at_epoch, generation);
@@ -370,14 +469,17 @@ fn project_account(
         entry.plan_label.as_deref(),
         &canonical_account_id,
     )?;
-    Ok(UsageAccountV1 {
+    Ok(UsageAccountV2 {
         canonical_account_id,
+        refresh_capabilities: Vec::new(),
+        username: entry.username.clone(),
+        auth_origin: entry.view.account.credential_origin.clone(),
         identity_kind: match entry.identity.subject {
-            CanonicalAccountSubject::ProviderId(_) => UsageIdentityKindV1::ProviderAccountId,
-            CanonicalAccountSubject::ProviderStableHandle(_)
-            | CanonicalAccountSubject::SourceCapability(_) => {
-                UsageIdentityKindV1::ProviderStableHandle
+            CanonicalAccountSubject::ProviderId(_) => UsageIdentityKindV2::ProviderAccountId,
+            CanonicalAccountSubject::ProviderStableHandle(_) => {
+                UsageIdentityKindV2::ProviderStableHandle
             }
+            CanonicalAccountSubject::SourceCapability(_) => UsageIdentityKindV2::SourceCapability,
         },
         rank: u32::try_from(rank).map_err(|_| "account rank overflow")?,
         display_label: entry.account_label.clone(),
@@ -397,15 +499,16 @@ fn project_account(
 
 fn discovery_issue(
     issue: super::discovery::UsageDiscoveryIssue,
-    scope: UsageIssueScopeV1,
-) -> UsageIssueV1 {
+    scope: UsageIssueScopeV2,
+) -> UsageIssueV2 {
     use super::discovery::UsageDiscoveryIssue;
     let recoverability = match issue {
-        UsageDiscoveryIssue::ConfigVersionUnsupported => UsageIssueRecoverabilityV1::Unsupported,
-        UsageDiscoveryIssue::ConfigTransientConflict => UsageIssueRecoverabilityV1::Retryable,
-        _ => UsageIssueRecoverabilityV1::ActionRequired,
+        UsageDiscoveryIssue::ConfigVersionUnsupported => UsageIssueRecoverabilityV2::Unsupported,
+        UsageDiscoveryIssue::ConfigTransientConflict
+        | UsageDiscoveryIssue::CredentialUnavailable => UsageIssueRecoverabilityV2::Retryable,
+        _ => UsageIssueRecoverabilityV2::ActionRequired,
     };
-    UsageIssueV1 {
+    UsageIssueV2 {
         code: issue.id().to_owned(),
         scope,
         recoverability,
@@ -415,36 +518,46 @@ fn discovery_issue(
 }
 
 /// Typed broker state supplies recovery policy; display text never controls it.
-fn apply_generation_metadata(account: &mut UsageAccountV1, state: &UsageGenerationView) {
+fn apply_generation_metadata(account: &mut UsageAccountV2, state: &UsageGenerationView) {
     account.freshness.generation = state.generation;
     account.freshness.retry_at_epoch = state.retry_at_epoch;
     account.freshness.last_good_at_epoch = state
         .snapshot
         .as_ref()
         .filter(|snapshot| view_is_usable(snapshot.status))
-        .map(|snapshot| snapshot.fetched_at_epoch);
-    account.freshness.is_stale = state.error.is_some()
-        && account.freshness.last_good_at_epoch.is_some()
+        .map(|snapshot| snapshot.fetched_at_epoch)
+        .or(account.freshness.last_good_at_epoch);
+    account.freshness.is_stale = account.freshness.is_stale
+        || (state.error.is_some() || state.snapshot.is_none())
+            && account.freshness.last_good_at_epoch.is_some()
         || state
             .snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.status == UsageSnapshotStatus::Stale);
     account.freshness.phase = if state.phase.is_active() {
-        UsageFreshnessPhaseV1::Refreshing
+        UsageFreshnessPhaseV2::Refreshing
     } else if account.freshness.is_stale {
-        UsageFreshnessPhaseV1::Stale
+        UsageFreshnessPhaseV2::Stale
     } else if state.error.is_some() || state.snapshot.is_none() {
-        UsageFreshnessPhaseV1::Failed
+        UsageFreshnessPhaseV2::Failed
     } else {
         account.freshness.phase
     };
+    if account.freshness.is_stale {
+        for group in &mut account.metric_groups {
+            if group.last_success_at_epoch.is_some() {
+                group.is_stale = true;
+                group.phase = UsageFreshnessPhaseV2::Stale;
+            }
+        }
+    }
     if let Some(error) = &state.error {
         if state.snapshot.is_none() {
             account.lifecycle = failure_lifecycle(error.kind);
         }
-        account.issues = vec![UsageIssueV1 {
+        account.issues = vec![UsageIssueV2 {
             code: super::broker::publish::issue_code(error.kind),
-            scope: UsageIssueScopeV1::Account,
+            scope: UsageIssueScopeV2::Account,
             recoverability: super::broker::publish::issue_recoverability(error.kind),
             message: error.message.clone(),
             retry_at_epoch: state.retry_at_epoch,
@@ -454,19 +567,19 @@ fn apply_generation_metadata(account: &mut UsageAccountV1, state: &UsageGenerati
 
 pub(in crate::host) fn failure_lifecycle(
     kind: jackin_protocol::usage_broker::UsageCoordinationErrorKind,
-) -> UsageLifecycleV1 {
+) -> UsageLifecycleV2 {
     use jackin_protocol::usage_broker::UsageCoordinationErrorKind;
     match kind {
-        UsageCoordinationErrorKind::NeedsSecret => UsageLifecycleV1::NeedsSecret,
-        UsageCoordinationErrorKind::Unauthorized => UsageLifecycleV1::NeedsLogin,
-        UsageCoordinationErrorKind::ProtocolMismatch => UsageLifecycleV1::Unsupported,
+        UsageCoordinationErrorKind::NeedsSecret => UsageLifecycleV2::NeedsSecret,
+        UsageCoordinationErrorKind::Unauthorized => UsageLifecycleV2::NeedsLogin,
+        UsageCoordinationErrorKind::ProtocolMismatch => UsageLifecycleV2::Unsupported,
         UsageCoordinationErrorKind::Unavailable
-        | UsageCoordinationErrorKind::ProviderUnavailable => UsageLifecycleV1::Unavailable,
-        _ => UsageLifecycleV1::Error,
+        | UsageCoordinationErrorKind::ProviderUnavailable => UsageLifecycleV2::Unavailable,
+        _ => UsageLifecycleV2::Error,
     }
 }
 
-fn view_issues(view: &jackin_protocol::control::FocusedUsageView) -> Vec<UsageIssueV1> {
+fn view_issues(view: &jackin_protocol::control::FocusedUsageView) -> Vec<UsageIssueV2> {
     let Some(message) = view
         .last_error
         .as_ref()
@@ -476,47 +589,73 @@ fn view_issues(view: &jackin_protocol::control::FocusedUsageView) -> Vec<UsageIs
     };
     let (code, recoverability) = match view.status {
         UsageSnapshotStatus::NeedsLogin => {
-            ("needs_login", UsageIssueRecoverabilityV1::ActionRequired)
+            ("needs_login", UsageIssueRecoverabilityV2::ActionRequired)
         }
         UsageSnapshotStatus::NeedsSecret => {
-            ("needs_secret", UsageIssueRecoverabilityV1::ActionRequired)
+            ("needs_secret", UsageIssueRecoverabilityV2::ActionRequired)
         }
         UsageSnapshotStatus::Unsupported => {
-            ("unsupported", UsageIssueRecoverabilityV1::Unsupported)
+            ("unsupported", UsageIssueRecoverabilityV2::Unsupported)
         }
         UsageSnapshotStatus::Fresh
         | UsageSnapshotStatus::Stale
         | UsageSnapshotStatus::Unavailable
         | UsageSnapshotStatus::Error => (
             "provider_unavailable",
-            UsageIssueRecoverabilityV1::Retryable,
+            UsageIssueRecoverabilityV2::Retryable,
         ),
     };
-    vec![UsageIssueV1 {
+    vec![UsageIssueV2 {
         code: code.to_owned(),
-        scope: UsageIssueScopeV1::Account,
+        scope: UsageIssueScopeV2::Account,
         recoverability,
         message: message.clone(),
         retry_at_epoch: None,
     }]
 }
 
-fn project_window(
+pub(in crate::host) fn project_window(
     canonical_account_id: &str,
     bucket: &QuotaBucketView,
     rank: usize,
-) -> Result<UsageLimitWindowV1, String> {
-    let raw_used = money_used_raw_percent(bucket);
-    let overage = raw_used.is_some_and(|value| value > 100);
-    let (remaining_percent, remaining_raw_percent) = if overage {
-        (None, None)
-    } else if let Some(value) = bucket.remaining_percent {
-        let (raw, clamped) = UsagePercent::split_raw(i32::from(value));
-        (Some(clamped), Some(raw))
-    } else {
-        (None, None)
-    };
-    let (used_percent, used_raw_percent) = if overage || remaining_percent.is_none() {
+) -> Result<UsageLimitWindowV2, String> {
+    bucket.validate_count_representation()?;
+    if !money_representation_valid(bucket) {
+        return Err(format!(
+            "quota bucket {} has invalid monetary quantities",
+            bucket.label
+        ));
+    }
+    let raw_used = bucket
+        .count_quota
+        .is_none()
+        .then(|| money_used_raw_percent(bucket))
+        .flatten();
+    let overage = bucket.remaining_money.is_none()
+        && matches!((bucket.used_money.as_ref(), bucket.limit_money.as_ref()),
+            (Some(used), Some(limit)) if used.exact_cmp(limit) == Some(std::cmp::Ordering::Greater));
+    let typed_money = bucket.used_money.is_some()
+        || bucket.limit_money.is_some()
+        || bucket.remaining_money.is_some();
+    let money_geometry = typed_money.then(|| money_window_geometry(bucket));
+    let (remaining_percent, remaining_raw_percent) =
+        if let Some((remaining, raw, _, _)) = money_geometry {
+            (remaining, raw)
+        } else if overage {
+            (None, None)
+        } else if let Some(value) = bucket
+            .count_quota
+            .as_ref()
+            .map_or(bucket.remaining_percent, |count| count.remaining_percent())
+        {
+            let (raw, clamped) = UsagePercent::split_raw(i32::from(value));
+            (Some(clamped), Some(raw))
+        } else {
+            (None, None)
+        };
+    let (used_percent, used_raw_percent) = if let Some((_, _, used, raw)) = money_geometry {
+        (used, raw)
+    } else if overage || remaining_percent.is_none() {
         if let Some(raw) = raw_used {
             let (_, clamped) = UsagePercent::split_raw(raw);
             (Some(clamped), Some(raw))
@@ -526,21 +665,39 @@ fn project_window(
     } else {
         (None, None)
     };
-    let value_label = if overage {
+    let value_label = if let Some(count) = &bucket.count_quota {
+        crate::usage::usage_count_quota_summary(count)
+    } else if overage {
         raw_used.map_or_else(
-            || bucket.used_label.clone().unwrap_or_default(),
+            || crate::usage::usage_money_quota_summary(bucket),
             |raw| format!("{raw}% used"),
         )
     } else {
-        bucket.remaining_percent.map_or_else(
-            || bucket.used_label.clone().unwrap_or_default(),
-            |value| format!("{value}% left"),
+        remaining_percent.map_or_else(
+            || {
+                bucket.remaining_money.as_ref().map_or_else(
+                    || bucket.used_label.clone().unwrap_or_default(),
+                    |remaining| format!("{remaining} left"),
+                )
+            },
+            |value| {
+                format!(
+                    "{}% left",
+                    remaining_raw_percent.unwrap_or(i32::from(value.get()))
+                )
+            },
         )
     };
-    Ok(UsageLimitWindowV1 {
+    Ok(UsageLimitWindowV2 {
         window_id: account_key_hash(canonical_account_id, &format!("canonical-window-v1:{rank}")),
         rank: u32::try_from(rank).map_err(|_| "window rank overflow")?,
-        category: window_category(bucket.status_slot),
+        category: bucket.count_quota.as_ref().map_or_else(
+            || window_category(bucket.status_slot),
+            |count| match count.period {
+                CountQuotaPeriod::UtcDaily => UsageWindowCategoryV2::LongRange,
+                CountQuotaPeriod::Unknown => UsageWindowCategoryV2::Other,
+            },
+        ),
         label: bucket.label.clone(),
         value_label,
         reset_label: bucket.reset_label.clone().unwrap_or_default(),
@@ -549,6 +706,7 @@ fn project_window(
         used_percent,
         used_raw_percent,
         reset_at_epoch: bucket.resets_at,
+        count_quota: bucket.count_quota.clone(),
         quota_state: quota_state(bucket),
         pace_label: bucket.pace_label.clone(),
         // No run-out signal exists outside the provider pace composite (which
@@ -559,11 +717,11 @@ fn project_window(
     })
 }
 
-const fn window_category(status_slot: Option<StatusSlot>) -> UsageWindowCategoryV1 {
+const fn window_category(status_slot: Option<StatusSlot>) -> UsageWindowCategoryV2 {
     match status_slot {
-        Some(StatusSlot::Daily | StatusSlot::Weekly) => UsageWindowCategoryV1::LongRange,
-        Some(StatusSlot::Session) => UsageWindowCategoryV1::Session,
-        Some(StatusSlot::Spend) | None => UsageWindowCategoryV1::Other,
+        Some(StatusSlot::Daily | StatusSlot::Weekly) => UsageWindowCategoryV2::LongRange,
+        Some(StatusSlot::Session) => UsageWindowCategoryV2::Session,
+        Some(StatusSlot::Spend) | None => UsageWindowCategoryV2::Other,
     }
 }
 
@@ -571,6 +729,9 @@ const fn window_category(status_slot: Option<StatusSlot>) -> UsageWindowCategory
 /// survives. One shared [`Money::raw_percent_of`] rule with the capsule
 /// bucket presentation, so both surfaces recover the same overage magnitude.
 fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
+    if !money_representation_valid(bucket) {
+        return None;
+    }
     bucket
         .used_money
         .as_ref()?
@@ -591,7 +752,7 @@ pub(crate) fn metric_groups_for_view(
     canonical_account_id: &str,
     view: &jackin_protocol::control::FocusedUsageView,
     plan_label: Option<&str>,
-) -> Result<Vec<UsageMetricGroupV1>, String> {
+) -> Result<Vec<UsageMetricGroupV2>, String> {
     project_groups(view, plan_label, canonical_account_id)
 }
 
@@ -599,7 +760,7 @@ fn project_groups(
     view: &jackin_protocol::control::FocusedUsageView,
     plan_label: Option<&str>,
     canonical_account_id: &str,
-) -> Result<Vec<UsageMetricGroupV1>, String> {
+) -> Result<Vec<UsageMetricGroupV2>, String> {
     let mut groups = Vec::new();
     for bucket in &view.buckets {
         let rank = groups.len();
@@ -610,7 +771,10 @@ fn project_groups(
             view.fetched_at_epoch,
             rank,
         )?);
-        if bucket.used_money.is_some() || bucket.limit_money.is_some() {
+        if bucket.used_money.is_some()
+            || bucket.limit_money.is_some()
+            || bucket.remaining_money.is_some()
+        {
             let rank = groups.len();
             groups.push(project_spend_group(
                 canonical_account_id,
@@ -658,30 +822,39 @@ fn project_window_group(
     view_status: UsageSnapshotStatus,
     view_fetched_at: i64,
     rank: usize,
-) -> Result<UsageMetricGroupV1, String> {
+) -> Result<UsageMetricGroupV2, String> {
     let window = project_window(canonical_account_id, bucket, rank)?;
     let phase = group_phase(bucket.status, view_status);
     let (observed_at_epoch, last_success_at_epoch) =
         group_epochs(view_fetched_at, view_is_usable(bucket.status));
-    Ok(UsageMetricGroupV1 {
+    Ok(UsageMetricGroupV2 {
         group_id: group_id(canonical_account_id, rank),
         rank: group_rank(rank)?,
-        kind: UsageMetricGroupKindV1::Window,
+        kind: UsageMetricGroupKindV2::Window,
         label: bucket.label.clone(),
-        scope: UsageMetricScopeV1::default(),
+        scope: UsageMetricScopeV2::default(),
         observed_at_epoch,
         fetched_at_epoch: view_fetched_at,
         last_success_at_epoch,
         phase,
-        is_stale: phase == UsageFreshnessPhaseV1::Stale,
+        is_stale: phase == UsageFreshnessPhaseV2::Stale,
         quota_state: window.quota_state,
-        value: UsageMetricValueV1::Window {
+        value: UsageMetricValueV2::Window {
             remaining_percent: window.remaining_percent,
             remaining_raw_percent: window.remaining_raw_percent,
             used_percent: window.used_percent,
             used_raw_percent: window.used_raw_percent,
-            period: group_period(bucket.status_slot),
-            unit: None,
+            period: bucket.count_quota.as_ref().map_or_else(
+                || group_period(bucket.status_slot),
+                |count| match count.period {
+                    CountQuotaPeriod::UtcDaily => UsageMetricPeriodV2::Calendar {
+                        granularity: UsageCalendarPeriodV2::Daily,
+                    },
+                    CountQuotaPeriod::Unknown => UsageMetricPeriodV2::Unknown,
+                },
+            ),
+            unit: bucket.count_quota.as_ref().map(|_| "requests".to_owned()),
+            count_quota: bucket.count_quota.clone(),
         },
         reset_at_epoch: bucket.resets_at,
         renews_at_epoch: None,
@@ -695,24 +868,24 @@ fn project_spend_group(
     view_status: UsageSnapshotStatus,
     view_fetched_at: i64,
     rank: usize,
-) -> Result<UsageMetricGroupV1, String> {
+) -> Result<UsageMetricGroupV2, String> {
     let phase = group_phase(bucket.status, view_status);
     let (observed_at_epoch, last_success_at_epoch) =
         group_epochs(view_fetched_at, view_is_usable(bucket.status));
     let quota_state = spend_quota_state(bucket);
-    Ok(UsageMetricGroupV1 {
+    Ok(UsageMetricGroupV2 {
         group_id: group_id(canonical_account_id, rank),
         rank: group_rank(rank)?,
-        kind: UsageMetricGroupKindV1::SpendCap,
+        kind: UsageMetricGroupKindV2::SpendCap,
         label: format!("{} spend", bucket.label),
-        scope: UsageMetricScopeV1::default(),
+        scope: UsageMetricScopeV2::default(),
         observed_at_epoch,
         fetched_at_epoch: view_fetched_at,
         last_success_at_epoch,
         phase,
-        is_stale: phase == UsageFreshnessPhaseV1::Stale,
+        is_stale: phase == UsageFreshnessPhaseV2::Stale,
         quota_state,
-        value: UsageMetricValueV1::SpendCap {
+        value: UsageMetricValueV2::SpendCap {
             cap: bucket.limit_money.clone(),
             spent: bucket.used_money.clone(),
             remaining: spend_remaining(bucket),
@@ -729,24 +902,24 @@ fn project_plan_group(
     view_fetched_at: i64,
     plan_label: &str,
     rank: usize,
-) -> Result<UsageMetricGroupV1, String> {
+) -> Result<UsageMetricGroupV2, String> {
     let phase = group_phase(view_status, view_status);
     let (observed_at_epoch, last_success_at_epoch) =
         group_epochs(view_fetched_at, view_is_usable(view_status));
-    Ok(UsageMetricGroupV1 {
+    Ok(UsageMetricGroupV2 {
         group_id: group_id(canonical_account_id, rank),
         rank: group_rank(rank)?,
-        kind: UsageMetricGroupKindV1::Plan,
+        kind: UsageMetricGroupKindV2::Plan,
         label: "Plan".to_owned(),
-        scope: UsageMetricScopeV1::default(),
+        scope: UsageMetricScopeV2::default(),
         observed_at_epoch,
         fetched_at_epoch: view_fetched_at,
         last_success_at_epoch,
         phase,
-        is_stale: phase == UsageFreshnessPhaseV1::Stale,
+        is_stale: phase == UsageFreshnessPhaseV2::Stale,
         // Plan metadata carries no quota notion.
-        quota_state: UsageQuotaStateV1::NotApplicable,
-        value: UsageMetricValueV1::Plan {
+        quota_state: UsageQuotaStateV2::NotApplicable,
+        value: UsageMetricValueV2::Plan {
             plan_label: Some(plan_label.to_owned()),
             tier: None,
         },
@@ -767,110 +940,200 @@ fn view_is_usable(status: UsageSnapshotStatus) -> bool {
 fn group_phase(
     bucket_status: UsageSnapshotStatus,
     view_status: UsageSnapshotStatus,
-) -> UsageFreshnessPhaseV1 {
+) -> UsageFreshnessPhaseV2 {
     if view_status == UsageSnapshotStatus::Stale {
-        return UsageFreshnessPhaseV1::Stale;
+        return UsageFreshnessPhaseV2::Stale;
     }
     match bucket_status {
-        UsageSnapshotStatus::Fresh => UsageFreshnessPhaseV1::Current,
-        UsageSnapshotStatus::Stale => UsageFreshnessPhaseV1::Stale,
-        _ => UsageFreshnessPhaseV1::Failed,
+        UsageSnapshotStatus::Fresh => UsageFreshnessPhaseV2::Current,
+        UsageSnapshotStatus::Stale => UsageFreshnessPhaseV2::Stale,
+        _ => UsageFreshnessPhaseV2::Failed,
     }
 }
 
-fn group_period(status_slot: Option<StatusSlot>) -> UsageMetricPeriodV1 {
+fn group_period(status_slot: Option<StatusSlot>) -> UsageMetricPeriodV2 {
     match status_slot {
-        Some(StatusSlot::Session) => UsageMetricPeriodV1::ProviderDefined,
-        Some(StatusSlot::Daily) => UsageMetricPeriodV1::Calendar {
-            granularity: UsageCalendarPeriodV1::Daily,
+        Some(StatusSlot::Session) => UsageMetricPeriodV2::ProviderDefined,
+        Some(StatusSlot::Daily) => UsageMetricPeriodV2::Calendar {
+            granularity: UsageCalendarPeriodV2::Daily,
         },
-        Some(StatusSlot::Weekly) => UsageMetricPeriodV1::Calendar {
-            granularity: UsageCalendarPeriodV1::Weekly,
+        Some(StatusSlot::Weekly) => UsageMetricPeriodV2::Calendar {
+            granularity: UsageCalendarPeriodV2::Weekly,
         },
-        Some(StatusSlot::Spend) | None => UsageMetricPeriodV1::Unknown,
+        Some(StatusSlot::Spend) | None => UsageMetricPeriodV2::Unknown,
     }
 }
 
-/// Remaining spend from a monetary bucket. Checked subtraction on compatible
-/// denominations only; over-spend clamps at zero here because a Money amount
-/// cannot express negative remaining, while the over-100% raw percent on the
-/// sibling window payload preserves the overage magnitude.
+/// Provider remaining wins. Otherwise exact checked subtraction preserves debt.
 fn spend_remaining(bucket: &QuotaBucketView) -> Option<Money> {
-    let used = bucket.used_money.as_ref()?;
-    let limit = bucket.limit_money.as_ref()?;
-    if used.currency != limit.currency || used.exponent != limit.exponent {
+    if !money_representation_valid(bucket) {
         return None;
     }
-    let remaining = limit.amount_minor.saturating_sub(used.amount_minor).max(0);
-    Some(Money::new(
-        remaining,
-        limit.currency.clone(),
-        limit.exponent,
-    ))
+    bucket.remaining_money.clone().or_else(|| {
+        bucket
+            .limit_money
+            .as_ref()?
+            .checked_sub(bucket.used_money.as_ref()?)
+    })
+}
+
+fn money_representation_valid(bucket: &QuotaBucketView) -> bool {
+    if bucket
+        .used_money
+        .as_ref()
+        .is_some_and(|used| used.amount_minor < 0)
+        || bucket
+            .limit_money
+            .as_ref()
+            .is_some_and(|limit| limit.amount_minor < 0)
+    {
+        return false;
+    }
+    let mut currency = None;
+    for money in [
+        &bucket.used_money,
+        &bucket.limit_money,
+        &bucket.remaining_money,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if currency.is_some_and(|currency| currency != money.currency.as_str()) {
+            return false;
+        }
+        currency = Some(money.currency.as_str());
+    }
+    true
+}
+
+/// Exact quantities own state. Ratios supply geometry only.
+fn money_window_geometry(
+    bucket: &QuotaBucketView,
+) -> (
+    Option<UsagePercent>,
+    Option<i32>,
+    Option<UsagePercent>,
+    Option<i32>,
+) {
+    if !money_representation_valid(bucket) {
+        return (None, None, None, None);
+    }
+    let limit = bucket.limit_money.as_ref();
+    if limit.is_some_and(|limit| limit.amount_minor == 0) {
+        return (Some(UsagePercent::clamp_raw(0)), None, None, None);
+    }
+    if bucket.remaining_money.is_none()
+        && matches!((bucket.used_money.as_ref(), limit),
+            (Some(used), Some(limit)) if used.exact_cmp(limit) == Some(std::cmp::Ordering::Greater))
+    {
+        return (
+            None,
+            None,
+            Some(UsagePercent::clamp_raw(100)),
+            money_used_raw_percent(bucket),
+        );
+    }
+    let Some(remaining) = spend_remaining(bucket) else {
+        return (None, None, None, None);
+    };
+    let raw = limit.and_then(|limit| remaining.raw_percent_of(limit));
+    let geometry = limit
+        .and_then(|limit| remaining.remaining_percent_of(limit))
+        .map(|percent| UsagePercent::clamp_raw(i32::from(percent)))
+        .or_else(|| (remaining.amount_minor <= 0).then(|| UsagePercent::clamp_raw(0)));
+    (geometry, raw, None, None)
 }
 
 /// Quota state for a spend-cap group from its money ratio. A missing or
-/// unusable cap is [`UsageQuotaStateV1::Unknown`], never fabricated credit;
-/// an uncapped tracker is [`UsageQuotaStateV1::NotApplicable`].
-fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
+/// unusable cap is [`UsageQuotaStateV2::Unknown`], never fabricated credit;
+/// a missing cap never proves unlimited credit.
+fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV2 {
     match bucket.status {
         UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::NeedsSecret => {
-            UsageQuotaStateV1::NoPermission
+            UsageQuotaStateV2::NoPermission
         }
-        UsageSnapshotStatus::Unsupported => UsageQuotaStateV1::Unsupported,
-        UsageSnapshotStatus::Unavailable => UsageQuotaStateV1::Unavailable,
-        UsageSnapshotStatus::Error => UsageQuotaStateV1::Error,
+        UsageSnapshotStatus::Unsupported => UsageQuotaStateV2::Unsupported,
+        UsageSnapshotStatus::Unavailable => UsageQuotaStateV2::Unavailable,
+        UsageSnapshotStatus::Error => UsageQuotaStateV2::Error,
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => {
+            if !money_representation_valid(bucket) {
+                return UsageQuotaStateV2::Unknown;
+            }
+            if bucket
+                .limit_money
+                .as_ref()
+                .is_some_and(|limit| limit.amount_minor == 0)
+            {
+                return UsageQuotaStateV2::Exhausted;
+            }
+            if let Some(remaining) = &bucket.remaining_money {
+                if remaining.amount_minor <= 0 {
+                    return UsageQuotaStateV2::Exhausted;
+                }
+                if let Some(limit) = &bucket.limit_money {
+                    return if remaining
+                        .percent_cmp(limit, 20)
+                        .is_some_and(|ordering| ordering != std::cmp::Ordering::Greater)
+                    {
+                        UsageQuotaStateV2::Warning
+                    } else {
+                        UsageQuotaStateV2::Available
+                    };
+                }
+                return UsageQuotaStateV2::Available;
+            }
             match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
                 (Some(used), Some(limit)) => spend_ratio_state(used, limit),
-                // Spend without a cap is uncapped tracking; a cap without
-                // spend leaves the ratio unknown.
-                (Some(_), None) => UsageQuotaStateV1::NotApplicable,
-                _ => UsageQuotaStateV1::Unknown,
+                _ => UsageQuotaStateV2::Unknown,
             }
         }
     }
 }
 
 /// Quota state from a spend/cap money ratio with checked math.
-fn spend_ratio_state(used: &Money, limit: &Money) -> UsageQuotaStateV1 {
-    if used.currency != limit.currency || used.exponent != limit.exponent || limit.amount_minor <= 0
-    {
-        return UsageQuotaStateV1::Unknown;
+fn spend_ratio_state(used: &Money, limit: &Money) -> UsageQuotaStateV2 {
+    if used.currency != limit.currency || limit.amount_minor < 0 || used.amount_minor < 0 {
+        return UsageQuotaStateV2::Unknown;
     }
-    if used.amount_minor >= limit.amount_minor {
-        UsageQuotaStateV1::Exhausted
-    } else if used.amount_minor.saturating_mul(100) / limit.amount_minor >= 80 {
-        UsageQuotaStateV1::Warning
+    if used
+        .exact_cmp(limit)
+        .is_some_and(|ordering| ordering != std::cmp::Ordering::Less)
+    {
+        UsageQuotaStateV2::Exhausted
+    } else if used
+        .percent_cmp(limit, 80)
+        .is_some_and(|ordering| ordering != std::cmp::Ordering::Less)
+    {
+        UsageQuotaStateV2::Warning
     } else {
-        UsageQuotaStateV1::Available
+        UsageQuotaStateV2::Available
     }
 }
 
 pub(in crate::host) fn lifecycle(
     status: UsageSnapshotStatus,
     confidence: UsageConfidence,
-) -> UsageLifecycleV1 {
+) -> UsageLifecycleV2 {
     if confidence == UsageConfidence::PresenceOnly {
-        return UsageLifecycleV1::AgentUninitialized;
+        return UsageLifecycleV2::AgentUninitialized;
     }
     match status {
-        UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => UsageLifecycleV1::Available,
-        UsageSnapshotStatus::NeedsLogin => UsageLifecycleV1::NeedsLogin,
-        UsageSnapshotStatus::NeedsSecret => UsageLifecycleV1::NeedsSecret,
-        UsageSnapshotStatus::Unsupported => UsageLifecycleV1::Unsupported,
-        UsageSnapshotStatus::Unavailable => UsageLifecycleV1::Unavailable,
-        UsageSnapshotStatus::Error => UsageLifecycleV1::Error,
+        UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => UsageLifecycleV2::Available,
+        UsageSnapshotStatus::NeedsLogin => UsageLifecycleV2::NeedsLogin,
+        UsageSnapshotStatus::NeedsSecret => UsageLifecycleV2::NeedsSecret,
+        UsageSnapshotStatus::Unsupported => UsageLifecycleV2::Unsupported,
+        UsageSnapshotStatus::Unavailable => UsageLifecycleV2::Unavailable,
+        UsageSnapshotStatus::Error => UsageLifecycleV2::Error,
     }
 }
 
-fn freshness(status: UsageSnapshotStatus, last_good: i64, generation: u64) -> UsageFreshnessV1 {
+fn freshness(status: UsageSnapshotStatus, last_good: i64, generation: u64) -> UsageFreshnessV2 {
     let phase = match status {
-        UsageSnapshotStatus::Fresh => UsageFreshnessPhaseV1::Current,
-        UsageSnapshotStatus::Stale => UsageFreshnessPhaseV1::Stale,
-        _ => UsageFreshnessPhaseV1::Failed,
+        UsageSnapshotStatus::Fresh => UsageFreshnessPhaseV2::Current,
+        UsageSnapshotStatus::Stale => UsageFreshnessPhaseV2::Stale,
+        _ => UsageFreshnessPhaseV2::Failed,
     };
-    UsageFreshnessV1 {
+    UsageFreshnessV2 {
         generation,
         phase,
         last_good_at_epoch: matches!(
@@ -883,25 +1146,25 @@ fn freshness(status: UsageSnapshotStatus, last_good: i64, generation: u64) -> Us
     }
 }
 
-fn provider_freshness(accounts: &[UsageAccountV1], generation: u64) -> UsageFreshnessV1 {
+fn provider_freshness(accounts: &[UsageAccountV2], generation: u64) -> UsageFreshnessV2 {
     let is_stale = accounts.iter().any(|account| account.freshness.is_stale);
     let phase = if accounts
         .iter()
-        .any(|account| account.freshness.phase == UsageFreshnessPhaseV1::Refreshing)
+        .any(|account| account.freshness.phase == UsageFreshnessPhaseV2::Refreshing)
     {
-        UsageFreshnessPhaseV1::Refreshing
+        UsageFreshnessPhaseV2::Refreshing
     } else if is_stale {
-        UsageFreshnessPhaseV1::Stale
+        UsageFreshnessPhaseV2::Stale
     } else if accounts.is_empty()
         || accounts
             .iter()
-            .all(|account| account.freshness.phase == UsageFreshnessPhaseV1::Failed)
+            .all(|account| account.freshness.phase == UsageFreshnessPhaseV2::Failed)
     {
-        UsageFreshnessPhaseV1::Failed
+        UsageFreshnessPhaseV2::Failed
     } else {
-        UsageFreshnessPhaseV1::Current
+        UsageFreshnessPhaseV2::Current
     };
-    UsageFreshnessV1 {
+    UsageFreshnessV2 {
         generation,
         phase,
         last_good_at_epoch: accounts
@@ -917,30 +1180,46 @@ fn provider_freshness(accounts: &[UsageAccountV1], generation: u64) -> UsageFres
 }
 
 /// Quota state for one bucket with no collapsing: missing permission stays
-/// [`UsageQuotaStateV1::NoPermission`] (never [`UsageQuotaStateV1::Unsupported`]),
+/// [`UsageQuotaStateV2::NoPermission`] (never [`UsageQuotaStateV2::Unsupported`]),
 /// and a fresh bucket with no usable quantity stays
-/// [`UsageQuotaStateV1::Unknown`] (never a fabricated `0%` bar or an
-/// [`UsageQuotaStateV1::Available`] claim).
-fn quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
+/// [`UsageQuotaStateV2::Unknown`] (never a fabricated `0%` bar or an
+/// [`UsageQuotaStateV2::Available`] claim).
+pub(in crate::host) fn quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV2 {
     match bucket.status {
         UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::NeedsSecret => {
-            UsageQuotaStateV1::NoPermission
+            UsageQuotaStateV2::NoPermission
         }
-        UsageSnapshotStatus::Unsupported => UsageQuotaStateV1::Unsupported,
-        UsageSnapshotStatus::Unavailable => UsageQuotaStateV1::Unavailable,
-        UsageSnapshotStatus::Error => UsageQuotaStateV1::Error,
+        UsageSnapshotStatus::Unsupported => UsageQuotaStateV2::Unsupported,
+        UsageSnapshotStatus::Unavailable => UsageQuotaStateV2::Unavailable,
+        UsageSnapshotStatus::Error => UsageQuotaStateV2::Error,
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => {
+            if let Some(count) = &bucket.count_quota {
+                return match count.remaining {
+                    Some(0) => UsageQuotaStateV2::Exhausted,
+                    Some(_) => match bucket.severity {
+                        UsageSeverity::Normal => UsageQuotaStateV2::Available,
+                        UsageSeverity::Warn | UsageSeverity::Danger => UsageQuotaStateV2::Warning,
+                    },
+                    None => UsageQuotaStateV2::Unknown,
+                };
+            }
+            if bucket.used_money.is_some()
+                || bucket.limit_money.is_some()
+                || bucket.remaining_money.is_some()
+            {
+                return spend_quota_state(bucket);
+            }
             if bucket.remaining_percent == Some(0) || money_is_exhausted(bucket) {
-                UsageQuotaStateV1::Exhausted
+                UsageQuotaStateV2::Exhausted
             } else {
                 match bucket.severity {
-                    UsageSeverity::Danger => UsageQuotaStateV1::Exhausted,
-                    UsageSeverity::Warn => UsageQuotaStateV1::Warning,
+                    UsageSeverity::Danger => UsageQuotaStateV2::Exhausted,
+                    UsageSeverity::Warn => UsageQuotaStateV2::Warning,
                     UsageSeverity::Normal => {
                         if bucket_has_quantity(bucket) {
-                            UsageQuotaStateV1::Available
+                            UsageQuotaStateV2::Available
                         } else {
-                            UsageQuotaStateV1::Unknown
+                            UsageQuotaStateV2::Unknown
                         }
                     }
                 }
@@ -952,15 +1231,7 @@ fn quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
 /// Whether a monetary bucket reports spend at or over its cap on a compatible
 /// denomination. Incompatible or unusable money never reads as exhausted.
 fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
-    match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
-        (Some(used), Some(limit)) => {
-            used.currency == limit.currency
-                && used.exponent == limit.exponent
-                && limit.amount_minor > 0
-                && used.amount_minor >= limit.amount_minor
-        }
-        _ => false,
-    }
+    spend_quota_state(bucket) == UsageQuotaStateV2::Exhausted
 }
 
 /// Whether a bucket carries any usable quantity: a percent, a money amount,

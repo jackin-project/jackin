@@ -21,13 +21,65 @@ use tokio::net::UnixStream;
 use crate::protocol::control::{ClientMsg, ControlRequest, ServerMsg, frame};
 use crate::socket::SOCKET_PATH;
 
+/// The exact executable and ordered arguments approved by the operator.
+/// Approval and execution carry this object instead of separate command and
+/// argument fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecInvocation {
+    command: String,
+    args: Vec<String>,
+}
+
+impl ExecInvocation {
+    #[must_use]
+    pub fn new(command: String, args: Vec<String>) -> Self {
+        Self { command, args }
+    }
+
+    #[must_use]
+    pub fn command(&self) -> &str {
+        &self.command
+    }
+
+    #[must_use]
+    pub fn args(&self) -> &[String] {
+        &self.args
+    }
+
+    /// Exact argv as JSON: argument boundaries and empty strings stay visible,
+    /// and terminal control characters are escaped instead of being emitted.
+    #[must_use]
+    pub fn approval_argv(&self) -> String {
+        let argv: Vec<&str> = std::iter::once(self.command())
+            .chain(self.args.iter().map(String::as_str))
+            .collect();
+        let json = serde_json::to_string(&argv).expect("serializing string argv cannot fail");
+        let mut display = String::with_capacity(json.len());
+        for ch in json.chars() {
+            // ASCII JSON remains exact even in a one-column viewport. Unicode
+            // escapes also expose C1 controls, direction overrides, combining
+            // marks and joiners instead of letting them alter approval text.
+            if !ch.is_ascii() || ch.is_control() {
+                use std::fmt::Write as _;
+                for unit in ch.encode_utf16(&mut [0; 2]) {
+                    write!(display, "\\u{unit:04x}").expect("formatting into a String cannot fail");
+                }
+            } else {
+                display.push(ch);
+            }
+        }
+        display
+    }
+}
+
 /// State for the exec credential picker dialog shown by the daemon's TUI.
 #[derive(Debug, Clone)]
 pub struct ExecPickerState {
-    pub command: String,
-    pub args: Vec<String>,
+    pub invocation: ExecInvocation,
     pub items: Vec<ExecPickerItem>,
     pub cursor: usize,
+    /// First displayed wrapped argv row; clamped to current viewport at paint.
+    pub argv_scroll: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 /// A single on-demand credential row in the picker. Carries the underlying
@@ -74,10 +126,10 @@ impl ExecPickerState {
             })
             .collect();
         Self {
-            command,
-            args,
+            invocation: ExecInvocation::new(command, args),
             items,
             cursor: 0,
+            argv_scroll: Default::default(),
         }
     }
 
@@ -217,12 +269,12 @@ pub async fn resolve_credentials(
 /// Returns an error when the configured command cannot be started or its
 /// output cannot be collected.
 pub async fn execute_command(
-    command: &str,
-    args: &[String],
+    invocation: &ExecInvocation,
     extra_env: &std::collections::BTreeMap<String, String>,
     secrets_for_redaction: &[&str],
 ) -> Result<(i32, String, String, u32)> {
-    let mut request = jackin_process::ExecRequest::new(command, args).no_timeout();
+    let mut request =
+        jackin_process::ExecRequest::new(invocation.command(), invocation.args()).no_timeout();
     request = request.envs(extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
     let output = crate::process_telemetry::exec_async_as(
         &request,

@@ -169,7 +169,7 @@ impl TokenSession {
             Agent::Claude => claude::poll_session(self),
             Agent::Codex => codex::poll_session(self),
             Agent::Kimi => kimi::poll_session(self),
-            // OpenCode reads SQLite via async turso.
+            // OpenCode reads SQLite through the strict readonly backend.
             Agent::Opencode => opencode::poll_session(self).await,
             Agent::Amp => amp::poll_session(self),
             // No token-spend reader for Grok yet.

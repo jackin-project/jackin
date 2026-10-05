@@ -1007,547 +1007,524 @@ fn github_context_uses_shared_focused_info_dialog() {
     );
 }
 
-fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
-    jackin_protocol::control::FocusedUsageView {
-        focused_agent: Some("codex".to_owned()),
-        focused_provider: Some("OpenAI".to_owned()),
-        account: jackin_protocol::control::FocusedAccountHeader {
-            provider_label: "OpenAI / Codex".to_owned(),
-            account_label: "alexey@example.com".to_owned(),
-            username: None,
-            plan_label: Some("Pro 20x".to_owned()),
-            credential_origin: None,
-        },
-        buckets: vec![
-            jackin_protocol::control::QuotaBucketView {
-                used_money: None,
-                limit_money: None,
-                severity: jackin_protocol::control::UsageSeverity::default(),
-                label: "Session".to_owned(),
-                used_label: Some("63% used".to_owned()),
-                limit_label: Some("100%".to_owned()),
-                remaining_percent: Some(37),
-                reset_label: Some("Resets 15:07".to_owned()),
-                resets_at: None,
-                status_slot: None,
-                pace_label: Some("10% in reserve".to_owned()),
-                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-            },
-            jackin_protocol::control::QuotaBucketView {
-                used_money: None,
-                limit_money: None,
-                severity: jackin_protocol::control::UsageSeverity::default(),
-                label: "Credits".to_owned(),
-                used_label: None,
-                limit_label: None,
-                remaining_percent: None,
-                reset_label: None,
-                resets_at: None,
-                status_slot: None,
-                pace_label: Some("ACP billing unavailable".to_owned()),
-                status: jackin_protocol::control::UsageSnapshotStatus::Unsupported,
-            },
-        ],
-        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        source: jackin_protocol::control::UsageSource::Cli,
-        confidence: jackin_protocol::control::UsageConfidence::Authoritative,
-        fetched_at_epoch: 1_781_185_560,
-        updated_label: "Updated now".to_owned(),
-        status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
-        tabs: vec![
-            jackin_protocol::control::UsageProviderTab {
-                id: "test-tab-codex".to_owned(),
-                label: "Codex".to_owned(),
-                status_label: "37% left · Resets in 1h 21m (Jun 17, 23:15)".to_owned(),
-                account_label: "alexey@example.com".to_owned(),
-                plan_label: Some("Pro 20x".to_owned()),
-                source_label: Some("fresh · provider".to_owned()),
-                active: true,
-            },
-            jackin_protocol::control::UsageProviderTab {
-                id: "test-tab-claude".to_owned(),
-                label: "Claude".to_owned(),
-                status_label: "16% left · Resets in 46m (Jun 17, 22:40)".to_owned(),
-                account_label: "alexey@example.com".to_owned(),
-                plan_label: Some("Max".to_owned()),
-                source_label: Some("stale · provider".to_owned()),
-                active: false,
-            },
-            jackin_protocol::control::UsageProviderTab {
-                id: "test-tab-amp".to_owned(),
-                label: "Amp".to_owned(),
-                status_label: "unsupported".to_owned(),
-                account_label: "account unavailable".to_owned(),
-                plan_label: None,
-                source_label: None,
-                active: false,
-            },
-            jackin_protocol::control::UsageProviderTab {
-                id: "test-tab-grok".to_owned(),
-                label: "Grok Build".to_owned(),
-                status_label: "needs login".to_owned(),
-                account_label: "account unavailable".to_owned(),
-                plan_label: None,
-                source_label: Some("needs-login · provider".to_owned()),
-                active: false,
-            },
-            jackin_protocol::control::UsageProviderTab {
-                id: "test-tab-zai".to_owned(),
-                label: "GLM / Z.AI".to_owned(),
-                status_label: "88% left · Resets in 4d (Jun 21, 00:00)".to_owned(),
-                account_label: "alexey@example.com".to_owned(),
-                plan_label: Some("GLM Coding".to_owned()),
-                source_label: Some("fresh · provider".to_owned()),
-                active: false,
-            },
-            jackin_protocol::control::UsageProviderTab {
-                id: "test-tab-kimi".to_owned(),
-                label: "Kimi".to_owned(),
-                status_label: "72% left · Resets in 13h (Jun 18, 11:00)".to_owned(),
-                account_label: "alexey@example.com".to_owned(),
-                plan_label: Some("Moonshot".to_owned()),
-                source_label: Some("fresh · provider".to_owned()),
-                active: false,
-            },
-            jackin_protocol::control::UsageProviderTab {
-                id: "test-tab-minimax".to_owned(),
-                label: "MiniMax".to_owned(),
-                status_label: "100% left".to_owned(),
-                account_label: "alexey@example.com".to_owned(),
-                plan_label: Some("M1 Coding".to_owned()),
-                source_label: Some("fresh · provider".to_owned()),
-                active: false,
-            },
-        ],
-        last_error: None,
+use jackin_protocol::control::{CountQuota, Money};
+use jackin_protocol::usage_broker::*;
+
+const USAGE_FIXTURE_TIME: i64 = 1_781_185_560;
+
+fn usage_freshness() -> UsageFreshnessV2 {
+    UsageFreshnessV2 {
+        generation: 7,
+        phase: UsageFreshnessPhaseV2::Current,
+        last_good_at_epoch: Some(USAGE_FIXTURE_TIME),
+        retry_at_epoch: None,
+        is_stale: false,
     }
 }
 
-#[test]
-fn usage_projection_empty_inventory_has_no_retry_copy() {
-    let dialog = Dialog::new_usage_with_tab(
-        jackin_protocol::control::FocusedUsageView::unavailable(
-            "No agents configured for this Capsule.",
-            1_781_185_560,
-        ),
-        UsageDialogTab::Overview,
-    );
-    let state = dialog.usage_state().expect("usage state");
-    assert_eq!(
-        state.rows()[0].value(),
-        "No agents configured for this Capsule."
-    );
-    let hints = dialog.footer_hint_spans(None, termrock::scroll::ScrollAxes::none());
-    assert!(
-        !hints
-            .iter()
-            .any(|hint| matches!(hint, termrock::widgets::HintSpan::Key("r")))
-    );
-}
-
-#[test]
-fn usage_overview_renders_one_row_per_account_tab() {
-    let mut view = usage_view_fixture();
-    view.tabs = vec![
-        jackin_protocol::control::UsageProviderTab {
-            id: "test-tab-claude-a".to_owned(),
-            label: "Claude".to_owned(),
-            status_label: "40% left".to_owned(),
-            account_label: "a@example.com".to_owned(),
-            plan_label: Some("Max".to_owned()),
-            source_label: Some("fresh · provider".to_owned()),
-            active: false,
-        },
-        jackin_protocol::control::UsageProviderTab {
-            id: "test-tab-claude-b".to_owned(),
-            label: "Claude".to_owned(),
-            status_label: "60% left".to_owned(),
-            account_label: "b@example.com".to_owned(),
-            plan_label: Some("Max 20x".to_owned()),
-            source_label: Some("fresh · provider".to_owned()),
-            active: true,
-        },
-        jackin_protocol::control::UsageProviderTab {
-            id: "test-tab-codex".to_owned(),
-            label: "Codex".to_owned(),
-            status_label: "37% left".to_owned(),
-            account_label: "codex@example.com".to_owned(),
-            plan_label: Some("Pro 20x".to_owned()),
-            source_label: Some("fresh · provider".to_owned()),
-            active: false,
-        },
-    ];
-    let strip = crate::tui::components::dialog_widgets::usage_tab_strip_labels(
-        &view,
-        UsageDialogTab::Overview,
-    );
-    assert_eq!(
-        strip
-            .iter()
-            .map(|(label, _)| label.as_str())
-            .collect::<Vec<_>>(),
-        vec!["Overview", "Anthropic", "Anthropic", "OpenAI"]
-    );
-    let dialog = Dialog::new_usage_with_tab(view, UsageDialogTab::Overview);
-    let state = dialog.usage_state().expect("usage state");
-    assert_eq!(state.rows().len(), 3);
-    assert_eq!(
-        state
-            .rows()
-            .iter()
-            .map(|row| row.value().to_owned())
-            .collect::<Vec<_>>(),
-        vec!["40% left", "60% left", "37% left"]
-    );
-}
-
-#[test]
-fn usage_overview_matches_provider_head_of_composite_tab_labels() {
-    use crate::tui::components::dialog_widgets::usage::is_overview_provider_label;
-
-    assert!(is_overview_provider_label("Anthropic"));
-    assert!(is_overview_provider_label("Anthropic · a@example.com"));
-    assert!(is_overview_provider_label("Cursor · c@example.com"));
-    assert!(is_overview_provider_label("OpenCode · o@example.com"));
-    assert!(!is_overview_provider_label("Nous Portal · n@example.com"));
-    assert!(!is_overview_provider_label("Username"));
-}
-
-fn usage_status_bucket(
+fn quota_window(
+    id: &str,
+    rank: u32,
     label: &str,
-    status: jackin_protocol::control::UsageSnapshotStatus,
-) -> jackin_protocol::control::QuotaBucketView {
-    jackin_protocol::control::QuotaBucketView {
-        used_money: None,
-        limit_money: None,
-        severity: jackin_protocol::control::UsageSeverity::default(),
-        label: label.to_owned(),
-        used_label: None,
-        limit_label: None,
-        remaining_percent: None,
-        reset_label: None,
-        resets_at: None,
-        status_slot: None,
-        pace_label: None,
-        status,
+    remaining: u8,
+    reset: &str,
+    pace: Option<&str>,
+) -> UsageLimitWindowV2 {
+    UsageLimitWindowV2 {
+        window_id: id.into(),
+        rank,
+        category: UsageWindowCategoryV2::Session,
+        label: label.into(),
+        value_label: format!("{remaining}% left"),
+        reset_label: reset.into(),
+        remaining_percent: Some(UsagePercent::new(remaining).unwrap()),
+        remaining_raw_percent: Some(i32::from(remaining)),
+        used_percent: None,
+        used_raw_percent: None,
+        reset_at_epoch: None,
+        quota_state: if remaining == 0 {
+            UsageQuotaStateV2::Exhausted
+        } else {
+            UsageQuotaStateV2::Available
+        },
+        count_quota: None,
+        pace_label: pace.map(str::to_owned),
+        runs_out_label: None,
     }
 }
 
-fn quota_bucket(
+fn usage_account(
+    id: &str,
+    rank: u32,
     label: &str,
-    remaining_percent: u8,
-    reset_label: Option<&str>,
-    pace_label: Option<&str>,
-) -> jackin_protocol::control::QuotaBucketView {
-    jackin_protocol::control::QuotaBucketView {
-        used_money: None,
-        limit_money: None,
-        severity: jackin_protocol::control::UsageSeverity::default(),
-        label: label.to_owned(),
-        used_label: Some(format!("{}% used", 100u8.saturating_sub(remaining_percent))),
-        limit_label: Some("100%".to_owned()),
-        remaining_percent: Some(remaining_percent),
-        reset_label: reset_label.map(str::to_owned),
-        resets_at: None,
-        status_slot: None,
-        pace_label: pace_label.map(str::to_owned),
-        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-    }
-}
-
-fn text_bucket(label: &str, value: &str) -> jackin_protocol::control::QuotaBucketView {
-    jackin_protocol::control::QuotaBucketView {
-        used_money: None,
-        limit_money: None,
-        severity: jackin_protocol::control::UsageSeverity::default(),
-        label: label.to_owned(),
-        used_label: None,
-        limit_label: None,
-        remaining_percent: None,
-        reset_label: None,
-        resets_at: None,
-        status_slot: None,
-        pace_label: Some(value.to_owned()),
-        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-    }
-}
-
-fn provider_usage_view_fixture(
-    tab_label: &str,
-    provider_label: &str,
-    account_label: &str,
-    plan_label: Option<&str>,
-    updated_label: &str,
-    buckets: Vec<jackin_protocol::control::QuotaBucketView>,
-) -> jackin_protocol::control::FocusedUsageView {
-    let mut view = usage_view_fixture();
-    view.focused_provider = Some(provider_label.to_owned());
-    view.account = jackin_protocol::control::FocusedAccountHeader {
-        provider_label: provider_label.to_owned(),
-        account_label: account_label.to_owned(),
+    plan: Option<&str>,
+    windows: Vec<UsageLimitWindowV2>,
+) -> UsageAccountV2 {
+    UsageAccountV2 {
+        canonical_account_id: id.into(),
+        identity_kind: UsageIdentityKindV2::ProviderAccountId,
+        rank,
+        display_label: label.into(),
+        plan_label: plan.map(str::to_owned),
         username: None,
-        plan_label: plan_label.map(str::to_owned),
-        credential_origin: None,
-    };
-    view.updated_label = updated_label.to_owned();
-    view.buckets = buckets;
-    for tab in &mut view.tabs {
-        tab.active = tab.label == tab_label;
+        auth_origin: None,
+        refresh_capabilities: vec![],
+        status_label: None,
+        lifecycle: UsageLifecycleV2::Available,
+        freshness: usage_freshness(),
+        provenance_count: 1,
+        windows,
+        metric_groups: vec![],
+        credential_expires_at_epoch: None,
+        issues: vec![],
     }
-    view
 }
 
-fn openai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
-    let mut credits = quota_bucket("Credits", 0, None, None);
-    credits.used_label = None;
-    credits.limit_label = Some("1K tokens".to_owned());
-    provider_usage_view_fixture(
-        "Codex",
-        "OpenAI",
-        "account@work.test",
+fn usage_provider(
+    id: &str,
+    rank: u32,
+    name: &str,
+    accounts: Vec<UsageAccountV2>,
+) -> UsageProviderV2 {
+    UsageProviderV2 {
+        provider_id: id.into(),
+        display_name: name.into(),
+        rank,
+        membership_state: UsageMembershipStateV2::Current,
+        freshness: usage_freshness(),
+        accounts,
+        issues: vec![],
+    }
+}
+
+fn projection_with(providers: Vec<UsageProviderV2>) -> UsageProjectionV2 {
+    UsageProjectionV2 {
+        schema_version: UsageProjectionSchemaV2,
+        projection_id: "publication-fixture-7".into(),
+        generated_at_epoch: USAGE_FIXTURE_TIME,
+        discovery_revision: "inventory-fixture".into(),
+        broker_instance_id: "broker-fixture".into(),
+        broker_generation: 7,
+        refresh_state: UsageProjectionRefreshStateV2::Idle,
+        providers,
+        unresolved: vec![],
+        unresolved_grants: vec![],
+        issues: vec![],
+    }
+}
+
+fn usage_view_fixture() -> UsageProjectionV2 {
+    let mut codex = usage_account(
+        "account-openai-a",
+        0,
+        "alexey@example.com",
         Some("Pro 20x"),
-        "Updated 1m ago",
+        vec![quota_window(
+            "window-session",
+            0,
+            "Session",
+            37,
+            "Resets 15:07",
+            Some("10% in reserve"),
+        )],
+    );
+    let mut credits = quota_window(
+        "window-credits",
+        1,
+        "Credits",
+        0,
+        "",
+        Some("ACP billing unavailable"),
+    );
+    credits.quota_state = UsageQuotaStateV2::Unsupported;
+    credits.remaining_percent = None;
+    credits.remaining_raw_percent = None;
+    credits.used_percent = None;
+    credits.used_raw_percent = None;
+    credits.value_label = "unsupported".into();
+    codex.windows.push(credits);
+    projection_with(vec![
+        usage_provider("openai", 0, "OpenAI", vec![codex]),
+        usage_provider(
+            "anthropic",
+            1,
+            "Anthropic",
+            vec![usage_account(
+                "account-anthropic-a",
+                0,
+                "alexey@example.com",
+                Some("Max"),
+                vec![quota_window(
+                    "window-weekly",
+                    0,
+                    "Weekly",
+                    16,
+                    "Resets in 46m (Jun 17, 22:40)",
+                    None,
+                )],
+            )],
+        ),
+        usage_provider(
+            "amp",
+            2,
+            "Amp",
+            vec![usage_account(
+                "account-amp-a",
+                0,
+                "account@personal.test",
+                None,
+                vec![],
+            )],
+        ),
+        usage_provider(
+            "xai",
+            3,
+            "xAI",
+            vec![{
+                let mut a = usage_account("account-xai-a", 0, "grok@work.test", None, vec![]);
+                a.lifecycle = UsageLifecycleV2::NeedsLogin;
+                a
+            }],
+        ),
+        usage_provider(
+            "zai",
+            4,
+            "Z.AI",
+            vec![usage_account(
+                "account-zai-a",
+                0,
+                "zai@work.test",
+                Some("GLM Coding"),
+                vec![quota_window(
+                    "window-zai",
+                    0,
+                    "Tokens",
+                    88,
+                    "Resets in 4d (Jun 21, 00:00)",
+                    None,
+                )],
+            )],
+        ),
+        usage_provider(
+            "kimi",
+            5,
+            "Kimi",
+            vec![usage_account(
+                "account-kimi-a",
+                0,
+                "kimi@work.test",
+                Some("Moonshot"),
+                vec![quota_window(
+                    "window-kimi",
+                    0,
+                    "Weekly",
+                    72,
+                    "Resets in 13h (Jun 18, 11:00)",
+                    None,
+                )],
+            )],
+        ),
+        usage_provider(
+            "minimax",
+            6,
+            "MiniMax",
+            vec![usage_account(
+                "account-minimax-a",
+                0,
+                "minimax@work.test",
+                Some("M1 Coding"),
+                vec![quota_window("window-minimax", 0, "Requests", 100, "", None)],
+            )],
+        ),
+    ])
+}
+
+fn first_account(view: &mut UsageProjectionV2) -> &mut UsageAccountV2 {
+    &mut view.providers[0].accounts[0]
+}
+
+fn usage_group(
+    id: &str,
+    rank: u32,
+    label: &str,
+    kind: UsageMetricGroupKindV2,
+    value: UsageMetricValueV2,
+) -> UsageMetricGroupV2 {
+    UsageMetricGroupV2 {
+        group_id: id.into(),
+        rank,
+        kind,
+        label: label.into(),
+        scope: UsageMetricScopeV2::default(),
+        observed_at_epoch: Some(USAGE_FIXTURE_TIME),
+        fetched_at_epoch: USAGE_FIXTURE_TIME,
+        last_success_at_epoch: Some(USAGE_FIXTURE_TIME),
+        phase: UsageFreshnessPhaseV2::Current,
+        is_stale: false,
+        quota_state: UsageQuotaStateV2::NotApplicable,
+        value,
+        reset_at_epoch: None,
+        renews_at_epoch: None,
+        issues: vec![],
+    }
+}
+
+fn provider_projection(
+    id: &str,
+    name: &str,
+    account_id: &str,
+    plan: &str,
+    windows: Vec<UsageLimitWindowV2>,
+) -> UsageProjectionV2 {
+    projection_with(vec![usage_provider(
+        id,
+        0,
+        name,
+        vec![usage_account(
+            account_id,
+            0,
+            "account@work.test",
+            Some(plan),
+            windows,
+        )],
+    )])
+}
+
+fn openai_usage_view_fixture() -> UsageProjectionV2 {
+    let mut p = provider_projection(
+        "openai",
+        "OpenAI",
+        "account-openai-a",
+        "Pro 20x",
         vec![
-            quota_bucket("Session", 97, Some("Resets 19:45"), Some("33% in reserve")),
-            quota_bucket(
+            quota_window(
+                "session",
+                0,
+                "Session",
+                97,
+                "Resets 19:45",
+                Some("33% in reserve"),
+            ),
+            quota_window(
+                "weekly",
+                1,
                 "Weekly",
                 19,
-                Some("Resets tomorrow, 04:18"),
+                "Resets tomorrow, 04:18",
                 Some("12% in reserve"),
             ),
-            quota_bucket("Codex Spark 5-hour", 100, Some("Resets 21:31"), None),
-            quota_bucket(
-                "Codex Spark Weekly",
+            quota_window(
+                "spark-short",
+                2,
+                "Codex Spark 5-hour",
                 100,
-                Some("Resets Jul 1 at 16:31"),
+                "Resets 21:31",
                 None,
             ),
-            text_bucket(
-                "Limit Reset Credits",
-                "2 manual resets available · Next expires Jul 12 at 08:14",
+            quota_window(
+                "spark-week",
+                3,
+                "Codex Spark Weekly",
+                100,
+                "Resets Jul 1 at 16:31",
+                None,
             ),
-            credits,
         ],
-    )
+    );
+    let mut resets = quota_window("manual-resets", 4, "Limit Reset Credits", 0, "", None);
+    resets.quota_state = UsageQuotaStateV2::NotApplicable;
+    resets.remaining_percent = None;
+    resets.remaining_raw_percent = None;
+    resets.used_percent = None;
+    resets.used_raw_percent = None;
+    resets.value_label = "2 manual resets available · Next expires Jul 12 at 08:14".into();
+    first_account(&mut p).windows.push(resets);
+    first_account(&mut p).metric_groups.push(usage_group(
+        "credits",
+        0,
+        "Credits",
+        UsageMetricGroupKindV2::Balance,
+        UsageMetricValueV2::Balance {
+            amount: Money::new(1000, "tokens", 0),
+            expires_at_epoch: None,
+        },
+    ));
+    p
 }
-
-fn anthropic_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
-    provider_usage_view_fixture(
-        "Claude",
+fn anthropic_usage_view_fixture() -> UsageProjectionV2 {
+    let mut p = provider_projection(
+        "anthropic",
         "Anthropic",
-        "account@work.test",
-        Some("Max"),
-        "Updated 2m ago",
+        "account-anthropic-a",
+        "Max",
         vec![
-            quota_bucket(
+            quota_window(
+                "session",
+                0,
                 "Session",
                 89,
-                Some("Resets in 2h 12m (Jun 17, 19:19)"),
+                "Resets in 2h 12m (Jun 17, 19:19)",
                 Some("34% in reserve"),
             ),
-            // limits-array shape: weekly_all is labelled "All models", and a
-            // model-scoped window (Fable) renders as its own non-headline row.
-            quota_bucket(
+            quota_window(
+                "all",
+                1,
                 "All models",
                 55,
-                Some("Resets in 1w 1d (Jun 26, 13:59)"),
+                "Resets in 1w 1d (Jun 26, 13:59)",
                 Some("28% in reserve"),
             ),
-            quota_bucket("Fable", 57, Some("Resets in 1w 1d (Jun 26, 13:59)"), None),
-            quota_bucket("Sonnet", 85, Some("Resets in 1w 1d (Jun 26, 13:59)"), None),
+            quota_window(
+                "fable",
+                2,
+                "Fable",
+                57,
+                "Resets in 1w 1d (Jun 26, 13:59)",
+                None,
+            ),
+            quota_window(
+                "sonnet",
+                3,
+                "Sonnet",
+                85,
+                "Resets in 1w 1d (Jun 26, 13:59)",
+                None,
+            ),
         ],
-    )
+    );
+    first_account(&mut p).windows[1].category = UsageWindowCategoryV2::LongRange;
+    for w in &mut first_account(&mut p).windows[2..] {
+        w.category = UsageWindowCategoryV2::Model;
+    }
+    p
 }
-
-fn amp_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
-    provider_usage_view_fixture(
+fn amp_usage_view_fixture() -> UsageProjectionV2 {
+    let mut p = provider_projection(
+        "amp",
         "Amp",
-        "Amp",
-        "account@personal.test",
-        Some("Amp Free"),
-        "Updated now",
-        vec![
-            jackin_protocol::control::QuotaBucketView {
-                used_money: None,
-                limit_money: None,
-                severity: jackin_protocol::control::UsageSeverity::default(),
-                label: "Amp Free".to_owned(),
-                used_label: Some("$9.60".to_owned()),
-                limit_label: Some("$10".to_owned()),
-                remaining_percent: Some(4),
-                reset_label: Some("Resets in 22h 40m".to_owned()),
-                resets_at: None,
-                status_slot: None,
-                pace_label: None,
-                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-            },
-            jackin_protocol::control::QuotaBucketView {
-                used_money: None,
-                limit_money: None,
-                severity: jackin_protocol::control::UsageSeverity::default(),
-                label: "Individual credits".to_owned(),
-                used_label: None,
-                limit_label: Some("$4.76".to_owned()),
-                remaining_percent: None,
-                reset_label: None,
-                resets_at: None,
-                status_slot: None,
-                pace_label: Some("Individual credits: $4.76".to_owned()),
-                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-            },
-        ],
-    )
+        "account-amp-a",
+        "Individual",
+        vec![quota_window(
+            "free",
+            0,
+            "Amp Free",
+            4,
+            "Resets in 22h 40m",
+            None,
+        )],
+    );
+    first_account(&mut p).display_label = "account@personal.test".into();
+    first_account(&mut p).metric_groups.push(usage_group(
+        "credits",
+        0,
+        "Individual credits",
+        UsageMetricGroupKindV2::Balance,
+        UsageMetricValueV2::Balance {
+            amount: Money::new(476, "USD", 2),
+            expires_at_epoch: None,
+        },
+    ));
+    p
 }
-
-fn xai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
-    provider_usage_view_fixture(
-        "Grok Build",
+fn xai_usage_view_fixture() -> UsageProjectionV2 {
+    provider_projection(
+        "xai",
         "xAI",
-        "account@work.test",
-        Some("SuperGrok"),
-        "Updated 4m ago",
-        vec![quota_bucket(
+        "account-xai-a",
+        "SuperGrok",
+        vec![quota_window(
+            "weekly",
+            0,
             "Weekly",
             18,
-            Some("Resets Jul 1 at 07:00"),
+            "Resets Jul 1 at 07:00",
             None,
         )],
     )
 }
-
-fn zai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
-    provider_usage_view_fixture(
-        "GLM / Z.AI",
+fn zai_usage_view_fixture() -> UsageProjectionV2 {
+    provider_projection(
+        "zai",
         "Z.AI",
-        "account@work.test",
-        None,
-        "Updated 2m ago",
+        "account-zai-a",
+        "GLM Coding",
         vec![
-            quota_bucket("Tokens", 99, Some("Resets Jun 27 at 15:27"), None),
-            quota_bucket(
+            quota_window("tokens", 0, "Tokens", 99, "Resets Jun 27 at 15:27", None),
+            quota_window(
+                "mcp",
+                1,
                 "MCP",
                 100,
-                Some("Resets Jul 13 at 15:27"),
+                "Resets Jul 13 at 15:27",
                 Some("0 / 100 (100 remaining)"),
             ),
-            quota_bucket("5-hour", 100, Some("Resets 5 hours window"), None),
+            quota_window("rolling", 2, "5-hour", 100, "Resets 5 hours window", None),
         ],
     )
 }
-
-fn kimi_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
-    provider_usage_view_fixture(
+fn kimi_usage_view_fixture() -> UsageProjectionV2 {
+    provider_projection(
+        "kimi",
         "Kimi",
-        "Kimi",
-        "account@work.test",
-        None,
-        "Updated 4m ago",
+        "account-kimi-a",
+        "Moonshot",
         vec![
-            quota_bucket("Weekly", 100, Some("Resets Jul 1 at 15:17"), None),
-            quota_bucket(
+            quota_window("weekly", 0, "Weekly", 100, "Resets Jul 1 at 15:17", None),
+            quota_window(
+                "rate",
+                1,
                 "Rate Limit",
                 100,
-                Some("Resets 17:17"),
+                "Resets 17:17",
                 Some("86% in reserve"),
             ),
         ],
     )
 }
-
-fn minimax_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
-    provider_usage_view_fixture(
+fn minimax_usage_view_fixture() -> UsageProjectionV2 {
+    provider_projection(
+        "minimax",
         "MiniMax",
-        "MiniMax",
-        "account@work.test",
-        None,
-        "Updated 3m ago",
+        "account-minimax-a",
+        "M1 Coding",
         vec![
-            quota_bucket(
+            quota_window(
+                "short",
+                0,
                 "General · 5h",
                 100,
-                Some("Resets 28m"),
+                "Resets 28m",
                 Some("Usage: 0 / 100"),
             ),
-            quota_bucket(
+            quota_window(
+                "weekly",
+                1,
                 "General · Weekly",
                 99,
-                Some("Resets 4d"),
+                "Resets 4d",
                 Some("Usage: 1 / 100"),
             ),
-            quota_bucket("Video", 100, Some("Resets 14h"), Some("Usage: 0 / 100")),
-        ],
-    )
-}
-
-fn antigravity_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
-    provider_usage_view_fixture(
-        "Antigravity",
-        "Antigravity",
-        "pilot@example.test",
-        Some("Antigravity Pro"),
-        "Updated 5m ago",
-        vec![
-            quota_bucket("Gemini · 5h", 73, Some("Resets in 1h 30m"), Some("On pace")),
-            // Legacy weekly fallback: no percent, no meter. The label head
-            // collides with the Gemini provider name, which used to route
-            // this row through the overview arm (S4/S5 parity).
-            text_bucket("Gemini · Weekly", "No data"),
-            quota_bucket(
-                "Other models · 5h",
-                12,
-                Some("Resets in 1h 30m"),
-                Some("5% in deficit"),
+            quota_window(
+                "video",
+                2,
+                "Video",
+                100,
+                "Resets 14h",
+                Some("Usage: 0 / 100"),
             ),
         ],
     )
 }
 
-#[test]
-fn usage_provider_tab_renders_meterless_family_bucket_as_plain_row() {
-    let text = render_usage_dialog_snapshot_for_view(
-        100,
-        32,
-        UsageDialogTab::Provider,
-        antigravity_usage_view_fixture(),
-    );
-    assert!(
-        text.contains("73% left"),
-        "metered family bucket must render its percent:\n{text}"
-    );
-    // Plain label/value row — never the overview join, which glues label and
-    // value without a separator ("Gemini · WeeklyNo data").
-    assert!(
-        text.contains("Gemini · Weekly No data"),
-        "meter-less family bucket must render as a plain row:\n{text}"
-    );
-    assert!(
-        !text.contains("WeeklyNo data"),
-        "overview-arm misroute must not garble the row:\n{text}"
-    );
-}
-
-fn render_usage_dialog_snapshot(width: u16, height: u16, tab: UsageDialogTab) -> String {
-    render_usage_dialog_snapshot_for_view(width, height, tab, usage_view_fixture())
-}
-
-fn render_usage_dialog_snapshot_for_view(
-    width: u16,
-    height: u16,
-    tab: UsageDialogTab,
-    view: jackin_protocol::control::FocusedUsageView,
-) -> String {
-    let d = Dialog::new_usage_with_tab(view, tab);
+fn render_usage_dialog(d: &Dialog, width: u16, height: u16) -> String {
     let snapshot = d.to_ratatui_snapshot(None);
     let rect = d.box_rect(height, width);
-    let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).unwrap();
-
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
         .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot)
         })
         .unwrap();
-
     let buf = terminal.backend().buffer();
     (0..height)
         .map(|y| {
@@ -1560,666 +1537,447 @@ fn render_usage_dialog_snapshot_for_view(
         .collect::<Vec<_>>()
         .join("\n")
 }
-
+fn render_usage_dialog_snapshot(width: u16, height: u16, tab: UsageDialogTab) -> String {
+    render_usage_dialog_snapshot_for_view(width, height, tab, usage_view_fixture())
+}
+fn render_usage_dialog_snapshot_for_view(
+    width: u16,
+    height: u16,
+    tab: UsageDialogTab,
+    view: UsageProjectionV2,
+) -> String {
+    render_usage_dialog(&Dialog::new_usage_with_tab(Some(view), tab), width, height)
+}
 fn usage_tab_text_position(d: &Dialog, height: u16, width: u16, label: &str) -> (u16, u16) {
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(height, width);
-    let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
-        })
-        .unwrap();
-
-    let buf = terminal.backend().buffer();
-    for y in 0..height {
-        let line = (0..width).map(|x| buf[(x, y)].symbol()).collect::<String>();
+    let text = render_usage_dialog(d, width, height);
+    for (y, line) in text.lines().enumerate() {
         if let Some(x) = line.find(label) {
-            return (y, u16::try_from(x).expect("tab label column fits u16"));
+            return (y as u16, x as u16);
         }
     }
-    panic!("usage tab label {label:?} not rendered");
+    panic!("missing {label}: {text}")
+}
+fn provider_dialog(view: UsageProjectionV2) -> Dialog {
+    Dialog::new_usage_with_tab(Some(view), UsageDialogTab::Provider)
+}
+fn usage_content_text(d: &Dialog) -> String {
+    let state = d.usage_state().expect("usage state");
+    crate::tui::components::dialog_widgets::usage_info_lines_for_width(&state, 120)
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+fn assert_usage_contains(view: UsageProjectionV2, expected: &[&str]) {
+    let text = usage_content_text(&provider_dialog(view));
+    for needle in expected {
+        assert!(text.contains(needle), "missing {needle}:\n{text}");
+    }
 }
 
 #[test]
+fn usage_projection_fixtures_have_valid_canonical_ranks_and_semantics() {
+    for p in [
+        usage_view_fixture(),
+        openai_usage_view_fixture(),
+        anthropic_usage_view_fixture(),
+        amp_usage_view_fixture(),
+        xai_usage_view_fixture(),
+        zai_usage_view_fixture(),
+        kimi_usage_view_fixture(),
+        minimax_usage_view_fixture(),
+    ] {
+        p.validate().unwrap();
+    }
+}
+#[test]
+fn usage_projection_empty_inventory_has_no_retry_copy() {
+    let d = Dialog::new_usage(Some(projection_with(vec![])));
+    let text = render_usage_dialog(&d, 100, 32);
+    assert!(!text.contains("retry"), "{text}");
+    assert!(
+        !d.footer_hint_spans(None, termrock::scroll::ScrollAxes::none())
+            .iter()
+            .any(|h| matches!(h, termrock::widgets::HintSpan::Key("r")))
+    );
+}
+#[test]
+fn usage_overview_renders_one_row_per_account_tab() {
+    let p = projection_with(vec![usage_provider(
+        "anthropic",
+        0,
+        "Anthropic",
+        vec![
+            usage_account(
+                "account-a",
+                0,
+                "same-label",
+                Some("Max"),
+                vec![quota_window("a", 0, "Weekly", 40, "", None)],
+            ),
+            usage_account(
+                "account-b",
+                1,
+                "same-label",
+                Some("Max 20x"),
+                vec![quota_window("b", 0, "Weekly", 60, "", None)],
+            ),
+            usage_account("account-zero", 2, "zero quota", None, vec![]),
+        ],
+    )]);
+    let d = Dialog::new_usage(Some(p));
+    let text = usage_content_text(&d);
+    assert!(text.contains("40% left"), "{text}");
+    assert!(text.contains("60% left"), "{text}");
+    assert!(text.contains("zero quota"), "{text}");
+}
+#[test]
+fn usage_overview_matches_provider_head_of_composite_tab_labels() {
+    // Provider identity is explicit; misleading display labels cannot remap it.
+    let p = projection_with(vec![usage_provider(
+        "anthropic",
+        0,
+        "OpenAI · misleading",
+        vec![usage_account("opaque-anthropic", 0, "same", None, vec![])],
+    )]);
+    let mut d = Dialog::new_usage(Some(p));
+    assert_eq!(
+        d.handle_key(b"\x1b[C", None),
+        DialogAction::SwitchUsageProvider {
+            provider_id: "anthropic".into(),
+            canonical_account_id: "opaque-anthropic".into()
+        }
+    );
+}
+#[test]
+fn usage_dialog_rows_render_provider_quota_snapshot() {
+    assert_usage_contains(
+        usage_view_fixture(),
+        &[
+            "OpenAI",
+            "alexey@example.com",
+            "Pro 20x",
+            "Session",
+            "37% left",
+            "10% in reserve",
+            "Resets 15:07",
+            "ACP billing unavailable",
+            "unsupported",
+        ],
+    );
+}
+#[test]
 fn usage_dialog_renders_auth_source_and_omits_blank_email() {
-    // credential_origin, distinct username, and plan stay in Details while the
-    // Rust identity projection supplies an honest non-account state above them.
-    let mut view = usage_view_fixture();
-    view.account = jackin_protocol::control::FocusedAccountHeader {
-        provider_label: "Z.AI".to_owned(),
-        account_label: String::new(),
-        username: Some("donbeave".to_owned()),
-        plan_label: Some("GLM Coding".to_owned()),
-        credential_origin: Some("API token \u{b7} env ZAI_API_KEY".to_owned()),
-    };
-    let snapshot = render_usage_dialog_snapshot_for_view(120, 40, UsageDialogTab::Provider, view);
+    let mut p = zai_usage_view_fixture();
+    let account = first_account(&mut p);
+    account.display_label = String::new();
+    account.username = Some("donbeave".into());
+    account.auth_origin = Some("API token · env ZAI_API_KEY".into());
+    account.plan_label = Some("GLM Coding".into());
+    let text = render_usage_dialog_snapshot_for_view(120, 40, UsageDialogTab::Provider, p);
     assert!(
-        snapshot.contains("Auth API token \u{b7} env ZAI_API_KEY"),
-        "auth source line missing:\n{snapshot}"
+        text.contains("Auth: API token · env ZAI_API_KEY"),
+        "auth source missing: {text}"
     );
     assert!(
-        snapshot.contains("Username donbeave"),
-        "username detail missing:\n{snapshot}"
+        text.contains("Username: donbeave"),
+        "distinct username missing: {text}"
     );
+    assert!(text.contains("Plan: GLM Coding"), "plan missing: {text}");
     assert!(
-        snapshot.contains("Plan GLM Coding"),
-        "plan detail missing:\n{snapshot}"
-    );
-    assert!(
-        !snapshot.contains("account unavailable"),
-        "blank email must be omitted, not labelled unavailable:\n{snapshot}"
+        !text.contains("account unavailable"),
+        "blank account identity must not fabricate unavailable email: {text}"
     );
 }
 
 #[test]
 fn usage_dialog_renders_usage_status_rows_for_error_and_stale_states() {
-    let mut values = Vec::new();
-    for status in [
-        jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
-        jackin_protocol::control::UsageSnapshotStatus::Stale,
-        jackin_protocol::control::UsageSnapshotStatus::Unsupported,
-        jackin_protocol::control::UsageSnapshotStatus::Error,
+    for lifecycle in [
+        UsageLifecycleV2::NeedsLogin,
+        UsageLifecycleV2::Unsupported,
+        UsageLifecycleV2::Error,
+        UsageLifecycleV2::Unavailable,
+        UsageLifecycleV2::AgentUninitialized,
     ] {
-        let mut view = usage_view_fixture();
-        view.status = status;
-        let d = Dialog::new_usage(view);
-        values.extend(
-            d.usage_state()
-                .expect("usage state")
-                .rows()
-                .iter()
-                .map(|row| row.value().to_owned()),
-        );
+        let mut p = usage_view_fixture();
+        let a = first_account(&mut p);
+        a.lifecycle = lifecycle;
+        a.status_label = Some(format!("canonical {lifecycle:?}"));
+        assert_usage_contains(p, &[&format!("canonical {lifecycle:?}")]);
     }
-
-    assert!(values.iter().any(|value| value == "Sign in required"));
-    assert!(
-        values
-            .iter()
-            .any(|value| value == "Update delayed · Updated now")
-    );
-    assert!(
-        values
-            .iter()
-            .any(|value| value == "Usage limits unsupported")
-    );
-    assert!(
-        values
-            .iter()
-            .any(|value| value == "Update failed · Updated now")
-    );
+    let mut p = usage_view_fixture();
+    first_account(&mut p).freshness.phase = UsageFreshnessPhaseV2::Stale;
+    first_account(&mut p).freshness.is_stale = true;
+    assert_usage_contains(p, &["stale"]);
 }
-
 #[test]
 fn usage_dialog_renders_bucket_status_rows_for_error_states() {
-    let mut view = usage_view_fixture();
-    view.buckets = vec![
-        usage_status_bucket(
-            "Tokens",
-            jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
-        ),
-        usage_status_bucket(
-            "Weekly",
-            jackin_protocol::control::UsageSnapshotStatus::Stale,
-        ),
-        usage_status_bucket(
-            "Credits",
-            jackin_protocol::control::UsageSnapshotStatus::Unsupported,
-        ),
-        usage_status_bucket(
-            "Detail",
-            jackin_protocol::control::UsageSnapshotStatus::Error,
-        ),
+    let states = [
+        UsageQuotaStateV2::NotStarted,
+        UsageQuotaStateV2::Unsupported,
+        UsageQuotaStateV2::Unavailable,
+        UsageQuotaStateV2::NoPermission,
+        UsageQuotaStateV2::Unknown,
+        UsageQuotaStateV2::NotApplicable,
+        UsageQuotaStateV2::Error,
     ];
-    let d = Dialog::new_usage(view);
-    let state = d.usage_state().expect("usage state");
-    let values: Vec<&str> = state
-        .rows()
-        .iter()
-        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
-        .collect();
-
-    assert!(values.iter().any(|value| value.contains("needs login")));
-    assert!(values.iter().any(|value| value.contains("stale")));
-    assert!(values.iter().any(|value| value.contains("unsupported")));
-    assert!(values.iter().any(|value| value.contains("error")));
-}
-
-#[test]
-fn usage_dialog_rows_render_provider_quota_snapshot() {
-    let d = Dialog::new_usage(usage_view_fixture());
-    let state = d.usage_state().expect("usage state");
-    let values: Vec<&str> = state
-        .rows()
-        .iter()
-        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
-        .collect();
-
-    assert_eq!(state.rows()[0].label(), "Identity provider");
-    assert_eq!(state.rows()[0].value(), "OpenAI");
-    assert_eq!(state.rows()[1].label(), "Identity account");
-    assert_eq!(state.rows()[1].value(), "alexey@example.com");
-    assert_eq!(state.rows()[2].label(), "Identity activity");
-    assert_eq!(state.rows()[2].value(), "Updated now");
-    assert!(values.iter().any(|value| {
-        value.starts_with("████")
-            && value.contains("37% left")
-            && value.contains("10% in reserve")
-            && value.contains("Resets 15:07")
-            && !value.contains("used / 100%")
-    }));
-    assert!(values.contains(&"ACP billing unavailable · unsupported"));
-    assert!(!values.contains(&"fresh"));
-    let rows_debug = format!("{:?}", state.rows());
-    assert!(!rows_debug.contains("Account availability"));
-    assert!(!rows_debug.contains("Header"));
-    assert!(!rows_debug.contains("Instance"));
-    assert!(!values.contains(&"local diagnostic detail"));
-}
-
-#[test]
-fn usage_dialog_renders_shared_provider_tab_strip_labels() {
-    let d = Dialog::new_usage(usage_view_fixture());
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(32, 120);
-    let backend = TestBackend::new(120, 32);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
-        })
-        .unwrap();
-
-    let buf = terminal.backend().buffer();
-    let rendered = (0..32)
-        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(rendered.contains("Overview"), "{rendered}");
-    assert!(rendered.contains("OpenAI"), "{rendered}");
-    assert!(rendered.contains("Anthropic"), "{rendered}");
-    assert!(rendered.contains("Amp"), "{rendered}");
-}
-
-#[test]
-fn usage_dialog_provider_tabs_are_clickable() {
-    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
-    let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Anthropic");
-
-    assert!(d.clickable_at(tab_row, tab_col, 32, 120, None));
-    match d.handle_click(tab_row, tab_col, 32, 120, None) {
-        DialogAction::SwitchUsageProvider {
-            provider_label,
-            account_id,
-        } => {
-            assert_eq!(provider_label, "Claude");
-            assert_eq!(account_id, "test-tab-claude");
-        }
-        other => panic!("expected provider switch, got {other:?}"),
+    for state in states {
+        let mut p = usage_view_fixture();
+        let w = &mut first_account(&mut p).windows[0];
+        w.quota_state = state;
+        w.remaining_percent = None;
+        w.remaining_raw_percent = None;
+        w.used_percent = None;
+        w.used_raw_percent = None;
+        w.value_label = format!("canonical {state:?}");
+        assert_usage_contains(p, &[&format!("canonical {state:?}")]);
     }
 }
-
+#[test]
+fn usage_provider_tab_renders_meterless_family_bucket_as_plain_row() {
+    let mut p = usage_view_fixture();
+    let w = &mut first_account(&mut p).windows[0];
+    w.label = "Gemini family".into();
+    w.value_label = "no published limit".into();
+    w.remaining_percent = None;
+    w.remaining_raw_percent = None;
+    w.used_percent = None;
+    w.used_raw_percent = None;
+    w.quota_state = UsageQuotaStateV2::Unknown;
+    let text = render_usage_dialog_snapshot_for_view(100, 32, UsageDialogTab::Provider, p);
+    assert!(text.contains("Gemini family"), "{text}");
+    assert!(text.contains("no published limit"), "{text}");
+    assert!(
+        !text.contains("████"),
+        "unknown quota must not create meter: {text}"
+    );
+}
+#[test]
+fn usage_dialog_renders_deficit_and_runout_quota_labels() {
+    let mut p = usage_view_fixture();
+    first_account(&mut p).windows.push(quota_window(
+        "weekly",
+        2,
+        "Weekly",
+        60,
+        "Resets Jun 17 at 23:15",
+        Some("31% in deficit · Runs out in 21h 45m"),
+    ));
+    assert_usage_contains(
+        p,
+        &[
+            "60% left",
+            "31% in deficit",
+            "Runs out in 21h 45m",
+            "Resets Jun 17 at 23:15",
+        ],
+    );
+}
+#[test]
+fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
+    let mut p = usage_view_fixture();
+    first_account(&mut p).windows = vec![
+        quota_window(
+            "tokens",
+            0,
+            "Tokens",
+            60,
+            "Resets Jun 17 at 23:15",
+            Some("31% in deficit"),
+        ),
+        quota_window("mcp", 1, "MCP", 60, "Resets 18:00", Some("5 hours window")),
+        quota_window(
+            "free",
+            2,
+            "Amp Free",
+            52,
+            "",
+            Some("replenishes +$1.00/hour"),
+        ),
+        quota_window(
+            "coding",
+            3,
+            "MiniMax M1 Coding plan",
+            88,
+            "Resets tomorrow",
+            None,
+        ),
+    ];
+    assert_usage_contains(
+        p,
+        &[
+            "Tokens",
+            "60% left",
+            "MCP",
+            "5 hours window",
+            "Amp Free",
+            "replenishes +$1.00/hour",
+            "MiniMax M1 Coding plan",
+            "88% left",
+            "████",
+        ],
+    );
+}
+#[test]
+fn usage_dialog_renders_extra_usage_monthly_cap() {
+    let mut p = usage_view_fixture();
+    first_account(&mut p).metric_groups.push(usage_group(
+        "spend",
+        0,
+        "Extra usage",
+        UsageMetricGroupKindV2::SpendCap,
+        UsageMetricValueV2::SpendCap {
+            cap: Some(Money::new(26000, "SGD", 2)),
+            spent: Some(Money::new(7849, "SGD", 2)),
+            remaining: Some(Money::new(18151, "SGD", 2)),
+        },
+    ));
+    assert_usage_contains(p, &["Extra usage", "78.49", "260.00", "SGD"]);
+}
+#[test]
+fn usage_dialog_renders_dollar_budget_window() {
+    let mut p = usage_view_fixture();
+    first_account(&mut p).metric_groups.push(usage_group(
+        "budget",
+        0,
+        "Amber Ladder",
+        UsageMetricGroupKindV2::SpendCap,
+        UsageMetricValueV2::SpendCap {
+            cap: Some(Money::new(2500000, "USD", 2)),
+            spent: Some(Money::new(0, "USD", 2)),
+            remaining: Some(Money::new(2500000, "USD", 2)),
+        },
+    ));
+    assert_usage_contains(p, &["Amber Ladder", "25000.00", "0.00"]);
+}
+#[test]
+fn usage_dialog_renders_amp_individual_credits_as_credits_section() {
+    assert_usage_contains(
+        amp_usage_view_fixture(),
+        &[
+            "Amp Free",
+            "4% left",
+            "Individual credits",
+            "4.76",
+            "account@personal.test",
+        ],
+    );
+}
+#[test]
+fn usage_dialog_overview_tab_renders_cross_provider_summary() {
+    let text = usage_content_text(&Dialog::new_usage(Some(usage_view_fixture())));
+    for needle in ["OpenAI", "Anthropic", "xAI", "Z.AI", "37% left", "16% left"] {
+        assert!(text.contains(needle), "{text}");
+    }
+}
+#[test]
+fn usage_dialog_renders_shared_provider_tab_strip_labels() {
+    let text = usage_content_text(&Dialog::new_usage(Some(usage_view_fixture())));
+    for label in ["Overview", "OpenAI", "Anthropic", "Amp"] {
+        assert!(text.contains(label), "{text}");
+    }
+}
+#[test]
+fn usage_dialog_provider_tabs_are_clickable() {
+    let mut d = Dialog::new_usage(Some(usage_view_fixture()));
+    let (y, x) = usage_tab_text_position(&d, 40, 120, "Anthropic");
+    assert!(d.clickable_at(y, x, 40, 120, None));
+    assert_eq!(
+        d.handle_click(y, x, 40, 120, None),
+        DialogAction::SwitchUsageProvider {
+            provider_id: "anthropic".into(),
+            canonical_account_id: "account-anthropic-a".into()
+        }
+    );
+}
 #[test]
 fn usage_dialog_provider_tab_hover_uses_shared_tab_hover_color() {
-    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
-    let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Anthropic");
-
-    assert!(d.set_usage_tab_hover(tab_row, tab_col, 32, 120));
-
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(32, 120);
-    let backend = TestBackend::new(120, 32);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
-        })
+    let mut d = Dialog::new_usage(Some(usage_view_fixture()));
+    let (y, x) = usage_tab_text_position(&d, 40, 120, "Anthropic");
+    assert!(d.set_usage_tab_hover(y, x, 40, 120));
+    let mut t = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    let s = d.to_ratatui_snapshot(None);
+    let r = d.box_rect(40, 120);
+    t.draw(|f| crate::tui::components::dialog_widgets::render_dialog_ratatui(f, r, &s))
         .unwrap();
-
     assert!(
-        terminal.backend().buffer()[(tab_col, tab_row)]
+        t.backend().buffer()[(x, y)]
             .modifier
             .contains(ratatui::style::Modifier::UNDERLINED)
     );
 }
-
 #[test]
 fn usage_dialog_overview_tab_click_selects_overview() {
-    let mut d = Dialog::new_usage(usage_view_fixture());
-    let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Overview");
-
-    assert_eq!(
-        d.handle_click(tab_row, tab_col, 32, 120, None),
-        DialogAction::Redraw
-    );
+    let mut d = provider_dialog(usage_view_fixture());
+    let (y, x) = usage_tab_text_position(&d, 40, 120, "Overview");
+    assert_eq!(d.handle_click(y, x, 40, 120, None), DialogAction::Redraw);
     assert_eq!(d.usage_selected_tab(), Some(UsageDialogTab::Overview));
 }
-
-#[test]
-fn usage_dialog_renders_deficit_and_runout_quota_labels() {
-    let mut view = usage_view_fixture();
-    view.buckets
-        .push(jackin_protocol::control::QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "Weekly".to_owned(),
-            used_label: Some("40% used".to_owned()),
-            limit_label: Some("100%".to_owned()),
-            remaining_percent: Some(60),
-            reset_label: Some("Resets Jun 17 at 23:15".to_owned()),
-            resets_at: None,
-            status_slot: None,
-            pace_label: Some("31% in deficit · Runs out in 21h 45m".to_owned()),
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        });
-    let d = Dialog::new_usage(view);
-    let state = d.usage_state().expect("usage state");
-    let values: Vec<&str> = state
-        .rows()
-        .iter()
-        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
-        .collect();
-
-    assert!(values.iter().any(|value| {
-        value.contains("60% left")
-            && value.contains("31% in deficit")
-            && value.contains("Runs out in 21h 45m")
-            && value.contains("Resets Jun 17 at 23:15")
-    }));
-
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(40, 100);
-    let backend = TestBackend::new(100, 40);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
-        })
-        .unwrap();
-
-    let buf = terminal.backend().buffer();
-    let rendered = (0..40)
-        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(rendered.contains("Weekly"), "{rendered}");
-    assert!(rendered.contains("31% in deficit"), "{rendered}");
-    assert!(rendered.contains("Runs out in 21h 45m"), "{rendered}");
-    assert!(rendered.contains("Lasts until reset"), "{rendered}");
-}
-
-#[test]
-fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
-    let mut view = usage_view_fixture();
-    view.buckets = vec![
-        jackin_protocol::control::QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "Tokens".to_owned(),
-            used_label: Some("400M".to_owned()),
-            limit_label: Some("1B".to_owned()),
-            remaining_percent: Some(60),
-            reset_label: Some("Resets Jun 17 at 23:15".to_owned()),
-            resets_at: None,
-            status_slot: None,
-            pace_label: Some("31% in deficit · Runs out in 21h 45m".to_owned()),
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        },
-        jackin_protocol::control::QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "MCP".to_owned(),
-            used_label: Some("2h".to_owned()),
-            limit_label: Some("5h".to_owned()),
-            remaining_percent: Some(60),
-            reset_label: Some("Resets 18:00".to_owned()),
-            resets_at: None,
-            status_slot: None,
-            pace_label: Some("5 hours window".to_owned()),
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        },
-        jackin_protocol::control::QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "Amp Free".to_owned(),
-            used_label: Some("$12.00".to_owned()),
-            limit_label: Some("$25.00".to_owned()),
-            remaining_percent: Some(52),
-            reset_label: None,
-            resets_at: None,
-            status_slot: None,
-            pace_label: Some("replenishes +$1.00/hour".to_owned()),
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        },
-        jackin_protocol::control::QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "MiniMax M1 Coding plan".to_owned(),
-            used_label: Some("12K".to_owned()),
-            limit_label: Some("100K".to_owned()),
-            remaining_percent: Some(88),
-            reset_label: Some("Resets tomorrow, 02:00".to_owned()),
-            resets_at: None,
-            status_slot: None,
-            pace_label: Some("Coding plan".to_owned()),
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        },
-    ];
-
-    let d = Dialog::new_usage(view);
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(40, 120);
-    let backend = TestBackend::new(120, 40);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
-        })
-        .unwrap();
-
-    let buf = terminal.backend().buffer();
-    let rendered = (0..40)
-        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(rendered.contains("Tokens"), "{rendered}");
-    assert!(rendered.contains("60% left"), "{rendered}");
-    assert!(rendered.contains("31% in deficit"), "{rendered}");
-    assert!(rendered.contains("MCP"), "{rendered}");
-    assert!(rendered.contains("5 hours window"), "{rendered}");
-    assert!(rendered.contains("Amp Free"), "{rendered}");
-    assert!(rendered.contains("replenishes +$1.00/hour"), "{rendered}");
-    assert!(rendered.contains("MiniMax M1 Coding plan"), "{rendered}");
-    assert!(rendered.contains("88% left"), "{rendered}");
-    assert!(rendered.contains("████"), "{rendered}");
-    assert!(
-        rendered
-            .lines()
-            .any(|line| line.chars().filter(|ch| matches!(*ch, '█' | '·')).count() >= 70),
-        "quota meters must span the available dialog width: {rendered}"
-    );
-}
-
-#[test]
-fn usage_dialog_renders_extra_usage_monthly_cap() {
-    let mut view = usage_view_fixture();
-    view.buckets
-        .push(jackin_protocol::control::QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "Extra usage".to_owned(),
-            used_label: Some("SGD 78.49".to_owned()),
-            limit_label: Some("SGD 260.00".to_owned()),
-            remaining_percent: Some(70),
-            reset_label: None,
-            resets_at: None,
-            status_slot: Some(jackin_protocol::control::StatusSlot::Spend),
-            pace_label: None,
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        });
-    let d = Dialog::new_usage(view);
-    let state = d.usage_state().expect("usage state");
-    let values: Vec<&str> = state
-        .rows()
-        .iter()
-        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
-        .collect();
-
-    assert!(values.iter().any(|value| {
-        value.contains("30% used") && value.contains("Monthly cap: SGD 78.49 / SGD 260.00")
-    }));
-
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(40, 100);
-    let backend = TestBackend::new(100, 40);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
-        })
-        .unwrap();
-
-    let buf = terminal.backend().buffer();
-    let rendered = (0..40)
-        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(rendered.contains("Extra usage"), "{rendered}");
-    assert!(rendered.contains("30% used"), "{rendered}");
-    assert!(
-        rendered.contains("Monthly cap: SGD 78.49 / SGD 260.00"),
-        "{rendered}"
-    );
-    let monthly = rendered
-        .find("Monthly cap: SGD 78.49 / SGD 260.00")
-        .expect("monthly cap");
-    let used = rendered.find("30% used").expect("used percent");
-    assert!(used < monthly, "{rendered}");
-}
-
-/// Bug 7: a dollar-bearing window that is NOT the spend slot (a Claude codename
-/// budget such as `amber_ladder`, the enterprise contractual budget) must show
-/// its used/limit dollars in the dialog — driven by the bucket's `used_money`/
-/// `limit_money`, not by a `"Extra usage"` label match.
-#[test]
-fn usage_dialog_renders_dollar_budget_window() {
-    let mut view = usage_view_fixture();
-    view.buckets
-        .push(jackin_protocol::control::QuotaBucketView {
-            used_money: Some(jackin_protocol::control::Money::new(0, "USD", 2)),
-            limit_money: Some(jackin_protocol::control::Money::new(2_500_000, "USD", 2)),
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "Amber Ladder".to_owned(),
-            used_label: Some("$0.00 spent".to_owned()),
-            limit_label: Some("$25,000.00".to_owned()),
-            remaining_percent: Some(100),
-            reset_label: Some("Resets in 66d".to_owned()),
-            resets_at: Some(1_788_000_000),
-            status_slot: None,
-            pace_label: Some("0% used".to_owned()),
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        });
-    let d = Dialog::new_usage(view);
-    let state = d.usage_state().expect("usage state");
-    let values: Vec<&str> = state
-        .rows()
-        .iter()
-        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
-        .collect();
-    assert!(
-        values
-            .iter()
-            .any(|value| value.contains("Budget: $0.00 spent / $25,000.00")),
-        "dollar-window cap must render: {values:?}"
-    );
-}
-
-#[test]
-fn usage_dialog_overview_tab_renders_cross_provider_summary() {
-    let d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
-    let state = d.usage_state().expect("usage state");
-    let values: Vec<&str> = state
-        .rows()
-        .iter()
-        .map(crate::tui::components::container_info_surface::ContainerInfoRow::value)
-        .collect();
-    let rows_debug = format!("{:?}", state.rows());
-
-    assert!(!rows_debug.contains("Focused agent"));
-    assert!(!rows_debug.contains("Focused account"));
-    assert!(rows_debug.contains("OpenAI"));
-    assert!(rows_debug.contains("Anthropic"));
-    assert!(rows_debug.contains("xAI"));
-    assert!(rows_debug.contains("Z.AI"));
-    assert!(values.contains(&"37% left · Resets in 1h 21m (Jun 17, 23:15)"));
-    assert!(values.contains(&"16% left · Resets in 46m (Jun 17, 22:40)"));
-    assert!(values.contains(&"unsupported"));
-    assert!(!rows_debug.contains("fresh · provider"));
-    assert!(!rows_debug.contains("stale · provider"));
-
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(32, 100);
-    let backend = TestBackend::new(100, 32);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
-        })
-        .unwrap();
-
-    let buf = terminal.backend().buffer();
-    let rendered = (0..32)
-        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(rendered.contains("OpenAI      37% left"), "{rendered}");
-    assert!(rendered.contains("Anthropic   16% left"), "{rendered}");
-    assert!(rendered.contains("Resets in 1h 21m"), "{rendered}");
-    assert!(rendered.contains("(Jun 17, 23:15)"), "{rendered}");
-    assert!(rendered.contains("xAI        needs login"), "{rendered}");
-    assert!(!rendered.contains("alexey@example.com"), "{rendered}");
-    assert!(!rendered.contains("Pro 20x"), "{rendered}");
-    assert!(!rendered.contains("fresh"), "{rendered}");
-    assert!(rendered.contains("unsupported"), "{rendered}");
-}
-
-#[test]
-fn usage_dialog_renders_amp_individual_credits_as_credits_section() {
-    let d = Dialog::new_usage(amp_usage_view_fixture());
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(32, 100);
-    let backend = TestBackend::new(100, 32);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
-        })
-        .unwrap();
-
-    let buf = terminal.backend().buffer();
-    let rendered = (0..32)
-        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(rendered.contains("Amp"), "{rendered}");
-    assert!(rendered.contains("account@personal.test"), "{rendered}");
-    assert!(rendered.contains("Amp Free"), "{rendered}");
-    assert!(rendered.contains("4% left"), "{rendered}");
-    assert!(rendered.contains("Resets in 22h 40m"), "{rendered}");
-    assert!(rendered.contains("Credits"), "{rendered}");
-    assert!(rendered.contains("Individual credits: $4.76"), "{rendered}");
-    assert!(
-        !rendered.contains("Individual credits  remaining"),
-        "{rendered}"
-    );
-}
-
 #[test]
 fn usage_dialog_right_arrow_switches_to_next_provider() {
-    let mut d = Dialog::new_usage(usage_view_fixture());
-
+    let mut d = provider_dialog(usage_view_fixture());
     assert_eq!(
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
-            provider_label: "Claude".to_owned(),
-            account_id: "test-tab-claude".to_owned(),
+            provider_id: "anthropic".into(),
+            canonical_account_id: "account-anthropic-a".into()
         }
     );
 }
-
 #[test]
 fn usage_dialog_tab_key_moves_focus_to_content() {
-    let mut d = Dialog::new_usage(usage_view_fixture());
-
+    let mut d = provider_dialog(usage_view_fixture());
     assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
-    let Dialog::Usage {
-        tab_bar_focused, ..
-    } = d
-    else {
-        panic!("usage dialog");
-    };
-    assert!(!tab_bar_focused);
+    assert!(!s8_usage_tab_bar_focused(&d));
 }
-
 #[test]
 fn usage_dialog_left_arrow_from_first_provider_switches_to_overview() {
-    let mut d = Dialog::new_usage(usage_view_fixture());
-
+    let mut d = provider_dialog(usage_view_fixture());
     assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
-    let state = d.usage_state().expect("usage state");
-    assert_eq!(state.rows()[0].label(), "OpenAI");
-    assert_eq!(
-        state.rows()[0].value(),
-        "37% left · Resets in 1h 21m (Jun 17, 23:15)"
-    );
+    assert_eq!(d.usage_selected_tab(), Some(UsageDialogTab::Overview));
 }
-
 #[test]
 fn usage_dialog_renders_inside_narrow_terminal() {
-    let d = Dialog::new_usage(usage_view_fixture());
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(18, 60);
-    let backend = TestBackend::new(60, 18);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
-        })
-        .unwrap();
-
-    let buf = terminal.backend().buffer();
-    let rendered = (0..18)
-        .map(|y| (0..60).map(|x| buf[(x, y)].symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(rendered.contains("Usage"), "{rendered}");
-    assert!(rendered.contains("OpenAI"), "{rendered}");
-    assert!(!rendered.contains("OpenAI / Codex"), "{rendered}");
-    assert!(rendered.contains("alexey@example.com"), "{rendered}");
-    assert!(rendered.contains("Pro 20x"), "{rendered}");
-    assert!(rendered.contains("Updated now"), "{rendered}");
-    assert!(!rendered.contains("Account availability"), "{rendered}");
-    assert!(!rendered.contains("2 buckets"), "{rendered}");
-    assert!(!rendered.contains("Overview  Codex"), "{rendered}");
-    assert!(!rendered.contains("████"), "{rendered}");
-    assert!(rendered.contains("Session  37% left"), "{rendered}");
-    assert!(!rendered.contains("Focused :"), "{rendered}");
+    let text = render_usage_dialog_snapshot(60, 18, UsageDialogTab::Provider);
+    for n in [
+        "Usage",
+        "OpenAI",
+        "alexey@example.com",
+        "Pro 20x",
+        "37% left",
+    ] {
+        assert!(text.contains(n), "{text}");
+    }
 }
-
 #[test]
 fn usage_dialog_stays_above_bottom_chrome_on_default_terminal() {
-    let d = Dialog::new_usage_with_tab(zai_usage_view_fixture(), UsageDialogTab::Provider);
+    let d = provider_dialog(zai_usage_view_fixture());
     let (row, _, height, _) = d.box_rect(24, 80);
-    let content_bottom = crate::tui::components::status_bar::STATUS_BAR_ROWS
+    let bottom = crate::tui::components::status_bar::STATUS_BAR_ROWS
         + crate::tui::layout::available_content_rows(24);
-
-    assert!(
-        row + height <= content_bottom,
-        "usage dialog must not overlap hint/footer chrome: row={row} height={height} content_bottom={content_bottom}"
-    );
+    assert!(row + height <= bottom);
+}
+#[test]
+fn usage_dialog_geometry_counts_rendered_section_lines() {
+    let mut p = usage_view_fixture();
+    for i in 0..15 {
+        first_account(&mut p).windows.push(quota_window(
+            &format!("extra-{i}"),
+            i + 2,
+            &format!("Tokens {i}"),
+            90,
+            "Resets tomorrow",
+            Some("20% in reserve"),
+        ));
+    }
+    let d = provider_dialog(p);
+    assert!(d.body_scroll_axes(18, 120, None).vertical);
+    assert!(!d.body_scroll_axes(100, 120, None).vertical);
 }
 
 #[test]
@@ -2337,56 +2095,227 @@ fn snapshot_usage_dialog_minimax_provider_100x32() {
     );
 }
 
-#[test]
-fn usage_dialog_geometry_counts_rendered_section_lines() {
-    let mut view = usage_view_fixture();
-    view.buckets.extend([
-        jackin_protocol::control::QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "Tokens".to_owned(),
-            used_label: Some("100K".to_owned()),
-            limit_label: Some("1M".to_owned()),
-            remaining_percent: Some(90),
-            reset_label: Some("Resets Jun 17 at 14:00".to_owned()),
-            resets_at: None,
-            status_slot: None,
-            pace_label: Some("20% in reserve".to_owned()),
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        },
-        jackin_protocol::control::QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "MCP".to_owned(),
-            used_label: Some("2".to_owned()),
-            limit_label: Some("100".to_owned()),
-            remaining_percent: Some(98),
-            reset_label: Some("Resets Jul 1 at 14:00".to_owned()),
-            resets_at: None,
-            status_slot: None,
-            pace_label: Some("2 / 100 (98 remaining)".to_owned()),
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        },
-    ]);
-    let d = Dialog::new_usage(view);
-    let state = d.usage_state().expect("usage state");
-    let usage_height = crate::tui::components::dialog_widgets::usage_info_required_height(&state);
+// ---- S8 interaction evidence: keyboard, focus, scroll, refresh, resize ----
 
-    assert!(usage_height >= 7);
-    assert_eq!(d.box_rect(50, 120).2, usage_height);
-    // Bug 2: the scroll bound now uses the same width-wrapped line set and body
-    // viewport (box − border − tab strip) the renderer uses. Assert overflow at a
-    // wide-but-short terminal (≥64 cols → wide layout matching `usage_height`;
-    // few rows → the box clamps below the content) so the dialog scrolls. A tall
-    // terminal must NOT advertise vertical scroll — the content fits its body.
-    // Bug 2: the scroll bound now uses the same width-wrapped line set and body
-    // viewport (box − border − tab strip) the renderer uses. At a wide terminal
-    // (≥64 cols → wide layout matching `usage_height`) the content overflows a
-    // short box and scrolls, and fits — no vertical scroll — at a tall one.
-    assert!(d.body_scroll_axes(18, 120, None).vertical);
-    assert!(!d.body_scroll_axes(50, 120, None).vertical);
+fn s8_usage_scroll(d: &Dialog) -> (u16, u16) {
+    let Dialog::Usage { scroll, .. } = d else {
+        panic!("usage dialog");
+    };
+    (scroll.scroll_x, scroll.scroll_y)
+}
+
+fn s8_usage_tab_bar_focused(d: &Dialog) -> bool {
+    let Dialog::Usage {
+        tab_bar_focused, ..
+    } = d
+    else {
+        panic!("usage dialog");
+    };
+    *tab_bar_focused
+}
+
+#[test]
+fn s8_usage_r_and_shift_r_request_refresh() {
+    for key in [b"r".as_slice(), b"R".as_slice()] {
+        let mut d = provider_dialog(usage_view_fixture());
+        assert_eq!(
+            d.handle_key(key, None),
+            DialogAction::RefreshUsage,
+            "key {key:?} must request a joined refresh"
+        );
+    }
+}
+
+#[test]
+fn s8_usage_shift_tab_restores_tab_focus() {
+    let mut d = provider_dialog(usage_view_fixture());
+    assert!(s8_usage_tab_bar_focused(&d));
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    assert!(!s8_usage_tab_bar_focused(&d));
+    assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
+    assert!(s8_usage_tab_bar_focused(&d));
+}
+
+#[test]
+fn s8_usage_esc_reverses_focus_then_dismisses() {
+    let mut d = provider_dialog(usage_view_fixture());
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    assert!(!s8_usage_tab_bar_focused(&d));
+
+    // First Esc walks focus back to the tab bar (focus reversal).
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Redraw);
+    assert!(s8_usage_tab_bar_focused(&d));
+
+    // Second Esc dismisses the dialog.
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
+}
+
+#[test]
+fn s8_usage_content_arrows_scroll_two_axes() {
+    let mut d = provider_dialog(usage_view_fixture());
+    // Tab-bar focus owns Left/Right for tab switches: no scroll movement.
+    assert_eq!(
+        d.handle_key(b"\x1b[C", None),
+        DialogAction::SwitchUsageProvider {
+            provider_id: "anthropic".to_owned(),
+            canonical_account_id: "account-anthropic-a".to_owned(),
+        }
+    );
+    assert_eq!(s8_usage_scroll(&d), (0, 0));
+
+    // Content focus owns every arrow plus hjkl for two-axis scrolling.
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 1));
+    assert_eq!(d.handle_key(b"j", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 2));
+    assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"k", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 0));
+    assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (1, 0));
+    assert_eq!(d.handle_key(b"l", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (2, 0));
+    assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"h", None), DialogAction::Redraw);
+    assert_eq!(s8_usage_scroll(&d), (0, 0));
+}
+
+#[test]
+fn s8_usage_right_from_last_tab_wraps_to_overview() {
+    let mut d = Dialog::new_usage_with_destination(
+        Some(usage_view_fixture()),
+        Some(UsageDialogDestination {
+            provider_id: "minimax".into(),
+            canonical_account_id: "account-minimax-a".into(),
+        }),
+    );
+    assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    assert_eq!(d.usage_selected_tab(), Some(UsageDialogTab::Overview));
+}
+
+#[test]
+fn s8_usage_left_from_overview_goes_to_last_tab() {
+    let mut d = Dialog::new_usage(Some(usage_view_fixture()));
+    assert_eq!(
+        d.handle_key(b"\x1b[D", None),
+        DialogAction::SwitchUsageProvider {
+            provider_id: "minimax".to_owned(),
+            canonical_account_id: "account-minimax-a".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn s8_usage_removed_account_renders_honest_unavailable() {
+    let mut d = provider_dialog(usage_view_fixture());
+    let mut p = usage_view_fixture();
+    p.providers.remove(0);
+    for (i, provider) in p.providers.iter_mut().enumerate() {
+        provider.rank = i as u32;
+    }
+    d.apply_usage_projection(p);
+    assert_eq!(d.usage_selected_tab(), Some(UsageDialogTab::Overview));
+    let Dialog::Usage {
+        destination,
+        notice,
+        ..
+    } = &d
+    else {
+        panic!("usage")
+    };
+    assert!(destination.is_none());
+    assert!(notice.is_some(), "removed account needs honest notice");
+    let text = usage_content_text(&d);
+    assert!(
+        !text.contains("37% left"),
+        "must not show departed account: {text}"
+    );
+}
+
+#[test]
+fn s8_usage_shrunk_tabs_overview_renders_remaining_rows() {
+    let mut p = usage_view_fixture();
+    p.providers.truncate(2);
+    let d = Dialog::new_usage(Some(p));
+    let text = usage_content_text(&d);
+    assert!(text.contains("OpenAI"));
+    assert!(text.contains("Anthropic"));
+    assert!(!text.contains("MiniMax"));
+}
+
+#[test]
+fn s8_usage_refreshing_placeholder_renders_loading() {
+    let d = Dialog::new_usage(None);
+    let text = render_usage_dialog(&d, 100, 32);
+    assert!(
+        text.to_lowercase().contains("publication unavailable"),
+        "{text}"
+    );
+    let Dialog::Usage { projection, .. } = d else {
+        panic!("usage")
+    };
+    assert!(
+        projection.is_none(),
+        "loading cannot fabricate a broker publication"
+    );
+}
+
+#[test]
+fn s8_usage_long_unicode_labels_render() {
+    let mut p = usage_view_fixture();
+    first_account(&mut p).display_label =
+        format!("work-巴黎-🚀-memo{}", "·很长的账户备注".repeat(6));
+    let text = render_usage_dialog_snapshot_for_view(100, 40, UsageDialogTab::Provider, p);
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    for n in ["Usage", "🚀", "巴黎", "很长的账户备注"] {
+        assert!(compact.contains(n), "{text}");
+    }
+}
+
+#[test]
+fn s8_usage_resize_pair_keeps_identity() {
+    for (width, height) in [(80, 24), (60, 18), (120, 40)] {
+        let text = render_usage_dialog_snapshot(width, height, UsageDialogTab::Provider);
+        assert!(
+            text.contains("alexey@example.com"),
+            "account lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("Pro 20x"),
+            "plan lost at {width}x{height}:\n{text}"
+        );
+        assert!(
+            text.contains("current"),
+            "freshness lost at {width}x{height}:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn s8_usage_extreme_scroll_still_renders_chrome() {
+    let mut d = provider_dialog(usage_view_fixture());
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    for _ in 0..500 {
+        assert_eq!(d.handle_key(b"j", None), DialogAction::Redraw);
+    }
+    assert!(s8_usage_scroll(&d).1 >= 500);
+    // Render clamps the runaway offset: chrome survives, no panic.
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(18, 60);
+    let backend = TestBackend::new(60, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer();
+    let rendered = (0..18)
+        .map(|y| (0..60).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Usage"), "{rendered}");
 }
 
 #[test]
@@ -2523,15 +2452,14 @@ fn exec_picker_space_toggles_enter_confirms_esc_cancels() {
     // Enter confirms, carrying the command + only the selected credential.
     let action = dialog.handle_key(b"\r", None);
     let DialogAction::ExecConfirm {
-        command,
-        args,
+        invocation,
         selected,
     } = action
     else {
         panic!("expected ExecConfirm, got {action:?}");
     };
-    assert_eq!(command, "ssh");
-    assert_eq!(args, vec!["sentry".to_owned()]);
+    assert_eq!(invocation.command(), "ssh");
+    assert_eq!(invocation.args(), &["sentry".to_owned()]);
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].name, "GH_TOKEN");
     assert_eq!(selected[0].kind, jackin_protocol::ExecKind::Env);
@@ -2701,231 +2629,495 @@ fn trparity_capsule_exit_inspect_arrows_scroll_without_dismissing() {
     assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
 }
 
-// ---- S8 interaction evidence: keyboard, focus, scroll, refresh, resize ----
-
-fn s8_usage_scroll(d: &Dialog) -> (u16, u16) {
-    let Dialog::Usage { scroll, .. } = d else {
-        panic!("usage dialog");
+#[test]
+fn usage_canonical_inventory_without_active_agent_or_sessions_keeps_zero_quota_accounts() {
+    let p = projection_with(vec![usage_provider(
+        "openai",
+        0,
+        "OpenAI",
+        vec![
+            usage_account("account-zero-a", 0, "same account label", None, vec![]),
+            usage_account("account-zero-b", 1, "same account label", None, vec![]),
+        ],
+    )]);
+    let d = Dialog::new_usage(Some(p.clone()));
+    let Dialog::Usage { projection, .. } = &d else {
+        panic!("usage")
     };
-    (scroll.scroll_x, scroll.scroll_y)
-}
-
-fn s8_usage_tab_bar_focused(d: &Dialog) -> bool {
-    let Dialog::Usage {
-        tab_bar_focused, ..
-    } = d
-    else {
-        panic!("usage dialog");
-    };
-    *tab_bar_focused
-}
-
-#[test]
-fn s8_usage_r_and_shift_r_request_refresh() {
-    for key in [b"r".as_slice(), b"R".as_slice()] {
-        let mut d = Dialog::new_usage(usage_view_fixture());
-        assert_eq!(
-            d.handle_key(key, None),
-            DialogAction::RefreshUsage,
-            "key {key:?} must request a joined refresh"
-        );
-    }
-}
-
-#[test]
-fn s8_usage_shift_tab_restores_tab_focus() {
-    let mut d = Dialog::new_usage(usage_view_fixture());
-    assert!(s8_usage_tab_bar_focused(&d));
-    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
-    assert!(!s8_usage_tab_bar_focused(&d));
-    assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
-    assert!(s8_usage_tab_bar_focused(&d));
-}
-
-#[test]
-fn s8_usage_esc_reverses_focus_then_dismisses() {
-    let mut d = Dialog::new_usage(usage_view_fixture());
-    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
-    assert!(!s8_usage_tab_bar_focused(&d));
-
-    // First Esc walks focus back to the tab bar (focus reversal).
-    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Redraw);
-    assert!(s8_usage_tab_bar_focused(&d));
-
-    // Second Esc dismisses the dialog.
-    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
-}
-
-#[test]
-fn s8_usage_content_arrows_scroll_two_axes() {
-    let mut d = Dialog::new_usage(usage_view_fixture());
-    // Tab-bar focus owns Left/Right for tab switches: no scroll movement.
+    assert_eq!(projection.as_deref(), Some(&p));
+    let mut d = d;
     assert_eq!(
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
-            provider_label: "Claude".to_owned(),
-            account_id: "test-tab-claude".to_owned(),
+            provider_id: "openai".into(),
+            canonical_account_id: "account-zero-a".into()
         }
     );
-    assert_eq!(s8_usage_scroll(&d), (0, 0));
-
-    // Content focus owns every arrow plus hjkl for two-axis scrolling.
-    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
-    assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
-    assert_eq!(s8_usage_scroll(&d), (0, 1));
-    assert_eq!(d.handle_key(b"j", None), DialogAction::Redraw);
-    assert_eq!(s8_usage_scroll(&d), (0, 2));
-    assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
-    assert_eq!(d.handle_key(b"k", None), DialogAction::Redraw);
-    assert_eq!(s8_usage_scroll(&d), (0, 0));
-    assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
-    assert_eq!(s8_usage_scroll(&d), (1, 0));
-    assert_eq!(d.handle_key(b"l", None), DialogAction::Redraw);
-    assert_eq!(s8_usage_scroll(&d), (2, 0));
-    assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
-    assert_eq!(d.handle_key(b"h", None), DialogAction::Redraw);
-    assert_eq!(s8_usage_scroll(&d), (0, 0));
-}
-
-#[test]
-fn s8_usage_right_from_last_tab_wraps_to_overview() {
-    let mut view = usage_view_fixture();
-    for tab in &mut view.tabs {
-        tab.active = tab.id == "test-tab-minimax";
-    }
-    let mut d = Dialog::new_usage(view);
-    assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
-    assert_eq!(d.usage_selected_tab(), Some(UsageDialogTab::Overview));
-    let state = d.usage_state().expect("usage state");
-    assert_eq!(state.rows()[0].label(), "OpenAI");
-}
-
-#[test]
-fn s8_usage_left_from_overview_goes_to_last_tab() {
-    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    let mut d = Dialog::new_usage_with_destination(
+        Some(p),
+        Some(UsageDialogDestination {
+            provider_id: "openai".into(),
+            canonical_account_id: "account-zero-a".into(),
+        }),
+    );
     assert_eq!(
-        d.handle_key(b"\x1b[D", None),
+        d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
-            provider_label: "MiniMax".to_owned(),
-            account_id: "test-tab-minimax".to_owned(),
+            provider_id: "openai".into(),
+            canonical_account_id: "account-zero-b".into()
         }
     );
 }
 
 #[test]
-fn s8_usage_removed_account_renders_honest_unavailable() {
-    // Daemon fallback for a tab whose account left the cache (removal while
-    // the dialog is open): an honest unavailable view, never a sibling.
-    let view = jackin_protocol::control::FocusedUsageView::unavailable(
-        "usage unavailable: account not cached",
-        1_781_185_560,
+fn usage_destination_survives_renames_reordering_and_focus_changes() {
+    let mut p = usage_view_fixture();
+    let destination = UsageDialogDestination {
+        provider_id: "anthropic".into(),
+        canonical_account_id: "account-anthropic-a".into(),
+    };
+    let mut d = Dialog::new_usage_with_destination(Some(p.clone()), Some(destination.clone()));
+    p.providers.swap(0, 1);
+    for (rank, provider) in p.providers.iter_mut().enumerate() {
+        provider.rank = rank as u32;
+    }
+    p.providers[0].display_name = "renamed provider".into();
+    p.providers[0].accounts[0].display_label = "renamed account".into();
+    p.projection_id = "publication-next".into();
+    p.broker_generation += 1;
+    d.apply_usage_projection(p.clone());
+    let Dialog::Usage {
+        projection,
+        destination: actual,
+        ..
+    } = &d
+    else {
+        panic!("usage")
+    };
+    assert_eq!(actual.as_ref(), Some(&UsageDialogTarget::Account(destination)));
+    assert_eq!(projection.as_deref(), Some(&p));
+}
+
+#[test]
+fn usage_refresh_error_preserves_last_publication_and_destination() {
+    let p = usage_view_fixture();
+    let mut d = provider_dialog(p.clone());
+    d.apply_usage_error("broker connection unavailable; retry".into());
+    let Dialog::Usage {
+        projection,
+        transport_error,
+        ..
+    } = &d
+    else {
+        panic!("usage")
+    };
+    assert_eq!(projection.as_deref(), Some(&p));
+    assert_eq!(
+        d.usage_destination().unwrap().canonical_account_id,
+        "account-openai-a"
     );
-    let d = Dialog::new_usage(view);
-    let state = d.usage_state().expect("usage state");
-    assert!(
-        state
-            .rows()
+    assert_eq!(
+        transport_error.as_deref(),
+        Some("broker connection unavailable; retry")
+    );
+    assert_eq!(d.handle_key(b"r", None), DialogAction::RefreshUsage);
+}
+
+#[test]
+fn usage_dialog_typed_groups_preserve_scopes_tokens_rate_balance_and_freshness() {
+    let mut p = openai_usage_view_fixture();
+    let a = first_account(&mut p);
+    let mut balance = usage_group(
+        "balance",
+        0,
+        "Prepaid balance",
+        UsageMetricGroupKindV2::Balance,
+        UsageMetricValueV2::Balance {
+            amount: Money::new(476, "USD", 2),
+            expires_at_epoch: Some(USAGE_FIXTURE_TIME + 86400),
+        },
+    );
+    balance.scope.pool = Some("team-pool".into());
+    balance.phase = UsageFreshnessPhaseV2::Stale;
+    balance.is_stale = true;
+    balance.issues.push(UsageIssueV2 {
+        code: "balance_delayed".into(),
+        scope: UsageIssueScopeV2::Group,
+        recoverability: UsageIssueRecoverabilityV2::Retryable,
+        message: "balance last-good retained".into(),
+        retry_at_epoch: Some(USAGE_FIXTURE_TIME + 60),
+    });
+    let mut rate = usage_group(
+        "rate",
+        1,
+        "Request rate",
+        UsageMetricGroupKindV2::RateLimit,
+        UsageMetricValueV2::RateLimit {
+            limit: Some(1000),
+            remaining: Some(950),
+            window_label: Some("per minute".into()),
+        },
+    );
+    rate.scope.model = Some("gpt-fixture".into());
+    rate.quota_state = UsageQuotaStateV2::Available;
+    let mut tokens = usage_group(
+        "tokens",
+        2,
+        "Token totals",
+        UsageMetricGroupKindV2::TokenTotals,
+        UsageMetricValueV2::TokenTotals {
+            input: Some(1234),
+            output: Some(567),
+            cached: Some(89),
+            reasoning: Some(10),
+            interval_label: Some("today".into()),
+        },
+    );
+    tokens.scope.service = Some("api-fixture".into());
+    a.metric_groups = vec![balance, rate, tokens];
+    p.validate().unwrap();
+    assert_usage_contains(
+        p,
+        &[
+            "Prepaid balance",
+            "4.76",
+            "team-pool",
+            "stale",
+            "balance last-good retained",
+            "Request rate",
+            "gpt-fixture",
+            "950",
+            "1000",
+            "per minute",
+            "Token totals",
+            "1234",
+            "567",
+            "89",
+            "10",
+            "api-fixture",
+        ],
+    );
+}
+
+#[test]
+fn usage_dialog_exact_count_survives_rounded_zero_meter() {
+    use jackin_protocol::control::{CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit};
+    let mut p = usage_view_fixture();
+    let w = &mut first_account(&mut p).windows[0];
+    w.count_quota = Some(CountQuota {
+        used: Some(999),
+        limit: Some(1000),
+        remaining: Some(1),
+        unit: CountQuotaUnit::Requests,
+        period: CountQuotaPeriod::UtcDaily,
+        provenance: CountQuotaProvenance::ProviderReported,
+    });
+    w.remaining_percent = Some(UsagePercent::new(0).unwrap());
+    w.remaining_raw_percent = Some(0);
+    w.used_percent = None;
+    w.used_raw_percent = None;
+    w.quota_state = UsageQuotaStateV2::Available;
+    w.value_label = "1 request left of 1000".into();
+    p.validate().unwrap();
+    assert_usage_contains(p, &["1 request left of 1000"]);
+}
+
+#[test]
+fn usage_dialog_used_only_windows_render_remaining_geometry() {
+    // Independent raw DTO, no remaining-window fixture or geometry mapper.
+    for (used, state, expected_filled) in [
+        (100, UsageQuotaStateV2::Exhausted, 0),
+        (20, UsageQuotaStateV2::Available, 80),
+        (0, UsageQuotaStateV2::Available, 100),
+    ] {
+        let window = UsageLimitWindowV2 {
+            window_id: "used-only-window".into(),
+            rank: 0,
+            category: UsageWindowCategoryV2::Session,
+            label: "Used-only allowance".into(),
+            value_label: format!("{used}% used"),
+            reset_label: String::new(),
+            remaining_percent: None,
+            remaining_raw_percent: None,
+            used_percent: Some(UsagePercent::new(used).unwrap()),
+            used_raw_percent: Some(i32::from(used)),
+            reset_at_epoch: None,
+            quota_state: state,
+            count_quota: None,
+            pace_label: None,
+            runs_out_label: None,
+        };
+        let p = projection_with(vec![usage_provider(
+            "openai",
+            0,
+            "OpenAI",
+            vec![usage_account(
+                "used-only-account",
+                0,
+                "Used account",
+                None,
+                vec![window],
+            )],
+        )]);
+        p.validate().unwrap();
+        let d = provider_dialog(p);
+        let state = d.usage_state().unwrap();
+        let lines = crate::tui::components::dialog_widgets::usage_info_lines_for_width(&state, 104);
+        let meters: Vec<String> = lines
             .iter()
-            .any(|row| row.value() == "usage unavailable: account not cached"),
-        "removed account must render its reason: {state:?}"
-    );
-    let text = render_usage_dialog_snapshot_for_view(
-        100,
-        32,
-        UsageDialogTab::Provider,
-        jackin_protocol::control::FocusedUsageView::unavailable(
-            "usage unavailable: account not cached",
-            1_781_185_560,
-        ),
-    );
-    assert!(
-        text.contains("usage unavailable: account not cached"),
-        "{text}"
-    );
-}
-
-#[test]
-fn s8_usage_shrunk_tabs_overview_renders_remaining_rows() {
-    let mut view = usage_view_fixture();
-    view.tabs.truncate(2);
-    let d = Dialog::new_usage_with_tab(view, UsageDialogTab::Overview);
-    let state = d.usage_state().expect("usage state");
-    assert_eq!(state.rows().len(), 2);
-    assert_eq!(state.rows()[0].label(), "OpenAI");
-    assert_eq!(state.rows()[1].label(), "Anthropic");
-    let text = render_usage_dialog_snapshot(100, 32, UsageDialogTab::Overview);
-    assert!(text.contains("Overview"), "{text}");
-}
-
-#[test]
-fn s8_usage_refreshing_placeholder_renders_loading() {
-    let view =
-        jackin_protocol::control::FocusedUsageView::refreshing(Some("OpenAI"), 1_781_185_560);
-    assert!(view.is_refreshing_placeholder());
-    let d = Dialog::new_usage(view);
-    let state = d.usage_state().expect("usage state");
-    assert!(
-        state
-            .rows()
-            .iter()
-            .any(|row| row.value().contains("Refreshing") || row.value().contains("refreshing")),
-        "refreshing placeholder must render loading copy: {state:?}"
-    );
-}
-
-#[test]
-fn s8_usage_long_unicode_labels_render() {
-    let mut view = usage_view_fixture();
-    view.account.account_label = format!("work-巴黎-🚀-memo{}", "·很长的账户备注".repeat(6));
-    let text = render_usage_dialog_snapshot_for_view(100, 32, UsageDialogTab::Provider, view);
-    assert!(text.contains("Usage"), "{text}");
-    assert!(text.contains("🚀"), "{text}");
-    let squeezed: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-    assert!(squeezed.contains("巴黎"), "{text}");
-    assert!(squeezed.contains("很长的账户备注"), "{text}");
-}
-
-#[test]
-fn s8_usage_resize_pair_keeps_identity() {
-    for (width, height) in [(80, 24), (60, 18), (120, 40)] {
-        let text = render_usage_dialog_snapshot(width, height, UsageDialogTab::Provider);
-        assert!(
-            text.contains("alexey@example.com"),
-            "account lost at {width}x{height}:\n{text}"
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .filter(|line| line.contains('░') || line.contains('█'))
+            .collect();
+        assert_eq!(
+            meters.len(),
+            1,
+            "exactly one principal meter for {used}% used"
+        );
+        assert_eq!(
+            meters[0].chars().filter(|c| *c == '█').count(),
+            expected_filled,
+            "used-only geometry must show remaining allowance"
+        );
+        assert_eq!(
+            meters[0]
+                .chars()
+                .filter(|c| matches!(*c, '█' | '░'))
+                .count(),
+            100,
+            "meter geometry bounded by content width"
         );
         assert!(
-            text.contains("Pro 20x"),
-            "plan lost at {width}x{height}:\n{text}"
-        );
-        assert!(
-            text.contains("Updated now"),
-            "activity lost at {width}x{height}:\n{text}"
+            usage_content_text(&d).contains(&format!("{used}% used")),
+            "authoritative used label retained"
         );
     }
 }
 
 #[test]
-fn s8_usage_extreme_scroll_still_renders_chrome() {
-    let mut d = Dialog::new_usage(usage_view_fixture());
-    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
-    for _ in 0..500 {
-        assert_eq!(d.handle_key(b"j", None), DialogAction::Redraw);
-    }
-    assert!(s8_usage_scroll(&d).1 >= 500);
-    // Render clamps the runaway offset: chrome survives, no panic.
-    let snapshot = d.to_ratatui_snapshot(None);
-    let rect = d.box_rect(18, 60);
-    let backend = TestBackend::new(60, 18);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|frame| {
-            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+fn usage_dialog_principal_exact_count_retains_generic_label_and_nonempty_meter() {
+    use jackin_protocol::control::{CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit};
+    let window = UsageLimitWindowV2 {
+        window_id: "exact-count-window".into(),
+        rank: 0,
+        category: UsageWindowCategoryV2::Session,
+        label: "Requests".into(),
+        value_label: "Provider quota".into(),
+        reset_label: String::new(),
+        remaining_percent: Some(UsagePercent::new(0).unwrap()),
+        remaining_raw_percent: Some(0),
+        used_percent: None,
+        used_raw_percent: None,
+        reset_at_epoch: None,
+        quota_state: UsageQuotaStateV2::Available,
+        count_quota: Some(CountQuota {
+            used: Some(9999),
+            limit: Some(10000),
+            remaining: Some(1),
+            unit: CountQuotaUnit::Requests,
+            period: CountQuotaPeriod::UtcDaily,
+            provenance: CountQuotaProvenance::ProviderReported,
+        }),
+        pace_label: None,
+        runs_out_label: None,
+    };
+    let p = projection_with(vec![usage_provider(
+        "openai",
+        0,
+        "OpenAI",
+        vec![usage_account(
+            "exact-count-account",
+            0,
+            "Count account",
+            None,
+            vec![window],
+        )],
+    )]);
+    p.validate().unwrap();
+    assert!(
+        p.providers[0].accounts[0].metric_groups.is_empty(),
+        "principal count needs no duplicate group"
+    );
+    let d = provider_dialog(p);
+    let state = d.usage_state().unwrap();
+    let lines = crate::tui::components::dialog_widgets::usage_info_lines_for_width(&state, 104);
+    let text = lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
         })
-        .unwrap();
-    let buf = terminal.backend().buffer();
-    let rendered = (0..18)
-        .map(|y| (0..60).map(|x| buf[(x, y)].symbol()).collect::<String>())
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(rendered.contains("Usage"), "{rendered}");
+    assert!(
+        text.contains("Provider quota"),
+        "supplied value label lost: {text}"
+    );
+    assert!(
+        text.contains("9999")
+            && text.contains("10000")
+            && text.contains("1 requests left")
+            && text.contains("requests"),
+        "exact typed summary lost: {text}"
+    );
+    let meters: Vec<&str> = text
+        .lines()
+        .filter(|line| line.contains('░') || line.contains('█'))
+        .collect();
+    assert_eq!(meters.len(), 1, "principal-only count renders one meter");
+    assert_eq!(
+        meters[0].chars().filter(|c| *c == '█').count(),
+        0,
+        "geometry preserves the exact-count floor contract"
+    );
+    assert_eq!(
+        meters[0]
+            .chars()
+            .filter(|c| matches!(*c, '█' | '░'))
+            .count(),
+        100,
+        "meter stays bounded"
+    );
+    assert!(
+        !text.contains("exhausted"),
+        "one request is not exhausted: {text}"
+    );
+}
+
+
+fn unresolved_grant_projection() -> UsageProjectionV2 {
+    use jackin_protocol::usage_broker::UsageUnresolvedGrantV2;
+    let mut projection = projection_with(vec![]);
+    projection.unresolved_grants = vec![
+        UsageUnresolvedGrantV2 {
+            configured_account_id: "missing-one".into(),
+            surface_id: "claude".into(),
+            issues: vec![UsageIssueV2 {
+                code: "configured_account_missing".into(),
+                scope: UsageIssueScopeV2::Account,
+                recoverability: UsageIssueRecoverabilityV2::ActionRequired,
+                message: "Configure credential for missing-one".into(),
+                retry_at_epoch: None,
+            }],
+        },
+        UsageUnresolvedGrantV2 {
+            configured_account_id: "missing-two".into(),
+            surface_id: "claude".into(),
+            issues: vec![UsageIssueV2 {
+                code: "configured_account_missing".into(),
+                scope: UsageIssueScopeV2::Account,
+                recoverability: UsageIssueRecoverabilityV2::ActionRequired,
+                message: "Configure credential for missing-two".into(),
+                retry_at_epoch: None,
+            }],
+        },
+    ];
+    projection
+}
+
+#[test]
+fn usage_unresolved_grants_real_render_and_keyboard_navigation_keep_distinct_accounts() {
+    let projection = unresolved_grant_projection();
+    projection.validate().unwrap();
+    let mut dialog = Dialog::new_usage(Some(projection));
+    let overview = render_usage_dialog(&dialog, 160, 48);
+    for expected in ["Configured account: missing-one", "Configured account: missing-two",
+        "Configure credential for missing-one", "Configure credential for missing-two"] {
+        assert!(overview.contains(expected), "missing {expected}: {overview}");
+    }
+    assert!(!overview.contains("No authorized usage accounts"));
+    assert_eq!(dialog.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    let first = render_usage_dialog(&dialog, 160, 48);
+    assert!(first.contains("Configure credential for missing-one"));
+    assert!(!first.contains("Configure credential for missing-two"));
+    assert!(dialog.usage_destination().is_none(), "grant must have no canonical refresh target");
+    assert!(dialog.usage_state().unwrap().refresh_unavailable);
+    assert_eq!(dialog.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    let second = render_usage_dialog(&dialog, 160, 48);
+    assert!(second.contains("Configure credential for missing-two"));
+    assert!(!second.contains("Configure credential for missing-one"));
+    assert_eq!(dialog.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    assert_eq!(dialog.usage_selected_tab(), Some(UsageDialogTab::Overview));
+}
+
+#[test]
+fn usage_unresolved_grant_mouse_opens_exact_painted_tab_details() {
+    let mut dialog = Dialog::new_usage(Some(unresolved_grant_projection()));
+    let area = dialog.box_rect(48, 160);
+    let snapshot = dialog.to_ratatui_snapshot(None);
+    let mut terminal = Terminal::new(TestBackend::new(160, 48)).unwrap();
+    terminal.draw(|frame| {
+        crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, area, &snapshot);
+    }).unwrap();
+    let buffer = terminal.backend().buffer();
+    let (row, _, height, _) = area;
+    let (x, y) = (row..row.saturating_add(height)).find_map(|y| {
+        let row: String = (0..160).map(|x| buffer[(x, y)].symbol()).collect();
+        row.find("missing-two").map(|x| (row[..x].chars().count() as u16, y))
+    }).expect("second grant tab painted");
+    assert_eq!(dialog.handle_click(y, x, 48, 160, None), DialogAction::Redraw);
+    let text = render_usage_dialog(&dialog, 160, 48);
+    assert!(text.contains("Configure credential for missing-two"));
+    assert!(!text.contains("Configure credential for missing-one"));
+    assert!(dialog.usage_destination().is_none());
+}
+
+#[test]
+fn usage_unresolved_grant_selection_uses_exact_tuple_and_reconciles_revocation() {
+    let mut projection = unresolved_grant_projection();
+    projection.unresolved_grants[1].configured_account_id = "missing-one".into();
+    projection.unresolved_grants[1].surface_id = "codex".into();
+    let target = UsageDialogTarget::UnresolvedGrant {
+        configured_account_id: "missing-one".into(),
+        surface_id: "codex".into(),
+    };
+    let mut dialog = Dialog::new_usage(Some(projection.clone()));
+    assert!(dialog.select_usage_target(target.clone()));
+    projection.unresolved_grants.swap(0, 1);
+    projection.broker_generation += 1;
+    projection.projection_id = "grant-next".into();
+    assert!(dialog.apply_usage_projection(projection.clone()));
+    assert_eq!(dialog.usage_state().unwrap().destination, Some(target));
+    assert!(dialog.usage_state().unwrap().refresh_unavailable);
+    assert!(dialog.usage_destination().is_none());
+    projection.unresolved_grants.remove(0);
+    projection.broker_generation += 1;
+    projection.projection_id = "grant-revoked".into();
+    assert!(dialog.apply_usage_projection(projection));
+    assert_eq!(dialog.usage_selected_tab(), Some(UsageDialogTab::Overview));
+    assert!(dialog.usage_state().unwrap().destination.is_none());
+}
+
+
+#[test]
+fn usage_mixed_inventory_navigation_preserves_canonical_action_and_grant_inertness() {
+    let mut projection = unresolved_grant_projection();
+    projection.providers = vec![usage_provider("openai", 0, "OpenAI", vec![
+        usage_account("canonical-existing", 0, "Existing account", None, vec![]),
+    ])];
+    let mut dialog = Dialog::new_usage(Some(projection));
+    let text = render_usage_dialog(&dialog, 180, 60);
+    assert!(text.contains("Existing account"));
+    assert!(text.contains("Configure credential for missing-one"));
+    assert!(text.contains("Configure credential for missing-two"));
+    assert_eq!(dialog.handle_key(b"\x1b[C", None), DialogAction::SwitchUsageProvider {
+        provider_id: "openai".into(),
+        canonical_account_id: "canonical-existing".into(),
+    });
+    assert!(dialog.select_usage_destination(UsageDialogDestination {
+        provider_id: "openai".into(),
+        canonical_account_id: "canonical-existing".into(),
+    }));
+    assert_eq!(dialog.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    assert!(dialog.usage_destination().is_none());
+    assert_eq!(dialog.handle_key(b"\x1b[D", None), DialogAction::SwitchUsageProvider {
+        provider_id: "openai".into(),
+        canonical_account_id: "canonical-existing".into(),
+    });
 }

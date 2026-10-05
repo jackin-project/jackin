@@ -2,34 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use clap::Args;
-use std::collections::HashMap;
-
-/// Poll futures sequentially and collect results.
-///
-/// Sequential is adequate for small fleet sizes (< ~20 containers); each Docker
-/// inspect round-trip is fast on localhost. Replace with `tokio::task::JoinSet`
-/// if fleet size grows large enough to make serial inspects a bottleneck.
-async fn poll_sequential<F, T>(futs: impl IntoIterator<Item = F>) -> Vec<T>
-where
-    F: Future<Output = T>,
-{
-    let mut results = Vec::new();
-    for fut in futs {
-        results.push(fut.await);
-    }
-    results
-}
+use std::collections::BTreeMap;
+use std::io::Write;
 
 use crate::cli::BANNER;
 use crate::cli::format::OutputFormat;
-use jackin_core::{ContainerHandle, JackinPaths};
+use jackin_core::{ContainerHandle, InstanceIndexEntry, JackinPaths};
 use jackin_docker::docker_client::{BollardDockerClient, ContainerState, DockerApi};
+use jackin_protocol::control::AgentRegistryEntry;
 use jackin_runtime::instance::manifest::InstanceIndex;
 
-/// Build the agent registry query with the caller's required Capsule protocol major.
+/// Command string for querying the agent registry over the capsule socket.
+const AGENTS_PENDING: &str = "jackin-agents-pending";
+
 fn jackin_agents_command() -> String {
     format!(
-        "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule protocol-check --expected-major {} && /jackin/runtime/jackin-capsule agents --format json",
+        "if test -S /jackin/run/jackin.sock; then /jackin/runtime/jackin-capsule protocol-check --expected-major {} && /jackin/runtime/jackin-capsule agents --format json; else printf 'jackin-agents-pending\\n'; fi",
         jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR
     )
 }
@@ -60,15 +48,12 @@ pub struct StatusArgs {
     pub workspace: Option<String>,
     /// Instance ID to show full detail for (requires workspace)
     pub instance_id: Option<String>,
-    /// Show agent counts at Level 0 (requires in-container queries per instance)
+    /// Include full instance detail in human summaries
     #[arg(long)]
     pub detail: bool,
     /// Filter by instance state
-    #[arg(long, value_name = "STATE")]
+    #[arg(long, value_name = "STATE", value_parser = ["running", "stopped", "paused", "restarting", "removing", "created", "dead", "missing", "unavailable"])]
     pub state: Option<String>,
-    /// Filter by agent type (e.g. `--filter agent=claude`)
-    #[arg(long, value_name = "KEY=VALUE")]
-    pub filter: Option<String>,
     /// Output format
     #[arg(long, value_name = "FORMAT", default_value = "human")]
     pub format: String,
@@ -82,436 +67,425 @@ impl StatusArgs {
 
 pub async fn run(args: &StatusArgs, paths: &JackinPaths) -> anyhow::Result<()> {
     let docker = BollardDockerClient::connect()?;
-    let format = args.output_format();
+    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    let rows = collect_instances(args, &index.instances, &docker).await?;
+    render_status(args, &rows, &mut std::io::stdout().lock())
+}
 
-    match (&args.workspace, &args.instance_id) {
-        (None, _) => run_level0(args, paths, &docker, format).await,
-        (Some(ws), None) => run_level1(ws, args, paths, &docker, format).await,
-        (Some(ws), Some(id)) => run_level2(ws, id, paths, &docker, format).await,
+#[derive(Debug)]
+enum AgentHydration {
+    Ready(Vec<AgentRegistryEntry>),
+    Pending,
+    Unavailable,
+    Stopped,
+}
+
+impl AgentHydration {
+    fn status(&self) -> &'static str {
+        match self {
+            Self::Ready(_) => "ready",
+            Self::Pending => "pending",
+            Self::Unavailable => "unavailable",
+            Self::Stopped => "stopped",
+        }
+    }
+
+    fn entries(&self) -> Option<&[AgentRegistryEntry]> {
+        match self {
+            Self::Ready(entries) => Some(entries),
+            _ => None,
+        }
     }
 }
 
-// ── Level 0 — workspace summary ─────────────────────────────────────────────
+#[derive(Debug)]
+struct HydratedInstance {
+    entry: InstanceIndexEntry,
+    state: ContainerState,
+    branch: Option<String>,
+    pr: Option<PrInfo>,
+    agents: AgentHydration,
+}
 
-async fn run_level0(
-    args: &StatusArgs,
-    paths: &JackinPaths,
-    docker: &impl DockerApi,
-    format: OutputFormat,
-) -> anyhow::Result<()> {
-    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
-
-    // Group by workspace name/label.
-    let mut workspaces: HashMap<
-        String,
-        Vec<&jackin_runtime::instance::manifest::InstanceIndexEntry>,
-    > = HashMap::new();
-    for entry in &index.instances {
-        let key = entry
+impl HydratedInstance {
+    fn workspace(&self) -> &str {
+        self.entry
             .workspace_name
-            .clone()
-            .unwrap_or_else(|| entry.workspace_label.clone());
-        workspaces.entry(key).or_default().push(entry);
+            .as_deref()
+            .unwrap_or(&self.entry.workspace_label)
     }
 
-    if format == OutputFormat::Json {
-        // Full JSON always has complete data — gather running state per instance.
-        let mut workspace_data = Vec::new();
-        for (name, entries) in &workspaces {
-            let mut instances = Vec::new();
-            for entry in entries {
-                let state = docker
-                    .inspect_container_by_name(&entry.container_base)
-                    .await
-                    .state;
-                instances.push(serde_json::json!({
-                    "instance_id": entry.instance_id,
-                    "container_base": entry.container_base,
-                    "role": entry.role_key,
-                    "state": state.short_label(),
-                }));
-            }
-            workspace_data.push(serde_json::json!({
-                "workspace": name,
-                "instances": instances,
-            }));
-        }
-        let envelope = serde_json::json!({
-            "schema_version": "v1",
-            "workspaces": workspace_data,
+    fn json(&self) -> serde_json::Value {
+        let pr = self.pr.as_ref().map(|pr| {
+            serde_json::json!({
+                "number": pr.number,
+                "title": pr.title,
+                "url": pr.url,
+                "ci_status": pr.ci.status(),
+                "ci_failing_check": pr.ci.failing_check(),
+            })
         });
-        println!("{}", serde_json::to_string_pretty(&envelope)?);
-        return Ok(());
+        serde_json::json!({
+            "instance_id": self.entry.instance_id,
+            "container_base": self.entry.container_base,
+            "workspace": self.workspace(),
+            "role": self.entry.role_key,
+            "state": self.state.short_label(),
+            "branch": self.branch,
+            "pull_request": pr,
+            "agents": self.agents.entries(),
+            "agents_status": self.agents.status(),
+        })
     }
+}
 
-    // Human output.
-    let mut sorted_ws: Vec<(
-        String,
-        Vec<&jackin_runtime::instance::manifest::InstanceIndexEntry>,
-    )> = workspaces.into_iter().collect();
-    sorted_ws.sort_by(|a, b| a.0.cmp(&b.0));
-
-    print!("{BANNER}");
-    println!("fleet status\n");
-
-    // Query container states for each workspace (sequential; fast enough for small fleets).
-    let mut workspace_rows: Vec<(String, usize, usize, usize)> = Vec::new(); // (name, total, running, stopped)
-    for (ws_name, entries) in &sorted_ws {
-        let states = poll_sequential(entries.iter().map(|e| async {
-            docker
-                .inspect_container_by_name(&e.container_base)
-                .await
-                .state
-        }))
-        .await;
-        let running = states
-            .iter()
-            .filter(|s| matches!(s, ContainerState::Running))
-            .count();
-        let stopped = entries.len() - running;
-        workspace_rows.push((ws_name.clone(), entries.len(), running, stopped));
+fn state_key(state: &ContainerState) -> &'static str {
+    match state {
+        ContainerState::Running => "running",
+        ContainerState::Stopped { .. } => "stopped",
+        ContainerState::Paused => "paused",
+        ContainerState::Restarting => "restarting",
+        ContainerState::Removing => "removing",
+        ContainerState::Created => "created",
+        ContainerState::Dead => "dead",
+        ContainerState::NotFound => "missing",
+        ContainerState::InspectUnavailable(_) => "unavailable",
     }
+}
 
-    // Apply --state filter.
-    let state_filter = args.state.as_deref();
-    let filtered: Vec<_> = workspace_rows
+async fn collect_instances(
+    args: &StatusArgs,
+    entries: &[InstanceIndexEntry],
+    docker: &impl DockerApi,
+) -> anyhow::Result<Vec<HydratedInstance>> {
+    if let Some(filter) = &args.state {
+        anyhow::ensure!(
+            [
+                "running",
+                "stopped",
+                "paused",
+                "restarting",
+                "removing",
+                "created",
+                "dead",
+                "missing",
+                "unavailable"
+            ]
+            .contains(&filter.as_str()),
+            "unknown instance state {filter:?}"
+        );
+    }
+    anyhow::ensure!(
+        args.instance_id.is_none() || args.workspace.is_some(),
+        "instance ID requires a workspace"
+    );
+    let selected: Vec<_> = entries
         .iter()
-        .filter(|(_, _, running, stopped)| match state_filter {
-            Some("running") => *running > 0,
-            Some("stopped") => *stopped > 0,
-            _ => true,
+        .filter(|entry| {
+            args.workspace.as_deref().is_none_or(|workspace| {
+                entry.workspace_name.as_deref() == Some(workspace)
+                    || entry.workspace_label == workspace
+            }) && args
+                .instance_id
+                .as_deref()
+                .is_none_or(|id| entry.instance_id == id)
         })
         .collect();
+    if selected.is_empty() && args.workspace.is_some() {
+        anyhow::bail!("no instances found for requested workspace or instance");
+    }
+    let mut rows = Vec::new();
+    for entry in selected {
+        let inspection = docker
+            .inspect_container_by_name(&entry.container_base)
+            .await;
+        if args
+            .state
+            .as_deref()
+            .is_some_and(|filter| state_key(&inspection.state) != filter)
+        {
+            continue;
+        }
+        rows.push(hydrate_instance(entry, inspection, docker).await);
+    }
+    rows.sort_by(|a, b| {
+        (a.workspace(), &a.entry.instance_id).cmp(&(b.workspace(), &b.entry.instance_id))
+    });
+    Ok(rows)
+}
 
-    if filtered.is_empty() {
-        println!("No workspaces found.");
+async fn hydrate_instance(
+    entry: &InstanceIndexEntry,
+    inspection: jackin_core::ContainerInspection,
+    docker: &impl DockerApi,
+) -> HydratedInstance {
+    let mut row = HydratedInstance {
+        entry: entry.clone(),
+        state: inspection.state,
+        branch: None,
+        pr: None,
+        agents: AgentHydration::Stopped,
+    };
+    if !matches!(row.state, ContainerState::Running) {
+        row.agents = match row.state {
+            ContainerState::Paused
+            | ContainerState::Removing
+            | ContainerState::InspectUnavailable(_) => AgentHydration::Unavailable,
+            ContainerState::Restarting => AgentHydration::Pending,
+            _ => AgentHydration::Stopped,
+        };
+        return row;
+    }
+    row.agents = AgentHydration::Unavailable;
+    let Some(container) = inspection.handle else {
+        return row;
+    };
+    let agents_command = jackin_agents_command();
+    row.agents = match docker
+        .exec_capture_by_id(&container, &["sh", "-c", &agents_command])
+        .await
+    {
+        Ok(output) if output.trim() == AGENTS_PENDING => AgentHydration::Pending,
+        Ok(output) => match serde_json::from_str::<Vec<AgentRegistryEntry>>(&output) {
+            Ok(mut agents) => {
+                agents.sort_by(|a, b| {
+                    (a.status != "active", &a.started_at, &a.codename).cmp(&(
+                        b.status != "active",
+                        &b.started_at,
+                        &b.codename,
+                    ))
+                });
+                AgentHydration::Ready(agents)
+            }
+            Err(_) => AgentHydration::Unavailable,
+        },
+        Err(_) => AgentHydration::Unavailable,
+    };
+    row.branch = docker
+        .exec_capture_by_id(&container, &["sh", "-c", GIT_BRANCH_CMD])
+        .await
+        .ok()
+        .map(|branch| branch.trim().to_owned())
+        .filter(|branch| !branch.is_empty() && branch != "unknown");
+    if row.branch.is_some() {
+        row.pr = fetch_pr_info(docker, &container).await;
+    }
+    row
+}
+
+fn render_status(
+    args: &StatusArgs,
+    rows: &[HydratedInstance],
+    output: &mut impl Write,
+) -> anyhow::Result<()> {
+    if args.output_format() == OutputFormat::Json {
+        let envelope = match (&args.workspace, &args.instance_id) {
+            (None, _) => {
+                let mut workspaces: BTreeMap<&str, Vec<serde_json::Value>> = BTreeMap::new();
+                for row in rows {
+                    workspaces
+                        .entry(row.workspace())
+                        .or_default()
+                        .push(row.json());
+                }
+                let workspaces: Vec<_> = workspaces.into_iter().map(|(workspace, instances)| {
+                    serde_json::json!({"workspace": workspace, "instances": instances})
+                }).collect();
+                serde_json::json!({"schema_version": "v1", "workspaces": workspaces})
+            }
+            (Some(workspace), None) => serde_json::json!({
+                "schema_version": "v1", "workspace": workspace,
+                "instances": rows.iter().map(HydratedInstance::json).collect::<Vec<_>>()
+            }),
+            (Some(_), Some(_)) => serde_json::json!({
+                "schema_version": "v1",
+                "instances": rows.iter().map(HydratedInstance::json).collect::<Vec<_>>()
+            }),
+        };
+        writeln!(output, "{}", serde_json::to_string_pretty(&envelope)?)?;
         return Ok(());
     }
-
-    // Column widths.
-    let ws_width = filtered
-        .iter()
-        .map(|(n, _, _, _)| n.len())
-        .max()
-        .unwrap_or(9)
-        .max(9);
-    println!("  {:<ws_width$}  {:<9}  state", "workspace", "instances");
-    println!("  {}", "─".repeat(ws_width + 2 + 9 + 2 + 30));
-
-    for (ws_name, total, running, stopped) in &filtered {
-        let state = if *running > 0 && *stopped > 0 {
-            format!("{running} running · {stopped} stopped")
-        } else if *running > 0 {
-            format!("{running} running")
-        } else {
-            format!("{stopped} stopped")
-        };
-        println!("  {ws_name:<ws_width$}  {total:<9}  {state}");
+    match (&args.workspace, &args.instance_id) {
+        (None, _) => render_fleet(rows, output)?,
+        (Some(workspace), None) => render_workspace(workspace, rows, output)?,
+        (Some(_), Some(_)) => {
+            if rows.is_empty() {
+                writeln!(output, "No instances match the requested state.")?;
+            }
+            for row in rows {
+                render_instance_detail(row, output)?;
+            }
+        }
     }
-
-    let _total_instances: usize = filtered.iter().map(|(_, t, _, _)| t).sum();
-    let total_running: usize = filtered.iter().map(|(_, _, r, _)| r).sum();
-    let total_stopped: usize = filtered.iter().map(|(_, _, _, s)| s).sum();
-    println!();
-    print!(
-        "  {} workspace{}, {} instance{} running",
-        filtered.len(),
-        if filtered.len() == 1 { "" } else { "s" },
-        total_running,
-        if total_running == 1 { "" } else { "s" },
-    );
-    if total_stopped > 0 {
-        print!(", {total_stopped} stopped");
+    if args.detail && args.instance_id.is_none() {
+        for row in rows {
+            render_instance_detail(row, output)?;
+        }
     }
-    println!("\n");
-    println!("  jackin status <workspace>           show instances");
-    println!("  jackin status <workspace> <id>      show full detail");
-    if !args.detail {
-        println!("  jackin status --detail              include per-instance agent counts");
-    }
-
     Ok(())
 }
 
-// ── Level 1 — instance list for a workspace ──────────────────────────────────
-
-async fn run_level1(
-    workspace: &str,
-    args: &StatusArgs,
-    paths: &JackinPaths,
-    docker: &impl DockerApi,
-    format: OutputFormat,
-) -> anyhow::Result<()> {
-    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
-    let instances: Vec<_> = index
-        .instances
-        .iter()
-        .filter(|e| {
-            e.workspace_name.as_deref() == Some(workspace) || e.workspace_label == workspace
-        })
-        .collect();
-
-    if instances.is_empty() {
-        anyhow::bail!("no instances found for workspace {workspace:?}");
-    }
-
-    // Gather state for each instance.
-    let states = poll_sequential(instances.iter().map(|e| async {
-        docker
-            .inspect_container_by_name(&e.container_base)
-            .await
-            .state
-    }))
-    .await;
-
-    // Apply state filter.
-    let state_filter = args.state.as_deref();
-    let rows: Vec<_> = instances
-        .iter()
-        .zip(states.iter())
-        .filter(|(_, s)| match state_filter {
-            Some("running") => matches!(s, ContainerState::Running),
-            Some("stopped") => !matches!(s, ContainerState::Running),
-            _ => true,
-        })
-        .collect();
-
-    if format == OutputFormat::Json {
-        let json_rows: Vec<_> = rows
-            .iter()
-            .map(|(e, s)| {
-                serde_json::json!({
-                    "instance_id": e.instance_id,
-                    "workspace": workspace,
-                    "role": e.role_key,
-                    "state": s.short_label(),
-                })
-            })
-            .collect();
-        let envelope = serde_json::json!({
-            "schema_version": "v1",
-            "workspace": workspace,
-            "instances": json_rows,
-        });
-        println!("{}", serde_json::to_string_pretty(&envelope)?);
+fn render_fleet(rows: &[HydratedInstance], output: &mut impl Write) -> anyhow::Result<()> {
+    write!(output, "{BANNER}")?;
+    writeln!(output, "fleet status\n")?;
+    if rows.is_empty() {
+        writeln!(output, "No workspaces found.")?;
         return Ok(());
     }
+    let mut workspaces: BTreeMap<&str, Vec<&HydratedInstance>> = BTreeMap::new();
+    for row in rows {
+        workspaces.entry(row.workspace()).or_default().push(row);
+    }
+    let width = workspaces
+        .keys()
+        .map(|name| name.len())
+        .max()
+        .unwrap_or(9)
+        .max(9);
+    writeln!(
+        output,
+        "  {:<width$}  {:<9}  state",
+        "workspace", "instances"
+    )?;
+    writeln!(output, "  {}", "─".repeat(width + 43))?;
+    for (workspace, instances) in &workspaces {
+        let mut counts = BTreeMap::new();
+        for row in instances {
+            *counts.entry(state_key(&row.state)).or_insert(0_usize) += 1;
+        }
+        let states = counts
+            .into_iter()
+            .map(|(state, count)| format!("{count} {state}"))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        writeln!(
+            output,
+            "  {workspace:<width$}  {:<9}  {states}",
+            instances.len()
+        )?;
+    }
+    writeln!(
+        output,
+        "\n  {} workspaces, {} instances\n",
+        workspaces.len(),
+        rows.len()
+    )?;
+    writeln!(
+        output,
+        "  jackin status <workspace>           show instances"
+    )?;
+    writeln!(
+        output,
+        "  jackin status <workspace> <id>      show full detail"
+    )?;
+    Ok(())
+}
 
+fn render_workspace(
+    workspace: &str,
+    rows: &[HydratedInstance],
+    output: &mut impl Write,
+) -> anyhow::Result<()> {
     let running = rows
         .iter()
-        .filter(|(_, s)| matches!(s, ContainerState::Running))
+        .filter(|row| matches!(row.state, ContainerState::Running))
         .count();
-    println!(
-        "{workspace}   {} instance{}  ·  {running} running\n",
-        rows.len(),
-        if rows.len() == 1 { "" } else { "s" }
-    );
-
+    writeln!(
+        output,
+        "{workspace}   {} instances  ·  {running} running\n",
+        rows.len()
+    )?;
     let id_width = rows
         .iter()
-        .map(|(e, _)| e.instance_id.len())
+        .map(|row| row.entry.instance_id.len())
         .max()
         .unwrap_or(11)
         .max(11);
     let role_width = rows
         .iter()
-        .map(|(e, _)| e.role_key.len())
+        .map(|row| row.entry.role_key.len())
         .max()
         .unwrap_or(4)
         .max(4);
-
-    println!(
-        "  {:<id_width$}  {:<role_width$}  {:<8}  pr",
+    writeln!(
+        output,
+        "  {:<id_width$}  {:<role_width$}  {:<11}  pr",
         "instance", "role", "state"
-    );
-    println!(
-        "  {}",
-        "─".repeat(id_width + 2 + role_width + 2 + 8 + 2 + 10)
-    );
-
-    for (entry, state) in &rows {
-        // "—" for pr: Level 2 detail query needed for that
-        println!(
-            "  {:<id_width$}  {:<role_width$}  {:<8}  —",
-            entry.instance_id,
-            entry.role_key,
-            state.short_label(),
+    )?;
+    writeln!(output, "  {}", "─".repeat(id_width + role_width + 29))?;
+    for row in rows {
+        let pr = row.pr.as_ref().map_or_else(
+            || "—".to_owned(),
+            |pr| format!("#{}  {}", pr.number, pr.title),
         );
+        writeln!(
+            output,
+            "  {:<id_width$}  {:<role_width$}  {:<11}  {pr}",
+            row.entry.instance_id,
+            row.entry.role_key,
+            row.state.short_label()
+        )?;
     }
-
-    println!();
-    println!("  jackin status {workspace} <id>      show full detail");
-
+    writeln!(
+        output,
+        "\n  jackin status {workspace} <id>      show full detail"
+    )?;
     Ok(())
 }
 
-// ── Level 2 — full instance detail ───────────────────────────────────────────
-
-async fn run_level2(
-    workspace: &str,
-    instance_id: &str,
-    paths: &JackinPaths,
-    docker: &impl DockerApi,
-    format: OutputFormat,
-) -> anyhow::Result<()> {
-    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
-    let entry = index.instances.iter().find(|e| {
-        e.instance_id == instance_id
-            && (e.workspace_name.as_deref() == Some(workspace) || e.workspace_label == workspace)
-    });
-
-    let entry = entry.ok_or_else(|| {
-        anyhow::anyhow!("instance {instance_id:?} not found in workspace {workspace:?}")
-    })?;
-
-    let container_name = &entry.container_base;
-    let inspection = docker.inspect_container_by_name(container_name).await;
-    let state = inspection.state;
-    let container = inspection.handle;
-    let is_running = matches!(state, ContainerState::Running);
-
-    // Fetch agents registry (only when running).
-    #[expect(
-        clippy::option_if_let_else,
-        reason = "documented residual allow; prefer expect when site is lint-true"
-    )]
-    let agents_json: Option<Vec<jackin_protocol::control::AgentRegistryEntry>> = if is_running {
-        let Some(container) = container.as_ref() else {
-            return Ok(());
-        };
-        match docker
-            .exec_capture_by_id(container, &["sh", "-c", &jackin_agents_command()])
-            .await
-        {
-            Err(_) => None, // socket not yet up or container exec failed — expected transient
-            Ok(s) => match serde_json::from_str(&s) {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    // Exec succeeded but output is not valid JSON — protocol or version mismatch.
-                    eprintln!("warning: agents registry parse error for {container_name}: {e:#}");
-                    None
-                }
-            },
-        }
+fn render_instance_detail(row: &HydratedInstance, output: &mut impl Write) -> anyhow::Result<()> {
+    writeln!(
+        output,
+        "\n{}   {} / {}   {}\n",
+        row.entry.instance_id,
+        row.workspace(),
+        row.entry.role_key,
+        row.state.inspect_label()
+    )?;
+    writeln!(
+        output,
+        "  branch   {}",
+        row.branch.as_deref().unwrap_or("—")
+    )?;
+    if let Some(pr) = &row.pr {
+        writeln!(output, "  pr       #{}  {}", pr.number, pr.title)?;
+        writeln!(output, "  url      {}", pr.url)?;
+        writeln!(output, "  ci       {}", pr.ci_display())?;
     } else {
-        None
-    };
-
-    // Fetch git branch (only when running). .ok() is intentional: exec failure
-    // is a transient or expected case (container just confirmed up but git not
-    // available), and GIT_BRANCH_CMD already suppresses git errors with `2>/dev/null`.
-    let branch: Option<String> = if is_running {
-        let Some(container) = container.as_ref() else {
-            return Ok(());
-        };
-        docker
-            .exec_capture_by_id(container, &["sh", "-c", GIT_BRANCH_CMD])
-            .await
-            .ok()
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty() && s != "unknown")
-    } else {
-        None
-    };
-
-    // Fetch PR info via gh (only when running and branch is known).
-    let pr_info: Option<PrInfo> = if is_running && branch.is_some() {
-        match container.as_ref() {
-            Some(container) => fetch_pr_info(docker, container).await,
-            None => None,
-        }
-    } else {
-        None
-    };
-
-    if format == OutputFormat::Json {
-        let agents_value = match &agents_json {
-            None => serde_json::Value::Null,
-            Some(a) => serde_json::to_value(a)?,
-        };
-        let pr_value = pr_info.as_ref().map_or(serde_json::Value::Null, |p| {
-            serde_json::json!({
-                "number": p.number,
-                "title": p.title,
-                "url": p.url,
-                "ci_status": p.ci_status,
-                "ci_failing_check": p.ci_failing_check,
-            })
-        });
-        let envelope = serde_json::json!({
-            "schema_version": "v1",
-            "instances": [{
-                "instance_id": entry.instance_id,
-                "workspace": workspace,
-                "role": entry.role_key,
-                "state": state.short_label(),
-                "branch": branch,
-                "pull_request": pr_value,
-                "agents": agents_value,
-            }],
-        });
-        println!("{}", serde_json::to_string_pretty(&envelope)?);
-        return Ok(());
+        writeln!(output, "  pr       —\n  url      —\n  ci       —")?;
     }
-
-    // Human output.
-    println!(
-        "\n{}   {} / {}   {}",
-        entry.instance_id,
-        workspace,
-        entry.role_key,
-        state.short_label()
-    );
-    println!();
-
-    // Branch / PR / CI block.
-    println!("  branch   {}", branch.as_deref().unwrap_or("—"));
-    if let Some(pr) = &pr_info {
-        println!("  pr       #{}  {}", pr.number, pr.title);
-        println!("  url      {}", pr.url);
-        println!("  ci       {}", pr.ci_display());
-    } else {
-        println!("  pr       —");
-        println!("  url      —");
-        println!("  ci       —");
-    }
-    println!();
-
-    // Agent table.
-    if let Some(agents) = &agents_json {
-        println!(
+    writeln!(output)?;
+    if let AgentHydration::Ready(agents) = &row.agents {
+        writeln!(
+            output,
             "  {:<12}  {:<10}  {:<14}  {:<20}  {:<20}  status",
             "codename", "agent", "provider", "started", "exited"
-        );
-        println!("  {}", "─".repeat(83));
-
-        let mut active: Vec<_> = agents.iter().filter(|a| a.status == "active").collect();
-        let mut exited: Vec<_> = agents.iter().filter(|a| a.status != "active").collect();
-        active.sort_by(|a, b| a.started_at.cmp(&b.started_at));
-        exited.sort_by(|a, b| a.started_at.cmp(&b.started_at));
-
-        for a in active.iter().chain(exited.iter()) {
-            println!(
+        )?;
+        writeln!(output, "  {}", "─".repeat(83))?;
+        for agent in agents {
+            writeln!(
+                output,
                 "  {:<12}  {:<10}  {:<14}  {:<20}  {:<20}  {}",
-                a.codename,
-                a.agent.as_deref().unwrap_or("shell"),
-                a.provider.as_deref().unwrap_or("—"),
-                compact_ts(&a.started_at),
-                a.exited_at
+                agent.codename,
+                agent.agent.as_deref().unwrap_or("shell"),
+                agent.provider.as_deref().unwrap_or("—"),
+                compact_ts(&agent.started_at),
+                agent
+                    .exited_at
                     .as_deref()
                     .map_or_else(|| "—".to_owned(), compact_ts),
-                a.status,
-            );
+                agent.status
+            )?;
         }
-    } else if is_running {
-        println!("  agents   pending");
     } else {
-        println!("  agents   —");
+        writeln!(output, "  agents   {}", row.agents.status())?;
     }
-    println!();
-
+    writeln!(output)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod hydration_tests;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -520,20 +494,19 @@ struct PrInfo {
     number: u64,
     title: String,
     url: String,
-    ci_status: String,
-    ci_failing_check: Option<String>,
+    ci: CiResult,
 }
 
 impl PrInfo {
     fn ci_display(&self) -> String {
-        match self.ci_status.as_str() {
-            "passing" | "success" => "✓ passing".to_owned(),
-            "pending" => "⏳ pending".to_owned(),
-            "failing" | "failure" | "error" => self.ci_failing_check.as_ref().map_or_else(
+        match &self.ci {
+            CiResult::Passing => "✓ passing".to_owned(),
+            CiResult::Pending => "⏳ pending".to_owned(),
+            CiResult::Failing(check) => check.as_ref().map_or_else(
                 || "✗ failing".to_owned(),
                 |check| format!("✗ failing — {check}"),
             ),
-            _ => "—".to_owned(),
+            CiResult::Unknown => "—".to_owned(),
         }
     }
 }
@@ -545,69 +518,315 @@ async fn fetch_pr_info(docker: &impl DockerApi, container: &ContainerHandle) -> 
         .exec_capture_by_id(container, &["sh", "-c", GH_PR_CMD])
         .await
         .ok()?;
-    let value: serde_json::Value = serde_json::from_str(output.trim()).ok()?;
-    let number = value["number"].as_u64()?;
-    let title = value["title"].as_str()?.to_owned();
-    let url = value["url"].as_str()?.to_owned();
+    parse_pr_info(output.trim())
+}
 
-    // Aggregate statusCheckRollup into a single ci_status.
-    let (ci_status, ci_failing_check) = aggregate_ci_status(&value["statusCheckRollup"]);
+#[derive(Debug, PartialEq, Eq)]
+enum CiResult {
+    Passing,
+    Pending,
+    Failing(Option<String>),
+    Unknown,
+}
 
+impl CiResult {
+    fn status(&self) -> &'static str {
+        match self {
+            Self::Passing => "passing",
+            Self::Pending => "pending",
+            Self::Failing(_) => "failing",
+            Self::Unknown => "—",
+        }
+    }
+
+    fn failing_check(&self) -> Option<&str> {
+        match self {
+            Self::Failing(name) => name.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GithubPr {
+    number: u64,
+    title: String,
+    url: String,
+    #[serde(rename = "statusCheckRollup", default)]
+    checks: Option<Vec<GithubCheck>>,
+}
+
+/// GitHub's rollup is a union: commit statuses use state/context, check runs
+/// use status/conclusion/name. Keep their fields distinct at the input boundary.
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "__typename")]
+enum GithubCheck {
+    CheckRun {
+        status: String,
+        conclusion: Option<String>,
+        name: Option<String>,
+    },
+    StatusContext {
+        state: String,
+        context: Option<String>,
+    },
+    #[serde(other)]
+    Unknown,
+}
+
+impl GithubCheck {
+    fn result(&self) -> CiResult {
+        match self {
+            Self::CheckRun {
+                status,
+                conclusion,
+                name,
+            } => match status.as_str() {
+                "COMPLETED" => match conclusion.as_deref() {
+                    Some("SUCCESS" | "NEUTRAL" | "SKIPPED") => CiResult::Passing,
+                    Some(
+                        "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" | "ACTION_REQUIRED"
+                        | "STARTUP_FAILURE" | "STALE",
+                    ) => CiResult::Failing(name.clone().filter(|name| !name.trim().is_empty())),
+                    _ => CiResult::Unknown,
+                },
+                "IN_PROGRESS" | "QUEUED" | "WAITING" | "PENDING" | "REQUESTED" => CiResult::Pending,
+                _ => CiResult::Unknown,
+            },
+            Self::StatusContext { state, context } => match state.as_str() {
+                "SUCCESS" => CiResult::Passing,
+                "FAILURE" | "ERROR" => {
+                    CiResult::Failing(context.clone().filter(|name| !name.trim().is_empty()))
+                }
+                "PENDING" | "EXPECTED" => CiResult::Pending,
+                _ => CiResult::Unknown,
+            },
+            Self::Unknown => CiResult::Unknown,
+        }
+    }
+}
+
+fn parse_pr_info(output: &str) -> Option<PrInfo> {
+    let pr: GithubPr = serde_json::from_str(output).ok()?;
     Some(PrInfo {
-        number,
-        title,
-        url,
-        ci_status,
-        ci_failing_check,
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        ci: aggregate_ci_status(pr.checks.as_deref().unwrap_or_default()),
     })
 }
 
-fn aggregate_ci_status(rollup: &serde_json::Value) -> (String, Option<String>) {
-    let Some(checks) = rollup.as_array() else {
-        return ("—".to_owned(), None);
-    };
+fn aggregate_ci_status(checks: &[GithubCheck]) -> CiResult {
     if checks.is_empty() {
-        return ("—".to_owned(), None);
+        return CiResult::Unknown;
     }
+    let mut any_failure = false;
     let mut failing_check = None;
     let mut any_pending = false;
-    let mut all_pass = true;
+    let mut any_unknown = false;
     for check in checks {
-        let conclusion = check
-            .get("conclusion")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let status = check.get("status").and_then(|v| v.as_str()).unwrap_or("");
-        match conclusion {
-            "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" => {
-                all_pass = false;
+        match check.result() {
+            CiResult::Failing(name) => {
+                any_failure = true;
                 if failing_check.is_none() {
-                    failing_check = check
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_owned);
+                    failing_check = name;
                 }
             }
-            "SUCCESS" | "NEUTRAL" | "SKIPPED" => {}
-            _ => {
-                if status == "IN_PROGRESS" || status == "QUEUED" || status == "WAITING" {
-                    any_pending = true;
-                }
-            }
+            CiResult::Pending => any_pending = true,
+            CiResult::Unknown => any_unknown = true,
+            CiResult::Passing => {}
         }
     }
-    if failing_check.is_some() {
-        ("failing".to_owned(), failing_check)
+    if any_failure {
+        CiResult::Failing(failing_check)
     } else if any_pending {
-        ("pending".to_owned(), None)
-    } else if all_pass {
-        ("passing".to_owned(), None)
+        CiResult::Pending
+    } else if any_unknown {
+        CiResult::Unknown
     } else {
-        ("—".to_owned(), None)
+        CiResult::Passing
     }
 }
 
 /// Compact ISO 8601 timestamp for table display: `2026-06-04 10:15:02`.
 fn compact_ts(ts: &str) -> String {
     ts.trim_end_matches('Z').replace('T', " ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CiResult, GithubCheck, aggregate_ci_status, parse_pr_info};
+    use serde_json::{Value, json};
+
+    fn aggregate(checks: Value) -> CiResult {
+        let checks: Vec<GithubCheck> = serde_json::from_value(checks).unwrap();
+        aggregate_ci_status(&checks)
+    }
+
+    fn check_run(status: &str, conclusion: Option<&str>) -> Value {
+        json!({
+            "__typename": "CheckRun",
+            "status": status,
+            "conclusion": conclusion,
+            "name": "build"
+        })
+    }
+
+    fn commit_status(state: &str) -> Value {
+        json!({"__typename": "StatusContext", "state": state, "context": "legacy CI"})
+    }
+
+    #[test]
+    fn ci_rollup_handles_both_github_union_members() {
+        for (state, expected) in [
+            ("SUCCESS", CiResult::Passing),
+            ("PENDING", CiResult::Pending),
+            ("EXPECTED", CiResult::Pending),
+            ("FAILURE", CiResult::Failing(Some("legacy CI".to_owned()))),
+            ("ERROR", CiResult::Failing(Some("legacy CI".to_owned()))),
+        ] {
+            assert_eq!(
+                aggregate(json!([
+                    check_run("COMPLETED", Some("SUCCESS")),
+                    commit_status(state)
+                ])),
+                expected,
+                "commit status {state}"
+            );
+        }
+    }
+
+    #[test]
+    fn ci_rollup_classifies_all_check_run_states_and_conclusions() {
+        for status in ["IN_PROGRESS", "QUEUED", "WAITING", "PENDING", "REQUESTED"] {
+            assert_eq!(
+                aggregate(json!([check_run(status, None)])),
+                CiResult::Pending
+            );
+        }
+        for conclusion in ["SUCCESS", "NEUTRAL", "SKIPPED"] {
+            assert_eq!(
+                aggregate(json!([check_run("COMPLETED", Some(conclusion))])),
+                CiResult::Passing
+            );
+        }
+        for conclusion in [
+            "FAILURE",
+            "ERROR",
+            "TIMED_OUT",
+            "CANCELLED",
+            "ACTION_REQUIRED",
+            "STARTUP_FAILURE",
+            "STALE",
+        ] {
+            assert_eq!(
+                aggregate(json!([check_run("COMPLETED", Some(conclusion))])),
+                CiResult::Failing(Some("build".to_owned()))
+            );
+        }
+    }
+
+    #[test]
+    fn ci_failure_does_not_require_a_check_name() {
+        for failed in [
+            json!({"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "FAILURE"}),
+            json!({"__typename": "StatusContext", "state": "ERROR"}),
+            json!({"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "FAILURE", "name": ""}),
+            json!({"__typename": "StatusContext", "state": "ERROR", "context": "  "}),
+        ] {
+            assert_eq!(
+                aggregate(json!([commit_status("PENDING"), failed])),
+                CiResult::Failing(None)
+            );
+        }
+    }
+
+    #[test]
+    fn ci_failure_precedes_pending_and_preserves_first_available_name() {
+        assert_eq!(
+            aggregate(json!([
+                commit_status("PENDING"),
+                {"__typename": "StatusContext", "state": "FAILURE"},
+                {"__typename": "StatusContext", "state": "FAILURE", "context": "  "},
+                check_run("COMPLETED", Some("FAILURE")),
+                commit_status("ERROR")
+            ])),
+            CiResult::Failing(Some("build".to_owned()))
+        );
+    }
+
+    #[test]
+    fn unknown_or_empty_ci_never_implies_passing() {
+        assert_eq!(aggregate(json!([])), CiResult::Unknown);
+        for unknown in [
+            check_run("NEW_STATE", Some("SUCCESS")),
+            check_run("COMPLETED", Some("NEW_CONCLUSION")),
+            check_run("COMPLETED", None),
+            commit_status("NEW_STATE"),
+            json!({"__typename": "FutureCheckType"}),
+        ] {
+            assert_eq!(
+                aggregate(json!([commit_status("SUCCESS"), unknown])),
+                CiResult::Unknown
+            );
+        }
+    }
+
+    #[test]
+    fn pr_hydration_preserves_legacy_failure_in_json_and_human_output() {
+        let output = json!({
+            "number": 42,
+            "title": "Fix CI",
+            "url": "https://github.com/example/repo/pull/42",
+            "statusCheckRollup": [commit_status("FAILURE")]
+        });
+        let pr = parse_pr_info(&output.to_string()).unwrap();
+        assert_eq!(pr.number, 42);
+        assert_eq!(pr.title, "Fix CI");
+        assert_eq!(pr.url, "https://github.com/example/repo/pull/42");
+        assert_eq!(pr.ci.status(), "failing");
+        assert_eq!(pr.ci.failing_check(), Some("legacy CI"));
+        assert_eq!(pr.ci_display(), "✗ failing — legacy CI");
+    }
+
+    #[test]
+    fn pr_hydration_handles_pending_unnamed_failure_and_absent_ci() {
+        for (rollup, status, name, display) in [
+            (
+                json!([commit_status("PENDING")]),
+                "pending",
+                None,
+                "⏳ pending",
+            ),
+            (
+                json!([{"__typename": "StatusContext", "state": "FAILURE"}]),
+                "failing",
+                None,
+                "✗ failing",
+            ),
+            (Value::Null, "—", None, "—"),
+            (json!([]), "—", None, "—"),
+        ] {
+            let output =
+                json!({"number": 1, "title": "PR", "url": "url", "statusCheckRollup": rollup});
+            let pr = parse_pr_info(&output.to_string()).unwrap();
+            assert_eq!(pr.ci.status(), status);
+            assert_eq!(pr.ci.failing_check(), name);
+            assert_eq!(pr.ci_display(), display);
+        }
+    }
+
+    #[test]
+    fn malformed_rollup_cannot_hydrate_a_passing_pr() {
+        for malformed in [
+            json!({}),
+            json!([{"__typename": "StatusContext"}]),
+            json!([{"__typename": "CheckRun", "status": false}]),
+            json!([{"state": "SUCCESS"}]),
+        ] {
+            let output =
+                json!({"number": 1, "title": "PR", "url": "url", "statusCheckRollup": malformed});
+            assert!(parse_pr_info(&output.to_string()).is_none());
+        }
+    }
 }

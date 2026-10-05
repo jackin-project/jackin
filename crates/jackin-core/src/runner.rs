@@ -10,8 +10,8 @@
 //! Canonical engines:
 //! - **async host** — `jackin_docker::shell_runner::ShellRunner` (honors
 //!   [`RunOptions::timeout`]).
-//! - **sync capsule** — `jackin_capsule`'s `wait_child_with_timeout` /
-//!   `WaitOutcome` engine for PID-1-aware waits.
+//! - **sync capsule** — `jackin_process::exec_sync`, with a finite request
+//!   deadline covering captured pipes and group-owned child completion.
 //!
 //! New wrappers must route through one of these rather than hand-rolling
 //! spawn/status/capture/timeout.
@@ -45,6 +45,10 @@ pub struct RunOptions {
     /// never captured — capturing denies the TTY and blocks forever on the
     /// long-lived session, even under `--debug` or while a rich surface was
     /// active.
+    /// The host runner owns a private local process group through terminal
+    /// restoration. Normal exit, timeout, and cancellation end every process
+    /// remaining in that group before foreground input resumes. Remote
+    /// container sessions and daemons retain their separate lifecycle owners.
     pub interactive: bool,
     /// Tee captured output into the build-log sink so the loading cockpit can
     /// show a live view. Only the derived-image `docker build` sets this.

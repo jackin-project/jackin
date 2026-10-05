@@ -46,6 +46,7 @@ public struct PopoverRoot: View {
     @ObservedObject public var store: PresentationStore
     @ObservedObject private var presentationState: PopoverPresentationState
     @State private var providerScrollPosition = ScrollPosition(edge: .top)
+    private var onRetryLastOperation: (() -> Void)?
     public var onOpenUsage: ((UsageNavigationContext?) -> Void)?
     @Environment(\.popoverQIFullPlate) private var qiFullPlate
 
@@ -61,10 +62,12 @@ public struct PopoverRoot: View {
     init(
         store: PresentationStore,
         presentationState: PopoverPresentationState,
+        onRetryLastOperation: (() -> Void)? = nil,
         onOpenUsage: ((UsageNavigationContext?) -> Void)? = nil
     ) {
         self.store = store
         self.presentationState = presentationState
+        self.onRetryLastOperation = onRetryLastOperation
         self.onOpenUsage = onOpenUsage
     }
 
@@ -108,46 +111,126 @@ public struct PopoverRoot: View {
 
     @ViewBuilder
     private var content: some View {
-        if store.isOpening, store.providerGlanceRows.isEmpty {
+        if store.isOpening, store.providerGroups.isEmpty {
             ProgressView("Loading usage")
                 .controlSize(.large)
                 .accessibilityIdentifier("popover.loading")
-        } else if let error = store.lastError, store.providerGlanceRows.isEmpty {
+        } else if let error = store.lastError, store.providerGroups.isEmpty {
             ContentUnavailableView {
                 Label("Usage unavailable", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(error)
             } actions: {
-                Button("Retry") { store.retryLastOperation() }
+                Button("Retry", action: retryLastOperation)
                     .disabled(store.isOpening || store.refreshInProgress)
                     .accessibilityIdentifier("popover.retry")
             }
             .accessibilityIdentifier("popover.global-error")
         } else if let provider = selectedProvider {
             providerForm(provider)
+        } else if store.popoverSelection == nil {
+            overviewContent
+        } else if let group = store.providerGroups.first(where: {
+            $0.surfaceId == store.popoverSelection
+        }) {
+            ContentUnavailableView {
+                Label(group.displayLabel, systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(group.lastError ?? group.accessibilityLabel)
+                if let error = store.lastError, error != group.lastError {
+                    Text(error)
+                        .accessibilityIdentifier("popover.refresh-error")
+                }
+            } actions: {
+                if store.lastError != nil {
+                    Button("Retry refresh", action: retryLastOperation)
+                        .disabled(store.isOpening || store.refreshInProgress)
+                        .accessibilityIdentifier("popover.refresh-retry")
+                }
+                Button("Retry") { store.refresh(surfaceId: group.surfaceId) }
+                    .disabled(store.isOpening || store.refreshInProgress)
+            }
+            .accessibilityIdentifier("popover.provider-unavailable")
         } else {
+            ContentUnavailableView(
+                "Provider unavailable",
+                systemImage: "exclamationmark.triangle",
+                description: Text(store.popoverSelection ?? "")
+            )
+            .accessibilityIdentifier("popover.provider-unavailable")
+        }
+    }
+
+    @ViewBuilder
+    private var overviewContent: some View {
+        if store.providerGroups.isEmpty {
             ContentUnavailableView(
                 "No providers detected",
                 systemImage: "chevron.right",
                 description: Text(UsageWindowModel.emptyHint)
             )
             .accessibilityIdentifier("popover.empty")
+        } else {
+            Form {
+                Section("Overview") {
+                    ForEach(store.providerGroups) { group in
+                        let account = store.accounts.first {
+                            $0.surfaceId == group.surfaceId && $0.selected
+                        }
+                        let glance = store.providerGlanceRows.first {
+                            $0.surfaceId == group.surfaceId
+                        }
+                        Button {
+                            store.popoverSelection = group.surfaceId
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(group.displayLabel)
+                                        .foregroundStyle(.primary)
+                                    Text(
+                                        account?.accountLabel
+                                            ?? glance?.accountLabel
+                                            ?? group.accessibilityLabel
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    if let activity = glance?.activityLabel {
+                                        Text(activity)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("popover.overview.provider.\(group.surfaceId)")
+                    }
+                }
+            }
+            .accessibilityIdentifier("popover.overview")
         }
     }
 
-    private var selectedProvider: PresentationStore.GlanceProviderRow? {
-        if let selection = store.popoverSelection,
-            let match = store.providerGlanceRows.first(where: { $0.surfaceId == selection })
-        {
-            return match
-        }
-        return store.providerGlanceRows.first
+    private var selectedProvider: StatusPopoverFocus.Content? {
+        StatusPopoverFocus.content(
+            providerGroups: store.providerGroups,
+            surfaces: store.surfaces,
+            accounts: store.accounts,
+            glanceRows: store.providerGlanceRows,
+            selection: store.popoverSelection,
+            refreshError: store.lastError
+        )
     }
 
-    private func providerForm(_ provider: PresentationStore.GlanceProviderRow) -> some View {
-        let surface = store.surfaces.first { $0.id == provider.surfaceId }
-        let metadataRows = surface?.detailPresentation.rows.filter { $0.kind != .bucket } ?? []
-        let limitRows = surface?.detailPresentation.rows.filter { $0.kind == .bucket } ?? []
+    private func providerForm(_ provider: StatusPopoverFocus.Content) -> some View {
+        let surface = provider.surface
+        let metadataRows = surface.detailPresentation.rows.filter { $0.kind != .bucket }
+        let limitRows = surface.detailPresentation.rows.filter { $0.kind == .bucket }
         let scrollReset = ProviderScrollReset(
             presentationSequence: presentationState.sequence,
             accountLabel: provider.accountLabel
@@ -166,7 +249,7 @@ public struct PopoverRoot: View {
                 } header: {
                     sectionHeader("Limits")
                 }
-            } else if surface?.lastError == nil {
+            } else if provider.lastError == nil {
                 Section {
                     Text("No limit details available")
                         .foregroundStyle(.secondary)
@@ -196,7 +279,21 @@ public struct PopoverRoot: View {
                 }
             }
 
-            if let error = surface?.lastError ?? provider.lastError {
+            if let error = provider.refreshError {
+                Section {
+                    if error != provider.lastError {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .accessibilityIdentifier("popover.refresh-error")
+                    }
+                    Button("Retry", action: retryLastOperation)
+                        .disabled(store.isOpening || store.refreshInProgress)
+                        .accessibilityIdentifier("popover.refresh-retry")
+                } header: {
+                    sectionHeader("Refresh status")
+                }
+            }
+
+            if let error = provider.lastError {
                 Section {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .accessibilityIdentifier("popover.provider-error")
@@ -224,7 +321,7 @@ public struct PopoverRoot: View {
         providerScrollPosition.scrollTo(edge: .top)
     }
 
-    private func providerIdentity(_ provider: PresentationStore.GlanceProviderRow) -> some View {
+    private func providerIdentity(_ provider: StatusPopoverFocus.Content) -> some View {
         HStack(spacing: 10) {
             if let mark = ProviderMarks.swiftUIImage(forIconKey: provider.iconKey) {
                 mark
@@ -258,10 +355,10 @@ public struct PopoverRoot: View {
 
     private func accountSelection(
         _ accounts: [PresentationStore.AccountRow],
-        provider: PresentationStore.GlanceProviderRow
+        provider: StatusPopoverFocus.Content
     ) -> Binding<String> {
         Binding(
-            get: { accounts.first(where: \.selected)?.accountKey ?? accounts[0].accountKey },
+            get: { accounts.first(where: \.selected)?.accountKey ?? "" },
             set: { store.setSelectedAccount(surfaceId: provider.surfaceId, accountKey: $0) }
         )
     }
@@ -297,6 +394,14 @@ public struct PopoverRoot: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .accessibilityLabel(title)
+    }
+
+    private func retryLastOperation() {
+        if let onRetryLastOperation {
+            onRetryLastOperation()
+        } else {
+            store.retryLastOperation()
+        }
     }
 
     private var controls: some View {
@@ -344,11 +449,24 @@ public struct PopoverRoot: View {
 
             if let provider = selectedProvider {
                 let accounts = store.accountsForSurface(provider.surfaceId)
-                if accounts.count > 1 {
+                let reselectionNotice = store.accountSelectionReselectionNotice(
+                    surfaceId: provider.surfaceId
+                )
+                if accounts.count > 1 || reselectionNotice != nil {
                     Picker(
                         "Account",
                         selection: accountSelection(accounts, provider: provider)
                     ) {
+                        if !accounts.contains(where: \.selected) {
+                            Text(
+                                reselectionNotice
+                                    ?? store.surfaces.first(where: { $0.id == provider.surfaceId })?
+                                        .lastError
+                                    ?? provider.lastError ?? provider.activityLabel
+                            )
+                            .tag("")
+                            .disabled(true)
+                        }
                         ForEach(accounts) { account in
                             Text(account.accountLabel)
                                 .tag(account.accountKey)

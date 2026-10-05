@@ -312,6 +312,17 @@ pub(super) struct PrWatch {
 pub(super) struct UsageState {
     pub(crate) usage_cache: UsageCache,
     pub(crate) token_monitor: TokenMonitor,
+    pub(crate) canonical_projection: Option<jackin_protocol::usage_broker::UsageProjectionV2>,
+    pub(crate) canonical_projection_error: Option<String>,
+    pub(crate) canonical_projection_revoked: bool,
+    pub(crate) projection_refresh_task: Option<
+        tokio::task::JoinHandle<
+            Result<
+                jackin_protocol::usage_broker::UsageProjectionV2,
+                jackin_protocol::usage_broker::UsageCoordinationError,
+            >,
+        >,
+    >,
     pub(crate) pending_usage_refresh: Option<crate::usage::UsageRefreshTarget>,
     pub(crate) usage_refresh_task: Option<tokio::task::JoinHandle<Vec<BrokerUsageRefresh>>>,
 }
@@ -650,6 +661,10 @@ impl Multiplexer {
             usage: UsageState {
                 usage_cache: UsageCache::default(),
                 token_monitor: TokenMonitor::new(),
+                canonical_projection: None,
+                canonical_projection_error: None,
+                canonical_projection_revoked: false,
+                projection_refresh_task: None,
                 pending_usage_refresh: None,
                 usage_refresh_task: None,
             },
@@ -1124,7 +1139,7 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
         mux.invalidate(status_change_redraw_reason());
         return;
     }
-    if mux.refresh_open_usage_dialog_from_cache() {
+    if mux.refresh_open_usage_dialog_from_projection() {
         mux.invalidate(dialog_change_redraw_reason());
         return;
     }
@@ -1201,7 +1216,7 @@ pub async fn run_daemon(
     launch_config: CapsuleConfig,
     telemetry: &mut crate::telemetry::FlushGuard,
 ) -> Result<()> {
-    crate::pid1::install_sigchld_reaper();
+    crate::pid1::install_child_reaper();
     run_daemon_loop(
         initial_agent,
         launch_config,
@@ -1337,6 +1352,9 @@ async fn run_daemon_loop(
     // `?2026` brackets, not from pacing.
     let mut last_frame_at: Option<tokio::time::Instant> = None;
     loop {
+        // Requester cleanup must run even when biased control traffic keeps
+        // the state ticker from winning. Idle loops still wake on that ticker.
+        mux.cancel_abandoned_exec_picker();
         // The dirty-exit modal's keep/discard rows set `exit_request`; record
         // the operator's choice for the host, then drain and exit.
         if let Some(action) = mux.control.exit_request.take() {
@@ -1790,7 +1808,7 @@ async fn run_daemon_loop(
             _ = usage_account_ticker.tick() => {
                 let refreshed = mux.finish_usage_account_refresh_if_ready().await;
                 mux.spawn_active_usage_account_refresh();
-                if refreshed && mux.refresh_open_usage_dialog_from_cache() {
+                if refreshed && mux.refresh_open_usage_dialog_from_projection() {
                     mux.invalidate(dialog_change_redraw_reason());
                 }
             }

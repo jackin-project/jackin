@@ -9,9 +9,9 @@ use super::{
     AttachControlOperation, AttachControlRequest, AttachControlResponse, AttachControlResult,
     ClipboardImage, ClipboardImageChunk, ClipboardImageEnd, ClipboardImageError,
     ClipboardImageFormat, ClipboardImageStart, FILE_EXPORT_DIGEST_BYTES, MAX_CLIPBOARD_IMAGE_BYTES,
-    MAX_CLIPBOARD_IMAGE_ERROR_BYTES, MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD, PayloadCursor,
-    TAG_ATTACH_CONTROL, TAG_ATTACH_CONTROL_RESPONSE, encode, encode_clipboard_image_chunk,
-    encode_clipboard_image_end, encode_clipboard_image_start,
+    MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD, PayloadCursor, TAG_ATTACH_CONTROL,
+    TAG_ATTACH_CONTROL_RESPONSE, encode, encode_clipboard_image_chunk, encode_clipboard_image_end,
+    encode_clipboard_image_start,
 };
 
 pub(super) fn encode_request(request: AttachControlRequest) -> Result<Vec<u8>> {
@@ -66,11 +66,7 @@ fn encode_operation(payload: &mut Vec<u8>, operation: AttachControlOperation) ->
             payload.extend_from_slice(encoded.get(5..).unwrap_or_default());
         }
         AttachControlOperation::ClipboardImageError(error) => {
-            let message = error.message().as_bytes();
-            if message.is_empty() || message.len() > MAX_CLIPBOARD_IMAGE_ERROR_BYTES {
-                bail!("clipboard image error message is outside the bounded range");
-            }
-            payload.extend_from_slice(message);
+            payload.extend_from_slice(&error.encode_payload()?);
         }
     }
     Ok(())
@@ -130,14 +126,9 @@ fn decode_operation(kind: u8, cursor: &mut PayloadCursor<'_>) -> Result<AttachCo
                 sha256,
             })
         }
-        8 => {
-            let message =
-                std::str::from_utf8(cursor.read_remaining("clipboard image error message")?)
-                    .context("clipboard image error message is not valid UTF-8")?;
-            AttachControlOperation::ClipboardImageError(ClipboardImageError::from_message(
-                message.to_owned(),
-            ))
-        }
+        8 => AttachControlOperation::ClipboardImageError(ClipboardImageError::decode_payload(
+            cursor.read_remaining("clipboard image error")?,
+        )?),
         other => bail!("unknown attach control kind {other}"),
     })
 }

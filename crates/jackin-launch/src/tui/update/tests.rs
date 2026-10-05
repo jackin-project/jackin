@@ -196,6 +196,7 @@ fn render_tick_advances_frame_and_clamps_build_log_scroll() {
         LaunchMessage::RenderTick {
             advance_frame: true,
             build_log_area: Some(ratatui::layout::Rect::new(0, 0, 40, 8)),
+            build_log_debug_mode: true,
             build_log_lines: (0..20).map(|idx| format!("line {idx}")).collect(),
             build_log_active: true,
         },

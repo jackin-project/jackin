@@ -183,7 +183,7 @@ The `[kimi]` table is required when `"kimi"` appears in `agents`.
 |---|---|---|
 | `model` | No | Optional Kimi model passed to `kimi --model` at launch |
 
-Kimi profile accounts authenticate using their selected host profile directory (default discovery: `~/.kimi-code`). jackin❯ forwards `~/.kimi-code/config.toml`, files under `~/.kimi-code/credentials/`, and `~/.kimi-code/device_id` into the container before Kimi starts. jackin❯ launches Kimi with `--yolo` by default; `model` is appended as `kimi --model <model>` when set. Moonshot API-key accounts supply `KIMI_API_KEY`; standalone OAuth-token accounts are Claude-specific.
+Kimi profile accounts authenticate using their selected host profile directory (default discovery: `~/.kimi-code`). Under the verified Kimi CLI 2.1.1 contract, jackin❯ resolves the OAuth file from the profile's effective OAuth host and API base URL, then forwards a route-checked config projection and only that credential file; `device_id` is copied when present. jackin❯ sets `KIMI_CODE_HOME` to the binding's per-instance durable home, isolating multiple Kimi bindings. jackin❯ launches Kimi with `--yolo` by default; `model` is appended as `kimi --model <model>` when set. Moonshot API-key accounts supply `KIMI_API_KEY`; standalone OAuth-token accounts are Claude-specific.
 
 ```toml title="jackin.role.toml"
 version = "v1alpha4"
@@ -283,9 +283,12 @@ mkdir -p "$state_dir"
 Hook paths must:
 
 - Be relative (no absolute paths)
-- Stay inside the repository (no `../` escapes)
+- Contain no parent-directory (`..`) components
 - Point to an existing, non-empty file
-- Not be a symlink
+- Resolve to a file inside the repository, including when a symlink is used
+
+Symlinks to shared hook files inside the repository are accepted. Dangling
+links and links whose resolved target escapes the repository are rejected.
 
 Example:
 

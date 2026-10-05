@@ -393,7 +393,7 @@ where
                             &mut server_writer,
                             &mut attach_operations,
                             read_host_clipboard_text_path_image().await,
-                            "host clipboard text is not an absolute readable image path or file:// image URL",
+                            jackin_protocol::attach::ClipboardImageError::NoReadableImagePath,
                             "host clipboard image path probe failed",
                         )
                         .await;
@@ -406,7 +406,7 @@ where
                             &mut server_writer,
                             &mut attach_operations,
                             read_host_clipboard_image().await,
-                            "host clipboard does not contain a readable image",
+                            jackin_protocol::attach::ClipboardImageError::NoReadableImage,
                             "host clipboard image probe failed",
                         )
                         .await;
@@ -1047,12 +1047,20 @@ where
 async fn send_clipboard_image_error<W>(
     writer: &mut W,
     operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
-    message: &str,
+    error: jackin_protocol::attach::ClipboardImageError,
 ) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
-    let message = bounded_attach_message(message, MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
+    let error = match error {
+        jackin_protocol::attach::ClipboardImageError::Other(message) => {
+            jackin_protocol::attach::ClipboardImageError::Other(bounded_attach_message(
+                &message,
+                MAX_CLIPBOARD_IMAGE_ERROR_BYTES,
+            ))
+        }
+        error => error,
+    };
     let (request_id, context) =
         begin_attach_control(operations, "jackin.capsule.Attach/ClipboardImageTransfer");
     write_attach_control(
@@ -1060,9 +1068,7 @@ where
         operations,
         request_id,
         &context,
-        AttachControlOperation::ClipboardImageError(
-            jackin_protocol::attach::ClipboardImageError::from_message(message),
-        ),
+        AttachControlOperation::ClipboardImageError(error),
     )
     .await
 }
@@ -1071,18 +1077,28 @@ async fn write_clipboard_image_request_result<W>(
     writer: &mut W,
     operations: &mut HashMap<u64, jackin_telemetry::operation::OperationGuard>,
     image: Result<Option<ClipboardImage>>,
-    empty_message: &str,
+    empty_error: jackin_protocol::attach::ClipboardImageError,
     probe_log_message: &str,
 ) where
     W: AsyncWrite + Unpin,
 {
     let result = match image {
         Ok(Some(image)) => write_clipboard_image_frames(writer, operations, image).await,
-        Ok(None) => send_clipboard_image_error(writer, operations, empty_message).await,
+        Ok(None) => send_clipboard_image_error(writer, operations, empty_error).await,
         Err(err) => {
             record_recovered_degradation();
-            send_clipboard_image_error(writer, operations, &format!("{probe_log_message}: {err:#}"))
-                .await
+            let error = if let Some(error) =
+                err.downcast_ref::<jackin_protocol::attach::ClipboardImageError>()
+            {
+                error.clone()
+            } else if err.downcast_ref::<std::io::Error>().is_some() {
+                jackin_protocol::attach::ClipboardImageError::Io
+            } else {
+                jackin_protocol::attach::ClipboardImageError::Other(format!(
+                    "{probe_log_message}: {err:#}"
+                ))
+            };
+            send_clipboard_image_error(writer, operations, error).await
         }
     };
     drop(result);

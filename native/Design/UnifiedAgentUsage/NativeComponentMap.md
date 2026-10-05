@@ -69,7 +69,7 @@ Every visible region carries exactly one classification.
 | `NSSplitViewItemAccessoryViewController` | macOS 26 | Allowed because deployment floor is macOS 26; verify scroll-edge interaction. |
 | `NSGlassEffectView`, `GlassEffectContainer`, `glassEffect` | macOS 26 but not selected | Do not use while standard components satisfy the design. Any future use needs a new component contract and evidence. |
 | `SMAppService` | Predates floor | Owns launch-at-login state; failure remains contextual in Settings. |
-| macOS 27 APIs | Above floor / beta | Forbidden for this plan. |
+| macOS 27 APIs | Stable, above macOS 26.0 floor | Before use, record each exact symbol, `#available(macOS 27, *)` guard, decided native fallback, and minimum-target bump removing the guard. Compiler promotion does not authorize unguarded API use. |
 
 ## Region contracts
 

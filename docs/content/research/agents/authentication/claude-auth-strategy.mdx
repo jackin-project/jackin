@@ -8,7 +8,9 @@ description: "Compares reliable Claude authentication strategies across host, co
 
 ## Summary
 
-A restored, host-owned Claude home remains the simplest authentication baseline, but token refresh and multi-account isolation must be revalidated before this page guides current work.
+Named Claude accounts now register existing OAuth tokens or host profiles and authorize workspaces explicitly. The former workspace token-minting orchestrator was removed; account-based minting, validation, rotation, revocation, doctor, expiry visibility, and validated 1Password storage remain open in [Workspace Claude Token Setup](/roadmap/workspace-claude-token-setup/).
+
+**Historical boundary (reviewed October 3, 2026):** the analysis below records the earlier token-mode release and its proposals, before the named-account migration. Its `sync`/`token`/`ignore` per-agent policy, `config auth` examples, and workspace `claude-token` commands are historical, not current instructions. [Account Credential Transport](/reference/capsule/token-orchestrator/) and [Agent Accounts](/guides/authentication/agents/) own the current contract. Token refresh and concurrent-account behavior still need independent validation.
 
 ## Research question
 
@@ -40,9 +42,9 @@ Please run /login · API Error: 401 {"type":"error","error":{"type":"authenticat
 - a copied OAuth session is not a stable runtime contract when refresh tokens rotate independently
 - repeated `/login` prompts are especially painful inside isolated runtimes because browser-driven recovery breaks flow
 
-## Current state
+## Historical token-mode release state
 
-Status as of the Token-mode release:
+Status before the named-account migration:
 
 - `sync` — overwrite container auth from host on each launch when host auth exists (default since the `sync`-default release)
 - `ignore` — never forward host auth; require in-container `/login`
@@ -163,7 +165,7 @@ Delivered (three-PR series):
 
 1. `sync` is the default auth-forwarding mode.
 2. A workspace-scoped env resolver populates `CLAUDE_CODE_OAUTH_TOKEN` from `op://` references or host env vars.
-3. `token` mode uses that resolved env instead of bind-mounting `/login` session state. Token mode is now the recommended choice for long-lived or concurrent jackin❯ sessions; `sync` remains a good default for ad-hoc single-session usage.
+3. `token` mode uses that resolved env instead of bind-mounting `/login` session state. At that historical release, token mode was recommended for long-lived or concurrent sessions and `sync` was the ad-hoc default. Current account registration and selection replace that per-agent mode policy.
 
 ## Suggested Operator UX
 
@@ -174,6 +176,7 @@ Examples:
 ```bash
 jackin config auth set sync
 jackin config auth set ignore
+# Historical command; removed by the named-account migration
 jackin config auth set token
 ```
 
@@ -261,11 +264,10 @@ The token-mode release leaves operator setup as a manual five-step
 copy-paste flow. A follow-up design proposal addresses that:
 
 - [Workspace Claude Token Setup](/roadmap/workspace-claude-token-setup/) —
-  guided `jackin workspace claude-token setup` orchestrator that
-  PTY-captures the upstream `claude setup-token` output, writes the
-  result to 1Password (or a future keychain backend), wires the
-  workspace config, and validates end-to-end. Also covers rotation,
-  revocation, expiry banners, and TUI integration.
+  account-based successor to the removed workspace orchestrator.
+  OAuth minting, validation, rotation, revocation, doctor, expiry visibility,
+  validated 1Password storage, and interactive onboarding remain open;
+  registering an existing account does not satisfy those outcomes.
 
 ## Limitations and open questions
 

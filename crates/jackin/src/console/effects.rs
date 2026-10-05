@@ -949,6 +949,9 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
 
     if let Some(repo_err) = find_repo_error(err) {
         return match repo_err {
+            jackin_runtime::runtime::RepoError::UnsafeGitUrl => {
+                "Role repository requires an HTTPS, SSH, or Git remote URL.".into()
+            }
             jackin_runtime::runtime::RepoError::CloneFailed(_) => {
                 role_repository_unavailable_message().into()
             }

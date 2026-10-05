@@ -7,10 +7,10 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::control::{FocusedUsageView, Money};
+use crate::control::{CountQuota, CountQuotaPeriod, FocusedUsageView, Money};
 
 /// Usage-broker wire protocol version.
-pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v3";
+pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v4";
 
 /// Maximum newline-delimited request or response body.
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;
@@ -80,7 +80,10 @@ pub fn usage_credential_material_fingerprint(material: &str) -> String {
 
 /// Secret-free proof that one exact launch credential source was staged.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
 pub struct UsageCredentialSourceProof {
+    /// Exact launch instance whose staged file supplied this material.
+    pub instance_id: String,
     /// Configured account selected for the launch instance.
     pub account_id: String,
     /// Canonical broker surface.
@@ -93,17 +96,40 @@ pub struct UsageCredentialSourceProof {
     pub material_fingerprint: String,
 }
 
-/// Immutable launch scope carried from staging through the relay to the broker.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageCredentialScope {
-    /// All exact source proofs admitted to this launch.
-    pub sources: BTreeSet<UsageCredentialSourceProof>,
+/// Secret-free proof that one exact selected profile payload was staged.
+///
+/// A canonical account may have several profile aliases. This proof names the
+/// configured selection and its full source descriptor, so a relay cannot
+/// substitute a different alias carrying the same logical account identity.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub struct UsageProfileSourceProof {
+    /// Exact launch instance whose protected snapshot supplied this payload.
+    pub instance_id: String,
+    /// Exact configured account selected by the launch instance.
+    pub account_id: String,
+    /// Canonical broker surface.
+    pub surface_id: String,
+    /// Opaque identity of the exact agent, provider, directory and selector.
+    pub source: jackin_core::ProfileCredentialSourceIdentity,
+    /// Revision of the credential payload actually staged for this instance.
+    pub material_revision: String,
 }
 
-/// Opaque authority for one canonical provider account.
+/// Immutable launch scope carried from staging through the relay to the broker.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct UsageCredentialScope {
+    /// Exact governed environment source proofs admitted to this launch.
+    pub sources: BTreeSet<UsageCredentialSourceProof>,
+    /// Exact selected profile payload proofs admitted to this launch.
+    pub profiles: BTreeSet<UsageProfileSourceProof>,
+}
+
+/// Opaque broker refresh route, distinct from stable logical account identity.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct UsageAccountCapability {
-    /// Host-generated opaque canonical account identifier.
+    /// Host-generated opaque refresh route, never a stable logical account subject.
     pub account_id: String,
     /// Closed Rust-owned provider surface identifier.
     pub surface_id: String,
@@ -113,8 +139,13 @@ pub struct UsageAccountCapability {
 /// revision. The revision fences work started under an older catalog entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct UsageCatalogEntry {
-    /// Canonical provider-account capability.
+    /// Exact broker refresh route for this current catalog admission.
     pub capability: UsageAccountCapability,
+    /// Authenticated logical account evidence; absent while unresolved.
+    pub canonical_identity: Option<crate::control::UsageCanonicalAccountIdentity>,
+    /// Count of unique admitted credential sources contributing authenticated evidence.
+    /// Authenticated canonical evidence requires a positive count; unresolved entries may use zero.
+    pub provenance_count: u32,
     /// Content-derived revision for this capability's current admission.
     pub revision: String,
 }
@@ -188,16 +219,16 @@ pub struct UsageCoordinationError {
     pub message: String,
 }
 
-/// Canonical usage-projection schema version 1.
+/// Canonical usage-projection schema version 2.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "u16", into = "u16")]
-pub struct UsageProjectionSchemaV1;
+pub struct UsageProjectionSchemaV2;
 
-impl TryFrom<u16> for UsageProjectionSchemaV1 {
+impl TryFrom<u16> for UsageProjectionSchemaV2 {
     type Error = String;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        if value == 1 {
+        if value == 2 {
             Ok(Self)
         } else {
             Err(format!(
@@ -207,9 +238,9 @@ impl TryFrom<u16> for UsageProjectionSchemaV1 {
     }
 }
 
-impl From<UsageProjectionSchemaV1> for u16 {
-    fn from(_: UsageProjectionSchemaV1) -> Self {
-        1
+impl From<UsageProjectionSchemaV2> for u16 {
+    fn from(_: UsageProjectionSchemaV2) -> Self {
+        2
     }
 }
 
@@ -282,7 +313,7 @@ impl From<UsagePercent> for u16 {
 /// Whole-projection refresh state.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageProjectionRefreshStateV1 {
+pub enum UsageProjectionRefreshStateV2 {
     /// No canonical publication is being refreshed.
     Idle,
     /// One canonical publication generation is active.
@@ -292,7 +323,7 @@ pub enum UsageProjectionRefreshStateV1 {
 /// Current-configuration membership state.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageMembershipStateV1 {
+pub enum UsageMembershipStateV2 {
     /// The provider is present in current read-only discovery.
     Current,
 }
@@ -300,17 +331,19 @@ pub enum UsageMembershipStateV1 {
 /// Non-secret evidence kind backing canonical account identity.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageIdentityKindV1 {
+pub enum UsageIdentityKindV2 {
     /// Provider-issued immutable account or organization identifier.
     ProviderAccountId,
     /// Provider-issued stable non-secret handle.
     ProviderStableHandle,
+    /// Authenticated source identity without a provider-issued account subject.
+    SourceCapability,
 }
 
 /// Account or agent lifecycle independent of quota freshness.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageLifecycleV1 {
+pub enum UsageLifecycleV2 {
     /// Account can currently supply usage.
     Available,
     /// Capsule agent has not started its first session.
@@ -330,7 +363,7 @@ pub enum UsageLifecycleV1 {
 /// Freshness phase for a provider or account.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageFreshnessPhaseV1 {
+pub enum UsageFreshnessPhaseV2 {
     /// Data is current at its broker deadline.
     Current,
     /// Last-good data is retained beyond its current deadline.
@@ -348,7 +381,7 @@ pub enum UsageFreshnessPhaseV1 {
 /// confused with an authentication or provider error.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageQuotaStateV1 {
+pub enum UsageQuotaStateV2 {
     /// Quota is available.
     Available,
     /// Provider explicitly reports that the window has not started. Missing
@@ -380,7 +413,7 @@ pub enum UsageQuotaStateV1 {
 /// Semantic quota-window category used for Rust-owned summary priority.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageWindowCategoryV1 {
+pub enum UsageWindowCategoryV2 {
     /// Daily, weekly, or monthly provider allowance.
     LongRange,
     /// Provider-supplied model-specific allowance.
@@ -394,12 +427,12 @@ pub enum UsageWindowCategoryV1 {
 /// Scope of one sanitized canonical issue.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageIssueScopeV1 {
+pub enum UsageIssueScopeV2 {
     /// Whole projection.
     Projection,
     /// Provider group.
     Provider,
-    /// Canonical account.
+    /// Canonical account or unresolved configured account grant.
     Account,
     /// Quota window.
     Window,
@@ -410,7 +443,7 @@ pub enum UsageIssueScopeV1 {
 /// Recovery category for one sanitized canonical issue.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageIssueRecoverabilityV1 {
+pub enum UsageIssueRecoverabilityV2 {
     /// Broker may retry under policy.
     Retryable,
     /// Operator action is required.
@@ -423,11 +456,11 @@ pub enum UsageIssueRecoverabilityV1 {
 
 /// Freshness metadata shared by provider and account projections.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageFreshnessV1 {
+pub struct UsageFreshnessV2 {
     /// Broker generation supplying this state.
     pub generation: u64,
     /// Current freshness phase.
-    pub phase: UsageFreshnessPhaseV1,
+    pub phase: UsageFreshnessPhaseV2,
     /// Last successful observation time in UTC Unix seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_good_at_epoch: Option<i64>,
@@ -440,13 +473,13 @@ pub struct UsageFreshnessV1 {
 
 /// Sanitized structured issue in a canonical projection.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageIssueV1 {
+pub struct UsageIssueV2 {
     /// Stable machine-readable issue code.
     pub code: String,
     /// Projection location affected by the issue.
-    pub scope: UsageIssueScopeV1,
+    pub scope: UsageIssueScopeV2,
     /// Recovery category.
-    pub recoverability: UsageIssueRecoverabilityV1,
+    pub recoverability: UsageIssueRecoverabilityV2,
     /// Rust-owned bounded operator message.
     pub message: String,
     /// Earliest broker-owned retry time in UTC Unix seconds.
@@ -458,15 +491,15 @@ pub struct UsageIssueV1 {
 ///
 /// `windows` is the principal-window projection: the short list every surface
 /// renders. Full typed detail lives in
-/// [`UsageAccountV1::metric_groups`]; window semantics here are unchanged.
+/// [`UsageAccountV2::metric_groups`]; window semantics here are unchanged.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageLimitWindowV1 {
+pub struct UsageLimitWindowV2 {
     /// Stable opaque window identifier.
     pub window_id: String,
     /// Zero-based Rust-owned display rank.
     pub rank: u32,
     /// Rust-owned semantic category; consumers never parse `label`.
-    pub category: UsageWindowCategoryV1,
+    pub category: UsageWindowCategoryV2,
     /// Rust-owned provider window label.
     pub label: String,
     /// Rust-owned primary value label.
@@ -492,12 +525,15 @@ pub struct UsageLimitWindowV1 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub used_raw_percent: Option<i32>,
     /// Quota-window reset time in UTC Unix seconds when known. This is not a
-    /// credential expiry ([`UsageAccountV1::credential_expires_at_epoch`]) and
+    /// credential expiry ([`UsageAccountV2::credential_expires_at_epoch`]) and
     /// not a subscription renewal (plan-group `renews_at_epoch`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reset_at_epoch: Option<i64>,
     /// Semantic quota state.
-    pub quota_state: UsageQuotaStateV1,
+    pub quota_state: UsageQuotaStateV2,
+    /// Exact discrete allowance, independent of rounded meter geometry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_quota: Option<CountQuota>,
     /// Optional rich-surface pace label.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pace_label: Option<String>,
@@ -507,6 +543,54 @@ pub struct UsageLimitWindowV1 {
     /// render a row for it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runs_out_label: Option<String>,
+}
+
+fn validate_count_quota(
+    owner: &str,
+    count: Option<&CountQuota>,
+    state: UsageQuotaStateV2,
+) -> Result<(), String> {
+    let Some(count) = count else {
+        return Ok(());
+    };
+    if matches!(
+        state,
+        UsageQuotaStateV2::Error
+            | UsageQuotaStateV2::Unavailable
+            | UsageQuotaStateV2::NoPermission
+            | UsageQuotaStateV2::Unsupported
+    ) {
+        return Ok(());
+    }
+    let consistent = match count.remaining {
+        Some(0) => state == UsageQuotaStateV2::Exhausted,
+        Some(_) => matches!(
+            state,
+            UsageQuotaStateV2::Available | UsageQuotaStateV2::Warning
+        ),
+        None => state == UsageQuotaStateV2::Unknown,
+    };
+    if !consistent {
+        return Err(format!(
+            "usage {owner} has quota state inconsistent with exact remaining count"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_count_geometry(
+    owner: &str,
+    count: Option<&CountQuota>,
+    remaining: Option<UsagePercent>,
+) -> Result<(), String> {
+    if let (Some(count), Some(remaining)) = (count, remaining)
+        && count.remaining_percent() != Some(remaining.get())
+    {
+        return Err(format!(
+            "usage {owner} has remaining geometry inconsistent with exact count"
+        ));
+    }
+    Ok(())
 }
 
 /// Validate one remaining/used percent side: a raw value requires its clamped
@@ -535,13 +619,15 @@ fn validate_percent_side(
     }
 }
 
-impl UsageLimitWindowV1 {
+impl UsageLimitWindowV2 {
     /// Validate cross-field representation invariants.
     pub fn validate(&self, expected_rank: usize) -> Result<(), String> {
         if usize::try_from(self.rank).ok() != Some(expected_rank) {
             return Err(format!("window {} has noncanonical rank", self.window_id));
         }
         let owner = format!("window {}", self.window_id);
+        validate_count_quota(&owner, self.count_quota.as_ref(), self.quota_state)?;
+        validate_count_geometry(&owner, self.count_quota.as_ref(), self.remaining_percent)?;
         let remaining = validate_percent_side(
             &owner,
             "remaining",
@@ -562,7 +648,7 @@ impl UsageLimitWindowV1 {
 /// Canonical class of one per-account metric group.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageMetricGroupKindV1 {
+pub enum UsageMetricGroupKindV2 {
     /// Allowance window with a limit/used/remaining representation.
     Window,
     /// Prepaid or remaining balance; never a percentage without a meaningful
@@ -583,7 +669,7 @@ pub enum UsageMetricGroupKindV1 {
 /// Typed allowance period.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "period", rename_all = "snake_case")]
-pub enum UsageMetricPeriodV1 {
+pub enum UsageMetricPeriodV2 {
     /// Rolling duration window.
     Rolling {
         /// Window length in seconds.
@@ -592,7 +678,7 @@ pub enum UsageMetricPeriodV1 {
     /// Fixed calendar period.
     Calendar {
         /// Calendar granularity.
-        granularity: UsageCalendarPeriodV1,
+        granularity: UsageCalendarPeriodV2,
     },
     /// Provider-defined period without a machine-readable duration.
     ProviderDefined,
@@ -603,7 +689,7 @@ pub enum UsageMetricPeriodV1 {
 /// Fixed calendar period granularity.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum UsageCalendarPeriodV1 {
+pub enum UsageCalendarPeriodV2 {
     /// Daily allowance.
     Daily,
     /// Weekly allowance.
@@ -618,7 +704,7 @@ pub enum UsageCalendarPeriodV1 {
 /// opaque key identity), never a secret. `None` means the provider did not
 /// scope this group on that axis, not that the axis was merged away.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageMetricScopeV1 {
+pub struct UsageMetricScopeV2 {
     /// Provider service identity when it narrows the account scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service: Option<String>,
@@ -640,9 +726,12 @@ pub struct UsageMetricScopeV1 {
 /// a missing field means the provider did not supply it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum UsageMetricValueV1 {
+pub enum UsageMetricValueV2 {
     /// Allowance-window payload.
     Window {
+        /// Exact discrete allowance behind the percentage geometry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count_quota: Option<CountQuota>,
         /// Clamped remaining geometry.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         remaining_percent: Option<UsagePercent>,
@@ -656,7 +745,7 @@ pub enum UsageMetricValueV1 {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         used_raw_percent: Option<i32>,
         /// Typed allowance period.
-        period: UsageMetricPeriodV1,
+        period: UsageMetricPeriodV2,
         /// Provider unit label when supplied.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unit: Option<String>,
@@ -728,17 +817,17 @@ pub enum UsageMetricValueV1 {
 /// phase, quota state, typed value, and issues. Fresh main quota never makes a
 /// retained old balance fresh: staleness is per group.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageMetricGroupV1 {
+pub struct UsageMetricGroupV2 {
     /// Stable opaque group identifier.
     pub group_id: String,
     /// Zero-based Rust-owned display rank within the account.
     pub rank: u32,
     /// Canonical metric class.
-    pub kind: UsageMetricGroupKindV1,
+    pub kind: UsageMetricGroupKindV2,
     /// Rust-owned group display label.
     pub label: String,
     /// Non-secret scope labels.
-    pub scope: UsageMetricScopeV1,
+    pub scope: UsageMetricScopeV2,
     /// Provider observation time in UTC Unix seconds when reported.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_at_epoch: Option<i64>,
@@ -748,13 +837,13 @@ pub struct UsageMetricGroupV1 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_success_at_epoch: Option<i64>,
     /// Group freshness phase, independent of sibling groups.
-    pub phase: UsageFreshnessPhaseV1,
+    pub phase: UsageFreshnessPhaseV2,
     /// Whether displayed data is retained last-good data.
     pub is_stale: bool,
-    /// Semantic quota state; [`UsageQuotaStateV1`] variants stay distinct.
-    pub quota_state: UsageQuotaStateV1,
+    /// Semantic quota state; [`UsageQuotaStateV2`] variants stay distinct.
+    pub quota_state: UsageQuotaStateV2,
     /// Typed value payload; must match `kind`.
-    pub value: UsageMetricValueV1,
+    pub value: UsageMetricValueV2,
     /// Quota-window or billing-period reset in UTC Unix seconds. Valid only on
     /// window, spend-cap, and rate-limit groups; never a credential expiry or
     /// a subscription renewal.
@@ -765,11 +854,11 @@ pub struct UsageMetricGroupV1 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub renews_at_epoch: Option<i64>,
     /// Sanitized group-scoped issues; every entry has
-    /// [`UsageIssueScopeV1::Group`] scope.
-    pub issues: Vec<UsageIssueV1>,
+    /// [`UsageIssueScopeV2::Group`] scope.
+    pub issues: Vec<UsageIssueV2>,
 }
 
-impl UsageMetricGroupV1 {
+impl UsageMetricGroupV2 {
     /// Validate rank, kind/value consistency, percent pairing, money
     /// consistency, reset/renewal separation, and issue scope.
     pub fn validate(&self, expected_rank: usize) -> Result<(), String> {
@@ -785,23 +874,23 @@ impl UsageMetricGroupV1 {
         let kind_matches = matches!(
             (&self.kind, &self.value),
             (
-                UsageMetricGroupKindV1::Window,
-                UsageMetricValueV1::Window { .. }
+                UsageMetricGroupKindV2::Window,
+                UsageMetricValueV2::Window { .. }
             ) | (
-                UsageMetricGroupKindV1::Balance,
-                UsageMetricValueV1::Balance { .. }
+                UsageMetricGroupKindV2::Balance,
+                UsageMetricValueV2::Balance { .. }
             ) | (
-                UsageMetricGroupKindV1::SpendCap,
-                UsageMetricValueV1::SpendCap { .. }
+                UsageMetricGroupKindV2::SpendCap,
+                UsageMetricValueV2::SpendCap { .. }
             ) | (
-                UsageMetricGroupKindV1::TokenTotals,
-                UsageMetricValueV1::TokenTotals { .. }
+                UsageMetricGroupKindV2::TokenTotals,
+                UsageMetricValueV2::TokenTotals { .. }
             ) | (
-                UsageMetricGroupKindV1::RateLimit,
-                UsageMetricValueV1::RateLimit { .. }
+                UsageMetricGroupKindV2::RateLimit,
+                UsageMetricValueV2::RateLimit { .. }
             ) | (
-                UsageMetricGroupKindV1::Plan,
-                UsageMetricValueV1::Plan { .. }
+                UsageMetricGroupKindV2::Plan,
+                UsageMetricValueV2::Plan { .. }
             )
         );
         if !kind_matches {
@@ -810,15 +899,33 @@ impl UsageMetricGroupV1 {
                 self.group_id
             ));
         }
-        if let UsageMetricValueV1::Window {
+        if let UsageMetricValueV2::Window {
+            count_quota,
             remaining_percent,
             remaining_raw_percent,
             used_percent,
             used_raw_percent,
+            period,
+            unit,
             ..
         } = &self.value
         {
             let owner = format!("group {}", self.group_id);
+            validate_count_quota(&owner, count_quota.as_ref(), self.quota_state)?;
+            validate_count_geometry(&owner, count_quota.as_ref(), *remaining_percent)?;
+            if let Some(count) = count_quota {
+                let expected_period = match count.period {
+                    CountQuotaPeriod::UtcDaily => UsageMetricPeriodV2::Calendar {
+                        granularity: UsageCalendarPeriodV2::Daily,
+                    },
+                    CountQuotaPeriod::Unknown => UsageMetricPeriodV2::Unknown,
+                };
+                if *period != expected_period || unit.as_deref() != Some("requests") {
+                    return Err(format!(
+                        "usage {owner} has period or unit inconsistent with exact count"
+                    ));
+                }
+            }
             let remaining = validate_percent_side(
                 &owner,
                 "remaining",
@@ -833,20 +940,27 @@ impl UsageMetricGroupV1 {
                 ));
             }
         }
-        if let UsageMetricValueV1::SpendCap {
+        if let UsageMetricValueV2::SpendCap {
             cap,
             spent,
             remaining,
         } = &self.value
         {
-            let mut denomination: Option<(&str, u8)> = None;
+            for money in [cap, spent].into_iter().flatten() {
+                if money.amount_minor < 0 {
+                    return Err(format!(
+                        "metric group {} has a negative monetary cap or spend",
+                        self.group_id
+                    ));
+                }
+            }
+            let mut denomination: Option<&str> = None;
             for money in [cap, spent, remaining].into_iter().flatten() {
                 match denomination {
                     None => {
-                        denomination = Some((money.currency.as_str(), money.exponent));
+                        denomination = Some(money.currency.as_str());
                     }
-                    Some((currency, exponent))
-                        if currency == money.currency && exponent == money.exponent => {}
+                    Some(currency) if currency == money.currency => {}
                     Some(_) => {
                         return Err(format!(
                             "metric group {} mixes money denominations",
@@ -856,7 +970,7 @@ impl UsageMetricGroupV1 {
                 }
             }
         }
-        if self.renews_at_epoch.is_some() && self.kind != UsageMetricGroupKindV1::Plan {
+        if self.renews_at_epoch.is_some() && self.kind != UsageMetricGroupKindV2::Plan {
             return Err(format!(
                 "metric group {} carries a renewal timestamp on a non-plan group",
                 self.group_id
@@ -865,9 +979,9 @@ impl UsageMetricGroupV1 {
         if self.reset_at_epoch.is_some()
             && !matches!(
                 self.kind,
-                UsageMetricGroupKindV1::Window
-                    | UsageMetricGroupKindV1::SpendCap
-                    | UsageMetricGroupKindV1::RateLimit
+                UsageMetricGroupKindV2::Window
+                    | UsageMetricGroupKindV2::SpendCap
+                    | UsageMetricGroupKindV2::RateLimit
             )
         {
             return Err(format!(
@@ -876,7 +990,7 @@ impl UsageMetricGroupV1 {
             ));
         }
         for issue in &self.issues {
-            if issue.scope != UsageIssueScopeV1::Group {
+            if issue.scope != UsageIssueScopeV2::Group {
                 return Err(format!(
                     "metric group {} carries a non-group issue",
                     self.group_id
@@ -979,15 +1093,24 @@ impl UsageQuotaScopeKey {
 
 /// One deduplicated canonical account.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageAccountV1 {
+pub struct UsageAccountV2 {
     /// Opaque canonical account identifier.
     pub canonical_account_id: String,
+    /// Exact currently admitted refresh routes for this logical account.
+    /// An empty list confers no refresh authority.
+    pub refresh_capabilities: Vec<UsageAccountCapability>,
     /// Non-secret evidence kind backing the identifier.
-    pub identity_kind: UsageIdentityKindV1,
+    pub identity_kind: UsageIdentityKindV2,
     /// Zero-based Rust-owned account display rank.
     pub rank: u32,
     /// Rust-owned full account display label.
     pub display_label: String,
+    /// Provider-supplied account username, retained independently of labels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    /// Sanitized authentication origin supplied by the account observation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_origin: Option<String>,
     /// Provider plan label when supplied.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan_label: Option<String>,
@@ -995,29 +1118,44 @@ pub struct UsageAccountV1 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_label: Option<String>,
     /// Account or Capsule-agent lifecycle.
-    pub lifecycle: UsageLifecycleV1,
+    pub lifecycle: UsageLifecycleV2,
     /// Account freshness.
-    pub freshness: UsageFreshnessV1,
+    pub freshness: UsageFreshnessV2,
     /// Count of current discovery observations merged into this account.
     pub provenance_count: u32,
     /// Provider/source-ordered principal quota windows. Unchanged semantics:
     /// the short list every surface renders.
-    pub windows: Vec<UsageLimitWindowV1>,
+    pub windows: Vec<UsageLimitWindowV2>,
     /// Typed metric groups with per-group scope, timestamps, freshness, and
     /// issues. Empty until a broker populates full typed detail.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub metric_groups: Vec<UsageMetricGroupV1>,
+    pub metric_groups: Vec<UsageMetricGroupV2>,
     /// Credential or auth-session expiry in UTC Unix seconds when the provider
     /// reports it. This is never a quota-window reset (`reset_at_epoch`) and
     /// never a subscription renewal (plan-group `renews_at_epoch`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credential_expires_at_epoch: Option<i64>,
     /// Sanitized account/window issues.
-    pub issues: Vec<UsageIssueV1>,
+    pub issues: Vec<UsageIssueV2>,
 }
 
-impl UsageAccountV1 {
+impl UsageAccountV2 {
     fn validate(&self, expected_rank: usize) -> Result<(), String> {
+        if self.canonical_account_id.trim().is_empty() {
+            return Err("account has empty canonical identity".into());
+        }
+        let mut capabilities = BTreeSet::new();
+        for capability in &self.refresh_capabilities {
+            if capability.account_id.trim().is_empty()
+                || capability.surface_id.trim().is_empty()
+                || !capabilities.insert(capability)
+            {
+                return Err(format!(
+                    "account {} has invalid or duplicate refresh capability",
+                    self.canonical_account_id
+                ));
+            }
+        }
         if usize::try_from(self.rank).ok() != Some(expected_rank) {
             return Err(format!(
                 "account {} has noncanonical rank",
@@ -1043,7 +1181,7 @@ impl UsageAccountV1 {
 
 /// One current provider group.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageProviderV1 {
+pub struct UsageProviderV2 {
     /// Closed provider identifier.
     pub provider_id: String,
     /// Provider-only visible name.
@@ -1051,16 +1189,16 @@ pub struct UsageProviderV1 {
     /// Zero-based settled provider rank.
     pub rank: u32,
     /// Current configuration membership.
-    pub membership_state: UsageMembershipStateV1,
+    pub membership_state: UsageMembershipStateV2,
     /// Provider freshness.
-    pub freshness: UsageFreshnessV1,
+    pub freshness: UsageFreshnessV2,
     /// Canonical accounts in Rust-owned order.
-    pub accounts: Vec<UsageAccountV1>,
+    pub accounts: Vec<UsageAccountV2>,
     /// Sanitized provider issues.
-    pub issues: Vec<UsageIssueV1>,
+    pub issues: Vec<UsageIssueV2>,
 }
 
-impl UsageProviderV1 {
+impl UsageProviderV2 {
     fn validate(&self, expected_rank: usize) -> Result<(), String> {
         if usize::try_from(self.rank).ok() != Some(expected_rank) {
             return Err(format!(
@@ -1068,7 +1206,29 @@ impl UsageProviderV1 {
                 self.provider_id
             ));
         }
+        let mut account_ids = BTreeSet::new();
+        let mut capabilities = BTreeSet::new();
         for (account_rank, account) in self.accounts.iter().enumerate() {
+            if !account_ids.insert(account.canonical_account_id.as_str()) {
+                return Err(format!(
+                    "provider {} has duplicate canonical account",
+                    self.provider_id
+                ));
+            }
+            for capability in &account.refresh_capabilities {
+                let owner = match capability.surface_id.as_str() {
+                    "claude" => "anthropic",
+                    "codex" => "openai",
+                    "grok" => "xai",
+                    surface => surface,
+                };
+                if owner != self.provider_id || !capabilities.insert(capability) {
+                    return Err(format!(
+                        "provider {} has mismatched or shared refresh capability",
+                        self.provider_id
+                    ));
+                }
+            }
             account.validate(account_rank)?;
         }
         Ok(())
@@ -1077,7 +1237,7 @@ impl UsageProviderV1 {
 
 /// Configured capability lacking non-secret canonical identity evidence.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageUnresolvedV1 {
+pub struct UsageUnresolvedV2 {
     /// Closed provider identifier.
     pub provider_id: String,
     /// Opaque non-secret capability identifier.
@@ -1085,16 +1245,29 @@ pub struct UsageUnresolvedV1 {
     /// Number of current configuration observations for this capability.
     pub configuration_count: u32,
     /// Rust-owned unresolved state label.
-    pub state: UsageLifecycleV1,
+    pub state: UsageLifecycleV2,
     /// Sanitized resolution issues.
-    pub issues: Vec<UsageIssueV1>,
+    pub issues: Vec<UsageIssueV2>,
+}
+
+/// Authorized configured grant whose usage source could not be resolved.
+/// Configuration identity is diagnostic context, never refresh or account authority.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct UsageUnresolvedGrantV2 {
+    /// Exact non-secret configured account identifier.
+    pub configured_account_id: String,
+    /// Exact configured provider surface.
+    pub surface_id: String,
+    /// Sanitized typed source-resolution issues.
+    pub issues: Vec<UsageIssueV2>,
 }
 
 /// Immutable canonical usage publication consumed by every surface.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageProjectionV1 {
-    /// Exact schema major, serialized as integer `1`.
-    pub schema_version: UsageProjectionSchemaV1,
+pub struct UsageProjectionV2 {
+    /// Exact schema major, serialized as integer `2`.
+    pub schema_version: UsageProjectionSchemaV2,
     /// Opaque monotonic publication identifier.
     pub projection_id: String,
     /// Publication time in UTC Unix seconds.
@@ -1106,19 +1279,62 @@ pub struct UsageProjectionV1 {
     /// Monotonic broker publication generation.
     pub broker_generation: u64,
     /// Whole-projection refresh state.
-    pub refresh_state: UsageProjectionRefreshStateV1,
+    pub refresh_state: UsageProjectionRefreshStateV2,
     /// Current providers in settled host order.
-    pub providers: Vec<UsageProviderV1>,
+    pub providers: Vec<UsageProviderV2>,
     /// Current configured capabilities without canonical identity evidence.
-    pub unresolved: Vec<UsageUnresolvedV1>,
+    pub unresolved: Vec<UsageUnresolvedV2>,
+    /// Authorized configured grants lacking a resolved usage source.
+    pub unresolved_grants: Vec<UsageUnresolvedGrantV2>,
     /// Sanitized projection issues.
-    pub issues: Vec<UsageIssueV1>,
+    pub issues: Vec<UsageIssueV2>,
 }
 
-impl UsageProjectionV1 {
+impl UsageProjectionV2 {
     /// Validate ranks and cross-field window invariants.
     pub fn validate(&self) -> Result<(), String> {
+        let mut configured_grants = BTreeSet::new();
+        for grant in &self.unresolved_grants {
+            if grant.configured_account_id.trim().is_empty()
+                || grant.configured_account_id.chars().any(char::is_control)
+                || grant.surface_id.trim().is_empty()
+                || grant.surface_id.chars().any(char::is_control)
+                || !matches!(
+                    grant.surface_id.as_str(),
+                    "claude"
+                        | "codex"
+                        | "amp"
+                        | "grok"
+                        | "zai"
+                        | "kimi"
+                        | "minimax"
+                        | "opencode"
+                        | "google"
+                        | "cursor"
+                        | "meta"
+                        | "openrouter"
+                )
+                || grant.issues.is_empty()
+                || grant.issues.iter().any(|issue| {
+                    issue.code.trim().is_empty()
+                        || issue.message.trim().is_empty()
+                        || issue.scope != UsageIssueScopeV2::Account
+                })
+                || !configured_grants.insert((
+                    grant.configured_account_id.as_str(),
+                    grant.surface_id.as_str(),
+                ))
+            {
+                return Err("projection has empty or duplicate unresolved configured grant".into());
+            }
+        }
+        let mut provider_ids = BTreeSet::new();
         for (provider_rank, provider) in self.providers.iter().enumerate() {
+            if provider.provider_id.trim().is_empty()
+                || !provider_ids.insert(provider.provider_id.as_str())
+            {
+                return Err("projection has empty or duplicate provider identity".into());
+            }
             provider.validate(provider_rank)?;
         }
         Ok(())
@@ -1197,11 +1413,15 @@ pub enum UsageBrokerOperation {
     CurrentForCapability {
         /// Exact account authority selected for this Capsule session.
         capability: UsageAccountCapability,
+        /// Explicit launched instance; guest peers are stamped from authenticated routing.
+        instance_id: String,
     },
     /// Relay-only refresh request for one exact forwarded capability.
     RefreshForCapability {
         /// Exact account authority selected for this Capsule session.
         capability: UsageAccountCapability,
+        /// Explicit launched instance; guest peers are stamped from authenticated routing.
+        instance_id: String,
         /// Last generation observed by the caller.
         observed_generation: u64,
         /// True only for an explicit operator Refresh action.
@@ -1211,6 +1431,8 @@ pub enum UsageBrokerOperation {
     JoinForCapability {
         /// Exact account authority selected for this Capsule session.
         capability: UsageAccountCapability,
+        /// Explicit launched instance; guest peers are stamped from authenticated routing.
+        instance_id: String,
         /// Generation returned by a prior refresh request.
         generation: u64,
         /// Bounded client wait in milliseconds.
@@ -1262,10 +1484,40 @@ pub struct UsageBrokerRequest {
 /// happens against that tunnel's immutable host-side capability allowlist.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UsageRelayTunnelRequest {
+    /// Trusted guest peer route, or None for supervisor inventory reads.
+    #[serde(deserialize_with = "deserialize_required_instance_route")]
+    pub instance_id: Option<String>,
+    /// Absolute request expiry, Unix epoch milliseconds, fixed at guest admission.
+    pub expires_at_unix_ms: u64,
     /// Process-local request identifier used only to route the response.
     pub request_id: u64,
-    /// Unmodified broker request emitted by a Capsule client.
+    /// Broker request with any scoped selector stamped by trusted guest routing.
     pub request: UsageBrokerRequest,
+}
+
+// `Option` ordinarily accepts an absent field. Requiring this deserializer
+// makes the trusted route field explicit even for inventory's null route.
+fn deserialize_required_instance_route<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+}
+
+/// Tunnel requests and cancellation share the same owned, framed transport.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UsageRelayTunnelMessage {
+    /// Admit one request under the tunnel's immutable host authority.
+    Request {
+        /// Request and accepted expiry.
+        request: Box<UsageRelayTunnelRequest>,
+    },
+    /// Release an admitted request when its guest owner expires.
+    Cancel {
+        /// Process-local request identifier.
+        request_id: u64,
+    },
 }
 
 /// Versioned broker response.
@@ -1280,7 +1532,7 @@ pub enum UsageBrokerResponse {
     /// Immutable canonical projection publication.
     Projection {
         /// Current surface-neutral projection.
-        projection: Box<UsageProjectionV1>,
+        projection: Box<UsageProjectionV2>,
     },
     /// Operation failed before provider dispatch.
     Error {

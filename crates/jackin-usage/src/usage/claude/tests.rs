@@ -79,3 +79,68 @@ fn scope_restriction_requires_typed_http_403() {
         )));
     }
 }
+
+#[test]
+fn captured_profile_oauth_failure_never_dispatches_ambient_cli() {
+    for status in [401, 403, 429, 500] {
+        let calls = std::cell::Cell::new(0);
+        let error = ProviderError::from(ProviderHttpError::HttpStatus {
+            status,
+            message: "fixture OAuth failure".to_owned(),
+            retry_after_seconds: None,
+            response_received_at_epoch: None,
+        });
+        let (oauth, cli) = claude_fetch_for_authority(
+            ClaudeUsageAuthority::CapturedProfile,
+            Err(error),
+            || {
+                calls.set(calls.get() + 1);
+                Err(ProviderError::from("fixture CLI failure".to_owned()))
+            },
+        );
+        assert_eq!(oauth.err().and_then(|error| error.status()), Some(status));
+        assert!(cli.is_none());
+        assert_eq!(calls.get(), 0, "captured token failure cannot use host CLI");
+    }
+}
+
+#[test]
+fn standalone_ambient_oauth_failure_retains_cli_fallback() {
+    let calls = std::cell::Cell::new(0);
+    let (oauth, cli) = claude_fetch_for_authority(
+        ClaudeUsageAuthority::Ambient,
+        Err(ProviderError::from("fixture OAuth failure".to_owned())),
+        || {
+            calls.set(calls.get() + 1);
+            Err(ProviderError::from("fixture CLI failure".to_owned()))
+        },
+    );
+    assert!(oauth.is_err());
+    assert!(cli.is_some_and(|result| result.is_err()));
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn successful_oauth_preserves_its_quota_without_cli_dispatch() {
+    for authority in [
+        ClaudeUsageAuthority::CapturedProfile,
+        ClaudeUsageAuthority::Ambient,
+    ] {
+        let calls = std::cell::Cell::new(0);
+        let usage = serde_json::from_value(serde_json::json!({
+            "five_hour": {"utilization": 17.0, "resets_at": "2026-10-03T00:00:00Z"}
+        }))
+        .expect("sanitized OAuth fixture");
+        let (oauth, cli) = claude_fetch_for_authority(authority, Ok(usage), || {
+            calls.set(calls.get() + 1);
+            Err(ProviderError::from("fixture CLI failure".to_owned()))
+        });
+        let usage = oauth.expect("OAuth quota retained");
+        assert_eq!(
+            usage.five_hour.and_then(|window| window.utilization),
+            Some(17.0)
+        );
+        assert!(cli.is_none());
+        assert_eq!(calls.get(), 0);
+    }
+}

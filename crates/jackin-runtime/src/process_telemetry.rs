@@ -17,8 +17,11 @@ fn operation(request: &ExecRequest) -> jackin_telemetry::OperationGuard {
     )
 }
 
-fn complete(operation: jackin_telemetry::OperationGuard, result: &anyhow::Result<ExecResult>) {
-    let completion = match result {
+fn completion(
+    operation: &jackin_telemetry::OperationGuard,
+    result: &anyhow::Result<ExecResult>,
+) -> (OutcomeValue, Option<ErrorType>) {
+    match result {
         Ok(output) => {
             if let Some(code) = output.code {
                 let _attribute = operation.set_attr(jackin_telemetry::Attr {
@@ -35,8 +38,7 @@ fn complete(operation: jackin_telemetry::OperationGuard, result: &anyhow::Result
             }
         }
         Err(_) => (OutcomeValue::Failure, Some(ErrorType::ProcessSpawnError)),
-    };
-    operation.complete(completion.0, completion.1);
+    }
 }
 
 pub(crate) struct ChildOperation {
@@ -104,7 +106,7 @@ impl Drop for ChildOperation {
 
 pub(crate) fn spawn_sync(
     request: &ExecRequest,
-) -> anyhow::Result<(ChildOperation, std::process::Child)> {
+) -> anyhow::Result<(ChildOperation, jackin_process::SyncChild)> {
     let operation = ChildOperation::begin(request);
     let Ok(child) = jackin_process::spawn_sync(request) else {
         operation.complete_failure(ErrorType::ProcessSpawnError);
@@ -115,7 +117,7 @@ pub(crate) fn spawn_sync(
 
 pub(crate) fn spawn_async(
     request: &ExecRequest,
-) -> anyhow::Result<(ChildOperation, tokio::process::Child)> {
+) -> anyhow::Result<(ChildOperation, jackin_process::AsyncChild)> {
     let operation = ChildOperation::begin(request);
     let Ok(child) = jackin_process::spawn_async(request) else {
         operation.complete_failure(ErrorType::ProcessSpawnError);
@@ -127,14 +129,16 @@ pub(crate) fn spawn_async(
 pub(crate) fn exec_sync(request: &ExecRequest) -> anyhow::Result<ExecResult> {
     let operation = operation(request);
     let result = jackin_process::exec_sync(request);
-    complete(operation, &result);
+    let (outcome, error_type) = completion(&operation, &result);
+    operation.complete(outcome, error_type);
     result.map_err(|_| anyhow::anyhow!("process spawn failed"))
 }
 
 pub(crate) async fn exec_async(request: &ExecRequest) -> anyhow::Result<ExecResult> {
-    let operation = operation(request);
+    let operation = jackin_telemetry::process::ProcessOperationGuard::new(operation(request));
     let result = jackin_process::exec_async(request).await;
-    complete(operation, &result);
+    let (outcome, error_type) = completion(&operation, &result);
+    operation.complete(outcome, error_type);
     result.map_err(|_| anyhow::anyhow!("process spawn failed"))
 }
 

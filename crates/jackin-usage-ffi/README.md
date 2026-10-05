@@ -42,14 +42,24 @@ the main actor. Broker failure preserves last-good quota and never probes direct
 
 `QuotaBucketDto` also carries the Rust-owned limits-only presentation
 (`remaining_label`, `display_segments`, `display_label`, `meter_percent`), so
-Swift renders the segments verbatim. `provider_glance_rows()` (Swift
+Swift renders the segments verbatim. Optional `count_quota` carries exact unsigned
+64-bit used, limit, and remaining quantities independently, with explicit request
+unit, period, and provenance. Unknown fields remain absent; reported zero remains
+zero. Counts never travel through money, signed integers, floating point, or parsed
+labels. Raw reset epoch remains independent of the period. Optional used, limit, and
+remaining money retain signed 64-bit minor units, currency, and the unsigned
+8-bit decimal exponent. Negative remaining overage remains signed; absent money
+and reported zero are distinct. No raw monetary value travels through floating
+point or display-label parsing. `provider_glance_rows()` (Swift
 `providerGlanceRows()`) returns `ProviderGlanceRowDto` — the selected-account-aware
 seven-provider Desktop glance rows in canonical order. `OpenConfig.allow_live_probes`
 maps to the Rust `HostProbePolicy` (false = smoke/defense mode, no live probes).
 
-`DesktopInventoryDto` carries the seven-provider Rust order, provider chrome, and
-self-contained account identity/lifecycle/limits/status fields. OpenCode is absent;
-Swift renders without cross-account joins.
+`DesktopInventoryDto` carries the complete canonical Rust provider order, provider
+chrome, and self-contained account identity/lifecycle/limits/status fields, including
+unresolved sources and providers disabled for compact display. `DesktopProjectionDto`
+uses those same full groups and selected views; compact glance rows remain separate.
+Swift renders without cross-account joins, and inventory reads never authorize probes.
 
 `UsageViewDto.detail_presentation` mirrors the Capsule Rust projection. Rows carry
 stable IDs/kinds, grouped lines, display copy, meter geometry, and severity; Swift

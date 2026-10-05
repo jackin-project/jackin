@@ -40,9 +40,21 @@ const RESEARCH_REL: &str = "research";
 const REPO_FILE_PREFIXES: &[&str] = &[
     "crates/", "src/", "docs/", "docker/", ".github/", "scripts/",
 ];
-const REPO_LINK_ROOT_DOCS: &[&str] = &[
+/// Published root prose. Register new root documents here; operational inputs
+/// belong outside this ownership contract. Docs subtrees are discovered below.
+const ROOT_PROSE_DOCS: &[&str] = &[
     "AGENTS.md",
+    "BRANCHING.md",
+    "CHANGELOG.md",
+    "CLAUDE.md",
+    "COMMITS.md",
+    "CONTEXT.md",
+    "CONTRIBUTING.md",
+    "DEFECT_LEDGER.md",
+    "DEPRECATED.md",
     "ENGINEERING.md",
+    "HOST_AND_CONTAINER.md",
+    "PRERELEASE.md",
     "PROJECT_STRUCTURE.md",
     "PULL_REQUESTS.md",
     "README.md",
@@ -789,7 +801,7 @@ fn collect_repo_link_files(root: &Path, content_root: &Path) -> Result<Vec<PathB
     let mut files = Vec::new();
     collect_mdx_files(content_root, &mut files)?;
     collect_markdown_files(&root.join(DOCS_MARKDOWN_ROOT), &mut files)?;
-    for doc in REPO_LINK_ROOT_DOCS {
+    for doc in ROOT_PROSE_DOCS {
         let path = root.join(doc);
         if path.is_file() {
             files.push(path);

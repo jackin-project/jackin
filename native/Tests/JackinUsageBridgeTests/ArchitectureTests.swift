@@ -186,16 +186,15 @@ final class ArchitectureTests: XCTestCase {
             .appendingPathComponent("UsageWindow/OverviewListView.swift")
         let text = try String(contentsOf: overview, encoding: .utf8)
 
-        XCTAssertTrue(
-            text.contains(
-                "Text(row.planOrStatusLabel)\n"
-                    + "                            .foregroundStyle(.primary)")
-        )
-        XCTAssertTrue(
-            text.contains(
-                "Text(row.resetLabel)\n"
-                    + "                        .foregroundStyle(.primary)")
-        )
+        for field in ["planOrStatusLabel", "resetLabel"] {
+            let expression = try NSRegularExpression(
+                pattern: "Text\\(row\\.\(field)\\)\\s*\\.foregroundStyle\\(\\.primary\\)")
+            XCTAssertNotNil(
+                expression.firstMatch(
+                    in: text,
+                    range: NSRange(text.startIndex..., in: text)),
+                "Overview \(field) must immediately use system primary foreground")
+        }
         XCTAssertFalse(text.contains("Color("))
     }
 

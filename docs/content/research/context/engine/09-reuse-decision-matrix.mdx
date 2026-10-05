@@ -1,15 +1,15 @@
 ---
 title: "09 — Current reuse decision matrix"
-description: "Current six-tool decisions: reuse selected Rust APIs, isolate retrieval backends, adapt policies, and own Jackin-specific contracts."
+description: "Current six-tool decisions: reuse selected Rust APIs, isolate retrieval backends, adapt policies, and own jackin❯-specific contracts."
 ---
 
 ## Summary
 
-Tool-state cutoff: **2026-09-23 UTC**. **Reuse before rewrite, with Jackin-owned boundaries.** None of these decisions changes Cargo dependencies or activates a runtime. The [integration plan](/research/context/tools/11-jackin-integration/) defines implementation gates; the [release register](/research/context/tools/08-current-release-register/) fixes versions.
+Tool-state cutoff: **2026-09-23 UTC**. **Reuse before rewrite, with jackin❯-owned boundaries.** None of these decisions changes Cargo dependencies or activates a runtime. The [integration plan](/research/context/tools/11-jackin-integration/) defines implementation gates; the [release register](/research/context/tools/08-current-release-register/) fixes versions.
 
 ## Question and scope
 
-Which capabilities should Jackin depend on, bundle, adapt, extract, or implement itself?
+Which capabilities should jackin❯ depend on, bundle, adapt, extract, or implement itself?
 
 ## Method
 
@@ -21,7 +21,7 @@ Distinguish current source APIs from published/stable SDK contracts, then assess
 
 | Product | Current release and license boundary | Decision | Gate |
 |---|---|---|---|
-| Headroom | 0.38.0; Apache-2.0 | Evaluate source-pinned headroom-core transforms inside a Jackin worker | Build the no-ML configuration, inspect linkage/egress, qualify selected algorithms |
+| Headroom | 0.38.0; Apache-2.0 | Evaluate source-pinned headroom-core transforms inside a jackin❯ worker | Build the no-ML configuration, inspect linkage/egress, qualify selected algorithms |
 | RTK | 0.49.0; Apache-2.0 | Bundle a pinned executable for measured command families; request an upstream pure-filter API | Native semantics, current recall behavior, fidelity and task-level qualification |
 | LeanCTX | 3.10.2; Apache-2.0 engine and preview facade | Restricted MCP first; evaluate lean-ctx-embed behind an internal adapter | Unpublished API, runtime ownership, feature granularity, state isolation |
 | LemonCrow | 0.7.4; Apache-2.0 source engine | Pinned per-worktree retrieval comparator; full runtime is a separate arm | Reproducible build, tool authorization, explicit roots, concurrent state and native edit prerequisites |
@@ -30,7 +30,7 @@ Distinguish current source APIs from published/stable SDK contracts, then assess
 
 Primary API/license evidence: [Headroom manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml), [Headroom exports](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/src/transforms/mod.rs), [RTK manifest](https://github.com/rtk-ai/rtk/blob/v0.49.0/Cargo.toml), [LeanCTX facade](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/Cargo.toml), [LemonCrow license](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/LICENSE), [Ponytail package](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/package.json), [Caveman map](https://github.com/JuliusBrussee/caveman/blob/v2.7.0/LICENSING.md).
 
-### What Jackin should own
+### What jackin❯ should own
 
 Own operator configuration, qualification records, typed result envelopes, artifact completeness/provenance, raw recovery, session/context-epoch exposure state, isolation, worker lifecycle, and actual-versus-estimated usage. Extend the existing workspace rather than duplicating execution, provider, or telemetry infrastructure. <RepoFile path="Cargo.toml">Workspace components</RepoFile> and <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">capsule-local setup</RepoFile> anchor this plan.
 
@@ -38,15 +38,15 @@ No whole-product rewrite is presently justified by the inspected evidence. Headr
 
 ### When to extract or build a kernel
 
-First try the narrow public API or subprocess and measure its boundary. Then propose an upstream change that makes the required feature pure, independently testable, or configurable. Extract a licensed kernel only when the existing boundary demonstrably cannot meet Jackin's requirements or upstream support is unavailable. Record source commit, notices, local modifications, regression corpus, and upstream-update review ownership.
+First try the narrow public API or subprocess and measure its boundary. Then propose an upstream change that makes the required feature pure, independently testable, or configurable. Extract a licensed kernel only when the existing boundary demonstrably cannot meet the requirements for jackin❯ or upstream support is unavailable. Record source commit, notices, local modifications, regression corpus, and upstream-update review ownership.
 
-Build new logic where it encodes Jackin's own contract or where no suitable implementation meets fidelity, isolation, or recovery requirements. Do not mistake a faster implementation of the wrong semantics for a successful optimization. Do not port BSL code into an Apache-only implementation while labeling it an independent reference design.
+Build new logic where it encodes the contract owned by jackin❯ or where no suitable implementation meets fidelity, isolation, or recovery requirements. Do not mistake a faster implementation of the wrong semantics for a successful optimization. Do not port BSL code into an Apache-only implementation while labeling it an independent reference design.
 
 ### Embedding is not automatic compatibility
 
 The Headroom core and LeanCTX embedding facade use internal version 0.1.0; the facade is unpublished and owns a Tokio runtime. Their product release numbers are not interchangeable Cargo versions. Disabling defaults on the LeanCTX facade's engine dependency still enables several substantial features explicitly. See its [README](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/README.md).
 
-Pin a commit and lock dependencies. Compile every supported target and selected feature combination, including native-library resolver constraints. Avoid exposing upstream types as durable Jackin APIs. A separately supervised worker is the initial fault-containment boundary, not a claim that crashes or deadlocks cannot occur.
+Pin a commit and lock dependencies. Compile every supported target and selected feature combination, including native-library resolver constraints. Avoid exposing upstream types as durable jackin❯ APIs. A separately supervised worker is the initial fault-containment boundary, not a claim that crashes or deadlocks cannot occur.
 
 ## Implications for jackin❯
 

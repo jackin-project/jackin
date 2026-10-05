@@ -4,12 +4,11 @@
 )]
 //! Launch rich terminal renderer and modal loops.
 
+use std::future::Future;
 use std::io::Write;
 
 use anyhow::Context;
-use crossterm::ExecutableCommand;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::backend::Backend as _;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -22,10 +21,10 @@ use crate::tui::components::prompts::{
     PromptConfirm, PromptError, PromptPicker, PromptText, draw_confirm, draw_error_popup,
     draw_select, draw_text_prompt,
 };
-use crate::tui::input::{LaunchInput, restore_renderer_terminal_for_process_exit};
+use crate::tui::input::{LaunchInput, restore_terminal_for_process_exit};
 use crate::tui::message::LaunchMessage;
 use crate::tui::model::{LaunchRenderContext, LaunchViewView};
-use crate::tui::subscriptions::{CockpitOutcome, SharedView, handle_cockpit_input};
+use crate::tui::subscriptions::{CockpitOutcome, SharedView, handle_cockpit_input, lock_view};
 use crate::tui::terminal::current_terminal_area;
 use crate::tui::update::update_launch_view;
 use crate::tui::view::launch_hyperlink_overlays;
@@ -35,17 +34,58 @@ pub fn rich_launch_dialog_required_message(what: &str) -> String {
     format!("{what} requires the rich launch dialog")
 }
 
+type LaunchTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>;
+
+/// Keeps ratatui's cursor-writing Drop inside the renderer's ownership scope.
+struct OwnedTerminal<T = LaunchTerminal>(Option<T>);
+
+impl<T> std::ops::Deref for OwnedTerminal<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().expect("launch terminal already released")
+    }
+}
+
+impl<T> std::ops::DerefMut for OwnedTerminal<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut().expect("launch terminal already released")
+    }
+}
+
+fn drive_active_render(
+    activity: jackin_core::TerminalActivity,
+    terminal: &mut OwnedTerminal,
+    render: impl FnOnce(&mut ratatui::Frame<'_>),
+) -> std::io::Result<()> {
+    activity
+        .run_if_active(|| jackin_tui::runtime::drive_render(terminal, render).map(|_| ()))
+        .unwrap_or(Ok(()))
+}
+
+fn release_renderer_resources<T>(
+    stop_input: impl FnOnce(),
+    terminal: &mut Option<T>,
+    ownership: &mut Option<jackin_core::TerminalOwnershipGuard>,
+) {
+    stop_input();
+    if let Some(scope) = ownership.as_ref() {
+        scope.activity().run_exclusive(|| drop(terminal.take()));
+    } else {
+        drop(terminal.take());
+    }
+    drop(ownership.take());
+}
+
 #[expect(
     missing_debug_implementations,
     reason = "RichRenderer owns terminal backend state that has no useful Debug representation."
 )]
 pub struct RichRenderer {
-    terminal: ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
+    terminal: OwnedTerminal,
     no_motion: bool,
-    /// Whether this renderer entered the alternate screen on construction.
-    /// Recorded so `drop` can leave it only when we entered it — under the
-    /// host `TerminalSession` guard the screen persists into the capsule attach.
-    entered_alt_screen: bool,
+    /// Scoped terminal ownership, released exactly once before handoff.
+    ownership: Option<jackin_core::TerminalOwnershipGuard>,
     /// Shared digital-rain engine (the same one the intro/outro use), ticked
     /// per frame and painted into the loading box. Sized to the terminal so
     /// the box shows a window into one continuous rainfall.
@@ -67,6 +107,55 @@ pub struct RichDriver {
     renderer: std::sync::Arc<std::sync::Mutex<RichRenderer>>,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+struct RenderTaskLifetime {
+    cancel: CancellationToken,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for RenderTaskLifetime {
+    fn drop(&mut self) {
+        // An absent input/render owner cannot acknowledge a pending failure.
+        if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+            self.cancel.cancel();
+        }
+    }
+}
+
+fn owned_render_task(
+    cancel: CancellationToken,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    work: impl Future<Output = ()>,
+) -> impl Future<Output = ()> {
+    let lifetime = RenderTaskLifetime { cancel, stop };
+    async move {
+        let _lifetime = lifetime;
+        work.await;
+    }
+}
+
+fn try_render_owner<'a, T>(
+    renderer: &'a std::sync::Mutex<T>,
+    cancel: &CancellationToken,
+) -> Result<Option<std::sync::MutexGuard<'a, T>>, ()> {
+    match renderer.try_lock() {
+        Ok(renderer) => Ok(Some(renderer)),
+        Err(std::sync::TryLockError::WouldBlock) => Ok(None),
+        Err(std::sync::TryLockError::Poisoned(_)) => {
+            cancel.cancel();
+            Err(())
+        }
+    }
+}
+
+fn render_frame_succeeded<E>(result: &Result<(), E>, cancel: &CancellationToken) -> bool {
+    if result.is_err() {
+        cancel.cancel();
+        false
+    } else {
+        true
+    }
 }
 
 impl RichDriver {
@@ -91,46 +180,63 @@ impl RichDriver {
         let handle = {
             let renderer = std::sync::Arc::clone(&renderer);
             let stop = std::sync::Arc::clone(&stop);
-            jackin_telemetry::spawn::spawn_cycle("launch.render", async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_millis(33));
-                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-                loop {
-                    interval.tick().await;
-                    if stop.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let Ok(mut rr) = renderer.try_lock() else {
-                        continue;
-                    };
-                    let outcome = handle_cockpit_input(
-                        &view,
-                        &run_id,
-                        host,
-                        jackin_version,
-                        &cancel_token,
-                        &rr.input,
-                    );
-                    // Ctrl+C — immediate hard stop. Restore the terminal, then
-                    // exit the process at once: no graceful teardown, no waiting
-                    // on in-flight blocking work (binary download/extract,
-                    // `docker build`). Stale docker resources are reclaimed by
-                    // the next launch's `gc_orphaned_resources`. This is the one
-                    // path that deliberately skips `LoadCleanup`.
-                    if outcome == CockpitOutcome::HardExit {
-                        rr.host.set_rich_surface_active(false);
-                        restore_renderer_terminal_for_process_exit(&mut rr.terminal);
-                        std::process::exit(0);
-                    }
-                    // Other cancellation sources can still ask the launch
-                    // pipeline to unwind gracefully. Operator quit from the
-                    // cockpit uses the HardExit arm above.
-                    if cancel_token.is_cancelled() {
-                        rr.restore_terminal();
-                        break;
-                    }
-                    let action_parent = jackin_telemetry::ui::take_action_parent();
-                    let snapshot = match view.lock() {
-                        Ok(mut v) => {
+            let owned_task = owned_render_task(
+                cancel_token.clone(),
+                std::sync::Arc::clone(&stop),
+                async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_millis(33));
+                    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    loop {
+                        interval.tick().await;
+                        if stop.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let mut rr = match try_render_owner(&renderer, &cancel_token) {
+                            Ok(Some(renderer)) => renderer,
+                            Ok(None) => continue,
+                            Err(()) => break,
+                        };
+                        if stop.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let activity = rr
+                            .ownership
+                            .as_ref()
+                            .expect("active renderer lease")
+                            .activity();
+                        let Some(outcome) = activity.run_if_active(|| {
+                            handle_cockpit_input(
+                                &view,
+                                &run_id,
+                                host,
+                                jackin_version,
+                                &cancel_token,
+                                &rr.input,
+                            )
+                        }) else {
+                            continue;
+                        };
+                        // Ctrl+C — immediate hard stop. Restore the terminal, then
+                        // exit the process at once: no graceful teardown, no waiting
+                        // on in-flight blocking work (binary download/extract,
+                        // `docker build`). Stale docker resources are reclaimed by
+                        // the next launch's `gc_orphaned_resources`. This is the one
+                        // path that deliberately skips `LoadCleanup`.
+                        if outcome == CockpitOutcome::HardExit {
+                            rr.restore_terminal();
+                            restore_terminal_for_process_exit();
+                            std::process::exit(0);
+                        }
+                        // Other cancellation sources can still ask the launch
+                        // pipeline to unwind gracefully. Operator quit from the
+                        // cockpit uses the HardExit arm above.
+                        if cancel_token.is_cancelled() {
+                            rr.restore_terminal();
+                            break;
+                        }
+                        let action_parent = jackin_telemetry::ui::take_action_parent();
+                        let snapshot = {
+                            let mut v = lock_view(&view);
                             let build_log_lines = jackin_diagnostics::build_log::snapshot();
                             let build_log_active = jackin_diagnostics::build_log::is_active();
                             let build_log_area = if v.build_log_open {
@@ -143,49 +249,58 @@ impl RichDriver {
                                 LaunchMessage::RenderTick {
                                     advance_frame: !rr.no_motion(),
                                     build_log_area,
+                                    build_log_debug_mode: rr.host.is_debug_mode(),
                                     build_log_lines,
                                     build_log_active,
                                 },
                             );
                             v.clone()
-                        }
-                        Err(_) => continue,
-                    };
-                    if let Some(parent) = action_parent.as_ref() {
-                        let render_attrs = [jackin_telemetry::Attr {
-                            key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
-                            value: jackin_telemetry::Value::Str(
-                                jackin_telemetry::schema::enums::ScreenId::LaunchProgress.as_str(),
-                            ),
-                        }];
-                        let render_operation = parent.in_scope(|| {
-                            jackin_telemetry::operation(
-                                &jackin_telemetry::operation::UI_RENDER,
-                                &render_attrs,
-                            )
-                            .ok()
-                        });
-                        let render_result = parent.in_scope(|| rr.render(&snapshot, &run_id));
-                        if let Some(guard) = render_operation {
-                            if render_result.is_ok() {
-                                guard.complete(
-                                    jackin_telemetry::schema::enums::OutcomeValue::Success,
-                                    None,
-                                );
-                            } else {
-                                guard.complete(
-                                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
-                                    Some(jackin_telemetry::schema::enums::ErrorType::IoError),
-                                );
+                        };
+                        let render_result = if let Some(parent) = action_parent.as_ref() {
+                            let render_attrs = [jackin_telemetry::Attr {
+                                key: jackin_telemetry::schema::attrs::std_attrs::APP_SCREEN_ID,
+                                value: jackin_telemetry::Value::Str(
+                                    jackin_telemetry::schema::enums::ScreenId::LaunchProgress.as_str(),
+                                ),
+                            }];
+                            let render_operation = parent.in_scope(|| {
+                                jackin_telemetry::operation(
+                                    &jackin_telemetry::operation::UI_RENDER,
+                                    &render_attrs,
+                                )
+                                .ok()
+                            });
+                            let render_result = parent.in_scope(|| {
+                                activity
+                                    .run_if_active(|| rr.render(&snapshot, &run_id))
+                                    .unwrap_or(Ok(()))
+                            });
+                            if let Some(guard) = render_operation {
+                                if render_result.is_ok() {
+                                    guard.complete(
+                                        jackin_telemetry::schema::enums::OutcomeValue::Success,
+                                        None,
+                                    );
+                                } else {
+                                    guard.complete(
+                                        jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                                        Some(jackin_telemetry::schema::enums::ErrorType::IoError),
+                                    );
+                                }
                             }
+                            render_result
+                        } else {
+                            activity.run_if_active(|| rr.render(&snapshot, &run_id)).unwrap_or(Ok(()))
+                        };
+                        drop(action_parent);
+                        if !render_frame_succeeded(&render_result, &cancel_token) {
+                            rr.restore_terminal();
+                            break;
                         }
-                        drop(render_result);
-                    } else {
-                        drop(rr.render(&snapshot, &run_id));
                     }
-                    drop(action_parent);
-                }
-            })
+                },
+            );
+            jackin_telemetry::spawn::spawn_cycle("launch.render", owned_task)
         };
         Self {
             renderer,
@@ -197,12 +312,21 @@ impl RichDriver {
     pub fn stop_detached(&mut self) {
         use std::sync::atomic::Ordering;
         self.stop.store(true, Ordering::Relaxed);
+        self.restore_renderer();
         drop(self.handle.take());
+    }
+
+    fn restore_renderer(&self) {
+        self.renderer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .restore_terminal();
     }
 
     pub fn request_stop(&self) {
         use std::sync::atomic::Ordering;
         self.stop.store(true, Ordering::Relaxed);
+        self.restore_renderer();
     }
 
     pub fn with_renderer<T>(
@@ -213,6 +337,9 @@ impl RichDriver {
             .renderer
             .lock()
             .map_err(|_| anyhow::anyhow!("launch renderer mutex poisoned"))?;
+        if renderer.ownership.is_none() {
+            anyhow::bail!("launch renderer already released");
+        }
         f(&mut renderer)
     }
 }
@@ -338,47 +465,44 @@ impl RichRenderer {
         terminal_check: impl FnOnce() -> anyhow::Result<()>,
     ) -> anyhow::Result<Self> {
         terminal_check()?;
-        let mut stdout = std::io::stdout();
-        // When the launch flow's host guard already owns the alternate screen,
-        // draw into it; only enter it ourselves when running standalone.
-        let entered_alt_screen = !host.host_screen_owned();
-        if entered_alt_screen {
-            crossterm::terminal::enable_raw_mode().context("entering raw mode for launch TUI")?;
-            stdout.execute(EnterAlternateScreen)?;
-            crate::tui::input::enable_mouse_capture(&mut stdout)
-                .context("enabling mouse capture for launch TUI")?;
-        }
-        stdout.execute(crossterm::cursor::Hide)?;
-        let backend = ratatui::backend::CrosstermBackend::new(stdout);
-        let mut terminal = ratatui::Terminal::new(backend)?;
-        // Wipe whatever the previous surface left on the screen and force a full
-        // first redraw. Under the host guard we skipped EnterAlternateScreen
-        // (which would have cleared), so the console's last frame is still on
-        // the inherited screen — clear it or the cockpit renders over it.
-        // Use backend_mut().clear() instead of terminal.clear(): ratatui-core ≥ 0.1.1
-        // added a cursor-position save/restore around the erase that blocks on a DSR
-        // query. On non-interactive PTYs (e.g. the script-based E2E harness) the
-        // terminal never answers, causing a timeout error. The backend call issues the
-        // same erase without the query; a freshly constructed Terminal already has
-        // default (empty) buffers so the next draw will repaint everything anyway.
-        terminal
-            .backend_mut()
-            .clear()
-            .context("clearing launch screen")?;
-        // Ancillary status printers (spinners) go silent while this surface
-        // owns the alternate screen.
-        host.set_rich_surface_active(true);
+        let ownership = host
+            .acquire_rich_surface()
+            .context("acquiring launch terminal ownership")?;
+        let terminal = ownership
+            .activity()
+            .run_if_active(|| -> anyhow::Result<LaunchTerminal> {
+                let stdout = std::io::stdout();
+                let backend = ratatui::backend::CrosstermBackend::new(stdout);
+                let mut terminal = ratatui::Terminal::new(backend)?;
+                // Wipe whatever the previous surface left on the screen and force a full
+                // first redraw. Under the host guard we skipped EnterAlternateScreen
+                // (which would have cleared), so the console's last frame is still on
+                // the inherited screen — clear it or the cockpit renders over it.
+                // Use backend_mut().clear() instead of terminal.clear(): ratatui-core ≥ 0.1.1
+                // added a cursor-position save/restore around the erase that blocks on a DSR
+                // query. On non-interactive PTYs (e.g. the script-based E2E harness) the
+                // terminal never answers, causing a timeout error. The backend call issues the
+                // same erase without the query; a freshly constructed Terminal already has
+                // default (empty) buffers so the next draw will repaint everything anyway.
+                terminal
+                    .backend_mut()
+                    .clear()
+                    .context("clearing launch screen")?;
+                Ok(terminal)
+            })
+            .ok_or_else(|| anyhow::anyhow!("launch terminal superseded during setup"))??;
         let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
         let _screen_result =
             screen_tracker.enter(jackin_telemetry::schema::enums::ScreenId::LaunchProgress);
+        let input = LaunchInput::spawn(ownership.activity());
         Ok(Self {
-            terminal,
+            terminal: OwnedTerminal(Some(terminal)),
             no_motion,
-            entered_alt_screen,
+            ownership: Some(ownership),
             rain: None,
             host,
             jackin_version,
-            input: LaunchInput::spawn(),
+            input,
             screen_tracker,
             jank_monitor: jackin_telemetry::ui::JankMonitor::default(),
         })
@@ -517,9 +641,16 @@ impl RichRenderer {
     ) -> anyhow::Result<usize> {
         let mut picker = PromptPicker::new(items);
         loop {
-            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_select(frame, title, context, &mut picker);
-            })
+            drive_active_render(
+                self.ownership
+                    .as_ref()
+                    .expect("active renderer lease")
+                    .activity(),
+                &mut self.terminal,
+                |frame| {
+                    draw_select(frame, title, context, &mut picker);
+                },
+            )
             .context("rendering launch picker")?;
             if let Some(index) = update_forced_select(
                 &mut picker,
@@ -556,9 +687,16 @@ impl RichRenderer {
             PromptText::new(title, initial)
         };
         loop {
-            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_text_prompt(frame, &mut input, skippable);
-            })
+            drive_active_render(
+                self.ownership
+                    .as_ref()
+                    .expect("active renderer lease")
+                    .activity(),
+                &mut self.terminal,
+                |frame| {
+                    draw_text_prompt(frame, &mut input, skippable);
+                },
+            )
             .context("rendering launch env text prompt")?;
             if let Some(result) = update_text_prompt(
                 &mut input,
@@ -603,9 +741,16 @@ impl RichRenderer {
             picker.select_index(index);
         }
         loop {
-            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_select(frame, title, &[], &mut picker);
-            })
+            drive_active_render(
+                self.ownership
+                    .as_ref()
+                    .expect("active renderer lease")
+                    .activity(),
+                &mut self.terminal,
+                |frame| {
+                    draw_select(frame, title, &[], &mut picker);
+                },
+            )
             .context("rendering launch env select prompt")?;
             if let Some(result) = update_select_prompt(
                 &mut picker,
@@ -641,9 +786,16 @@ impl RichRenderer {
 
     fn confirm_loop(&mut self, state: &mut PromptConfirm) -> anyhow::Result<bool> {
         loop {
-            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_confirm(frame, state);
-            })
+            drive_active_render(
+                self.ownership
+                    .as_ref()
+                    .expect("active renderer lease")
+                    .activity(),
+                &mut self.terminal,
+                |frame| {
+                    draw_confirm(frame, state);
+                },
+            )
             .context("rendering launch confirmation")?;
             if let Some(result) = update_confirm_prompt(
                 state,
@@ -660,9 +812,16 @@ impl RichRenderer {
     fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
         let mut state = PromptError::new(title, message);
         loop {
-            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_error_popup(frame, &mut state);
-            })
+            drive_active_render(
+                self.ownership
+                    .as_ref()
+                    .expect("active renderer lease")
+                    .activity(),
+                &mut self.terminal,
+                |frame| {
+                    draw_error_popup(frame, &mut state);
+                },
+            )
             .context("rendering launch error popup")?;
             if update_error_prompt(
                 &mut state,
@@ -736,29 +895,44 @@ impl RichRenderer {
         loop {
             match &mut mode {
                 Mode::Picker => {
-                    jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
-                        let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-                        let picker_rect = {
-                            let rows = u16::try_from(picker.len())
-                                .unwrap_or(u16::MAX)
-                                .saturating_add(4);
-                            let height = rows.clamp(6, box_area.height.saturating_sub(2).max(6));
-                            percent_dialog_rect(box_area, 80, 40.min(box_area.width), 2, 2, height)
-                        };
-                        crate::tui::components::prompts::render_picker(
-                            frame,
-                            picker_rect,
-                            title,
-                            &[],
-                            &mut picker,
-                        );
-                        termrock::widgets::render_hint_bar(
-                            frame,
-                            hint_area,
-                            hint_normal,
-                            &termrock::style::DesignSystem::default(),
-                        );
-                    })
+                    drive_active_render(
+                        self.ownership
+                            .as_ref()
+                            .expect("active renderer lease")
+                            .activity(),
+                        &mut self.terminal,
+                        |frame| {
+                            let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+                            let picker_rect = {
+                                let rows = u16::try_from(picker.len())
+                                    .unwrap_or(u16::MAX)
+                                    .saturating_add(4);
+                                let height =
+                                    rows.clamp(6, box_area.height.saturating_sub(2).max(6));
+                                percent_dialog_rect(
+                                    box_area,
+                                    80,
+                                    40.min(box_area.width),
+                                    2,
+                                    2,
+                                    height,
+                                )
+                            };
+                            crate::tui::components::prompts::render_picker(
+                                frame,
+                                picker_rect,
+                                title,
+                                &[],
+                                &mut picker,
+                            );
+                            termrock::widgets::render_hint_bar(
+                                frame,
+                                hint_area,
+                                hint_normal,
+                                &termrock::style::DesignSystem::default(),
+                            );
+                        },
+                    )
                     .context("rendering launch dialog")?;
 
                     let key = read_pressed_key(&self.input, "reading launch dialog input")?;
@@ -802,9 +976,16 @@ impl RichRenderer {
                     let mut confirm = PromptConfirm::new(format!(
                         "Delete {label}?\n\nAny uncommitted changes will be lost."
                     ));
-                    jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
-                        draw_confirm(frame, &mut confirm);
-                    })
+                    drive_active_render(
+                        self.ownership
+                            .as_ref()
+                            .expect("active renderer lease")
+                            .activity(),
+                        &mut self.terminal,
+                        |frame| {
+                            draw_confirm(frame, &mut confirm);
+                        },
+                    )
                     .context("rendering delete confirm")?;
                     let key = read_pressed_key(&self.input, "reading delete confirm input")?;
                     match update_confirm_prompt(&mut confirm, ConfirmPromptMessage::Key(key)) {
@@ -916,106 +1097,113 @@ impl RichRenderer {
             let has_repos = worktrees.len() > 1;
             let mut diff_cloned = diff_state.clone();
 
-            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
-                let (body, hint_area) = dialog_backdrop(frame, frame.area());
-                termrock::widgets::render_hint_bar(
-                    frame,
-                    hint_area,
-                    hint,
-                    &termrock::style::DesignSystem::default(),
-                );
+            drive_active_render(
+                self.ownership
+                    .as_ref()
+                    .expect("active renderer lease")
+                    .activity(),
+                &mut self.terminal,
+                |frame| {
+                    let (body, hint_area) = dialog_backdrop(frame, frame.area());
+                    termrock::widgets::render_hint_bar(
+                        frame,
+                        hint_area,
+                        hint,
+                        &termrock::style::DesignSystem::default(),
+                    );
 
-                // Split body: repos (if >1) | files | diff
-                let constraints = if has_repos {
-                    vec![
-                        Constraint::Percentage(20),
-                        Constraint::Percentage(30),
-                        Constraint::Percentage(50),
-                    ]
-                } else {
-                    vec![Constraint::Percentage(35), Constraint::Percentage(65)]
-                };
-                let panes = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(constraints)
-                    .split(body);
-
-                let (repos_area, files_area, diff_area) = if has_repos {
-                    (Some(panes[0]), panes[1], panes[2])
-                } else {
-                    (None, panes[0], panes[1])
-                };
-
-                // Mark the Tab-focused pane with the ▸ selection glyph so the
-                // operator sees which pane Up/Down/PageUp drive.
-                if let Some(repos_area) = repos_area {
-                    let mut repos_state = PromptPicker::new(wt_labels.clone());
-                    repos_state.select_index(wt_sel_c);
-                    let title = if matches!(focus_c, InspFocus::Repos) {
-                        "▸ Repos"
+                    // Split body: repos (if >1) | files | diff
+                    let constraints = if has_repos {
+                        vec![
+                            Constraint::Percentage(20),
+                            Constraint::Percentage(30),
+                            Constraint::Percentage(50),
+                        ]
                     } else {
-                        "Repos"
+                        vec![Constraint::Percentage(35), Constraint::Percentage(65)]
+                    };
+                    let panes = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints(constraints)
+                        .split(body);
+
+                    let (repos_area, files_area, diff_area) = if has_repos {
+                        (Some(panes[0]), panes[1], panes[2])
+                    } else {
+                        (None, panes[0], panes[1])
+                    };
+
+                    // Mark the Tab-focused pane with the ▸ selection glyph so the
+                    // operator sees which pane Up/Down/PageUp drive.
+                    if let Some(repos_area) = repos_area {
+                        let mut repos_state = PromptPicker::new(wt_labels.clone());
+                        repos_state.select_index(wt_sel_c);
+                        let title = if matches!(focus_c, InspFocus::Repos) {
+                            "▸ Repos"
+                        } else {
+                            "Repos"
+                        };
+                        crate::tui::components::prompts::render_picker(
+                            frame,
+                            repos_area,
+                            title,
+                            &[],
+                            &mut repos_state,
+                        );
+                    }
+
+                    let mut files_state = PromptPicker::new(file_labels.clone());
+                    files_state.select_index(file_sel_c);
+                    let files_title = if matches!(focus_c, InspFocus::Files) {
+                        "▸ Changed files"
+                    } else {
+                        "Changed files"
                     };
                     crate::tui::components::prompts::render_picker(
                         frame,
-                        repos_area,
-                        title,
+                        files_area,
+                        files_title,
                         &[],
-                        &mut repos_state,
+                        &mut files_state,
                     );
-                }
 
-                let mut files_state = PromptPicker::new(file_labels.clone());
-                files_state.select_index(file_sel_c);
-                let files_title = if matches!(focus_c, InspFocus::Files) {
-                    "▸ Changed files"
-                } else {
-                    "Changed files"
-                };
-                crate::tui::components::prompts::render_picker(
-                    frame,
-                    files_area,
-                    files_title,
-                    &[],
-                    &mut files_state,
-                );
-
-                if let Some(diff) = diff_cloned.as_mut() {
-                    let offset = u16::try_from(diff_scroll.offset_for_render(diff.lines.len()))
-                        .unwrap_or(u16::MAX);
-                    diff.state.scroll_mut().set_offset_y(offset);
-                    let ids = (0..diff.lines.len())
-                        .map(|index| format!("diff-line-{index}"))
-                        .collect::<Vec<_>>();
-                    let lines = diff
-                        .lines
-                        .iter()
-                        .zip(&ids)
-                        .map(|((text, kind), id)| DiffLine::new(id, *kind, text))
-                        .collect::<Vec<_>>();
-                    let diff_theme = termrock::style::DesignSystem::default()
-                        .with_role(
-                            termrock::style::Role::DiffAdded,
-                            Style::default().fg(termrock::style::DesignSystem::default()
-                                .style(termrock::style::Role::Accent)
-                                .fg
-                                .unwrap_or_default()),
-                        )
-                        .with_role(
-                            termrock::style::Role::DiffRemoved,
-                            Style::default().fg(termrock::style::DesignSystem::default()
-                                .style(termrock::style::Role::Danger)
-                                .fg
-                                .unwrap_or_default()),
+                    if let Some(diff) = diff_cloned.as_mut() {
+                        let offset = u16::try_from(diff_scroll.offset_for_render(diff.lines.len()))
+                            .unwrap_or(u16::MAX);
+                        diff.state.scroll_mut().set_offset_y(offset);
+                        let ids = (0..diff.lines.len())
+                            .map(|index| format!("diff-line-{index}"))
+                            .collect::<Vec<_>>();
+                        let lines = diff
+                            .lines
+                            .iter()
+                            .zip(&ids)
+                            .map(|((text, kind), id)| DiffLine::new(id, *kind, text))
+                            .collect::<Vec<_>>();
+                        let diff_theme = termrock::style::DesignSystem::default()
+                            .with_role(
+                                termrock::style::Role::DiffAdded,
+                                Style::default().fg(termrock::style::DesignSystem::default()
+                                    .style(termrock::style::Role::Accent)
+                                    .fg
+                                    .unwrap_or_default()),
+                            )
+                            .with_role(
+                                termrock::style::Role::DiffRemoved,
+                                Style::default().fg(termrock::style::DesignSystem::default()
+                                    .style(termrock::style::Role::Danger)
+                                    .fg
+                                    .unwrap_or_default()),
+                            );
+                        frame.render_stateful_widget(
+                            &DiffView::new(&lines, &diff_theme),
+                            diff_area,
+                            &mut diff.state,
                         );
-                    frame.render_stateful_widget(
-                        &DiffView::new(&lines, &diff_theme),
-                        diff_area,
-                        &mut diff.state,
-                    );
-                    diff_scroll.record_rendered(usize::from(diff.state.offset()));
-                }
-            })
+                        diff_scroll.record_rendered(usize::from(diff.state.offset()));
+                    }
+                },
+            )
             .context("rendering inspect surface")?;
 
             // Persist the widget-synced scroll metrics so the next frame's
@@ -1122,9 +1310,16 @@ impl RichRenderer {
         let mut picker = PromptPicker::new(options);
 
         loop {
-            jackin_tui::runtime::drive_render(&mut self.terminal, |frame| {
-                draw_select(frame, title, context, &mut picker);
-            })
+            drive_active_render(
+                self.ownership
+                    .as_ref()
+                    .expect("active renderer lease")
+                    .activity(),
+                &mut self.terminal,
+                |frame| {
+                    draw_select(frame, title, context, &mut picker);
+                },
+            )
             .context("rendering exit dialog")?;
 
             let key = read_pressed_key(&self.input, "reading exit dialog input")?;
@@ -1189,24 +1384,14 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
 }
 
 impl RichRenderer {
-    /// Restore the terminal to its pre-launch state immediately.
-    ///
-    /// Called explicitly from the render task on cancel detection so that the
-    /// terminal is visible before cleanup runs (cleanup can take 10-30 s).
-    /// Sets `entered_alt_screen = false` so the `Drop` impl is a no-op if this
-    /// was already called — restoration is idempotent.
+    /// Stop input and release this renderer's lease before interactive handoff.
+    /// Repeated restoration leaves every other surface's ownership intact.
     pub(super) fn restore_terminal(&mut self) {
-        self.host.set_rich_surface_active(false);
-        drop(self.terminal.backend_mut().execute(crossterm::cursor::Show));
-        if self.entered_alt_screen {
-            drop(crate::tui::input::disable_mouse_capture(
-                self.terminal.backend_mut(),
-            ));
-            drop(crossterm::terminal::disable_raw_mode());
-            drop(self.terminal.backend_mut().execute(LeaveAlternateScreen));
-            self.entered_alt_screen = false;
-        }
-        drop(std::io::stdout().flush());
+        release_renderer_resources(
+            || self.input.stop(),
+            &mut self.terminal.0,
+            &mut self.ownership,
+        );
     }
 }
 
@@ -1215,8 +1400,7 @@ impl Drop for RichRenderer {
         let _screen_result = self
             .screen_tracker
             .exit(jackin_telemetry::schema::enums::TransitionReason::Completion);
-        // `restore_terminal()` sets `entered_alt_screen = false` when called
-        // explicitly on cancel, making this a no-op for the cancel path.
+        // The lease is taken once, including explicit cancellation/handoff.
         self.restore_terminal();
     }
 }

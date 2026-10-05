@@ -151,6 +151,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         LaunchMessage::RenderTick {
             advance_frame,
             build_log_area,
+            build_log_debug_mode,
             build_log_lines,
             build_log_active,
         } => {
@@ -161,7 +162,7 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.build_log_lines = build_log_lines;
             view.build_log_active = build_log_active;
             if let Some(area) = build_log_area {
-                refresh_build_log_layout(view, area, lines_changed);
+                refresh_build_log_layout(view, area, build_log_debug_mode, lines_changed);
                 view.build_log_scroll.clamp(view.build_log_filled);
             } else {
                 view.build_log_wrapped_lines.clear();

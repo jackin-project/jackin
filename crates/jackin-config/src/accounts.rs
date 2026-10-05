@@ -681,7 +681,7 @@ impl AccountConfig {
                     let name = match agent {
                         Agent::Claude => "ANTHROPIC_BASE_URL",
                         Agent::Codex => "OPENAI_BASE_URL",
-                        Agent::Kimi => "KIMI_BASE_URL",
+                        Agent::Kimi => "KIMI_CODE_BASE_URL",
                         _ => {
                             return Err(ConfigError::msg(format_args!(
                                 "endpoint overrides are unsupported for this agent"

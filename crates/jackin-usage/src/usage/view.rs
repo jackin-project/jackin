@@ -43,6 +43,7 @@ impl UsageCache {
                 )
             }
         });
+        view.account_identity = Some((&state.capability).into());
         if let Some(error) = &state.error {
             view.last_error = Some(error.message.clone());
             view.status = if view.buckets.is_empty() {
@@ -90,6 +91,7 @@ impl UsageCache {
             view.focused_provider = target.provider.clone();
             CachedUsage { view }
         });
+        cached.view.account_identity = Some((&target.capability).into());
         cached.view.last_error = Some(error.message.clone());
         cached.view.status = if cached.view.buckets.is_empty() {
             UsageSnapshotStatus::Error
@@ -175,9 +177,9 @@ pub(crate) fn cached_refreshing_view(
 pub(crate) fn mark_active_tab(view: &mut FocusedUsageView) {
     // Navigation keys on the stable canonical account id, never on the
     // display label: same-provider accounts share a label but never an id.
-    let focused = usage_account_tab_id(&view.account.provider_label, &view.account.account_label);
+    let focused = view.account_identity.as_ref().map(usage_account_tab_id);
     for tab in &mut view.tabs {
-        tab.active = tab.id == focused;
+        tab.active = focused.as_ref().is_some_and(|id| &tab.id == id);
     }
 }
 
@@ -198,6 +200,12 @@ pub(crate) fn account_snapshot_views_from_cache(
                         view.status
                     };
                 AccountUsageSnapshotView {
+                    account_identity: view.account_identity.clone(),
+                    canonical_identity: view.canonical_identity.clone(),
+                    count_quota: bucket.count_quota.clone(),
+                    used_money: bucket.used_money.clone(),
+                    limit_money: bucket.limit_money.clone(),
+                    remaining_money: bucket.remaining_money.clone(),
                     provider: view.account.provider_label.clone(),
                     account_label: view.account.account_label.clone(),
                     source: usage_source_storage_label(view.source).to_owned(),
@@ -227,19 +235,18 @@ pub(crate) fn account_snapshot_views_from_cache(
 pub(crate) fn quota_amounts_for_account_snapshot(
     bucket: &QuotaBucketView,
 ) -> (Option<i64>, Option<String>, Option<i64>, Option<String>) {
-    if bucket.used_money.is_some() || bucket.limit_money.is_some() {
+    if let Some(count) = &bucket.count_quota {
+        let used = count.used.and_then(|value| i64::try_from(value).ok());
+        let limit = count.limit.and_then(|value| i64::try_from(value).ok());
         return (
-            bucket.used_money.as_ref().map(|money| money.amount_minor),
-            bucket
-                .used_money
-                .as_ref()
-                .map(|money| money.currency.clone()),
-            bucket.limit_money.as_ref().map(|money| money.amount_minor),
-            bucket
-                .limit_money
-                .as_ref()
-                .map(|money| money.currency.clone()),
+            used,
+            used.map(|_| "requests".to_owned()),
+            limit,
+            limit.map(|_| "requests".to_owned()),
         );
+    }
+    if bucket.used_money.is_some() || bucket.limit_money.is_some() || bucket.remaining_money.is_some() {
+        return (None, None, None, None);
     }
     if bucket.status_slot == Some(StatusSlot::Spend) {
         return (None, None, None, None);
@@ -291,6 +298,8 @@ pub(crate) fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         &input.buckets,
     );
     let mut view = FocusedUsageView {
+        account_identity: None,
+        canonical_identity: None,
         focused_agent: Some(input.agent.to_owned()),
         focused_provider: input
             .provider
@@ -344,7 +353,7 @@ pub(crate) fn spend_headline_label(buckets: &[QuotaBucketView]) -> Option<String
         return None;
     }
     Some(match spend.limit_money.as_ref() {
-        Some(limit) => format!("{} of {}", used.format_compact(), limit.major_amount()),
+        Some(limit) => format!("{} of {}", used.format_compact(), limit.format_compact_amount()),
         None => format!("{} spent", used.format_compact()),
     })
 }
@@ -447,33 +456,49 @@ pub(crate) fn compact_account_identity(account_label: &str) -> &str {
 
 /// Rank of one bucket in the settled Overview-summary order (D30:
 /// long-range weekly/daily, model-specific, session, then other). The slot
-/// mapping mirrors the projection's `window_category` exactly
-/// (`Spend`/`None` read as `Other`), so the capsule and the console select
+/// mapping mirrors the projection's `window_category` exactly: count windows
+/// use their explicit period (UTC daily is long-range, unknown is other),
+/// while percentage `Spend`/`None` slots read as `Other`. Surfaces select
 /// the same window; no producer emits the `Model` category yet, so
 /// model-specific windows rank as `Other` on both surfaces until one does.
-fn summary_slot_rank(slot: Option<StatusSlot>) -> u8 {
-    match slot {
+fn summary_slot_rank(bucket: &QuotaBucketView) -> u8 {
+    if let Some(counts) = &bucket.count_quota {
+        return match counts.period {
+            jackin_protocol::control::CountQuotaPeriod::UtcDaily => 0,
+            jackin_protocol::control::CountQuotaPeriod::Unknown => 3,
+        };
+    }
+    match bucket.status_slot {
         Some(StatusSlot::Daily | StatusSlot::Weekly) => 0,
-        // No `StatusSlot` marks a model-specific window; unslotted buckets
-        // rank as `Other`, exactly like the projection maps them.
         Some(StatusSlot::Session) => 2,
         Some(StatusSlot::Spend) | None => 3,
     }
 }
 
-pub(crate) fn summary_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
-    // First available Rust-ranked limit (D30): lowest category rank wins,
-    // ties break to provider order, and only fresh buckets carrying a
-    // remaining percent qualify. Spend ranks last as `Other` (Bug 5: a
-    // reset-less spend bucket must not win the headline over a real limit),
-    // but still wins over nothing, so a spend-only account shows its quota.
+fn select_summary_bucket(
+    buckets: &[QuotaBucketView],
+    fresh_only: bool,
+) -> Option<&QuotaBucketView> {
     buckets
         .iter()
         .enumerate()
-        .filter(|(_, bucket)| bucket.status == UsageSnapshotStatus::Fresh)
-        .filter(|(_, bucket)| bucket.remaining_percent.is_some())
-        .min_by_key(|(index, bucket)| (summary_slot_rank(bucket.status_slot), *index))
+        .filter(|(_, bucket)| !fresh_only || bucket.status == UsageSnapshotStatus::Fresh)
+        .filter(|(_, bucket)| {
+            bucket.count_quota.is_some() || bucket.remaining_percent.is_some()
+                || bucket.used_money.is_some() || bucket.limit_money.is_some()
+                || bucket.remaining_money.is_some()
+        })
+        .min_by_key(|(index, bucket)| (summary_slot_rank(bucket), *index))
         .map(|(_, bucket)| bucket)
+}
+
+pub(crate) fn summary_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
+    select_summary_bucket(buckets, true)
+}
+
+/// Account rows retain last-good windows while their actual freshness remains explicit.
+pub(crate) fn host_account_summary_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
+    select_summary_bucket(buckets, false)
 }
 
 pub(crate) fn preserve_cached_quota_on_failed_refresh(
@@ -528,8 +553,8 @@ pub(crate) fn preserve_cached_quota_on_failed_refresh(
 /// [`account_key_hash`] the durable snapshot store uses as its stable
 /// multi-account id, so tabs, overview rows, and stored snapshots correlate.
 /// Same-provider accounts share a display label but never an id.
-pub(crate) fn usage_account_tab_id(provider_label: &str, account_label: &str) -> String {
-    account_key_hash(provider_label, account_label)
+pub(crate) fn usage_account_tab_id(identity: &UsageAccountIdentity) -> String {
+    account_key_hash(&identity.surface_id, &identity.account_id)
 }
 
 /// One tab per distinct admitted account, keyed by
@@ -541,11 +566,10 @@ pub(crate) fn usage_account_tab_id(provider_label: &str, account_label: &str) ->
 pub(crate) fn provider_tabs(views: &[&FocusedUsageView]) -> Vec<UsageProviderTab> {
     let mut keyed: Vec<(String, &FocusedUsageView)> = views
         .iter()
-        .map(|view| {
-            (
-                usage_account_tab_id(&view.account.provider_label, &view.account.account_label),
-                *view,
-            )
+        .filter_map(|view| {
+            view.account_identity
+                .as_ref()
+                .map(|identity| (usage_account_tab_id(identity), *view))
         })
         .collect();
     // Newest fetch first per account, so `dedup_by` (which keeps the first of
@@ -635,17 +659,17 @@ pub(crate) fn account_tab_label_for_parts(
 
 impl UsageCache {
     /// Focused snapshot for an exact canonical account id (tab selection).
-    /// `None` when no admitted snapshot carries the id; the caller falls back
-    /// to label resolution only for empty ids (old payloads).
+    /// Unknown or unbound account ids have no selection.
     pub fn focused_snapshot_for_account_id(&self, account_id: &str) -> Option<FocusedUsageView> {
         let mut view = self
             .snapshots
             .values()
             .filter(|cached| {
-                usage_account_tab_id(
-                    &cached.view.account.provider_label,
-                    &cached.view.account.account_label,
-                ) == account_id
+                cached
+                    .view
+                    .account_identity
+                    .as_ref()
+                    .is_some_and(|identity| usage_account_tab_id(identity) == account_id)
             })
             .max_by_key(|cached| cached.view.fetched_at_epoch)
             .map(|cached| cached.view.clone())?;
@@ -655,34 +679,13 @@ impl UsageCache {
         Some(view)
     }
 
-    /// Broker-namespace account id behind an exact tab id, recovered from the
-    /// owning cache entry's broker key. `None` for unknown ids and for
-    /// non-broker entries (legacy keys carry no capability).
-    pub fn broker_account_id_for_tab_id(&self, tab_id: &str) -> Option<String> {
-        self.snapshots
-            .iter()
-            .filter(|(_, cached)| {
-                usage_account_tab_id(
-                    &cached.view.account.provider_label,
-                    &cached.view.account.account_label,
-                ) == tab_id
-            })
-            .filter_map(|(key, cached)| {
-                broker_account_id_from_cache_key(key).map(|id| (cached.view.fetched_at_epoch, id))
-            })
-            .max_by_key(|(fetched_at_epoch, _)| *fetched_at_epoch)
-            .map(|(_, id)| id)
+    /// Canonical account/provider pair behind an exact navigation key.
+    pub fn account_identity_for_tab_id(&self, tab_id: &str) -> Option<UsageAccountIdentity> {
+        self.snapshots.values().find_map(|cached| {
+            let identity = cached.view.account_identity.as_ref()?;
+            (usage_account_tab_id(identity) == tab_id).then(|| identity.clone())
+        })
     }
-}
-
-/// Parse the broker account id out of a broker cache key
-/// (`{base}:account-id-v1:{surface_id}:{account_id}`, built by
-/// `usage_cache_key_for_broker_account`). Surface ids are closed colon-free
-/// tokens, so the first colon after the marker splits the pair.
-fn broker_account_id_from_cache_key(key: &str) -> Option<String> {
-    let (_, rest) = key.split_once(":account-id-v1:")?;
-    let (surface_id, account_id) = rest.split_once(':')?;
-    (!surface_id.is_empty() && !account_id.is_empty()).then(|| account_id.to_owned())
 }
 
 /// Freshness + source tag for the Overview row, e.g. "fresh · provider" or
@@ -710,8 +713,21 @@ pub(crate) fn usage_tab_source_label(view: &FocusedUsageView) -> String {
 pub(crate) fn usage_tab_status_label(view: &FocusedUsageView) -> String {
     if view.status == UsageSnapshotStatus::Fresh
         && let Some(bucket) = summary_bucket(&view.buckets)
-        && let Some(remaining) = bucket.remaining_percent
     {
+        if let Some(counts) = &bucket.count_quota {
+            let mut label = usage_count_quota_summary(counts);
+            if let Some(reset) = &bucket.reset_label {
+                label.push_str(" · ");
+                label.push_str(reset);
+            }
+            return label;
+        }
+        if bucket.used_money.is_some() || bucket.limit_money.is_some() || bucket.remaining_money.is_some() {
+            return usage_money_quota_summary(bucket);
+        }
+        let Some(remaining) = bucket.remaining_percent else {
+            return "fresh".to_owned();
+        };
         // The summary window is the first available Rust-ranked limit (D30),
         // shared with the console list summary. An unslotted window (a
         // model-scoped Fable/Sonnet limit, or any other provider bucket)
@@ -752,6 +768,7 @@ pub(crate) fn bucket(
     status: UsageSnapshotStatus,
 ) -> QuotaBucketView {
     QuotaBucketView {
+        count_quota: None,
         label: label.to_owned(),
         used_label,
         limit_label,
@@ -763,6 +780,7 @@ pub(crate) fn bucket(
         status,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::default(),
     }
 }

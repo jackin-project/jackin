@@ -237,7 +237,7 @@ fn build_log_dialog_renders_product_wrap_continuation() {
         last_dialog_mouse_cell: None,
         quit_confirm: None,
     };
-    refresh_build_log_layout(&mut view, Rect::new(0, 0, 56, 12), true);
+    refresh_build_log_layout(&mut view, Rect::new(0, 0, 56, 12), true, true);
     terminal
         .draw(|frame| render_build_log_dialog(frame, frame.area(), &view, "jk-run-test", true))
         .unwrap();
@@ -257,7 +257,7 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
 
     let area = Rect::new(0, 0, 40, 8);
     let lines = jackin_diagnostics::build_log::snapshot();
-    let metrics = build_log_scroll_metrics(area, &lines);
+    let metrics = build_log_scroll_metrics(area, true, &lines);
     let filled = metrics.filled;
     assert!(filled > 1);
     let mut view = LaunchView {

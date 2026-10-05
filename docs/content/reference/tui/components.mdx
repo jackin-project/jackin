@@ -88,7 +88,7 @@ Layout and interaction primitives that support the catalogued widgets live in [T
 
 Console role-load error text is assembled through <RepoFile path="crates/jackin-console/src/tui/components/error_popup.rs">crates/jackin-console/src/tui/components/error_popup.rs</RepoFile>. Root state may classify root-only repository and validation error types, but popup wording belongs to the console TUI component boundary.
 
-Console effect executors use the same error-popup helper boundary for side-effect failure titles such as token generation, URL opening, workspace deletion, and file-browser startup. The executor owns the work and the concrete error value; <RepoFile path="crates/jackin-console/src/tui/components/error_popup.rs">crates/jackin-console/src/tui/components/error_popup.rs</RepoFile> owns the visible popup title/state construction.
+Console effect executors use the same error-popup helper boundary for side-effect failure titles such as URL opening, workspace deletion, and file-browser startup. The executor owns the work and the concrete error value; <RepoFile path="crates/jackin-console/src/tui/components/error_popup.rs">crates/jackin-console/src/tui/components/error_popup.rs</RepoFile> owns the visible popup title/state construction.
 
 Background-work status popups follow the same split: <RepoFile path="crates/jackin/src/console/effects.rs">crates/jackin/src/console/effects.rs</RepoFile> starts role registration, workspace drift checks, and isolated-state cleanup, while <RepoFile path="crates/jackin-console/src/tui/components/status_popup.rs">crates/jackin-console/src/tui/components/status_popup.rs</RepoFile> owns the visible status title/message construction.
 
@@ -110,9 +110,7 @@ Workspace-list header title wording lives with top-level console view helpers in
 
 Editor/settings save-footer base labels and pick-list modal commit labels live with console-local footer hint components in <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs">crates/jackin-console/src/tui/components/footer_hints.rs</RepoFile>. Root footer adapters may pass dirty/change facts, row modes, and modal variants, but they should not carry the `save workspace`, `save settings`, `select`, or `confirm` copy.
 
-Generated-token source-picker label construction lives with the auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs">crates/jackin-console/src/tui/components/auth_panel.rs</RepoFile>. Editor and settings input code decides when token generation starts, but visible source-picker state comes from the component helper.
-
-Generated-token 1Password item-name default construction also lives with the auth-panel component in <RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs">crates/jackin-console/src/tui/components/auth_panel.rs</RepoFile>. Editor and settings token-generation input code should pass the template and scope label into the helper rather than hard-coding `{ws}` replacement in root input handlers.
+Account forms reuse the auth-panel field anatomy. Register existing credentials through the named account editor; the former generated-token item-name helper and workspace minting flow are no longer current component contracts.
 
 #### Lookbook focus behavior
 
@@ -148,7 +146,7 @@ There are exactly two full-picker row kinds, and a caller must not hand-roll eit
 
 ### Default values are pre-filled in input boxes
 
-**When an input box has a suggested default, that default MUST be pre-filled into the box (cursor at end), not shown as placeholder/ghost text.** The operator either presses `Enter` to accept the pre-filled value or edits it. Never make the operator type a value that the system already knows the default for. This matches the CLI prompt convention (`dialoguer::Input::default(...)`, where `Enter` accepts the suggestion) so the two surfaces behave identically. Construct the input with the default as its initial content — `TextInputState::new(label, default)` already does this (the textarea opens holding `default` with the cursor at the end). Use an empty initial value (`""`) only when there is genuinely no sensible default (e.g. a new section name). Example: the op_picker Create-mode naming stages open with `Claude` (item) and `oauth-token` (field) pre-filled; the operator hits `Enter` to take them or types over them.
+**When an input box has a suggested default, that default MUST be pre-filled into the box (cursor at end), not shown as placeholder/ghost text.** The operator either presses `Enter` to accept the pre-filled value or edits it. Never make the operator type a value that the system already knows the default for. This matches the CLI prompt convention (`dialoguer::Input::default(...)`, where `Enter` accepts the suggestion) so the two surfaces behave identically. Construct the input with the default as its initial content — `TextInputState::new(label, default)` already does this (the textarea opens holding `default` with the cursor at the end). Use an empty initial value (`""`) only when there is genuinely no sensible default (e.g. a new section name). For example, a future account-creation flow that suggests an item or field name must pre-fill that suggestion. This rule does not imply that the removed Claude minting wizard or its `Claude`/`oauth-token` defaults are active.
 
 ### Toasts are state feedback, never action hints
 
@@ -178,36 +176,24 @@ When a feature requires the operator to complete several sequential decisions be
 - The first step in the chain is opened from whatever UI element the operator interacts with (a button, a hint, an auth-tab action). It does not require a CLI flag.
 - The flow lives in the TUI, not in the CLI. The CLI is for scripted or non-interactive invocations. The TUI is for interactive flows.
 
-### Canonical example — Claude token setup flow
+### Historical example — Claude token setup flow
 
-This is **the reference example** for how to design any multi-step TUI flow in jackin❯, and it is **shipped**. Every screen reuses a component from the catalog above; the flow adds **zero new widgets** and only **extends** `op_picker` (`OpPickerMode::Create`). Read this whenever you design a new flow and ask "which existing component is each of my screens?" before writing any code.
+The former console Claude token-generation wizard reused the source picker,
+text input, and 1Password picker. That workspace minting path and its `G generate`
+action were removed during the named-account migration; it is not a shipped
+setup path. [Account Credential Transport](/reference/capsule/token-orchestrator/)
+records the current ownership boundary.
 
-The flow configures a Claude OAuth token, launched entirely from inside `jackin console` — the operator never leaves the console and never runs a CLI command.
+Current account forms register an existing OAuth token or profile and assign
+accounts separately to workspaces. Secret-reference selection and the shared
+1Password picker remain reusable components. The shared picker may expose
+creation stages; their presence does not implement Claude token minting.
 
-**Scope comes from the auth form, not a picker step.** The operator chooses *what* the token wires by opening the right Claude `oauth_token` auth form: the workspace-level form (all roles), a per-role override form (reached via `+ Override for a role`), or the global form in Settings. There is deliberately no scope/role picker *inside* the generate flow — the auth tab's existing structure is the scope chooser, so the flow needs no `scope_picker`/`role_picker` step.
-
-**Entry point — `G` on the Edit auth dialog.** With the form on `Mode: oauth_token`, `G` (shown in the footer as `G generate`) starts the flow. The screens, each mapped to the component it reuses:
-
-| Step | Screen | Component reused | Notes |
-|---|---|---|---|
-| 1 | **Source**: `Plain text` / `1Password` | Source picker (`source_picker.rs`) | The same two-button dialog the provide flow uses. |
-| 2a *(if "Plain text")* | *(no screen)* | — | The token is minted by `claude setup-token` and stored as a literal at the scope; nothing is typed. |
-| 2b *(if "1Password")* | **Account → Vault → Item → [Section →] Field** drill-down | `op_picker` (Create mode) | The existing `op_picker`, reused for the drill-down; `OpPickerMode::Create` adds the Section stage + creation sentinels below. |
-
-After the source/location choice, the console suspends, runs the `claude setup-token` OAuth capture, writes the minted token, and resumes — the storage location was already chosen, so the mint is the only blocking step.
-
-**Step 2b in detail — extending `op_picker`, not copying it.** The 1Password branch reuses the existing `op_picker` Account, Vault, and Item screens exactly as they render today. Create mode adds a **Section stage** for an existing item and creation sentinels, each following the `+ Add X` pattern (a `+ ` row at the bottom of the list):
-
-- **Item stage** — a `+ New item` sentinel below the item list. Selecting it opens the **text input box** to name the new item, then names the field — the token is written there.
-- **Section stage** (existing item only) — rows are `(root)` (unsectioned fields), each existing named section, and a `+ New section` sentinel. Picking a section scopes the next screen; `+ New section` opens the **text input box** to name it.
-- **Field stage** (scoped to the chosen section) — the existing fields in that section, plus a `+ New field` sentinel that opens the **text input box** to name the field.
-- Selecting an **existing field** writes the token into that field in-place (overwrite); creation rows write into the chosen section (`(root)` ⇒ unsectioned). Browse mode skips the Section stage and keeps the flat field list with collapsible section headers.
-
-The root console run loop that drives the wizard lives under <RepoFile path="crates/jackin/src/console/adapter/run.rs">crates/jackin/src/console/adapter/run.rs</RepoFile>; it suspends and resumes the terminal while external minting and write validation run through non-TUI services.
-
-Every "create" affordance in this branch is the same `+ ` sentinel row, and every "name it" prompt is the same text input box. Nothing new is drawn.
-
-**Implementation contract.** These sentinels are shipped in `op_picker` behind the opt-in `OpPickerMode::Create` mode parameter that turns the creation rows on; the picker commits an `OpPickerSelection` enum (`Existing` / `NewItem` / `EditItemField`) instead of only the plain `op://` reference string. This capability now lives in the shared <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile> — it MUST NOT be reimplemented by forking `op_picker` into a second module.
+Preserve the wizard composition rules above for future flows. An account-based
+successor for OAuth minting, validated storage, rotation, revocation, expiry
+visibility, and interactive storage selection still needs implementation and
+verification; [Workspace Claude Token Setup](/roadmap/workspace-claude-token-setup/)
+tracks that unfinished outcome.
 
 ### Rich TUI lives in the console; the CLI stays plain CLI
 
@@ -215,6 +201,6 @@ The rich account editor belongs in `jackin console`. It reuses masked text entry
 
 `jackin account add` uses plain prompts or standard input for secret values, and supports explicit secret references for scripting. It never launches another alternate-screen UI. The retired workspace token-generation wizard is no longer an active account setup path.
 
-### Why reusability matters — the design principle behind this flow
+### Why reusability matters — the design principle behind wizard flows
 
 The reason every screen above reuses an existing component is not code economy — it is **operator trust**. When the same meaning is always shown with the same shape, the operator learns the UI once and recognises it everywhere: a two-button dialog always means "pick one of two", a `+ ` row always means "add a new one", the bordered filter list always means "drill down", the input box always means "type a value here". A flow assembled from these known shapes is legible on first sight even though the operator has never seen this particular flow before. A flow that invents new shapes for the same meanings forces the operator to re-learn the UI at every screen and erodes that trust. Consistency in design is not polish; it is the contract that lets the operator predict what each screen does. This is why copy-pasting a component with slightly different look-and-feel is a bug, not a shortcut: it breaks the one-meaning-one-shape contract that makes the whole TUI predictable.

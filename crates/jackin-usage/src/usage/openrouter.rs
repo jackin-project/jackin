@@ -3,18 +3,14 @@
 
 //! `OpenRouter` key/account usage snapshot.
 //!
-//! An ordinary inference key reads `GET {base}/key` (key cap, remaining,
-//! period spend, BYOK attribution, expiry). Account balance reads
-//! `GET {base}/credits` and needs a Management key: its 403 is a typed scope
-//! mismatch that never suppresses the `/key` rows. Model IDs validate against
-//! the public `GET {base}/models` catalog; a stale omission is `Unverified`,
-//! never a rejection. A null key cap means no configured cap, not infinite
-//! credit — no percentage bar is drawn without a matching denominator.
-//!
-//! Completed activity history (`GET {base}/activity`) is Management-key-only.
-//! The current account credential contract supplies an inference key, not a
-//! separate Management key, so history remains explicitly unavailable rather
-//! than being fetched with the wrong scope or inferred from live key usage.
+//! An ordinary inference credential reads only `GET {base}/key`: key cap,
+//! remaining allowance and the account's UTC daily free-model request quota.
+//! Account funds (`/credits`) and completed activity (`/activity`) require a
+//! separately configured Management credential. The current credential
+//! contract supplies only an inference key, so those routes are absent from
+//! this collector and their data remains explicitly unavailable.
+//! A null key cap means no configured cap, never unlimited account funds.
+//! Public model catalog omissions remain unverified rather than rejected.
 
 use super::refresh::{ProviderError, ProviderRateLimit};
 #[cfg_attr(
@@ -23,6 +19,10 @@ use super::refresh::{ProviderError, ProviderRateLimit};
 )]
 use super::*;
 use serde::Deserialize;
+
+#[path = "openrouter_money.rs"]
+mod openrouter_money;
+use openrouter_money::{MoneyField, MoneySum, SignedPolicy, parse_money_field};
 
 pub(crate) const OPENROUTER_DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
 
@@ -48,61 +48,18 @@ pub(crate) fn openrouter_base_url_from(api_url: Option<&str>, base_url: Option<&
 #[derive(Debug, Deserialize, Default)]
 struct OpenRouterKeyData {
     #[serde(default)]
-    usage: Option<f64>,
-    #[serde(default)]
-    usage_daily: Option<f64>,
-    #[serde(default)]
-    usage_weekly: Option<f64>,
-    #[serde(default)]
-    usage_monthly: Option<f64>,
-    /// Null = no configured key cap (never infinite credit).
-    #[serde(default)]
-    limit: Option<f64>,
-    #[serde(default)]
-    limit_remaining: Option<f64>,
-    #[serde(default)]
     is_free_tier: Option<bool>,
+    #[serde(default)]
+    free_model_daily_requests: Option<OpenRouterFreeModelQuota>,
 }
 
+/// The account's free-model daily policy; exempt accounts, endpoints and
+/// BYOK requests are not constrained by this ceiling.
 #[derive(Debug, Deserialize)]
-struct OpenRouterKeyResponse {
-    data: OpenRouterKeyData,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenRouterCreditsData {
-    total_credits: f64,
-    total_usage: f64,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenRouterCreditsResponse {
-    data: OpenRouterCreditsData,
-}
-
-/// Typed `/credits` outcome. A 403 means the ordinary key lacks the Management
-/// scope — the `/key` rows still render.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum OpenRouterCreditsOutcome {
-    Available {
-        spent_cents: i64,
-        ceiling_cents: i64,
-    },
-    ManagementScopeDenied,
-    Unavailable(String),
-}
-
-impl OpenRouterCreditsOutcome {
-    /// Classify a `/credits` HTTP failure without string sniffing at the call
-    /// site: 403 is the management-scope mismatch, anything else stays an
-    /// opaque unavailable state.
-    pub(crate) fn from_http_status(status: u16) -> Self {
-        if status == 403 {
-            Self::ManagementScopeDenied
-        } else {
-            Self::Unavailable(format!("OpenRouter credits HTTP {status}"))
-        }
-    }
+struct OpenRouterFreeModelQuota {
+    used: Option<u64>,
+    limit: Option<u64>,
+    remaining: Option<u64>,
 }
 
 /// Model-ID check against a catalog snapshot. Stale omission is `Unverified`,
@@ -140,60 +97,78 @@ pub(crate) fn check_openrouter_model_in_catalog(
     }
 }
 
-/// Exact dollars-to-cents conversion behind every `OpenRouter` money row.
-/// Non-finite or out-of-range values are invalid (`None`), never clamped.
-fn openrouter_cents(dollars: f64) -> Option<i64> {
-    if !dollars.is_finite() {
-        return None;
+/// Preserve absent/null while rejecting any present invalid monetary field.
+fn openrouter_money_field(
+    data: &serde_json::Value,
+    field: &str,
+    policy: SignedPolicy,
+) -> Result<MoneyField, String> {
+    let parsed = parse_money_field(data.get(field), policy);
+    if matches!(parsed, MoneyField::Invalid(_)) {
+        // Only locally selected field names appear in this error. Never echo
+        // provider-controlled field names or decimal spellings.
+        return Err("OpenRouter key response contains an invalid monetary field".to_owned());
     }
-    let cents = (dollars * 100.0).round();
-    if !cents.is_finite() || cents.abs() >= 9_007_199_254_740_992.0 {
-        return None;
-    }
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "range-checked below 2^53, exactly representable"
-    )]
-    Some(cents as i64)
+    Ok(parsed)
 }
 
-/// BYOK attribution stays a separate row: the first available BYOK spend field
-/// (monthly, then weekly, daily, plain), or the sum of any other `byok*`
-/// *spend* numerics. The fallback only counts keys that also name usage or
-/// spend — a `byok_limit`/`byok_remaining` cap must never be read as spend.
-/// Never merged into the key usage rows.
-fn openrouter_byok_spend(data: &serde_json::Value) -> Option<i64> {
-    let object = data.as_object()?;
-    for key in [
+fn known_money(field: MoneyField) -> Option<Money> {
+    match field {
+        MoneyField::Known(money) => Some(money),
+        MoneyField::Unknown | MoneyField::Null | MoneyField::Invalid(_) => None,
+    }
+}
+
+/// BYOK attribution stays separate. The first non-null primary spend field
+/// owns attribution; an invalid selected primary never falls through.
+/// Fallback sums are exact and complete, or remain unknown when a component
+/// is null. Cap/remaining fields cannot become spend.
+fn openrouter_byok_spend(data: &serde_json::Value) -> Result<Option<Money>, String> {
+    const PRIMARY: [&str; 4] = [
         "byok_usage_monthly",
         "byok_usage_weekly",
         "byok_usage_daily",
         "byok_usage",
-    ] {
-        if let Some(cents) = object
-            .get(key)
-            .and_then(serde_json::Value::as_f64)
-            .and_then(openrouter_cents)
-            .filter(|cents| *cents >= 0)
-        {
-            return Some(cents);
+    ];
+    let object = data
+        .as_object()
+        .ok_or_else(|| "OpenRouter key response is malformed".to_owned())?;
+    for field in PRIMARY {
+        let money = openrouter_money_field(data, field, SignedPolicy::NonNegative)?;
+        if let Some(money) = known_money(money) {
+            return Ok(Some(money));
         }
     }
-    let mut total: i64 = 0;
-    let mut found = false;
-    for (key, value) in object {
-        let lower = key.to_ascii_lowercase();
-        if lower.contains("byok")
-            && (lower.contains("usage") || lower.contains("spend") || lower.contains("cost"))
-            && let Some(cents) = value.as_f64().and_then(openrouter_cents)
-            && cents >= 0
-            && let Some(sum) = total.checked_add(cents)
+    let mut total = MoneySum::new();
+    let mut incomplete = false;
+    for (field, value) in object {
+        let lower = field.to_ascii_lowercase();
+        if PRIMARY.contains(&field.as_str())
+            || !lower.contains("byok")
+            || !(lower.contains("usage") || lower.contains("spend") || lower.contains("cost"))
+            || lower.contains("limit")
+            || lower.contains("remaining")
         {
-            total = sum;
-            found = true;
+            continue;
+        }
+        match parse_money_field(Some(value), SignedPolicy::NonNegative) {
+            MoneyField::Known(money) => {
+                total.add(&money).map_err(|_| {
+                    "OpenRouter BYOK spend total exceeds accumulator bounds".to_owned()
+                })?;
+            }
+            MoneyField::Unknown | MoneyField::Null => incomplete = true,
+            MoneyField::Invalid(_) => {
+                return Err("OpenRouter BYOK spend contains an invalid monetary field".to_owned());
+            }
         }
     }
-    found.then_some(total)
+    if incomplete {
+        return Ok(None);
+    }
+    total
+        .finish()
+        .map_err(|_| "OpenRouter BYOK spend total is not exactly representable".to_owned())
 }
 
 /// Optional key expiry (`expires_at` as ISO string or epoch number, seconds or
@@ -220,13 +195,31 @@ fn openrouter_key_expiry(data: &serde_json::Value, now: i64) -> Option<String> {
     Some(format!("expires {}", expiry_label(epoch, now)))
 }
 
-/// Optional key-cap reset timestamp (`reset_at`/`resets_at` ISO). Absent on
-/// most keys — the Key Limit row then carries no reset.
-fn openrouter_key_reset(data: &serde_json::Value) -> Option<i64> {
-    data.get("reset_at")
-        .or_else(|| data.get("resets_at"))
-        .and_then(serde_json::Value::as_str)
-        .and_then(parse_iso_epoch)
+/// Official recurring key caps reset at UTC midnight; weeks begin Monday.
+/// Null or an unknown reset policy cannot supply a reset timestamp.
+fn openrouter_key_reset(data: &serde_json::Value, now: i64) -> Option<i64> {
+    use chrono::Datelike as _;
+    let moment = chrono::DateTime::from_timestamp(now, 0)?;
+    let date = moment.date_naive();
+    let next = match data
+        .get("limit_reset")
+        .and_then(serde_json::Value::as_str)?
+    {
+        "daily" => date.checked_add_days(chrono::Days::new(1))?,
+        "weekly" => date.checked_add_days(chrono::Days::new(u64::from(
+            7 - date.weekday().num_days_from_monday(),
+        )))?,
+        "monthly" => {
+            let (year, month) = if date.month() == 12 {
+                (date.year().checked_add(1)?, 1)
+            } else {
+                (date.year(), date.month() + 1)
+            };
+            chrono::NaiveDate::from_ymd_opt(year, month, 1)?
+        }
+        _ => return None,
+    };
+    Some(next.and_hms_opt(0, 0, 0)?.and_utc().timestamp())
 }
 
 #[derive(Debug)]
@@ -246,68 +239,115 @@ pub(crate) fn parse_openrouter_key_usage(
     let key: OpenRouterKeyData = serde_json::from_value(data.clone())
         .map_err(|_| "OpenRouter key response is malformed".to_owned())?;
     let mut buckets = Vec::new();
-    // Key Limit meter: coherent cap/remaining only. A null (or non-positive)
-    // cap means no configured cap — no row at all, never an infinite bar.
-    if let Some(cap) = key.limit.and_then(openrouter_cents).filter(|cap| *cap > 0) {
-        let remaining = key
-            .limit_remaining
-            .and_then(openrouter_cents)
-            .filter(|remaining| *remaining >= 0);
-        let used = remaining.map(|remaining| cap.saturating_sub(remaining).max(0));
-        let remaining_percent = remaining.map(|remaining| {
-            #[expect(clippy::cast_precision_loss, reason = "cents magnitudes fit f64")]
-            let fraction = (remaining.min(cap) as f64) / (cap as f64);
-            #[expect(clippy::cast_sign_loss, reason = "clamped 0.0..=100.0 before cast")]
-            {
-                (fraction * 100.0).round().clamp(0.0, 100.0) as u8
+    // Validate every official monetary field, including usage when period
+    // rows are unavailable. Malformed money must not become a fresh omission.
+    let cap = openrouter_money_field(&data, "limit", SignedPolicy::NonNegative)?;
+    let remaining = openrouter_money_field(&data, "limit_remaining", SignedPolicy::Remaining)?;
+    let _usage = openrouter_money_field(&data, "usage", SignedPolicy::NonNegative)?;
+    let daily_spend = openrouter_money_field(&data, "usage_daily", SignedPolicy::NonNegative)?;
+    let weekly_spend = openrouter_money_field(&data, "usage_weekly", SignedPolicy::NonNegative)?;
+    let monthly_spend = openrouter_money_field(&data, "usage_monthly", SignedPolicy::NonNegative)?;
+    let byok_spend = openrouter_byok_spend(&data)?;
+    // A known remaining allowance survives independently of cap availability.
+    // Zero is a configured cap; unknown denominators supply no percentage.
+    let cap = known_money(cap);
+    let remaining = known_money(remaining);
+    if cap.is_some() || remaining.is_some() {
+        let used = match (&cap, &remaining) {
+            (Some(cap), Some(remaining)) => {
+                let used = cap.checked_sub(remaining).ok_or_else(|| {
+                    "OpenRouter key usage difference is not exactly representable".to_owned()
+                })?;
+                if used.amount_minor < 0 {
+                    return Err("OpenRouter key remaining allowance exceeds its cap".to_owned());
+                }
+                Some(used)
             }
+            _ => None,
+        };
+        let remaining_percent = cap.as_ref().and_then(|cap| {
+            remaining
+                .as_ref()
+                .and_then(|remaining| remaining.remaining_percent_of(cap))
         });
         let mut view = timed_bucket(
             "Key Limit",
-            used.map(format_cents),
-            Some(format_cents(cap)),
+            used.as_ref().map(ToString::to_string),
+            Some(
+                cap.as_ref()
+                    .map_or_else(|| "Unknown".to_owned(), ToString::to_string),
+            ),
             remaining_percent,
-            openrouter_key_reset(&data),
+            openrouter_key_reset(&data, now),
             now,
             openrouter_key_expiry(&data, now).as_deref(),
             UsageSnapshotStatus::Fresh,
         );
-        view.used_money = used.map(|used| Money::new(used, "USD", 2));
-        view.limit_money = Some(Money::new(cap, "USD", 2));
+        view.used_money = used;
+        view.limit_money = cap;
+        view.remaining_money = remaining;
         view.status_slot = Some(StatusSlot::Spend);
+        buckets.push(view);
+    }
+    if let Some(daily) = key.free_model_daily_requests {
+        let counts = jackin_protocol::control::CountQuota {
+            used: daily.used,
+            limit: daily.limit,
+            remaining: daily.remaining,
+            unit: jackin_protocol::control::CountQuotaUnit::Requests,
+            period: jackin_protocol::control::CountQuotaPeriod::UtcDaily,
+            provenance: jackin_protocol::control::CountQuotaProvenance::ProviderReported,
+        };
+        let remaining_percent = counts.remaining_percent();
+        // Official contract: this account counter resets at UTC midnight.
+        let reset_at = now
+            .div_euclid(86_400)
+            .checked_add(1)
+            .and_then(|day| day.checked_mul(86_400));
+        let mut view = timed_bucket(
+            "Free model daily requests",
+            daily.used.map(|used| format!("{used} requests")),
+            daily.limit.map(|limit| format!("{limit} requests")),
+            remaining_percent,
+            reset_at,
+            now,
+            Some("account tier policy; exempt accounts, endpoints and BYOK are not gated"),
+            UsageSnapshotStatus::Fresh,
+        );
+        view.count_quota = Some(counts);
         buckets.push(view);
     }
     // Period spend rows carry no denominator, so they never draw percentages.
     for (label, spend) in [
-        ("Spent today", key.usage_daily),
-        ("Spent this week", key.usage_weekly),
-        ("Spent this month", key.usage_monthly),
+        ("Spent today", daily_spend),
+        ("Spent this week", weekly_spend),
+        ("Spent this month", monthly_spend),
     ] {
-        if let Some(cents) = spend.and_then(openrouter_cents).filter(|cents| *cents >= 0) {
+        if let Some(money) = known_money(spend) {
             let mut view = bucket(
                 label,
-                Some(format_cents(cents)),
+                Some(money.to_string()),
                 None,
                 None,
                 None,
                 None,
                 UsageSnapshotStatus::Fresh,
             );
-            view.used_money = Some(Money::new(cents, "USD", 2));
+            view.used_money = Some(money);
             buckets.push(view);
         }
     }
-    if let Some(byok) = openrouter_byok_spend(&data) {
+    if let Some(byok) = byok_spend {
         let mut view = bucket(
             "BYOK spend",
-            Some(format_cents(byok)),
+            Some(byok.to_string()),
             None,
             None,
             None,
             Some("billed to your own key"),
             UsageSnapshotStatus::Fresh,
         );
-        view.used_money = Some(Money::new(byok, "USD", 2));
+        view.used_money = Some(byok);
         buckets.push(view);
     }
     // Without a cap the monthly spend row feeds the status-bar money headline.
@@ -330,59 +370,6 @@ pub(crate) fn parse_openrouter_key_usage(
     })
 }
 
-pub(crate) fn parse_openrouter_credits(
-    value: serde_json::Value,
-) -> Result<OpenRouterCreditsOutcome, String> {
-    let response: OpenRouterCreditsResponse = serde_json::from_value(value)
-        .map_err(|_| "OpenRouter credits response is malformed".to_owned())?;
-    let ceiling = openrouter_cents(response.data.total_credits)
-        .filter(|ceiling| *ceiling >= 0)
-        .ok_or_else(|| "OpenRouter total credits are invalid".to_owned())?;
-    let spent = openrouter_cents(response.data.total_usage)
-        .filter(|spent| *spent >= 0)
-        .ok_or_else(|| "OpenRouter total usage is invalid".to_owned())?;
-    Ok(OpenRouterCreditsOutcome::Available {
-        spent_cents: spent,
-        ceiling_cents: ceiling,
-    })
-}
-
-/// Account-credits row: the meter shows remaining balance, while the spent
-/// fields retain the provider's `total_usage`. A real zero balance renders as
-/// `$0` remaining (never "No data"). The percentage meter exists only when the
-/// ceiling is positive.
-pub(crate) fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) -> QuotaBucketView {
-    let balance = ceiling_cents.saturating_sub(spent_cents);
-    let overage = ceiling_cents > 0 && spent_cents > ceiling_cents;
-    let remaining_percent = (ceiling_cents > 0 && !overage).then(|| {
-        #[expect(clippy::cast_precision_loss, reason = "cents magnitudes fit f64")]
-        let fraction = (balance.max(0).min(ceiling_cents) as f64) / (ceiling_cents as f64);
-        #[expect(clippy::cast_sign_loss, reason = "clamped 0.0..=100.0 before cast")]
-        {
-            (fraction * 100.0).round().clamp(0.0, 100.0) as u8
-        }
-    });
-    let mut view = bucket(
-        "Account credits",
-        Some(format_cents(spent_cents)),
-        Some(format_cents(ceiling_cents)),
-        remaining_percent,
-        None,
-        None,
-        UsageSnapshotStatus::Fresh,
-    );
-    if overage {
-        let raw_used = spent_cents
-            .saturating_mul(100)
-            .checked_div(ceiling_cents)
-            .unwrap_or(i64::MAX);
-        view.used_label = Some(format!("{raw_used}% used"));
-    }
-    view.used_money = Some(Money::new(spent_cents, "USD", 2));
-    view.limit_money = Some(Money::new(ceiling_cents, "USD", 2));
-    view
-}
-
 pub(crate) fn fetch_openrouter_key_usage(
     base_url: &str,
     key: &str,
@@ -402,35 +389,6 @@ fn openrouter_key_error_status(error: &ProviderError) -> UsageSnapshotStatus {
         Some(401) => UsageSnapshotStatus::NeedsLogin,
         _ => UsageSnapshotStatus::Error,
     }
-}
-
-/// `/credits` never fails the snapshot: every outcome (including the typed 403
-/// management-scope mismatch) is a value, so `/key` rows always survive it.
-pub(crate) fn fetch_openrouter_credits(base_url: &str, key: &str) -> OpenRouterCreditsOutcome {
-    provider_request(
-        jackin_telemetry::schema::enums::ProviderName::Openrouter,
-        "GET",
-        "/credits",
-        || {
-            let client = provider_http_client()?;
-            let response = client
-                .get(format!("{base_url}/credits"))
-                .bearer_auth(key)
-                .header(reqwest::header::ACCEPT, "application/json")
-                .send()
-                .map_err(|error| format!("OpenRouter credits request failed: {error}"))?;
-            let status = response.status();
-            if !status.is_success() {
-                return Ok(OpenRouterCreditsOutcome::from_http_status(status.as_u16()));
-            }
-            let value = response
-                .json::<serde_json::Value>()
-                .map_err(|error| format!("OpenRouter credits decode failed: {error}"))?;
-            Ok(parse_openrouter_credits(value)
-                .unwrap_or_else(OpenRouterCreditsOutcome::Unavailable))
-        },
-    )
-    .unwrap_or_else(OpenRouterCreditsOutcome::Unavailable)
 }
 
 /// Catalog validation never errors: any fetch failure degrades to `Unverified`
@@ -548,7 +506,7 @@ where
         });
     let rate_limit = key_error.as_ref().and_then(ProviderError::rate_limit);
     let key_error_message = key_error.as_ref().map(|error| error.message().to_owned());
-    let mut buckets = quota.as_ref().map_or_else(
+    let buckets = quota.as_ref().map_or_else(
         || {
             vec![bucket(
                 "Usage",
@@ -562,25 +520,11 @@ where
         },
         |quota| quota.buckets.clone(),
     );
-    // `/credits` enriches but never suppresses: a Management-scope 403 keeps
-    // the `/key` rows and surfaces as a note.
-    let credits_note =
-        (status == UsageSnapshotStatus::Fresh).then(|| {
-            match fetch_openrouter_credits(base_url, key) {
-                OpenRouterCreditsOutcome::Available {
-                    spent_cents,
-                    ceiling_cents,
-                } => {
-                    buckets.push(openrouter_credits_bucket(spent_cents, ceiling_cents));
-                    None
-                }
-                OpenRouterCreditsOutcome::ManagementScopeDenied => Some(
-                    "OpenRouter account credits need a Management key; showing key usage only"
-                        .to_owned(),
-                ),
-                OpenRouterCreditsOutcome::Unavailable(error) => Some(error),
-            }
-        });
+    // No management authority exists in this API. Removing the management
+    // fetch path makes credential substitution impossible, including retries.
+    let enrichment_note = (status == UsageSnapshotStatus::Fresh).then(|| {
+        "OpenRouter account funds and activity unavailable: a separately configured Management credential is required".to_owned()
+    });
     let view = usage_view(UsageViewInput {
         agent,
         provider: Some("OpenRouter"),
@@ -602,10 +546,14 @@ where
             UsageConfidence::None
         },
         now,
-        last_error: key_error_message.or_else(|| credits_note.flatten()),
+        last_error: key_error_message.or_else(|| enrichment_note),
     });
     (view, rate_limit)
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "openrouter_money_tests.rs"]
+mod money_tests;

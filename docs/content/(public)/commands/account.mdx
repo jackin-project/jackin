@@ -12,7 +12,7 @@ jackin account list
 jackin account scan
 ```
 
-The first start scans all supported agents' default credential locations and nonempty provider API-key environment variables. `scan` repeats discovery and imports newly found sources, including `CLAUDE_CODE_OAUTH_TOKEN` subscription references. Kimi also checks `~/.kimi` when `~/.kimi-code` has no credentials. API-key discovery accepts the supported coding-plan aliases, including `KIMI_CODE_API_KEY`, `Z_AI_API_KEY`, and `MINIMAX_CODING_API_KEY`. Neither command prints credential values. Empty directories and configuration files without credential evidence are not accounts.
+The first start scans all supported agents' default credential locations and nonempty provider API-key environment variables. `scan` repeats discovery and imports newly found sources, including `CLAUDE_CODE_OAUTH_TOKEN` subscription references. Kimi checks the OAuth file selected by `config.toml`'s route under the verified CLI 2.1.1 contract, and also checks `~/.kimi` when `~/.kimi-code` has no credentials. API-key discovery accepts the supported coding-plan aliases, including `KIMI_CODE_API_KEY`, `Z_AI_API_KEY`, and `MINIMAX_CODING_API_KEY`. Neither command prints credential values. Empty directories and configuration files without credential evidence are not accounts.
 
 ## `account add`
 

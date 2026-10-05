@@ -10,6 +10,44 @@
 
 use std::collections::HashMap;
 
+/// Exact opaque identity reported by Docker's `/info` endpoint.
+/// Controller paths and connection endpoints cannot substitute for this ID.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct DaemonServerId(String);
+
+impl DaemonServerId {
+    /// Validate a daemon-reported ID, preserving its exact bytes.
+    pub fn parse(input: &str) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !input.trim().is_empty() && input.len() <= 256 && !input.chars().any(char::is_control),
+            "Docker daemon server ID must be nonblank, at most 256 bytes, and contain no control characters"
+        );
+        Ok(Self(input.to_owned()))
+    }
+
+    /// Borrow the exact identity reported by the daemon.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for DaemonServerId {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(&value)
+    }
+}
+
+impl From<DaemonServerId> for String {
+    fn from(value: DaemonServerId) -> Self {
+        value.0
+    }
+}
+
+
 /// Runtime state of a container as returned by the Docker API.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerState {
@@ -77,11 +115,11 @@ impl ContainerState {
     }
 }
 
-/// Immutable Docker identity captured from one daemon inspection or create.
+/// Full Docker identity captured from one daemon inspection or create.
 ///
-/// Container names are mutable namespace entries. Lifecycle operations must
-/// use this daemon-assigned ID after the name lookup so a replacement with
-/// the same name cannot receive an operation intended for the original.
+/// Container names are mutable. Engine path parameters accept either an ID
+/// or a name, so callers verify the returned ID before each operation and
+/// retain the residual race between verification and a later delete request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerHandle {
     name: String,
@@ -95,7 +133,13 @@ impl ContainerHandle {
         let name = name.into();
         let id = id.into();
         anyhow::ensure!(!name.is_empty(), "Docker container name is empty");
-        anyhow::ensure!(!id.is_empty(), "Docker container ID is empty");
+        anyhow::ensure!(
+            id.len() == 64
+                && id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+            "Docker container ID must be 64 lowercase hexadecimal characters"
+        );
         Ok(Self { name, id })
     }
 
@@ -139,13 +183,68 @@ impl ContainerRow {
     }
 }
 
+/// Named Docker volume metadata. Docker volumes have no immutable daemon ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VolumeRow {
+    /// Docker volume name.
+    pub name: String,
+    /// Ownership metadata returned by the daemon.
+    pub labels: HashMap<String, String>,
+    /// Docker volume driver.
+    pub driver: String,
+}
+
 /// One network row from a list/filter query.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkRow {
+    /// Immutable daemon-assigned Docker network identity.
+    pub id: NetworkId,
     /// Docker network name.
     pub name: String,
     /// Network labels as returned by the daemon.
     pub labels: HashMap<String, String>,
+}
+
+/// Immutable full Docker network ID; names and abbreviated IDs are rejected.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct NetworkId(String);
+
+impl NetworkId {
+    /// Validate a daemon-assigned network ID.
+    pub fn parse(input: &str) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            input.len() == 64 && input.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+            "Docker network ID must be 64 lowercase hexadecimal characters"
+        );
+        Ok(Self(input.to_owned()))
+    }
+
+    /// Borrow the immutable ID for daemon operations.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for NetworkId {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(&value)
+    }
+}
+
+impl From<NetworkId> for String {
+    fn from(value: NetworkId) -> Self {
+        value.0
+    }
+}
+
+impl std::fmt::Display for NetworkId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// Result of attempting to delete an image.
@@ -211,15 +310,23 @@ pub struct ContainerSpec {
 /// Async Docker daemon API seam. Dependency-injected so tests can stub Docker
 /// without a running daemon.
 pub trait DockerApi {
+    /// Return the transport captured by the same constructor as this client.
+    fn controller_endpoint(&self) -> &ControllerEndpoint;
     /// Ping the daemon (`/_ping`).
     async fn ping(&self) -> anyhow::Result<()>;
+    /// Read the current actual server ID from the daemon, without endpoint fallback.
+    async fn daemon_server_id(&self) -> anyhow::Result<DaemonServerId>;
     /// Resolve a container name and capture its immutable daemon ID.
     #[must_use]
     async fn inspect_container_by_name(&self, name: &str) -> ContainerInspection;
     /// Inspect a container by immutable daemon ID.
     #[must_use]
     async fn inspect_container_by_id(&self, container: &ContainerHandle) -> ContainerState;
-    /// Force-remove a container by immutable daemon ID.
+    /// Attest the running init PID for this exact immutable daemon ID.
+    /// Backends lacking a host-visible process proof cannot enable credential relays.
+    async fn container_init_pid_by_id(&self, container: &ContainerHandle) -> anyhow::Result<u32>;
+    /// Force-remove after exact ID preflight. Docker's endpoint is not an
+    /// atomic ID-only delete; callers must retain custody on ambiguity.
     async fn remove_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()>;
     /// List containers matching label filters; `all` includes stopped ones.
     async fn list_containers(
@@ -236,21 +343,33 @@ pub trait DockerApi {
     ) -> anyhow::Result<ContainerHandle>;
     /// Start a previously created container by immutable daemon ID.
     async fn start_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()>;
+    /// Create a named volume and reject returned ownership labels that differ.
+    async fn create_volume(
+        &self,
+        name: &str,
+        labels: HashMap<String, String>,
+    ) -> anyhow::Result<VolumeRow>;
+    /// Inspect named volume metadata; `None` when missing.
+    async fn inspect_volume_by_name(&self, name: &str) -> anyhow::Result<Option<VolumeRow>>;
     /// Remove a named volume.
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()>;
-    /// Create a network with optional labels; `internal` isolates it from the host.
+    /// Create a network and capture its immutable ID; conflicts must fail.
     async fn create_network(
         &self,
         name: &str,
         labels: HashMap<String, String>,
         internal: bool,
-    ) -> anyhow::Result<()>;
-    /// Remove a network by name.
-    async fn remove_network(&self, name: &str) -> anyhow::Result<()>;
+    ) -> anyhow::Result<NetworkId>;
+    /// Address network removal using its captured full daemon ID. Docker's
+    /// endpoint is not an atomic ID-only delete; backends must reject a
+    /// mismatched inspection result.
+    async fn remove_network_by_id(&self, id: &NetworkId) -> anyhow::Result<()>;
     /// List networks matching label filters.
     async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>>;
     /// Inspect a network by name; `None` when missing.
-    async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>>;
+    async fn inspect_network_by_name(&self, name: &str) -> anyhow::Result<Option<NetworkRow>>;
+    /// Inspect the exact immutable network ID; `None` when missing.
+    async fn inspect_network_by_id(&self, id: &NetworkId) -> anyhow::Result<Option<NetworkRow>>;
     /// List local image tags matching a reference filter.
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>>;
     /// Remove an image by name/tag/id.
@@ -274,4 +393,86 @@ pub trait DockerApi {
         container: &ContainerHandle,
         cmd: &[&str],
     ) -> anyhow::Result<String>;
+}
+
+#[cfg(test)]
+mod daemon_server_id_tests {
+    use super::DaemonServerId;
+
+    #[test]
+    fn preserves_exact_opaque_identity() {
+        let raw = " exact/opaque daemon:identity ";
+        assert!(matches!(
+            DaemonServerId::parse(raw),
+            Ok(id)
+                if id.as_str() == raw
+                    && matches!(
+                        serde_json::to_string(&id),
+                        Ok(json)
+                            if matches!(serde_json::from_str::<DaemonServerId>(&json), Ok(round_trip) if round_trip == id)
+                    )
+        ));
+        assert!(DaemonServerId::parse(&"a".repeat(256)).ok().is_some());
+    }
+
+    #[test]
+    fn rejects_missing_blank_control_and_oversized_identity() {
+        for invalid in [
+            "",
+            " ",
+            "\t",
+            "daemon\nidentity",
+            "daemon\0identity",
+            "daemon\u{7f}identity",
+            &"a".repeat(257),
+        ] {
+            assert!(DaemonServerId::parse(invalid).err().is_some());
+            assert!(matches!(
+                serde_json::to_string(invalid),
+                Ok(json) if serde_json::from_str::<DaemonServerId>(&json).err().is_some()
+            ));
+        }
+        assert!(
+            serde_json::from_str::<DaemonServerId>("null")
+                .err()
+                .is_some()
+        );
+    }
+}
+use std::path::PathBuf;
+
+/// Captured controller transport used by this exact Docker client.
+/// Admission must inspect this value instead of resolving environment again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControllerEndpoint {
+    /// Local daemon Unix socket. Read-only binds still permit socket connections.
+    Unix {
+        /// Absolute host socket path supplied to the connector.
+        socket: PathBuf,
+    },
+    /// Network daemon; bind checks alone cannot exclude agent access.
+    Tcp {
+        /// Captured Docker network URI supplied to the connector.
+        authority: String,
+        /// Captured client authentication files when HTTPS is selected.
+        tls: Option<ControllerTlsFiles>,
+    },
+    /// Windows daemon pipe.
+    #[cfg(windows)]
+    NamedPipe {
+        /// Captured pipe URI supplied to the connector.
+        pipe: String,
+    },
+}
+
+/// Captured TLS file paths consumed by the controller connector.
+/// These describe file authority, not immutable credential bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControllerTlsFiles {
+    /// Absolute client private key path.
+    pub key: PathBuf,
+    /// Absolute client certificate path.
+    pub cert: PathBuf,
+    /// Absolute daemon certificate authority path.
+    pub ca: PathBuf,
 }

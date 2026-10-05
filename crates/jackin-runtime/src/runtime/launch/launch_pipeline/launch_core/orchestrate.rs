@@ -159,6 +159,7 @@ where
                 runner,
                 container,
                 None,
+                None,
             )
             .await?;
             admission_lease.ensure_current(paths)?;
@@ -657,6 +658,8 @@ struct PrepareEnvironment<'a, D> {
     docker: &'a D,
     configured: EnvironmentConfigured,
     opts: &'a super::super::super::LoadOptions,
+    image: &'a str,
+    resolved_env: &'a jackin_env::ResolvedEnv,
 }
 
 async fn prewarm_sibling_auth_before_admission(
@@ -667,6 +670,7 @@ async fn prewarm_sibling_auth_before_admission(
     workspace_name: &str,
     role_key: &str,
     agent: jackin_core::Agent,
+    kimi_runtime: Option<&jackin_instance::KimiRuntimeAuthContext>,
 ) -> anyhow::Result<()> {
     let prewarm = super::super::super::SiblingAuthPrewarm {
         manifest,
@@ -674,8 +678,13 @@ async fn prewarm_sibling_auth_before_admission(
         workspace_name,
         role_key,
     };
-    let prewarm =
-        super::super::super::spawn_sibling_auth_prewarm(paths, container_name, &prewarm, agent);
+    let prewarm = super::super::super::spawn_sibling_auth_prewarm(
+        paths,
+        container_name,
+        &prewarm,
+        agent,
+        kimi_runtime,
+    );
     super::super::super::await_sibling_auth_prewarm(prewarm).await
 }
 
@@ -690,6 +699,7 @@ struct RoleStatePreparation {
     agent: jackin_core::Agent,
     model_override: Option<String>,
     effort: Option<jackin_core::ReasoningEffort>,
+    kimi_runtime_auth: Option<jackin_instance::KimiRuntimeAuthContext>,
 }
 
 async fn prepare_role_state(
@@ -706,11 +716,12 @@ async fn prepare_role_state(
         agent,
         model_override,
         effort,
+        kimi_runtime_auth,
     } = input;
     jackin_telemetry::spawn::joined_blocking(move || {
         let bindings =
             super::super::super::capsule_setup::instance_auth_bindings(&config, &instances)?;
-        let mut prepared = RoleState::prepare_for_bindings(
+        let mut prepared = RoleState::prepare_for_bindings_with_kimi_runtime(
             &paths,
             &container_name,
             &manifest,
@@ -718,6 +729,7 @@ async fn prepare_role_state(
             &github,
             &paths.home_dir,
             agent,
+            kimi_runtime_auth.as_ref(),
         )?;
         super::super::super::account_identity::write_account_credentials(
             &prepared.0.root,
@@ -770,6 +782,8 @@ where
         docker,
         configured,
         opts,
+        image,
+        resolved_env,
     } = input;
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Credentials,
@@ -783,21 +797,88 @@ where
     let github_ctx_owned = configured.github_ctx.clone();
     let model_override_owned = opts.model.clone();
     let effort_owned = opts.effort;
-    let provision = resolve_provision_inputs(
+    let provision = match resolve_provision_inputs(
         config,
         configured.workspace_opt.as_ref(),
         role_key,
         agent,
         opts,
-    )?;
+    ) {
+        Ok(provision) => provision,
+        Err(error) => {
+            cleanup.run(docker).await;
+            return Err(error);
+        }
+    };
     let instances = provision.instances;
     let admitted = instances.clone();
     let credentials = provision.credentials;
-    let credential_scope = crate::usage_relay::usage_credential_scope_for_staged_launch(
+    let kimi_runtime_auth = if instances.iter().any(|instance| {
+        instance.agent == jackin_core::Agent::Kimi
+            && config
+                .accounts
+                .get(&instance.account_id)
+                .is_some_and(|account| {
+                    matches!(
+                        &account.credential,
+                        jackin_config::AccountCredential::Profile {
+                            agent: jackin_core::Agent::Kimi,
+                            ..
+                        }
+                    )
+                })
+    }) {
+        let version_label = format!(
+            "{}.{}.version",
+            jackin_image::LABEL_IMAGE_AGENT_VERSION_PREFIX,
+            jackin_core::Agent::Kimi.slug()
+        );
+        let labels = match docker.inspect_image_labels(image).await {
+            Ok(labels) => labels,
+            Err(error) => {
+                cleanup.run(docker).await;
+                return Err(error).context("reading selected Kimi image version label");
+            }
+        };
+        let Some(cli_version) = labels.get(&version_label) else {
+            cleanup.run(docker).await;
+            anyhow::bail!(
+                "selected image {image} has no {version_label} label; Kimi profile auth cannot be bound to a runtime slot"
+            );
+        };
+        let contract_version = labels.get(jackin_image::LABEL_IMAGE_KIMI_AUTH_SLOT_CONTRACT);
+        if contract_version != Some(cli_version) {
+            cleanup.run(docker).await;
+            anyhow::bail!(
+                "selected image {image} has no verified Kimi auth-slot contract for installed release {cli_version}"
+            );
+        }
+        let environment = resolved_env
+            .vars
+            .iter()
+            // Capsule agent launches strip account-owned names before exec;
+            // resolve the slot from that effective per-agent environment.
+            .filter(|(name, _)| !jackin_core::is_account_env(name))
+            .cloned()
+            .collect();
+        Some(jackin_instance::KimiRuntimeAuthContext {
+            cli_version: cli_version.clone(),
+            environment,
+        })
+    } else {
+        None
+    };
+    let mut credential_scope = match crate::usage_relay::usage_credential_scope_for_staged_launch(
         config,
         &instances,
         &credentials,
-    )?;
+    ) {
+        Ok(scope) => scope,
+        Err(error) => {
+            cleanup.run(docker).await;
+            return Err(error);
+        }
+    };
     // Auth prewarm mutates paths that the foreground launch may mount.
     // Complete it before RoleState acquires mount leases.
     if let Err(error) = prewarm_sibling_auth_before_admission(
@@ -808,6 +889,7 @@ where
         &configured.workspace_name_str,
         role_key,
         agent,
+        kimi_runtime_auth.as_ref(),
     )
     .await
     {
@@ -825,6 +907,7 @@ where
         agent,
         model_override: model_override_owned,
         effort: effort_owned,
+        kimi_runtime_auth,
     });
     let mut role_state_future = std::pin::pin!(role_state_future);
     let select_role_state = async {
@@ -845,7 +928,8 @@ where
     } else {
         select_role_state.await
     };
-    let (state, _) = match role_state_result {
+    #[allow(unused_mut)]
+    let (mut state, _) = match role_state_result {
         Ok(prepared) => prepared,
         Err(error) => {
             jackin_diagnostics::active_timing_done(
@@ -862,6 +946,17 @@ where
         "role_state_prepare",
         Some("prepared"),
     );
+    #[cfg(test)]
+    profile_scope_test_hook::apply(&mut state, cleanup);
+    if let Err(error) = crate::usage_relay::merge_usage_profile_scope_for_prepared_launch(
+        config,
+        &admitted,
+        &state,
+        &mut credential_scope,
+    ) {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
     emit_auth_provision_launch_plan(&state, container_name);
     if let Err(error) = seed_codex_project_trust(&state, workspace) {
         cleanup.run(docker).await;
@@ -1105,6 +1200,7 @@ where
 }
 
 struct InitializeLaunch<'a, D> {
+    backend: super::super::super::Backend,
     paths: &'a jackin_core::JackinPaths,
     config: &'a jackin_config::AppConfig,
     selector: &'a jackin_core::RoleSelector,
@@ -1122,10 +1218,86 @@ struct LaunchInitialized {
     dind: String,
     certs_volume: String,
     cleanup: super::super::super::LoadCleanup,
+    shared_docker: SharedDockerInitialization,
     effective_grants: EffectiveGrants,
     resolved_profile: (DockerSecurityProfile, ProfileSource),
     dind_started: bool,
     image_phase: ImagePhaseClassified,
+}
+
+enum SharedDockerInitialization {
+    Docker {
+        custody: std::sync::Arc<super::super::super::launch_dind::SharedDockerCreationCustody>,
+    },
+    AppleSkip,
+}
+
+async fn initialize_shared_docker<D: DockerApi>(
+    backend: super::super::super::Backend,
+    paths: &jackin_core::JackinPaths,
+    docker: &D,
+    container_name: &str,
+    effective_grants: &EffectiveGrants,
+    dind_started: bool,
+) -> anyhow::Result<(
+    SharedDockerInitialization,
+    Option<super::super::super::launch_dind::AdoptedDindSidecar>,
+)> {
+    if backend == super::super::super::Backend::AppleContainer {
+        return Ok((SharedDockerInitialization::AppleSkip, None));
+    }
+    crate::runtime::launch::ensure_controller_transport_supported(docker.controller_endpoint())?;
+    let daemon_server_id = docker.daemon_server_id().await?;
+    let adopted = if dind_started {
+        super::super::super::adopt_prewarmed_dind_sidecar(paths, docker).await
+    } else {
+        None
+    };
+    let shared_custody = if let Some(sidecar) = adopted.as_ref() {
+        let previous = crate::instance::SharedDockerLifetime::load(
+            paths,
+            &daemon_server_id,
+            &sidecar.sidecar.lifetime_owner,
+        )?
+        .context("adopted prewarm has no durable shared resource lifetime")?;
+        anyhow::ensure!(
+            previous.network_id() == Some(&sidecar.sidecar.network_id)
+                && previous.network_name() == Some(sidecar.sidecar.network.as_str())
+                && matches!(
+                    previous.certs_volume(),
+                    crate::instance::SharedCertsVolumeCustody::Owned { .. }
+                )
+                && previous.certs_volume_name() == Some(sidecar.sidecar.certs_volume.as_str())
+                && matches!(previous.dind_container(), crate::instance::SharedContainerCustody::Owned { name, id }
+                if name == &sidecar.sidecar.dind && id == &sidecar.sidecar.dind_id),
+            "adopted prewarm shared resource custody differs from daemon state"
+        );
+        anyhow::ensure!(
+            docker.daemon_server_id().await? == daemon_server_id,
+            "Docker daemon identity changed before shared resource adoption transfer"
+        );
+        let transferred = previous.transfer(paths, container_name)?;
+        let custody = super::super::super::launch_dind::SharedDockerCreationCustody::adopt(
+            paths,
+            transferred,
+        )?;
+        super::super::super::launch_dind::commit_prewarm_state_transfer(paths)?;
+        custody
+    } else {
+        let lifetime = crate::instance::SharedDockerLifetime::fresh(
+            &daemon_server_id,
+            container_name,
+            !crate::runtime::docker_profile::network_disabled(effective_grants),
+            dind_started,
+        )?;
+        super::super::super::launch_dind::SharedDockerCreationCustody::reserve(paths, lifetime)?
+    };
+    Ok((
+        SharedDockerInitialization::Docker {
+            custody: shared_custody,
+        },
+        adopted,
+    ))
 }
 
 async fn initialize_launch<D: DockerApi>(
@@ -1141,8 +1313,9 @@ async fn initialize_launch<D: DockerApi>(
         validated_repo,
         image_decision,
         container_name,
+        backend,
     } = input;
-    let container_id = ContainerId::parse(container_name).context("validating container name")?;
+    ContainerId::parse(container_name).context("validating container name")?;
     let GrantsValidated {
         effective_grants,
         resolved_profile,
@@ -1158,37 +1331,45 @@ async fn initialize_launch<D: DockerApi>(
             role_manifest: &validated_repo.manifest,
         },
     )?;
-    let adopted = if dind_started {
-        super::super::super::adopt_prewarmed_dind_sidecar(paths, docker).await
-    } else {
-        None
-    };
+    let (shared_docker, adopted) = initialize_shared_docker(
+        backend,
+        paths,
+        docker,
+        container_name,
+        &effective_grants,
+        dind_started,
+    )
+    .await?;
+    let dind_started =
+        dind_started && matches!(&shared_docker, SharedDockerInitialization::Docker { .. });
     let adopted_sidecar_was_used = adopted.is_some();
-    let resources = adopted.as_ref().map_or_else(
-        || DockerResources::from_container_id(&container_id),
-        |sidecar| DockerResources {
-            role_container: container_name.to_owned(),
-            dind_container: Some(sidecar.sidecar.dind.clone()),
-            network: sidecar.sidecar.network.clone(),
-            certs_volume: Some(sidecar.sidecar.certs_volume.clone()),
-        },
-    );
-    let network = resources.network;
-    let dind = resources
-        .dind_container
-        .unwrap_or_else(|| crate::instance::naming::dind_container_name(container_name));
-    let certs_volume = resources
-        .certs_volume
-        .unwrap_or_else(|| crate::instance::naming::dind_certs_volume(container_name));
+    let (network, dind, certs_volume) = match &shared_docker {
+        SharedDockerInitialization::AppleSkip => (String::new(), String::new(), String::new()),
+        SharedDockerInitialization::Docker { custody } => {
+            let lifetime = custody.snapshot();
+            let dind = adopted.as_ref().map_or_else(
+                || crate::instance::naming::dind_container_name(container_name),
+                |sidecar| sidecar.sidecar.dind.clone(),
+            );
+            (
+                lifetime.network_name().unwrap_or_default().to_owned(),
+                dind,
+                lifetime.certs_volume_name().unwrap_or_default().to_owned(),
+            )
+        }
+    };
     let cleanup = super::super::super::LoadCleanup::new(
+        paths,
         container_name.to_owned(),
         dind.clone(),
         certs_volume.clone(),
-        network.clone(),
-        paths.jackin_home.join("sockets").join(container_name),
-    );
+    )?;
+    if let SharedDockerInitialization::Docker { custody } = &shared_docker {
+        cleanup.bind_shared_custody(std::sync::Arc::clone(custody));
+    }
     if let Some(sidecar) = adopted.as_ref() {
         cleanup.set_dind_handle(sidecar.dind_handle.clone());
+        cleanup.set_network_id(sidecar.sidecar.network_id.clone());
     }
     cleanup.set_dind_required(adopted_sidecar_was_used || dind_started);
     Ok(LaunchInitialized {
@@ -1197,6 +1378,7 @@ async fn initialize_launch<D: DockerApi>(
         dind,
         certs_volume,
         cleanup,
+        shared_docker,
         effective_grants,
         resolved_profile: (resolved_profile, profile_source),
         dind_started,
@@ -1396,6 +1578,8 @@ where
             docker: launch.docker,
             configured,
             opts: launch.opts,
+            image: &prepared.image,
+            resolved_env: &launch.resolved_env,
         },
         sidecar.as_mut(),
         early_sidecar_result,
@@ -1547,6 +1731,15 @@ where
     execute_active_launch(launch, prepared, workspace).await
 }
 
+fn workspace_dirty_exit_policy(
+    config: &jackin_config::AppConfig,
+    workspace_name: Option<&WorkspaceName>,
+) -> jackin_config::DirtyExitPolicy {
+    config.resolve_dirty_exit_policy(
+        workspace_name.and_then(|name| config.workspaces.get(name.as_str())),
+    )
+}
+
 async fn materialize_workspace_phase<D, R, S>(
     input: MaterializeWorkspace<'_, D, R>,
     mut sidecar: Pin<&mut S>,
@@ -1681,8 +1874,7 @@ where
         crate::runtime::progress::LaunchStage::Workspace,
         "materialized",
     );
-    let dirty_exit_policy =
-        config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
+    let dirty_exit_policy = workspace_dirty_exit_policy(config, environment.workspace_opt.as_ref());
     let mut launch_config = workspace_launch_config(
         config,
         selector,
@@ -1808,6 +2000,9 @@ where
         opts.role_branch.as_deref(),
     );
     let role_handle_slot = cleanup.role_handle_slot();
+    let shared_custody = cleanup
+        .shared_custody_handle()
+        .context("Docker launch has no durable shared resource custody")?;
     let ownership = super::super::super::launch_runtime::DockerLaunchOwnership {
         manifest: std::sync::Mutex::new(&mut instance_manifest),
         resources: DockerResources {
@@ -1821,12 +2016,14 @@ where
             .then(|| certs_volume.to_owned()),
         },
         dind_handle_slot: cleanup.dind_handle_slot(),
+        network_id_slot: cleanup.network_id_slot(),
         paths,
         state_dir: &container_state,
     };
     let ctx = super::super::super::LaunchContext {
         container_name,
         ownership: &ownership,
+        shared_custody: &shared_custody,
         role_handle_slot: &role_handle_slot,
         image: &image,
         network,
@@ -1934,6 +2131,7 @@ where
         ..
     } = ctx;
     let initialized = initialize_launch(InitializeLaunch {
+        backend,
         paths,
         config,
         selector,
@@ -1992,6 +2190,13 @@ where
     let sidecar_certs_volume = launch.initialized.certs_volume.clone();
     let sidecar_dind_grant = launch.initialized.effective_grants.dind;
     let sidecar_dind_handle_slot = launch.initialized.cleanup.dind_handle_slot();
+    let sidecar_network_id_slot = launch.initialized.cleanup.network_id_slot();
+    let sidecar_shared_docker = match &launch.initialized.shared_docker {
+        SharedDockerInitialization::Docker { custody } => SharedDockerInitialization::Docker {
+            custody: std::sync::Arc::clone(custody),
+        },
+        SharedDockerInitialization::AppleSkip => SharedDockerInitialization::AppleSkip,
+    };
     let sidecar_network_disabled =
         crate::runtime::docker_profile::network_disabled(&launch.initialized.effective_grants);
     let role_network_internal = crate::runtime::docker_profile::role_network_internal(
@@ -2013,6 +2218,10 @@ where
     }
     let docker = launch.docker;
     let sidecar = async move {
+        let sidecar_shared_custody = match sidecar_shared_docker {
+            SharedDockerInitialization::AppleSkip => return Ok(()),
+            SharedDockerInitialization::Docker { custody } => custody,
+        };
         if adopted_sidecar_was_used {
             Ok(())
         } else if dind_started {
@@ -2023,6 +2232,8 @@ where
                 &sidecar_certs_volume,
                 sidecar_dind_grant,
                 sidecar_dind_handle_slot,
+                sidecar_network_id_slot,
+                sidecar_shared_custody,
                 docker,
             )
             .await
@@ -2033,6 +2244,8 @@ where
                 &sidecar_container,
                 &sidecar_network,
                 role_network_internal,
+                sidecar_network_id_slot,
+                sidecar_shared_custody,
                 docker,
             )
             .await
@@ -2040,6 +2253,45 @@ where
     };
     let mut sidecar = std::pin::pin!(sidecar);
     run_active_launch(launch, sidecar.as_mut(), sidecar_required).await
+}
+
+#[cfg(test)]
+pub(in crate::runtime::launch::launch_pipeline) mod profile_scope_test_hook {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
+
+    type Hook =
+        Box<dyn FnOnce(&mut super::RoleState, &super::super::super::super::LoadCleanup) + Send>;
+
+    fn hooks() -> &'static Mutex<BTreeMap<PathBuf, Hook>> {
+        static HOOKS: OnceLock<Mutex<BTreeMap<PathBuf, Hook>>> = OnceLock::new();
+        HOOKS.get_or_init(|| Mutex::new(BTreeMap::new()))
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct Guard(PathBuf);
+
+    pub(crate) fn register(root: PathBuf, hook: Hook) -> Guard {
+        assert!(hooks().lock().unwrap().insert(root.clone(), hook).is_none());
+        Guard(root)
+    }
+
+    pub(super) fn apply(
+        state: &mut super::RoleState,
+        cleanup: &super::super::super::super::LoadCleanup,
+    ) {
+        let hook = hooks().lock().unwrap().remove(&state.root);
+        if let Some(hook) = hook {
+            hook(state, cleanup);
+        }
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            hooks().lock().unwrap().remove(&self.0);
+        }
+    }
 }
 
 #[cfg(test)]

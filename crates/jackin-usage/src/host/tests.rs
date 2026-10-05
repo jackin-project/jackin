@@ -9,6 +9,7 @@ use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
@@ -23,7 +24,9 @@ fn open_runtime(dir: &Path) -> HostUsageRuntime {
 }
 
 fn codex_fixture_view() -> FocusedUsageView {
-    FocusedUsageView {
+    let mut view = FocusedUsageView {
+        canonical_identity: None,
+        account_identity: None,
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("Codex".to_owned()),
         account: FocusedAccountHeader {
@@ -35,6 +38,7 @@ fn codex_fixture_view() -> FocusedUsageView {
         },
         buckets: vec![
             QuotaBucketView {
+                count_quota: None,
                 label: "Session".to_owned(),
                 used_label: Some("63% used".to_owned()),
                 limit_label: Some("100%".to_owned()),
@@ -46,9 +50,11 @@ fn codex_fixture_view() -> FocusedUsageView {
                 status: UsageSnapshotStatus::Fresh,
                 used_money: None,
                 limit_money: None,
+                remaining_money: None,
                 severity: UsageSeverity::Normal,
             },
             QuotaBucketView {
+                count_quota: None,
                 label: "Weekly".to_owned(),
                 used_label: Some("40% used".to_owned()),
                 limit_label: Some("100%".to_owned()),
@@ -60,6 +66,7 @@ fn codex_fixture_view() -> FocusedUsageView {
                 status: UsageSnapshotStatus::Fresh,
                 used_money: None,
                 limit_money: None,
+                remaining_money: None,
                 severity: UsageSeverity::Normal,
             },
         ],
@@ -71,16 +78,32 @@ fn codex_fixture_view() -> FocusedUsageView {
         status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
         tabs: Vec::new(),
         last_error: None,
-    }
+    };
+    bind_fixture_identity(&mut view, HostSurfaceId::Codex, "fixture-codex");
+    view
+}
+
+fn bind_fixture_identity(view: &mut FocusedUsageView, surface: HostSurfaceId, id: &str) {
+    let identity = CanonicalAccountIdentity {
+        surface,
+        subject: CanonicalAccountSubject::ProviderId(id.to_owned()),
+    };
+    view.canonical_identity = Some(identity.protocol_identity());
+    view.account_identity = Some(jackin_protocol::control::UsageAccountIdentity {
+        account_id: format!("fixture-route-{id}"),
+        surface_id: surface.id().to_owned(),
+        source_revision: None,
+    });
 }
 
 fn canonical_discovered_account(
     surface: HostSurfaceId,
     account_label: &str,
+    provider_id: &str,
 ) -> DiscoveredAccountDescriptor {
     let identity = CanonicalAccountIdentity {
         surface,
-        subject: CanonicalAccountSubject::ProviderStableHandle(account_label.to_owned()),
+        subject: CanonicalAccountSubject::ProviderId(provider_id.to_owned()),
     };
     DiscoveredAccountDescriptor {
         surface_id: surface.id().to_owned(),
@@ -98,15 +121,17 @@ fn canonical_projection_uses_current_membership_provider_names_and_rust_ranks() 
     let mut runtime = open_runtime(dir.path());
     let mut zulu = codex_fixture_view();
     zulu.account.account_label = "zulu@example.test".to_owned();
+    bind_fixture_identity(&mut zulu, HostSurfaceId::Codex, "fixture-zulu");
     zulu.status = UsageSnapshotStatus::Stale;
     zulu.buckets
         .iter_mut()
         .for_each(|bucket| bucket.status = UsageSnapshotStatus::Stale);
     let mut alpha = codex_fixture_view();
     alpha.account.account_label = "Alpha@example.test".to_owned();
+    bind_fixture_identity(&mut alpha, HostSurfaceId::Codex, "fixture-alpha");
     alpha.buckets[0].severity = UsageSeverity::Danger;
-    let zulu_account = canonical_discovered_account(HostSurfaceId::Codex, "zulu@example.test");
-    let alpha_account = canonical_discovered_account(HostSurfaceId::Codex, "Alpha@example.test");
+    let zulu_account = canonical_discovered_account(HostSurfaceId::Codex, "zulu@example.test", "fixture-zulu");
+    let alpha_account = canonical_discovered_account(HostSurfaceId::Codex, "Alpha@example.test", "fixture-alpha");
     runtime.discovered_views.insert(
         (HostSurfaceId::Codex, zulu_account.account_key.clone()),
         zulu,
@@ -143,7 +168,7 @@ fn canonical_projection_uses_current_membership_provider_names_and_rust_ranks() 
     assert_eq!(projection.providers[0].accounts[0].windows[0].rank, 0);
     assert_eq!(
         projection.providers[0].accounts[1].freshness.phase,
-        jackin_protocol::usage_broker::UsageFreshnessPhaseV1::Stale
+        jackin_protocol::usage_broker::UsageFreshnessPhaseV2::Stale
     );
     assert_eq!(projection.providers[0].accounts[1].windows.len(), 2);
 
@@ -184,14 +209,17 @@ fn canonical_projection_keeps_unresolved_capability_out_of_account_rows() {
             source_id: "source-0001".to_owned(),
             capability_id: "opaque-capability".to_owned(),
             provenance: vec!["workspace sample".to_owned()],
+            configured_account_ids: BTreeSet::new(),
         }],
         bindings: vec![discovery::ValidatedCredentialBinding {
+            profile_material: None,
             surface: HostSurfaceId::Codex,
             identity: None,
             source_id: "source-0001".to_owned(),
             capability_id: "opaque-capability".to_owned(),
             credential_revision: "credential-revision".to_owned(),
             provenance: std::collections::BTreeSet::from(["workspace sample".to_owned()]),
+            configured_account_ids: BTreeSet::new(),
             source: discovery::ValidatedCredentialSource::Capability,
         }],
     });
@@ -344,11 +372,13 @@ fn snapshot_surfaces_discovery_diagnostic_instead_of_refreshing() {
             UsageDiscoveryDiagnostic {
                 surface_id: Some("claude".to_owned()),
                 scope_label: "account claude".to_owned(),
+                configured_account_ids: BTreeSet::new(),
                 issue: UsageDiscoveryIssue::CredentialMalformed,
             },
             UsageDiscoveryDiagnostic {
                 surface_id: Some("kimi".to_owned()),
                 scope_label: "account kimi".to_owned(),
+                configured_account_ids: BTreeSet::new(),
                 issue: UsageDiscoveryIssue::CredentialMissing,
             },
         ],
@@ -374,7 +404,7 @@ fn snapshot_surfaces_discovery_diagnostic_instead_of_refreshing() {
 }
 
 #[test]
-fn disable_surface_removes_from_list_and_blocks_snapshot() {
+fn disabled_surface_keeps_cached_detail_and_excludes_compact_label() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut runtime = open_runtime(dir.path());
     runtime.set_enabled("claude", false).expect("disable");
@@ -384,7 +414,7 @@ fn disable_surface_removes_from_list_and_blocks_snapshot() {
         .find(|row| row.id == "claude")
         .expect("claude row");
     assert!(!claude.enabled);
-    drop(runtime.snapshot("claude").unwrap_err());
+    assert!(runtime.snapshot("claude").expect("disabled cached detail remains readable").is_refreshing_placeholder());
     assert_eq!(runtime.status_bar_label("claude").expect("label"), None);
 }
 
@@ -434,6 +464,7 @@ fn inject_remaining_at(
         "Weekly"
     };
     view.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: label.to_owned(),
         used_label: Some(format!("{}% used", 100u8.saturating_sub(remaining))),
         limit_label: Some("100%".to_owned()),
@@ -445,6 +476,7 @@ fn inject_remaining_at(
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }];
     runtime.inject_snapshot(surface_id, view).expect("inject");
@@ -464,6 +496,7 @@ fn inject_dual_remaining(
     view.status_bar_label = format!("{session_remaining}% left");
     view.buckets = vec![
         QuotaBucketView {
+            count_quota: None,
             label: "Session".to_owned(),
             used_label: Some(format!("{}% used", 100u8.saturating_sub(session_remaining))),
             limit_label: Some("100%".to_owned()),
@@ -475,9 +508,11 @@ fn inject_dual_remaining(
             status: UsageSnapshotStatus::Fresh,
             used_money: None,
             limit_money: None,
+            remaining_money: None,
             severity: UsageSeverity::Normal,
         },
         QuotaBucketView {
+            count_quota: None,
             label: "Weekly".to_owned(),
             used_label: Some(format!("{}% used", 100u8.saturating_sub(weekly_remaining))),
             limit_label: Some("100%".to_owned()),
@@ -489,6 +524,7 @@ fn inject_dual_remaining(
             status: UsageSnapshotStatus::Fresh,
             used_money: None,
             limit_money: None,
+            remaining_money: None,
             severity: UsageSeverity::Normal,
         },
     ];
@@ -579,6 +615,7 @@ fn money_bucket_preserved_in_host_snapshot() {
     view.confidence = UsageConfidence::Authoritative;
     view.status_bar_label = "Session 10% · SGD 78 of 260".to_owned();
     view.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Spend".to_owned(),
         used_label: Some("SGD 78".to_owned()),
         limit_label: Some("SGD 260".to_owned()),
@@ -590,6 +627,7 @@ fn money_bucket_preserved_in_host_snapshot() {
         status: UsageSnapshotStatus::Fresh,
         used_money: Some(Money::new(7800, "SGD", 2)),
         limit_money: Some(Money::new(26_000, "SGD", 2)),
+        remaining_money: None,
         severity: UsageSeverity::Warn,
     }];
     runtime.inject_snapshot("claude", view).expect("inject");
@@ -892,6 +930,7 @@ fn compact_depleted_with_and_without_resets_at() {
     view.confidence = UsageConfidence::Authoritative;
     let future = chrono::Utc::now().timestamp() + 4_860; // 1h 21m
     view.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Session".to_owned(),
         used_label: Some("100% used".to_owned()),
         limit_label: Some("100%".to_owned()),
@@ -903,6 +942,7 @@ fn compact_depleted_with_and_without_resets_at() {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Danger,
     }];
     runtime.inject_snapshot("claude", view).expect("inject");
@@ -942,6 +982,7 @@ fn overview_rows_numeric_and_status_word() {
     named.confidence = UsageConfidence::Authoritative;
     named.account.provider_label = "OpenAI / Codex".to_owned();
     named.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Fable".to_owned(),
         used_label: Some("32% used".to_owned()),
         limit_label: Some("100%".to_owned()),
@@ -953,6 +994,7 @@ fn overview_rows_numeric_and_status_word() {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Warn,
     }];
     runtime.inject_snapshot("codex", named).expect("inject");
@@ -1038,9 +1080,11 @@ fn multi_account_list_select_and_snapshot() {
     account_a.confidence = UsageConfidence::Authoritative;
     account_a.account.provider_label = "Anthropic / Claude".to_owned();
     account_a.account.account_label = "personal@example.com".to_owned();
+    bind_fixture_identity(&mut account_a, HostSurfaceId::Claude, "fixture-personal-claude");
     account_a.account.plan_label = Some("Max".to_owned());
     account_a.status_bar_label = "50% left".to_owned();
     account_a.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Session".to_owned(),
         used_label: Some("50% used".to_owned()),
         limit_label: Some("100%".to_owned()),
@@ -1052,6 +1096,7 @@ fn multi_account_list_select_and_snapshot() {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }];
     let key_a = account_key_for_view(&account_a).expect("canonical key A");
@@ -1060,6 +1105,7 @@ fn multi_account_list_select_and_snapshot() {
 
     let mut account_b = account_a.clone();
     account_b.account.account_label = "work@company.com".to_owned();
+    bind_fixture_identity(&mut account_b, HostSurfaceId::Claude, "fixture-work-claude");
     account_b.account.plan_label = Some("Team".to_owned());
     account_b.status_bar_label = "20% left".to_owned();
     account_b.buckets[0].remaining_percent = Some(20);
@@ -1093,6 +1139,7 @@ fn multi_account_list_select_and_snapshot() {
         accounts: vec![canonical_discovered_account(
             HostSurfaceId::Claude,
             "work@company.com",
+            "fixture-work-claude",
         )],
         diagnostics: Vec::new(),
         candidates: Vec::new(),
@@ -1105,8 +1152,11 @@ fn multi_account_list_select_and_snapshot() {
         Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
     );
     assert_ne!(unavailable.account.account_label, "work@company.com");
-    let persisted = accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()));
-    assert_eq!(persisted.get("claude"), Some(&key_a));
+    let (persisted, migrated) =
+        accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()))
+            .expect("persisted selection");
+    assert!(!migrated);
+    assert_eq!(persisted.selected.get("claude"), Some(&key_a));
 
     let glance = runtime
         .provider_glance_rows()
@@ -1146,8 +1196,8 @@ fn multi_account_list_select_and_snapshot() {
     runtime.discovery = Some(ValidatedUsageDiscovery {
         config_generation: Some("a-and-b-generation".to_owned()),
         accounts: vec![
-            canonical_discovered_account(HostSurfaceId::Claude, "personal@example.com"),
-            canonical_discovered_account(HostSurfaceId::Claude, "work@company.com"),
+            canonical_discovered_account(HostSurfaceId::Claude, "personal@example.com", "fixture-personal-claude"),
+            canonical_discovered_account(HostSurfaceId::Claude, "work@company.com", "fixture-work-claude"),
         ],
         diagnostics: Vec::new(),
         candidates: Vec::new(),
@@ -1171,7 +1221,7 @@ fn removed_last_selected_account_keeps_unavailable_provider_and_restores_exact_k
         let dir = tempfile::tempdir().expect("tempdir");
         let mut runtime = open_runtime(dir.path());
         let view = codex_fixture_view();
-        let account = canonical_discovered_account(HostSurfaceId::Codex, "codex@example.com");
+        let account = canonical_discovered_account(HostSurfaceId::Codex, "codex@example.com", "fixture-codex");
         let key = account.account_key.clone();
         runtime
             .inject_snapshot("codex", view.clone())
@@ -1242,6 +1292,9 @@ fn removed_last_selected_account_keeps_unavailable_provider_and_restores_exact_k
         );
         assert_eq!(
             accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()))
+                .expect("persisted selection")
+                .0
+                .selected
                 .get("codex"),
             Some(&key)
         );
@@ -1310,6 +1363,7 @@ fn canonical_identity_domain_separates_evidence_and_normalizes_stable_handles() 
     uppercase.account.provider_label = "OpenAI".to_owned();
     uppercase.account.account_label = " Person@Example.Test ".to_owned();
     uppercase.confidence = UsageConfidence::Authoritative;
+    uppercase.canonical_identity = Some(stable_handle.protocol_identity());
     let mut lowercase = uppercase.clone();
     lowercase.account.account_label = "person@example.test".to_owned();
     assert_eq!(
@@ -1359,6 +1413,7 @@ fn estimate_caption_variants() {
 
 fn glance_weekly_bucket(remaining: u8) -> QuotaBucketView {
     QuotaBucketView {
+        count_quota: None,
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
@@ -1370,6 +1425,7 @@ fn glance_weekly_bucket(remaining: u8) -> QuotaBucketView {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }
 }
@@ -1389,7 +1445,9 @@ fn glance_view(
     buckets: Vec<QuotaBucketView>,
     status: UsageSnapshotStatus,
 ) -> FocusedUsageView {
-    FocusedUsageView {
+    let mut view = FocusedUsageView {
+        canonical_identity: None,
+        account_identity: None,
         focused_agent: None,
         focused_provider: Some(provider_label.to_owned()),
         account: FocusedAccountHeader {
@@ -1408,7 +1466,11 @@ fn glance_view(
         status_bar_label: String::new(),
         tabs: Vec::new(),
         last_error: None,
+    };
+    if let Some(surface) = HostSurfaceId::from_provider_alias(provider_label) {
+        bind_fixture_identity(&mut view, surface, &format!("fixture-{}", surface.id()));
     }
+    view
 }
 
 #[test]
@@ -1525,6 +1587,8 @@ fn canon_presence_only_state_is_not_an_account() {
     );
     presence.account.account_label = "local Amp auth".to_owned();
     presence.confidence = UsageConfidence::PresenceOnly;
+    presence.canonical_identity = None;
+    presence.account_identity = None;
     runtime.inject_snapshot("amp", presence).expect("inject");
     assert!(
         runtime
@@ -1574,14 +1638,8 @@ fn canon_sel_rejects_unknown_and_cross_surface_keys() {
 }
 
 #[test]
-fn canon_sel_stale_persisted_key_remains_explicitly_unavailable() {
+fn canon_sel_unversioned_identity_requires_visible_reselection() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let mut selected = HashMap::new();
-    selected.insert("codex".to_owned(), "sha256:unknown".to_owned());
-    accounts::save_selected_accounts(&accounts::selected_accounts_path(dir.path()), &selected)
-        .expect("seed stale selection");
-
-    let mut runtime = open_runtime(dir.path());
     let view = glance_view(
         "OpenAI / Codex",
         Some("OAuth"),
@@ -1589,6 +1647,17 @@ fn canon_sel_stale_persisted_key_remains_explicitly_unavailable() {
         UsageSnapshotStatus::Fresh,
     );
     let key = account_key_for_view(&view).expect("canonical key");
+    let selected_path = accounts::selected_accounts_path(dir.path());
+    std::fs::create_dir_all(selected_path.parent().expect("selection parent"))
+        .expect("create selection parent");
+    std::fs::write(
+        &selected_path,
+        serde_json::to_vec(&serde_json::json!({"selected": {"codex": key}}))
+            .expect("serialize legacy selection"),
+    )
+    .expect("seed unversioned selection");
+
+    let mut runtime = open_runtime(dir.path());
     runtime.inject_snapshot("codex", view).expect("inject");
     let rows = runtime.list_accounts(Some("codex")).expect("accounts");
     assert_eq!(rows.len(), 1);
@@ -1598,10 +1667,20 @@ fn canon_sel_stale_persisted_key_remains_explicitly_unavailable() {
     assert_eq!(snapshot.status, UsageSnapshotStatus::Unavailable);
     assert_eq!(
         snapshot.last_error.as_deref(),
-        Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
+        Some(SELECTED_ACCOUNT_RESELECTION_NOTICE)
     );
-    let persisted = accounts::load_selected_accounts(&accounts::selected_accounts_path(dir.path()));
-    assert_eq!(persisted.get("codex"), Some(&"sha256:unknown".to_owned()));
+    let (persisted, migrated) = accounts::load_selected_accounts(&selected_path)
+        .expect("persisted selection");
+    assert!(!migrated);
+    assert_eq!(persisted.selected.get("codex"), Some(&key));
+    assert!(persisted.reselection_required.contains("codex"));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(
+            &std::fs::read(&selected_path).expect("read migrated selection")
+        )
+        .expect("decode migrated selection")["schema_version"],
+        2
+    );
 }
 
 #[test]
@@ -1645,6 +1724,7 @@ fn canon_amp_presence_does_not_promote_durable_history() {
         UsageSnapshotStatus::Fresh,
     );
     history.account.account_label = "amp@example.com".to_owned();
+    bind_fixture_identity(&mut history, HostSurfaceId::Amp, "fixture-history-amp");
     store_usage_snapshot(&host_snapshot_store_path(dir.path()), &history).expect("store history");
 
     let mut presence = glance_view(
@@ -1655,6 +1735,8 @@ fn canon_amp_presence_does_not_promote_durable_history() {
     );
     presence.account.account_label = "local Amp auth".to_owned();
     presence.confidence = UsageConfidence::PresenceOnly;
+    presence.canonical_identity = None;
+    presence.account_identity = None;
     let mut runtime = open_runtime(dir.path());
     runtime.inject_snapshot("amp", presence).expect("inject");
     let rows = runtime.list_accounts(Some("amp")).expect("accounts");
@@ -1676,6 +1758,7 @@ fn canon_each_account_retains_its_own_status_limit_and_error() {
         UsageSnapshotStatus::Stale,
     );
     history.account.account_label = "history@example.com".to_owned();
+    bind_fixture_identity(&mut history, HostSurfaceId::Claude, "fixture-history-claude");
     history.buckets[0].status = UsageSnapshotStatus::Stale;
     history.last_error = Some("history unavailable".to_owned());
     store_usage_snapshot(&host_snapshot_store_path(dir.path()), &history).expect("store history");
@@ -1687,6 +1770,7 @@ fn canon_each_account_retains_its_own_status_limit_and_error() {
         UsageSnapshotStatus::Fresh,
     );
     current.account.account_label = "current@example.com".to_owned();
+    bind_fixture_identity(&mut current, HostSurfaceId::Claude, "fixture-current-claude");
     let mut runtime = open_runtime(dir.path());
     runtime
         .inject_snapshot("claude", current)
@@ -1775,7 +1859,7 @@ fn canon_desktop_inventory_is_grouped_and_complete() {
         )
         .expect("inject");
     let inventory = runtime.desktop_inventory().expect("inventory");
-    assert_eq!(inventory.groups.len(), 1);
+    assert_eq!(inventory.groups.len(), 2);
     let codex = &inventory.groups[0];
     assert_eq!(codex.surface_id, "codex");
     assert_eq!(codex.display_label, "OpenAI");
@@ -1794,12 +1878,372 @@ fn canon_desktop_inventory_is_grouped_and_complete() {
     assert_eq!(account.headline, "57% left");
     assert_eq!(account.status_word, "fresh");
     assert_eq!(account.plan_or_status_label, "—");
-    assert!(
-        inventory
-            .groups
-            .iter()
-            .all(|group| group.surface_id != "opencode")
-    );
+    assert_eq!(inventory.groups[1].surface_id, "opencode");
+    assert_eq!(inventory.groups[1].accounts.len(), 1);
+}
+
+fn count_summary_fixture(used: Option<u64>, limit: Option<u64>, remaining: Option<u64>) -> QuotaBucketView {
+    use jackin_protocol::control::{CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit};
+    let mut bucket = glance_daily_bucket(99);
+    bucket.label = "Requests".to_owned();
+    bucket.count_quota = Some(CountQuota {
+        used, limit, remaining,
+        unit: CountQuotaUnit::Requests,
+        period: CountQuotaPeriod::UtcDaily,
+        provenance: CountQuotaProvenance::ProviderReported,
+    });
+    // Contradictory geometry must never override raw count observations.
+    bucket.remaining_percent = Some(99);
+    bucket
+}
+
+#[test]
+fn account_summary_preserves_exact_counts_zero_unknown_and_raw_reset_epochs() {
+    for (used, limit, remaining, reset, expected, percent) in [
+        (Some(12), Some(50), Some(38), Some(0), "12 / 50 requests used · 38 requests left", Some(76)),
+        (Some(0), Some(0), Some(0), None, "0 / 0 requests used · 0 requests left", None),
+        (None, None, None, Some(-1), "Request usage and limit unknown · Remaining requests unknown", None),
+    ] {
+        let mut bucket = count_summary_fixture(used, limit, remaining);
+        bucket.resets_at = reset;
+        let expected_counts = bucket.count_quota.clone();
+        let view = glance_view("OpenRouter", None, vec![bucket], UsageSnapshotStatus::Fresh);
+        let identity = CanonicalAccountIdentity {
+            surface: HostSurfaceId::OpenRouter,
+            subject: CanonicalAccountSubject::SourceCapability("count-summary-fixture".to_owned()),
+        };
+        let entry = accounts::AccountCatalogEntry {
+            account_key: identity.account_key(), identity,
+            account_label: "Count fixture".to_owned(), username: None, plan_label: None,
+            provenance: Default::default(), discovery_provenance: Default::default(),
+            lifecycle: AccountLifecycle::Current, fetched_at_epoch: view.fetched_at_epoch, view,
+        };
+        let row = account_descriptor(HostSurfaceId::OpenRouter, &entry, true, 1_700_000_000, UsageFormatPrefs::default());
+        assert_eq!(row.count_quota, expected_counts);
+        assert_eq!(row.resets_at, reset);
+        assert_eq!(row.remaining_percent, percent);
+        assert_eq!(row.remaining_label, expected);
+        assert_eq!(row.headline, expected);
+        assert_eq!(row.exact_reset.is_some(), reset.is_some());
+        let mut stale_entry = entry;
+        stale_entry.view.status = UsageSnapshotStatus::Stale;
+        stale_entry.view.buckets[0].status = UsageSnapshotStatus::Stale;
+        let stale_row = account_descriptor(HostSurfaceId::OpenRouter, &stale_entry, true, 1_700_000_000, UsageFormatPrefs::default());
+        assert_eq!(stale_row.status_word, "stale");
+        assert_eq!(stale_row.count_quota, expected_counts);
+        assert_eq!(stale_row.resets_at, reset);
+        assert_eq!(stale_row.remaining_label, expected);
+    }
+}
+
+#[test]
+fn account_summary_preserves_exact_money_without_label_or_integer_reconstruction() {
+    for (used, limit, remaining, expected_text, expected_percent) in [
+        (Some(Money::new(1_200, "USD", 2)), Some(Money::new(5_000, "USD", 2)), Some(Money::new(3_800, "USD", 2)), Some("$12.00 / $50.00 spent · $38.00 remaining"), Some(76)),
+        (Some(Money::new(1_200, "USD", 2)), Some(Money::new(5_000, "USD", 2)), None, Some("$12.00 / $50.00 spent · $38.00 remaining"), Some(76)),
+        (Some(Money::new(i64::MAX, "XTS", 255)), None, Some(Money::new(i64::MIN, "XTS", 255)), None, None),
+        (None, Some(Money::new(50, "USD", 0)), Some(Money::new(38, "JPY", 0)), None, None),
+        (None, Some(Money::new(0, "JPY", 0)), None, Some("Cap JPY 0 · Spending unknown · Remaining allowance unknown"), None),
+    ] {
+        let mut bucket = glance_weekly_bucket(99);
+        bucket.status_slot = Some(StatusSlot::Spend);
+        bucket.remaining_percent = Some(99);
+        bucket.used_money = used.clone();
+        bucket.limit_money = limit.clone();
+        bucket.remaining_money = remaining.clone();
+        let view = glance_view("OpenRouter", None, vec![bucket], UsageSnapshotStatus::Fresh);
+        let identity = CanonicalAccountIdentity {
+            surface: HostSurfaceId::OpenRouter,
+            subject: CanonicalAccountSubject::SourceCapability("money-summary-fixture".to_owned()),
+        };
+        let entry = accounts::AccountCatalogEntry {
+            account_key: identity.account_key(), identity,
+            account_label: "Money fixture".to_owned(), username: None, plan_label: None,
+            provenance: Default::default(), discovery_provenance: Default::default(),
+            lifecycle: AccountLifecycle::Current, fetched_at_epoch: view.fetched_at_epoch, view,
+        };
+        let row = account_descriptor(HostSurfaceId::OpenRouter, &entry, true, 1_700_000_000, UsageFormatPrefs::default());
+        assert_eq!(row.used_money, used);
+        assert_eq!(row.limit_money, limit);
+        assert_eq!(row.remaining_money, remaining);
+        assert!(row.count_quota.is_none());
+        assert_eq!(row.remaining_percent, expected_percent);
+        if let Some(expected_text) = expected_text {
+            assert_eq!(row.remaining_label, expected_text);
+            assert_eq!(row.headline, expected_text);
+        }
+        let mut stale_entry = entry;
+        stale_entry.view.status = UsageSnapshotStatus::Stale;
+        stale_entry.view.buckets[0].status = UsageSnapshotStatus::Stale;
+        let stale = account_descriptor(HostSurfaceId::OpenRouter, &stale_entry, true, 1_700_000_000, UsageFormatPrefs::default());
+        assert_eq!(stale.status_word, "stale");
+        assert_eq!(stale.used_money, used);
+        assert_eq!(stale.limit_money, limit);
+        assert_eq!(stale.remaining_money, remaining);
+        assert_eq!(stale.remaining_percent, expected_percent);
+    }
+}
+
+#[test]
+fn summary_ranker_retains_zero_and_unknown_counts_and_honest_freshness() {
+    let mut zero = count_summary_fixture(Some(0), Some(0), Some(0));
+    zero.remaining_percent = None;
+    let weekly = glance_weekly_bucket(45);
+    let mut unknown = count_summary_fixture(None, None, None);
+    unknown.remaining_percent = None;
+    let buckets = [unknown.clone()];
+    assert_eq!(crate::usage::summary_bucket(&buckets).expect("explicit unknown count remains visible").label, "Requests");
+    let mut stale = zero.clone();
+    stale.status = UsageSnapshotStatus::Stale;
+    let buckets = [zero, weekly.clone()];
+    assert_eq!(crate::usage::summary_bucket(&buckets).expect("zero daily count is visible").label, "Requests");
+    let buckets = [weekly.clone(), buckets[0].clone()];
+    assert_eq!(crate::usage::summary_bucket(&buckets).expect("equal category follows provider order").label, "Weekly");
+    unknown.count_quota.as_mut().expect("counts").period = jackin_protocol::control::CountQuotaPeriod::Unknown;
+    let buckets = [unknown, weekly];
+    assert_eq!(crate::usage::summary_bucket(&buckets).expect("known weekly outranks unknown period").label, "Weekly");
+    let buckets = [stale];
+    assert!(crate::usage::summary_bucket(&buckets).is_none());
+    let cached = crate::usage::host_account_summary_bucket(&buckets).expect("last-good host count");
+    assert_eq!(cached.status, UsageSnapshotStatus::Stale);
+    assert_eq!(cached.count_quota.as_ref().expect("retained counts").limit, Some(0));
+}
+
+#[test]
+fn summary_ranker_retains_money_only_windows_without_promoting_spend_over_limits() {
+    let mut money = glance_weekly_bucket(99);
+    money.label = "Spend".to_owned();
+    money.status_slot = Some(StatusSlot::Spend);
+    money.remaining_percent = None;
+    money.used_money = Some(Money::new(7, "USD", 0));
+    let buckets = [money.clone()];
+    assert_eq!(crate::usage::summary_bucket(&buckets).expect("raw money is visible without ratio").label, "Spend");
+    let mut other = money.clone();
+    other.label = "Second spend".to_owned();
+    let buckets = [money.clone(), other];
+    assert_eq!(crate::usage::summary_bucket(&buckets).expect("equal category keeps provider order").label, "Spend");
+    let buckets = [money.clone(), glance_weekly_bucket(42)];
+    assert_eq!(crate::usage::summary_bucket(&buckets).expect("weekly limit outranks spend").label, "Weekly");
+    money.status = UsageSnapshotStatus::Stale;
+    let buckets = [money];
+    assert!(crate::usage::summary_bucket(&buckets).is_none());
+    let cached = crate::usage::host_account_summary_bucket(&buckets).expect("last-good monetary window");
+    assert_eq!(cached.used_money, Some(Money::new(7, "USD", 0)));
+    assert_eq!(cached.status, UsageSnapshotStatus::Stale);
+}
+
+const EXPECTED_FULL_INVENTORY_IDS: [&str; 12] = [
+    "codex", "claude", "amp", "grok", "zai", "kimi", "minimax", "opencode",
+    "google", "cursor", "meta", "openrouter",
+];
+
+fn seed_full_inventory(runtime: &mut HostUsageRuntime) {
+    for (id, label) in [
+        ("codex", "OpenAI"), ("claude", "Anthropic"), ("amp", "Amp"),
+        ("grok", "xAI"), ("zai", "Z.AI"), ("kimi", "Kimi"),
+        ("minimax", "MiniMax"), ("opencode", "OpenCode"), ("google", "Google"),
+        ("cursor", "Cursor"), ("meta", "Meta"), ("openrouter", "OpenRouter"),
+    ] {
+        let mut view = glance_view(label, Some("fixture credential"), vec![glance_weekly_bucket(61)], UsageSnapshotStatus::Fresh);
+        view.account.account_label = format!("{id}-account@example.test");
+        view.account_identity = Some(jackin_protocol::control::UsageAccountIdentity {
+            surface_id: id.to_owned(), account_id: format!("full-inventory-route-{id}"),
+            source_revision: None,
+        });
+        view.canonical_identity = Some(jackin_protocol::control::UsageCanonicalAccountIdentity {
+            surface_id: id.to_owned(),
+            subject: jackin_protocol::control::UsageCanonicalAccountSubject::SourceCapability(format!("full-inventory-source-{id}")),
+        });
+        runtime.inject_snapshot(id, view).expect("seed supported provider");
+    }
+}
+
+#[test]
+fn global_account_list_covers_explicit_complete_provider_registry() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    seed_full_inventory(&mut runtime);
+    assert_eq!(HostSurfaceId::ALL.iter().map(|surface| surface.id()).collect::<Vec<_>>(), EXPECTED_FULL_INVENTORY_IDS);
+    let listed = runtime.list_accounts(None).expect("global account list");
+    assert_eq!(listed.iter().map(|account| account.surface_id.as_str()).collect::<Vec<_>>(), EXPECTED_FULL_INVENTORY_IDS);
+    assert!(listed.iter().all(|account| account.selected));
+    let glance = runtime.provider_glance_rows().expect("compact summary");
+    assert_eq!(glance.iter().map(|row| row.surface_id.as_str()).collect::<Vec<_>>(), ["codex", "claude", "amp", "grok", "zai", "kimi", "minimax"]);
+}
+
+#[test]
+fn desktop_full_inventory_preserves_every_provider_and_multiple_accounts_outside_glance() {
+    use crate::usage_snapshot_store::store_usage_snapshot;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    seed_full_inventory(&mut runtime);
+    let mut second = glance_view("Google", Some("fixture credential"), vec![glance_weekly_bucket(29)], UsageSnapshotStatus::Fresh);
+    second.account.account_label = "second-google-account@example.test".to_owned();
+    second.account_identity = Some(jackin_protocol::control::UsageAccountIdentity {
+        surface_id: "google".to_owned(), account_id: "second-google-route".to_owned(),
+        source_revision: None,
+    });
+    second.canonical_identity = Some(jackin_protocol::control::UsageCanonicalAccountIdentity {
+        surface_id: "google".to_owned(),
+        subject: jackin_protocol::control::UsageCanonicalAccountSubject::SourceCapability("second-google-source".to_owned()),
+    });
+    let second_key = account_key_for_view(&second).expect("independent second account key");
+    store_usage_snapshot(&host_snapshot_store_path(dir.path()), &second).expect("second account quota");
+    runtime.set_selected_account("google", &second_key).expect("select outside summary");
+    let projection = runtime.desktop_projection(3).expect("full projection");
+    assert_eq!(projection.providers.iter().map(|provider| provider.group.surface_id.as_str()).collect::<Vec<_>>(), EXPECTED_FULL_INVENTORY_IDS);
+    let google = projection.providers.iter().find(|provider| provider.group.surface_id == "google").expect("Google group");
+    assert_eq!(google.group.accounts.len(), 2);
+    assert_eq!(google.group.accounts.iter().filter(|account| account.selected).count(), 1);
+    assert_eq!(google.selected_account_key.as_deref(), Some(second_key.as_str()));
+    assert_eq!(google.selected_usage.account.account_label, "second-google-account@example.test");
+    assert_eq!(google.selected_usage.buckets[0].remaining_percent, Some(29));
+    assert!(projection.glance_rows.iter().all(|row| row.surface_id != "google"));
+    assert!(projection.status_bar_glance_rows.iter().all(|row| row.surface_id != "google"));
+}
+
+#[test]
+fn desktop_full_inventory_keeps_unresolved_provider_sources_honest_without_accounts() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = HostUsageRuntime::new();
+    runtime.open_with_validated_discovery(HostRuntimeConfig::under_data_dir(dir.path()), ValidatedUsageDiscovery {
+        config_generation: Some("unresolved-fixture".to_owned()),
+        accounts: Vec::new(),
+        diagnostics: vec![
+            UsageDiscoveryDiagnostic { surface_id: Some("google".to_owned()), scope_label: "registered Google account".to_owned(), configured_account_ids: BTreeSet::new(), issue: UsageDiscoveryIssue::CredentialDenied },
+            UsageDiscoveryDiagnostic { surface_id: Some("meta".to_owned()), scope_label: "registered Meta account".to_owned(), configured_account_ids: BTreeSet::new(), issue: UsageDiscoveryIssue::CredentialMissing },
+            UsageDiscoveryDiagnostic { surface_id: Some("openrouter".to_owned()), scope_label: "registered OpenRouter account".to_owned(), configured_account_ids: BTreeSet::new(), issue: UsageDiscoveryIssue::ConfigInvalid },
+        ],
+        candidates: Vec::new(), bindings: Vec::new(),
+    }).expect("open unresolved sources");
+    let projection = runtime.desktop_projection(3).expect("honest full projection");
+    assert_eq!(projection.providers.iter().map(|provider| provider.group.surface_id.as_str()).collect::<Vec<_>>(), ["google", "meta", "openrouter"]);
+    for (provider, (expected_status, expected_word)) in projection.providers.iter().zip([(UsageSnapshotStatus::NeedsSecret, "needs_secret"), (UsageSnapshotStatus::NeedsLogin, "needs_login"), (UsageSnapshotStatus::Unavailable, "unavailable")]) {
+        assert!(provider.group.accounts.is_empty());
+        assert!(provider.selected_account_key.is_none());
+        assert!(provider.selected_usage.buckets.is_empty());
+        assert_eq!(provider.selected_usage.status, expected_status);
+        let empty = provider.group.empty_state.as_ref().expect("actionable provider state");
+        assert_eq!(empty.status_word, expected_word);
+        assert!(!empty.is_refreshing);
+        assert!(empty.last_error.is_some());
+    }
+    assert_eq!(projection.diagnostics.len(), 3);
+    assert!(runtime.list_accounts(None).expect("unresolved accounts").is_empty());
+}
+
+#[test]
+fn full_inventory_reopen_diagnostic_never_revives_unselected_cached_account_quota() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    let mut old = glance_view("Google", Some("fixture credential"), vec![glance_weekly_bucket(81)], UsageSnapshotStatus::Fresh);
+    old.account.account_label = "removed-google@example.test".to_owned();
+    old.account_identity = Some(jackin_protocol::control::UsageAccountIdentity {
+        surface_id: "google".to_owned(), account_id: "removed-google-route".to_owned(),
+        source_revision: None,
+    });
+    old.canonical_identity = Some(jackin_protocol::control::UsageCanonicalAccountIdentity {
+        surface_id: "google".to_owned(),
+        subject: jackin_protocol::control::UsageCanonicalAccountSubject::SourceCapability("removed-google-source".to_owned()),
+    });
+    runtime.inject_snapshot("google", old).expect("seed cache without selection");
+    assert!(!runtime.selected_accounts.contains_key("google"));
+    runtime.open_with_validated_discovery(HostRuntimeConfig::under_data_dir(dir.path()), ValidatedUsageDiscovery {
+        config_generation: Some("removed-denied".to_owned()), accounts: Vec::new(),
+        diagnostics: vec![UsageDiscoveryDiagnostic { surface_id: Some("google".to_owned()), scope_label: "registered Google account".to_owned(), configured_account_ids: BTreeSet::new(), issue: UsageDiscoveryIssue::CredentialDenied }],
+        candidates: Vec::new(), bindings: Vec::new(),
+    }).expect("reopen same data directory");
+    let projection = runtime.desktop_projection(3).expect("diagnostic projection");
+    let google = projection.providers.iter().find(|provider| provider.group.surface_id == "google").expect("diagnosed Google provider");
+    assert!(google.group.accounts.is_empty());
+    assert!(google.selected_account_key.is_none());
+    assert_eq!(google.group.empty_state.as_ref().expect("empty diagnostic").status_word, "needs_secret");
+    assert_eq!(google.selected_usage.status, UsageSnapshotStatus::NeedsSecret);
+    assert!(google.selected_usage.buckets.is_empty());
+    assert_ne!(google.selected_usage.account.account_label, "removed-google@example.test");
+    assert!(runtime.list_accounts(None).expect("current inventory").is_empty());
+    runtime.discovery.as_mut().expect("current discovery").diagnostics.clear();
+    let undiagnosed = runtime.snapshot("google").expect("known empty membership");
+    assert_eq!(undiagnosed.status, UsageSnapshotStatus::Unavailable);
+    assert_eq!(undiagnosed.source, UsageSource::None);
+    assert_eq!(undiagnosed.confidence, UsageConfidence::None);
+    assert!(undiagnosed.buckets.is_empty());
+    assert_ne!(undiagnosed.account.account_label, "removed-google@example.test");
+}
+
+#[test]
+fn full_inventory_keeps_disabled_accounts_and_unresolved_sources_navigable() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    seed_full_inventory(&mut runtime);
+    assert!(runtime.provider_glance_rows().expect("enabled compact fixture").iter().any(|row| row.surface_id == "codex"));
+    runtime.set_enabled("codex", false).expect("disable compact provider polling");
+    runtime.set_enabled("google", false).expect("disable account polling");
+    let projection = runtime.desktop_projection(3).expect("disabled detail must not abort full projection");
+    let codex = projection.providers.iter().find(|provider| provider.group.surface_id == "codex").expect("disabled compact-provider account retained");
+    assert_eq!(codex.group.accounts.len(), 1);
+    assert_eq!(codex.group.plan_or_status_label, "Disabled");
+    assert_eq!(codex.selected_usage.buckets[0].remaining_percent, Some(61));
+    let google = projection.providers.iter().find(|provider| provider.group.surface_id == "google").expect("disabled account retained");
+    assert_eq!(google.group.accounts.len(), 1);
+    assert_eq!(google.group.plan_or_status_label, "Disabled");
+    assert!(google.group.accessibility_label.contains("Disabled"));
+    assert_eq!(google.selected_usage.status, UsageSnapshotStatus::Fresh);
+    assert_eq!(google.selected_usage.buckets[0].remaining_percent, Some(61));
+    assert!(projection.surfaces.iter().filter(|surface| ["codex", "google"].contains(&surface.id.as_str())).all(|surface| !surface.enabled));
+    assert!(projection.glance_rows.iter().all(|row| !["codex", "google"].contains(&row.surface_id.as_str())));
+    assert!(projection.status_bar_glance_rows.iter().all(|row| !["codex", "google"].contains(&row.surface_id.as_str())));
+    assert!(runtime.list_accounts(None).expect("full disabled account list").iter().any(|account| account.surface_id == "google"));
+    assert!(runtime.status_bar_label("google").expect("disabled compact label").is_none());
+    let denied_dir = tempfile::tempdir().expect("denied tempdir");
+    let mut denied = HostUsageRuntime::new();
+    denied.open_with_validated_discovery(HostRuntimeConfig::under_data_dir(denied_dir.path()), ValidatedUsageDiscovery {
+        config_generation: Some("disabled-source-denied".to_owned()), accounts: Vec::new(),
+        diagnostics: vec![UsageDiscoveryDiagnostic {
+            surface_id: Some("meta".to_owned()), scope_label: "registered disabled Meta source".to_owned(),
+            configured_account_ids: BTreeSet::new(), issue: UsageDiscoveryIssue::CredentialDenied,
+        }], candidates: Vec::new(), bindings: Vec::new(),
+    }).expect("open known source failure");
+    denied.set_enabled("meta", false).expect("disable unresolved polling");
+    let denied_projection = denied.desktop_projection(3).expect("disabled source detail");
+    let meta = denied_projection.providers.iter().find(|provider| provider.group.surface_id == "meta").expect("disabled unresolved source retained");
+    assert!(meta.group.accounts.is_empty());
+    assert_eq!(meta.group.plan_or_status_label, "Disabled");
+    assert_eq!(meta.group.empty_state.as_ref().expect("honest source diagnostic").status_word, "needs_secret");
+    assert_eq!(meta.selected_usage.status, UsageSnapshotStatus::NeedsSecret);
+    assert!(meta.selected_usage.buckets.is_empty());
+    assert!(denied_projection.surfaces.iter().find(|surface| surface.id == "meta").is_some_and(|surface| !surface.enabled));
+    assert!(denied_projection.glance_rows.iter().all(|row| row.surface_id != "meta"));
+}
+
+#[test]
+fn full_inventory_missing_selection_keeps_intent_when_source_diagnostic_exists() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let requested = "sha256:requested-missing-google";
+    accounts::save_selected_accounts(
+        &accounts::selected_accounts_path(dir.path()),
+        &accounts::SelectedAccountPreferences {
+            selected: HashMap::from([("google".to_owned(), requested.to_owned())]),
+            reselection_required: BTreeSet::new(),
+        },
+    )
+    .expect("persist requested key");
+    let mut runtime = HostUsageRuntime::new();
+    runtime.open_with_validated_discovery(HostRuntimeConfig::under_data_dir(dir.path()), ValidatedUsageDiscovery {
+        config_generation: Some("selected-denied".to_owned()), accounts: Vec::new(),
+        diagnostics: vec![UsageDiscoveryDiagnostic { surface_id: Some("google".to_owned()), scope_label: "registered Google account".to_owned(), configured_account_ids: BTreeSet::new(), issue: UsageDiscoveryIssue::CredentialDenied }],
+        candidates: Vec::new(), bindings: Vec::new(),
+    }).expect("open diagnostic and selection");
+    let projection = runtime.desktop_projection(3).expect("selected diagnostic projection");
+    let google = projection.providers.iter().find(|provider| provider.group.surface_id == "google").expect("requested Google provider");
+    assert_eq!(google.selected_account_key.as_deref(), Some(requested));
+    assert_eq!(google.selected_usage.status, UsageSnapshotStatus::Unavailable);
+    assert!(google.selected_usage.buckets.is_empty());
+    assert_eq!(google.selected_usage.last_error.as_deref(), Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE));
+    let empty = google.group.empty_state.as_ref().expect("missing selection state");
+    assert_eq!(empty.status_word, "unavailable");
+    assert_eq!(empty.last_error.as_deref(), Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE));
+    assert_eq!(projection.diagnostics.len(), 1);
 }
 
 #[test]

@@ -143,13 +143,6 @@ fn profile_auth_and_identity_parse_from_values() {
 }
 
 #[test]
-fn profile_snapshot_missing_auth_needs_secret_without_network() {
-    let temp = tempfile::tempdir().unwrap();
-    let view = cursor_profile_snapshot("cursor", &temp.path().join("auth.json"), 1_781_728_000);
-    assert_eq!(view.status, UsageSnapshotStatus::NeedsSecret);
-}
-
-#[test]
 fn plan_and_grants_parse() {
     assert_eq!(
         parse_cursor_plan_info(&serde_json::json!({"planName": "pro_plus"})),
@@ -451,4 +444,28 @@ fn snapshot_with_auth_refused_base_is_stale_never_fabricated() {
     assert_eq!(view.status, UsageSnapshotStatus::Stale);
     assert_eq!(view.account.provider_label, "Cursor");
     assert!(view.last_error.is_some());
+}
+
+#[test]
+fn captured_profile_dispatch_uses_native_routes_without_ambient_override() {
+    let foreign_base = cursor_dashboard_base_from_override(Some("https://foreign.example"));
+    assert_eq!(foreign_base, "https://foreign.example");
+    let mut native_calls = 0;
+    let mut foreign_calls = 0;
+    cursor_profile_dispatch(|route| {
+        if route.dashboard_base == foreign_base {
+            foreign_calls += 1;
+        } else {
+            native_calls += 1;
+        }
+        assert_eq!(route.dashboard_base, "https://api2.cursor.sh");
+        assert!(route.session_enrichment);
+        assert_eq!(CURSOR_SESSION_BASE, "https://cursor.com");
+    });
+    assert_eq!(native_calls, 1);
+    assert_eq!(foreign_calls, 0);
+    assert_eq!(
+        cursor_dashboard_base_from_override(None),
+        "https://api2.cursor.sh"
+    );
 }

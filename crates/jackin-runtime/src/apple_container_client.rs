@@ -27,7 +27,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 /// Bind mount passed to Apple `container run`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,20 +128,6 @@ impl AppleContainerClient {
         Self
     }
 
-    /// Run a no-output `container <sub> <name>` lifecycle command, logging the
-    /// outcome and bailing on a non-zero exit. Shared by `stop`/`remove`, which
-    /// differ only in the subcommand.
-    async fn lifecycle(&self, name: &str, sub: &str) -> Result<()> {
-        let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
-            "container",
-            [sub, name],
-        ))
-        .await?;
-        if !output.success {
-            anyhow::bail!("container lifecycle command exited unsuccessfully");
-        }
-        Ok(())
-    }
 }
 
 impl Default for AppleContainerClient {
@@ -156,25 +142,21 @@ impl AppleContainerApi for AppleContainerClient {
             spec.user == crate::runtime::identity::CAPSULE_SUPERVISOR_USER,
             "apple-container capsule supervisor must launch as root"
         );
-        let args = container_run_args(name, spec);
+        anyhow::bail!("apple/container CLI does not expose a bindable immutable incarnation authority; refusing to launch {name}");
+    }
 
-        let output = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
-            "container",
-            &args,
-        ))
-        .await?;
-        if !output.success {
-            anyhow::bail!("container run exited unsuccessfully");
+    async fn stop_container(&self, name: &str) -> Result<()> {
+        if self.inspect_container(name).await?.is_some() {
+            anyhow::bail!("apple/container cannot stop `{name}` safely: no incarnation-bound conditional operation exists");
         }
         Ok(())
     }
 
-    async fn stop_container(&self, name: &str) -> Result<()> {
-        self.lifecycle(name, "stop").await
-    }
-
     async fn remove_container(&self, name: &str) -> Result<()> {
-        self.lifecycle(name, "rm").await
+        if self.inspect_container(name).await?.is_some() {
+            anyhow::bail!("apple/container cannot remove `{name}` safely: no incarnation-bound conditional operation exists");
+        }
+        Ok(())
     }
 
     async fn inspect_container(&self, name: &str) -> Result<Option<AppleContainerInfo>> {
@@ -200,7 +182,7 @@ impl AppleContainerApi for AppleContainerClient {
             anyhow::bail!("container list exited unsuccessfully");
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let all = parse_all_containers_json(&stdout);
+        let all = parse_all_containers_json(&stdout)?;
         Ok(all
             .into_iter()
             .filter(|c| c.name.starts_with(name_prefix))
@@ -208,6 +190,7 @@ impl AppleContainerApi for AppleContainerClient {
     }
 }
 
+#[cfg(test)]
 fn container_run_args(name: &str, spec: &AppleContainerSpec) -> Vec<std::ffi::OsString> {
     let mut args: Vec<std::ffi::OsString> = vec![
         "run".into(),
@@ -246,10 +229,10 @@ fn container_run_args(name: &str, spec: &AppleContainerSpec) -> Vec<std::ffi::Os
 /// Parse `container ps --format json` output into container info records.
 /// The exact JSON schema is determined empirically during Phase 0 testing;
 /// this implementation handles the most common shapes (array or NDJSON).
-fn parse_all_containers_json(json_output: &str) -> Vec<AppleContainerInfo> {
+fn parse_all_containers_json(json_output: &str) -> Result<Vec<AppleContainerInfo>> {
     let trimmed = json_output.trim();
     if trimmed.is_empty() {
-        return vec![];
+        return Ok(vec![]);
     }
 
     // apple/container may emit a JSON array or newline-delimited JSON objects.
@@ -258,35 +241,36 @@ fn parse_all_containers_json(json_output: &str) -> Vec<AppleContainerInfo> {
     // Try as a JSON array first.
     if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(trimmed) {
         for item in arr {
-            if let Some(info) = extract_container_info(&item) {
-                results.push(info);
-            }
+            results.push(extract_container_info(&item)?);
         }
-        return results;
+        return Ok(results);
     }
 
     // Try newline-delimited JSON objects.
-    for line in trimmed.lines() {
+    for (index, line) in trimmed.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        if let Ok(obj) = serde_json::from_str::<serde_json::Value>(line)
-            && let Some(info) = extract_container_info(&obj)
-        {
-            results.push(info);
-        }
+        let obj = serde_json::from_str::<serde_json::Value>(line)
+            .with_context(|| format!("parsing apple-container listing row {}", index + 1))?;
+        results.push(extract_container_info(&obj)
+            .with_context(|| format!("validating apple-container listing row {}", index + 1))?);
     }
 
-    results
+    anyhow::ensure!(!results.is_empty(), "apple-container listing output contained no valid rows");
+    Ok(results)
 }
 
-fn extract_container_info(obj: &serde_json::Value) -> Option<AppleContainerInfo> {
+fn extract_container_info(obj: &serde_json::Value) -> Result<AppleContainerInfo> {
+    let obj = obj.as_object().context("apple-container listing row is not an object")?;
     let name = obj
         .get("name")
         .or_else(|| obj.get("Name"))
-        .and_then(|v| v.as_str())?
+        .and_then(serde_json::Value::as_str)
+        .context("apple-container listing row has no string name")?
         .to_owned();
+    anyhow::ensure!(!name.is_empty(), "apple-container listing row has an empty name");
     let status = obj
         .get("status")
         .or_else(|| obj.get("Status"))
@@ -295,7 +279,7 @@ fn extract_container_info(obj: &serde_json::Value) -> Option<AppleContainerInfo>
         .and_then(|v| v.as_str())
         .unwrap_or("unknown")
         .to_owned();
-    Some(AppleContainerInfo { name, status })
+    Ok(AppleContainerInfo { name, status })
 }
 
 /// Test double for unit tests that do not want to shell out to the `container` CLI.

@@ -37,6 +37,8 @@ fn capability(account_id: &str) -> UsageAccountCapability {
 fn entry(account_id: &str, revision: &str) -> UsageCatalogEntry {
     UsageCatalogEntry {
         capability: capability(account_id),
+        canonical_identity: None,
+        provenance_count: 0,
         revision: revision.into(),
     }
 }
@@ -179,6 +181,7 @@ fn quota_view() -> FocusedUsageView {
     view.account.provider_label = "Claude".to_owned();
     view.account.account_label = "scope-proof@example.test".to_owned();
     view.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
@@ -190,6 +193,7 @@ fn quota_view() -> FocusedUsageView {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }];
     view

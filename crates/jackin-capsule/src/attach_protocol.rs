@@ -308,6 +308,12 @@ async fn perform_control_handshake(
         drop(client_permit);
         return completion;
     }
+    // Approval and the configured command intentionally have no deadline.
+    // Keep their requester alive until completion, and cancel on peer departure.
+    let is_exec = matches!(
+        request.msg,
+        jackin_protocol::control::ClientMsg::ExecCommand { .. }
+    );
     let (reply_tx, reply_rx) = oneshot::channel();
     if control_tx
         .send(ControlRequest {
@@ -323,8 +329,26 @@ async fn perform_control_handshake(
             jackin_telemetry::schema::enums::ErrorType::RpcError,
         );
     }
-    let completion = match tokio::time::timeout(timeout, reply_rx).await {
-        Ok(Ok(response)) => {
+    let mut peer_byte = [0_u8; 1];
+    let reply = tokio::select! {
+        biased;
+        _ = stream.read(&mut peer_byte), if is_exec => {
+            return jackin_telemetry::spawn::DetachedCompletion {
+                outcome: jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
+                error_type: None,
+            };
+        }
+        reply = reply_rx => reply,
+        () = async {
+            if is_exec {
+                std::future::pending::<()>().await;
+            } else {
+                tokio::time::sleep(timeout).await;
+            }
+        } => return jackin_telemetry::spawn::DetachedCompletion::timeout(),
+    };
+    let completion = match reply {
+        Ok(response) => {
             let write_result = socket::write_control_reply(stream, &response.msg).await;
             let completion = if write_result.is_ok() {
                 jackin_telemetry::spawn::DetachedCompletion::success()
@@ -336,10 +360,9 @@ async fn perform_control_handshake(
             response.complete(&write_result);
             completion
         }
-        Ok(Err(_)) => jackin_telemetry::spawn::DetachedCompletion::error(
+        Err(_) => jackin_telemetry::spawn::DetachedCompletion::error(
             jackin_telemetry::schema::enums::ErrorType::RpcError,
         ),
-        Err(_) => jackin_telemetry::spawn::DetachedCompletion::timeout(),
     };
     drop(client_permit);
     completion

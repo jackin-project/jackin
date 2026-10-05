@@ -51,3 +51,6 @@ workspace = true
 [[bench]]
 name = "config_resolve"
 harness = false
+
+[target.'cfg(unix)'.dependencies]
+jackin-process-directory = { workspace = true }

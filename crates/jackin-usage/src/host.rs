@@ -12,7 +12,7 @@ mod credential_resolver;
 mod discovery;
 mod projection;
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -22,7 +22,7 @@ use jackin_protocol::control::{
     FocusedUsageView, UsageIdentityPresentation, UsageSeverity, UsageSnapshotStatus,
 };
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCoordinationError, UsageGenerationView, UsageProjectionV1,
+    UsageAccountCapability, UsageCoordinationError, UsageGenerationView, UsageProjectionV2,
     UsageRefreshPhase,
 };
 
@@ -39,10 +39,11 @@ pub use accounts::{
 };
 pub use broker::{
     ForwardedUsageSources, UsageBrokerClient, UsageBrokerConfig, UsageBrokerHandle,
-    ensure_usage_broker, ensure_usage_broker_process, ensure_usage_broker_with_executor,
-    forwarded_usage_capabilities, run_usage_broker_service, run_usage_broker_service_with_executor,
-    usage_broker_capabilities, usage_capability_for_selected_account,
-    usage_capability_for_selected_account_with_sources,
+    discover_and_ensure_usage_broker, ensure_usage_broker, ensure_usage_broker_process,
+    ensure_usage_broker_with_executor, forwarded_usage_capabilities, run_usage_broker_service,
+    run_usage_broker_service_with_executor, usage_broker_capabilities,
+    usage_capability_for_selected_account, usage_capability_for_selected_account_with_sources,
+    usage_projection_account_for_capability, usage_projection_source_ids_for_capability,
 };
 pub use credential_resolver::{
     CachedProviderCredentialResolver, ProviderCredentialSecretOutcome,
@@ -55,7 +56,7 @@ pub use discovery::{
     ProviderCredentialRefreshOutcome, ProviderCredentialSourceMaterial, UsageCredentialKind,
     UsageDiscoveryCatalog, UsageDiscoveryDiagnostic, UsageDiscoveryIssue, UsageDiscoveryScope,
     UsageSourceCandidateDescriptor, ValidatedUsageDiscovery, discover_usage_sources,
-    host_credential_root_matrix, validate_usage_sources,
+    discover_usage_inventory, host_credential_root_matrix, validate_usage_sources,
 };
 
 /// A successful discovery scan staged against one runtime catalog generation.
@@ -76,6 +77,9 @@ pub use projection::{NormalizedUsageDestination, UsageDestination, normalize_des
 pub const HOST_USAGE_STATE_REL: &str = "usage-menu-bar";
 /// Persistent notice when the requested account is absent from current membership.
 pub const SELECTED_ACCOUNT_UNAVAILABLE_NOTICE: &str = "Selected account is no longer available.";
+/// Persistent notice when an unversioned selection key needs operator confirmation.
+pub const SELECTED_ACCOUNT_RESELECTION_NOTICE: &str =
+    "Saved account selection needs confirmation; choose an account again.";
 
 static CANONICAL_INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -136,8 +140,8 @@ impl HostSurfaceId {
         Self::OpenRouter,
     ];
 
-    /// The canonical seven-provider Desktop glance order (Capsule tab order).
-    /// `OpenCode` is intentionally excluded from the Desktop item contract.
+    /// Provider order for the compact Desktop glance summary only.
+    /// Full account and usage inventories use [`Self::ALL`].
     pub const DESKTOP_PROVIDER_ORDER: &'static [Self] = &[
         Self::Codex,
         Self::Claude,
@@ -467,7 +471,7 @@ pub fn request_usage_batch(
     let mut results = Vec::new();
     for capability in capabilities
         .into_iter()
-        .collect::<std::collections::BTreeSet<_>>()
+        .collect::<BTreeSet<_>>()
     {
         let observed = client
             .current(capability.clone())
@@ -648,6 +652,8 @@ pub struct HostUsageRuntime {
     data_dir: Option<PathBuf>,
     /// Selected account key per surface id (persisted).
     selected_accounts: HashMap<String, String>,
+    /// Legacy or unavailable selections require an explicit operator choice.
+    selected_accounts_needing_reselection: BTreeSet<String>,
     /// Whether live probes may dispatch (smoke mode disables them).
     probe_policy: HostProbePolicy,
     /// Provider ids currently auto-detected for the Desktop glance list.
@@ -669,7 +675,7 @@ pub struct HostUsageRuntime {
     broker_generations: BTreeMap<UsageAccountCapability, UsageGenerationView>,
     canonical_instance_id: String,
     canonical_content_id: Option<String>,
-    canonical_projection_cache: Option<UsageProjectionV1>,
+    canonical_projection_cache: Option<UsageProjectionV2>,
     canonical_identity_graph: accounts::CanonicalIdentityGraph,
 }
 
@@ -688,6 +694,7 @@ impl HostUsageRuntime {
             open: false,
             data_dir: None,
             selected_accounts: HashMap::new(),
+            selected_accounts_needing_reselection: BTreeSet::new(),
             probe_policy: HostProbePolicy::Live,
             desktop_detected_surfaces: HashSet::new(),
             discovery: None,
@@ -715,10 +722,14 @@ impl HostUsageRuntime {
         config: HostRuntimeConfig,
         resolver: &dyn ProviderCredentialEnvResolver,
     ) -> Result<(), String> {
-        let discovered = validate_usage_sources(
-            discover_usage_sources(&config.discovery_scope, resolver)?,
-            resolver,
-        );
+        let discovered = if config.probe_policy == HostProbePolicy::Live {
+            validate_usage_sources(
+                discover_usage_sources(&config.discovery_scope, resolver)?,
+                resolver,
+            )
+        } else {
+            discover_usage_inventory(&config.discovery_scope)?
+        };
         self.open_with_validated_discovery(config, discovered)
     }
 
@@ -743,11 +754,23 @@ impl HostUsageRuntime {
             .data_dir
             .as_ref()
             .is_some_and(|current| current != &config.data_dir);
+
+        // Prepare every fallible piece before changing an already-open runtime.
+        // In particular, migration persistence must succeed before the new
+        // selection or any of the other runtime configuration is committed.
+        let accounts_path = host_accounts_path(&config.data_dir);
+        let selected_path = accounts::selected_accounts_path(&config.data_dir);
+        let (selection, migrate_unversioned) = accounts::load_selected_accounts(&selected_path)?;
+        if migrate_unversioned {
+            accounts::save_selected_accounts(&selected_path, &selection)?;
+        }
+
         if data_dir_changed {
             self.cache = UsageCache::default();
             self.events.clear();
             self.next_seq = 0;
             self.selected_accounts.clear();
+            self.selected_accounts_needing_reselection.clear();
             self.desktop_detected_surfaces.clear();
             self.discovery = None;
             self.discovered_views.clear();
@@ -755,7 +778,6 @@ impl HostUsageRuntime {
             self.broker_phases.clear();
             self.broker_generations.clear();
         }
-        let accounts_path = host_accounts_path(&config.data_dir);
         self.cache.set_accounts_materialize_path(accounts_path);
         self.refresh_floor_secs = config.refresh_floor_secs.max(60);
         self.last_refresh = None;
@@ -769,8 +791,8 @@ impl HostUsageRuntime {
                 agent.slug()
             );
         }
-        let selected_path = accounts::selected_accounts_path(&config.data_dir);
-        self.selected_accounts = accounts::load_selected_accounts(&selected_path);
+        self.selected_accounts = selection.selected.clone();
+        self.selected_accounts_needing_reselection = selection.reselection_required.clone();
         self.probe_policy = config.probe_policy;
         self.discovery_scope = Some(config.discovery_scope);
         self.discovery = discovery;
@@ -918,6 +940,7 @@ impl HostUsageRuntime {
     }
 
     /// Cached snapshot for one surface (honest refreshing/unavailable).
+    /// Reading full account detail is independent of polling/display preference.
     ///
     /// When a non-live account is selected, returns that account's durable view
     /// (multi-account Desktop); otherwise the live host-login snapshot.
@@ -925,9 +948,6 @@ impl HostUsageRuntime {
         self.require_open()?;
         let surface = HostSurfaceId::from_id(surface_id)
             .ok_or_else(|| format!("unknown surface: {surface_id}"))?;
-        if !self.enabled.contains(surface.id()) {
-            return Err(format!("surface disabled: {surface_id}"));
-        }
         let live = self
             .cache
             .focused_snapshot(Some(surface.agent_slug()), surface.provider_label());
@@ -980,6 +1000,12 @@ impl HostUsageRuntime {
                 "Needs login",
                 "needs login",
                 format!("credential malformed: log in again to {label} to enable usage"),
+            ),
+            UsageDiscoveryIssue::CredentialUnavailable => (
+                UsageSnapshotStatus::Unavailable,
+                "Unavailable",
+                "usage unavailable",
+                format!("credential access is temporarily unavailable for {label}"),
             ),
             UsageDiscoveryIssue::CredentialDenied => (
                 UsageSnapshotStatus::NeedsSecret,
@@ -1045,7 +1071,7 @@ impl HostUsageRuntime {
                     HostSurfaceId::from_id(id).ok_or_else(|| format!("unknown surface: {id}"))?;
                 vec![surface]
             }
-            None => HostSurfaceId::DESKTOP_PROVIDER_ORDER.to_vec(),
+            None => HostSurfaceId::ALL.to_vec(),
         };
         let catalog = self.materialize_account_catalog()?;
         self.reconcile_selected_accounts(&catalog, &surfaces)?;
@@ -1053,7 +1079,11 @@ impl HostUsageRuntime {
         let prefs = self.format_prefs;
         let mut out = Vec::new();
         for surface in surfaces {
-            let selected = self.selected_accounts.get(surface.id()).map(String::as_str);
+            let selected = (!self
+                .selected_accounts_needing_reselection
+                .contains(surface.id()))
+            .then(|| self.selected_accounts.get(surface.id()).map(String::as_str))
+            .flatten();
             for entry in catalog.entries_for_surface(surface) {
                 out.push(account_descriptor(
                     surface,
@@ -1076,8 +1106,13 @@ impl HostUsageRuntime {
         self.require_open()?;
         let surface = HostSurfaceId::from_id(surface_id)
             .ok_or_else(|| format!("unknown surface: {surface_id}"))?;
+        let mut selected_accounts = self.selected_accounts.clone();
+        let mut reselection_required = self.selected_accounts_needing_reselection.clone();
         if account_key.is_empty() {
-            self.selected_accounts.remove(surface.id());
+            if reselection_required.contains(surface.id()) {
+                return Err(SELECTED_ACCOUNT_RESELECTION_NOTICE.to_owned());
+            }
+            selected_accounts.remove(surface.id());
         } else {
             let catalog = self.materialize_account_catalog()?;
             if catalog.entry(surface, account_key).is_none() {
@@ -1085,13 +1120,21 @@ impl HostUsageRuntime {
                     "account key does not belong to surface {surface_id}"
                 ));
             }
-            self.selected_accounts
-                .insert(surface.id().to_owned(), account_key.to_owned());
+            selected_accounts.insert(surface.id().to_owned(), account_key.to_owned());
+            reselection_required.remove(surface.id());
         }
         if let Some(dir) = &self.data_dir {
             let path = accounts::selected_accounts_path(dir);
-            accounts::save_selected_accounts(&path, &self.selected_accounts)?;
+            accounts::save_selected_accounts(
+                &path,
+                &accounts::SelectedAccountPreferences {
+                    selected: selected_accounts.clone(),
+                    reselection_required: reselection_required.clone(),
+                },
+            )?;
         }
+        self.selected_accounts = selected_accounts;
+        self.selected_accounts_needing_reselection = reselection_required;
         self.push_event(
             "account_selected",
             Some(surface.id()),
@@ -1388,25 +1431,27 @@ impl HostUsageRuntime {
     }
 
     /// One atomic, Rust-owned grouped account projection for jackin❯ desktop.
+    /// Disabled polling/display preferences never remove registered account evidence.
     pub fn desktop_inventory(&mut self) -> Result<HostDesktopInventory, String> {
         self.require_open()?;
         let catalog = self.materialize_account_catalog()?;
-        self.reconcile_selected_accounts(&catalog, HostSurfaceId::DESKTOP_PROVIDER_ORDER)?;
+        self.reconcile_selected_accounts(&catalog, HostSurfaceId::ALL)?;
         let now = chrono::Utc::now().timestamp();
         let prefs = self.format_prefs;
         let mut groups = Vec::new();
-        for surface in HostSurfaceId::DESKTOP_PROVIDER_ORDER.iter().copied() {
-            if !self.enabled.contains(surface.id()) {
-                self.desktop_detected_surfaces.remove(surface.id());
-                continue;
-            }
+        for surface in HostSurfaceId::ALL.iter().copied() {
             let entries = catalog.entries_for_surface(surface);
             let has_current = entries
                 .iter()
                 .any(|entry| entry.lifecycle == AccountLifecycle::Current);
             let provider_state = catalog.provider_state(surface);
-            let detected = if self.selected_account_missing(&catalog, surface)
+            let diagnostic_view = self.diagnostic_view_for_surface(surface);
+            let detected = if diagnostic_view.is_some()
+                || self.selected_account_missing(&catalog, surface)
                 || has_current
+                || self.discovery.as_ref().is_some_and(|discovery| {
+                    discovery.has_deferred_sources(surface.id())
+                })
                 || provider_state.is_some_and(view_is_auto_detected)
             {
                 self.desktop_detected_surfaces
@@ -1421,7 +1466,11 @@ impl HostUsageRuntime {
             if !detected {
                 continue;
             }
-            let selected = self.selected_accounts.get(surface.id()).map(String::as_str);
+            let selected = (!self
+                .selected_accounts_needing_reselection
+                .contains(surface.id()))
+            .then(|| self.selected_accounts.get(surface.id()).map(String::as_str))
+            .flatten();
             let accounts = entries
                 .into_iter()
                 .map(|entry| {
@@ -1451,14 +1500,20 @@ impl HostUsageRuntime {
                 }
             });
             let display_label = provider_display_label(surface.label()).to_owned();
-            let plan_or_status_label = empty_state
+            let enabled = self.enabled.contains(surface.id());
+            let plan_or_status_label = if !enabled {
+                "Disabled".to_owned()
+            } else { empty_state
                 .as_ref()
                 .filter(|state| state.status_word != "fresh")
-                .map_or_else(|| "—".to_owned(), |state| state.status_label.clone());
-            let accessibility_label = empty_state.as_ref().map_or_else(
+                .map_or_else(|| "—".to_owned(), |state| state.status_label.clone()) };
+            let mut accessibility_label = empty_state.as_ref().map_or_else(
                 || display_label.clone(),
                 |state| format!("{display_label}, {}", state.status_label),
             );
+            if !enabled {
+                accessibility_label.push_str(", Disabled");
+            }
             groups.push(HostDesktopProviderGroup {
                 surface_id: surface.id().to_owned(),
                 display_label,
@@ -1702,9 +1757,7 @@ impl HostUsageRuntime {
             &self.discovered_views,
             &self.discovered_provider_views,
             &store_path,
-            self.discovery
-                .as_ref()
-                .map(|discovery| discovery.accounts.as_slice()),
+            self.discovery.as_ref(),
         )
     }
 
@@ -1713,25 +1766,30 @@ impl HostUsageRuntime {
         catalog: &accounts::AccountCatalog,
         surfaces: &[HostSurfaceId],
     ) -> Result<(), String> {
-        let before = self.selected_accounts.clone();
+        let mut selected_accounts = self.selected_accounts.clone();
         // Persisted selection is operator intent, including while its account
         // is missing. A sibling must never become an implicit replacement.
-        self.selected_accounts
-            .retain(|surface_id, _| HostSurfaceId::from_id(surface_id).is_some());
         for surface in surfaces {
-            if !self.selected_accounts.contains_key(surface.id())
+            if !selected_accounts.contains_key(surface.id())
+                && !self
+                    .selected_accounts_needing_reselection
+                    .contains(surface.id())
                 && let Some(key) = catalog.preferred_current_key(*surface)
             {
-                self.selected_accounts.insert(surface.id().to_owned(), key);
+                selected_accounts.insert(surface.id().to_owned(), key);
             }
         }
-        if self.selected_accounts != before
-            && let Some(data_dir) = &self.data_dir
-        {
-            accounts::save_selected_accounts(
-                &accounts::selected_accounts_path(data_dir),
-                &self.selected_accounts,
-            )?;
+        if selected_accounts != self.selected_accounts {
+            if let Some(data_dir) = &self.data_dir {
+                accounts::save_selected_accounts(
+                    &accounts::selected_accounts_path(data_dir),
+                    &accounts::SelectedAccountPreferences {
+                        selected: selected_accounts.clone(),
+                        reselection_required: self.selected_accounts_needing_reselection.clone(),
+                    },
+                )?;
+            }
+            self.selected_accounts = selected_accounts;
         }
         Ok(())
     }
@@ -1741,9 +1799,11 @@ impl HostUsageRuntime {
         catalog: &accounts::AccountCatalog,
         surface: HostSurfaceId,
     ) -> bool {
-        self.selected_accounts
-            .get(surface.id())
-            .is_some_and(|key| catalog.entry(surface, key).is_none())
+        self.selected_accounts_needing_reselection.contains(surface.id())
+            || self
+                .selected_accounts
+                .get(surface.id())
+                .is_some_and(|key| catalog.entry(surface, key).is_none())
     }
 
     fn selected_view_for_catalog(
@@ -1751,6 +1811,15 @@ impl HostUsageRuntime {
         catalog: &accounts::AccountCatalog,
         surface: HostSurfaceId,
     ) -> Option<FocusedUsageView> {
+        if self
+            .selected_accounts_needing_reselection
+            .contains(surface.id())
+        {
+            return Some(account_unavailable_view(
+                surface,
+                SELECTED_ACCOUNT_RESELECTION_NOTICE,
+            ));
+        }
         match self.selected_accounts.get(surface.id()) {
             Some(key) => match catalog.entry(surface, key) {
                 Some(entry) => Some(entry.view.clone()),
@@ -1764,9 +1833,25 @@ impl HostUsageRuntime {
                     // borrowing another account's identity or quota.
                     catalog.provider_state(surface).cloned()
                 }
-                None => Some(selected_account_unavailable_view(surface)),
+                None => Some(account_unavailable_view(surface, SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)),
             },
-            None => catalog.provider_state(surface).cloned(),
+            None => {
+                if let Some(diagnostic) = self.diagnostic_view_for_surface(surface) {
+                    return Some(diagnostic);
+                }
+                if self.discovery.as_ref().is_some_and(|discovery| discovery.has_deferred_sources(surface.id())) {
+                    return Some(account_unavailable_view(surface, "Credential lookup deferred."));
+                }
+                let view = catalog.provider_state(surface)?.clone();
+                if self.discovery.is_some()
+                    && catalog.entries_for_surface(surface).is_empty()
+                    && (CanonicalAccountIdentity::from_view(surface, &view).is_some()
+                        || !view.buckets.is_empty())
+                {
+                    return Some(account_unavailable_view(surface, "No current account is available."));
+                }
+                Some(view)
+            }
         }
     }
 
@@ -1857,11 +1942,8 @@ fn drive_label_prefix(view: &FocusedUsageView, remaining: u8) -> Option<&str> {
         .filter(|label| !label.is_empty())
 }
 
-fn selected_account_unavailable_view(surface: HostSurfaceId) -> FocusedUsageView {
-    let mut view = FocusedUsageView::unavailable(
-        SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
-        chrono::Utc::now().timestamp(),
-    );
+fn account_unavailable_view(surface: HostSurfaceId, message: &str) -> FocusedUsageView {
+    let mut view = FocusedUsageView::unavailable(message, chrono::Utc::now().timestamp());
     view.focused_agent = Some(surface.agent_slug().to_owned());
     view.focused_provider = Some(surface.label().to_owned());
     view.account.provider_label = surface.account_provider_label().to_owned();
@@ -1996,17 +2078,34 @@ fn account_descriptor(
     use jackin_protocol::control::UsageSnapshotStatus as Status;
 
     let view = &entry.view;
-    let bucket = glance_bucket(surface, view).or_else(|| {
-        view.buckets
-            .iter()
-            .filter(|bucket| bucket.remaining_percent.is_some())
-            .min_by_key(|bucket| bucket.remaining_percent)
-    });
-    let remaining_percent = bucket.and_then(|bucket| bucket.remaining_percent);
-    let (remaining_label, headline) = remaining_percent.map_or_else(
-        || ("—".to_owned(), "—".to_owned()),
-        |percent| (format!("{percent}%"), percent_headline(percent, prefs)),
-    );
+    let bucket = crate::usage::host_account_summary_bucket(&view.buckets);
+    let count_quota = bucket.and_then(|bucket| bucket.count_quota.clone());
+    let used_money = bucket.and_then(|bucket| bucket.used_money.clone());
+    let limit_money = bucket.and_then(|bucket| bucket.limit_money.clone());
+    let remaining_money = bucket.and_then(|bucket| bucket.remaining_money.clone());
+    let remaining_percent = if let Some(counts) = &count_quota {
+        counts.remaining_percent()
+    } else if used_money.is_some() || limit_money.is_some() || remaining_money.is_some() {
+        let remaining = remaining_money.clone().or_else(|| {
+            limit_money.as_ref()?.checked_sub(used_money.as_ref()?)
+        });
+        remaining.as_ref().and_then(|remaining| remaining.remaining_percent_of(limit_money.as_ref()?))
+    } else {
+        bucket.and_then(|bucket| bucket.remaining_percent)
+    };
+    let (remaining_label, headline) = if let Some(counts) = &count_quota {
+        let summary = crate::usage::usage_count_quota_summary(counts);
+        (summary.clone(), summary)
+    } else if used_money.is_some() || limit_money.is_some() || remaining_money.is_some() {
+        let summary = crate::usage::usage_money_quota_summary(bucket.expect("monetary summary bucket"));
+        (summary.clone(), summary)
+    } else {
+        remaining_percent.map_or_else(
+            || ("—".to_owned(), "—".to_owned()),
+            |percent| (format!("{percent}%"), percent_headline(percent, prefs)),
+        )
+    };
+    let resets_at = bucket.and_then(|bucket| bucket.resets_at);
     let (reset_label, exact_reset) =
         bucket
             .and_then(|bucket| bucket.resets_at)
@@ -2060,9 +2159,14 @@ fn account_descriptor(
         provenance_label,
         plan_or_status_label,
         remaining_percent,
+        count_quota,
+        used_money,
+        limit_money,
+        remaining_money,
         remaining_label,
         headline,
         reset_label,
+        resets_at,
         reset_display_label,
         exact_reset,
         status_word: usage_status_storage_label(view.status).to_owned(),

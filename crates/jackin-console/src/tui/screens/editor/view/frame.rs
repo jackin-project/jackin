@@ -29,6 +29,10 @@ use super::{
     tab_labels,
 };
 
+#[cfg(test)]
+#[path = "frame_regression_tests.rs"]
+mod frame_regression_tests;
+
 pub(crate) fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -699,23 +703,25 @@ pub(crate) fn clamp_editor_scroll_for_frame(
     if geometry.active_mounts {
         mounts_scroll.set_content_size(
             u16::try_from(geometry.mounts_content_width).unwrap_or(u16::MAX),
-            u16::MAX,
+            1,
         );
         mounts_scroll.set_viewport(u16::try_from(viewport_w).unwrap_or(u16::MAX), 1);
         mounts_scroll.clamp();
-    } else {
-        tab_scroll.set_content_size(
-            u16::try_from(geometry.content_width).unwrap_or(u16::MAX),
-            u16::MAX,
-        );
-        tab_scroll.set_viewport(u16::try_from(viewport_w).unwrap_or(u16::MAX), 1);
-        tab_scroll.clamp();
     }
+    // State owns both axes: configuring one axis must preserve the other's
+    // measured bounds for subsequent scroll input.
     tab_scroll.set_content_size(
-        u16::MAX,
+        if geometry.active_mounts {
+            1
+        } else {
+            u16::try_from(geometry.content_width).unwrap_or(u16::MAX)
+        },
         u16::try_from(geometry.content_height).unwrap_or(u16::MAX),
     );
-    tab_scroll.set_viewport(1, u16::try_from(viewport_h).unwrap_or(u16::MAX));
+    tab_scroll.set_viewport(
+        u16::try_from(viewport_w).unwrap_or(u16::MAX),
+        u16::try_from(viewport_h).unwrap_or(u16::MAX),
+    );
     tab_scroll.clamp();
 }
 

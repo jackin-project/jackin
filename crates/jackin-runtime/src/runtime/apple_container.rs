@@ -23,7 +23,7 @@ use anyhow::{Context as _, Result, bail};
 
 use crate::apple_container_client::AppleContainerApi as _;
 use crate::instance::{
-    AppleContainerResources, BackendResources, DockerResources, InstanceManifest,
+    AppleAuthorityBinding, AppleContainerResources, BackendResources, DockerResources, InstanceManifest,
     NewInstanceManifest,
 };
 use jackin_core::JackinPaths;
@@ -248,8 +248,7 @@ fn validate_exec_bindings(bindings: &[jackin_protocol::ExecBinding]) -> Result<(
         return Ok(());
     }
 
-    crate::exec_host::ensure_caller_auth_supported()
-        .context("apple-container does not support on-demand credential bindings")
+    anyhow::bail!("apple-container does not support on-demand credential bindings: runtime caller identity is unavailable")
 }
 
 async fn activate_started_entry(
@@ -265,24 +264,6 @@ async fn activate_started_entry(
             .context("activating running launch entry")?;
     }
     Ok(())
-}
-
-fn apple_supervisor_env(debug: bool) -> Vec<(String, String)> {
-    // JACKIN_CAPSULE_FORCE_DAEMON=1 enables daemon mode without PID 1 (vminitd
-    // is PID 1 inside apple/container VMs; capsule runs as entrypoint at PID 2+).
-    let mut env: Vec<(String, String)> = vec![
-        ("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned()),
-        (
-            // vminitd is PID 1; Capsule entrypoint is launched after it. This
-            // is the Apple launch contract, not a runtime probe of the live PID.
-            jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV.to_owned(),
-            jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID.to_string(),
-        ),
-    ];
-    if debug {
-        env.push(("JACKIN_TELEMETRY_LEVEL".to_owned(), "debug".to_owned()));
-    }
-    env
 }
 
 /// Full launch path for the `apple-container` backend.
@@ -313,11 +294,13 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         debug,
         entry_claim,
     } = args;
+    let authority = require_apple_incarnation_authority()?;
 
     anyhow::ensure!(
         state.provider_config_mounts.is_empty(),
         "generated provider configuration requires read-only file overlays; the apple-container backend rejects single-file bind mounts; use the docker backend"
     );
+
     validate_exec_bindings(&capsule_config.exec_bindings)?;
 
     // Probe container CLI availability.
@@ -330,7 +313,20 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     }
 
     // Build AppleContainerSpec — delegates all arg formatting to the client.
-    let mut env = apple_supervisor_env(debug);
+    // JACKIN_CAPSULE_FORCE_DAEMON=1 enables daemon mode without PID 1 (vminitd
+    // is PID 1 inside apple/container VMs; capsule runs as entrypoint at PID 2+).
+    let mut env: Vec<(String, String)> = vec![
+        ("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned()),
+        (
+            // vminitd is PID 1; Capsule entrypoint is launched after it. This
+            // is the Apple launch contract, not a runtime probe of the live PID.
+            jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV.to_owned(),
+            jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID.to_string(),
+        ),
+    ];
+    if debug {
+        env.push(("JACKIN_TELEMETRY_LEVEL".to_owned(), "debug".to_owned()));
+    }
     let host_env_entries = env_pairs
         .iter()
         .filter(|(key, _)| {
@@ -374,18 +370,8 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
     let mut container_mounts = mounts.to_vec();
     container_mounts.push(crate::usage_relay::apple_runtime_mount(socket_dir.clone()));
-    if !capsule_config.exec_bindings.is_empty() {
-        drop(crate::exec_host::start_bound_for_container(
-            &paths.jackin_home,
-            container_name,
-            &capsule_config.exec_bindings,
-        )?);
-        container_mounts.push(AppleContainerMount::new(
-            socket_dir.join("host.sock"),
-            jackin_protocol::HOST_SOCK_CONTAINER_PATH,
-            false,
-        ));
-    }
+
+    super::launch::ensure_apple_provider_authority_not_exposed(state, &container_mounts)?;
 
     let host_env_file =
         super::launch::create_host_env_file(&paths.jackin_home, container_name, &host_env_entries)
@@ -400,12 +386,9 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         caps_add: vec![],
     };
 
-    let run_result = with_admitted_final_apple_spec(paths, state, spec, |spec| async move {
-        crate::apple_container_client::AppleContainerClient::new()
-            .run_container(container_name, &spec)
-            .await
-    })?
-    .await;
+    let run_result = crate::apple_container_client::AppleContainerClient::new()
+        .run_container(container_name, &spec)
+        .await;
     drop(host_env_file);
     activate_started_entry(run_result, entry_claim).await?;
     let _usage_relay_guard =
@@ -437,13 +420,10 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
             container_name: container_name.to_owned(),
             role_image_ref: image_tag.to_owned(),
             inner_docker_enabled: false, // gated on Phase 0 DinD validation
+            authority,
         }),
     );
     manifest.write(&container_state)?;
-
-    // No second host.sock resolver start here: the pre-bound
-    // `start_bound_for_container` above already owns the session resolver, and
-    // starting again would double-bind the same socket path.
 
     // Wait for capsule daemon readiness.
     wait_for_capsule(container_name).await?;
@@ -466,6 +446,27 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     check_dns(container_name).await;
 
     Ok(())
+}
+
+fn require_apple_incarnation_authority() -> Result<AppleAuthorityBinding> {
+    bail!("apple/container does not expose an immutable incarnation authority; refusing to launch")
+}
+
+pub(crate) fn require_persisted_apple_authority(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> Result<AppleAuthorityBinding> {
+    let state_dir = paths.data_dir.join(container_name);
+    let manifest = InstanceManifest::read_optional(&state_dir)?
+        .ok_or_else(|| anyhow::anyhow!("Apple ownership manifest unavailable for {container_name}"))?;
+    anyhow::ensure!(manifest.container_base == container_name,
+        "Apple ownership manifest differs from {container_name}");
+    let Some(BackendResources::AppleContainer(apple)) = manifest.backend.as_ref() else {
+        anyhow::bail!("Apple ownership authority unavailable for {container_name}");
+    };
+    anyhow::ensure!(apple.container_name == container_name,
+        "Apple resource name differs from ownership manifest for {container_name}");
+    Ok(apple.authority.clone())
 }
 
 /// Check whether an apple/container container is currently running.
@@ -558,7 +559,10 @@ pub async fn stop_with(
     client: &impl crate::apple_container_client::AppleContainerApi,
     container_name: &str,
 ) -> Result<()> {
-    client.stop_container(container_name).await
+    if client.inspect_container(container_name).await?.is_some() {
+        bail!("apple/container cannot stop `{container_name}` safely: the CLI exposes no incarnation-bound conditional stop operation")
+    }
+    Ok(())
 }
 
 /// Remove the container (purge).
@@ -574,9 +578,10 @@ pub async fn remove_with(
     client: &impl crate::apple_container_client::AppleContainerApi,
     container_name: &str,
 ) -> Result<()> {
-    // Stop first (ignore errors — may already be stopped).
-    drop(client.stop_container(container_name).await);
-    client.remove_container(container_name).await
+    if client.inspect_container(container_name).await?.is_some() {
+        bail!("apple/container cannot remove `{container_name}` safely: the CLI exposes no incarnation-bound conditional remove operation")
+    }
+    Ok(())
 }
 
 /// Probe the `container` CLI version. Returns `None` if not installed.
@@ -622,8 +627,8 @@ mod tests {
                 model: None,
             },
             auth: crate::instance::ProvisionedAuth::default(),
-            auth_outcomes: std::collections::BTreeMap::default(),
-            auth_mount_paths: std::collections::BTreeSet::default(),
+            auth_outcomes: Default::default(),
+            auth_mount_paths: Default::default(),
             auth_mount_leases: Vec::new(),
             provider_config_mounts: vec![(
                 fixture.path().join("role/provider-config/config.toml"),
@@ -659,7 +664,7 @@ mod tests {
         let mut context = Context::from_waker(Waker::noop());
         match future.as_mut().poll(&mut context) {
             Poll::Ready(Err(error)) => {
-                assert!(format!("{error:#}").contains("requires read-only file overlays"));
+                assert!(format!("{error:#}").contains("requires read-only file overlays"))
             }
             result => panic!(
                 "unsupported generated provider config must reject before the first runtime await: {result:?}"
@@ -676,38 +681,12 @@ mod tests {
         validate_exec_bindings(&[]).expect("no credential relay is required");
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
-    fn linux_exec_bindings_are_supported() {
-        validate_exec_bindings(&[test_binding()]).expect("Linux peer auth is available");
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    #[test]
-    fn non_linux_exec_bindings_are_rejected_explicitly() {
+    fn apple_exec_bindings_are_rejected_without_runtime_identity() {
         let error = validate_exec_bindings(&[test_binding()])
-            .expect_err("non-Linux peer auth is unavailable");
+            .expect_err("Apple runtime cannot attest the credential socket peer");
         let message = format!("{error:#}");
         assert!(message.contains("apple-container does not support on-demand credential bindings"));
-        assert!(message.contains("peer authentication is unavailable"));
+        assert!(message.contains("runtime caller identity is unavailable"));
     }
 }
-
-/// Final complete-spec admission boundary, immediately before Apple creation.
-fn with_admitted_final_apple_spec<T>(
-    paths: &JackinPaths,
-    state: &crate::instance::RoleState,
-    spec: crate::apple_container_client::AppleContainerSpec,
-    submit: impl FnOnce(crate::apple_container_client::AppleContainerSpec) -> T,
-) -> Result<T> {
-    super::launch::ensure_apple_provider_authority_not_exposed(
-        state,
-        &spec.mounts,
-        &[paths.home_dir.join(".jackin-coordination")],
-    )?;
-    Ok(submit(spec))
-}
-
-#[cfg(test)]
-#[path = "apple_container/coordination_tests.rs"]
-mod coordination_tests;

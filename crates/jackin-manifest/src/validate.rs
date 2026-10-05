@@ -72,35 +72,14 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
     // `agents` field implicitly default to claude-only and have their
     // own coverage rule above.
     if manifest.agents.is_some() {
-        if manifest.codex.is_some() && !supported.contains(&Agent::Codex) {
-            warnings.push(ManifestWarning::new(
-                "[codex] table is present but `agents` does not include codex; \
-                 the table is ignored — add codex to `agents` to enable it.",
-            ));
-        }
-        if manifest.claude.is_some() && !supported.contains(&Agent::Claude) {
-            warnings.push(ManifestWarning::new(
-                "[claude] table is present but `agents` does not include claude; \
-                 the table is ignored — add claude to `agents` to enable it.",
-            ));
-        }
-        if manifest.amp.is_some() && !supported.contains(&Agent::Amp) {
-            warnings.push(ManifestWarning::new(
-                "[amp] table is present but `agents` does not include amp; \
-                 the table is ignored — add amp to `agents` to enable it.",
-            ));
-        }
-        if manifest.kimi.is_some() && !supported.contains(&Agent::Kimi) {
-            warnings.push(ManifestWarning::new(
-                "[kimi] table is present but `agents` does not include kimi; \
-                 the table is ignored — add kimi to `agents` to enable it.",
-            ));
-        }
-        if manifest.opencode.is_some() && !supported.contains(&Agent::Opencode) {
-            warnings.push(ManifestWarning::new(
-                "[opencode] table is present but `agents` does not include opencode; \
-                 the table is ignored — add opencode to `agents` to enable it.",
-            ));
+        for agent in Agent::ALL {
+            if manifest.has_agent_config(*agent) && !supported.contains(agent) {
+                let slug = agent.slug();
+                warnings.push(ManifestWarning::new(format!(
+                    "[{slug}] table is present but `agents` does not include {slug}; \
+                     the table is ignored — add {slug} to `agents` to enable it."
+                )));
+            }
         }
     }
 

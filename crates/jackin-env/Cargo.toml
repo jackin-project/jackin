@@ -36,3 +36,6 @@ tracing = { workspace = true }
 
 [lints]
 workspace = true
+
+[target.'cfg(unix)'.dependencies]
+jackin-process-directory = { workspace = true }

@@ -71,8 +71,6 @@ impl Multiplexer {
         // stays DialogCopyTarget. Track the per-row hover separately.
         let (term_rows, term_cols) = self.render.terminal_size();
         let row_hover_changed = self.dialog_top_mut().is_some_and(|dialog| {
-            let row = row + 1;
-            let col = col + 1;
             dialog.set_container_info_hover(row, col, term_rows, term_cols)
                 || dialog.set_usage_tab_hover(row, col, term_rows, term_cols)
         });
@@ -95,13 +93,11 @@ impl Multiplexer {
     /// in priority order. Both `hover_target_at` and `pointer_shape_at`
     /// consume this so the priority ordering lives once.
     pub(super) fn chrome_hit_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
-        let row_1based = row + 1;
-        let col_1based = col + 1;
         let dialog_copy_target = self.dialog_top().is_some_and(|dialog| {
             let github = self.github_context_view();
             dialog.clickable_at(
-                row_1based,
-                col_1based,
+                row,
+                col,
                 self.render.term_rows,
                 self.render.term_cols,
                 Some(&github),
@@ -556,14 +552,13 @@ impl Multiplexer {
             .saturating_add(usize::from(cursor_row));
         let rows = session
             .render_content_snapshot_range(inner.cols, content_row..content_row.saturating_add(1));
-        if rows.is_empty() {
+        let Some(visible_row) = rows.first() else {
             return false;
-        }
-        let Some(target) = self.resolve_host_open_target_at_content_cell(
+        };
+        let Some(target) = self.resolve_host_open_target_at_viewport_cell(
             session_id,
-            &rows,
-            content_row,
-            content_row,
+            visible_row,
+            cursor_row,
             cursor_col,
         ) else {
             return false;
@@ -581,39 +576,35 @@ impl Multiplexer {
         let candidate = self.detect_selection_start(row, col)?;
         let session = self.session_supervisor.sessions.get(candidate.session_id)?;
         // Hover/click URL resolution inspects only the anchor row:
-        // single-row word_bounds_in_row; OSC8 uses absolute content coords.
+        // single-row word_bounds_in_row; OSC 8 uses viewport coordinates.
         // Window = 1 row (this function).
         let content_row = candidate.anchor_row;
-        let range_start = content_row;
         let rows = session.render_content_snapshot_range(
             candidate.inner.cols,
             content_row..content_row.saturating_add(1),
         );
-        self.resolve_host_open_target_at_content_cell(
+        self.resolve_host_open_target_at_viewport_cell(
             candidate.session_id,
-            &rows,
-            range_start,
-            content_row,
+            rows.first()?,
+            row.checked_sub(candidate.inner.row)?,
             candidate.anchor_col,
         )
     }
 
-    /// Resolve a host-open target at an absolute content cell.
-    ///
-    /// `rows` may be a full content snapshot or a range slice; `rows_base` is
-    /// the absolute content-row index of `rows[0]` so absolute coordinates keep
-    /// working without re-basing selection/hyperlink semantics.
-    fn resolve_host_open_target_at_content_cell(
+    /// Resolve the displayed cell using its viewport row and matching text row.
+    /// History indices belong only to text-snapshot acquisition; the terminal
+    /// hyperlink lookup addresses the currently displayed viewport.
+    fn resolve_host_open_target_at_viewport_cell(
         &self,
         session_id: u64,
-        rows: &[RowSnapshot],
-        rows_base: usize,
-        row_idx: usize,
+        visible_row: &RowSnapshot,
+        viewport_row: u16,
         anchor_col: u16,
     ) -> Option<HostOpenTarget> {
         let session = self.session_supervisor.sessions.get(session_id)?;
 
-        if let Some(osc8_target) = session.hyperlink_target_at_content_row(row_idx, anchor_col) {
+        if let Some(osc8_target) = session.hyperlink_target_at_viewport_cell(viewport_row, anchor_col)
+        {
             if crate::tui::url_text::is_host_open_url(osc8_target) {
                 return Some(HostOpenTarget::Allowed(osc8_target.to_owned()));
             }
@@ -623,10 +614,8 @@ impl Multiplexer {
             return Some(HostOpenTarget::Rejected);
         }
 
-        let local_row = row_idx.saturating_sub(rows_base);
-        let row = rows.get(local_row)?;
-        let (start_col, end_col) = word_bounds_in_row(row, anchor_col)?;
-        let url = row.text_range(start_col, end_col);
+        let (start_col, end_col) = word_bounds_in_row(visible_row, anchor_col)?;
+        let url = visible_row.text_range(start_col, end_col);
         if !crate::tui::url_text::is_host_open_url(&url) {
             if !crate::tui::url_text::has_url_scheme(&url) {
                 return None;

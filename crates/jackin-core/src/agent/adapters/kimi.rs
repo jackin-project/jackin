@@ -6,8 +6,8 @@
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, bounded_fallback_curl, looks_like_version,
-    render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, bounded_fallback_curl,
+    looks_like_version, render_fallback_install_block,
 };
 
 const FALLBACK_INSTALL_COMMAND: &str =
@@ -32,10 +32,13 @@ impl AgentRuntime for KimiRuntime {
         format!(
             "\
 USER agent
+ARG JACKIN_EXPECTED_KIMI_VERSION
 COPY --link --chown=agent:0 --chmod=0755 {source} /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
-    kimi --version
+    test -n \"$JACKIN_EXPECTED_KIMI_VERSION\" && \\
+    test \"$(kimi --version)\" = \"kimi $JACKIN_EXPECTED_KIMI_VERSION\"
+ENV JACKIN_KIMI_CLI_VERSION=$JACKIN_EXPECTED_KIMI_VERSION
 "
         )
     }
@@ -45,11 +48,19 @@ RUN set -euxo pipefail && \\
     }
 
     fn fallback_install_block(&self) -> String {
-        render_fallback_install_block(
+        let mut block = render_fallback_install_block(
             "/home/agent/.kimi-code/bin:/home/agent/.local/bin",
             FALLBACK_INSTALL_COMMAND,
             self.slug(),
-        )
+        );
+        block.push_str(
+            "ARG JACKIN_EXPECTED_KIMI_VERSION\n\
+RUN set -euxo pipefail && \\
+    test -n \"$JACKIN_EXPECTED_KIMI_VERSION\" && \\
+    test \"$(kimi --version)\" = \"kimi $JACKIN_EXPECTED_KIMI_VERSION\"\n\
+ENV JACKIN_KIMI_CLI_VERSION=$JACKIN_EXPECTED_KIMI_VERSION\n",
+        );
+        block
     }
 
     fn fallback_install_command(&self) -> &'static str {
@@ -77,7 +88,10 @@ RUN set -euxo pipefail && \\
             credential_dir: ".kimi-code",
             config_dir: None,      // all durable state under ~/.kimi-code
             credential_file: None, // directory-based provisioning
-            folder_env_var: None,  // no standard folder env var
+            folder_env_var: Some(FolderVar {
+                name: "KIMI_CODE_HOME",
+                kind: FolderVarKind::Dir,
+            }),
         }
     }
 

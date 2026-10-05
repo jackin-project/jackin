@@ -515,25 +515,11 @@ pub(crate) fn fetch_amp_api_usage(token: &str) -> Result<AmpUsage, String> {
 
 pub(crate) fn load_amp_api_key(path: &Path) -> Option<String> {
     let value = read_json_file(path)?;
-    value
-        .as_object()?
-        .iter()
-        .find_map(|(key, value)| {
-            key.starts_with("apiKey@")
-                .then(|| value.as_str())
-                .flatten()
-                .map(str::trim)
-                .filter(|token| !token.is_empty())
-                .map(ToOwned::to_owned)
-        })
-        .or_else(|| {
-            value
-                .as_object()?
-                .values()
-                .filter_map(|value| value.as_str().map(str::trim))
-                .find(|token| !token.is_empty())
-                .map(ToOwned::to_owned)
-        })
+    let payload = jackin_core::amp_profile_credential_payload(&value).ok()?;
+    payload
+        .get("apiKey@https://ampcode.com/")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
 }
 
 pub(crate) fn fetch_amp_cli_usage() -> Result<AmpUsage, String> {

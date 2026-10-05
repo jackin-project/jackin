@@ -1,5 +1,13 @@
 use super::*;
 
+fn published_root_fixture() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    for doc in super::super::ROOT_PROSE_DOCS {
+        fs::write(dir.path().join(doc), "Published jackin❯ document.\n").unwrap();
+    }
+    dir
+}
+
 #[test]
 fn strips_fenced_blocks() {
     let text = "prose jackin'\n```\njackin'\n```\nmore";
@@ -26,25 +34,59 @@ fn strips_urls() {
 
 #[test]
 fn detects_real_violation() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = published_root_fixture();
     let root = dir.path();
-    fs::write(root.join("NOTE.md"), "The jackin' product is great.\n").unwrap();
+    fs::write(
+        root.join("CONTRIBUTING.md"),
+        "The jackin' product is great.\n",
+    )
+    .unwrap();
     let err = check_brand(root).unwrap_err().to_string();
     assert!(err.contains("jackin'"), "{err}");
-    assert!(err.contains("NOTE.md"), "{err}");
+    assert!(err.contains("CONTRIBUTING.md"), "{err}");
 }
 
 #[test]
 fn clean_file_passes() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    fs::write(root.join("NOTE.md"), "The jackin❯ product is great.\n").unwrap();
-    check_brand(root).unwrap();
+    let dir = published_root_fixture();
+    check_brand(dir.path()).unwrap();
+}
+
+#[test]
+fn operational_root_inputs_are_outside_published_prose() {
+    let dir = published_root_fixture();
+    fs::write(dir.path().join("operator-task.md"), "Consolidate Jackin.\n").unwrap();
+    check_brand(dir.path()).unwrap();
+}
+
+#[test]
+fn missing_owned_root_document_is_an_error() {
+    let dir = published_root_fixture();
+    fs::remove_file(dir.path().join("CONTRIBUTING.md")).unwrap();
+    let error = check_brand(dir.path()).unwrap_err().to_string();
+    assert!(
+        error.contains("owned root prose document missing"),
+        "{error}"
+    );
+    assert!(error.contains("CONTRIBUTING.md"), "{error}");
+}
+
+#[test]
+fn new_docs_pages_are_discovered_without_root_registration() {
+    let dir = published_root_fixture();
+    let content = dir.path().join("docs/content/new-domain");
+    fs::create_dir_all(&content).unwrap();
+    fs::write(content.join("new-page.mdx"), "Jackin product.\n").unwrap();
+    let error = check_brand(dir.path()).unwrap_err().to_string();
+    assert!(
+        error.contains("docs/content/new-domain/new-page.mdx"),
+        "{error}"
+    );
 }
 
 #[test]
 fn scans_roadmap_tree() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = published_root_fixture();
     let root = dir.path();
     fs::create_dir_all(root.join("roadmap/topic")).unwrap();
     fs::write(

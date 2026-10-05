@@ -3,106 +3,230 @@
 
 use super::*;
 
-fn account(window: &str, used: i64) -> AccountUsageSnapshotView {
-    AccountUsageSnapshotView {
-        provider: "codex".to_owned(),
-        account_label: "alexey@example.com".to_owned(),
-        source: "codex-rpc".to_owned(),
-        confidence: "authoritative".to_owned(),
-        window_kind: window.to_owned(),
-        used_amount: Some(used),
-        used_unit: Some("percent".to_owned()),
-        limit_amount: Some(100),
-        limit_unit: Some("percent".to_owned()),
-        resets_at: Some(1_781_200_000),
-        fetched_at: 1_781_190_000,
-        expires_at: Some(1_781_190_300),
-        status: "fresh".to_owned(),
-        last_error: None,
+fn scope(id: &str) -> UsageMembershipScope {
+    UsageMembershipScope {
+        container_id: format!("{id:0<64}"),
+        workspace_config_proof: "accepted-host-proof".to_owned(),
     }
 }
 
 #[tokio::test]
-async fn host_account_cache_upserts_rows() {
+async fn scoped_membership_cache_preserves_unavailable_and_revoked() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    let rows = [account("session", 37), account("weekly", 10)];
-
-    let path = upsert_accounts(&paths, &rows).await.unwrap();
-    assert_eq!(path, paths.data_dir.join("daemon").join("accounts.db"));
-    assert_eq!(count_account_rows(path.clone()).await.unwrap(), 2);
-
-    upsert_accounts(&paths, &[account("session", 38)])
+    let path = store_membership(&paths, &scope("a"), &UsageAccountMembershipV1::Unavailable)
         .await
         .unwrap();
-    assert_eq!(count_account_rows(path).await.unwrap(), 2);
+    store_membership(&paths, &scope("b"), &UsageAccountMembershipV1::Revoked)
+        .await
+        .unwrap();
+    let (read_path, memberships) = read_memberships(&paths).await.unwrap();
+    assert_eq!(path, read_path);
+    assert_eq!(memberships.len(), 2);
+    assert!(memberships.iter().any(|entry| entry.scope == scope("a")
+        && matches!(entry.membership, UsageAccountMembershipV1::Unavailable)));
+    assert!(memberships.iter().any(|entry| entry.scope == scope("b")
+        && matches!(entry.membership, UsageAccountMembershipV1::Revoked)));
 }
 
 #[tokio::test]
-async fn host_account_cache_reads_seeded_rows_without_provider_poll() {
+async fn scoped_membership_cache_retains_accepted_empty_projection() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    let seeded = [account("session", 37), account("weekly", 10)];
-
-    let path = upsert_accounts(&paths, &seeded).await.unwrap();
-    let (read_path, rows) = read_accounts(&paths).await.unwrap();
-
-    assert_eq!(read_path, path);
-    assert_eq!(rows, seeded);
-}
-
-#[tokio::test]
-async fn host_account_cache_missing_file_reads_empty_without_creating_db() {
-    let temp = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    let path = paths.data_dir.join("daemon").join("accounts.db");
-
-    let (read_path, rows) = read_accounts(&paths).await.unwrap();
-
-    assert_eq!(read_path, path);
-    assert!(rows.is_empty());
-    assert!(!read_path.exists());
-}
-
-#[test]
-fn account_hash_is_stable_and_namespaced() {
+    let membership = super::super::tests::empty_membership();
+    store_membership(&paths, &scope("c"), &membership)
+        .await
+        .unwrap();
+    let (_, memberships) = read_memberships(&paths).await.unwrap();
+    assert_eq!(memberships.len(), 1);
     assert_eq!(
-        account_key_hash("codex", "alexey@example.com"),
-        account_key_hash("codex", "alexey@example.com")
-    );
-    assert_ne!(
-        account_key_hash("codex", "alexey@example.com"),
-        account_key_hash("claude", "alexey@example.com")
+        serde_json::to_value(&memberships[0].membership).unwrap(),
+        serde_json::to_value(&membership).unwrap()
     );
 }
 
 #[tokio::test]
-async fn host_account_cache_exports_owned_operations_without_payloads() {
+async fn missing_membership_cache_reads_without_creating_database() {
     let temp = tempfile::tempdir().unwrap();
-    let root = temp.path().join("host-cache-secret-path");
-    let paths = JackinPaths::for_tests(&root);
-    let mut sensitive_account = account("host-cache-secret-window", 37);
-    sensitive_account.account_label = "host-cache-secret@example.com".to_owned();
+    let paths = JackinPaths::for_tests(temp.path());
+    let (path, memberships) = read_memberships(&paths).await.unwrap();
+    assert!(memberships.is_empty());
+    assert!(!path.exists());
+}
 
-    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
-    let _subscriber = tracing::subscriber::set_default(subscriber);
+struct CachedMembershipDocker {
+    rows: std::result::Result<Vec<jackin_core::ContainerRow>, String>,
+}
 
-    upsert_accounts(&paths, &[sensitive_account]).await.unwrap();
-    read_accounts(&paths).await.unwrap();
-
-    export.force_flush();
-    assert_eq!(export.finished_spans().len(), 7);
-    assert_eq!(export.error_span_count(), 0);
-    for expected in ["connect", "update", "upsert", "select"] {
-        assert!(export.contains_span_text(expected), "missing {expected}");
+impl jackin_core::DockerApi for CachedMembershipDocker {
+    fn controller_endpoint(&self) -> &jackin_core::ControllerEndpoint {
+        static ENDPOINT: std::sync::OnceLock<jackin_core::ControllerEndpoint> = std::sync::OnceLock::new();
+        ENDPOINT.get_or_init(|| jackin_core::ControllerEndpoint::Unix {
+            socket: "/var/run/docker.sock".into(),
+        })
     }
-    for prohibited in [
-        "host-cache-secret-path",
-        "host-cache-secret-window",
-        "host-cache-secret@example.com",
-        "account_usage_snapshots",
-        "CREATE TABLE",
+    async fn daemon_server_id(&self) -> Result<jackin_core::DaemonServerId> {
+        panic!("unexpected Docker operation")
+    }
+
+    async fn ping(&self) -> Result<()> {
+        panic!("unexpected Docker operation")
+    }
+    async fn inspect_container_by_name(&self, _name: &str) -> jackin_core::ContainerInspection {
+        panic!("unexpected Docker operation")
+    }
+    async fn inspect_container_by_id(
+        &self,
+        _container: &jackin_core::ContainerHandle,
+    ) -> jackin_core::ContainerState {
+        panic!("unexpected Docker operation")
+    }
+    async fn container_init_pid_by_id(
+        &self,
+        _container: &jackin_core::ContainerHandle,
+    ) -> Result<u32> {
+        panic!("unexpected Docker operation")
+    }
+    async fn remove_container_by_id(
+        &self,
+        _container: &jackin_core::ContainerHandle,
+    ) -> Result<()> {
+        panic!("unexpected Docker operation")
+    }
+    async fn list_containers(
+        &self,
+        _label_filters: &[&str],
+        _all: bool,
+    ) -> Result<Vec<jackin_core::ContainerRow>> {
+        assert!(_label_filters.is_empty());
+        assert!(_all);
+        self.rows.clone().map_err(anyhow::Error::msg)
+    }
+    async fn create_container(
+        &self,
+        _name: &str,
+        _spec: jackin_core::ContainerSpec,
+    ) -> Result<jackin_core::ContainerHandle> {
+        panic!("unexpected Docker operation")
+    }
+    async fn start_container_by_id(&self, _container: &jackin_core::ContainerHandle) -> Result<()> {
+        panic!("unexpected Docker operation")
+    }
+    async fn create_volume(
+        &self,
+        _name: &str,
+        _labels: std::collections::HashMap<String, String>,
+    ) -> Result<jackin_core::VolumeRow> {
+        panic!("unexpected Docker operation")
+    }
+
+    async fn inspect_volume_by_name(&self, _name: &str) -> Result<Option<jackin_core::VolumeRow>> {
+        panic!("unexpected Docker operation")
+    }
+
+    async fn remove_volume(&self, _name: &str) -> Result<()> {
+        panic!("unexpected Docker operation")
+    }
+    async fn create_network(
+        &self,
+        _name: &str,
+        _labels: std::collections::HashMap<String, String>,
+        _internal: bool,
+    ) -> Result<jackin_core::NetworkId> {
+        panic!("unexpected Docker operation")
+    }
+    async fn remove_network_by_id(&self, _id: &jackin_core::NetworkId) -> Result<()> {
+        panic!("unexpected Docker operation")
+    }
+    async fn list_networks(&self, _label_filters: &[&str]) -> Result<Vec<jackin_core::NetworkRow>> {
+        panic!("unexpected Docker operation")
+    }
+    async fn inspect_network_by_name(
+        &self,
+        _name: &str,
+    ) -> Result<Option<jackin_core::NetworkRow>> {
+        panic!("unexpected Docker operation")
+    }
+    async fn inspect_network_by_id(
+        &self,
+        _id: &jackin_core::NetworkId,
+    ) -> Result<Option<jackin_core::NetworkRow>> {
+        panic!("unexpected Docker operation")
+    }
+
+    async fn list_image_tags(&self, _reference_filter: &str) -> Result<Vec<String>> {
+        panic!("unexpected Docker operation")
+    }
+    async fn remove_image(&self, _name: &str) -> Result<jackin_core::RemoveImageOutcome> {
+        panic!("unexpected Docker operation")
+    }
+    async fn inspect_image_labels(
+        &self,
+        _image: &str,
+    ) -> Result<std::collections::HashMap<String, String>> {
+        panic!("unexpected Docker operation")
+    }
+    async fn pull_image(&self, _image: &str) -> Result<()> {
+        panic!("unexpected Docker operation")
+    }
+    async fn exec_capture_by_id(
+        &self,
+        _container: &jackin_core::ContainerHandle,
+        _cmd: &[&str],
+    ) -> Result<String> {
+        panic!("unexpected Docker operation")
+    }
+}
+
+#[tokio::test]
+async fn actual_cache_collector_revalidates_without_writing() {
+    use super::super::validate_cached_memberships_with_docker;
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let membership = super::super::tests::empty_membership();
+    let path = store_membership(&paths, &scope("d"), &membership)
+        .await
+        .unwrap();
+    let before = std::fs::read(&path).unwrap();
+    for (rows, revoked) in [
+        (Err("Docker unavailable".to_owned()), false),
+        (Ok(vec![]), true),
+        (
+            Ok(vec![jackin_core::ContainerRow {
+                name: "renamed-container".to_owned(),
+                id: scope("d").container_id,
+                labels: std::collections::HashMap::new(),
+            }]),
+            false,
+        ),
+        (
+            Ok(vec![jackin_core::ContainerRow {
+                name: "original-display-name".to_owned(),
+                id: scope("e").container_id,
+                labels: std::collections::HashMap::new(),
+            }]),
+            true,
+        ),
     ] {
-        assert!(!export.contains_span_text(prohibited));
+        let (_, entries) = read_memberships(&paths).await.unwrap();
+        let entries = validate_cached_memberships_with_docker(
+            &paths,
+            &CachedMembershipDocker { rows },
+            entries,
+        )
+        .await
+        .unwrap();
+        if revoked {
+            assert!(matches!(
+                entries[0].membership,
+                UsageAccountMembershipV1::Revoked
+            ));
+        } else {
+            assert!(matches!(
+                entries[0].membership,
+                UsageAccountMembershipV1::Unavailable
+            ));
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), before);
     }
 }

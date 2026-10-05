@@ -252,7 +252,7 @@ pub fn dispatch_wheel(
                         scroll_block_by(
                             &mut editor.tab_scroll,
                             region.rect,
-                            region.content_w,
+                            1,
                             region.content_h,
                             isize::from(dy),
                             0,
@@ -262,7 +262,7 @@ pub fn dispatch_wheel(
                             &mut editor.workspace_mounts_scroll,
                             region.rect,
                             region.content_w,
-                            region.content_h,
+                            1,
                             0,
                             isize::from(dx),
                         )

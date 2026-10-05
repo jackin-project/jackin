@@ -699,7 +699,7 @@ pub(super) fn configure_accounts(
                 efforts.get(&instance.config_id).map(String::as_str),
             )?),
             Agent::Opencode => {
-                mounts.extend(configure_opencode(root, config, instance, slot, model)?);
+                mounts.extend(configure_opencode(root, config, instance, slot, model)?)
             }
             _ => {}
         }

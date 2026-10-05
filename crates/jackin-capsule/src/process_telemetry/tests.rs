@@ -165,3 +165,88 @@ fn child_owner_exports_exit_timeout_spawn_and_abandonment() {
     assert!(!export.contains_span_text("/operator-secret/missing-child"));
     assert!(!export.contains_span_text("operator-secret-child-argument"));
 }
+
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn cancelled_configured_process_exports_cancellation_without_fault() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let temporary = tempfile::tempdir().unwrap();
+    let ready_path = temporary.path().join("ready");
+    let request = ExecRequest::new(
+        "sh",
+        [
+            "-c",
+            "printf ready > \"$1\"; exec sleep 30",
+            "fixture",
+            ready_path.to_str().unwrap(),
+        ],
+    )
+    .no_timeout();
+    let mut future = Box::pin(exec_async_as(
+        &request,
+        ProcessExecutableName::ConfiguredCommand,
+    ));
+    tokio::select! {
+        result = &mut future => panic!("fixture exited before cancellation: {result:?}"),
+        ready = tokio::time::timeout(Duration::from_secs(2), async {
+            while !ready_path.exists() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }) => ready.expect("real credential/configured process spawned"),
+    }
+    drop(future);
+    drop(guard);
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 0);
+    assert!(export.contains_span_text("cancellation"));
+    assert!(!export.contains_span_text("telemetry_instrumentation_fault"));
+    assert!(!export.contains_span_text("ready"));
+}
+
+#[cfg(unix)]
+#[test]
+fn finite_sync_execution_preserves_accepted_status_and_safe_failure_types() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    tracing::subscriber::with_default(subscriber, || {
+        let pending = ExecRequest::new("/bin/sh", ["-c", "printf private-response; exit 8"])
+            .timeout(Duration::from_secs(2));
+        let output = exec_sync_accepted(&pending, &[0, 8]).unwrap();
+        assert_eq!(output.code, Some(8));
+        assert!(!output.success);
+
+        let missing = ExecRequest::new("/private-marker/missing-command", ["private-argument"])
+            .timeout(Duration::from_secs(2));
+        let error = exec_sync_accepted(&missing, &[0]).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<jackin_process::ExecStage>(),
+            Some(&jackin_process::ExecStage::Spawn)
+        );
+        assert_eq!(format!("{error:#}"), "process spawn failed");
+        assert!(!format!("{error:?}").contains("private-marker"));
+        assert!(!format!("{error:?}").contains("private-argument"));
+
+        let overflow = ExecRequest::new("/bin/sh", ["-c", "printf private-overflow"])
+            .timeout(Duration::from_secs(2))
+            .output_limits(1, 1024);
+        let error = exec_sync_accepted(&overflow, &[0]).unwrap_err();
+        assert!(error.downcast_ref::<std::io::Error>().is_some());
+        assert_eq!(format!("{error:#}"), "process I/O failed");
+        assert!(!format!("{error:?}").contains("private-overflow"));
+    });
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 3);
+    assert_eq!(export.error_span_count(), 2);
+    assert!(export.contains_span_text("process_spawn_error"));
+    assert!(export.contains_span_text("io_error"));
+    assert!(!export.contains_span_text("process_exit_nonzero"));
+    for private in [
+        "private-response",
+        "private-marker",
+        "private-argument",
+        "private-overflow",
+    ] {
+        assert!(!export.contains_span_text(private));
+    }
+}

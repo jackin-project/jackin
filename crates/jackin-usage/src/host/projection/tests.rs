@@ -24,6 +24,8 @@ fn sorted(locale: &str, labels: &[&str]) -> Vec<String> {
 fn bucket(label: &str) -> QuotaBucketView {
     QuotaBucketView {
         label: label.into(),
+        count_quota: None,
+        remaining_money: None,
         used_label: None,
         limit_label: None,
         remaining_percent: None,
@@ -43,6 +45,13 @@ fn view_with_buckets(
     buckets: Vec<QuotaBucketView>,
 ) -> FocusedUsageView {
     FocusedUsageView {
+        canonical_identity: Some(jackin_protocol::control::UsageCanonicalAccountIdentity {
+            surface_id: "codex".to_owned(),
+            subject: jackin_protocol::control::UsageCanonicalAccountSubject::ProviderId(
+                "codex-account-1".to_owned(),
+            ),
+        }),
+        account_identity: None,
         focused_agent: None,
         focused_provider: None,
         account: FocusedAccountHeader {
@@ -93,7 +102,7 @@ fn window_projection_preserves_raw_overage_from_money_ratio() {
     assert_eq!(window.used_percent.map(UsagePercent::get), Some(100));
     assert_eq!(window.used_raw_percent, Some(120));
     assert_eq!(window.remaining_percent, None);
-    assert_eq!(window.quota_state, UsageQuotaStateV1::Exhausted);
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Exhausted);
     window.validate(0).unwrap();
 }
 
@@ -104,16 +113,13 @@ fn window_projection_keeps_checked_math_without_wrap_or_fabrication() {
     huge.limit_money = Some(Money::new(1, "USD", 2));
     let window = project_window("canon-1", &huge, 0).unwrap();
     assert_eq!(window.used_percent.map(UsagePercent::get), Some(100));
-    assert_eq!(window.used_raw_percent, Some(i32::MAX));
+    assert_eq!(window.used_raw_percent, None);
     window.validate(0).unwrap();
 
     let mut mismatched = bucket("Mismatched");
     mismatched.used_money = Some(Money::new(50_00, "USD", 2));
     mismatched.limit_money = Some(Money::new(10_000, "SGD", 2));
-    let window = project_window("canon-1", &mismatched, 0).unwrap();
-    assert_eq!(window.used_percent, None);
-    assert_eq!(window.used_raw_percent, None);
-    window.validate(0).unwrap();
+    assert!(project_window("canon-1", &mismatched, 0).is_err());
 
     let mut zero_cap = bucket("Zero cap");
     zero_cap.used_money = Some(Money::new(1, "USD", 2));
@@ -124,47 +130,161 @@ fn window_projection_keeps_checked_math_without_wrap_or_fabrication() {
 }
 
 #[test]
+fn exact_money_remaining_owns_state_and_geometry() {
+    let mut quota = bucket("Sub-cent cap");
+    quota.limit_money = Some(Money::new(1, "USD", 3));
+    quota.remaining_money = Some(Money::new(1, "USD", 3));
+    quota.remaining_percent = Some(0); // A legacy rounded value cannot own state.
+    let window = project_window("money-literal", &quota, 0).unwrap();
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Available);
+    assert_eq!(window.remaining_percent.map(UsagePercent::get), Some(100));
+
+    quota.limit_money = Some(Money::new(1, "USD", 0));
+    quota.remaining_money = Some(Money::new(4, "USD", 3));
+    let window = project_window("money-literal", &quota, 0).unwrap();
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Warning);
+    assert_eq!(window.remaining_percent.map(UsagePercent::get), Some(0));
+    assert_eq!(window.remaining_raw_percent, Some(0));
+
+    quota.used_money = Some(Money::new(2, "USD", 0));
+    quota.remaining_money = Some(Money::new(1, "USD", 0));
+    let window = project_window("money-literal", &quota, 0).unwrap();
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Available);
+    assert_eq!(window.remaining_percent.map(UsagePercent::get), Some(100));
+    assert_eq!(spend_remaining(&quota), quota.remaining_money);
+    window.validate(0).unwrap();
+}
+
+#[test]
+fn exact_money_zero_unknown_and_signed_remaining_survive_projection() {
+    let mut quota = bucket("Known zero cap");
+    quota.limit_money = Some(Money::new(0, "USD", 255));
+    let window = project_window("money-literal", &quota, 0).unwrap();
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Exhausted);
+    assert_eq!(window.remaining_percent.map(UsagePercent::get), Some(0));
+    assert_eq!(spend_remaining(&quota), None);
+
+    quota.limit_money = Some(Money::new(1, "USD", 0));
+    assert_eq!(quota_state(&quota), UsageQuotaStateV2::Unknown);
+    quota.limit_money = None;
+    quota.used_money = Some(Money::new(1, "USD", 3));
+    let window = project_window("money-literal", &quota, 0).unwrap();
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Unknown);
+    assert_eq!(window.remaining_percent, None);
+
+    quota.used_money = None;
+    quota.remaining_money = Some(Money::new(i64::MIN, "USD", 255));
+    let window = project_window("money-literal", &quota, 0).unwrap();
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Exhausted);
+    assert_eq!(window.remaining_percent.map(UsagePercent::get), Some(0));
+    assert_eq!(spend_remaining(&quota), quota.remaining_money);
+}
+
+#[test]
+fn exact_money_mixed_scale_overflow_and_invalid_source_are_distinct() {
+    let mut quota = bucket("Extreme overage");
+    quota.used_money = Some(Money::new(i64::MAX, "USD", 0));
+    quota.limit_money = Some(Money::new(1, "USD", 255));
+    let window = project_window("money-literal", &quota, 0).unwrap();
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Exhausted);
+    assert_eq!(window.used_percent.map(UsagePercent::get), Some(100));
+    assert_eq!(window.used_raw_percent, None);
+    assert_eq!(spend_remaining(&quota), None); // Exact result exceeds Money domain.
+    window.validate(0).unwrap();
+
+    quota.used_money = Some(Money::new(125, "USD", 2));
+    quota.limit_money = Some(Money::new(1, "USD", 0));
+    assert_eq!(spend_remaining(&quota), Some(Money::new(-25, "USD", 2)));
+    assert_eq!(
+        spend_ratio_state(
+            quota.used_money.as_ref().unwrap(),
+            quota.limit_money.as_ref().unwrap()
+        ),
+        UsageQuotaStateV2::Exhausted
+    );
+    quota.remaining_money = Some(Money::new(1, "SGD", 0));
+    assert!(project_window("money-literal", &quota, 0).is_err());
+    assert_eq!(spend_quota_state(&quota), UsageQuotaStateV2::Unknown);
+    quota.remaining_money = None;
+    quota.used_money = Some(Money::new(-1, "USD", 0));
+    assert!(project_window("money-literal", &quota, 0).is_err());
+    quota.used_money = None;
+    quota.limit_money = Some(Money::new(-1, "USD", 0));
+    assert!(project_window("money-literal", &quota, 0).is_err());
+}
+
+#[test]
+fn exact_money_warning_boundary_survives_unrepresentable_subtraction() {
+    let mut quota = bucket("Exact warning threshold");
+    quota.limit_money = Some(Money::new(2, "USD", 0));
+    quota.remaining_money = Some(Money::new(4_000_000_000_000_000_001, "USD", 19));
+    assert_eq!(spend_remaining(&quota), quota.remaining_money);
+    assert_eq!(
+        quota
+            .limit_money
+            .as_ref()
+            .unwrap()
+            .checked_sub(quota.remaining_money.as_ref().unwrap()),
+        None
+    );
+    let window = project_window("money-literal", &quota, 0).unwrap();
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Available);
+    assert_eq!(window.remaining_percent.map(UsagePercent::get), Some(20));
+
+    quota.remaining_money = Some(Money::new(4_000_000_000_000_000_000, "USD", 19));
+    assert_eq!(quota_state(&quota), UsageQuotaStateV2::Warning);
+    assert_eq!(
+        spend_ratio_state(&Money::new(80, "USD", 2), &Money::new(1, "USD", 0)),
+        UsageQuotaStateV2::Warning
+    );
+    assert_eq!(
+        spend_ratio_state(&Money::new(799, "USD", 3), &Money::new(1, "USD", 0)),
+        UsageQuotaStateV2::Available
+    );
+}
+
+#[test]
 fn quota_state_keeps_permission_unknown_and_exhausted_distinct() {
     let mut login = bucket("Login");
     login.status = UsageSnapshotStatus::NeedsLogin;
-    assert_eq!(quota_state(&login), UsageQuotaStateV1::NoPermission);
+    assert_eq!(quota_state(&login), UsageQuotaStateV2::NoPermission);
 
     let mut secret = bucket("Secret");
     secret.status = UsageSnapshotStatus::NeedsSecret;
-    assert_eq!(quota_state(&secret), UsageQuotaStateV1::NoPermission);
+    assert_eq!(quota_state(&secret), UsageQuotaStateV2::NoPermission);
 
     let mut unsupported = bucket("Unsupported");
     unsupported.status = UsageSnapshotStatus::Unsupported;
-    assert_eq!(quota_state(&unsupported), UsageQuotaStateV1::Unsupported);
+    assert_eq!(quota_state(&unsupported), UsageQuotaStateV2::Unsupported);
 
     let mut unavailable = bucket("Unavailable");
     unavailable.status = UsageSnapshotStatus::Unavailable;
-    assert_eq!(quota_state(&unavailable), UsageQuotaStateV1::Unavailable);
+    assert_eq!(quota_state(&unavailable), UsageQuotaStateV2::Unavailable);
 
     let mut error = bucket("Error");
     error.status = UsageSnapshotStatus::Error;
-    assert_eq!(quota_state(&error), UsageQuotaStateV1::Error);
+    assert_eq!(quota_state(&error), UsageQuotaStateV2::Error);
 
     let empty = bucket("Empty");
-    assert_eq!(quota_state(&empty), UsageQuotaStateV1::Unknown);
+    assert_eq!(quota_state(&empty), UsageQuotaStateV2::Unknown);
 
     let mut exhausted = bucket("Exhausted");
     exhausted.remaining_percent = Some(0);
-    assert_eq!(quota_state(&exhausted), UsageQuotaStateV1::Exhausted);
+    assert_eq!(quota_state(&exhausted), UsageQuotaStateV2::Exhausted);
 
     let mut available = bucket("Available");
     available.remaining_percent = Some(57);
-    assert_eq!(quota_state(&available), UsageQuotaStateV1::Available);
+    assert_eq!(quota_state(&available), UsageQuotaStateV2::Available);
 
     let mut warn = bucket("Warn");
     warn.remaining_percent = Some(10);
     warn.severity = UsageSeverity::Warn;
-    assert_eq!(quota_state(&warn), UsageQuotaStateV1::Warning);
+    assert_eq!(quota_state(&warn), UsageQuotaStateV2::Warning);
 
     let mut danger = bucket("Danger");
     danger.remaining_percent = Some(10);
     danger.severity = UsageSeverity::Danger;
-    assert_eq!(quota_state(&danger), UsageQuotaStateV1::Exhausted);
+    assert_eq!(quota_state(&danger), UsageQuotaStateV2::Exhausted);
 }
 
 #[test]
@@ -202,10 +322,10 @@ fn account_projects_window_spend_and_plan_groups() {
     assert_eq!(
         kinds,
         [
-            UsageMetricGroupKindV1::Window,
-            UsageMetricGroupKindV1::Window,
-            UsageMetricGroupKindV1::SpendCap,
-            UsageMetricGroupKindV1::Plan,
+            UsageMetricGroupKindV2::Window,
+            UsageMetricGroupKindV2::Window,
+            UsageMetricGroupKindV2::SpendCap,
+            UsageMetricGroupKindV2::Plan,
         ]
     );
     for (rank, group) in account.metric_groups.iter().enumerate() {
@@ -224,14 +344,14 @@ fn account_projects_window_spend_and_plan_groups() {
     assert_eq!(account.metric_groups[0].renews_at_epoch, None);
     // Spend group carries structured money with currency and exponent.
     match &account.metric_groups[2].value {
-        UsageMetricValueV1::SpendCap {
+        UsageMetricValueV2::SpendCap {
             cap,
             spent,
             remaining,
         } => {
             assert_eq!(cap, &Some(Money::new(30_000, "USD", 2)));
             assert_eq!(spent, &Some(Money::new(27_00, "USD", 2)));
-            assert_eq!(remaining, &Some(Money::new(30_000 - 27_00, "USD", 2)));
+            assert_eq!(remaining, &Some(Money::new(273, "USD", 0)));
         }
         other => panic!("expected spend-cap value, got {other:?}"),
     }
@@ -239,7 +359,7 @@ fn account_projects_window_spend_and_plan_groups() {
     // Plan group carries metadata with no quota notion and no reset.
     assert_eq!(
         account.metric_groups[3].quota_state,
-        UsageQuotaStateV1::NotApplicable
+        UsageQuotaStateV2::NotApplicable
     );
     assert_eq!(account.metric_groups[3].reset_at_epoch, None);
     assert_eq!(account.metric_groups[3].renews_at_epoch, None);
@@ -264,39 +384,36 @@ fn spend_group_states_cover_ratio_edges() {
     let mut over = bucket("Over");
     over.used_money = Some(Money::new(12_000, "USD", 2));
     over.limit_money = Some(Money::new(10_000, "USD", 2));
-    assert_eq!(spend_quota_state(&over), UsageQuotaStateV1::Exhausted);
+    assert_eq!(spend_quota_state(&over), UsageQuotaStateV2::Exhausted);
 
     let mut warn = bucket("Warn");
     warn.used_money = Some(Money::new(80_00, "USD", 2));
     warn.limit_money = Some(Money::new(10_000, "USD", 2));
-    assert_eq!(spend_quota_state(&warn), UsageQuotaStateV1::Warning);
+    assert_eq!(spend_quota_state(&warn), UsageQuotaStateV2::Warning);
 
     let mut ok = bucket("Ok");
     ok.used_money = Some(Money::new(10_00, "USD", 2));
     ok.limit_money = Some(Money::new(10_000, "USD", 2));
-    assert_eq!(spend_quota_state(&ok), UsageQuotaStateV1::Available);
+    assert_eq!(spend_quota_state(&ok), UsageQuotaStateV2::Available);
 
     let mut uncapped = bucket("Uncapped");
     uncapped.used_money = Some(Money::new(10_00, "USD", 2));
-    assert_eq!(
-        spend_quota_state(&uncapped),
-        UsageQuotaStateV1::NotApplicable
-    );
+    assert_eq!(spend_quota_state(&uncapped), UsageQuotaStateV2::Unknown);
 
     let mut cap_only = bucket("Cap only");
     cap_only.limit_money = Some(Money::new(10_000, "USD", 2));
-    assert_eq!(spend_quota_state(&cap_only), UsageQuotaStateV1::Unknown);
+    assert_eq!(spend_quota_state(&cap_only), UsageQuotaStateV2::Unknown);
 
     let mut mismatched = bucket("Mismatched");
     mismatched.used_money = Some(Money::new(10_00, "USD", 2));
     mismatched.limit_money = Some(Money::new(10_000, "SGD", 2));
-    assert_eq!(spend_quota_state(&mismatched), UsageQuotaStateV1::Unknown);
+    assert_eq!(spend_quota_state(&mismatched), UsageQuotaStateV2::Unknown);
 
     let mut login = bucket("Login");
     login.status = UsageSnapshotStatus::NeedsLogin;
     login.used_money = Some(Money::new(10_00, "USD", 2));
     login.limit_money = Some(Money::new(10_000, "USD", 2));
-    assert_eq!(spend_quota_state(&login), UsageQuotaStateV1::NoPermission);
+    assert_eq!(spend_quota_state(&login), UsageQuotaStateV2::NoPermission);
 }
 
 fn status_bucket(label: &str, status: UsageSnapshotStatus) -> QuotaBucketView {
@@ -319,7 +436,7 @@ fn group_timestamps_track_view_usability() {
     assert_eq!(account.metric_groups.len(), 1);
     assert_eq!(
         account.metric_groups[0].phase,
-        UsageFreshnessPhaseV1::Current
+        UsageFreshnessPhaseV2::Current
     );
     assert_eq!(
         account.metric_groups[0].last_success_at_epoch,
@@ -334,7 +451,7 @@ fn group_timestamps_track_view_usability() {
         None,
     );
     let account = project_account(&stale, 0, 1).unwrap();
-    assert_eq!(account.metric_groups[0].phase, UsageFreshnessPhaseV1::Stale);
+    assert_eq!(account.metric_groups[0].phase, UsageFreshnessPhaseV2::Stale);
     assert!(account.metric_groups[0].is_stale);
     assert_eq!(
         account.metric_groups[0].last_success_at_epoch,
@@ -351,12 +468,12 @@ fn group_timestamps_track_view_usability() {
     let account = project_account(&error, 0, 1).unwrap();
     assert_eq!(
         account.metric_groups[0].phase,
-        UsageFreshnessPhaseV1::Failed
+        UsageFreshnessPhaseV2::Failed
     );
     assert_eq!(account.metric_groups[0].last_success_at_epoch, None);
     assert_eq!(
         account.metric_groups[0].quota_state,
-        UsageQuotaStateV1::Error
+        UsageQuotaStateV2::Error
     );
 }
 
@@ -400,7 +517,7 @@ fn canonical_projection_icu_collation_goldens_are_pinned() {
 // show the same canonical usage meaning:
 //
 // - Console: fixture `FocusedUsageView`s → the REAL `project_account` → a
-//   validated `UsageProjectionV1` → the real
+//   validated `UsageProjectionV2` → the real
 //   `UsageScreenState::from_projection` → the renderer's public label, meter,
 //   and freshness helpers (plus one `TestBackend` render smoke test for the
 //   renderer-private strings).
@@ -412,7 +529,7 @@ fn canonical_projection_icu_collation_goldens_are_pinned() {
 // credential expiry, unresolved entries, projection issues) and typed groups
 // no producer emits yet (balance / rate-limit / token-totals / scoped
 // groups); provider assembly reuses the real `provider_freshness`, and every
-// assembled projection passes the real `UsageProjectionV1::validate`.
+// assembled projection passes the real `UsageProjectionV2::validate`.
 // No provider I/O anywhere: all views are fixture-built, the clock is fixed,
 // and timezone-dependent fragments are asserted by prefix only.
 //
@@ -424,7 +541,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use jackin_protocol::control::{UsageActivityKind, UsageDetailRowKind};
-use jackin_protocol::usage_broker::{UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1};
+use jackin_protocol::usage_broker::{UsageIssueRecoverabilityV2, UsageIssueScopeV2, UsageIssueV2};
 
 use crate::host::HostSurfaceId;
 use crate::usage::{
@@ -502,7 +619,7 @@ struct ParityAccount {
     buckets: Vec<ParityBucket>,
     last_error: Option<&'static str>,
     /// Broker-owned overlays (populated post-projection, as the broker does).
-    account_issues: Vec<UsageIssueV1>,
+    account_issues: Vec<UsageIssueV2>,
     credential_expires_at: Option<i64>,
     extra_groups: Vec<ParityExtraGroup>,
 }
@@ -511,12 +628,12 @@ struct ParityAccount {
 /// token-totals / scoped groups). Rank and id are assigned at assembly.
 #[derive(Debug, Clone)]
 struct ParityExtraGroup {
-    kind: UsageMetricGroupKindV1,
+    kind: UsageMetricGroupKindV2,
     label: &'static str,
-    scope: UsageMetricScopeV1,
-    value: UsageMetricValueV1,
-    quota_state: UsageQuotaStateV1,
-    phase: UsageFreshnessPhaseV1,
+    scope: UsageMetricScopeV2,
+    value: UsageMetricValueV2,
+    quota_state: UsageQuotaStateV2,
+    phase: UsageFreshnessPhaseV2,
     is_stale: bool,
     observed_at: Option<i64>,
     fetched_at: i64,
@@ -527,12 +644,12 @@ struct ParityExtraGroup {
 
 fn parity_issue(
     code: &'static str,
-    scope: UsageIssueScopeV1,
-    recoverability: UsageIssueRecoverabilityV1,
+    scope: UsageIssueScopeV2,
+    recoverability: UsageIssueRecoverabilityV2,
     message: &'static str,
     retry_at: Option<i64>,
-) -> UsageIssueV1 {
-    UsageIssueV1 {
+) -> UsageIssueV2 {
+    UsageIssueV2 {
         code: code.to_owned(),
         scope,
         recoverability,
@@ -603,6 +720,31 @@ fn parity_view_at(account: &ParityAccount, now: i64) -> FocusedUsageView {
         now: account.fetched_at,
         last_error: account.last_error.map(str::to_owned),
     });
+    // The fixture declares logical evidence independently of display labels.
+    view.canonical_identity = Some(jackin_protocol::control::UsageCanonicalAccountIdentity {
+        surface_id: account.surface.id().to_owned(),
+        subject: match &account.subject {
+            CanonicalAccountSubject::ProviderId(id) => {
+                jackin_protocol::control::UsageCanonicalAccountSubject::ProviderId(id.clone())
+            }
+            CanonicalAccountSubject::ProviderStableHandle(handle) => {
+                jackin_protocol::control::UsageCanonicalAccountSubject::ProviderStableHandle(
+                    handle.clone(),
+                )
+            }
+            CanonicalAccountSubject::SourceCapability(source) => {
+                jackin_protocol::control::UsageCanonicalAccountSubject::SourceCapability(
+                    source.clone(),
+                )
+            }
+        },
+    });
+    // Mirror the broker binding; display labels never identify an account.
+    view.account_identity = Some(jackin_protocol::control::UsageAccountIdentity {
+        account_id: account.account_key.to_owned(),
+        surface_id: account.surface.id().to_owned(),
+        source_revision: None,
+    });
     if let Some(label) = account.capsule_provider_label {
         view.account.provider_label = label.to_owned();
     }
@@ -630,8 +772,8 @@ fn parity_entry(account: &ParityAccount, view: FocusedUsageView) -> AccountCatal
     }
 }
 
-fn parity_extra_group(canonical_id: &str, rank: u32, def: &ParityExtraGroup) -> UsageMetricGroupV1 {
-    UsageMetricGroupV1 {
+fn parity_extra_group(canonical_id: &str, rank: u32, def: &ParityExtraGroup) -> UsageMetricGroupV2 {
+    UsageMetricGroupV2 {
         group_id: format!("parity-extra:{canonical_id}:{rank}"),
         rank,
         kind: def.kind,
@@ -656,7 +798,7 @@ fn parity_project_account(
     account: &ParityAccount,
     view: &FocusedUsageView,
     rank: usize,
-) -> UsageAccountV1 {
+) -> UsageAccountV2 {
     let entry = parity_entry(account, view.clone());
     let mut projected = project_account(&entry, rank, PARITY_GENERATION).unwrap();
     for def in &account.extra_groups {
@@ -677,25 +819,25 @@ struct ParityProvider {
     provider_id: &'static str,
     display_name: &'static str,
     accounts: Vec<ParityAccount>,
-    provider_issues: Vec<UsageIssueV1>,
+    provider_issues: Vec<UsageIssueV2>,
 }
 
 /// Assemble and validate a canonical projection from fixture providers.
 /// Provider assembly reuses the real `provider_freshness`.
 fn parity_projection(
     providers: &[ParityProvider],
-    unresolved: Vec<UsageUnresolvedV1>,
-    projection_issues: Vec<UsageIssueV1>,
-) -> (UsageProjectionV1, Vec<Vec<FocusedUsageView>>) {
+    unresolved: Vec<UsageUnresolvedV2>,
+    projection_issues: Vec<UsageIssueV2>,
+) -> (UsageProjectionV2, Vec<Vec<FocusedUsageView>>) {
     parity_projection_at(PARITY_NOW, providers, unresolved, projection_issues)
 }
 
 fn parity_projection_at(
     now: i64,
     providers: &[ParityProvider],
-    unresolved: Vec<UsageUnresolvedV1>,
-    projection_issues: Vec<UsageIssueV1>,
-) -> (UsageProjectionV1, Vec<Vec<FocusedUsageView>>) {
+    unresolved: Vec<UsageUnresolvedV2>,
+    projection_issues: Vec<UsageIssueV2>,
+) -> (UsageProjectionV2, Vec<Vec<FocusedUsageView>>) {
     let mut views_by_provider = Vec::new();
     let mut projected = Vec::new();
     for (provider_rank, provider) in providers.iter().enumerate() {
@@ -712,26 +854,27 @@ fn parity_projection_at(
         }
         views_by_provider.push(views);
         let freshness = provider_freshness(&accounts, PARITY_GENERATION);
-        projected.push(UsageProviderV1 {
+        projected.push(UsageProviderV2 {
             provider_id: provider.provider_id.to_owned(),
             display_name: provider.display_name.to_owned(),
             rank: u32::try_from(provider_rank).unwrap(),
-            membership_state: UsageMembershipStateV1::Current,
+            membership_state: UsageMembershipStateV2::Current,
             freshness,
             accounts,
             issues: provider.provider_issues.clone(),
         });
     }
-    let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+    let projection = UsageProjectionV2 {
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "parity-fixture:1".to_owned(),
         generated_at_epoch: now,
         discovery_revision: "parity".to_owned(),
         broker_instance_id: "parity-broker".to_owned(),
         broker_generation: PARITY_GENERATION,
-        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        refresh_state: UsageProjectionRefreshStateV2::Idle,
         providers: projected,
         unresolved,
+        unresolved_grants: Vec::new(),
         issues: projection_issues,
     };
     projection.validate().unwrap();
@@ -826,22 +969,22 @@ fn parity_antigravity_account() -> ParityAccount {
         account_issues: Vec::new(),
         credential_expires_at: None,
         extra_groups: vec![ParityExtraGroup {
-            kind: UsageMetricGroupKindV1::Balance,
+            kind: UsageMetricGroupKindV2::Balance,
             label: "Credits",
-            scope: UsageMetricScopeV1 {
+            scope: UsageMetricScopeV2 {
                 service: None,
                 model: None,
                 pool: Some("credits-pool".to_owned()),
                 key_id: None,
             },
-            value: UsageMetricValueV1::Balance {
+            value: UsageMetricValueV2::Balance {
                 amount: usd(1_250),
                 expires_at_epoch: Some(PARITY_NOW + 2_592_000),
             },
             // No producer rule assigns balance quota states yet; the balance
             // carries a usable quantity, so `Available` (harness choice).
-            quota_state: UsageQuotaStateV1::Available,
-            phase: UsageFreshnessPhaseV1::Current,
+            quota_state: UsageQuotaStateV2::Available,
+            phase: UsageFreshnessPhaseV2::Current,
             is_stale: false,
             observed_at: Some(PARITY_NOW - 300),
             fetched_at: PARITY_NOW - 300,
@@ -891,23 +1034,23 @@ fn parity_claude_work_account() -> ParityAccount {
         account_issues: Vec::new(),
         credential_expires_at: None,
         extra_groups: vec![ParityExtraGroup {
-            kind: UsageMetricGroupKindV1::TokenTotals,
+            kind: UsageMetricGroupKindV2::TokenTotals,
             label: "Tokens",
-            scope: UsageMetricScopeV1 {
+            scope: UsageMetricScopeV2 {
                 service: None,
                 model: Some("claude-opus-4-6".to_owned()),
                 pool: None,
                 key_id: None,
             },
-            value: UsageMetricValueV1::TokenTotals {
+            value: UsageMetricValueV2::TokenTotals {
                 input: Some(1_500_000),
                 output: Some(320_000),
                 cached: Some(900_000),
                 reasoning: None,
                 interval_label: Some("this week".to_owned()),
             },
-            quota_state: UsageQuotaStateV1::NotApplicable,
-            phase: UsageFreshnessPhaseV1::Current,
+            quota_state: UsageQuotaStateV2::NotApplicable,
+            phase: UsageFreshnessPhaseV2::Current,
             is_stale: false,
             observed_at: Some(PARITY_NOW - 120),
             fetched_at: PARITY_NOW - 120,
@@ -1047,16 +1190,16 @@ fn parity_cursor_account() -> ParityAccount {
         account_issues: Vec::new(),
         credential_expires_at: None,
         extra_groups: vec![ParityExtraGroup {
-            kind: UsageMetricGroupKindV1::RateLimit,
+            kind: UsageMetricGroupKindV2::RateLimit,
             label: "API rate limit",
-            scope: UsageMetricScopeV1::default(),
-            value: UsageMetricValueV1::RateLimit {
+            scope: UsageMetricScopeV2::default(),
+            value: UsageMetricValueV2::RateLimit {
                 limit: Some(100),
                 remaining: Some(20),
                 window_label: Some("per minute".to_owned()),
             },
-            quota_state: UsageQuotaStateV1::Available,
-            phase: UsageFreshnessPhaseV1::Current,
+            quota_state: UsageQuotaStateV2::Available,
+            phase: UsageFreshnessPhaseV2::Current,
             is_stale: false,
             observed_at: Some(PARITY_NOW - 600),
             fetched_at: PARITY_NOW - 600,
@@ -1162,8 +1305,8 @@ fn parity_partial_account() -> ParityAccount {
         last_error: Some("rate limited by provider; showing last cached quota"),
         account_issues: vec![parity_issue(
             "rate_limited",
-            UsageIssueScopeV1::Account,
-            UsageIssueRecoverabilityV1::Retryable,
+            UsageIssueScopeV2::Account,
+            UsageIssueRecoverabilityV2::Retryable,
             "rate limited by provider",
             Some(PARITY_NOW + 330),
         )],
@@ -1233,8 +1376,8 @@ fn parity_auth_account() -> ParityAccount {
         last_error: Some("sign in required"),
         account_issues: vec![parity_issue(
             "auth_required",
-            UsageIssueScopeV1::Account,
-            UsageIssueRecoverabilityV1::ActionRequired,
+            UsageIssueScopeV2::Account,
+            UsageIssueRecoverabilityV2::ActionRequired,
             "sign in required",
             None,
         )],
@@ -1267,15 +1410,15 @@ fn parity_error_account() -> ParityAccount {
         account_issues: vec![
             parity_issue(
                 "timeout",
-                UsageIssueScopeV1::Account,
-                UsageIssueRecoverabilityV1::Retryable,
+                UsageIssueScopeV2::Account,
+                UsageIssueRecoverabilityV2::Retryable,
                 "usage request timed out",
                 Some(PARITY_NOW + 150),
             ),
             parity_issue(
                 "malformed",
-                UsageIssueScopeV1::Account,
-                UsageIssueRecoverabilityV1::Terminal,
+                UsageIssueScopeV2::Account,
+                UsageIssueRecoverabilityV2::Terminal,
                 "usage response malformed",
                 None,
             ),
@@ -1395,8 +1538,8 @@ fn parity_mega_providers() -> Vec<ParityProvider> {
             accounts: vec![parity_partial_account()],
             provider_issues: vec![parity_issue(
                 "provider_slow",
-                UsageIssueScopeV1::Provider,
-                UsageIssueRecoverabilityV1::Retryable,
+                UsageIssueScopeV2::Provider,
+                UsageIssueRecoverabilityV2::Retryable,
                 "provider responding slowly",
                 Some(PARITY_NOW + 630),
             )],
@@ -1428,36 +1571,36 @@ fn parity_mega_providers() -> Vec<ParityProvider> {
     ]
 }
 
-fn parity_unresolved_entries() -> Vec<UsageUnresolvedV1> {
+fn parity_unresolved_entries() -> Vec<UsageUnresolvedV2> {
     vec![
-        UsageUnresolvedV1 {
+        UsageUnresolvedV2 {
             provider_id: "anthropic".to_owned(),
             capability_id: "anthropic:key".to_owned(),
             configuration_count: 1,
-            state: UsageLifecycleV1::NeedsLogin,
+            state: UsageLifecycleV2::NeedsLogin,
             issues: vec![parity_issue(
                 "auth_required",
-                UsageIssueScopeV1::Account,
-                UsageIssueRecoverabilityV1::ActionRequired,
+                UsageIssueScopeV2::Account,
+                UsageIssueRecoverabilityV2::ActionRequired,
                 "authentication required",
                 None,
             )],
         },
-        UsageUnresolvedV1 {
+        UsageUnresolvedV2 {
             provider_id: "openai".to_owned(),
             capability_id: "openai:second".to_owned(),
             configuration_count: 1,
-            state: UsageLifecycleV1::NeedsLogin,
+            state: UsageLifecycleV2::NeedsLogin,
             issues: Vec::new(),
         },
     ]
 }
 
-fn parity_projection_issue() -> UsageIssueV1 {
+fn parity_projection_issue() -> UsageIssueV2 {
     parity_issue(
         "broker_degraded",
-        UsageIssueScopeV1::Projection,
-        UsageIssueRecoverabilityV1::Retryable,
+        UsageIssueScopeV2::Projection,
+        UsageIssueRecoverabilityV2::Retryable,
         "one provider refresh failed",
         None,
     )
@@ -1467,7 +1610,7 @@ use jackin_console::tui::screens::usage::{
     UsageScreenState, UsageWindow, freshness_age_label, group_freshness_label,
 };
 
-fn parity_single_provider(provider: ParityProvider) -> (UsageProjectionV1, Vec<FocusedUsageView>) {
+fn parity_single_provider(provider: ParityProvider) -> (UsageProjectionV2, Vec<FocusedUsageView>) {
     let (projection, views) = parity_projection(&[provider], Vec::new(), Vec::new());
     (projection, views.into_iter().next().unwrap())
 }
@@ -1487,7 +1630,7 @@ fn parity_antigravity_two_family_windows_groups_and_credits() {
     assert_eq!(account.account, "pilot@example.test");
     assert!(!account.unresolved);
     assert_eq!(account.status, "Available");
-    assert_eq!(account.lifecycle, UsageLifecycleV1::Available);
+    assert_eq!(account.lifecycle, UsageLifecycleV2::Available);
 
     // Principal windows: family membership, order, percents, resets.
     let labels = account
@@ -1517,7 +1660,7 @@ fn parity_antigravity_two_family_windows_groups_and_credits() {
         account
             .windows
             .iter()
-            .all(|window| window.quota_state == UsageQuotaStateV1::Available)
+            .all(|window| window.quota_state == UsageQuotaStateV2::Available)
     );
 
     // Metric groups: four real window groups, the real plan group, and the
@@ -1525,12 +1668,12 @@ fn parity_antigravity_two_family_windows_groups_and_credits() {
     assert_eq!(account.metric_groups.len(), 6);
     for (index, percent) in [73_u8, 41, 12, 88].iter().enumerate() {
         let group = &account.metric_groups[index];
-        assert_eq!(group.kind, UsageMetricGroupKindV1::Window);
+        assert_eq!(group.kind, UsageMetricGroupKindV2::Window);
         assert_eq!(group.meter_percent(), Some(*percent));
         assert!(
             matches!(
                 &group.value,
-                UsageMetricValueV1::Window {
+                UsageMetricValueV2::Window {
                     remaining_percent: Some(remaining),
                     ..
                 } if remaining.get() == *percent
@@ -1538,15 +1681,15 @@ fn parity_antigravity_two_family_windows_groups_and_credits() {
             "window group {index} must carry {percent}% remaining"
         );
     }
-    assert_eq!(account.metric_groups[4].kind, UsageMetricGroupKindV1::Plan);
+    assert_eq!(account.metric_groups[4].kind, UsageMetricGroupKindV2::Plan);
     let balance = &account.metric_groups[5];
-    assert_eq!(balance.kind, UsageMetricGroupKindV1::Balance);
+    assert_eq!(balance.kind, UsageMetricGroupKindV2::Balance);
     assert_eq!(balance.label, "Credits");
     assert_eq!(balance.scope.pool.as_deref(), Some("credits-pool"));
     assert!(
         matches!(
             &balance.value,
-            UsageMetricValueV1::Balance {
+            UsageMetricValueV2::Balance {
                 amount,
                 expires_at_epoch: Some(expires),
             } if amount == &usd(1_250) && *expires == PARITY_NOW + 2_592_000
@@ -1672,11 +1815,11 @@ fn parity_duplicate_provider_accounts_stay_distinct() {
     // Identity evidence kinds survive: provider id vs stable handle.
     assert_eq!(
         screen.accounts[0].identity_kind,
-        Some(UsageIdentityKindV1::ProviderAccountId)
+        Some(UsageIdentityKindV2::ProviderAccountId)
     );
     assert_eq!(
         screen.accounts[1].identity_kind,
-        Some(UsageIdentityKindV1::ProviderStableHandle)
+        Some(UsageIdentityKindV2::ProviderStableHandle)
     );
 
     // Capsule tabs: one per account, distinct ids, exact-id active marking.
@@ -1752,13 +1895,13 @@ fn parity_cursor_groups_money_and_units() {
         .collect::<Vec<_>>();
     assert_eq!(meters, [Some(62), Some(55), None, Some(76)]);
     // API-mirrored Warn severity becomes a Warning quota state.
-    assert_eq!(account.windows[0].quota_state, UsageQuotaStateV1::Warning);
+    assert_eq!(account.windows[0].quota_state, UsageQuotaStateV2::Warning);
     assert_eq!(
         account.windows[0].reset_at_epoch,
         Some(PARITY_NOW + 1_200_000)
     );
     // Used-only money still counts as quantity (Available), with no bar.
-    assert_eq!(account.windows[2].quota_state, UsageQuotaStateV1::Available);
+    assert_eq!(account.windows[2].quota_state, UsageQuotaStateV2::Available);
     assert_eq!(account.windows[2].value, "$8.30");
 
     // Groups: window, window, spend, window, spend, window, plan, rate-limit.
@@ -1770,19 +1913,19 @@ fn parity_cursor_groups_money_and_units() {
     assert_eq!(
         kinds,
         [
-            UsageMetricGroupKindV1::Window,
-            UsageMetricGroupKindV1::Window,
-            UsageMetricGroupKindV1::SpendCap,
-            UsageMetricGroupKindV1::Window,
-            UsageMetricGroupKindV1::SpendCap,
-            UsageMetricGroupKindV1::Window,
-            UsageMetricGroupKindV1::Plan,
-            UsageMetricGroupKindV1::RateLimit,
+            UsageMetricGroupKindV2::Window,
+            UsageMetricGroupKindV2::Window,
+            UsageMetricGroupKindV2::SpendCap,
+            UsageMetricGroupKindV2::Window,
+            UsageMetricGroupKindV2::SpendCap,
+            UsageMetricGroupKindV2::Window,
+            UsageMetricGroupKindV2::Plan,
+            UsageMetricGroupKindV2::RateLimit,
         ]
     );
     // Spend amounts stay in minor-unit scale end to end ($45.20, not $4520).
     match &account.metric_groups[2].value {
-        UsageMetricValueV1::SpendCap {
+        UsageMetricValueV2::SpendCap {
             cap,
             spent,
             remaining,
@@ -1805,7 +1948,7 @@ fn parity_cursor_groups_money_and_units() {
     // Balance-shaped money (used-only) yields a cap-less spend group
     // (documented delta: renders as "uncapped" — see the render smoke test).
     match &account.metric_groups[4].value {
-        UsageMetricValueV1::SpendCap {
+        UsageMetricValueV2::SpendCap {
             cap,
             spent,
             remaining,
@@ -1817,7 +1960,7 @@ fn parity_cursor_groups_money_and_units() {
         other => panic!("expected spend-cap value, got {other:?}"),
     }
     match &account.metric_groups[7].value {
-        UsageMetricValueV1::RateLimit {
+        UsageMetricValueV2::RateLimit {
             limit,
             remaining,
             window_label,
@@ -1885,8 +2028,8 @@ fn parity_exhausted_zero_is_not_unknown() {
     assert_eq!(account.windows.len(), 1);
     assert_eq!(account.windows[0].meter_percent(), Some(0));
     assert_eq!(account.windows[0].value, "0% left");
-    assert_eq!(account.windows[0].quota_state, UsageQuotaStateV1::Exhausted);
-    assert_ne!(account.windows[0].quota_state, UsageQuotaStateV1::Unknown);
+    assert_eq!(account.windows[0].quota_state, UsageQuotaStateV2::Exhausted);
+    assert_ne!(account.windows[0].quota_state, UsageQuotaStateV2::Unknown);
     // Missing plan label yields no plan group and no invented values.
     assert_eq!(account.metric_groups.len(), 1);
     assert_eq!(account.plan_label, None);
@@ -1920,7 +2063,7 @@ fn parity_stale_partial_windows_issues_and_retry() {
     // Stale but Available: the status override names staleness honestly.
     assert_eq!(account.status, "stale");
     assert!(account.is_stale);
-    assert_eq!(account.freshness_phase, UsageFreshnessPhaseV1::Stale);
+    assert_eq!(account.freshness_phase, UsageFreshnessPhaseV2::Stale);
     assert_eq!(
         freshness_age_label(PARITY_NOW, account),
         "stale · updated 25m ago"
@@ -1930,10 +2073,10 @@ fn parity_stale_partial_windows_issues_and_retry() {
     assert_eq!(account.windows[0].meter_percent(), Some(54));
     assert_eq!(account.windows[0].reset_at_epoch, Some(PARITY_NOW + 70_000));
     // Limit-only balance: usable quantity, but no percent means no bar.
-    assert_eq!(account.windows[1].quota_state, UsageQuotaStateV1::Available);
+    assert_eq!(account.windows[1].quota_state, UsageQuotaStateV2::Available);
     assert_eq!(account.windows[1].meter_percent(), None);
     // Quantity-less window: unknown, never a fabricated 0% bar.
-    assert_eq!(account.windows[2].quota_state, UsageQuotaStateV1::Unknown);
+    assert_eq!(account.windows[2].quota_state, UsageQuotaStateV2::Unknown);
     assert_eq!(account.windows[2].meter_percent(), None);
     // Freshness is per group: every group is stale with the same age.
     for group in &account.metric_groups {
@@ -2008,15 +2151,15 @@ fn parity_unsupported_lifecycle_words() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
-    assert_eq!(account.lifecycle, UsageLifecycleV1::Unsupported);
+    assert_eq!(account.lifecycle, UsageLifecycleV2::Unsupported);
     // Projection-owned status word (capitalized — see the wording delta).
     assert_eq!(account.status, "Unsupported");
-    assert_eq!(account.freshness_phase, UsageFreshnessPhaseV1::Failed);
+    assert_eq!(account.freshness_phase, UsageFreshnessPhaseV2::Failed);
     assert_eq!(freshness_age_label(PARITY_NOW, account), "never updated");
     assert_eq!(account.windows.len(), 1);
     assert_eq!(
         account.windows[0].quota_state,
-        UsageQuotaStateV1::Unsupported
+        UsageQuotaStateV2::Unsupported
     );
     assert_eq!(account.windows[0].meter_percent(), None);
 
@@ -2056,7 +2199,7 @@ fn parity_auth_expired_login_state() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
-    assert_eq!(account.lifecycle, UsageLifecycleV1::NeedsLogin);
+    assert_eq!(account.lifecycle, UsageLifecycleV2::NeedsLogin);
     assert_eq!(account.status, "Needs login");
     assert!(account.windows.is_empty());
     assert!(account.metric_groups.is_empty());
@@ -2066,10 +2209,10 @@ fn parity_auth_expired_login_state() {
     );
     assert_eq!(account.issues.len(), 1);
     assert_eq!(account.issues[0].code, "auth_required");
-    // Source-capability subjects map to the stable-handle evidence kind.
+    // Source authority remains distinct from provider-issued stable handles.
     assert_eq!(
         account.identity_kind,
-        Some(UsageIdentityKindV1::ProviderStableHandle)
+        Some(UsageIdentityKindV2::SourceCapability)
     );
 
     let enriched = parity_tabs(&views);
@@ -2103,7 +2246,7 @@ fn parity_error_timeout_and_malformed() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
-    assert_eq!(account.lifecycle, UsageLifecycleV1::Error);
+    assert_eq!(account.lifecycle, UsageLifecycleV2::Error);
     assert_eq!(account.status, "Error");
     assert_eq!(freshness_age_label(PARITY_NOW, account), "never updated");
     assert_eq!(account.issue_count(), 2);
@@ -2150,7 +2293,7 @@ fn parity_legit_zero_spend_and_missing_fields() {
     // Zero spend is tracked data: cap, spent, and remaining all survive.
     assert_eq!(account.metric_groups.len(), 2);
     match &account.metric_groups[1].value {
-        UsageMetricValueV1::SpendCap {
+        UsageMetricValueV2::SpendCap {
             cap,
             spent,
             remaining,
@@ -2243,7 +2386,7 @@ fn parity_s5_stale_and_partial_failure() {
         fresh
             .metric_groups
             .iter()
-            .all(|group| !group.is_stale && group.phase == UsageFreshnessPhaseV1::Current)
+            .all(|group| !group.is_stale && group.phase == UsageFreshnessPhaseV2::Current)
     );
     let stale = &screen.accounts[1];
     assert_eq!(stale.status, "stale");
@@ -2256,7 +2399,7 @@ fn parity_s5_stale_and_partial_failure() {
         stale
             .metric_groups
             .iter()
-            .all(|group| group.is_stale && group.phase == UsageFreshnessPhaseV1::Stale)
+            .all(|group| group.is_stale && group.phase == UsageFreshnessPhaseV2::Stale)
     );
     assert_eq!(screen.projection_issues.len(), 1);
     assert_eq!(screen.projection_issues[0].code, "broker_degraded");
@@ -2447,7 +2590,7 @@ fn documented_delta_severity_color_inputs() {
     let screen = UsageScreenState::from_projection(&projection);
     assert_eq!(
         screen.accounts[0].windows[1].quota_state,
-        UsageQuotaStateV1::Exhausted,
+        UsageQuotaStateV2::Exhausted,
         "Danger severity must surface as Exhausted"
     );
     let (projection, _) = parity_single_provider(ParityProvider {
@@ -2459,7 +2602,7 @@ fn documented_delta_severity_color_inputs() {
     let screen = UsageScreenState::from_projection(&projection);
     assert_eq!(
         screen.accounts[0].windows[0].quota_state,
-        UsageQuotaStateV1::Warning,
+        UsageQuotaStateV2::Warning,
         "Warn severity must surface as Warning"
     );
     let (projection, _) = parity_single_provider(ParityProvider {
@@ -2471,7 +2614,7 @@ fn documented_delta_severity_color_inputs() {
     let screen = UsageScreenState::from_projection(&projection);
     assert_eq!(
         screen.accounts[0].windows[2].quota_state,
-        UsageQuotaStateV1::Available,
+        UsageQuotaStateV2::Available,
         "Normal severity stays Available even at 12% (both renderers green)"
     );
 }
@@ -2727,7 +2870,7 @@ fn documented_delta_balance_value_and_uncapped_spend() {
     assert!(
         matches!(
             &screen.accounts[0].metric_groups[4].value,
-            UsageMetricValueV1::SpendCap {
+            UsageMetricValueV2::SpendCap {
                 cap: None,
                 spent: Some(_),
                 ..
@@ -2812,7 +2955,7 @@ fn parity_overage_magnitude_matches_raw_money() {
     assert_eq!(window.remaining_percent, None);
     assert_eq!(window.value, "150% used");
     assert_eq!(window.meter_percent(), Some(0));
-    assert_eq!(window.quota_state, UsageQuotaStateV1::Exhausted);
+    assert_eq!(window.quota_state, UsageQuotaStateV2::Exhausted);
     let spend = usage_bucket_presentation(&views[0].buckets[2]);
     assert_eq!(spend.remaining_label.as_deref(), Some("150% used"));
     assert_eq!(spend.meter_percent, Some(0));
@@ -3059,7 +3202,24 @@ fn parity_s5_render_smoke() {
         );
     }
 }
-use jackin_protocol::usage_broker::{UsageAccountCapability, UsageGenerationView};
+
+fn production_projection_snapshot(capability: &UsageAccountCapability) -> FocusedUsageView {
+    let mut snapshot = view_with_buckets(UsageSnapshotStatus::Fresh, vec![bucket("Weekly")]);
+    snapshot.canonical_identity = Some(jackin_protocol::control::UsageCanonicalAccountIdentity {
+        surface_id: "codex".to_owned(),
+        subject: jackin_protocol::control::UsageCanonicalAccountSubject::ProviderId(
+            "projection-account".to_owned(),
+        ),
+    });
+    snapshot.account_identity = Some(jackin_protocol::control::UsageAccountIdentity {
+        account_id: capability.account_id.clone(),
+        surface_id: "codex".to_owned(),
+        source_revision: Some(
+            "sha256:b6a07736983da99c5e06f3eb8e54af35c23cfb979c847c7f22825293b98b902b".to_owned(),
+        ),
+    });
+    snapshot
+}
 
 fn production_projection_runtime() -> (tempfile::TempDir, HostUsageRuntime, UsageAccountCapability)
 {
@@ -3071,12 +3231,14 @@ fn production_projection_runtime() -> (tempfile::TempDir, HostUsageRuntime, Usag
         subject: CanonicalAccountSubject::ProviderId("projection-account".to_owned()),
     };
     let binding = ValidatedCredentialBinding {
+        profile_material: None,
         surface: HostSurfaceId::Codex,
         identity: Some(identity.clone()),
         source_id: "projection-source".to_owned(),
         capability_id: "projection-capability".to_owned(),
         credential_revision: "revision".to_owned(),
         provenance: BTreeSet::from(["account work".to_owned()]),
+        configured_account_ids: BTreeSet::from(["work".to_owned()]),
         source: ValidatedCredentialSource::Capability,
     };
     let capability =
@@ -3108,7 +3270,7 @@ fn canonical_runtime_preserves_broker_failure_retry_and_recovery() {
         UsageCoordinationError, UsageCoordinationErrorKind, UsageRefreshPhase,
     };
     let (_temp, mut runtime, capability) = production_projection_runtime();
-    let snapshot = view_with_buckets(UsageSnapshotStatus::Fresh, vec![bucket("Weekly")]);
+    let snapshot = production_projection_snapshot(&capability);
     runtime
         .apply_broker_generation(UsageGenerationView {
             capability: capability.clone(),
@@ -3125,7 +3287,7 @@ fn canonical_runtime_preserves_broker_failure_retry_and_recovery() {
     let failed = runtime.canonical_projection("en").unwrap();
     let account = &failed.providers[0].accounts[0];
     assert_eq!(account.freshness.generation, 41);
-    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV1::Stale);
+    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV2::Stale);
     assert_eq!(account.freshness.last_good_at_epoch, Some(1_800_000_000));
     assert_eq!(account.freshness.retry_at_epoch, Some(1_800_000_123));
     assert_eq!(
@@ -3134,10 +3296,10 @@ fn canonical_runtime_preserves_broker_failure_retry_and_recovery() {
     );
     assert_eq!(
         account.issues,
-        vec![UsageIssueV1 {
+        vec![UsageIssueV2 {
             code: "rate_limited".to_owned(),
-            scope: UsageIssueScopeV1::Account,
-            recoverability: UsageIssueRecoverabilityV1::Retryable,
+            scope: UsageIssueScopeV2::Account,
+            recoverability: UsageIssueRecoverabilityV2::Retryable,
             message: "Provider request quota exceeded".to_owned(),
             retry_at_epoch: Some(1_800_000_123),
         }]
@@ -3155,7 +3317,7 @@ fn canonical_runtime_preserves_broker_failure_retry_and_recovery() {
     let recovered = runtime.canonical_projection("en").unwrap();
     let account = &recovered.providers[0].accounts[0];
     assert_ne!(failed.projection_id, recovered.projection_id);
-    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV1::Current);
+    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV2::Current);
     assert_eq!(account.freshness.retry_at_epoch, None);
     assert!(account.issues.is_empty());
 }
@@ -3181,15 +3343,142 @@ fn canonical_runtime_preserves_action_required_failure_without_snapshot() {
         .unwrap();
     let projection = runtime.canonical_projection("en").unwrap();
     let account = &projection.providers[0].accounts[0];
-    assert_eq!(account.lifecycle, UsageLifecycleV1::NeedsSecret);
-    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV1::Failed);
+    assert_eq!(account.lifecycle, UsageLifecycleV2::NeedsSecret);
+    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV2::Failed);
     assert_eq!(account.freshness.last_good_at_epoch, None);
     assert_eq!(account.issues[0].code, "needs_secret");
     assert_eq!(account.issues[0].message, "Approve credential access");
     assert_eq!(
         account.issues[0].recoverability,
-        UsageIssueRecoverabilityV1::ActionRequired
+        UsageIssueRecoverabilityV2::ActionRequired
     );
+}
+
+#[test]
+fn canonical_runtime_rejects_broker_observation_for_another_principal() {
+    use jackin_protocol::usage_broker::UsageRefreshPhase;
+    let (_temp, mut runtime, capability) = production_projection_runtime();
+    // Inject directly to exercise the projection boundary independently of
+    // broker adoption and its own admission guard.
+    let mut snapshot = production_projection_snapshot(&capability);
+    snapshot.canonical_identity.as_mut().unwrap().subject =
+        jackin_protocol::control::UsageCanonicalAccountSubject::ProviderId(
+            "another-principal".to_owned(),
+        );
+    runtime.broker_generations.insert(
+        capability.clone(),
+        UsageGenerationView {
+            capability,
+            generation: 99,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(snapshot),
+            error: None,
+            retry_at_epoch: Some(1_800_000_123),
+        },
+    );
+    let projection = runtime.canonical_projection("en").unwrap();
+    let account = &projection.providers[0].accounts[0];
+    assert!(account.windows.is_empty());
+    assert_ne!(account.freshness.generation, 99);
+    assert_eq!(account.freshness.retry_at_epoch, None);
+}
+
+#[test]
+fn canonical_runtime_checks_strong_observation_route_and_revision_independently() {
+    use jackin_protocol::usage_broker::UsageRefreshPhase;
+    for wrong_route in [true, false] {
+        let (_temp, mut runtime, capability) = production_projection_runtime();
+        let mut snapshot = production_projection_snapshot(&capability);
+        let route = snapshot.account_identity.as_mut().unwrap();
+        route.source_revision = Some("retired-revision".to_owned());
+        if wrong_route {
+            route.account_id = "another-route".to_owned();
+        }
+        runtime.broker_generations.insert(
+            capability.clone(),
+            UsageGenerationView {
+                capability,
+                generation: 99,
+                phase: UsageRefreshPhase::Completed,
+                snapshot: Some(snapshot),
+                error: None,
+                retry_at_epoch: None,
+            },
+        );
+        let projection = runtime.canonical_projection("en").unwrap();
+        let account = &projection.providers[0].accounts[0];
+        if wrong_route {
+            assert!(account.windows.is_empty());
+            assert_ne!(account.freshness.generation, 99);
+        } else {
+            assert_eq!(account.windows.len(), 1);
+            assert_eq!(account.freshness.generation, 99);
+            assert_eq!(account.freshness.phase, UsageFreshnessPhaseV2::Stale);
+            assert!(account.freshness.is_stale);
+            assert_eq!(account.freshness.last_good_at_epoch, Some(1_800_000_000));
+        }
+    }
+}
+
+#[test]
+fn canonical_runtime_retains_validated_last_good_while_current_route_has_no_snapshot() {
+    use jackin_protocol::usage_broker::UsageRefreshPhase;
+    let (_temp, mut runtime, capability) = production_projection_runtime();
+    let snapshot = production_projection_snapshot(&capability);
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: capability.clone(),
+            generation: 7,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(snapshot),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    runtime.broker_generations.insert(
+        capability.clone(),
+        UsageGenerationView {
+            capability,
+            generation: 8,
+            phase: UsageRefreshPhase::Updating,
+            snapshot: None,
+            error: None,
+            retry_at_epoch: Some(1_800_000_123),
+        },
+    );
+    let projection = runtime.canonical_projection("en").unwrap();
+    let account = &projection.providers[0].accounts[0];
+    assert_eq!(account.windows.len(), 1);
+    assert_eq!(account.freshness.last_good_at_epoch, Some(1_800_000_000));
+    assert_eq!(account.freshness.generation, 8);
+    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV2::Refreshing);
+    assert!(account.freshness.is_stale);
+    assert!(account.metric_groups.iter().all(|group| group.is_stale));
+    assert_eq!(account.freshness.retry_at_epoch, Some(1_800_000_123));
+}
+
+#[test]
+fn canonical_runtime_exhaustion_rejects_changed_and_unchanged_content_without_reusing_identity() {
+    for ordinal in [u64::MAX - 1, u64::MAX] {
+        let (_temp, mut runtime, _capability) = production_projection_runtime();
+        runtime.canonical_projection("en").unwrap();
+        let cached = runtime.canonical_projection_cache.as_mut().unwrap();
+        cached.broker_generation = ordinal;
+        cached.projection_id = format!("desktop:{ordinal}");
+        let before = runtime.canonical_projection_cache.clone();
+        let content_id = runtime.canonical_content_id.clone();
+        assert_eq!(
+            runtime.canonical_projection("en").unwrap_err(),
+            "usage publication generation exhausted"
+        );
+        runtime.discovery.as_mut().unwrap().config_generation = Some("changed-config".to_owned());
+        assert_eq!(
+            runtime.canonical_projection("en").unwrap_err(),
+            "usage publication generation exhausted"
+        );
+        assert_eq!(runtime.canonical_projection_cache, before);
+        assert_eq!(runtime.canonical_content_id, content_id);
+    }
 }
 
 #[test]
@@ -3217,11 +3506,13 @@ fn canonical_runtime_projects_discovery_diagnostics_without_account_rows() {
         UsageDiscoveryDiagnostic {
             surface_id: Some("codex".to_owned()),
             scope_label: "account work".to_owned(),
+            configured_account_ids: BTreeSet::new(),
             issue: UsageDiscoveryIssue::KeychainConsentRequired,
         },
         UsageDiscoveryDiagnostic {
             surface_id: None,
             scope_label: "workspace work".to_owned(),
+            configured_account_ids: BTreeSet::new(),
             issue: UsageDiscoveryIssue::ConfigInvalid,
         },
     ];
@@ -3234,14 +3525,14 @@ fn canonical_runtime_projects_discovery_diagnostics_without_account_rows() {
     );
     assert_eq!(
         projection.providers[0].issues[0].scope,
-        UsageIssueScopeV1::Provider
+        UsageIssueScopeV2::Provider
     );
     assert_eq!(
         projection.providers[0].issues[0].recoverability,
-        UsageIssueRecoverabilityV1::ActionRequired
+        UsageIssueRecoverabilityV2::ActionRequired
     );
     assert_eq!(projection.issues[0].code, "config_invalid");
-    assert_eq!(projection.issues[0].scope, UsageIssueScopeV1::Projection);
+    assert_eq!(projection.issues[0].scope, UsageIssueScopeV2::Projection);
 }
 
 #[test]
@@ -3250,7 +3541,7 @@ fn canonical_runtime_projects_coordination_failure_and_retains_last_good() {
         UsageCoordinationError, UsageCoordinationErrorKind, UsageRefreshPhase,
     };
     let (_temp, mut runtime, capability) = production_projection_runtime();
-    let snapshot = view_with_buckets(UsageSnapshotStatus::Fresh, vec![bucket("Weekly")]);
+    let snapshot = production_projection_snapshot(&capability);
     runtime
         .apply_broker_generation(UsageGenerationView {
             capability: capability.clone(),
@@ -3275,16 +3566,16 @@ fn canonical_runtime_projects_coordination_failure_and_retains_last_good() {
     let account = &failed.providers[0].accounts[0];
     assert_ne!(before.projection_id, failed.projection_id);
     assert_eq!(account.freshness.generation, 41);
-    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV1::Stale);
+    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV2::Stale);
     assert_eq!(account.freshness.last_good_at_epoch, Some(1_800_000_000));
     assert_eq!(account.freshness.retry_at_epoch, None);
     assert_eq!(account.windows[0].label, "Weekly");
     assert_eq!(
         account.issues,
-        vec![UsageIssueV1 {
+        vec![UsageIssueV2 {
             code: "unavailable".to_owned(),
-            scope: UsageIssueScopeV1::Account,
-            recoverability: UsageIssueRecoverabilityV1::Retryable,
+            scope: UsageIssueScopeV2::Account,
+            recoverability: UsageIssueRecoverabilityV2::Retryable,
             message: "Usage broker connection failed".to_owned(),
             retry_at_epoch: None,
         }]
@@ -3312,10 +3603,10 @@ fn canonical_runtime_projects_coordination_failure_and_retains_last_good() {
     let account = &active_failure.providers[0].accounts[0];
     assert_eq!(
         active_failure.refresh_state,
-        UsageProjectionRefreshStateV1::Refreshing
+        UsageProjectionRefreshStateV2::Refreshing
     );
     assert_eq!(account.freshness.generation, 43);
-    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV1::Refreshing);
+    assert_eq!(account.freshness.phase, UsageFreshnessPhaseV2::Refreshing);
     assert!(account.freshness.is_stale);
     assert_eq!(account.freshness.last_good_at_epoch, Some(1_800_000_000));
     assert_eq!(account.freshness.retry_at_epoch, Some(1_800_000_120));
@@ -3343,7 +3634,180 @@ fn canonical_runtime_projects_coordination_failure_and_retains_last_good() {
     let recovered = runtime.canonical_projection("en").unwrap();
     assert_eq!(
         recovered.providers[0].accounts[0].freshness.phase,
-        UsageFreshnessPhaseV1::Current
+        UsageFreshnessPhaseV2::Current
     );
     assert!(recovered.providers[0].accounts[0].issues.is_empty());
+}
+
+#[test]
+fn count_quota_projects_exact_remaining_without_rounding_to_exhaustion() {
+    use jackin_protocol::control::{
+        CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    };
+    for (remaining, expected_state, expected_percent) in [
+        (Some(1), UsageQuotaStateV2::Available, Some(0)),
+        (Some(0), UsageQuotaStateV2::Exhausted, Some(0)),
+        (None, UsageQuotaStateV2::Unknown, None),
+    ] {
+        let count = CountQuota {
+            used: Some(u64::MAX - 1),
+            limit: Some(u64::MAX),
+            remaining,
+            unit: CountQuotaUnit::Requests,
+            period: CountQuotaPeriod::UtcDaily,
+            provenance: CountQuotaProvenance::ProviderReported,
+        };
+        let mut quota = bucket("Free requests");
+        quota.count_quota = Some(count.clone());
+        quota.remaining_percent = Some(99);
+        quota.status_slot = Some(StatusSlot::Weekly);
+        let account = project_account(
+            &catalog_entry(
+                view_with_buckets(UsageSnapshotStatus::Fresh, vec![quota]),
+                None,
+            ),
+            0,
+            1,
+        )
+        .unwrap();
+        let window = &account.windows[0];
+        assert_eq!(window.count_quota, Some(count.clone()));
+        assert_eq!(window.quota_state, expected_state);
+        assert_eq!(
+            window.remaining_percent.map(UsagePercent::get),
+            expected_percent
+        );
+        assert_eq!(window.category, UsageWindowCategoryV2::LongRange);
+        window.validate(0).unwrap();
+        let group = &account.metric_groups[0];
+        assert_eq!(group.quota_state, expected_state);
+        assert!(matches!(&group.value, UsageMetricValueV2::Window {
+            count_quota: Some(actual), period: UsageMetricPeriodV2::Calendar { granularity: UsageCalendarPeriodV2::Daily }, unit: Some(unit), ..
+        } if actual == &count && unit == "requests"));
+        group.validate(0).unwrap();
+        if remaining == Some(1) {
+            assert_eq!(
+                window.value_label,
+                "18446744073709551614 / 18446744073709551615 requests used · 1 requests left"
+            );
+        }
+    }
+}
+
+#[test]
+fn count_quota_unknown_period_and_zero_cap_do_not_infer_calendar_or_geometry() {
+    use jackin_protocol::control::{
+        CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    };
+    let mut quota = bucket("Requests");
+    quota.count_quota = Some(CountQuota {
+        used: None,
+        limit: Some(0),
+        remaining: Some(0),
+        unit: CountQuotaUnit::Requests,
+        period: CountQuotaPeriod::Unknown,
+        provenance: CountQuotaProvenance::ProviderReported,
+    });
+    quota.status_slot = Some(StatusSlot::Daily);
+    quota.remaining_percent = Some(100);
+    let account = project_account(
+        &catalog_entry(
+            view_with_buckets(UsageSnapshotStatus::Fresh, vec![quota]),
+            None,
+        ),
+        0,
+        1,
+    )
+    .unwrap();
+    assert_eq!(account.windows[0].category, UsageWindowCategoryV2::Other);
+    assert_eq!(account.windows[0].remaining_percent, None);
+    assert_eq!(account.windows[0].quota_state, UsageQuotaStateV2::Exhausted);
+    assert!(matches!(
+        &account.metric_groups[0].value,
+        UsageMetricValueV2::Window {
+            period: UsageMetricPeriodV2::Unknown,
+            remaining_percent: None,
+            ..
+        }
+    ));
+    account.metric_groups[0].validate(0).unwrap();
+}
+
+#[test]
+fn configured_zero_money_cap_is_exhausted_without_fabricated_percentage() {
+    assert_eq!(
+        spend_ratio_state(&Money::new(-1, "USD", 2), &Money::new(0, "USD", 2)),
+        UsageQuotaStateV2::Unknown,
+    );
+    let mut quota = bucket("Paid credits");
+    quota.used_money = Some(Money::new(0, "USD", 2));
+    quota.limit_money = Some(Money::new(0, "USD", 2));
+    let account = project_account(
+        &catalog_entry(
+            view_with_buckets(UsageSnapshotStatus::Fresh, vec![quota]),
+            None,
+        ),
+        0,
+        1,
+    )
+    .unwrap();
+    assert_eq!(account.windows[0].quota_state, UsageQuotaStateV2::Exhausted);
+    assert_eq!(
+        account.windows[0].remaining_percent.map(UsagePercent::get),
+        Some(0)
+    );
+    assert_eq!(account.windows[0].used_percent, None);
+    let spend = &account.metric_groups[1];
+    assert_eq!(spend.quota_state, UsageQuotaStateV2::Exhausted);
+    assert!(matches!(&spend.value, UsageMetricValueV2::SpendCap {
+        cap: Some(cap), spent: Some(spent), remaining: Some(remaining),
+    } if cap.amount_minor == 0 && spent.amount_minor == 0 && remaining.amount_minor == 0));
+    spend.validate(1).unwrap();
+}
+
+#[test]
+fn exact_account_destination_survives_provider_membership_shrinking_to_one() {
+    use crate::host::DiscoveredAccountDescriptor;
+    let (_temp, mut runtime, original_route) = production_projection_runtime();
+    let other = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Codex,
+        subject: CanonicalAccountSubject::ProviderId("other-provider-account".to_owned()),
+    };
+    let discovery = runtime.discovery.as_mut().unwrap();
+    let mut binding = discovery.bindings[0].clone();
+    binding.identity = Some(other.clone());
+    binding.capability_id = "other-source-capability".to_owned();
+    binding.source_id = "other-source".to_owned();
+    discovery.bindings.push(binding);
+    discovery.accounts.push(DiscoveredAccountDescriptor {
+        surface_id: "codex".to_owned(),
+        account_key: other.account_key(),
+        account_label: "Other configured account".to_owned(),
+        provenance: vec!["account other".to_owned()],
+        source_ids: vec!["other-source".to_owned()],
+        identity: other.clone(),
+    });
+    let before = runtime.canonical_projection("en").unwrap();
+    assert_eq!(before.providers[0].accounts.len(), 2);
+    let account = before.providers[0]
+        .accounts
+        .iter()
+        .find(|account| account.refresh_capabilities.contains(&original_route))
+        .unwrap();
+    let requested = UsageDestination::Account {
+        provider_id: "openai".to_owned(),
+        canonical_account_id: account.canonical_account_id.clone(),
+    };
+    let discovery = runtime.discovery.as_mut().unwrap();
+    discovery
+        .accounts
+        .retain(|account| account.identity != other);
+    discovery
+        .bindings
+        .retain(|binding| binding.identity.as_ref() != Some(&other));
+    let after = runtime.canonical_projection("en").unwrap();
+    assert_eq!(after.providers[0].accounts.len(), 1);
+    let normalized = normalize_destination(&after, &requested);
+    assert_eq!(normalized.destination, requested);
+    assert_eq!(normalized.notice, None);
 }

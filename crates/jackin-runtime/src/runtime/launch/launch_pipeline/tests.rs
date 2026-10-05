@@ -801,3 +801,85 @@ fn breadcrumb_auth_mode_ignores_agents_with_no_admitted_instance() {
     let mode = breadcrumb_auth_mode(&config, Agent::Claude, Some(&ws), "smith").unwrap();
     assert_eq!(mode, AuthForwardMode::Ignore);
 }
+
+
+#[cfg(unix)]
+#[tokio::test]
+async fn run_launch_core_profile_scope_failure_cleans_up_and_releases_leases_before_role_launch() {
+    use fs4::{FileExt, TryLockError};
+    use std::sync::Arc;
+
+    fn auth_locks(root: &std::path::Path, output: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(root).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                auth_locks(&entry.path(), output);
+            } else if entry.file_name().to_string_lossy().starts_with(".jackin-auth-lock-") {
+                output.push(entry.path());
+            }
+        }
+    }
+
+    let mut fixture = LaunchCoreFixture::new();
+    // Unique temporary role root also keys the one-shot hook; parallel launch
+    // tests cannot consume this injection.
+    let source = fixture.paths.home_dir.join("selected-codex-profile");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("auth.json"),
+        br#"{"tokens":{"access_token":"fixture-access","refresh_token":"fixture-refresh","id_token":"fixture-id"}}"#,
+    )
+    .unwrap();
+    fixture.config.accounts.get_mut("test-codex").unwrap().credential =
+        jackin_config::AccountCredential::Profile {
+            agent: Agent::Codex,
+            directory: source,
+            xdg_roots: None,
+            source_selector: None,
+        };
+    std::fs::write(&fixture.paths.config_file, toml::to_string(&fixture.config).unwrap()).unwrap();
+    let root = fixture.paths.data_dir.join(&fixture.container_name);
+    let held_lock_paths = Arc::new(Mutex::new(Vec::new()));
+    let observed_paths = Arc::clone(&held_lock_paths);
+    let hook = launch_core::profile_scope_test_hook::register(
+        root,
+        Box::new(move |state, cleanup| {
+            assert!(!state.auth_mount_leases.is_empty(), "real preparation must admit auth mount leases");
+            let slot = state.auth.slots.get_mut("codex-main").expect("exact admitted slot");
+            assert_eq!(slot.mode, jackin_config::AuthForwardMode::Sync);
+            assert!(slot.forward_auth);
+            assert!(slot.profile_material.is_some(), "snapshot capture must succeed before injection");
+            slot.profile_material = None;
+            let mut paths = Vec::new();
+            auth_locks(&state.root, &mut paths);
+            let held = paths.into_iter().filter(|path| {
+                let file = std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap();
+                match FileExt::try_lock(&file) {
+                    Err(TryLockError::WouldBlock) => true,
+                    Ok(()) => false,
+                    Err(TryLockError::Error(error)) => panic!("checking live lease: {error}"),
+                }
+            }).collect::<Vec<_>>();
+            assert!(!held.is_empty(), "real admitted mount lease must hold a physical lock");
+            *observed_paths.lock().unwrap() = held;
+            // Model a sidecar launch that admitted shared resources before its
+            // create returned an ID. Real LoadCleanup must dispose of those
+            // resources on the subsequent profile-fence failure.
+            cleanup.set_dind_required(true);
+        }),
+    );
+    let role_name = fixture.container_name.clone();
+    let error = launch_core::run_launch_core(fixture.as_core()).await.expect_err("missing prepared profile proof must stop the real launch pipeline");
+    assert!(format!("{error:#}").contains("prepared profile proof missing"), "{error:#}");
+    let calls = fixture.docker.recorded.borrow();
+    assert!(!calls.iter().any(|call| call == &format!("create_container:{role_name}")), "authenticated role create reached: {calls:?}");
+    assert!(!calls.iter().any(|call| call == &format!("start_container:{role_name}")), "authenticated role start reached: {calls:?}");
+    assert!(calls.iter().any(|call| call.starts_with("docker network rm ")), "real cleanup did not remove admitted resources: {calls:?}");
+    assert!(calls.iter().any(|call| call.starts_with("docker volume rm ")), "real cleanup did not remove admitted resources: {calls:?}");
+    drop(calls);
+    for path in held_lock_paths.lock().unwrap().iter() {
+        let file = std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap();
+        FileExt::try_lock(&file).expect("prepared mount lease must be released before launch returns");
+    }
+    drop(hook);
+}

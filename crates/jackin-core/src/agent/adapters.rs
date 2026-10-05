@@ -47,22 +47,7 @@ pub(crate) use opencode::OpencodeRuntime;
 
 use super::runtime::AgentRuntime;
 
-/// All twelve built-in adapters in the canonical declaration order.
-///
-/// Adding a new runtime is one new file + one line here.
+/// Adapter registry is generated with enum iteration and per-agent dispatch.
 pub(crate) const fn registry() -> &'static [&'static dyn AgentRuntime] {
-    &[
-        &ClaudeRuntime,
-        &CodexRuntime,
-        &AmpRuntime,
-        &KimiRuntime,
-        &OpencodeRuntime,
-        &GrokRuntime,
-        &AntigravityRuntime,
-        &GeminiRuntime,
-        &CursorRuntime,
-        &MuseRuntime,
-        &OmpRuntime,
-        &HermesRuntime,
-    ]
+    super::Agent::RUNTIME_REGISTRY
 }

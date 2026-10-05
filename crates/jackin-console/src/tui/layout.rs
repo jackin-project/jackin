@@ -165,17 +165,17 @@ pub fn apply_scrollbar_drag(
     let len = u16::try_from(content_len).unwrap_or(u16::MAX);
     match axis {
         ScrollbarAxis::Horizontal => {
-            scroll.set_content_size(len, u16::MAX);
+            scroll.set_content_size(len, scroll.content_h());
             scroll.set_viewport(
                 u16::try_from(scroll_viewport_width(area)).unwrap_or(u16::MAX),
-                1,
+                scroll.viewport_h(),
             );
             scroll.set_offset_x(offset);
         }
         ScrollbarAxis::Vertical => {
-            scroll.set_content_size(u16::MAX, len);
+            scroll.set_content_size(scroll.content_w(), len);
             scroll.set_viewport(
-                1,
+                scroll.viewport_w(),
                 u16::try_from(scroll_viewport_height(area)).unwrap_or(u16::MAX),
             );
             // User-driven position change: the pausing setter, not the

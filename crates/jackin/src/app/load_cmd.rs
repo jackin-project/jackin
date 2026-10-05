@@ -263,7 +263,6 @@ pub(super) async fn handle_console(
         console::adapter::run::ConsoleRunOptions {
             op_available,
             startup_error,
-            parent_session: Some(&screen),
         },
         &mut in_place,
         &mut runner,
@@ -588,7 +587,7 @@ pub(super) async fn handle_hardline(
         } else {
             match Selector::parse(&sel)? {
                 Selector::Container(name) => name,
-                Selector::Role(class) => resolve_role_to_container(&class, &docker).await?,
+                Selector::Role(class) => resolve_role_to_container(&paths, &class, &docker).await?,
             }
         }
     } else {
@@ -684,11 +683,12 @@ pub(super) async fn handle_eject(
             Selector::Role(class) => {
                 if all {
                     runtime::matching_family(
+                        paths,
                         &class,
                         &runtime::list_managed_role_names(&docker).await?,
-                    )
+                    )?
                 } else {
-                    vec![resolve_role_to_container(&class, &docker).await?]
+                    vec![resolve_role_to_container(paths, &class, &docker).await?]
                 }
             }
         }

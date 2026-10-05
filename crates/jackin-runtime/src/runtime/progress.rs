@@ -23,8 +23,8 @@ pub use jackin_launch::{
 struct HostTerminal;
 
 impl LaunchHostTerminal for HostTerminal {
-    fn set_rich_surface_active(&self, active: bool) {
-        jackin_diagnostics::set_rich_surface_active(active);
+    fn acquire_rich_surface(&self) -> std::io::Result<jackin_core::TerminalOwnershipGuard> {
+        jackin_diagnostics::enter_rich_surface()
     }
 
     fn host_screen_owned(&self) -> bool {

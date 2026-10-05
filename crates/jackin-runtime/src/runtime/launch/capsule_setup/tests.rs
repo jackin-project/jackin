@@ -480,6 +480,7 @@ fn instance_bindings_carry_roots_only_for_selected_instances() {
 fn instance_dirs_come_from_slots_and_fail_closed() {
     use crate::instance::ProvisionedInstanceAuth;
     let slot = |suffix: Option<&str>, home_rel: &str, store_rel: &str| ProvisionedInstanceAuth {
+        profile_material: None,
         agent: Agent::Claude,
         account_id: "work".into(),
         mode: AuthForwardMode::Sync,
@@ -556,6 +557,7 @@ fn amp_instance_dir_exports_the_durable_data_parent() {
     use crate::instance::ProvisionedInstanceAuth;
 
     let slot = ProvisionedInstanceAuth {
+        profile_material: None,
         agent: Agent::Amp,
         account_id: "amp".into(),
         mode: AuthForwardMode::Sync,

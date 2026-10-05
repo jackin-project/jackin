@@ -17,8 +17,10 @@ The boundary is a synchronous coarse-grained boltffi facade compiled as a static
 - Display: remaining/used percentage, reset timing, plan/status, multi-account identity, and provider-supplied quota caps.
 - Excluded: token unit prices, inferred cost, usage/spend history, trends, charts, forecasts, analytics, and unrelated providers.
 - Deployment target: macOS 26.0.
-- Release toolchain: Xcode 26.6 on a fixed `macos-26` GitHub runner.
+- Release toolchain: stable Xcode 27.0 (`27A266a`), macOS SDK 27.0 (`26A425`), Swift 6.4 (`swiftlang-6.4.0.34.1`, `clang-2100.3.34.1`), qualified macOS 27.0 arm64 host. The generated native runner/task integration remains unproven.
 - Release architecture: Apple Silicon arm64.
+
+**2026-10-03 shipping compiler decision:** Apple's [stable release record](https://developer.apple.com/news/releases/) identifies Xcode 27 (`27A266a`), and the [support table](https://developer.apple.com/support/xcode/) requires host macOS 26.6 or later and supplies SDK 27/Swift 6.4. The qualified signed bundle binds the exact SDK/compiler builds above. Xcode 26.6 supports only 26.x hosts; the original 26 lane remains blocked and unpassed on the actual 27 host. Historical 26 measurements remain historical. Deployment floor 26.0, availability guards, decided native fallbacks, static FFI/broker assembly, and every named unit/UI obligation remain required. New shipping acceptance needs full Rust/FFI, bindings, Swift/unit/UI and bundle gates at one final revision. Actual 26 runtime and native Intel CLI proof remain separate; Rosetta supplies neither. A future nonblocking compiler lane is unimplemented.
 
 Before 1.0 this is latest-only engineering. There is no macOS 14/15 UI lane, compatibility renderer, custom material, or alternate design.
 
@@ -51,7 +53,7 @@ Window entry is intentional:
 - popover Open Usage calls the explicit provider path.
 - App menu/Dock reopen calls the preserving path.
 
-`PresentationStore` owns selection validity. Provider removal/disablement normalizes Usage to Overview and moves stale popover focus to the first valid provider. Views do not conceal invalid owner state with local fallback.
+`PresentationStore` owns selection validity. Provider removal normalizes Usage to Overview and moves stale popover focus to the first valid compact provider. Disabling a provider for compact display does not remove it from the canonical Usage inventory or invalidate its destination. Account removal normalizes only the affected current destination and retains the Rust unavailable-selection notice across passive projections. Rust keeps the persisted binding until an explicit account choice; removing the last account leaves an actionable provider row. Unrelated unavailable bindings cannot redirect a valid destination. Account pickers and identity models never infer a first-sibling replacement. Views do not conceal invalid owner state with local fallback.
 
 Overview is a hierarchical native `Table`: provider parents contain exact account
 children across Provider, Account, Plan or status, Remaining, and Reset columns.
@@ -97,3 +99,5 @@ Secret-free release validation proves assembly, bundle verification, release-mod
 - Cross-provider comparison stays in Usage; the popover stays provider-focused.
 - New display behavior requires a Rust projection or an explicit architecture decision, not Swift-side inference.
 - Capture-gated provider wire formats remain unimplemented until authentic operator-owned evidence exists.
+
+Full Usage navigation, empty-state decisions, and recovery use the complete canonical provider groups. Compact glance membership and enabled preferences govern compact presentation and scheduled probing separately; neither hides configured accounts or unresolved sources from the full inventory. Swift preserves Rust disabled-preference copy and actual selected usage state. Transient projection failures keep the full inventory and valid destination visible alongside the reported error and Retry; empty inventory retains the global loading/error states.

@@ -14,6 +14,7 @@ fn docker_identity_roundtrips_without_inferring_ownership_from_names() -> anyhow
     manifest.docker_identity = Some(DockerIdentity {
         role_container_id: "original-role-id".to_owned(),
         dind_container_id: Some("original-sidecar-id".to_owned()),
+        network_id: Some(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap()),
     });
     manifest.write(temp.path())?;
     assert_eq!(InstanceManifest::read(temp.path())?, manifest);
@@ -26,36 +27,16 @@ fn docker_identity_roundtrips_without_inferring_ownership_from_names() -> anyhow
 }
 
 #[test]
-fn manifest_v3_backend_roundtrips_and_omitted_backend_deserializes() {
-    let manifest = InstanceManifest::new_with_backend(
-        NewInstanceManifest {
-            container_base: "jackin-x",
-            workspace_name: Some("ws"),
-            workspace_label: "ws",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:t",
-            role_key: "org/agent",
-            role_display_name: "Agent",
-            agent_runtime: Agent::Claude,
-            role_source_git: "https://example.invalid/role.git",
-            role_source_ref: Some("main"),
-            image_tag: "img",
-            docker: DockerResources::from_container_name("jackin-x"),
-            role_git_sha: None,
-            base_image_ref: None,
-            base_image_digest: None,
-            supported_agents: vec![],
-        },
-        BackendResources::AppleContainer(AppleContainerResources {
-            container_name: "jackin-x".to_owned(),
-            role_image_ref: "img".to_owned(),
-            inner_docker_enabled: false,
-        }),
+fn manifest_v4_backend_roundtrips_and_omitted_backend_deserializes() {
+    let manifest = sample_apple_manifest(
+        "11111111-1111-4111-8111-111111111111",
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-333333333333",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     );
-    // A v3 apple-container manifest survives a serialize -> deserialize round trip.
+    // A v4 apple-container manifest survives a validated serialize -> deserialize round trip.
     let json = serde_json::to_string(&manifest).unwrap();
     assert_eq!(
-        serde_json::from_str::<InstanceManifest>(&json).unwrap(),
+        InstanceManifest::parse_and_validate(json.as_bytes(), Path::new("instance.json")).unwrap(),
         manifest
     );
     assert!(matches!(
@@ -63,7 +44,7 @@ fn manifest_v3_backend_roundtrips_and_omitted_backend_deserializes() {
         Some(BackendResources::AppleContainer(_))
     ));
 
-    // `backend` is optional for v3 Docker manifests.
+    // `backend` is optional for v4 Docker manifests.
     let mut obj = serde_json::to_value(&manifest)
         .unwrap()
         .as_object()
@@ -72,6 +53,171 @@ fn manifest_v3_backend_roundtrips_and_omitted_backend_deserializes() {
     obj.remove("backend");
     let legacy: InstanceManifest = serde_json::from_value(serde_json::Value::Object(obj)).unwrap();
     assert_eq!(legacy.backend, None);
+}
+
+#[test]
+fn apple_authority_allows_duplicate_names_with_distinct_process_generations() {
+    let first = sample_apple_manifest(
+        "11111111-1111-4111-8111-111111111111",
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-333333333333",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    let recreated = sample_apple_manifest(
+        "11111111-1111-4111-8111-111111111111",
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.44444444-4444-4444-8444-444444444444",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+
+    assert_eq!(first.container_base, recreated.container_base);
+    assert_ne!(
+        apple_authority(&first).resource_handle,
+        apple_authority(&recreated).resource_handle
+    );
+    assert_eq!(
+        validate_manifest(&first).unwrap().container_base,
+        validate_manifest(&recreated).unwrap().container_base
+    );
+}
+
+#[test]
+fn apple_authority_keeps_same_name_foreign_owner_recreation_distinct() {
+    let original = sample_apple_manifest(
+        "11111111-1111-4111-8111-111111111111",
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-333333333333",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    let foreign_owner = sample_apple_manifest(
+        "55555555-5555-4555-8555-555555555555",
+        "jackin-owner-v1.66666666-6666-4666-8666-666666666666.77777777-7777-4777-8777-777777777777",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+
+    assert_eq!(original.container_base, foreign_owner.container_base);
+    assert_ne!(apple_authority(&original), apple_authority(&foreign_owner));
+    assert_eq!(validate_manifest(&original).unwrap(), original);
+    assert_eq!(validate_manifest(&foreign_owner).unwrap(), foreign_owner);
+}
+
+#[test]
+fn apple_authority_preserves_old_owner_generation_for_exact_runtime_matching() {
+    let previous_generation = sample_apple_manifest(
+        "11111111-1111-4111-8111-111111111111",
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-333333333333",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    let current_generation = sample_apple_manifest(
+        "11111111-1111-4111-8111-111111111111",
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.44444444-4444-4444-8444-444444444444",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+
+    assert_eq!(
+        apple_authority(&previous_generation).owner_id,
+        apple_authority(&current_generation).owner_id
+    );
+    assert_ne!(
+        apple_authority(&previous_generation).resource_handle,
+        apple_authority(&current_generation).resource_handle
+    );
+    assert_eq!(
+        validate_manifest(&previous_generation).unwrap(),
+        previous_generation
+    );
+}
+
+#[test]
+fn apple_authority_requires_handle_and_rejects_foreign_handle_format() {
+    let manifest = sample_apple_manifest(
+        "11111111-1111-4111-8111-111111111111",
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-333333333333",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    let mut value = serde_json::to_value(&manifest).unwrap();
+    let apple = value["backend"]["apple_container"].as_object_mut().unwrap();
+    apple.remove("authority");
+    let error = validate_value(value).unwrap_err();
+    assert!(format!("{error:#}").contains("missing field `authority`"));
+
+    let mut value = serde_json::to_value(&manifest).unwrap();
+    let authority = value["backend"]["apple_container"]["authority"]
+        .as_object_mut()
+        .unwrap();
+    authority.remove("resource_handle");
+    let error = validate_value(value).unwrap_err();
+    assert!(format!("{error:#}").contains("missing field `resource_handle`"));
+
+    let mut foreign_handle = manifest.clone();
+    apple_authority_mut(&mut foreign_handle).resource_handle =
+        "docker://jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-333333333333".to_owned();
+    assert!(
+        validate_manifest(&foreign_handle)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid Apple authority resource handle")
+    );
+
+    let mut noncanonical_generation = manifest;
+    apple_authority_mut(&mut noncanonical_generation).resource_handle =
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-33333333333A"
+            .to_owned();
+    assert!(
+        validate_manifest(&noncanonical_generation)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid Apple authority resource handle")
+    );
+}
+
+#[test]
+fn apple_authority_rejects_noncanonical_owner_uuid_and_scope_fingerprint() {
+    let valid = sample_apple_manifest(
+        "11111111-1111-4111-8111-111111111111",
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-333333333333",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    let mut invalid_owner = valid.clone();
+    apple_authority_mut(&mut invalid_owner).owner_id =
+        "11111111-1111-4111-8111-11111111111A".to_owned();
+    assert!(
+        validate_manifest(&invalid_owner)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid Apple authority owner UUID")
+    );
+
+    for fingerprint in [
+        "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0",
+        "sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ] {
+        let mut invalid_scope = valid.clone();
+        apple_authority_mut(&mut invalid_scope).scope_fingerprint = fingerprint.to_owned();
+        assert!(
+            validate_manifest(&invalid_scope)
+                .unwrap_err()
+                .to_string()
+                .contains("invalid Apple authority scope fingerprint")
+        );
+    }
+}
+
+#[test]
+fn apple_backend_name_must_match_manifest_container_base() {
+    let mut manifest = sample_apple_manifest(
+        "11111111-1111-4111-8111-111111111111",
+        "jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-333333333333",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    if let Some(BackendResources::AppleContainer(apple)) = manifest.backend.as_mut() {
+        apple.container_name = "jackin-recreated-with-same-label".to_owned();
+    }
+    assert!(
+        validate_manifest(&manifest)
+            .unwrap_err()
+            .to_string()
+            .contains("Apple backend display name does not match instance manifest container base")
+    );
 }
 
 #[test]
@@ -115,7 +261,7 @@ fn admitted_instances_empty_is_explicit_and_validate_tabs() {
         manifest
     );
 
-    // Admission is required by the v3 manifest schema; omission is malformed.
+    // Admission is required by the v4 manifest schema; omission is malformed.
     let mut obj = serde_json::to_value(&manifest)
         .unwrap()
         .as_object()
@@ -163,24 +309,36 @@ fn registration_state_is_visible_without_relabeling_admitted_identity() {
 }
 
 #[test]
-fn manifest_read_rejects_pre_v3_versions() {
-    let temp = tempdir().unwrap();
-    let state_dir = temp.path();
-    std::fs::create_dir_all(state_dir.join(".jackin")).unwrap();
-    let mut value = serde_json::to_value(sample_manifest()).unwrap();
-    value["version"] = serde_json::json!(2);
-    std::fs::write(
-        state_dir.join(".jackin/instance.json"),
-        serde_json::to_vec(&value).unwrap(),
-    )
-    .unwrap();
+fn manifest_read_rejects_all_pre_v4_versions() {
+    for version in [2, 3] {
+        let temp = tempdir().unwrap();
+        let state_dir = temp.path();
+        std::fs::create_dir_all(state_dir.join(".jackin")).unwrap();
+        let mut value = serde_json::to_value(sample_apple_manifest(
+            "11111111-1111-4111-8111-111111111111",
+            "jackin-owner-v1.22222222-2222-4222-8222-222222222222.33333333-3333-4333-8333-333333333333",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ))
+        .unwrap();
+        value["version"] = serde_json::json!(version);
+        // A pre-v4 Apple manifest has no authority binding. Its version still
+        // fails closed before any attempt to infer authority from its name.
+        value["backend"]["apple_container"]
+            .as_object_mut()
+            .unwrap()
+            .remove("authority");
+        std::fs::write(
+            state_dir.join(".jackin/instance.json"),
+            serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
 
-    let error = InstanceManifest::read(state_dir).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("unsupported instance manifest version 2")
-    );
+        let error = InstanceManifest::read(state_dir).unwrap_err();
+        assert!(
+            format!("{error:#}")
+                .contains(&format!("unsupported instance manifest version {version}"))
+        );
+    }
 }
 
 #[test]
@@ -229,6 +387,49 @@ fn sample_manifest() -> InstanceManifest {
     })
 }
 
+fn sample_apple_manifest(
+    owner_id: &str,
+    resource_handle: &str,
+    scope_fingerprint: &str,
+) -> InstanceManifest {
+    let mut manifest = sample_manifest();
+    manifest.backend = Some(BackendResources::AppleContainer(AppleContainerResources {
+        container_name: manifest.container_base.clone(),
+        role_image_ref: "img".to_owned(),
+        inner_docker_enabled: false,
+        authority: AppleAuthorityBinding {
+            owner_id: owner_id.to_owned(),
+            resource_handle: resource_handle.to_owned(),
+            scope_fingerprint: scope_fingerprint.to_owned(),
+        },
+    }));
+    manifest
+}
+
+fn apple_authority(manifest: &InstanceManifest) -> &AppleAuthorityBinding {
+    match manifest.backend.as_ref().unwrap() {
+        BackendResources::AppleContainer(apple) => &apple.authority,
+        BackendResources::Docker(_) => panic!("expected Apple backend"),
+    }
+}
+
+fn apple_authority_mut(manifest: &mut InstanceManifest) -> &mut AppleAuthorityBinding {
+    match manifest.backend.as_mut().unwrap() {
+        BackendResources::AppleContainer(apple) => &mut apple.authority,
+        BackendResources::Docker(_) => panic!("expected Apple backend"),
+    }
+}
+
+fn validate_manifest(manifest: &InstanceManifest) -> anyhow::Result<InstanceManifest> {
+    let bytes = serde_json::to_vec(manifest)?;
+    InstanceManifest::parse_and_validate(&bytes, Path::new("instance.json"))
+}
+
+fn validate_value(value: serde_json::Value) -> anyhow::Result<InstanceManifest> {
+    let bytes = serde_json::to_vec(&value)?;
+    InstanceManifest::parse_and_validate(&bytes, Path::new("instance.json"))
+}
+
 #[test]
 fn writes_manifest_under_jackin_state_dir() {
     let temp = tempdir().unwrap();
@@ -260,9 +461,32 @@ fn writes_manifest_under_jackin_state_dir() {
     manifest.write(temp.path()).unwrap();
 
     let body = std::fs::read_to_string(temp.path().join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 3"#));
+    assert!(body.contains(r#""version": 4"#));
     assert!(body.contains(r#""status": "running""#));
     assert!(body.contains(r#""role_key": "org/agent""#));
+}
+
+#[cfg(unix)]
+#[test]
+fn manifest_write_restricts_state_directories_and_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempdir().unwrap();
+    let state_dir = temp.path().join("instance-state");
+    sample_manifest().write(&state_dir).unwrap();
+
+    let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&state_dir), 0o700, "instance state dir must be 0700");
+    assert_eq!(
+        mode(&state_dir.join(".jackin")),
+        0o700,
+        "manifest dir must be 0700"
+    );
+    assert_eq!(
+        mode(&state_dir.join(".jackin/instance.json")),
+        0o600,
+        "manifest file must be 0600"
+    );
 }
 
 #[test]
@@ -480,7 +704,7 @@ fn instance_manifest_write_replaces_partial_file() {
     std::fs::write(state_dir.join(".jackin/instance.json"), b"{ partial").unwrap();
     sample_manifest().write(state_dir).unwrap();
     let body = std::fs::read_to_string(state_dir.join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 3"#));
+    assert!(body.contains(r#""version": 4"#));
     assert!(!body.contains("partial"));
 }
 

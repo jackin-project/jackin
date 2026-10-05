@@ -41,10 +41,35 @@ use jackin_config::AppConfig;
 use jackin_config::LoadWorkspaceInput;
 use jackin_core::JackinPaths;
 
-pub struct ConsoleRunOptions<'a> {
+/// Ratatui cursor restoration stays serialized on every return path.
+struct OwnedConsoleTerminal<T> {
+    terminal: Option<T>,
+    activity: jackin_core::TerminalActivity,
+}
+
+impl<T> std::ops::Deref for OwnedConsoleTerminal<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.terminal.as_ref().expect("console terminal lease")
+    }
+}
+
+impl<T> std::ops::DerefMut for OwnedConsoleTerminal<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.terminal.as_mut().expect("console terminal lease")
+    }
+}
+
+impl<T> Drop for OwnedConsoleTerminal<T> {
+    fn drop(&mut self) {
+        self.activity.run_exclusive(|| drop(self.terminal.take()));
+    }
+}
+
+pub struct ConsoleRunOptions {
     pub op_available: bool,
     pub startup_error: Option<(String, String)>,
-    pub parent_session: Option<&'a TerminalSession>,
 }
 
 /// Worker body for the Console Usage refresh effect: read the broker's
@@ -65,17 +90,25 @@ pub(crate) fn load_console_usage_state(
 ) -> anyhow::Result<jackin_console::tui::state::UsageScreenState> {
     use jackin_usage::host::{
         HostProbePolicy, HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig,
-        UsageDiscoveryScope, ensure_usage_broker_process, request_usage_batch,
-        usage_broker_capabilities,
+        UsageDiscoveryScope, discover_and_ensure_usage_broker, request_usage_batch,
     };
 
     let discovery_scope = UsageDiscoveryScope::HostDesktop {
         config_root: paths.config_dir.clone(),
         operator_home: paths.home_dir.clone(),
     };
+    let resolver = std::sync::Arc::new(jackin_usage::host::CachedProviderCredentialResolver::new(
+        crate::cli::usage::CliUsageSecretSource,
+    ));
+    let broker = discover_and_ensure_usage_broker(
+        UsageBrokerConfig::for_data_dir(paths.data_dir.clone()),
+        discovery_scope.clone(),
+        resolver,
+    )
+    .map_err(|error| anyhow::anyhow!(error.message))?;
     let mut runtime = HostUsageRuntime::new();
     runtime
-        .open_with_discovery(
+        .open_with_validated_discovery(
             HostRuntimeConfig {
                 data_dir: paths.data_dir.clone(),
                 refresh_floor_secs: 300,
@@ -83,24 +116,12 @@ pub(crate) fn load_console_usage_state(
                 probe_policy: HostProbePolicy::Live,
                 discovery_scope: discovery_scope.clone(),
             },
-            &jackin_usage::host::CachedProviderCredentialResolver::new(
-                crate::cli::usage::CliUsageSecretSource,
-            ),
+            broker.discovery,
         )
         .map_err(anyhow::Error::msg)?;
-    let discovery = runtime
-        .validated_discovery()
-        .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-    let client = ensure_usage_broker_process(
-        UsageBrokerConfig::for_data_dir(paths.data_dir.clone()),
-        &discovery_scope,
-    )
-    .map_err(|error| anyhow::anyhow!(error.message))?;
-    for (capability, result) in request_usage_batch(
-        &client,
-        usage_broker_capabilities(&discovery),
-        force_refresh,
-    ) {
+    for (capability, result) in
+        request_usage_batch(&broker.client, broker.capabilities, force_refresh)
+    {
         match result {
             Ok(view) => runtime
                 .apply_broker_generation(view)
@@ -211,12 +232,11 @@ fn poll_startup_usage(
     true
 }
 
-impl std::fmt::Debug for ConsoleRunOptions<'_> {
+impl std::fmt::Debug for ConsoleRunOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ConsoleRunOptions")
             .field("op_available", &self.op_available)
             .field("startup_error", &self.startup_error)
-            .field("parent_session_present", &self.parent_session.is_some())
             .finish()
     }
 }
@@ -552,7 +572,7 @@ where
                 ..main_area
             };
             jackin_console::tui::view::render_modal_backdrop(frame, body);
-            let area = quit_confirm_area(body, confirm);
+            let area = quit_confirm_area(main_area, confirm);
             jackin_console::tui::components::render_confirm_dialog(frame, area, confirm);
             termrock::widgets::render_hint_bar(
                 frame,
@@ -1196,7 +1216,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
-    options: ConsoleRunOptions<'_>,
+    options: ConsoleRunOptions,
     action_handler: &mut H,
     runner: &mut impl jackin_docker::CommandRunner,
 ) -> anyhow::Result<(Option<ConsoleOutcome>, AppConfig)> {
@@ -1221,19 +1241,18 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 .map_err(|error| error.to_string())
         },
     ));
-    // When the launch flow in `app` already owns the host screen, draw into it
-    // and leave teardown to that guard; otherwise own the screen here for the
-    // lifetime of the console (standalone `jackin console` with no launch).
-    let owned_screen = if options
-        .parent_session
-        .is_some_and(TerminalSession::is_active)
-    {
-        None
-    } else {
-        Some(TerminalSession::enter(host_console_terminal())?)
-    };
+    // Every console backend owns a nested lease; physical modes remain with
+    // the shared authority until the final surface leaves.
+    let owned_screen = TerminalSession::enter(host_console_terminal())?;
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
-    let mut terminal = ratatui::Terminal::new(backend)?;
+    let activity = owned_screen.activity();
+    let terminal = activity
+        .run_if_active(|| ratatui::Terminal::new(backend))
+        .ok_or_else(|| anyhow::anyhow!("console terminal superseded during setup"))??;
+    let mut terminal = OwnedConsoleTerminal {
+        terminal: Some(terminal),
+        activity,
+    };
     let mut mouse_state = ConsoleMouseState::new();
     let mut event_stream = crossterm::event::EventStream::new();
     // Animation tick: redraws the TUI when no events arrive so spinners,
@@ -1350,9 +1369,10 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let _screen_result =
         screen_tracker.exit(jackin_telemetry::schema::enums::TransitionReason::Shutdown);
     let _focus_result = widget_tracker.unfocus();
-    // Tears down only when the console owns the screen standalone. When the
-    // launch flow owns it, this is `None` and teardown waits for that guard so
-    // the console → loading transition stays on one alternate screen.
+    // Ratatui's Drop writes cursor state, so destroy it before releasing the
+    // scope. A surviving host lease then reasserts its cursor policy.
+    drop(event_stream);
+    drop(terminal);
     drop(owned_screen);
     // Return the in-memory config so the post-console path can skip a disk
     // reload when nothing was written (and still sees in-session mutations

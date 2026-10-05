@@ -8,7 +8,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use jackin_core::account_key_hash;
-use jackin_protocol::control::{FocusedUsageView, UsageConfidence};
+use jackin_protocol::control::{
+    FocusedUsageView, UsageCanonicalAccountIdentity, UsageCanonicalAccountSubject,
+    UsageSnapshotStatus,
+};
+use jackin_protocol::usage_broker::UsageCatalogEntry;
 use serde::{Deserialize, Serialize};
 
 use crate::usage::atomic_write_usage_json;
@@ -81,65 +85,83 @@ impl CanonicalIdentityGraph {
 }
 
 impl CanonicalAccountIdentity {
-    pub(super) fn source_capability(surface: HostSurfaceId, capability_id: &str) -> Self {
-        Self {
-            surface,
-            subject: CanonicalAccountSubject::SourceCapability(capability_id.to_owned()),
-        }
+    pub(super) fn from_view(surface: HostSurfaceId, view: &FocusedUsageView) -> Option<Self> {
+        let evidence = view.canonical_identity.as_ref()?;
+        Self::from_protocol(surface, evidence)
     }
 
-    pub(super) fn from_view(surface: HostSurfaceId, view: &FocusedUsageView) -> Option<Self> {
-        if surface_for_view(view) != Some(surface)
-            || matches!(view.confidence, UsageConfidence::PresenceOnly)
-        {
+    pub(super) fn from_protocol(
+        surface: HostSurfaceId,
+        evidence: &UsageCanonicalAccountIdentity,
+    ) -> Option<Self> {
+        if evidence.surface_id != surface.id() {
             return None;
         }
-        let label = stable_account_label(&view.account.account_label)?;
-        Some(Self {
-            surface,
-            subject: CanonicalAccountSubject::ProviderStableHandle(label.to_owned()),
-        })
+        let subject = match &evidence.subject {
+            UsageCanonicalAccountSubject::ProviderId(id) if !id.trim().is_empty() => {
+                CanonicalAccountSubject::ProviderId(id.clone())
+            }
+            UsageCanonicalAccountSubject::ProviderStableHandle(handle)
+                if !handle.trim().is_empty() =>
+            {
+                CanonicalAccountSubject::ProviderStableHandle(handle.clone())
+            }
+            UsageCanonicalAccountSubject::SourceCapability(capability)
+                if !capability.trim().is_empty() =>
+            {
+                CanonicalAccountSubject::SourceCapability(capability.clone())
+            }
+            _ => return None,
+        };
+        Some(Self { surface, subject })
+    }
+
+    pub(super) fn protocol_identity(&self) -> UsageCanonicalAccountIdentity {
+        let subject = match &self.subject {
+            CanonicalAccountSubject::ProviderId(id) => {
+                UsageCanonicalAccountSubject::ProviderId(id.clone())
+            }
+            CanonicalAccountSubject::ProviderStableHandle(handle) => {
+                UsageCanonicalAccountSubject::ProviderStableHandle(handle.clone())
+            }
+            CanonicalAccountSubject::SourceCapability(capability) => {
+                UsageCanonicalAccountSubject::SourceCapability(capability.clone())
+            }
+        };
+        UsageCanonicalAccountIdentity {
+            surface_id: self.surface.id().to_owned(),
+            subject,
+        }
     }
 
     pub(super) fn account_key(&self) -> String {
-        let evidence = match &self.subject {
-            CanonicalAccountSubject::ProviderId(id) => {
-                format!("account-key-v1:provider-id:{}", id.trim())
-            }
-            CanonicalAccountSubject::ProviderStableHandle(handle) => format!(
-                "account-key-v1:stable-handle:{}",
-                normalize_stable_handle(handle)
-            ),
-            CanonicalAccountSubject::SourceCapability(capability_id) => format!(
-                "account-key-v1:source-capability:{}:{}",
-                capability_id.len(),
-                capability_id
-            ),
-        };
-        account_key_hash(self.surface.provider_id(), &evidence)
+        account_key_hash(
+            self.surface.provider_id(),
+            &self.identity_evidence("account-key-v1"),
+        )
     }
 
     pub(super) fn canonical_id_v1(&self) -> String {
-        let evidence = match &self.subject {
-            CanonicalAccountSubject::ProviderId(id) => {
-                format!("canonical-account-v1:provider-id:{}", id.trim())
-            }
-            CanonicalAccountSubject::ProviderStableHandle(handle) => format!(
-                "canonical-account-v1:stable-handle:{}",
-                normalize_stable_handle(handle)
-            ),
-            CanonicalAccountSubject::SourceCapability(capability_id) => format!(
-                "canonical-account-v1:source-capability:{}:{}",
-                capability_id.len(),
-                capability_id
-            ),
-        };
-        account_key_hash(self.surface.provider_id(), &evidence)
+        account_key_hash(
+            self.surface.provider_id(),
+            &self.identity_evidence("canonical-account-v1"),
+        )
     }
-}
 
-fn normalize_stable_handle(handle: &str) -> String {
-    handle.trim().to_lowercase()
+    fn identity_evidence(&self, namespace: &str) -> String {
+        let surface = self.surface.id();
+        let (kind, subject) = match &self.subject {
+            CanonicalAccountSubject::ProviderId(subject) => ("provider-id", subject),
+            CanonicalAccountSubject::ProviderStableHandle(subject) => ("stable-handle", subject),
+            CanonicalAccountSubject::SourceCapability(subject) => ("source-capability", subject),
+        };
+        format!(
+            "{namespace}:surface:{}:{surface}:subject-kind:{}:{kind}:subject:{}:{subject}",
+            surface.len(),
+            kind.len(),
+            subject.len()
+        )
+    }
 }
 
 /// Account lifecycle is independent from snapshot freshness.
@@ -202,9 +224,17 @@ pub struct HostAccountDescriptor {
     pub provenance_label: String,
     pub plan_or_status_label: String,
     pub remaining_percent: Option<u8>,
+    /// Exact observed count window behind the summary, including unknown and zero limits.
+    pub count_quota: Option<jackin_protocol::control::CountQuota>,
+    /// Exact monetary observations from the selected summary window.
+    pub used_money: Option<jackin_protocol::control::Money>,
+    pub limit_money: Option<jackin_protocol::control::Money>,
+    pub remaining_money: Option<jackin_protocol::control::Money>,
     pub remaining_label: String,
     pub headline: String,
     pub reset_label: Option<String>,
+    /// Provider reset epoch, preserving zero independently from an unknown reset.
+    pub resets_at: Option<i64>,
     /// Non-optional Overview display value (`—` when unknown).
     pub reset_display_label: String,
     pub exact_reset: Option<String>,
@@ -281,9 +311,27 @@ fn lifecycle_rank(lifecycle: AccountLifecycle) -> u8 {
     }
 }
 
-/// Persist selected account keys: `surface_id -> account_key`.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+/// Persisted operator selection. Legacy keys remain preserved until an
+/// explicit account choice clears `reselection_required` for that surface.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(super) struct SelectedAccountPreferences {
+    pub(super) selected: HashMap<String, String>,
+    pub(super) reselection_required: BTreeSet<String>,
+}
+
+const SELECTED_ACCOUNTS_SCHEMA_VERSION: u32 = 2;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SelectedAccountsFile {
+    schema_version: u32,
+    selected: HashMap<String, String>,
+    reselection_required: BTreeSet<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnversionedSelectedAccountsFile {
     selected: HashMap<String, String>,
 }
 
@@ -293,21 +341,70 @@ pub(super) fn selected_accounts_path(data_dir: &Path) -> PathBuf {
         .join("selected-accounts.json")
 }
 
-pub(super) fn load_selected_accounts(path: &Path) -> HashMap<String, String> {
-    let Ok(bytes) = fs::read(path) else {
-        return HashMap::new();
+pub(super) fn load_selected_accounts(
+    path: &Path,
+) -> Result<(SelectedAccountPreferences, bool), String> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((SelectedAccountPreferences::default(), false));
+        }
+        Err(error) => return Err(format!("read selected-accounts: {error}")),
     };
-    serde_json::from_slice::<SelectedAccountsFile>(&bytes)
-        .map(|doc| doc.selected)
-        .unwrap_or_default()
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("decode selected-accounts: {error}"))?;
+    if value.get("schema_version").is_some() {
+        let file: SelectedAccountsFile = serde_json::from_value(value)
+            .map_err(|error| format!("decode selected-accounts: {error}"))?;
+        if file.schema_version != SELECTED_ACCOUNTS_SCHEMA_VERSION {
+            return Err(format!(
+                "unsupported selected-accounts schema {}; file retained",
+                file.schema_version
+            ));
+        }
+        if !file
+            .reselection_required
+            .iter()
+            .all(|surface_id| file.selected.contains_key(surface_id))
+        {
+            return Err("selected-accounts reselection state has no saved identity".to_owned());
+        }
+        return Ok((
+            SelectedAccountPreferences {
+                selected: file.selected,
+                reselection_required: file.reselection_required,
+            },
+            false,
+        ));
+    }
+
+    let legacy: UnversionedSelectedAccountsFile = serde_json::from_value(value)
+        .map_err(|error| format!("decode unversioned selected-accounts: {error}"))?;
+    let reselection_required = legacy.selected.keys().cloned().collect();
+    Ok((
+        SelectedAccountPreferences {
+            selected: legacy.selected,
+            reselection_required,
+        },
+        true,
+    ))
 }
 
 pub(super) fn save_selected_accounts(
     path: &Path,
-    selected: &HashMap<String, String>,
+    preferences: &SelectedAccountPreferences,
 ) -> Result<(), String> {
+    if !preferences
+        .reselection_required
+        .iter()
+        .all(|surface_id| preferences.selected.contains_key(surface_id))
+    {
+        return Err("selected-accounts reselection state has no saved identity".to_owned());
+    }
     let doc = SelectedAccountsFile {
-        selected: selected.clone(),
+        schema_version: SELECTED_ACCOUNTS_SCHEMA_VERSION,
+        selected: preferences.selected.clone(),
+        reselection_required: preferences.reselection_required.clone(),
     };
     let json = serde_json::to_string_pretty(&doc)
         .map_err(|err| format!("serialize selected-accounts: {err}"))?;
@@ -371,6 +468,12 @@ pub fn min_remaining(view: &FocusedUsageView) -> Option<u8> {
 /// Closed provider-alias parser. It never performs containment matching.
 #[must_use]
 pub(super) fn surface_for_view(view: &FocusedUsageView) -> Option<HostSurfaceId> {
+    if let Some(identity) = &view.canonical_identity {
+        return HostSurfaceId::ALL
+            .iter()
+            .copied()
+            .find(|surface| surface.id() == identity.surface_id);
+    }
     HostSurfaceId::from_provider_alias(&view.account.provider_label)
 }
 
@@ -380,9 +483,12 @@ pub(super) fn materialize_account_catalog(
     discovered_views: &BTreeMap<(HostSurfaceId, String), FocusedUsageView>,
     discovered_provider_views: &BTreeMap<HostSurfaceId, FocusedUsageView>,
     store_path: &Path,
-    membership: Option<&[super::DiscoveredAccountDescriptor]>,
+    discovery: Option<&super::ValidatedUsageDiscovery>,
 ) -> Result<AccountCatalog, String> {
     let mut catalog = AccountCatalog::default();
+    let current_catalog = discovery
+        .map(super::broker::usage_catalog_entries)
+        .unwrap_or_default();
     let include_external: BTreeMap<_, _> = live_views
         .iter()
         .map(|(surface, _, include)| (*surface, *include))
@@ -399,82 +505,153 @@ pub(super) fn materialize_account_catalog(
             if !include_external.get(&surface).copied().unwrap_or(true) {
                 continue;
             }
-            let identity = membership_identity(membership, surface, &stored.view);
-            if membership.is_some() && identity.is_none() {
+            let Some((_, view)) =
+                admitted_cached_view(discovery, &current_catalog, surface, &stored.view)
+            else {
                 continue;
-            }
+            };
             merge_view(
                 &mut catalog,
                 surface,
-                stored.view,
-                if membership.is_some() {
-                    AccountLifecycle::Current
-                } else {
-                    AccountLifecycle::Historical
-                },
+                view,
+                AccountLifecycle::Historical,
                 AccountProvenance::DurableHistory,
-                identity,
             );
         }
     }
 
     for (surface, view, _) in live_views {
-        catalog.provider_states.insert(*surface, view.clone());
-        let identity = membership_identity(membership, *surface, view);
-        if membership.is_some() && identity.is_none() {
+        let Some((_, view)) = admitted_cached_view(discovery, &current_catalog, *surface, view)
+        else {
+            // A rejected typed view must not become a provider fallback. An
+            // identity-less view is the one current diagnostic shape that may
+            // remain surface-scoped.
+            if view.canonical_identity.is_none() {
+                catalog.provider_states.insert(*surface, view.clone());
+            }
             continue;
-        }
+        };
         merge_view(
             &mut catalog,
             *surface,
-            view.clone(),
+            view,
             AccountLifecycle::Current,
             AccountProvenance::LiveHost,
-            identity,
         );
     }
-    catalog.provider_states.extend(
-        discovered_provider_views
-            .iter()
-            .map(|(surface, view)| (*surface, view.clone())),
-    );
-    if let Some(membership) = membership {
+    for (surface, view) in discovered_provider_views {
+        if view.canonical_identity.is_none() {
+            catalog.provider_states.insert(*surface, view.clone());
+        }
+    }
+    if let Some(discovery) = discovery {
         for ((surface, account_key), view) in discovered_views {
-            let Some(account) = membership.iter().find(|account| {
+            if !discovery.accounts.iter().any(|account| {
                 account.surface_id == surface.id() && account.account_key == *account_key
-            }) else {
+            }) {
+                continue;
+            }
+            let Some((identity, view)) =
+                admitted_cached_view(Some(discovery), &current_catalog, *surface, view)
+            else {
                 continue;
             };
+            if identity.account_key() != *account_key {
+                continue;
+            }
             merge_view(
                 &mut catalog,
                 *surface,
-                view.clone(),
+                view,
                 AccountLifecycle::Current,
                 AccountProvenance::ConfiguredSource,
-                Some(account.identity.clone()),
             );
         }
-    }
-    if let Some(membership) = membership {
-        merge_discovered_placeholders(&mut catalog, membership);
+        merge_discovered_placeholders(&mut catalog, &discovery.accounts);
     }
     Ok(catalog)
 }
 
 fn membership_identity(
-    membership: Option<&[super::DiscoveredAccountDescriptor]>,
+    discovery: Option<&super::ValidatedUsageDiscovery>,
     surface: HostSurfaceId,
     view: &FocusedUsageView,
 ) -> Option<CanonicalAccountIdentity> {
-    let membership = membership?;
-    // Existing snapshots retain their pre-V1 routing key during additive
-    // migration. Only discovery supplies canonical evidence; display-label
-    // comparison never promotes a snapshot into membership.
-    let routing_key = CanonicalAccountIdentity::from_view(surface, view)?.account_key();
-    membership
+    let discovery = discovery?;
+    let identity = CanonicalAccountIdentity::from_view(surface, view)?;
+    discovery
+        .accounts
         .iter()
-        .find(|account| account.surface_id == surface.id() && account.account_key == routing_key)
+        .find(|account| account.identity == identity)
         .map(|account| account.identity.clone())
+}
+
+/// Admit a cached account view only when its typed identity still belongs to
+/// the current discovery generation. Source-scoped identities additionally
+/// require the exact accepted catalog revision; provider-owned identities may
+/// retain last-good data while their route backing rotates.
+fn admitted_cached_view(
+    discovery: Option<&super::ValidatedUsageDiscovery>,
+    current_catalog: &[UsageCatalogEntry],
+    surface: HostSurfaceId,
+    view: &FocusedUsageView,
+) -> Option<(CanonicalAccountIdentity, FocusedUsageView)> {
+    let identity = CanonicalAccountIdentity::from_view(surface, view)?;
+    if let Some(route) = &view.account_identity
+        && (route.surface_id != surface.id()
+            || route.account_id.is_empty()
+            || route.account_id.len() > 128
+            || !route
+                .account_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'))
+    {
+        return None;
+    }
+    let Some(discovery) = discovery else {
+        return Some((identity, view.clone()));
+    };
+    let membership = membership_identity(Some(discovery), surface, view)?;
+    let proof = identity.protocol_identity();
+    let mut matching_entries = current_catalog.iter().filter(|entry| {
+        entry.capability.surface_id == surface.id()
+            && entry.canonical_identity.as_ref() == Some(&proof)
+    });
+    match identity.subject {
+        CanonicalAccountSubject::SourceCapability(_) => {
+            let route = view.account_identity.as_ref()?;
+            let revision = route.source_revision.as_deref()?;
+            matching_entries
+                .any(|entry| entry.revision.as_str() == revision)
+                .then(|| (membership, view.clone()))
+        }
+        CanonicalAccountSubject::ProviderId(_)
+        | CanonicalAccountSubject::ProviderStableHandle(_) => {
+            let matching_entries = matching_entries.collect::<Vec<_>>();
+            if matching_entries.is_empty() {
+                return None;
+            }
+            let route_revision = view
+                .account_identity
+                .as_ref()
+                .and_then(|route| route.source_revision.as_deref());
+            let backing_differs = !matching_entries.is_empty()
+                && !route_revision.is_some_and(|revision| {
+                    matching_entries
+                        .iter()
+                        .any(|entry| entry.revision.as_str() == revision)
+                });
+            let mut view = view.clone();
+            if backing_differs && view.status == UsageSnapshotStatus::Fresh {
+                view.status = UsageSnapshotStatus::Stale;
+                view.updated_label = "Stale".to_owned();
+                for bucket in &mut view.buckets {
+                    bucket.status = UsageSnapshotStatus::Stale;
+                }
+            }
+            Some((membership, view))
+        }
+    }
 }
 
 fn merge_discovered_placeholders(
@@ -493,6 +670,7 @@ fn merge_discovered_placeholders(
         }
         let mut view =
             FocusedUsageView::refreshing(surface.provider_label(), chrono::Utc::now().timestamp());
+        view.canonical_identity = Some(account.identity.protocol_identity());
         view.focused_agent = Some(surface.agent_slug().to_owned());
         view.account.account_label = account.account_label.clone();
         view.updated_label = "Not refreshed".to_owned();
@@ -521,11 +699,8 @@ fn merge_view(
     view: FocusedUsageView,
     lifecycle: AccountLifecycle,
     provenance: AccountProvenance,
-    forced_identity: Option<CanonicalAccountIdentity>,
 ) {
-    let Some(identity) =
-        forced_identity.or_else(|| CanonicalAccountIdentity::from_view(surface, &view))
-    else {
+    let Some(identity) = CanonicalAccountIdentity::from_view(surface, &view) else {
         return;
     };
     let account_key = identity.account_key();

@@ -128,19 +128,20 @@ fn profile_snapshot_surfaces_reset_credits_from_fixture() {
         }
         served
     });
-    let home = tempfile::tempdir().unwrap();
-    fs::write(
-        home.path().join("config.toml"),
-        format!("chatgpt_base_url = \"http://{address}\"\n"),
-    )
-    .unwrap();
     let credentials = CodexOAuthCredentials {
         access_token: "fixture-token".to_owned(),
         account_id: None,
         account_label: Some("codex@example.test".to_owned()),
         refresh_token: None,
     };
-    let view = codex_profile_snapshot("codex", &credentials, home.path(), 1_781_728_000);
+    let view = codex_profile_snapshot_at_urls(
+        "codex",
+        &credentials,
+        &format!("http://{address}/api/codex/usage"),
+        &format!("http://{address}/wham/rate-limit-reset-credits"),
+        1_781_728_000,
+    )
+    .0;
     assert_eq!(
         server.join().expect("canned server"),
         2,
@@ -186,12 +187,6 @@ fn profile_snapshot_carries_typed_429_retry_after_to_broker_boundary() {
         .expect("429 fixture write");
     });
 
-    let home = tempfile::tempdir().unwrap();
-    fs::write(
-        home.path().join("config.toml"),
-        format!("chatgpt_base_url = \"http://{address}\"\n"),
-    )
-    .unwrap();
     let credentials = CodexOAuthCredentials {
         access_token: "fixture-token".to_owned(),
         account_id: None,
@@ -199,8 +194,13 @@ fn profile_snapshot_carries_typed_429_retry_after_to_broker_boundary() {
         refresh_token: None,
     };
     let request_now = now_epoch().saturating_sub(120);
-    let (view, rate_limit) =
-        codex_profile_snapshot_with_rate_limit("codex", &credentials, home.path(), request_now);
+    let (view, rate_limit) = codex_profile_snapshot_at_urls(
+        "codex",
+        &credentials,
+        &format!("http://{address}/api/codex/usage"),
+        &format!("http://{address}/wham/rate-limit-reset-credits"),
+        request_now,
+    );
     server.join().expect("429 fixture server");
 
     assert_eq!(view.status, UsageSnapshotStatus::Stale);

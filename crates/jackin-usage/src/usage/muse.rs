@@ -247,6 +247,8 @@ pub(crate) fn muse_view(
         labels.join(" · ")
     };
     FocusedUsageView {
+        account_identity: None,
+        canonical_identity: None,
         focused_agent: Some(agent.to_owned()),
         focused_provider: Some("Muse".to_owned()),
         account: FocusedAccountHeader {

@@ -12,7 +12,7 @@ use jackin_protocol::usage_broker::{
 };
 use jackin_usage::host::{
     HostSurfaceId, HostUsageRuntime, UsageBrokerClient, UsageBrokerConfig, UsageDiscoveryScope,
-    ValidatedUsageDiscovery, discover_usage_sources, validate_usage_sources,
+    ValidatedUsageDiscovery, discover_usage_inventory, discover_usage_sources, validate_usage_sources,
 };
 
 use crate::discovery::DesktopCredentialResolver;
@@ -475,12 +475,16 @@ impl UsageMenuBarBridge {
             )));
         }
         let live = host_config.probe_policy == jackin_usage::host::HostProbePolicy::Live;
-        let catalog = discover_usage_sources(
-            &host_config.discovery_scope,
-            self.credential_resolver.as_ref(),
-        )
-        .map_err(map_open_err)?;
-        let discovery = validate_usage_sources(catalog, self.credential_resolver.as_ref());
+        let discovery = if live {
+            let catalog = discover_usage_sources(
+                &host_config.discovery_scope,
+                self.credential_resolver.as_ref(),
+            )
+            .map_err(map_open_err)?;
+            validate_usage_sources(catalog, self.credential_resolver.as_ref())
+        } else {
+            discover_usage_inventory(&host_config.discovery_scope).map_err(map_open_err)?
+        };
         let fallback = broker_config.client();
         let broker = if live {
             self.activate_broker(

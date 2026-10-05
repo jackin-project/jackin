@@ -48,32 +48,39 @@ fn docker_exec_fallback_binds_the_immutable_container_id() {
 }
 
 #[test]
-fn parses_usage_accounts_cli_stdout() {
-    let accounts = usage_accounts_from_cli_stdout(
-        r#"[
-              {
-                "provider": "codex",
-                "account_label": "alexey@example.com",
-                "source": "codex-rpc",
-                "confidence": "authoritative",
-                "window_kind": "session",
-                "used_amount": 37,
-                "used_unit": "percent",
-                "limit_amount": 100,
-                "limit_unit": "percent",
-                "resets_at": 1781200000,
-                "fetched_at": 1781190000,
-                "expires_at": 1781190300,
-                "status": "fresh",
-                "last_error": null
-              }
-            ]"#,
-    )
-    .unwrap();
+fn usage_membership_preserves_unavailable_and_revoked() {
+    assert!(matches!(
+        usage_accounts_from_cli_stdout(r#"{"state":"unavailable"}"#).unwrap(),
+        UsageAccountMembershipV1::Unavailable
+    ));
+    assert!(matches!(
+        usage_accounts_from_cli_stdout(r#"{"state":"revoked"}"#).unwrap(),
+        UsageAccountMembershipV1::Revoked
+    ));
+}
 
-    assert_eq!(accounts.len(), 1);
-    assert_eq!(accounts[0].provider, "codex");
-    assert_eq!(accounts[0].used_amount, Some(37));
+#[test]
+fn usage_membership_rejects_raw_snapshot_fallback() {
+    assert!(usage_accounts_from_cli_stdout("[]").is_err());
+}
+
+#[test]
+fn usage_membership_rejects_provisional_current_and_accepts_certified_empty() {
+    let mut payload = serde_json::json!({
+        "state": "current",
+        "projection": {
+            "schema_version": 2, "projection_id": "projection-1", "generated_at_epoch": 1,
+            "discovery_revision": "revision-1", "broker_instance_id": "broker-1",
+            "broker_generation": 0, "refresh_state": "idle", "providers": [],
+            "unresolved": [], "unresolved_grants": [], "issues": []
+        }
+    });
+    assert!(usage_accounts_from_cli_stdout(&payload.to_string()).is_err());
+    payload["projection"]["broker_generation"] = serde_json::json!(1);
+    assert!(
+        matches!(usage_accounts_from_cli_stdout(&payload.to_string()).unwrap(),
+        UsageAccountMembershipV1::Current { projection } if projection.providers.is_empty())
+    );
 }
 
 #[test]

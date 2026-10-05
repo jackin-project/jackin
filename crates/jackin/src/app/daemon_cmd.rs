@@ -86,6 +86,7 @@ async fn start(layout: &DaemonLayout) -> Result<()> {
     );
     match wait_until_ready(layout).await {
         Ok(()) => {
+            child.detach();
             operation.complete_ready();
             Ok(())
         }

@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+#[path = "generation_exhaustion_tests.rs"]
+mod generation_exhaustion;
+
 use std::os::unix::fs::PermissionsExt as _;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -153,6 +156,7 @@ fn quota_view(epoch: i64, percent: u8) -> FocusedUsageView {
     view.account.provider_label = "Claude".into();
     view.account.account_label = "account@example.test".into();
     view.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Session".into(),
         used_label: None,
         limit_label: None,
@@ -164,6 +168,7 @@ fn quota_view(epoch: i64, percent: u8) -> FocusedUsageView {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }];
     view.last_error = None;
@@ -823,6 +828,8 @@ fn catalog_entry(account: &UsageAccountCapability, revision: &str) -> UsageCatal
     UsageCatalogEntry {
         capability: account.clone(),
         revision: revision.to_owned(),
+        canonical_identity: None,
+        provenance_count: 0,
     }
 }
 
@@ -1278,6 +1285,7 @@ fn cadence_quota_view(epoch: i64) -> FocusedUsageView {
     view.source = UsageSource::ProviderApi;
     view.confidence = UsageConfidence::Authoritative;
     view.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Session".into(),
         used_label: None,
         limit_label: None,
@@ -1289,6 +1297,7 @@ fn cadence_quota_view(epoch: i64) -> FocusedUsageView {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }];
     view.last_error = None;
@@ -1476,4 +1485,214 @@ fn cadence_two_clients_single_flight_exactly_one_provider_call() {
     let terminal = join_ok(&coordinator, &account, 1, 1_001);
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn accepted_catalog_proof_overrides_probe_and_survives_reload_then_rotation() {
+    use jackin_protocol::control::{UsageCanonicalAccountIdentity, UsageCanonicalAccountSubject};
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(FileAccountStateStore::at(temp.path().join("accounts")));
+    let account = capability("stable-route");
+    let accepted = UsageCanonicalAccountIdentity {
+        surface_id: account.surface_id.clone(),
+        subject: UsageCanonicalAccountSubject::ProviderId("trusted-id".into()),
+    };
+    let mut catalog = catalog_entry(&account, "revision-a");
+    catalog.canonical_identity = Some(accepted.clone());
+    catalog.provenance_count = 1;
+    let mut forged = quota_view(1_000, 80);
+    forged.account_identity = Some((&capability("forged-route")).into());
+    forged.account_identity.as_mut().unwrap().source_revision = Some("forged-revision".into());
+    forged.canonical_identity = Some(UsageCanonicalAccountIdentity {
+        surface_id: "codex".into(),
+        subject: UsageCanonicalAccountSubject::ProviderStableHandle("forged-handle".into()),
+    });
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        forged,
+    )));
+    let coordinator = UsageCoordinator::with_catalog(
+        executor.clone(),
+        store.clone(),
+        UsageCoordinatorConfig::default(),
+        [catalog.clone()],
+    );
+    let queued = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    let terminal = join_ok(&coordinator, &account, queued.generation, 1_001);
+    let view = terminal.snapshot.unwrap();
+    let mut expected_route: jackin_protocol::control::UsageAccountIdentity = (&account).into();
+    expected_route.source_revision = Some("revision-a".into());
+    assert_eq!(view.account_identity, Some(expected_route));
+    assert_eq!(view.canonical_identity, Some(accepted.clone()));
+    drop(coordinator);
+    let recovered = UsageCoordinator::with_catalog(
+        executor.clone(),
+        store.clone(),
+        UsageCoordinatorConfig::default(),
+        [catalog.clone()],
+    );
+    assert_eq!(
+        recovered
+            .current(&account, 1_002)
+            .unwrap()
+            .snapshot
+            .unwrap()
+            .canonical_identity,
+        Some(accepted)
+    );
+    // Even an unchanged caller revision cannot retain cached evidence when proof changes.
+    catalog.canonical_identity = None;
+    recovered
+        .reconcile_catalog([catalog.clone()], 1_003)
+        .unwrap();
+    let reset = recovered.current(&account, 1_003).unwrap();
+    assert!(reset.snapshot.is_none());
+    let queued = recovered
+        .request_refresh(&account, reset.generation, true, 1_003)
+        .unwrap();
+    let terminal = join_ok(&recovered, &account, queued.generation, 1_004);
+    assert!(terminal.snapshot.unwrap().canonical_identity.is_none());
+    let durable = store.load(&account, 1_004).unwrap().unwrap();
+    assert_eq!(durable.accepted_catalog_entry, Some(catalog));
+}
+
+#[test]
+fn loading_another_catalog_revision_discards_cached_proof() {
+    let store = Arc::new(MemoryStore::default());
+    let account = capability("stale-route");
+    let mut cached = AccountStateEnvelope::idle(account.clone());
+    cached.generation = 8;
+    cached.phase = UsageRefreshPhase::Completed;
+    cached.terminal_result = Some(quota_view(1_000, 80));
+    cached.last_good = cached.terminal_result.clone();
+    cached.accepted_catalog_entry = Some(catalog_entry(&account, "revision-old"));
+    store.store(&cached, 1_000).unwrap();
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let coordinator = UsageCoordinator::with_catalog(
+        executor,
+        store,
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "revision-new")],
+    );
+    let current = coordinator.current(&account, 1_001).unwrap();
+    assert_eq!(current.phase, UsageRefreshPhase::Idle);
+    assert_eq!(current.generation, 9);
+    assert!(current.snapshot.is_none());
+}
+
+#[test]
+fn catalog_rejects_blank_canonical_subjects_before_acceptance() {
+    use jackin_protocol::control::{UsageCanonicalAccountIdentity, UsageCanonicalAccountSubject};
+    let account = capability("subject-validation");
+    for subject in [
+        UsageCanonicalAccountSubject::ProviderId("".into()),
+        UsageCanonicalAccountSubject::ProviderStableHandle(" ".into()),
+        UsageCanonicalAccountSubject::SourceCapability("\t".into()),
+    ] {
+        let mut entry = catalog_entry(&account, "revision-a");
+        entry.provenance_count = 1;
+        entry.canonical_identity = Some(UsageCanonicalAccountIdentity {
+            surface_id: account.surface_id.clone(),
+            subject,
+        });
+        assert_eq!(
+            validate_catalog_entries(&[entry]).unwrap_err().kind,
+            UsageCoordinationErrorKind::CorruptState
+        );
+    }
+}
+
+#[test]
+fn catalog_rejects_authenticated_identity_without_provenance() {
+    use jackin_protocol::control::{UsageCanonicalAccountIdentity, UsageCanonicalAccountSubject};
+    let account = capability("no-provenance");
+    let mut entry = catalog_entry(&account, "revision-a");
+    entry.canonical_identity = Some(UsageCanonicalAccountIdentity {
+        surface_id: account.surface_id.clone(),
+        subject: UsageCanonicalAccountSubject::ProviderId("valid-id".into()),
+    });
+    assert_eq!(
+        validate_catalog_entries(&[entry.clone()]).unwrap_err().kind,
+        UsageCoordinationErrorKind::CorruptState
+    );
+    entry.provenance_count = 1;
+    validate_catalog_entries(&[entry]).unwrap();
+}
+
+#[test]
+fn catalog_source_revision_replacement_clears_previous_material() {
+    let store = Arc::new(MemoryStore::default());
+    let account = capability("source-replacement");
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let coordinator = UsageCoordinator::with_catalog(
+        executor,
+        store,
+        UsageCoordinatorConfig::default(),
+        [catalog_entry(&account, "material-a")],
+    );
+    let queued = coordinator
+        .request_refresh(&account, 0, true, 1_000)
+        .unwrap();
+    let terminal = join_ok(&coordinator, &account, queued.generation, 1_001);
+    assert_eq!(
+        terminal
+            .snapshot
+            .unwrap()
+            .account_identity
+            .unwrap()
+            .source_revision
+            .as_deref(),
+        Some("material-a")
+    );
+    coordinator
+        .reconcile_catalog([catalog_entry(&account, "material-b")], 1_002)
+        .unwrap();
+    let reset = coordinator.current(&account, 1_002).unwrap();
+    assert!(reset.snapshot.is_none());
+    let queued = coordinator
+        .request_refresh(&account, reset.generation, true, 1_002)
+        .unwrap();
+    let terminal = join_ok(&coordinator, &account, queued.generation, 1_003);
+    assert_eq!(
+        terminal
+            .snapshot
+            .unwrap()
+            .account_identity
+            .unwrap()
+            .source_revision
+            .as_deref(),
+        Some("material-b")
+    );
+}
+
+#[test]
+fn accepted_same_source_revision_rebinds_route_and_preserves_logical_proof() {
+    use jackin_protocol::control::{UsageCanonicalAccountIdentity, UsageCanonicalAccountSubject};
+    let old = capability("old-source-route");
+    let new = capability("new-source-route");
+    let mut source = catalog_entry(&new, "same-material");
+    source.provenance_count = 1;
+    source.canonical_identity = Some(UsageCanonicalAccountIdentity {
+        surface_id: new.surface_id.clone(),
+        subject: UsageCanonicalAccountSubject::ProviderId("same-logical-account".into()),
+    });
+    let mut view = quota_view(1_000, 80);
+    let mut old_route: jackin_protocol::control::UsageAccountIdentity = (&old).into();
+    old_route.source_revision = Some("same-material".into());
+    view.account_identity = Some(old_route);
+    let stamped = sanitize_usage_view(view, &new, Some(&source));
+    assert_eq!(
+        stamped.account_identity.unwrap(),
+        jackin_protocol::control::UsageAccountIdentity {
+            account_id: new.account_id,
+            surface_id: new.surface_id,
+            source_revision: Some("same-material".into()),
+        }
+    );
+    assert_eq!(stamped.canonical_identity, source.canonical_identity);
 }

@@ -21,7 +21,7 @@ pub use jackin_core::{
     InstanceIndexEntry, InstanceQuery, InstanceStatus, SessionRecord, SessionStatus,
 };
 
-pub const INSTANCE_MANIFEST_VERSION: u32 = 3;
+pub const INSTANCE_MANIFEST_VERSION: u32 = 4;
 pub const INSTANCE_INDEX_VERSION: u32 = 1;
 const INSTANCE_INDEX_FILE: &str = "instances.json";
 const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
@@ -34,6 +34,7 @@ pub struct DockerResources {
     /// an explicit `DinD` grant).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dind_container: Option<String>,
+    /// Physical network name; empty only for an explicitly network-disabled launch.
     pub network: String,
     /// `DinD` TLS cert volume name. `None` when there is no `DinD` sidecar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,6 +48,10 @@ pub struct DockerIdentity {
     pub role_container_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dind_container_id: Option<String>,
+    /// Immutable daemon network ID captured by this launch. `None` authorizes
+    /// no-network cleanup only when the persisted physical network name is empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_id: Option<jackin_core::NetworkId>,
 }
 
 /// Resources backing an apple-container instance. The lifecycle CLI
@@ -62,6 +67,73 @@ pub struct AppleContainerResources {
     /// Phase 0 empirical validation of rootless `DinD` inside an apple/container
     /// VM; `false` until that gate passes.
     pub inner_docker_enabled: bool,
+    /// Exact helper authority captured by this launch. Container names are
+    /// display identifiers and cannot authorize cleanup or reconnect.
+    pub authority: AppleAuthorityBinding,
+}
+
+/// Apple helper authority recorded for one launch.
+///
+/// `owner_id` identifies the stable per-instance helper slot; the resource
+/// handle also carries a process generation, so it remains distinct across
+/// helper restarts even when the slot ID is unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppleAuthorityBinding {
+    pub owner_id: String,
+    pub resource_handle: String,
+    pub scope_fingerprint: String,
+}
+
+impl AppleAuthorityBinding {
+    fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            is_canonical_uuid(&self.owner_id),
+            "invalid Apple authority owner UUID"
+        );
+        anyhow::ensure!(
+            is_canonical_apple_resource_handle(&self.resource_handle),
+            "invalid Apple authority resource handle"
+        );
+        anyhow::ensure!(
+            is_sha256_fingerprint(&self.scope_fingerprint),
+            "invalid Apple authority scope fingerprint"
+        );
+        Ok(())
+    }
+}
+
+fn is_canonical_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && bytes[8] == b'-'
+        && bytes[13] == b'-'
+        && bytes[18] == b'-'
+        && bytes[23] == b'-'
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            matches!(index, 8 | 13 | 18 | 23)
+                || byte.is_ascii_digit()
+                || (b'a'..=b'f').contains(byte)
+        })
+}
+
+fn is_canonical_apple_resource_handle(value: &str) -> bool {
+    let Some(ids) = value.strip_prefix("jackin-owner-v1.") else {
+        return false;
+    };
+    let Some((first_id, generation_id)) = ids.split_once('.') else {
+        return false;
+    };
+    is_canonical_uuid(first_id) && is_canonical_uuid(generation_id) && !generation_id.contains('.')
+}
+
+fn is_sha256_fingerprint(value: &str) -> bool {
+    let Some(digest) = value.strip_prefix("sha256:") else {
+        return false;
+    };
+    digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// Backend-specific resources for an instance. `Docker` carries the four
@@ -148,8 +220,8 @@ pub struct InstanceManifest {
     /// Instances admitted at launch, in launch order. Host-side tab
     /// validation checks spawned tabs against this set so a tab can never
     /// reference an instance (or account) the launch did not authorize.
-    /// The field is required by the v3 manifest contract. An empty vector is
-    /// an explicit v3 admission set, never a legacy-manifest fallback.
+    /// The field is required by the v4 manifest contract. An empty vector is
+    /// an explicit v4 admission set, never a legacy-manifest fallback.
     pub admitted_instances: Vec<AdmittedInstance>,
 }
 
@@ -462,7 +534,19 @@ impl InstanceManifest {
             manifest.version,
             path.display()
         );
+        manifest.validate()?;
         Ok(manifest)
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        if let Some(BackendResources::AppleContainer(apple)) = &self.backend {
+            anyhow::ensure!(
+                apple.container_name == self.container_base,
+                "Apple backend display name does not match instance manifest container base"
+            );
+            apple.authority.validate()?;
+        }
+        Ok(())
     }
 
     /// Collapses [`Self::read_optional`]'s three outcomes into the two
@@ -474,10 +558,25 @@ impl InstanceManifest {
     }
 
     pub fn write(&self, state_dir: &Path) -> anyhow::Result<()> {
+        self.validate()?;
+        ensure_private_directory(state_dir)?;
+        ensure_private_directory(&state_dir.join(".jackin"))?;
         let path = state_dir.join(".jackin/instance.json");
         let body = serde_json::to_string_pretty(self)?;
         Ok(jackin_config::atomic_write(&path, &body)?)
     }
+}
+
+fn ensure_private_directory(path: &Path) -> anyhow::Result<()> {
+    std::fs::create_dir_all(path)
+        .with_context(|| format!("creating instance state directory {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("restricting instance state directory {}", path.display()))?;
+    }
+    Ok(())
 }
 
 /// SHA-256 of the canonical host path.

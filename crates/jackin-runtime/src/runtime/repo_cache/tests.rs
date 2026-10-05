@@ -9,6 +9,104 @@ use jackin_test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo
 use std::time::Duration;
 use tempfile::tempdir;
 
+const UNSAFE_GIT_URLS: &[&str] = &[
+    "", "--upload-pack=unexpected-command", "-oProxyCommand=id",
+    "ext::sh -c id", "fd::17/foo", "file:///etc/passwd", "/tmp/repo",
+    "./repo", "../repo", "repo.git", "./repo@host:path",
+    "https:///repo", "ssh://-oProxyCommand/repo", "git@-oProxyCommand:repo",
+    "https://example.com/role\n", " git@github.com:org/role.git",
+];
+
+#[test]
+fn git_url_rejects_unsafe_transports_and_invalid_remote_syntax() {
+    for input in UNSAFE_GIT_URLS {
+        assert!(RemoteGitUrl::parse(input).is_err(), "accepted {input:?}");
+    }
+}
+
+#[test]
+fn git_url_accepts_documented_remote_transports() {
+    for input in [
+        "https://github.com/org/role.git", "ssh://git@example.com/org/role.git",
+        "git@github.com:org/role.git", "git@gitlab.example.com:team/repo.git",
+        "git://example.com/org/role.git", "git+ssh://git@example.com/org/role.git",
+        "ssh://git@example.com:2222/org/role.git", "git@[::1]:org/role.git",
+        "https://[::1]/org/role.git", "git@example.com:org/role]name.git",
+        "https://example.com", "https://example.com/",
+    ] {
+        assert!(RemoteGitUrl::parse(input).is_ok(), "rejected {input:?}");
+    }
+    assert_eq!(RemoteGitUrl::parse("git@github.com:org/role.git").unwrap().as_str(),
+        "https://github.com/org/role.git");
+}
+
+#[test]
+fn clone_args_terminates_options_and_preserves_branch() {
+    let url = RemoteGitUrl::parse("https://github.com/org/role.git").unwrap();
+    assert_eq!(clone_args(&url, "/dest", None),
+        ["clone", "--", "https://github.com/org/role.git", "/dest"]);
+    assert_eq!(clone_args(&url, "/dest", Some("feat/security")),
+        ["clone", "-b", "feat/security", "--", "https://github.com/org/role.git", "/dest"]);
+}
+
+#[test]
+fn git_url_transport_allowlist_applies_in_both_interactivity_modes() {
+    for non_interactive in [false, true] {
+        let options = git_run_options(false, non_interactive);
+        assert!(options.extra_env.contains(&("GIT_ALLOW_PROTOCOL".into(), "https:ssh:git".into())));
+        assert_eq!(options.null_stdin, non_interactive);
+    }
+}
+
+#[tokio::test]
+async fn git_url_rejection_runs_zero_commands_for_all_entry_paths() {
+    for input in UNSAFE_GIT_URLS {
+        for cached in [false, true] {
+            let temp = tempdir().unwrap();
+            let paths = JackinPaths::for_tests(temp.path());
+            let selector = RoleSelector::new(None, "unsafe-source");
+            if cached {
+                seed_valid_role_repo(&CachedRepo::new(&paths, &selector).repo_dir);
+            }
+            let mut runner = FakeRunner::default();
+            let error = register_agent_repo(&paths, &selector, input, &mut runner, false)
+                .await.unwrap_err();
+            assert!(matches!(error.downcast_ref::<RepoError>(), Some(RepoError::UnsafeGitUrl)));
+            assert!(runner.recorded.is_empty());
+            for branch in [None, Some("feat/security")] {
+                let error = resolve_agent_repo_with(&paths, &selector, input, &mut runner,
+                    RepoResolveOptions::interactive(false).with_branch(branch), || panic!("confirmation reached"))
+                    .await.unwrap_err();
+                assert!(matches!(error.downcast_ref::<RepoError>(), Some(RepoError::UnsafeGitUrl)));
+                assert!(runner.recorded.is_empty());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn git_url_cache_miss_branch_clone_has_guarded_argv_and_transport() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "remote-source");
+    let repo_dir = CachedRepo::for_branch(&paths, &selector, "feat/security").repo_dir;
+    let cloned_repo = repo_dir.clone();
+    let mut runner = FakeRunner::default();
+    runner.side_effects.push(("git clone".into(),
+        Box::new(move || seed_valid_role_repo(&cloned_repo))));
+    resolve_agent_repo_with(&paths, &selector, "git@gitlab.example.com:team/role.git",
+        &mut runner, RepoResolveOptions::interactive(false).with_branch(Some("feat/security")),
+        || panic!("unexpected removal confirmation"))
+        .await.expect("branch clone succeeds");
+    assert_eq!(runner.run_recorded, [format!(
+        "git clone -b feat/security -- git@gitlab.example.com:team/role.git {}", repo_dir.display()
+    )]);
+    assert_eq!(runner.run_options.len(), 1);
+    assert!(runner.run_options[0].extra_env.contains(&(
+        "GIT_ALLOW_PROTOCOL".into(), "https:ssh:git".into()
+    )));
+}
+
 #[test]
 fn normalize_github_url_rewrites_scp_form() {
     assert_eq!(
@@ -213,6 +311,10 @@ plugins = []
     .await;
 
     result.expect("expected recovery to succeed");
+    assert!(runner.run_recorded.iter().any(|call| call.contains("git clone -- ")));
+    assert!(runner.run_options.iter().all(|options| options.extra_env.contains(&(
+        "GIT_ALLOW_PROTOCOL".into(), "https:ssh:git".into()
+    ))));
     assert!(
         runner.recorded.iter().any(|c| c.contains("clone")),
         "expected a git clone after removal"
@@ -365,7 +467,7 @@ plugins = []
 
     result.expect("expected recovery to succeed");
     assert!(runner.run_recorded.iter().any(|call| {
-        call.contains("git clone https://github.com/jackin-project/jackin-agent-smith.git")
+        call.contains("git clone -- https://github.com/jackin-project/jackin-agent-smith.git")
     }));
 }
 
@@ -737,6 +839,15 @@ async fn register_agent_repo_installs_valid_repo_into_cache() {
     )
     .await
     .expect("repo registration should succeed");
+    assert_eq!(runner.run_options.len(), 1);
+    assert!(runner.run_recorded[0].starts_with("git clone -- https://github.com/example/agent-persist-ok.git "));
+    assert!(runner.run_options[0].extra_env.contains(&(
+        "GIT_ALLOW_PROTOCOL".into(), "https:ssh:git".into()
+    )));
+    assert!(runner.run_options[0].extra_env.contains(&(
+        "GIT_TERMINAL_PROMPT".into(), "0".into()
+    )));
+    assert!(runner.run_options[0].null_stdin);
     assert!(
         cached_dir.join(".git").is_dir(),
         "cache must be populated after successful registration",

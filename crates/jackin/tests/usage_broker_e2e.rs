@@ -88,6 +88,7 @@ fn quota_view() -> FocusedUsageView {
     view.account.provider_label = "Claude".to_owned();
     view.account.account_label = "shared@example.test".to_owned();
     view.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
@@ -99,6 +100,7 @@ fn quota_view() -> FocusedUsageView {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }];
     view
@@ -134,6 +136,8 @@ fn usage_broker_child() -> Result<()> {
                 "e2e-catalog-1".to_owned(),
                 vec![UsageCatalogEntry {
                     capability: capability(),
+                    canonical_identity: None,
+                    provenance_count: 0,
                     revision: "e2e-shared-account-1".to_owned(),
                 }],
             )

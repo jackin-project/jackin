@@ -105,8 +105,8 @@ pub trait SettingsPanelTakeError {
     fn take_panel_error(&mut self) -> Option<String>;
 }
 
-pub trait SettingsAuthRestorePendingForm {
-    fn restore_pending_auth_form(&mut self);
+pub trait SettingsAuthResumeAfterError {
+    fn resume_auth_after_error(&mut self);
 }
 
 pub trait SettingsMountsTakeExit {
@@ -140,10 +140,10 @@ pub enum SettingsHoverTarget {
 impl<Mounts, Env, Auth, Trust, ErrorPopup> SettingsState<Mounts, Env, Auth, Trust, ErrorPopup> {
     pub fn dismiss_error_popup(&mut self)
     where
-        Auth: SettingsAuthRestorePendingForm,
+        Auth: SettingsAuthResumeAfterError,
     {
         self.error_popup = None;
-        self.auth.restore_pending_auth_form();
+        self.auth.resume_auth_after_error();
     }
 
     #[must_use]
@@ -618,6 +618,10 @@ pub enum SettingsModal<
         action: SettingsEnvConfirm,
         state: ConfirmState,
     },
+    AuthProviderPicker {
+        kind: AuthKind,
+        selected: usize,
+    },
     AuthTextInput {
         state: Box<TextInputState>,
     },
@@ -688,6 +692,7 @@ where
             | Self::EnvRolePicker { .. }
             | Self::EnvScopePicker { .. }
             | Self::EnvConfirm { .. }
+            | Self::AuthProviderPicker { .. }
             | Self::AuthTextInput { .. }
             | Self::AuthSourcePicker { .. }
             | Self::AuthSourceFolderPicker { .. }
@@ -816,6 +821,7 @@ where
             Self::MountPreviewSave { state } => {
                 fixed_dialog_size(outer, 80, state.required_height().min(outer.height))
             }
+            Self::AuthProviderPicker { .. } => fixed_dialog_size(outer, 50, 16),
             Self::AuthForm { state, .. } => fixed_dialog_size(outer, 80, state.required_height()),
         }
     }
@@ -901,6 +907,9 @@ where
             Self::AuthForm { state, focus, .. } => {
                 footer_items_for_mode(state.footer_mode(*focus, can_generate_token))
             }
+            Self::AuthProviderPicker { .. } => footer_items_for_mode(ModalFooterMode::PickList {
+                commit_label: "select",
+            }),
             Self::AuthTextInput { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
             Self::AuthSourcePicker { .. } => {
                 footer_items_for_mode(ModalFooterMode::SegmentedChoice)

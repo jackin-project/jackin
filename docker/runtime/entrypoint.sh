@@ -84,56 +84,7 @@ EXEC_PROMPT
 ${JACKIN_EXEC_BINDINGS}"
 fi
 
-case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
-  claude)
-    LAUNCH=(claude --settings '{"skipDangerousModePermissionPrompt":true}' --dangerously-skip-permissions --verbose)
-    if [ -n "${JACKIN_EXEC_SYSTEM_PROMPT:-}" ]; then
-        LAUNCH+=(--system-prompt "${JACKIN_EXEC_SYSTEM_PROMPT}")
-    fi
-    if [ "$#" -gt 0 ]; then
-        LAUNCH+=("$@")
-    fi
-    ;;
-  codex)
-    LAUNCH=(codex --enable goals --dangerously-bypass-approvals-and-sandbox)
-    if [ "$#" -gt 0 ]; then
-        LAUNCH+=("$@")
-    fi
-    ;;
-  amp)
-    # CLI flag chosen over `amp.dangerouslyAllowAll: true` so jackin
-    # doesn't write to the operator's XDG_CONFIG.
-    LAUNCH=(amp --dangerously-allow-all)
-    ;;
-  kimi)
-    LAUNCH=(kimi --yolo)
-    if [ "$#" -gt 0 ]; then
-        LAUNCH+=("$@")
-    fi
-    ;;
-  opencode)
-    export OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'
-    LAUNCH=(opencode)
-    if [ $# -gt 0 ]; then
-        LAUNCH+=("$@")
-    fi
-    ;;
-  grok)
-    # --always-approve auto-approves edits/tools (like --dangerously-*-*
-    # for Claude/Amp/Kimi/etc.).
-    # Role manifest model (if any) is passed via -m/--model in the
-    # appended "$@" (from agent_model_args).
-    # Other flags (plan mode etc.) can come via hooks or extra args.
-    LAUNCH=(grok --always-approve)
-    if [ "$#" -gt 0 ]; then
-        LAUNCH+=("$@")
-    fi
-    ;;
-  *)
-    echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2
-    exit 2
-    ;;
-esac
+# JACKIN_GENERATED_AGENT_DISPATCH
 
 # ── role runtime hooks ─────────────────────────────────────────────
 if [ -x /jackin/runtime/hooks/setup-once.sh ]; then

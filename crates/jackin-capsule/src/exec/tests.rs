@@ -5,6 +5,75 @@
 use super::*;
 
 #[test]
+fn approval_argv_preserves_every_argument_and_escapes_terminal_controls() {
+    let invocation = ExecInvocation::new(
+        "tool\u{1b}[31m".to_owned(),
+        vec![
+            String::new(),
+            "one two".to_owned(),
+            "quote\" slash\\ newline\n".to_owned(),
+            "\u{009b}31m\u{007f}\u{202e}hidden\u{2066}".to_owned(),
+            "é界".to_owned(),
+        ],
+    );
+    let display = invocation.approval_argv();
+    let decoded: Vec<String> = serde_json::from_str(&display).unwrap();
+    let expected: Vec<String> = std::iter::once(invocation.command().to_owned())
+        .chain(invocation.args().iter().cloned())
+        .collect();
+    assert_eq!(decoded, expected);
+    assert!(!display.chars().any(char::is_control));
+    assert!(!display.contains('\u{202e}'));
+    assert!(!display.contains('\u{2066}'));
+    assert!(display.contains("\\u009b"));
+}
+
+#[test]
+fn approval_argv_distinguishes_read_and_destructive_commands() {
+    let view = ExecInvocation::new("gh".to_owned(), vec!["repo".to_owned(), "view".to_owned()]);
+    let delete = ExecInvocation::new(
+        "gh".to_owned(),
+        vec!["repo".to_owned(), "delete".to_owned(), "--yes".to_owned()],
+    );
+    assert_ne!(view.approval_argv(), delete.approval_argv());
+    assert_eq!(
+        delete.approval_argv(),
+        "[\"gh\",\"repo\",\"delete\",\"--yes\"]"
+    );
+}
+
+#[tokio::test]
+async fn execute_command_uses_exact_approved_argument_boundaries() {
+    let args = vec![
+        String::new(),
+        "one two".to_owned(),
+        "line\nend".to_owned(),
+        "\u{1b}[0m".to_owned(),
+    ];
+    let invocation = ExecInvocation::new(
+        "printf".to_owned(),
+        std::iter::once("<%s>".to_owned())
+            .chain(args.iter().cloned())
+            .collect(),
+    );
+    let displayed: Vec<String> = serde_json::from_str(&invocation.approval_argv()).unwrap();
+    assert_eq!(displayed[2..], args);
+    let (code, stdout, stderr, redacted) =
+        execute_command(&invocation, &std::collections::BTreeMap::new(), &[])
+            .await
+            .unwrap();
+    assert_eq!(code, 0);
+    assert_eq!(
+        stdout,
+        args.iter()
+            .map(|arg| format!("<{arg}>"))
+            .collect::<String>()
+    );
+    assert!(stderr.is_empty());
+    assert_eq!(redacted, 0);
+}
+
+#[test]
 fn cap_output_truncates_on_char_boundary() {
     // 'é' is 2 bytes, placed so byte index 10 falls mid-codepoint. Capping
     // at 10 must round down to a boundary (9) instead of panicking.
@@ -40,8 +109,7 @@ fn selected_refs_wire_shape_is_stable() {
     // shared `jackin_protocol::CredRequest`/`ExecBinding`. A field rename breaks
     // credential resolution silently, so pin the on-the-wire shape here.
     let state = ExecPickerState {
-        command: "gh".to_owned(),
-        args: vec![],
+        invocation: ExecInvocation::new("gh".to_owned(), vec![]),
         items: vec![ExecPickerItem {
             binding: jackin_protocol::ExecBinding {
                 name: "GH_TOKEN".to_owned(),
@@ -52,6 +120,7 @@ fn selected_refs_wire_shape_is_stable() {
             selected: true,
         }],
         cursor: 0,
+        argv_scroll: Default::default(),
     };
     let req = jackin_protocol::CredRequest {
         ctx: jackin_protocol::TelemetryContext::v1(),
@@ -122,8 +191,10 @@ async fn execute_command_redacts_secret_straddling_1mib_cap() {
 
     let env = std::collections::BTreeMap::new();
     let (code, stdout, _stderr, redacted) = execute_command(
-        "cat",
-        &[file.path().to_string_lossy().into_owned()],
+        &ExecInvocation::new(
+            "cat".to_owned(),
+            vec![file.path().to_string_lossy().into_owned()],
+        ),
         &env,
         &[secret],
     )
@@ -140,8 +211,10 @@ async fn execute_command_redacts_secret_straddling_1mib_cap() {
 async fn execute_command_redacts_plain_secret() {
     let env = std::collections::BTreeMap::new();
     let (code, stdout, _stderr, redacted) = execute_command(
-        "printf",
-        &["%s".to_owned(), "tok-SECRET-xyz".to_owned()],
+        &ExecInvocation::new(
+            "printf".to_owned(),
+            vec!["%s".to_owned(), "tok-SECRET-xyz".to_owned()],
+        ),
         &env,
         &["tok-SECRET-xyz"],
     )

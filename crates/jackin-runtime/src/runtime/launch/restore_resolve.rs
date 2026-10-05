@@ -386,7 +386,7 @@ async fn check_container_network_exists(
     } else {
         manifest.docker.network.clone()
     };
-    match docker.inspect_network(&network_name).await {
+    match docker.inspect_network_by_name(&network_name).await {
         Ok(Some(_)) => Ok(true),
         Ok(None) => Ok(false),
         Err(e) => anyhow::bail!(

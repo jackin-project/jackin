@@ -22,6 +22,7 @@ pub use state::{
     AccountStateEnvelope, AccountStateStore, FileAccountStateStore, FileProjectionStateStore,
     ProjectionAlias, ProjectionStateEnvelope, StateStoreError,
 };
+pub(crate) use state::PROJECTION_STATE_SCHEMA_VERSION;
 
 use self::policy::UsageActivity;
 use self::state::sanitize_usage_view;
@@ -286,7 +287,7 @@ impl AccountEntry {
 struct CoordinatorState {
     accounts: BTreeMap<UsageAccountCapability, AccountEntry>,
     blocked: BTreeMap<UsageAccountCapability, UsageCoordinationError>,
-    catalog: Option<BTreeMap<UsageAccountCapability, String>>,
+    catalog: Option<BTreeMap<UsageAccountCapability, UsageCatalogEntry>>,
     catalog_revision: Option<String>,
 }
 
@@ -419,7 +420,7 @@ impl UsageCoordinator {
     ) -> Self {
         let catalog = catalog
             .into_iter()
-            .map(|entry| (entry.capability, entry.revision))
+            .map(|entry| (entry.capability.clone(), entry))
             .collect();
         Self::start(executor, store, config, Some(catalog), None)
     }
@@ -437,7 +438,7 @@ impl UsageCoordinator {
     ) -> Self {
         let catalog = catalog
             .into_iter()
-            .map(|entry| (entry.capability, entry.revision))
+            .map(|entry| (entry.capability.clone(), entry))
             .collect();
         Self::start(
             executor,
@@ -452,7 +453,7 @@ impl UsageCoordinator {
         executor: Arc<dyn UsageProviderExecutor>,
         store: Arc<dyn AccountStateStore>,
         config: UsageCoordinatorConfig,
-        catalog: Option<BTreeMap<UsageAccountCapability, String>>,
+        catalog: Option<BTreeMap<UsageAccountCapability, UsageCatalogEntry>>,
         catalog_revision: Option<String>,
     ) -> Self {
         let config = UsageCoordinatorConfig {
@@ -538,16 +539,17 @@ impl UsageCoordinator {
                 .iter()
                 .filter_map(|(capability, entry)| {
                     entry
-                        .catalog_revision
+                        .envelope
+                        .accepted_catalog_entry
                         .clone()
-                        .map(|revision| (capability.clone(), revision))
+                        .map(|accepted| (capability.clone(), accepted))
                 })
                 .collect()
         });
         let next = entries
             .iter()
             .cloned()
-            .map(|entry| (entry.capability, entry.revision))
+            .map(|entry| (entry.capability.clone(), entry))
             .collect::<BTreeMap<_, _>>();
         let purge = catalog_purge_set(&state, &previous, &next);
         let preimages = purge
@@ -622,10 +624,37 @@ impl UsageCoordinator {
                     revoke_entry(entry, now_epoch);
                     state.blocked.remove(&capability);
                 }
-                Some(revision)
-                    if entry.revoked || entry.catalog_revision.as_ref() != Some(revision) =>
+                Some(accepted)
+                    if entry.revoked
+                        || entry.catalog_revision.as_ref() != Some(&accepted.revision)
+                        || previous.get(&capability) != Some(accepted)
+                        || entry.envelope.accepted_catalog_entry.as_ref() != Some(accepted) =>
                 {
-                    reset_entry(entry, now_epoch, revision.clone());
+                    reset_entry(entry, now_epoch, accepted.revision.clone());
+                    entry.envelope.accepted_catalog_entry = Some(accepted.clone());
+                    if entry.envelope.generation == u64::MAX
+                        && entry.envelope.phase == UsageRefreshPhase::Failed
+                    {
+                        if let Err(error) = self.shared.store.store(&entry.envelope, now_epoch) {
+                            let durable = restore_catalog_preimages(
+                                &self.shared,
+                                &preimages,
+                                completed_purges,
+                                now_epoch,
+                            )
+                            .map_err(state_error);
+                            let executor = reconcile_executor_catalog(
+                                &self.shared,
+                                previous_state.catalog_revision.as_deref(),
+                                &catalog_entries_from_map(&previous),
+                            );
+                            *state = previous_state;
+                            return Err(preserve_catalog_error(
+                                state_error(error),
+                                first_catalog_rollback_error(durable, executor),
+                            ));
+                        }
+                    }
                     state.blocked.remove(&capability);
                 }
                 Some(_) => {}
@@ -753,7 +782,11 @@ impl UsageCoordinator {
         let previous = entry.envelope.clone();
         let recovery_pending = entry.recovery_pending;
         entry.recovery_pending = false;
-        entry.envelope.generation = entry.envelope.generation.saturating_add(1);
+        if let Err(error) = advance_generation(&mut entry.envelope, now_epoch) {
+            entry.history.retain(|view| view.generation != entry.envelope.generation);
+            persist_terminal(&self.shared, &mut state, capability, now_epoch);
+            return Err(error);
+        }
         entry.envelope.phase = UsageRefreshPhase::Queued;
         entry.envelope.started_at_epoch = Some(now_epoch);
         entry.envelope.completed_at_epoch = None;
@@ -894,8 +927,21 @@ impl UsageCoordinator {
         };
         let mut views = Vec::with_capacity(due.len());
         for (capability, observed) in due {
-            let Ok(view) = self.request_refresh(&capability, observed, false, now_epoch) else {
-                continue;
+            let view = match self.request_refresh(&capability, observed, false, now_epoch) {
+                Ok(view) => view,
+                Err(error)
+                    if observed == u64::MAX
+                        && error.kind == UsageCoordinationErrorKind::Unavailable =>
+                {
+                    let Ok(view) = self.current(&capability, now_epoch) else {
+                        continue;
+                    };
+                    if view.generation != u64::MAX || view.phase != UsageRefreshPhase::Failed {
+                        continue;
+                    }
+                    view
+                }
+                Err(_) => continue,
             };
             self.advance_cadence(&capability, observed, now_epoch);
             views.push(view);
@@ -1107,11 +1153,30 @@ impl UsageCoordinator {
         let catalog_revision = state
             .catalog
             .as_ref()
+            .and_then(|catalog| catalog.get(capability).map(|entry| entry.revision.clone()));
+        let accepted_catalog_entry = state
+            .catalog
+            .as_ref()
             .and_then(|catalog| catalog.get(capability).cloned());
         match loaded {
             Ok(envelope) => {
+                let loaded_existing = envelope.is_some();
                 let mut envelope =
                     envelope.unwrap_or_else(|| AccountStateEnvelope::idle(capability.clone()));
+                if loaded_existing && envelope.accepted_catalog_entry != accepted_catalog_entry {
+                    let previous_generation = envelope.generation;
+                    envelope = AccountStateEnvelope::idle(capability.clone());
+                    envelope.generation = previous_generation;
+                    if advance_generation(&mut envelope, now_epoch).is_err() {
+                        envelope.accepted_catalog_entry = accepted_catalog_entry.clone();
+                        if self.shared.store.store(&envelope, now_epoch).is_err() {
+                            let error = unavailable_error();
+                            state.blocked.insert(capability.clone(), error.clone());
+                            return Err(error);
+                        }
+                    }
+                }
+                envelope.accepted_catalog_entry = accepted_catalog_entry;
                 let recovery_pending = envelope.phase.is_active();
                 if recovery_pending {
                     envelope.phase = UsageRefreshPhase::Failed;
@@ -1309,7 +1374,11 @@ fn finish_success(
     {
         return;
     }
-    let view = sanitize_usage_view(view);
+    let view = sanitize_usage_view(
+        view,
+        &entry.envelope.capability,
+        entry.envelope.accepted_catalog_entry.as_ref(),
+    );
     entry.envelope.phase = UsageRefreshPhase::Completed;
     entry.envelope.terminal_result = Some(view.clone());
     entry.envelope.last_good = Some(view);
@@ -1418,7 +1487,14 @@ fn persist_terminal(
 fn validate_catalog_entries(entries: &[UsageCatalogEntry]) -> Result<(), UsageCoordinationError> {
     let mut capabilities = BTreeSet::new();
     for entry in entries {
-        if entry.revision.is_empty() || !capabilities.insert(entry.capability.clone()) {
+        if entry.revision.is_empty()
+            || entry.canonical_identity.as_ref().is_some_and(|identity| {
+                entry.provenance_count == 0
+                    || identity.validate().is_err()
+                    || identity.surface_id != entry.capability.surface_id
+            })
+            || !capabilities.insert(entry.capability.clone())
+        {
             return Err(coordination_error(
                 UsageCoordinationErrorKind::CorruptState,
                 "usage broker catalog contains an invalid or duplicate entry",
@@ -1430,8 +1506,8 @@ fn validate_catalog_entries(entries: &[UsageCatalogEntry]) -> Result<(), UsageCo
 
 fn catalog_purge_set(
     state: &CoordinatorState,
-    previous: &BTreeMap<UsageAccountCapability, String>,
-    next: &BTreeMap<UsageAccountCapability, String>,
+    previous: &BTreeMap<UsageAccountCapability, UsageCatalogEntry>,
+    next: &BTreeMap<UsageAccountCapability, UsageCatalogEntry>,
 ) -> BTreeSet<UsageAccountCapability> {
     let mut purge = BTreeSet::new();
     for (capability, revision) in previous {
@@ -1443,10 +1519,10 @@ fn catalog_purge_set(
         }
     }
     for (capability, entry) in &state.accounts {
-        if next
-            .get(capability)
-            .is_none_or(|revision| entry.catalog_revision.as_ref() != Some(revision))
-        {
+        if next.get(capability).is_none_or(|accepted| {
+            entry.catalog_revision.as_ref() != Some(&accepted.revision)
+                || entry.envelope.accepted_catalog_entry.as_ref() != Some(accepted)
+        }) {
             purge.insert(capability.clone());
         }
     }
@@ -1459,15 +1535,9 @@ fn catalog_purge_set(
 }
 
 fn catalog_entries_from_map(
-    catalog: &BTreeMap<UsageAccountCapability, String>,
+    catalog: &BTreeMap<UsageAccountCapability, UsageCatalogEntry>,
 ) -> Vec<UsageCatalogEntry> {
-    catalog
-        .iter()
-        .map(|(capability, revision)| UsageCatalogEntry {
-            capability: capability.clone(),
-            revision: revision.clone(),
-        })
-        .collect()
+    catalog.values().cloned().collect()
 }
 
 fn reconcile_executor_catalog(
@@ -1534,12 +1604,42 @@ fn preserve_catalog_error(
     }
 }
 
+/// Generation identity must never be reused, including catalog fencing.
+/// Exhaustion terminates ownership at the existing identity before dispatch.
+fn advance_generation(
+    envelope: &mut AccountStateEnvelope,
+    now_epoch: i64,
+) -> Result<(), UsageCoordinationError> {
+    if let Some(generation) = envelope.generation.checked_add(1) {
+        envelope.generation = generation;
+        return Ok(());
+    }
+    let error = coordination_error(
+        UsageCoordinationErrorKind::Unavailable,
+        "usage generation counter is exhausted",
+    );
+    envelope.phase = UsageRefreshPhase::Failed;
+    envelope.terminal_result = None;
+    envelope.terminal_error = Some(error.clone());
+    envelope.started_at_epoch = None;
+    envelope.completed_at_epoch = Some(now_epoch);
+    envelope.rate_limit_deadline_epoch = None;
+    envelope.retry_deadline_epoch = None;
+    envelope.success_deadline_epoch = None;
+    Err(error)
+}
+
 fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
     entry.fenced_generations.insert(entry.envelope.generation);
-    entry.envelope.generation = entry.envelope.generation.saturating_add(1);
+    let exhausted = advance_generation(&mut entry.envelope, now_epoch).is_err();
+    if exhausted {
+        entry.history.retain(|view| view.generation != entry.envelope.generation);
+    }
     entry.envelope.phase = UsageRefreshPhase::Failed;
     entry.envelope.terminal_result = None;
-    entry.envelope.terminal_error = Some(catalog_revoked_error());
+    if !exhausted {
+        entry.envelope.terminal_error = Some(catalog_revoked_error());
+    }
     entry.envelope.started_at_epoch = None;
     entry.envelope.completed_at_epoch = Some(now_epoch);
     entry.envelope.rate_limit_deadline_epoch = None;
@@ -1553,7 +1653,16 @@ fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64) {
 
 fn reset_entry(entry: &mut AccountEntry, now_epoch: i64, revision: String) {
     entry.fenced_generations.insert(entry.envelope.generation);
-    entry.envelope.generation = entry.envelope.generation.saturating_add(1);
+    if advance_generation(&mut entry.envelope, now_epoch).is_err() {
+        entry.envelope.last_good = None;
+        entry.history.clear();
+        entry.fenced_generations.remove(&entry.envelope.generation);
+        entry.recovery_pending = false;
+        entry.catalog_revision = Some(revision);
+        entry.revoked = false;
+        entry.record_terminal();
+        return;
+    }
     entry.envelope.phase = UsageRefreshPhase::Idle;
     entry.envelope.terminal_result = None;
     entry.envelope.last_good = None;
@@ -1646,7 +1755,14 @@ fn generation_view(envelope: &AccountStateEnvelope) -> UsageGenerationView {
         snapshot: envelope
             .terminal_result
             .clone()
-            .or_else(|| envelope.last_good.clone()),
+            .or_else(|| envelope.last_good.clone())
+            .map(|view| {
+                sanitize_usage_view(
+                    view,
+                    &envelope.capability,
+                    envelope.accepted_catalog_entry.as_ref(),
+                )
+            }),
         error: envelope.terminal_error.clone(),
         retry_at_epoch: [
             envelope.rate_limit_deadline_epoch,

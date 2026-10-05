@@ -17,8 +17,6 @@ use super::{
     usage_view,
 };
 use serde::Deserialize;
-use std::fs;
-use std::path::Path;
 
 const OPENCODE_USAGE_URL: &str = "https://opencode.ai/zen/go/v1/usage";
 
@@ -105,16 +103,8 @@ pub(crate) fn classify_opencode_http_error(status: u16, body: &str) -> OpenCodeU
     }
 }
 
-pub(crate) fn load_opencode_api_key(path: &Path) -> Result<String, String> {
-    let text = fs::read_to_string(path).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            "OpenCode auth.json is missing".to_owned()
-        } else {
-            "OpenCode auth.json is unreadable".to_owned()
-        }
-    })?;
-    let value: serde_json::Value =
-        serde_json::from_str(&text).map_err(|_| "OpenCode auth.json is malformed".to_owned())?;
+/// Parse the captured profile value once; refresh carries the resulting key.
+pub(crate) fn opencode_api_key_from_value(value: &serde_json::Value) -> Result<String, String> {
     let entries = value
         .as_object()
         .ok_or_else(|| "OpenCode auth.json is malformed".to_owned())?;
@@ -136,14 +126,7 @@ pub(crate) fn load_opencode_api_key(path: &Path) -> Result<String, String> {
         .ok_or_else(|| "OpenCode opencode-go API key is empty".to_owned())
 }
 
-pub(crate) fn fetch_opencode_usage(path: &Path) -> Result<OpenCodeQuota, OpenCodeUsageError> {
-    let token = load_opencode_api_key(path).map_err(|error| {
-        if error.contains("missing") {
-            OpenCodeUsageError::Key(error)
-        } else {
-            OpenCodeUsageError::Schema(error)
-        }
-    })?;
+pub(crate) fn fetch_opencode_usage(token: &str) -> Result<OpenCodeQuota, OpenCodeUsageError> {
     let client = provider_http_client().map_err(OpenCodeUsageError::Transport)?;
     let response = client
         .get(OPENCODE_USAGE_URL)
@@ -285,12 +268,8 @@ fn opencode_used_label(used_percent: f64) -> String {
     }
 }
 
-pub(crate) fn opencode_profile_snapshot(
-    agent: &str,
-    auth_path: &Path,
-    now: i64,
-) -> FocusedUsageView {
-    let result = fetch_opencode_usage(auth_path);
+pub(crate) fn opencode_profile_snapshot(agent: &str, token: &str, now: i64) -> FocusedUsageView {
+    let result = fetch_opencode_usage(token);
     let (buckets, status, error) = match result {
         Ok(quota) => (
             quota.buckets,

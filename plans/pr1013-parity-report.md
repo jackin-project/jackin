@@ -46,7 +46,7 @@ usage-provider-apis/07-runout-projection.mdx` for the failure modes).
 
 - Removed: `UsageWindow.runs_out_label`, the `from_projection` clone, the
   `runs out:` render arm, and the console test fixtures/assertions.
-- Kept: the optional protocol field `UsageLimitWindowV1.runs_out_label`,
+- Kept: the optional protocol field `UsageLimitWindowV2.runs_out_label`,
   now documented as reserved (no producer). Full field removal would break
   the broker publisher's struct literal, which is out of scope.
 

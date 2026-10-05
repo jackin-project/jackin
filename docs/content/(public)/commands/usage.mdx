@@ -1,23 +1,29 @@
 ---
 title: jackin❯ usage
-description: "Inspect cached Capsule usage and quota data for a running instance"
+description: "Read canonical host usage or inspect accepted Capsule account membership"
 ---
 
 ## Synopsis
 
 ```bash
+jackin usage [--format human|json]
+jackin usage host snapshot --agent <SURFACE> [--no-refresh] [--format human|json]
 jackin usage cache accounts [--format human|json]
 jackin usage <INSTANCE> accounts [--sync-host-cache] [--format human|json]
 jackin usage <INSTANCE> verify [--format human|json]
 ```
 
-`jackin usage` reads the same daemon-cached usage and quota snapshots that the
-Capsule status bar and usage overlay render. It never polls Claude, Codex, Amp,
-or any provider directly from the host command; the selected running Capsule
-daemon owns provider refresh, caching, retry, and stale-state decisions.
+With no instance, `jackin usage` refreshes configured host accounts through the
+host usage broker and prints their canonical projection. `host snapshot`
+inspects one host surface, such as `codex`, `claude`, or `openrouter`;
+`--no-refresh` reads its cached state without requesting a network refresh.
 
-`<INSTANCE>` accepts a full container name or the short instance id shown by
-[`jackin status`](/commands/status/).
+Instance `accounts` and `verify` inspect accepted Capsule membership. These
+commands do not request provider refresh. `<INSTANCE>` accepts a full container
+name or the short instance id shown by [`jackin status`](/commands/status/).
+The host resolves that reference to an immutable Docker container ID, then
+fetches membership through a root Capsule client executed in that exact
+container.
 
 ## Scopes
 
@@ -27,11 +33,20 @@ daemon owns provider refresh, caching, retry, and stale-state decisions.
 jackin usage cache accounts
 ```
 
-Reads the host-global jackin❯ account cache at
-`~/.jackin/data/daemon/accounts.db`. This is a read-only command: it does not
-create the cache file, poll providers, launch provider CLIs, or repair
-credentials. If the cache has not been explicitly seeded yet, it prints an
-empty table.
+Reads scoped membership at `~/.jackin/data/daemon/accounts.db`. Each scope is
+an immutable Docker container ID; scopes remain separate even when visible
+container or account names match.
+
+Stored membership alone does not establish current authority. The command
+checks the exact container ID, protected host launch and configuration proof,
+and the existing host broker's current publication. It does not create or
+modify the cache, activate discovery, poll providers, launch provider CLIs,
+or repair credentials. An absent cache returns no stored scopes.
+
+A removed container or a validated configuration-proof mismatch revokes the
+cached scope.
+An unavailable Docker daemon, launch proof, or current issuer publication yields
+`unavailable`. Historical quota rows cannot restore membership authority.
 
 ### accounts
 
@@ -39,13 +54,19 @@ empty table.
 jackin usage jk-k7p9m2xq accounts
 ```
 
-Prints provider account/quota buckets known to the Capsule daemon: provider,
-account label, quota window, status, usage amount, and source.
+Prints the accepted canonical provider accounts, principal quota windows, and
+typed metric values. Account identity comes from canonical IDs; changing a
+visible label does not change membership or refresh routes.
 
-`--sync-host-cache` also upserts the returned rows into jackin❯'s host-global
-account cache at `~/.jackin/data/daemon/accounts.db`. This is an explicit
-host-side write, intended as a diagnostic bridge until the long-running host
-daemon owns provider refresh and writes that cache itself.
+The host validates protected scope before and after inspection. A `current`
+publication must match the freshest host broker publication filtered to the
+admitted inventory, including canonical accounts and refresh capabilities.
+An unavailable or superseded publication appears as `unavailable`.
+
+`--sync-host-cache` explicitly persists that scope's accepted publication or
+its `unavailable`/`revoked` state. Accepted empty membership replaces earlier
+membership for that scope. Raw quota history is stored separately and does
+not confer current authority.
 
 ### verify
 
@@ -53,38 +74,55 @@ daemon owns provider refresh and writes that cache itself.
 jackin usage jk-k7p9m2xq verify
 ```
 
-Checks that every provider quota row known to the Capsule daemon is present and
-trusted (fresh enough and from an expected source). Use this after auth or
-provider changes to confirm the status bar and usage overlay will see the same
-data.
+Verifies current canonical members using typed lifecycle, freshness, quota,
+and unresolved-source states. Unsupported accounts, missing quota metrics,
+stale data, unresolved configured grants, and unavailable or revoked
+membership fail verification. Accepted empty membership passes when the host's
+admitted inventory is also empty. Provider display labels are never evidence.
 
 ## Output
 
-Human output is compact and intended for diagnostics:
+Human instance output uses canonical labels and values:
 
 ```text
-  jackin❯
-
 usage accounts for jk-k7p9m2xq (k7p9m2xq)
 
-  provider      account                 window        status        usage               source
-  ----------------------------------------------------------------------------------------------
-  codex         alexey@example.com      session       fresh         37/100 percent      codex-rpc
+  OpenAI
+    alexey@example.com · Available
+    Session  37% remaining
 ```
 
-`--format json` wraps the shared protocol shape in a stable command envelope:
+Membership has three explicit states:
+
+- `current`: an accepted canonical `UsageProjectionV2`, including an
+  authoritative empty projection when no accounts are admitted.
+- `unavailable`: current membership cannot be established.
+- `revoked`: the scope's prior membership authority was removed.
+
+Instance and cache `accounts --format json` return scoped membership in the
+command envelope. For example:
 
 ```json
 {
   "schema_version": "v1",
   "data": {
     "container": "jk-k7p9m2xq-myproj-agent",
-    "accounts": [],
+    "membership": [
+      {
+        "scope_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "membership": { "state": "unavailable" }
+      }
+    ],
     "synced_host_cache_path": null,
     "host_cache_path": null
   }
 }
 ```
+
+`current` membership includes a `projection` field. Bare host JSON prints the
+canonical projection directly. `host snapshot` JSON returns its host snapshot
+in the command envelope. Instance `verify` emits checks and explicit membership in the selected format
+and exits with an error when any check fails.
 
 ## Related
 

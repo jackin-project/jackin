@@ -124,72 +124,35 @@ fn contains_parent_dir(path: &Path) -> bool {
 /// existing symlinked ancestor while retaining lexical components that do not
 /// exist yet. Docker interprets the source path at launch time, so comparing
 /// only the original strings would let an alias escape the authority audit.
-fn canonical_mount_path(path: &Path) -> anyhow::Result<PathBuf> {
-    use std::collections::VecDeque;
-    use std::ffi::OsString;
+fn canonical_mount_path(path: &Path) -> PathBuf {
+    let normalized = jackin_core::container_paths::normalize_path(path);
+    if let Ok(canonical) = std::fs::canonicalize(&normalized) {
+        return canonical;
+    }
 
-    anyhow::ensure!(
-        path.is_absolute(),
-        "host mount path must be absolute: {}",
-        path.display()
-    );
-    let mut pending: VecDeque<OsString> = path
-        .components()
-        .map(|component| component.as_os_str().to_owned())
-        .collect();
-    let mut resolved = PathBuf::from("/");
-    let mut symlink_hops = 0;
-    while let Some(component) = pending.pop_front() {
-        match Path::new(&component).components().next() {
-            Some(Component::RootDir) => {
-                resolved = PathBuf::from("/");
-                continue;
-            }
-            Some(Component::CurDir) => continue,
-            Some(Component::ParentDir) => {
-                resolved.pop();
-                continue;
-            }
-            Some(Component::Normal(_)) => {}
-            _ => anyhow::bail!("unsupported host mount path component: {}", path.display()),
-        }
-        let candidate = resolved.join(&component);
-        match std::fs::symlink_metadata(&candidate) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                symlink_hops += 1;
-                anyhow::ensure!(
-                    symlink_hops <= 40,
-                    "host mount path exceeds symlink hop limit: {}",
-                    path.display()
-                );
-                let target = std::fs::read_link(&candidate).map_err(|error| {
-                    anyhow::anyhow!(
-                        "reading host mount symlink {}: {error}",
-                        candidate.display()
-                    )
-                })?;
-                for next in target.components().rev() {
-                    pending.push_front(next.as_os_str().to_owned());
-                }
-            }
-            Ok(_) => resolved = candidate,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                // Retain a future suffix; keep following any existing symlinks
-                // after .. returns resolution to an existing ancestor.
-                resolved = candidate;
-            }
-            Err(error) => {
-                anyhow::bail!("resolving host mount path {}: {error}", candidate.display())
-            }
+    let mut ancestor = normalized.clone();
+    let mut missing = Vec::new();
+    while !ancestor.exists() {
+        let Some(name) = ancestor.file_name().map(ToOwned::to_owned) else {
+            return normalized;
+        };
+        missing.push(name);
+        if !ancestor.pop() {
+            return normalized;
         }
     }
-    Ok(resolved)
+
+    let mut resolved = std::fs::canonicalize(&ancestor).unwrap_or(ancestor);
+    for name in missing.iter().rev() {
+        resolved.push(name);
+    }
+    resolved
 }
 
 fn provider_config_overlays(
     state: &crate::instance::RoleState,
 ) -> anyhow::Result<(PathBuf, Vec<ProviderConfigOverlay>)> {
-    let authority = canonical_mount_path(&state.root.join("provider-config"))?;
+    let authority = canonical_mount_path(&state.root.join("provider-config"));
     let mut overlays = Vec::with_capacity(state.provider_config_mounts.len());
 
     for (source, target) in &state.provider_config_mounts {
@@ -218,7 +181,7 @@ fn provider_config_overlays(
             source.display()
         );
 
-        let source = canonical_mount_path(source)?;
+        let source = canonical_mount_path(source);
         anyhow::ensure!(
             jackin_core::container_paths::path_is_ancestor_or_equal(&authority, &source)
                 && source != authority,
@@ -245,52 +208,42 @@ fn provider_config_overlays(
     Ok((authority, overlays))
 }
 
-fn instance_data_parent(state: &crate::instance::RoleState) -> anyhow::Result<PathBuf> {
-    let root = canonical_mount_path(&state.root)?;
-    match root.parent() {
-        Some(parent) => canonical_mount_path(parent),
-        None => Ok(root),
-    }
+fn instance_data_parent(state: &crate::instance::RoleState) -> PathBuf {
+    let root = canonical_mount_path(&state.root);
+    root.parent().map(canonical_mount_path).unwrap_or(root)
 }
 
 /// Return the authority directory for the instance child containing `source`.
 /// The sibling child need not exist yet: the path schema itself is enough to
 /// protect a future instance's provider-config authority.
-fn sibling_authority_for_source(
-    data_parent: &Path,
-    source: &Path,
-) -> anyhow::Result<Option<PathBuf>> {
+fn sibling_authority_for_source(data_parent: &Path, source: &Path) -> Option<PathBuf> {
     if !jackin_core::container_paths::path_is_ancestor_or_equal(data_parent, source)
         || source == data_parent
     {
-        return Ok(None);
+        return None;
     }
-    let Some(relative) = source.strip_prefix(data_parent).ok() else {
-        return Ok(None);
+    let relative = source.strip_prefix(data_parent).ok()?;
+    let Component::Normal(instance) = relative.components().next()? else {
+        return None;
     };
-    let Some(Component::Normal(instance)) = relative.components().next() else {
-        return Ok(None);
-    };
-    Ok(Some(canonical_mount_path(
+    Some(canonical_mount_path(
         &data_parent.join(instance).join("provider-config"),
-    )?))
+    ))
 }
 
 fn exposed_provider_authority(
     data_parent: &Path,
     current_authority: &Path,
     source: &Path,
-) -> anyhow::Result<Option<PathBuf>> {
+) -> Option<PathBuf> {
     if jackin_core::container_paths::path_is_ancestor_or_equal(source, data_parent) {
-        return Ok(Some(data_parent.to_owned()));
+        return Some(data_parent.to_owned());
     }
     if jackin_core::container_paths::paths_overlap(current_authority, source) {
-        return Ok(Some(current_authority.to_owned()));
+        return Some(current_authority.to_owned());
     }
-    let Some(sibling) = sibling_authority_for_source(data_parent, source)? else {
-        return Ok(None);
-    };
-    Ok(jackin_core::container_paths::paths_overlap(&sibling, source).then_some(sibling))
+    let sibling = sibling_authority_for_source(data_parent, source)?;
+    jackin_core::container_paths::paths_overlap(&sibling, source).then_some(sibling)
 }
 
 fn parse_docker_bind(bind: &str) -> anyhow::Result<ParsedDockerBind> {
@@ -334,8 +287,7 @@ fn parse_docker_bind(bind: &str) -> anyhow::Result<ParsedDockerBind> {
     Ok(ParsedDockerBind {
         source: source_path
             .is_absolute()
-            .then(|| canonical_mount_path(source_path))
-            .transpose()?,
+            .then(|| canonical_mount_path(source_path)),
         raw_source: source_path.is_absolute().then(|| source_path.to_owned()),
         target: jackin_core::container_paths::normalize_path(Path::new(target)),
         readonly: saw_readonly,
@@ -349,7 +301,7 @@ fn ensure_source_parents_outside_writable_roots(
 ) -> anyhow::Result<()> {
     let mut ancestor = raw_source.parent();
     while let Some(path) = ancestor {
-        let canonical = canonical_mount_path(path)?;
+        let canonical = canonical_mount_path(path);
         for writable in writable_roots {
             if jackin_core::container_paths::path_is_ancestor_or_equal(writable, &canonical) {
                 anyhow::bail!(
@@ -365,54 +317,6 @@ fn ensure_source_parents_outside_writable_roots(
     Ok(())
 }
 
-/// Host coordinator files must never enter a container, even read-only:
-/// an exclusive flock needs no write access to the lock file.
-fn ensure_protected_host_roots_not_exposed(
-    raw_source: &Path,
-    protected_host_roots: &[PathBuf],
-    backend: &str,
-) -> anyhow::Result<()> {
-    let source = canonical_mount_path(raw_source)?;
-    let lexical_source = jackin_core::container_paths::normalize_path(raw_source);
-    for root in protected_host_roots {
-        anyhow::ensure!(
-            root.is_absolute() && !contains_parent_dir(root),
-            "protected host root must be absolute without parent traversal: {}",
-            root.display()
-        );
-        let lexical_root = jackin_core::container_paths::normalize_path(root);
-        let canonical_root = canonical_mount_path(root)?;
-        anyhow::ensure!(
-            !jackin_core::container_paths::paths_overlap(&canonical_root, &source)
-                && !jackin_core::container_paths::paths_overlap(&lexical_root, &lexical_source),
-            "{backend} bind source {} exposes protected host root {}",
-            raw_source.display(),
-            root.display()
-        );
-        // A source reached through a symlink inside the protected namespace
-        // still exposes its directory entry, even if the final target escapes.
-        let mut ancestor = raw_source.parent();
-        while let Some(parent) = ancestor {
-            let lexical_parent = jackin_core::container_paths::normalize_path(parent);
-            let canonical_parent = canonical_mount_path(parent)?;
-            anyhow::ensure!(
-                !jackin_core::container_paths::path_is_ancestor_or_equal(
-                    &canonical_root,
-                    &canonical_parent
-                ) && !jackin_core::container_paths::path_is_ancestor_or_equal(
-                    &lexical_root,
-                    &lexical_parent
-                ),
-                "{backend} bind source {} has parent inside protected host root {}",
-                raw_source.display(),
-                root.display()
-            );
-            ancestor = parent.parent();
-        }
-    }
-    Ok(())
-}
-
 /// Audit every Docker bind against the host-only provider configuration
 /// authority. The generated files are the only authority paths allowed to
 /// cross the container boundary, and each must be an exact read-only file
@@ -422,10 +326,9 @@ fn ensure_protected_host_roots_not_exposed(
 pub(crate) fn ensure_provider_authority_not_writable(
     state: &crate::instance::RoleState,
     mounts: &[String],
-    protected_host_roots: &[PathBuf],
 ) -> anyhow::Result<()> {
     let (authority, overlays) = provider_config_overlays(state)?;
-    let data_parent = instance_data_parent(state)?;
+    let data_parent = instance_data_parent(state);
     let parsed = mounts
         .iter()
         .map(|mount| {
@@ -437,11 +340,6 @@ pub(crate) fn ensure_provider_authority_not_writable(
         .filter(|mount| !mount.readonly)
         .filter_map(|mount| mount.source.clone())
         .collect::<Vec<_>>();
-    for mount in &parsed {
-        if let Some(raw_source) = &mount.raw_source {
-            ensure_protected_host_roots_not_exposed(raw_source, protected_host_roots, "Docker")?;
-        }
-    }
     for mount in &parsed {
         if let Some(raw_source) = &mount.raw_source {
             ensure_source_parents_outside_writable_roots(raw_source, &writable_roots, "Docker")?;
@@ -492,7 +390,7 @@ pub(crate) fn ensure_provider_authority_not_writable(
             continue;
         }
 
-        if let Some(exposed) = exposed_provider_authority(&data_parent, &authority, source)? {
+        if let Some(exposed) = exposed_provider_authority(&data_parent, &authority, source) {
             anyhow::bail!(
                 "Docker bind source {} exposes the provider configuration authority {}",
                 source.display(),
@@ -521,36 +419,27 @@ pub(crate) fn ensure_provider_authority_not_writable(
 pub(crate) fn ensure_apple_provider_authority_not_exposed(
     state: &crate::instance::RoleState,
     mounts: &[AppleContainerMount],
-    protected_host_roots: &[PathBuf],
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
         state.provider_config_mounts.is_empty(),
         "Apple Container cannot mount generated provider config file overlays"
     );
     let (authority, _) = provider_config_overlays(state)?;
-    let data_parent = instance_data_parent(state)?;
+    let data_parent = instance_data_parent(state);
     let writable_roots = mounts
         .iter()
         .filter(|mount| !mount.readonly)
         .map(|mount| canonical_mount_path(&mount.source))
-        .collect::<anyhow::Result<Vec<_>>>()?;
+        .collect::<Vec<_>>();
     for mount in mounts {
         anyhow::ensure!(
             !contains_parent_dir(&mount.source),
             "Apple Container bind source must not contain parent traversal: {}",
             mount.source.display()
         );
-        anyhow::ensure!(
-            mount.source.is_absolute(),
-            "Apple Container bind source must be absolute: {}",
-            mount.source.display()
-        );
-        ensure_protected_host_roots_not_exposed(&mount.source, protected_host_roots, "Apple")?;
-    }
-    for mount in mounts {
         ensure_source_parents_outside_writable_roots(&mount.source, &writable_roots, "Apple")?;
-        let source = canonical_mount_path(&mount.source)?;
-        if let Some(exposed) = exposed_provider_authority(&data_parent, &authority, &source)? {
+        let source = canonical_mount_path(&mount.source);
+        if let Some(exposed) = exposed_provider_authority(&data_parent, &authority, &source) {
             anyhow::bail!(
                 "Apple Container bind source {} exposes the provider configuration authority {}",
                 source.display(),
@@ -622,7 +511,7 @@ pub(crate) fn agent_mounts(state: &crate::instance::RoleState) -> anyhow::Result
     }
 
     append_provider_config_mounts(&mut mounts, state)?;
-    ensure_provider_authority_not_writable(state, &mounts, &[])?;
+    ensure_provider_authority_not_writable(state, &mounts)?;
 
     Ok(mounts)
 }
@@ -708,7 +597,7 @@ pub(crate) fn apple_agent_mounts(
             }
         }
     }
-    ensure_apple_provider_authority_not_exposed(state, &mounts, &[])?;
+    ensure_apple_provider_authority_not_exposed(state, &mounts)?;
     Ok(mounts)
 }
 
@@ -835,3 +724,21 @@ pub(crate) fn build_workspace_mounts(
 
 #[cfg(test)]
 mod tests;
+
+/// Reject controller transports without an implemented guest isolation boundary.
+/// Unix transport still requires the separate physical source admission.
+pub(crate) fn ensure_controller_transport_supported(
+    endpoint: &jackin_core::ControllerEndpoint,
+) -> anyhow::Result<()> {
+    use jackin_core::ControllerEndpoint;
+    match endpoint {
+        ControllerEndpoint::Unix { .. } => Ok(()),
+        ControllerEndpoint::Tcp { .. } => {
+            anyhow::bail!("controller TCP endpoint lacks proved guest route isolation")
+        }
+        #[cfg(windows)]
+        ControllerEndpoint::NamedPipe { .. } => {
+            anyhow::bail!("controller named-pipe mount isolation has no implemented adapter")
+        }
+    }
+}

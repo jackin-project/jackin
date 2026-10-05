@@ -27,11 +27,11 @@ pub fn init() {
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
 
     let () = PANIC_HOOK_INSTALLED.get_or_init(|| {
-        let default_hook = std::panic::take_hook();
+        let _previous_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             jackin_diagnostics::emit_panic_crash(info, "capsule panic");
             crate::telemetry::shutdown();
-            default_hook(info);
+            jackin_diagnostics::write_redacted_panic_to_stderr(info);
         }));
     });
 }

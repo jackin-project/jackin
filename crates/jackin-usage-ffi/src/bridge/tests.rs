@@ -300,6 +300,7 @@ impl UsageProviderExecutor for BlockingBrokerExecutor {
         view.account.provider_label = "Anthropic / Claude".to_owned();
         view.account.account_label = "broker@example.test".to_owned();
         view.buckets = vec![QuotaBucketView {
+            count_quota: None,
             label: "Weekly".to_owned(),
             used_label: None,
             limit_label: None,
@@ -312,6 +313,7 @@ impl UsageProviderExecutor for BlockingBrokerExecutor {
             used_money: None,
             limit_money: None,
             severity: UsageSeverity::Normal,
+            remaining_money: None,
         }];
         ProviderProbeOutcome::success(view)
     }
@@ -323,6 +325,12 @@ fn broker_client_refresh_returns_immediately_and_joins_one_generation() {
     let bridge = UsageMenuBarBridge::create();
     let discovery_scope = UsageDiscoveryScope::Capsule {
         forwarded_accounts: vec![ForwardedUsageAccount {
+            canonical_identity: Some(jackin_protocol::control::UsageCanonicalAccountIdentity {
+                surface_id: "claude".to_owned(),
+                subject: jackin_protocol::control::UsageCanonicalAccountSubject::ProviderId(
+                    "fixture-broker-authenticated-account".to_owned(),
+                ),
+            }),
             surface_id: "claude".to_owned(),
             capability_id: "fixture-capability".to_owned(),
             account_label: Some("broker@example.test".to_owned()),
@@ -423,6 +431,8 @@ fn fixture_snapshot_round_trip_via_bridge() {
     {
         let mut guard = bridge.inner.lock().expect("lock");
         let view = FocusedUsageView {
+            account_identity: None,
+            canonical_identity: None,
             focused_agent: Some("codex".to_owned()),
             focused_provider: Some("Codex".to_owned()),
             account: FocusedAccountHeader {
@@ -434,6 +444,7 @@ fn fixture_snapshot_round_trip_via_bridge() {
             },
             buckets: vec![
                 QuotaBucketView {
+                    count_quota: None,
                     label: "Session".to_owned(),
                     used_label: Some("63% used".to_owned()),
                     limit_label: Some("100%".to_owned()),
@@ -446,8 +457,10 @@ fn fixture_snapshot_round_trip_via_bridge() {
                     used_money: None,
                     limit_money: None,
                     severity: UsageSeverity::Normal,
+                    remaining_money: None,
                 },
                 QuotaBucketView {
+                    count_quota: None,
                     label: "Amp Free".to_owned(),
                     used_label: None,
                     limit_label: None,
@@ -460,6 +473,7 @@ fn fixture_snapshot_round_trip_via_bridge() {
                     used_money: None,
                     limit_money: None,
                     severity: UsageSeverity::Normal,
+                    remaining_money: None,
                 },
             ],
             status: UsageSnapshotStatus::Fresh,
@@ -515,6 +529,8 @@ fn overview_rows_and_format_prefs_round_trip() {
     {
         let mut guard = bridge.inner.lock().expect("lock");
         let view = FocusedUsageView {
+            account_identity: None,
+            canonical_identity: None,
             focused_agent: Some("claude".to_owned()),
             focused_provider: Some("Claude".to_owned()),
             account: FocusedAccountHeader {
@@ -525,6 +541,7 @@ fn overview_rows_and_format_prefs_round_trip() {
                 credential_origin: None,
             },
             buckets: vec![QuotaBucketView {
+                count_quota: None,
                 label: "Session".to_owned(),
                 used_label: Some("3% used".to_owned()),
                 limit_label: Some("100%".to_owned()),
@@ -537,6 +554,7 @@ fn overview_rows_and_format_prefs_round_trip() {
                 used_money: None,
                 limit_money: None,
                 severity: UsageSeverity::Normal,
+                remaining_money: None,
             }],
             status: UsageSnapshotStatus::Fresh,
             source: UsageSource::ProviderApi,
@@ -552,6 +570,8 @@ fn overview_rows_and_format_prefs_round_trip() {
     {
         let mut guard = bridge.inner.lock().expect("lock");
         let view = FocusedUsageView {
+            account_identity: None,
+            canonical_identity: None,
             focused_agent: Some("codex".to_owned()),
             focused_provider: Some("Codex".to_owned()),
             account: FocusedAccountHeader {
@@ -562,6 +582,7 @@ fn overview_rows_and_format_prefs_round_trip() {
                 credential_origin: None,
             },
             buckets: vec![QuotaBucketView {
+                count_quota: None,
                 label: "Session".to_owned(),
                 used_label: Some("41% used".to_owned()),
                 limit_label: Some("100%".to_owned()),
@@ -574,6 +595,7 @@ fn overview_rows_and_format_prefs_round_trip() {
                 used_money: None,
                 limit_money: None,
                 severity: UsageSeverity::Normal,
+                remaining_money: None,
             }],
             status: UsageSnapshotStatus::Fresh,
             source: UsageSource::ProviderApi,
@@ -648,6 +670,7 @@ fn provider_glance_rows_via_bridge_project_rust_rows() {
         view.account.credential_origin = Some("OAuth · ~/.codex/auth.json".to_owned());
         view.last_error = None;
         view.buckets = vec![QuotaBucketView {
+            count_quota: None,
             label: "Weekly".to_owned(),
             used_label: None,
             limit_label: None,
@@ -660,6 +683,7 @@ fn provider_glance_rows_via_bridge_project_rust_rows() {
             used_money: None,
             limit_money: None,
             severity: UsageSeverity::Normal,
+            remaining_money: None,
         }];
         guard.inject_snapshot("codex", view).expect("inject");
     }
@@ -742,6 +766,7 @@ fn detail_presentation_rides_the_snapshot_dto() {
         view.updated_label = "Updated 2m ago".to_owned();
         view.last_error = Some("upstream 503".to_owned());
         let weekly = |rem| QuotaBucketView {
+            count_quota: None,
             label: "Weekly".to_owned(),
             used_label: None,
             limit_label: None,
@@ -754,6 +779,7 @@ fn detail_presentation_rides_the_snapshot_dto() {
             used_money: None,
             limit_money: None,
             severity: UsageSeverity::Normal,
+            remaining_money: None,
         };
         view.buckets = vec![weekly(80), weekly(20)];
         guard.inject_snapshot("codex", view).expect("inject");
@@ -794,3 +820,5 @@ fn detail_presentation_rides_the_snapshot_dto() {
     assert_eq!(detail.len(), 1);
     assert_eq!(detail[0].display_label, "upstream 503");
 }
+
+mod disabled_open;

@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_protocol::control::FocusedUsageView;
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageProjectionV1,
+    UsageAccountCapability, UsageCatalogEntry, UsageCoordinationError, UsageProjectionV2,
     UsageRefreshPhase,
 };
 use nix::fcntl::{OFlag, open, openat, renameat};
@@ -19,18 +19,18 @@ use nix::sys::stat::Mode;
 use nix::unistd::{UnlinkatFlags, fsync, geteuid, unlinkat};
 use serde::{Deserialize, Serialize};
 
-const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 1;
+const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 2;
 const MAX_ACCOUNT_STATE_BYTES: u64 = 512 * 1024;
 const MAX_CLOCK_SKEW_SECS: i64 = 300;
 const MAX_DISPLAY_CHARS: usize = 256;
 /// Exact durable projection envelope schema.
 ///
-/// Schema v1 is deliberately not migrated: it did not carry the admitted
-/// catalog required to fence removed credentials. Loading v1 quarantines the
-/// file and lets the broker rebuild an empty projection from the current host
-/// catalog. This is the migration contract; no serde default may hide a
-/// missing or unknown catalog.
-const PROJECTION_STATE_SCHEMA_VERSION: u32 = 2;
+/// Schemas v1 and v2 are deliberately not migrated. V1 did not carry the
+/// admitted catalog required to fence removed credentials; v2 is the previous
+/// exact projection envelope contract. Loading either quarantines the file and
+/// lets the broker rebuild from the current host catalog. No serde default may
+/// hide a missing or unknown catalog.
+pub(crate) const PROJECTION_STATE_SCHEMA_VERSION: u32 = 3;
 static STATE_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 static STATE_QUARANTINE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -41,6 +41,8 @@ pub struct AccountStateEnvelope {
     pub schema_version: u32,
     /// Canonical account authority.
     pub capability: UsageAccountCapability,
+    /// Exact admitted catalog evidence bound to these cached snapshots.
+    pub accepted_catalog_entry: Option<UsageCatalogEntry>,
     /// Monotonic account generation.
     pub generation: u64,
     /// Refresh lifecycle phase.
@@ -72,6 +74,7 @@ impl AccountStateEnvelope {
         Self {
             schema_version: ACCOUNT_STATE_SCHEMA_VERSION,
             capability,
+            accepted_catalog_entry: None,
             generation: 0,
             phase: UsageRefreshPhase::Idle,
             terminal_result: None,
@@ -132,7 +135,7 @@ pub struct ProjectionStateEnvelope {
     /// Persisted schema version.
     pub schema_version: u32,
     /// Immutable canonical publication.
-    pub projection: UsageProjectionV1,
+    pub projection: UsageProjectionV2,
     /// Secret-free alias mappings committed with the publication.
     pub aliases: Vec<ProjectionAlias>,
     /// Current discovery catalog revision.
@@ -171,7 +174,7 @@ impl FileProjectionStateStore {
         }
     }
 
-    /// Read one exact v2 envelope. Corrupt, v1, and future bytes are
+    /// Read one exact v3 envelope. Corrupt, v1, v2, and future bytes are
     /// quarantined and treated as unavailable rather than being rendered or
     /// used for provider work. The caller deliberately rebuilds from the
     /// current host catalog after this fail-closed reset.
@@ -321,6 +324,12 @@ impl AccountStateStore for FileAccountStateStore {
         }
         let envelope: AccountStateEnvelope =
             serde_json::from_slice(&bytes).map_err(|_| StateStoreError::Corrupt)?;
+        // Old cache snapshots lack admitted catalog evidence. Discard them
+        // after the same ownership, size, and parsing gates as current state.
+        if envelope.schema_version == 1 && envelope.capability == *capability {
+            self.quarantine(capability)?;
+            return Ok(None);
+        }
         validate_envelope(envelope, capability, now_epoch).map(Some)
     }
 
@@ -472,6 +481,21 @@ fn validate_envelope(
     if envelope.schema_version != ACCOUNT_STATE_SCHEMA_VERSION || &envelope.capability != expected {
         return Err(StateStoreError::Corrupt);
     }
+    if envelope
+        .accepted_catalog_entry
+        .as_ref()
+        .is_some_and(|entry| {
+            entry.capability != envelope.capability
+                || entry.revision.is_empty()
+                || entry.canonical_identity.as_ref().is_some_and(|identity| {
+                    entry.provenance_count == 0
+                        || identity.validate().is_err()
+                        || identity.surface_id != envelope.capability.surface_id
+                })
+        })
+    {
+        return Err(StateStoreError::Corrupt);
+    }
     let future_limit = now_epoch.saturating_add(MAX_CLOCK_SKEW_SECS);
     if [
         envelope.started_at_epoch,
@@ -495,15 +519,40 @@ fn validate_envelope(
 }
 
 fn sanitize_envelope(mut envelope: AccountStateEnvelope) -> AccountStateEnvelope {
-    envelope.terminal_result = envelope.terminal_result.map(sanitize_usage_view);
-    envelope.last_good = envelope.last_good.map(sanitize_usage_view);
+    envelope.terminal_result = envelope.terminal_result.map(|view| {
+        sanitize_usage_view(
+            view,
+            &envelope.capability,
+            envelope.accepted_catalog_entry.as_ref(),
+        )
+    });
+    envelope.last_good = envelope.last_good.map(|view| {
+        sanitize_usage_view(
+            view,
+            &envelope.capability,
+            envelope.accepted_catalog_entry.as_ref(),
+        )
+    });
     if let Some(error) = &mut envelope.terminal_error {
         error.message = sanitize_text(&error.message);
     }
     envelope
 }
 
-pub(super) fn sanitize_usage_view(mut view: FocusedUsageView) -> FocusedUsageView {
+/// Bind provider presentation to the validated envelope authority before export
+/// or persistence. Collectors cannot supply or replace canonical identity.
+pub(super) fn sanitize_usage_view(
+    mut view: FocusedUsageView,
+    capability: &UsageAccountCapability,
+    accepted_catalog_entry: Option<&UsageCatalogEntry>,
+) -> FocusedUsageView {
+    let accepted_catalog_entry =
+        accepted_catalog_entry.filter(|entry| &entry.capability == capability);
+    let mut route_identity: jackin_protocol::control::UsageAccountIdentity = capability.into();
+    route_identity.source_revision = accepted_catalog_entry.map(|entry| entry.revision.clone());
+    view.account_identity = Some(route_identity);
+    view.canonical_identity =
+        accepted_catalog_entry.and_then(|entry| entry.canonical_identity.clone());
     view.focused_agent = view.focused_agent.map(|value| sanitize_text(&value));
     view.focused_provider = view.focused_provider.map(|value| sanitize_text(&value));
     view.account.provider_label = sanitize_text(&view.account.provider_label);

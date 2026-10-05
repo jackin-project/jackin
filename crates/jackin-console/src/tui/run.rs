@@ -497,7 +497,8 @@ pub const fn should_debug_log_mouse(mouse: crossterm::event::MouseEvent) -> bool
 
 #[must_use]
 pub fn quit_confirm_area(frame: Rect, confirm: &crate::tui::components::ConfirmState) -> Rect {
-    // Structural exception: the root console quit prompt is outside `Modal`; it still uses shared confirm height and centered geometry.
+    // Own the footer reservation here so paint and hit testing center in the same body.
+    let frame = Rect { height: frame.height.saturating_sub(1), ..frame };
     let width: u16 = 44.min(frame.width.saturating_sub(4));
     let height: u16 = confirm
         .required_height()

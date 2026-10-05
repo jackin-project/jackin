@@ -11,6 +11,71 @@ use super::*;
 // build-time error.
 const _: fn() -> Result<Docker, bollard::errors::Error> = Docker::connect_with_ssl_defaults;
 
+#[test]
+#[cfg(unix)]
+fn controller_endpoint_captures_custom_absolute_unix_socket() -> anyhow::Result<()> {
+    let endpoint = capture_controller_endpoint("unix:///custom/daemon.sock", true, None)?;
+    assert_eq!(endpoint, ControllerEndpoint::Unix {
+        socket: "/custom/daemon.sock".into(),
+    });
+    Ok(())
+}
+
+#[test]
+fn controller_endpoint_rejects_relative_or_empty_unix_socket() {
+    for host in ["unix://relative.sock", "unix://"] {
+        assert!(capture_controller_endpoint(host, false, None).is_err(), "{host}");
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn unix_connector_preserves_embedded_scheme_token_in_captured_socket_path() -> anyhow::Result<()> {
+    let endpoint = capture_controller_endpoint("unix:///tmp/unix://daemon.sock", false, None)?;
+    let ControllerEndpoint::Unix { socket } = endpoint else {
+        anyhow::bail!("expected Unix endpoint");
+    };
+    let address = captured_unix_connector_address(&socket)?;
+    assert_eq!(address, "unix:///tmp/unix://daemon.sock");
+    // Mirror the locked Bollard 0.21.1 connector's first-occurrence removal.
+    assert_eq!(address.replacen("unix://", "", 1), "/tmp/unix://daemon.sock");
+    assert_eq!(socket, PathBuf::from("/tmp/unix://daemon.sock"));
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn controller_endpoint_distinguishes_plain_and_tls_tcp() -> anyhow::Result<()> {
+    let plain = capture_controller_endpoint("tcp://controller.test:2375", false, None)?;
+    assert_eq!(plain, ControllerEndpoint::Tcp {
+        authority: "tcp://controller.test:2375".into(),
+        tls: None,
+    });
+    let tls = capture_controller_endpoint(
+        "http://controller.test:2376", true, Some("/custom/certs".into()),
+    )?;
+    assert_eq!(tls, ControllerEndpoint::Tcp {
+        authority: "tcp://controller.test:2376".into(),
+        tls: Some(ControllerTlsFiles {
+            key: "/custom/certs/key.pem".into(),
+            cert: "/custom/certs/cert.pem".into(),
+            ca: "/custom/certs/ca.pem".into(),
+        }),
+    });
+    Ok(())
+}
+
+#[test]
+fn controller_endpoint_rejects_unbound_tls_and_malformed_network_authority() {
+    assert!(capture_controller_endpoint("tcp://controller.test:2376", true, None).is_err());
+    assert!(capture_controller_endpoint(
+        "tcp://controller.test:2376", true, Some("relative-certs".into()),
+    ).is_err());
+    for host in ["tcp://", "tcp://user@controller.test:2375", "tcp://controller.test/path", "ssh://controller.test"] {
+        assert!(capture_controller_endpoint(host, false, None).is_err(), "{host}");
+    }
+}
+
 fn content_length(headers: &str) -> anyhow::Result<usize> {
     headers
         .lines()
@@ -68,7 +133,13 @@ async fn exercise_private_container_create() -> anyhow::Result<Vec<String>> {
         2,
         bollard::API_DEFAULT_VERSION,
     )?;
-    let client = BollardDockerClient { inner };
+    let client = BollardDockerClient {
+        inner,
+        endpoint: ControllerEndpoint::Tcp {
+            authority: format!("tcp://{address}"),
+            tls: None,
+        },
+    };
     let private = vec![
         "wire-private-container-name".to_owned(),
         "registry.invalid/wire-private-image@sha256:deadbeef".to_owned(),
@@ -578,5 +649,25 @@ fn docker_http_routes_are_static_bounded_templates() {
                 assert!(matches!(segment, "{id}" | "{name}"));
             }
         }
+    }
+}
+
+
+#[test]
+fn credential_init_pid_attestation_requires_exact_running_container() {
+    let expected = ContainerHandle::new("role", "owned-immutable-id").unwrap();
+    let valid: ContainerInspectResponse = serde_json::from_value(serde_json::json!({
+        "Id": "owned-immutable-id", "State": {"Running": true, "Status": "running", "Pid": 424242}
+    })).unwrap();
+    assert_eq!(authenticated_container_init_pid(&valid, &expected).unwrap(), 424242);
+    for bad in [
+        serde_json::json!({"Id": "foreign-id", "State": {"Running": true, "Status": "running", "Pid": 424242}}),
+        serde_json::json!({"Id": "owned-immutable-id", "State": {"Running": false, "Status": "exited", "Pid": 424242}}),
+        serde_json::json!({"Id": "owned-immutable-id", "State": {"Running": true, "Status": "running", "Pid": 0}}),
+        serde_json::json!({"Id": "owned-immutable-id", "State": {"Running": true, "Status": "running", "Pid": -1}}),
+        serde_json::json!({"Id": "owned-immutable-id", "State": {"Running": true, "Status": "running"}}),
+    ] {
+        let info: ContainerInspectResponse = serde_json::from_value(bad).unwrap();
+        assert!(authenticated_container_init_pid(&info, &expected).is_err());
     }
 }

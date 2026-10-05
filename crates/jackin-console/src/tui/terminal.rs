@@ -3,8 +3,6 @@
 
 //! Terminal raw-mode lifecycle and teardown helpers.
 
-use crossterm::ExecutableCommand as _;
-
 use crate::ConsoleHostTerminal;
 
 /// 20 Hz: spinner stays fluid and op results surface within ~50ms
@@ -64,16 +62,6 @@ pub fn flush_terminal_input_queue() {
 #[cfg(not(unix))]
 pub fn flush_terminal_input_queue() {}
 
-pub fn enable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
-    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h")?;
-    out.flush()
-}
-
-pub fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
-    out.write_all(b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")?;
-    out.flush()
-}
-
 /// Owns the terminal for an entire launch flow so it never flashes the shell.
 ///
 /// Holds the alternate screen, raw mode, and mouse capture across console →
@@ -84,85 +72,40 @@ pub fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io:
     reason = "TerminalSession is a raw terminal guard around host callbacks, not diagnostic state."
 )]
 pub struct TerminalSession {
-    host: &'static dyn ConsoleHostTerminal,
+    ownership: Option<jackin_core::TerminalOwnershipGuard>,
 }
 
 impl TerminalSession {
     /// Enter raw mode + the alternate screen + mouse capture and mark the
     /// screen owned. The caller holds the returned guard for the whole flow.
     pub fn enter(host: &'static dyn ConsoleHostTerminal) -> std::io::Result<Self> {
-        let mut stdout = std::io::stdout();
-        crossterm::terminal::enable_raw_mode()?;
-        host.begin_debug_buffering();
-        let screen = Self { host };
-        stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
-        enable_console_mouse_capture(&mut stdout)?;
-        host.set_host_screen_owned(true);
-        Ok(screen)
+        let ownership = host.acquire_host_screen()?;
+        Ok(Self {
+            ownership: Some(ownership),
+        })
     }
-
-    /// Returns true while this session owns the host terminal.
+    /// Share the authoritative foreground gate with backend teardown.
     #[must_use]
-    pub fn is_active(&self) -> bool {
-        self.host.host_screen_owned()
-    }
-
-    /// Drop to the cooked primary screen for the duration of `f`, then restore
-    /// the full-screen session.
-    pub fn suspend<T>(&self, f: impl FnOnce() -> T) -> std::io::Result<T> {
-        let mut stdout = std::io::stdout();
-        drop(disable_console_mouse_capture(&mut stdout));
-        crossterm::terminal::disable_raw_mode()?;
-        stdout.execute(crossterm::terminal::LeaveAlternateScreen)?;
-        stdout.execute(crossterm::cursor::Show)?;
-        self.host.set_host_screen_owned(false);
-        let out = f();
-        crossterm::terminal::enable_raw_mode()?;
-        stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
-        enable_console_mouse_capture(&mut stdout)?;
-        self.host.set_host_screen_owned(true);
-        Ok(out)
+    pub fn activity(&self) -> jackin_core::TerminalActivity {
+        self.ownership
+            .as_ref()
+            .expect("host terminal lease")
+            .activity()
     }
 }
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
-        let mut stdout = std::io::stdout();
-        drain_pending_terminal_events_until_quiet(
-            MAX_TEARDOWN_DRAIN_EVENTS,
-            std::time::Duration::from_millis(TEARDOWN_DRAIN_QUIET_MS),
-        );
-        drop(disable_console_mouse_capture(&mut stdout));
-        drain_pending_terminal_events(MAX_TEARDOWN_DRAIN_EVENTS);
-        flush_terminal_input_queue();
-        drop(crossterm::terminal::disable_raw_mode());
-        drop(stdout.execute(crossterm::terminal::LeaveAlternateScreen));
-        drop(stdout.execute(crossterm::cursor::Show));
-        self.host.set_host_screen_owned(false);
-        self.host.end_debug_buffering();
+        drop(self.ownership.take());
     }
 }
 
-/// Hand the real terminal back to a child process.
-pub fn suspend_console_terminal(
-    stdout: &mut std::io::Stdout,
-    host: &'static dyn ConsoleHostTerminal,
-) {
-    drop(disable_console_mouse_capture(stdout));
-    drop(crossterm::terminal::disable_raw_mode());
-    drop(stdout.execute(crossterm::terminal::LeaveAlternateScreen));
-    drop(stdout.execute(crossterm::cursor::Show));
-    host.end_debug_buffering();
-}
-
-/// Re-enter raw-mode + alt-screen after a [`suspend_console_terminal`] detour.
-pub fn resume_console_terminal(
-    stdout: &mut std::io::Stdout,
-    host: &'static dyn ConsoleHostTerminal,
-) -> anyhow::Result<()> {
-    host.begin_debug_buffering();
-    crossterm::terminal::enable_raw_mode()?;
-    stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
-    enable_console_mouse_capture(stdout)?;
-    Ok(())
+/// Clear buffered input only when the final shared terminal lease ends.
+pub fn drain_console_terminal_input() {
+    drain_pending_terminal_events_until_quiet(
+        MAX_TEARDOWN_DRAIN_EVENTS,
+        std::time::Duration::from_millis(TEARDOWN_DRAIN_QUIET_MS),
+    );
+    drain_pending_terminal_events(MAX_TEARDOWN_DRAIN_EVENTS);
+    flush_terminal_input_queue();
 }

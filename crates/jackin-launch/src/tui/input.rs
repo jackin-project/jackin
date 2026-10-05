@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-use anyhow::Context as _;
 use crossterm::ExecutableCommand as _;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::LeaveAlternateScreen;
@@ -16,11 +15,6 @@ use crossterm::terminal::LeaveAlternateScreen;
 const DOUBLE_CTRL_C_WINDOW: Duration = Duration::from_millis(750);
 const HARD_EXIT_DRAIN_LIMIT: usize = 16_384;
 pub(super) const ANSI_RESET: &str = "\x1b[0m";
-
-pub(super) fn enable_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
-    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h")?;
-    out.flush()
-}
 
 pub(super) fn disable_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
     out.write_all(b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")?;
@@ -31,6 +25,8 @@ pub(super) fn disable_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::
 pub struct LaunchInput {
     rx: Arc<Mutex<mpsc::Receiver<Event>>>,
     stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+    activity: jackin_core::TerminalActivity,
 }
 
 impl LaunchInput {
@@ -40,18 +36,23 @@ impl LaunchInput {
                   Ctrl-C tracker, and IPC channels together. The nested `while` \
                   + `match` + `if let` is the per-event ARM/dispatch protocol."
     )]
-    pub fn spawn() -> Self {
+    pub fn spawn(activity: jackin_core::TerminalActivity) -> Self {
         let (tx, rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop);
-        jackin_telemetry::spawn::thread_stream("launch.input", move || {
+        let thread_activity = activity.clone();
+        let thread = jackin_telemetry::spawn::thread_stream("launch.input", move || {
             let mut ctrl_c = DoubleCtrlC::new(DOUBLE_CTRL_C_WINDOW);
             while !thread_stop.load(Ordering::Relaxed) {
-                match event::poll(Duration::from_millis(25)) {
-                    Ok(true) => {
-                        let Ok(ev) = event::read() else {
-                            continue;
-                        };
+                let ready = thread_activity.run_if_active(|| {
+                    match event::poll(Duration::from_millis(25)) {
+                        Ok(true) if !thread_stop.load(Ordering::Relaxed) => event::read().map(Some),
+                        Ok(_) => Ok(None),
+                        Err(error) => Err(error),
+                    }
+                });
+                match ready {
+                    Some(Ok(Some(ev))) => {
                         if ctrl_c.observe(&ev, Instant::now()) == CtrlCAction::HardExit {
                             restore_terminal_for_process_exit();
                             std::process::exit(0);
@@ -60,29 +61,67 @@ impl LaunchInput {
                             break;
                         }
                     }
-                    Ok(false) => {}
-                    Err(_) => break,
+                    Some(Ok(None)) => {}
+                    Some(Err(_)) => break,
+                    None => std::thread::sleep(Duration::from_millis(25)),
                 }
             }
         });
         Self {
             rx: Arc::new(Mutex::new(rx)),
             stop,
+            thread: Some(thread),
+            activity,
         }
     }
 
-    pub fn try_recv(&self) -> Option<Event> {
-        self.rx.lock().ok()?.try_recv().ok()
+    #[cfg(test)]
+    pub(crate) fn queued_for_test(events: impl IntoIterator<Item = Event>) -> (Self, mpsc::Sender<Event>) {
+        let (tx, rx) = mpsc::channel();
+        for event in events {
+            tx.send(event).unwrap();
+        }
+        (Self {
+            rx: Arc::new(Mutex::new(rx)),
+            stop: Arc::new(AtomicBool::new(false)),
+            thread: None,
+            activity: jackin_core::TerminalActivity::new(|| true, Arc::new(Mutex::new(()))),
+        }, tx)
+    }
+
+    /// Wait until the bounded polling thread relinquishes terminal input.
+    pub fn stop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            // The input owner lives on the renderer thread; guard against a
+            // future caller moving it into its own input worker.
+            if thread.thread().id() != std::thread::current().id() {
+                drop(thread.join());
+            }
+        }
+    }
+
+    pub fn try_recv(&self) -> anyhow::Result<Option<Event>> {
+        if !self.activity.is_active() {
+            return Ok(None);
+        }
+        let receiver = self.rx.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        match receiver.try_recv() {
+            Ok(event) => Ok(Some(event)),
+            Err(mpsc::TryRecvError::Empty) => Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => anyhow::bail!("launch input disconnected"),
+        }
     }
 
     pub fn recv_key(&self, context: &'static str) -> anyhow::Result<event::KeyEvent> {
         loop {
-            let event = self
-                .rx
-                .lock()
-                .map_err(|_| anyhow::anyhow!("launch input mutex poisoned"))?
-                .recv()
-                .context(context)?;
+            let received = self.activity.run_if_active(|| {
+                self.try_recv().map_err(|_| anyhow::anyhow!(context))
+            });
+            let Some(event) = received.transpose()?.flatten() else {
+                std::thread::sleep(Duration::from_millis(25));
+                continue;
+            };
             let Event::Key(key) = event else {
                 continue;
             };
@@ -96,7 +135,7 @@ impl LaunchInput {
 
 impl Drop for LaunchInput {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop();
     }
 }
 
@@ -177,17 +216,6 @@ pub(super) fn drain_pending_terminal_events(limit: usize) {
             Ok(false) | Err(_) => break,
         }
     }
-}
-
-pub(super) fn restore_renderer_terminal_for_process_exit(
-    terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
-) {
-    drop(write_forced_terminal_restore(terminal.backend_mut()));
-    drain_pending_terminal_events(HARD_EXIT_DRAIN_LIMIT);
-    drop(crossterm::terminal::disable_raw_mode());
-    drain_pending_terminal_events(HARD_EXIT_DRAIN_LIMIT);
-    drop(terminal.backend_mut().execute(LeaveAlternateScreen));
-    drop(terminal.backend_mut().flush());
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ Cutoff: **2026-09-23 UTC**. There is no defensible universal winner. Headroom of
 
 ## Question and scope
 
-Which component solves each part of Jackin's token problem, and which integration form preserves ownership and correctness?
+Which component solves each part of the token problem for jackin❯, and which integration form preserves ownership and correctness?
 
 ## Method
 
@@ -28,7 +28,7 @@ Compare interception reach, effect on behavior, recovery, cache risk, dependenci
 | Provider interception required | No for skill; input path varies | No | No for MCP | No | No for library; yes for proxy | No for local tool integration |
 | Recovery | Engine-specific references | Current recall/tee modes | Archive / exact reads | Not applicable | CCR / selected originals | Spill / targeted reads |
 | Rust embedding | No verified Rust engine API | CLI, no verified library target | Preview lean-ctx-embed | Not a Rust runtime | Public headroom-core source APIs | Python, use process boundary |
-| Initial Jackin role | Optional narration | Qualified command arm | Read-only backend | Adapted policy | Selected transform worker | Read-only comparator |
+| Initial jackin❯ role | Optional narration | Qualified command arm | Read-only backend | Adapted policy | Selected transform worker | Read-only comparator |
 
 Sources: the current [Caveman](/research/context/tools/01-caveman-design/), [RTK](/research/context/tools/03-rtk-design/), [LeanCTX](/research/context/tools/04-leanctx-design/), [Ponytail](/research/context/tools/09-ponytail-design/), [Headroom](/research/context/tools/02-headroom-design/), and [LemonCrow](/research/context/tools/10-lemoncrow-design/) source reviews.
 
@@ -36,7 +36,7 @@ Sources: the current [Caveman](/research/context/tools/01-caveman-design/), [RTK
 
 | Capability | Preferred first move | When to build or extract |
 |---|---|---|
-| Configuration, compatibility, evidence, isolation | Build in Jackin, extending existing components | These contracts depend on Jackin's host and capsule model |
+| Configuration, compatibility, evidence, isolation | Build in jackin❯, extending existing components | These contracts depend on the host and capsule model of jackin❯ |
 | Structured transforms | Source-pin selected headroom-core APIs in an isolated worker | Upstream cannot meet a demonstrated feature, fidelity, or deployment boundary |
 | Shell filters | Evaluate RTK executable and request a pure-filter upstream API | Only selected licensed kernels, with copied regression fixtures and provenance |
 | Repository retrieval | Native exact tools versus restricted LeanCTX and LemonCrow arms | A backend fails measured recall, freshness, isolation, or host integration requirements |
@@ -53,11 +53,11 @@ If large structured command results dominate, test qualified RTK families or sel
 
 ### Evidence is not additive
 
-A full LemonCrow result includes its tools and persona; it cannot qualify a read-only Jackin backend. A Ponytail result cannot qualify a rewritten policy. A Headroom proxy result cannot qualify a direct Rust transform. Percentages from these configurations must never be added together to forecast a combined stack.
+A full LemonCrow result includes its tools and persona; it cannot qualify a read-only jackin❯ backend. A Ponytail result cannot qualify a rewritten policy. A Headroom proxy result cannot qualify a direct Rust transform. Percentages from these configurations must never be added together to forecast a combined stack.
 
 ## Implications for jackin❯
 
-The recommended target is **automatic, compatibility-qualified selection**, not an empty abstraction and not unconditional compression. Package reviewed components with Jackin; enable only transformations that satisfy a recorded host/version/content contract. Keep raw operation available and explain every bypass or disabled component.
+The recommended target is **automatic, compatibility-qualified selection**, not an empty abstraction and not unconditional compression. Package reviewed components with jackin❯; enable only transformations that satisfy a recorded host/version/content contract. Keep raw operation available and explain every bypass or disabled component.
 
 Retain native agent execution, editing, approvals, and authentication by default. Use replaceable backends rather than rebuilding entire products. The [implementation plan](/research/context/tools/11-jackin-integration/) gives concrete responsibilities and gates.
 

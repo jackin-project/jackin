@@ -204,6 +204,15 @@ pub(crate) fn open_settings_auth_form(
         (kind, mode, None, None)
     };
     auth.selected_kind = Some(kind);
+    if auth.editing_account.is_none()
+        && matches!(
+            kind,
+            crate::tui::auth::AuthKind::Omp | crate::tui::auth::AuthKind::Hermes
+        )
+    {
+        auth.set_modal(SettingsModal::AuthProviderPicker { kind, selected: 0 });
+        return;
+    }
     let form = AuthForm::from_existing(kind, mode, credential).with_source_folder(
         folder,
         Some(
@@ -213,6 +222,16 @@ pub(crate) fn open_settings_auth_form(
             },
         ),
     );
+    let form = if let Some(provider) = auth
+        .editing_account
+        .as_ref()
+        .and_then(|id| auth.pending.get(id))
+        .map(|account| account.provider)
+    {
+        form.with_provider(provider)
+    } else {
+        form
+    };
     let literal_buffer = form.literal_buffer();
     auth.set_modal(SettingsModal::AuthForm {
         target: AuthFormTarget::Workspace { kind },
@@ -239,6 +258,43 @@ pub fn handle_settings_auth_modal(
         return SettingsAuthOutcome::Continue;
     };
     match &mut modal {
+        SettingsModal::AuthProviderPicker { kind, selected } => match key.code {
+            KeyCode::Esc => {
+                auth.selected_kind = None;
+            }
+            KeyCode::Up | KeyCode::BackTab => {
+                *selected = (*selected % jackin_config::AiProvider::ALL.len()
+                    + jackin_config::AiProvider::ALL.len()
+                    - 1)
+                    % jackin_config::AiProvider::ALL.len();
+                auth.set_modal(modal);
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                *selected = (*selected % jackin_config::AiProvider::ALL.len() + 1)
+                    % jackin_config::AiProvider::ALL.len();
+                auth.set_modal(modal);
+            }
+            KeyCode::Enter => {
+                let Some(provider) = jackin_config::AiProvider::ALL.get(*selected).copied() else {
+                    auth.set_error("Select an AI provider");
+                    auth.set_modal(modal);
+                    return SettingsAuthOutcome::Continue;
+                };
+                let form = AuthForm::from_existing(*kind, crate::tui::auth::AuthMode::Sync, None)
+                        .with_provider(provider)
+                        .with_source_folder(None, Some(crate::tui::components::editor_rows::AuthSourceFolderDisplay {
+                            kind: crate::tui::components::editor_rows::AuthSourceFolderKind::Explicit,
+                            path: "Select a profile folder".to_owned(),
+                        }));
+                auth.set_modal(SettingsModal::AuthForm {
+                    target: AuthFormTarget::Workspace { kind: *kind },
+                    state: Box::new(form),
+                    focus: AuthFormFocus::Mode,
+                    literal_buffer: String::new(),
+                });
+            }
+            _ => auth.set_modal(modal),
+        },
         SettingsModal::AuthForm {
             target,
             state,
@@ -260,8 +316,7 @@ pub fn handle_settings_auth_modal(
                 AuthFormKeyPlan::Focus(next) => *focus = next,
                 AuthFormKeyPlan::CycleMode => state.cycle_mode(),
                 AuthFormKeyPlan::OpenCredentialSource => {
-                    let Some(env_var) = state.mode.and_then(|m| state.kind.required_env_var(m))
-                    else {
+                    let Some(env_var) = state.mode.and_then(|m| state.required_env_var(m)) else {
                         auth.set_modal(modal);
                         return SettingsAuthOutcome::Continue;
                     };
@@ -567,16 +622,8 @@ fn persist_settings_auth_form(
         AuthKind::Cursor => AiProvider::Cursor,
         AuthKind::Muse => AiProvider::Meta,
         AuthKind::Omp | AuthKind::Hermes => {
-            // No native provider: edits keep the existing account's
-            // provider; only brand-new console accounts are refused (the
-            // console has no provider picker yet — use the CLI).
-            let existing = auth
-                .editing_account
-                .as_ref()
-                .and_then(|id| auth.pending.get(id))
-                .map(|account| account.provider);
-            let Some(provider) = existing else {
-                auth.set_error("omp/Hermes accounts need an explicit provider; add them with `jackin account add --provider`");
+            let Some(provider) = form.provider else {
+                auth.set_error("Select an AI provider");
                 return;
             };
             provider
@@ -714,3 +761,6 @@ fn clear_settings_auth_kind(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod folder_validation_tests;

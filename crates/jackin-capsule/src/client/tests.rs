@@ -29,41 +29,73 @@ async fn control_ack_reader_rejects_truncated_body() {
     read_control_reply(&mut reader).await.unwrap_err();
 }
 
-fn account(
-    provider: &str,
-    status: &str,
-    source: &str,
-    confidence: &str,
-) -> AccountUsageSnapshotView {
-    AccountUsageSnapshotView {
-        provider: provider.to_owned(),
-        account_label: format!("{provider} account"),
-        source: source.to_owned(),
-        confidence: confidence.to_owned(),
-        window_kind: "Session".to_owned(),
-        used_amount: Some(63),
-        used_unit: Some("percent".to_owned()),
-        limit_amount: Some(100),
-        limit_unit: Some("percent".to_owned()),
-        resets_at: Some(1_781_186_000),
-        fetched_at: 1_781_185_680,
-        expires_at: None,
-        status: status.to_owned(),
-        last_error: None,
+fn account(provider: &str, lifecycle: &str, phase: &str) -> serde_json::Value {
+    serde_json::json!({
+        "provider_id": provider,
+        "display_name": provider,
+        "rank": 0,
+        "membership_state": "current",
+        "freshness": {"generation": 1, "phase": phase, "is_stale": false},
+        "accounts": [{
+            "canonical_account_id": format!("{provider}-account"),
+            "refresh_capabilities": [],
+            "identity_kind": "provider_account_id",
+            "rank": 0,
+            "display_label": format!("{provider} account"),
+            "lifecycle": lifecycle,
+            "freshness": {"generation": 1, "phase": phase, "is_stale": false},
+            "provenance_count": 1,
+            "windows": [{
+                "window_id": "session",
+                "rank": 0,
+                "category": "session",
+                "label": "Session",
+                "value_label": "63% used",
+                "reset_label": "soon",
+                "used_percent": 63,
+                "used_raw_percent": 63,
+                "quota_state": "available"
+            }],
+            "issues": []
+        }],
+        "issues": []
+    })
+}
+
+fn membership(mut providers: Vec<serde_json::Value>) -> UsageAccountMembershipV1 {
+    for (rank, provider) in providers.iter_mut().enumerate() {
+        provider["rank"] = serde_json::json!(rank);
     }
+    serde_json::from_value(serde_json::json!({
+        "state": "current",
+        "projection": {
+            "schema_version": 2,
+            "projection_id": "projection-1",
+            "generated_at_epoch": 1_781_185_680,
+            "discovery_revision": "discovery-1",
+            "broker_instance_id": "broker-1",
+            "broker_generation": 1,
+            "refresh_state": "idle",
+            "providers": providers,
+            "unresolved": [],
+            "unresolved_grants": [],
+            "issues": []
+        }
+    }))
+    .unwrap()
 }
 
 #[test]
 fn usage_verify_accepts_trusted_rows_for_every_provider() {
-    let accounts = [
-        account("Codex", "fresh", "provider_api", "authoritative"),
-        account("Claude", "fresh", "cli", "authoritative"),
-        account("Amp", "fresh", "provider_api", "authoritative"),
-        account("Grok Build", "fresh", "cli", "authoritative"),
-        account("GLM / Z.AI", "fresh", "provider_api", "authoritative"),
-        account("Kimi", "fresh", "provider_api", "authoritative"),
-        account("MiniMax", "fresh", "provider_api", "authoritative"),
-    ];
+    let accounts = membership(vec![
+        account("openai", "available", "current"),
+        account("anthropic", "available", "current"),
+        account("amp", "available", "current"),
+        account("xai", "available", "current"),
+        account("zai", "available", "current"),
+        account("kimi", "available", "current"),
+        account("minimax", "available", "current"),
+    ]);
 
     let checks = verify_usage_accounts(&accounts);
 
@@ -76,13 +108,10 @@ fn usage_verify_accepts_trusted_rows_for_every_provider() {
 
 #[test]
 fn usage_verify_reports_missing_and_untrusted_providers() {
-    let mut untrusted = account("Codex", "needs_login", "none", "none");
-    untrusted.account_label = "needs Codex login".to_owned();
-    untrusted.last_error = Some("Codex auth not available".to_owned());
-    let accounts = [
-        untrusted,
-        account("Amp", "fresh", "provider_api", "authoritative"),
-    ];
+    let accounts = membership(vec![
+        account("openai", "needs_login", "failed"),
+        account("amp", "available", "current"),
+    ]);
 
     let checks = verify_usage_accounts(&accounts);
 

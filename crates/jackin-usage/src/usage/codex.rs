@@ -254,27 +254,44 @@ pub(crate) fn codex_snapshot(
 pub(crate) fn codex_profile_snapshot(
     agent: &str,
     credentials: &CodexOAuthCredentials,
-    codex_home: &Path,
     now: i64,
 ) -> FocusedUsageView {
-    codex_profile_snapshot_with_rate_limit(agent, credentials, codex_home, now).0
+    codex_profile_snapshot_with_rate_limit(agent, credentials, now).0
 }
 
 pub(crate) fn codex_profile_snapshot_with_rate_limit(
     agent: &str,
     credentials: &CodexOAuthCredentials,
-    codex_home: &Path,
+    now: i64,
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    codex_profile_snapshot_at_urls(
+        agent,
+        credentials,
+        "https://chatgpt.com/backend-api/wham/usage",
+        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
+        now,
+    )
+}
+
+/// Shared snapshot assembly. Production profile endpoints are fixed by the
+/// wrapper; tests supply owned localhost fixtures without mutable config files.
+fn codex_profile_snapshot_at_urls(
+    agent: &str,
+    credentials: &CodexOAuthCredentials,
+    usage_url: &str,
+    reset_credits_url: &str,
     now: i64,
 ) -> (FocusedUsageView, Option<ProviderRateLimit>) {
     // Same reset-credits merge as the ambient lane: the read-only GET must not
     // gate the quota — a failure degrades to no "Limit Reset Credits" row.
     let (quota, error) = split_provider_fetch(Some(
-        fetch_codex_oauth_usage(credentials, codex_home)
+        fetch_codex_oauth_usage_at_url(credentials, usage_url)
             .map_err(ProviderError::from)
             .map(|mut usage| {
-                usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, codex_home)
-                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::HttpError)
-                    .ok();
+                usage.reset_credits =
+                    fetch_codex_oauth_reset_credits_at_url(credentials, reset_credits_url)
+                        .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::HttpError)
+                        .ok();
                 usage
             }),
     ));
@@ -395,8 +412,7 @@ pub(crate) fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexO
         .get("account_id")
         .or_else(|| tokens.get("accountId"))
         .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
         .map(str::to_owned);
     let account_label = tokens
         .get("id_token")
@@ -1017,13 +1033,13 @@ pub(crate) fn fetch_codex_rpc_usage(
 ) -> Result<CodexRpcUsage, ProviderError> {
     gate.can_launch("Codex app-server", Instant::now())?;
     let process = process_telemetry::ChildOperation::begin("codex");
-    let mut child = match Command::new("codex")
-        .args(["-s", "read-only", "-a", "untrusted", "app-server"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
+    let request = jackin_process::ExecRequest::new(
+        "codex",
+        ["-s", "read-only", "-a", "untrusted", "app-server"],
+    )
+    .stdin_mode(jackin_process::StdioMode::Capture)
+    .stderr_mode(jackin_process::StdioMode::Null);
+    let mut child = match jackin_process::spawn_group_sync(&request) {
         Ok(child) => child,
         Err(err) => {
             process.spawn_failed();
@@ -1045,13 +1061,9 @@ pub(crate) fn fetch_codex_rpc_usage(
             "codex app-server stdout unavailable".to_owned(),
         ));
     };
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::sync_channel(0);
     let reader = jackin_telemetry::spawn::thread_stream("codex.stdout", move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if tx.send(line).is_err() {
-                break;
-            }
-        }
+        format::read_rpc_frames(stdout, tx);
     });
 
     let result: Result<CodexRpcUsage, ProviderError> = (|| {
@@ -1092,9 +1104,24 @@ pub(crate) fn fetch_codex_rpc_usage(
     })();
 
     drop(stdin);
+    // Cancel rendezvous delivery before cleanup joins the reader.
+    drop(rx);
     let reaped = process_telemetry::ChildOperation::reap_managed(&mut child);
-    let reader_joined = reader.join().is_ok();
+    let reader_joined = if reaped {
+        reader.join().is_ok()
+    } else {
+        // A failed group termination cannot guarantee pipe EOF.
+        drop(reader);
+        false
+    };
     process.finish_managed(reaped && reader_joined);
+    let result = if reaped && reader_joined {
+        result
+    } else {
+        Err(ProviderError::from(
+            "codex app-server cleanup failed".to_owned(),
+        ))
+    };
 
     if result.is_ok() {
         gate.record_success();
@@ -1106,7 +1133,7 @@ pub(crate) fn fetch_codex_rpc_usage(
 
 pub(crate) fn codex_rpc_request(
     stdin: &mut impl Write,
-    rx: &mpsc::Receiver<String>,
+    rx: &mpsc::Receiver<Result<String, String>>,
     id: i64,
     method: &str,
     params: serde_json::Value,
@@ -1138,7 +1165,7 @@ pub(crate) fn codex_rpc_request(
             }
             let line = rx
                 .recv_timeout(remaining)
-                .map_err(|_| format!("Codex app-server timed out waiting for {method}"))?;
+                .map_err(|_| format!("Codex app-server timed out waiting for {method}"))??;
             let value: serde_json::Value = serde_json::from_str(&line)
                 .map_err(|err| format!("Codex app-server response decode failed: {err}"))?;
             if value.get("id").and_then(serde_json::Value::as_i64) != Some(id) {
@@ -1184,6 +1211,13 @@ pub(crate) fn fetch_codex_oauth_usage(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
 ) -> Result<CodexUsageResponse, ProviderHttpError> {
+    fetch_codex_oauth_usage_at_url(credentials, &resolve_codex_usage_url(codex_home))
+}
+
+fn fetch_codex_oauth_usage_at_url(
+    credentials: &CodexOAuthCredentials,
+    url: &str,
+) -> Result<CodexUsageResponse, ProviderHttpError> {
     let mut headers = vec![(reqwest::header::USER_AGENT, "jackin-capsule/usage")];
     if let Some(account_id) = &credentials.account_id {
         headers.push((
@@ -1195,7 +1229,7 @@ pub(crate) fn fetch_codex_oauth_usage(
         jackin_telemetry::schema::enums::ProviderName::Openai,
         "/backend-api/wham/usage",
         "Codex OAuth usage",
-        &resolve_codex_usage_url(codex_home),
+        url,
         &credentials.access_token,
         &headers,
     )
@@ -1305,6 +1339,16 @@ pub(crate) fn fetch_codex_oauth_reset_credits(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
 ) -> Result<CodexResetCredits, ProviderHttpError> {
+    fetch_codex_oauth_reset_credits_at_url(
+        credentials,
+        &resolve_codex_reset_credits_url(codex_home),
+    )
+}
+
+fn fetch_codex_oauth_reset_credits_at_url(
+    credentials: &CodexOAuthCredentials,
+    url: &str,
+) -> Result<CodexResetCredits, ProviderHttpError> {
     let mut headers = vec![
         (reqwest::header::USER_AGENT, "jackin-capsule/usage"),
         (
@@ -1326,7 +1370,7 @@ pub(crate) fn fetch_codex_oauth_reset_credits(
         jackin_telemetry::schema::enums::ProviderName::Openai,
         "/backend-api/wham/usage/reset_credits",
         "Codex reset credits",
-        &resolve_codex_reset_credits_url(codex_home),
+        url,
         &credentials.access_token,
         &headers,
     )?;

@@ -103,7 +103,7 @@ async fn universe_auxiliary_nonregular_inodes_fail_closed() {
             assert_eq!(claim.start_kind(), StartKind::ResumeExisting);
             assert!(claim.pending_file.is_none());
             assert_eq!(exit, ExitClaim::Missing);
-            std::fs::symlink_metadata(&invalid).unwrap();
+            assert!(std::fs::symlink_metadata(&invalid).is_ok());
         }
     }
 }
@@ -961,7 +961,7 @@ async fn early_launch_errors_do_not_poison_subsequent_entry_claims() {
     async fn failed_launch(paths: &JackinPaths, docker: &impl DockerApi) -> Result<(), ()> {
         let claim = claim_entry(paths, docker).await;
         assert_eq!(claim.start_kind(), StartKind::FreshConstruct);
-        assert_eq!(count_pending_claims(&authority(paths)), Some(1));
+        assert_eq!(count_pending_claims(&authority(&paths)), Some(1));
         Err(())?;
         Ok(())
     }

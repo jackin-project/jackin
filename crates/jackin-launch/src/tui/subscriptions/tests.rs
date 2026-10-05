@@ -9,8 +9,8 @@ use ratatui::layout::Rect;
 use super::{
     BUILD_LOG_SCROLL_STEP, CockpitContext, QuitConfirmOutcome, apply_quit_confirm_key,
     build_log_action_name, cockpit_action_name, cockpit_outcome_for_quit_confirm,
-    emit_dialog_mouse_debug_telemetry, handle_cockpit_mouse_down, is_ctrl_c,
-    should_emit_dialog_mouse, update_build_log_mouse_scroll,
+    emit_dialog_mouse_debug_telemetry, handle_build_log_mouse_drag, handle_cockpit_mouse_down,
+    is_ctrl_c, should_emit_dialog_mouse, update_build_log_mouse_scroll,
 };
 use crate::LaunchHostTerminal;
 use crate::tui::components::container_info_dialog::{
@@ -48,7 +48,9 @@ impl RecordingTerminal {
 }
 
 impl LaunchHostTerminal for RecordingTerminal {
-    fn set_rich_surface_active(&self, _active: bool) {}
+    fn acquire_rich_surface(&self) -> std::io::Result<jackin_core::TerminalOwnershipGuard> {
+        Ok(jackin_core::TerminalOwnershipGuard::new(|| {}))
+    }
     fn host_screen_owned(&self) -> bool {
         false
     }
@@ -110,6 +112,7 @@ fn build_log_mouse_wheel_scrolls_tail_when_vertical_bar_visible() {
     assert!(update_build_log_mouse_scroll(
         &mut view,
         area,
+        false,
         MouseEventKind::ScrollUp,
         KeyModifiers::NONE,
     ));
@@ -126,12 +129,14 @@ fn build_log_mouse_wheel_ignores_axes_without_visible_scrollbar() {
     assert!(!update_build_log_mouse_scroll(
         &mut view,
         area,
+        false,
         MouseEventKind::ScrollUp,
         KeyModifiers::NONE,
     ));
     assert!(!update_build_log_mouse_scroll(
         &mut view,
         area,
+        false,
         MouseEventKind::ScrollRight,
         KeyModifiers::NONE,
     ));
@@ -287,6 +292,164 @@ fn build_log_body_click_is_swallowed() {
 
     assert!(view.build_log_open);
     assert!(!view.build_log_scroll_dragging);
+}
+
+fn build_log_rendered_row(
+    view: &crate::LaunchView,
+    area: Rect,
+    debug_mode: bool,
+    row: u16,
+) -> String {
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(area.width, area.height))
+            .expect("test backend should initialize");
+    terminal
+        .draw(|frame| {
+            crate::tui::components::build_log_dialog::render_build_log_dialog(
+                frame,
+                area,
+                view,
+                "jk-run-test",
+                debug_mode,
+            );
+        })
+        .expect("build log should render");
+    (0..area.width)
+        .map(|col| terminal.backend().buffer()[(col, row)].symbol())
+        .collect()
+}
+
+#[test]
+fn build_log_captured_drag_clamps_outside_track_and_requires_acquisition() {
+    let debug_terminal = RecordingTerminal::new();
+    for debug_mode in [false, true] {
+        let mut view = crate::tui::update::initial_view();
+        view.build_log_open = true;
+        view.build_log_lines = (0..60).map(|idx| format!("line {idx:02}")).collect();
+        let area = Rect::new(0, 0, 80, 24);
+        let terminal: &dyn LaunchHostTerminal = if debug_mode {
+            &debug_terminal
+        } else {
+            crate::test_support::test_host_terminal()
+        };
+        let ctx = CockpitContext {
+            area,
+            run_id: "jk-run-test",
+            terminal,
+            jackin_version: "jackin 0.0.0-test",
+        };
+        let last_content_row = if debug_mode { 19 } else { 21 };
+
+        // Body clicks cannot acquire the scrollbar, even followed by drag events.
+        handle_cockpit_mouse_down(&mut view, ctx, 2, 2);
+        handle_build_log_mouse_drag(&mut view, area, debug_mode, 0);
+        assert!(!view.build_log_scroll_dragging);
+        assert_eq!(view.build_log_scroll.offset(), 0);
+
+        // Acquire on the last rendered track cell, including the extra two
+        // content rows exposed when debug footer chrome is absent.
+        assert!(
+            build_log_rendered_row(&view, area, debug_mode, last_content_row).contains("line 59")
+        );
+        handle_cockpit_mouse_down(&mut view, ctx, 79, last_content_row);
+        assert!(view.build_log_scroll_dragging);
+        handle_build_log_mouse_drag(&mut view, area, debug_mode, 0);
+        assert!(build_log_rendered_row(&view, area, debug_mode, 1).contains("line 00"));
+        handle_build_log_mouse_drag(&mut view, area, debug_mode, u16::MAX);
+        assert!(
+            build_log_rendered_row(&view, area, debug_mode, last_content_row).contains("line 59")
+        );
+
+        // Captured motion refreshes stale geometry after a terminal resize.
+        let resized = Rect::new(0, 0, 80, 16);
+        handle_build_log_mouse_drag(&mut view, resized, debug_mode, 0);
+        assert_eq!(
+            view.build_log_viewport_height,
+            if debug_mode { 11 } else { 13 }
+        );
+        assert!(build_log_rendered_row(&view, resized, debug_mode, 1).contains("line 00"));
+        handle_build_log_mouse_drag(&mut view, resized, debug_mode, u16::MAX);
+        let last_resized_row = if debug_mode { 11 } else { 13 };
+        assert!(
+            build_log_rendered_row(&view, resized, debug_mode, last_resized_row)
+                .contains("line 59")
+        );
+
+        // Releasing capture prevents later motion from moving the view.
+        drop(crate::tui::update::update_launch_view(
+            &mut view,
+            crate::tui::message::LaunchMessage::BuildLogScrollDragChanged(false),
+        ));
+        handle_build_log_mouse_drag(&mut view, resized, debug_mode, 0);
+        assert!(
+            build_log_rendered_row(&view, resized, debug_mode, last_resized_row)
+                .contains("line 59")
+        );
+    }
+}
+
+#[test]
+fn build_log_captured_drag_reaches_both_ends_with_a_single_track_cell() {
+    let mut view = crate::tui::update::initial_view();
+    view.build_log_open = true;
+    view.build_log_lines = (0..60).map(|idx| format!("line {idx:02}")).collect();
+    let area = Rect::new(0, 0, 80, 4);
+    handle_cockpit_mouse_down(
+        &mut view,
+        CockpitContext {
+            area,
+            run_id: "jk-run-test",
+            terminal: crate::test_support::test_host_terminal(),
+            jackin_version: "jackin 0.0.0-test",
+        },
+        79,
+        1,
+    );
+    assert!(view.build_log_scroll_dragging);
+    handle_build_log_mouse_drag(&mut view, area, false, 0);
+    assert!(build_log_rendered_row(&view, area, false, 1).contains("line 00"));
+    handle_build_log_mouse_drag(&mut view, area, false, u16::MAX);
+    assert!(build_log_rendered_row(&view, area, false, 1).contains("line 59"));
+}
+
+#[test]
+fn build_log_wheel_axes_follow_rendered_debug_chrome() {
+    let area = Rect::new(0, 0, 80, 24);
+    for debug_mode in [false, true] {
+        let mut view = crate::tui::update::initial_view();
+        view.build_log_lines = (0..20).map(|idx| format!("line {idx:02}")).collect();
+        assert_eq!(
+            update_build_log_mouse_scroll(
+                &mut view,
+                area,
+                debug_mode,
+                MouseEventKind::ScrollUp,
+                KeyModifiers::NONE,
+            ),
+            debug_mode
+        );
+    }
+}
+
+#[test]
+fn build_log_cannot_acquire_capture_without_a_renderable_track() {
+    let mut view = crate::tui::update::initial_view();
+    view.build_log_open = true;
+    view.build_log_lines = (0..60).map(|idx| format!("line {idx:02}")).collect();
+    for area in [Rect::new(0, 0, 0, 24), Rect::new(0, 0, 80, 2)] {
+        handle_cockpit_mouse_down(
+            &mut view,
+            CockpitContext {
+                area,
+                run_id: "jk-run-test",
+                terminal: crate::test_support::test_host_terminal(),
+                jackin_version: "jackin 0.0.0-test",
+            },
+            0,
+            1,
+        );
+        assert!(!view.build_log_scroll_dragging);
+    }
 }
 
 #[test]

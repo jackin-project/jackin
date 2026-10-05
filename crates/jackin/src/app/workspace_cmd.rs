@@ -581,9 +581,11 @@ async fn apply_workspace_edit(
     // before we query it; skip the connection entirely when there
     // is nothing to check (common in fresh or test environments).
     let wn = WorkspaceName::parse(name).map_err(anyhow::Error::from)?;
+    // Inventory failure cannot establish that preserved isolation is absent.
+    // Keep the read error until the caller reports it, before any mutation.
     let has_records =
-        jackin_runtime::isolation::state::list_records_for_workspace(&paths.data_dir, &wn)
-            .is_ok_and(|r| !r.is_empty());
+        !jackin_runtime::isolation::state::list_records_for_workspace(&paths.data_dir, &wn)?
+            .is_empty();
     let detection = if has_records {
         let docker = connect_docker()?;
         jackin_runtime::runtime::drift::detect_workspace_edit_drift(

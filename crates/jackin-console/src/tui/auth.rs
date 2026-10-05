@@ -112,7 +112,7 @@ impl AuthKind {
             }
             (Self::Codex, AuthMode::ApiKey) => Some(jackin_core::OPENAI_API_KEY_ENV_NAME),
             (Self::Amp, AuthMode::ApiKey) => Some(jackin_core::AMP_API_KEY_ENV_NAME),
-            (Self::Kimi, AuthMode::ApiKey) => Some(jackin_core::KIMI_CODE_API_KEY_ENV_NAME),
+            (Self::Kimi, AuthMode::ApiKey) => Some(jackin_core::KIMI_API_KEY_ENV_NAME),
             (Self::Opencode, AuthMode::ApiKey) => Some(jackin_core::OPENCODE_API_KEY_ENV_NAME),
             (Self::Grok, AuthMode::ApiKey) => Some(jackin_core::XAI_API_KEY_ENV_NAME),
             (Self::Antigravity | Self::Gemini, AuthMode::ApiKey) => {

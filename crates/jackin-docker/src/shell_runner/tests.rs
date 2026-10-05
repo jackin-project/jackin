@@ -325,25 +325,23 @@ async fn capture_secret_omits_stderr_from_error_on_failure() {
 
 #[test]
 fn rich_surface_closes_stdin_for_noninteractive_commands() {
-    jackin_diagnostics::set_rich_surface_active(false);
-    jackin_diagnostics::set_host_screen_owned(false);
     assert!(!should_null_stdin(&RunOptions::default()));
 
-    jackin_diagnostics::set_rich_surface_active(true);
+    let rich = jackin_diagnostics::claim_rich_surface();
     assert!(should_null_stdin(&RunOptions::default()));
     assert!(!should_null_stdin(&RunOptions {
         interactive: true,
         ..RunOptions::default()
     }));
-    jackin_diagnostics::set_rich_surface_active(false);
+    drop(rich);
 
-    jackin_diagnostics::set_host_screen_owned(true);
+    let host = jackin_diagnostics::claim_host_screen();
     assert!(should_null_stdin(&RunOptions::default()));
     assert!(!should_null_stdin(&RunOptions {
         interactive: true,
         ..RunOptions::default()
     }));
-    jackin_diagnostics::set_host_screen_owned(false);
+    drop(host);
 }
 
 #[cfg(unix)]
@@ -541,7 +539,6 @@ fn process_execute_completion_classifies_nonzero_exit() {
     let result = Err::<(), _>(
         DockerError::CommandFailed {
             program: "tool".to_owned(),
-            args: "--private user-value".to_owned(),
         }
         .into(),
     );
@@ -770,4 +767,466 @@ async fn descriptor_cwd_rejects_pathname_cwd_and_non_directory_without_fallback(
         .await
         .unwrap_err();
     assert!(error.to_string().contains("not a directory"));
+}
+
+#[cfg(unix)]
+fn capture_fixture_process_exists(pid: i32) -> bool {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok()
+}
+
+#[cfg(unix)]
+async fn wait_capture_fixture_absent(pid: i32) -> bool {
+    for _ in 0..100 {
+        if !capture_fixture_process_exists(pid) {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    drop(nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(pid),
+        nix::sys::signal::Signal::SIGKILL,
+    ));
+    false
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn capture_timeout_owns_pipe_descendant_after_direct_child_exits() {
+    let temporary = tempfile::tempdir().unwrap();
+    let pids_path = temporary.path().join("pids");
+    let script = "sleep 30 & printf '%s:%s' $$ $! > \"$1\"; exit 0";
+    let mut runner = ShellRunner::default();
+    let opts = RunOptions {
+        timeout: Some(std::time::Duration::from_millis(150)),
+        null_stdin: true,
+        ..RunOptions::default()
+    };
+    let started = std::time::Instant::now();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        runner.capture_with_options(
+            "sh",
+            &["-c", script, "fixture", pids_path.to_str().unwrap()],
+            None,
+            &opts,
+        ),
+    )
+    .await;
+    let pids = std::fs::read_to_string(pids_path).unwrap();
+    let (parent, descendant) = pids.split_once(':').unwrap();
+    let parent = parent.parse().unwrap();
+    let descendant = descendant.parse().unwrap();
+    let parent_absent = !capture_fixture_process_exists(parent);
+    let descendant_absent = wait_capture_fixture_absent(descendant).await;
+    let error = result
+        .expect("capture deadline also bounds inherited output pipes")
+        .unwrap_err();
+    assert!(
+        error
+            .downcast_ref::<DockerError>()
+            .is_some_and(|error| matches!(error, DockerError::CommandTimeout { .. }))
+    );
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    assert!(
+        parent_absent,
+        "direct child must be reaped before timeout return"
+    );
+    assert!(
+        descendant_absent,
+        "descendant retaining output pipe must be killed"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn capture_cancel_owns_pipe_descendant_after_direct_child_exits() {
+    let temporary = tempfile::tempdir().unwrap();
+    let pids_path = temporary.path().join("pids");
+    let task_path = pids_path.clone();
+    let task = tokio::spawn(async move {
+        let mut runner = ShellRunner::default();
+        runner
+            .capture(
+                "sh",
+                &[
+                    "-c",
+                    "sleep 30 & printf '%s:%s\\n' $$ $! > \"$1\"; exit 0",
+                    "fixture",
+                    task_path.to_str().unwrap(),
+                ],
+                None,
+            )
+            .await
+    });
+    let ready = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if let Ok(pids) = std::fs::read_to_string(&pids_path)
+                && pids.ends_with('\n')
+                && let Some((parent, descendant)) = pids.trim_end().split_once(':')
+                && let (Ok(parent), Ok(descendant)) =
+                    (parent.parse::<i32>(), descendant.parse::<i32>())
+            {
+                break (parent, descendant);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    let Ok((parent, descendant)) = ready else {
+        task.abort();
+        drop(task.await);
+        panic!("fixture did not write complete child identifiers");
+    };
+    // A zombie proves the group leader exited while its unreaped PID remains
+    // reserved. Absence also accepts the old implementation for the red proof.
+    let parent_exited = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let status = jackin_process::exec_async(
+                &jackin_process::ExecRequest::new("ps", ["-o", "stat=", "-p", &parent.to_string()])
+                    .timeout(std::time::Duration::from_millis(300)),
+            )
+            .await?;
+            if status.code == Some(1)
+                || (status.success
+                    && String::from_utf8_lossy(&status.stdout)
+                        .trim()
+                        .starts_with('Z'))
+            {
+                break Ok::<(), anyhow::Error>(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    if !matches!(parent_exited, Ok(Ok(()))) {
+        task.abort();
+        drop(task.await);
+        let _parent_absent = wait_capture_fixture_absent(parent).await;
+        let _descendant_absent = wait_capture_fixture_absent(descendant).await;
+        panic!("fixture parent did not exit before cancellation");
+    }
+    assert!(
+        !task.is_finished(),
+        "inherited output pipe retains lifecycle ownership"
+    );
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    assert!(
+        wait_capture_fixture_absent(parent).await,
+        "direct child reaped after cancellation"
+    );
+    assert!(
+        wait_capture_fixture_absent(descendant).await,
+        "descendant killed after cancellation"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn capture_default_limits_are_finite_and_error_is_private() {
+    for redirect in ["", " >&2"] {
+        let script = format!("(dd if=/dev/zero bs=1048576 count=17 2>/dev/null){redirect}");
+        let mut runner = ShellRunner::default();
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            runner.capture("sh", &["-c", &script, "private-cap-argument"], None),
+        )
+        .await
+        .expect("overflow must fail promptly")
+        .unwrap_err();
+        assert!(
+            error
+                .downcast_ref::<ProcessBoundaryError>()
+                .is_some_and(|error| matches!(error, ProcessBoundaryError::Io))
+        );
+        assert!(!format!("{error:#}").contains("private-cap-argument"));
+    }
+    let mut runner = ShellRunner::default();
+    let error = runner
+        .capture_secret(
+            "private-missing-program",
+            &["private-secret-argument"],
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .downcast_ref::<ProcessBoundaryError>()
+            .is_some_and(|error| matches!(error, ProcessBoundaryError::Spawn))
+    );
+    assert!(!format!("{error:#}").contains("private-secret-argument"));
+}
+
+#[test]
+fn failed_command_errors_omit_private_program_and_secret_stderr() {
+    let private_program = "/private/operator-canary/bin/arbitrary-tool";
+    let private_stderr = b"password=stderr-canary\n-----BEGIN PRIVATE KEY-----\nkey-canary\n-----END PRIVATE KEY-----\n";
+    for mode in [CaptureMode::Normal, CaptureMode::Secret] {
+        let error = captured_command_error(private_program, private_stderr, mode);
+        for representation in [error.to_string(), format!("{error:?}")] {
+            for canary in ["operator-canary", "stderr-canary", "key-canary"] {
+                assert!(!representation.contains(canary), "{representation}");
+            }
+        }
+    }
+    let build = summarize_build_stderr(private_stderr);
+    assert!(!build.contains("stderr-canary"));
+    assert!(!build.contains("key-canary"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn failed_capture_and_run_errors_omit_argv_and_redact_stderr() {
+    let args = [
+        "-c",
+        "printf 'password=stderr-canary\\n%s\\n' \"$0\" >&2; exit 1",
+        "arbitrary-argv-canary",
+    ];
+    let mut runner = ShellRunner::default();
+    let options = RunOptions {
+        capture_stderr: true,
+        stream_captured_output: false,
+        ..RunOptions::default()
+    };
+    let errors = [
+        runner.capture("sh", &args, None).await.unwrap_err(),
+        runner.capture_secret("sh", &args, None).await.unwrap_err(),
+        runner.run("sh", &args, None, &options).await.unwrap_err(),
+    ];
+    for error in errors {
+        for representation in [error.to_string(), format!("{error:?}")] {
+            assert!(!representation.contains("arbitrary-argv-canary"));
+            assert!(!representation.contains("stderr-canary"));
+        }
+    }
+    let summary =
+        summarize_stderr(format!("password={}\n{}", "z".repeat(1000), "x".repeat(1000)).as_bytes())
+            .unwrap();
+    assert!(summary.chars().count() <= 503);
+    assert!(!summary.contains("zzzz"));
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn dropped_capture_and_run_futures_export_cancellation_without_fault() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    for capture in [true, false] {
+        let mut runner = ShellRunner::default();
+        let temporary = tempfile::tempdir().unwrap();
+        let ready_path = temporary.path().join("ready");
+        let args = [
+            "-c",
+            "printf ready > \"$1\"; exec sleep 30",
+            "fixture",
+            ready_path.to_str().unwrap(),
+        ];
+        let options = RunOptions {
+            quiet: true,
+            ..RunOptions::default()
+        };
+        let future = async {
+            if capture {
+                runner.capture("sh", &args, None).await.map(|_| ())
+            } else {
+                runner.run("sh", &args, None, &options).await
+            }
+        };
+        let mut future = Box::pin(future);
+        tokio::select! {
+            result = &mut future => panic!("fixture exited before cancellation: {result:?}"),
+            ready = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                while !ready_path.exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            }) => ready.expect("fixture spawned before cancellation"),
+        }
+        drop(future);
+    }
+    drop(guard);
+    export.force_flush();
+    let spans = export
+        .finished_spans()
+        .into_iter()
+        .filter(|span| span.name == jackin_telemetry::schema::spans::PROCESS_COMMAND)
+        .collect::<Vec<_>>();
+    assert_eq!(spans.len(), 2);
+    assert!(spans.iter().all(|span| !span.error));
+    assert!(export.contains_span_text("cancellation"));
+    assert!(!export.contains_span_text("telemetry_instrumentation_fault"));
+    assert!(!export.contains_log_text("telemetry_instrumentation_fault"));
+}
+
+#[test]
+fn request_value_redaction_preserves_credential_pattern_detection() {
+    let options = RunOptions {
+        extra_env: vec![("CUSTOM".to_owned(), "unstructured-env-canary".to_owned())],
+        ..RunOptions::default()
+    };
+    let sanitized = sanitize_error_stderr(
+        b"password=unknown-credential-canary; unstructured-env-canary; argument-canary; private-program-canary",
+        "private-program-canary",
+        &["password", "--custom=argument-canary"],
+        &options,
+        None,
+    );
+    let summary = summarize_stderr(&sanitized).unwrap();
+    for canary in [
+        "unknown-credential-canary",
+        "unstructured-env-canary",
+        "argument-canary",
+        "private-program-canary",
+    ] {
+        assert!(!summary.contains(canary), "{summary}");
+    }
+}
+
+#[test]
+fn process_error_summaries_omit_request_and_absolute_paths() {
+    let sanitized = sanitize_error_stderr(
+        b"failed cwd=/Users/operator/private-project; /opt/other/private-file; path=/Users/other/private; file:/opt/embedded/private; path=\"/Users/quoted/private\"; C:\\Users\\windows-private",
+        "sh",
+        &[],
+        &RunOptions::default(),
+        Some(Path::new("/Users/operator/private-project")),
+    );
+    let summary = summarize_stderr(&sanitized).unwrap();
+    assert!(!summary.contains("/Users/operator/private-project"));
+    assert!(!summary.contains("/opt/other/private-file"));
+    assert!(!summary.contains("/Users/other/private"));
+    assert!(!summary.contains("/opt/embedded/private"));
+    assert!(!summary.contains("/Users/quoted/private"));
+    assert!(!summary.contains("windows-private"));
+}
+
+#[test]
+fn panic_drops_process_operation_as_error() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let result = std::panic::catch_unwind(|| {
+        let _operation = enter_process_execute("sh");
+        panic!("fixture panic");
+    });
+    assert!(result.is_err());
+    drop(guard);
+    export.force_flush();
+    assert_eq!(export.error_span_count(), 1);
+    assert!(export.contains_span_text("panic"));
+    assert!(!export.contains_span_text("cancellation"));
+    assert!(!export.contains_span_text("telemetry_instrumentation_fault"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn captured_run_output_limit_kills_and_reaps_child_before_return() {
+    for stream in ["stdout", "stderr"] {
+        let temporary = tempfile::tempdir().unwrap();
+        let pid_path = temporary.path().join("pid");
+        // exec replaces the shell so the recorded PID is the output producer.
+        let script = if stream == "stderr" {
+            "printf '%s' $$ > \"$1\"; exec yes output-limit-canary >&2"
+        } else {
+            "printf '%s' $$ > \"$1\"; exec yes output-limit-canary"
+        };
+        let options = RunOptions {
+            capture_stdout: true,
+            capture_stderr: true,
+            stream_captured_output: false,
+            ..RunOptions::default()
+        };
+        let mut runner = ShellRunner::default();
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            runner.run(
+                "sh",
+                &["-c", script, "fixture", pid_path.to_str().unwrap()],
+                None,
+                &options,
+            ),
+        )
+        .await
+        .expect("output overflow must not await infinite producer")
+        .unwrap_err();
+        let pid = std::fs::read_to_string(pid_path)
+            .unwrap()
+            .parse::<i32>()
+            .unwrap();
+        assert!(
+            !capture_fixture_process_exists(pid),
+            "producer must be reaped before overflow returns"
+        );
+        assert!(matches!(
+            error.downcast_ref::<ProcessBoundaryError>(),
+            Some(ProcessBoundaryError::Io)
+        ));
+        assert!(!error.to_string().contains("output-limit-canary"));
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn captured_run_group_owns_descendants_on_timeout_overflow_and_cancellation() {
+    for mode in ["timeout", "overflow", "cancel"] {
+        let temporary = tempfile::tempdir().unwrap();
+        let pids_path = temporary.path().join("pids");
+        let task_path = pids_path.clone();
+        let task = tokio::spawn(async move {
+            let script = if mode == "overflow" {
+                "yes group-overflow-canary & printf '%s:%s\\n' $$ $! > \"$1\"; exit 0"
+            } else {
+                "sleep 30 & printf '%s:%s\\n' $$ $! > \"$1\"; exit 0"
+            };
+            let options = RunOptions {
+                capture_stdout: true,
+                capture_stderr: true,
+                stream_captured_output: false,
+                timeout: (mode == "timeout").then_some(std::time::Duration::from_millis(150)),
+                ..RunOptions::default()
+            };
+            let mut runner = ShellRunner::default();
+            runner
+                .run(
+                    "sh",
+                    &["-c", script, "fixture", task_path.to_str().unwrap()],
+                    None,
+                    &options,
+                )
+                .await
+        });
+        let (parent, descendant) = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if let Ok(pids) = std::fs::read_to_string(&pids_path)
+                    && pids.ends_with('\n')
+                    && let Some((parent, descendant)) = pids.trim_end().split_once(':')
+                    && let (Ok(parent), Ok(descendant)) =
+                        (parent.parse::<i32>(), descendant.parse::<i32>())
+                {
+                    break (parent, descendant);
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("fixture spawned and recorded descendants");
+        if mode == "cancel" {
+            task.abort();
+        }
+        let result = tokio::time::timeout(std::time::Duration::from_secs(3), task)
+            .await
+            .expect("group cleanup bounded");
+        if mode == "cancel" {
+            assert!(result.unwrap_err().is_cancelled());
+        } else {
+            assert!(result.unwrap().is_err());
+        }
+        assert!(
+            wait_capture_fixture_absent(parent).await,
+            "direct child reaped: {mode}"
+        );
+        assert!(
+            wait_capture_fixture_absent(descendant).await,
+            "pipe descendant killed: {mode}"
+        );
+    }
 }

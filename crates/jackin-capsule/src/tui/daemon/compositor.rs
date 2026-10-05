@@ -320,7 +320,7 @@ impl Multiplexer {
 
         // Frame hyperlink layer (§3.4): the encoder brackets exactly these
         // cells with OSC 8 during emission — no raw overlay writes.
-        let (mut hyperlink_regions, sgr_regions) = cached_pane_regions(
+        let (mut hyperlink_regions, mut sgr_regions) = cached_pane_regions(
             &mut self.render.pane_region_cache,
             &panes,
             &pane_screens,
@@ -328,6 +328,12 @@ impl Multiplexer {
             &damaged_panes,
             focused_id,
         );
+        // Modal rendering replaces pane bodies. Pane sidecars must follow
+        // that same ownership boundary; cached pane regions return on dismiss.
+        if dialog_open {
+            hyperlink_regions.clear();
+            sgr_regions.clear();
+        }
         let ui_hyperlink_regions =
             if let Some((DialogRatatuiSnapshot::DebugInfo(state), (row, col, height, width))) =
                 dialog_snapshot.as_ref()

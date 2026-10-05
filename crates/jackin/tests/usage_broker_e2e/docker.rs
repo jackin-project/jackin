@@ -22,7 +22,7 @@ use super::*;
 
 const CAPSULE_IMAGE: &str = "python:3.14-alpine";
 const TUNNEL_PROXY_SCRIPT: &str = r#"
-import json, os, socket, sys
+import json, os, socket, sys, time
 
 path = "/jackin/run/usage.sock"
 try:
@@ -48,7 +48,7 @@ while True:
         if b"\n" in chunk:
             break
     request = json.loads(b"".join(chunks))
-    tunneled = {"request_id": request_id, "request": request}
+    tunneled = {"kind": "request", "request": {"request_id": request_id, "expires_at_unix_ms": int(time.time() * 1000) + 45000, "instance_id": "test-instance", "request": request}}
     sys.stdout.write(json.dumps(tunneled, separators=(",", ":")) + "\n")
     sys.stdout.flush()
     response = json.loads(sys.stdin.readline())
@@ -106,6 +106,7 @@ if mode == "gated-refresh":
 if mode == "refresh":
     initial = call({
         "operation": "refresh_for_capability",
+        "instance_id": "test-instance",
         "capability": {"account_id": "shared-account", "surface_id": "claude"},
         "observed_generation": 0,
         "force": True,
@@ -115,6 +116,7 @@ if mode == "refresh":
         marker.write(str(initial["state"]["generation"]))
     response = call({
         "operation": "join_for_capability",
+        "instance_id": "test-instance",
         "capability": {"account_id": "shared-account", "surface_id": "claude"},
         "generation": initial["state"]["generation"],
         "timeout_ms": 30000,
@@ -122,6 +124,7 @@ if mode == "refresh":
 elif mode == "request":
     response = call({
         "operation": "refresh_for_capability",
+        "instance_id": "test-instance",
         "capability": {"account_id": "shared-account", "surface_id": "claude"},
         "observed_generation": 0,
         "force": True,
@@ -137,6 +140,7 @@ elif mode == "unauthorized":
     assert response["error"]["kind"] == "unauthorized", response
     missing = call({
         "operation": "current_for_capability",
+        "instance_id": "test-instance",
         "capability": {"account_id": "account-b", "surface_id": "codex"},
     })
     assert missing["status"] == "error", missing
@@ -573,6 +577,7 @@ async fn start_capsule(
         vec![capability()],
         UsageCredentialScope::default(),
         &proxy_command,
+        std::collections::BTreeMap::from([("test-instance".to_owned(), capability())]),
     )?;
     wait_for_async(Duration::from_secs(10), || {
         relay_dir.join("proxy-ready").exists()

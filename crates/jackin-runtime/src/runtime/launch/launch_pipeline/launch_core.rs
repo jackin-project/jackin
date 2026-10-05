@@ -8,6 +8,9 @@
 
 mod orchestrate;
 
+#[cfg(test)]
+pub(super) use orchestrate::profile_scope_test_hook;
+
 use jackin_config::AppConfig;
 use jackin_core::CommandRunner;
 use jackin_core::JackinPaths;

@@ -12,7 +12,6 @@ use termrock::widgets::HintSpan;
 
 use crate::LaunchView;
 use crate::tui::components::cells::coalesce_cells;
-use crate::tui::components::chrome::bottom_chrome_areas;
 use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,20 +36,23 @@ const fn vertical_scrollbar_area(area: Rect) -> Rect {
     Rect {
         x: area.x.saturating_add(area.width.saturating_sub(1)),
         y: area.y.saturating_add(1),
-        width: 1,
+        width: if area.width == 0 { 0 } else { 1 },
         height: area.height.saturating_sub(2),
     }
 }
 
 #[must_use]
-pub fn build_log_box_area(area: Rect) -> Rect {
-    // Structural exception: build-log geometry is the shared bottom-chrome body, not an independent modal rect.
-    bottom_chrome_areas(area).body
+pub fn build_log_box_area(area: Rect, debug_mode: bool) -> Rect {
+    launch_overlay_chrome_areas(area, debug_mode).body
 }
 
 #[must_use]
-pub fn build_log_scroll_metrics(area: Rect, raw: &[String]) -> BuildLogScrollMetrics {
-    let box_area = build_log_box_area(area);
+pub fn build_log_scroll_metrics(
+    area: Rect,
+    debug_mode: bool,
+    raw: &[String],
+) -> BuildLogScrollMetrics {
+    let box_area = build_log_box_area(area, debug_mode);
     let viewport_w = viewport_width(box_area);
     let viewport_h = viewport_height(box_area);
     let content_len = build_log_wrapped_lines(raw, viewport_w).len();
@@ -73,8 +75,8 @@ pub fn build_log_wrapped_lines(raw: &[String], width: usize) -> Vec<Line<'static
     }
 }
 
-pub fn refresh_build_log_layout(view: &mut LaunchView, area: Rect, force: bool) {
-    let box_area = build_log_box_area(area);
+pub fn refresh_build_log_layout(view: &mut LaunchView, area: Rect, debug_mode: bool, force: bool) {
+    let box_area = build_log_box_area(area, debug_mode);
     let viewport_w = viewport_width(box_area);
     let viewport_h = viewport_height(box_area);
     if !force
@@ -92,18 +94,19 @@ pub fn refresh_build_log_layout(view: &mut LaunchView, area: Rect, force: bool) 
 }
 
 #[must_use]
-pub fn build_log_scroll_filled_for_lines(area: Rect, raw: &[String]) -> usize {
-    build_log_scroll_metrics(area, raw).filled
+pub fn build_log_scroll_filled_for_lines(area: Rect, debug_mode: bool, raw: &[String]) -> usize {
+    build_log_scroll_metrics(area, debug_mode, raw).filled
 }
 
 #[must_use]
 pub fn build_log_scrollbar_top_offset_at(
     area: Rect,
+    debug_mode: bool,
     raw: &[String],
     col: u16,
     row: u16,
 ) -> Option<usize> {
-    let box_area = build_log_box_area(area);
+    let box_area = build_log_box_area(area, debug_mode);
     let scrollbar = vertical_scrollbar_area(box_area);
     if col < scrollbar.x
         || col >= scrollbar.x.saturating_add(scrollbar.width)
@@ -112,44 +115,34 @@ pub fn build_log_scrollbar_top_offset_at(
     {
         return None;
     }
-    build_log_scrollbar_top_offset_for_row(area, raw, row)
+    build_log_scrollbar_top_offset_for_row(area, debug_mode, raw, row)
 }
 
 #[must_use]
 pub fn build_log_scrollbar_top_offset_for_row(
     area: Rect,
+    debug_mode: bool,
     raw: &[String],
     row: u16,
 ) -> Option<usize> {
-    let metrics = build_log_scroll_metrics(area, raw);
-    if !termrock::scroll::is_scrollable(metrics.content_len, metrics.viewport_h) {
-        return None;
-    }
-    let scrollbar = vertical_scrollbar_area(build_log_box_area(area));
-    let track_len = usize::from(scrollbar.height);
-    if track_len == 0 {
-        return None;
-    }
-    let max_position = scrollbar.height.saturating_sub(1);
-    let track_position = row.saturating_sub(scrollbar.y).min(max_position);
-    Some(usize::from(
-        termrock::scroll::offset_for_track_position_u16(
-            metrics.content_len,
-            metrics.viewport_h,
-            track_len,
-            usize::from(track_position),
-        ),
-    ))
+    let metrics = build_log_scroll_metrics(area, debug_mode, raw);
+    scrollbar_top_offset_for_row(
+        vertical_scrollbar_area(build_log_box_area(area, debug_mode)),
+        metrics.content_len,
+        metrics.viewport_h,
+        row,
+    )
 }
 
 #[must_use]
-pub fn build_log_scrollbar_top_offset_for_row_cached(
+pub fn build_log_scrollbar_top_offset_at_cached(
     view: &LaunchView,
     area: Rect,
+    debug_mode: bool,
     col: u16,
     row: u16,
 ) -> Option<usize> {
-    let box_area = build_log_box_area(area);
+    let box_area = build_log_box_area(area, debug_mode);
     let scrollbar = vertical_scrollbar_area(box_area);
     if col < scrollbar.x
         || col >= scrollbar.x.saturating_add(scrollbar.width)
@@ -158,21 +151,52 @@ pub fn build_log_scrollbar_top_offset_for_row_cached(
     {
         return None;
     }
-    if view.build_log_filled == 0 {
+    build_log_scrollbar_top_offset_for_row_cached(view, area, debug_mode, row)
+}
+
+/// Captured scrollbar motion follows the pointer outside the track, clamping
+/// its row to the nearest end. Hit testing belongs only to drag acquisition.
+#[must_use]
+pub fn build_log_scrollbar_top_offset_for_row_cached(
+    view: &LaunchView,
+    area: Rect,
+    debug_mode: bool,
+    row: u16,
+) -> Option<usize> {
+    scrollbar_top_offset_for_row(
+        vertical_scrollbar_area(build_log_box_area(area, debug_mode)),
+        view.build_log_wrapped_lines.len(),
+        view.build_log_viewport_height,
+        row,
+    )
+}
+
+fn scrollbar_top_offset_for_row(
+    scrollbar: Rect,
+    content_len: usize,
+    viewport_h: usize,
+    row: u16,
+) -> Option<usize> {
+    if scrollbar.width == 0
+        || scrollbar.height == 0
+        || !termrock::scroll::is_scrollable(content_len, viewport_h)
+    {
         return None;
     }
-    let track_len = usize::from(scrollbar.height);
-    if track_len == 0 {
-        return None;
+    // Explicit outside-track endpoints also cover a one-cell track, where
+    // TermRock's in-track mapping cannot represent two distinct ends.
+    if row < scrollbar.y {
+        return Some(0);
     }
-    let max_position = scrollbar.height.saturating_sub(1);
-    let track_position = row.saturating_sub(scrollbar.y).min(max_position);
+    if row >= scrollbar.bottom() {
+        return Some(termrock::scroll::max_offset(content_len, viewport_h));
+    }
     Some(usize::from(
         termrock::scroll::offset_for_track_position_u16(
-            view.build_log_wrapped_lines.len(),
-            view.build_log_viewport_height,
-            track_len,
-            usize::from(track_position),
+            content_len,
+            viewport_h,
+            usize::from(scrollbar.height),
+            usize::from(row.saturating_sub(scrollbar.y)),
         ),
     ))
 }

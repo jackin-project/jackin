@@ -66,8 +66,7 @@ impl Multiplexer {
             }
             DialogAction::Redraw | DialogAction::Consume => {}
             DialogAction::ExecConfirm {
-                command,
-                args,
+                invocation,
                 selected,
             } => {
                 // Operator approved. Close the picker, then resolve the chosen
@@ -77,7 +76,7 @@ impl Multiplexer {
                 // finishes (or fails closed).
                 self.dialog_pop_one();
                 if let Some(reply_tx) = self.control.pending_exec_reply.take() {
-                    reply_tx.spawn(async move { run_exec_selected(command, args, selected).await });
+                    reply_tx.spawn(async move { run_exec_selected(invocation, selected).await });
                 }
             }
             DialogAction::ExecCancel => {
@@ -177,17 +176,21 @@ impl Multiplexer {
                 self.export_file_to_host(path, reveal_after_export, open_after_export);
             }
             DialogAction::RefreshUsage => {
-                self.request_usage_refresh_for_provider(None);
+                self.request_selected_usage_refresh();
             }
             DialogAction::SwitchUsageProvider {
-                provider_label,
-                account_id,
+                provider_id,
+                canonical_account_id,
             } => {
-                let view = self.focused_usage_snapshot_for_account_id(&account_id, &provider_label);
                 if let Some(dialog) = self.dialog_top_mut() {
-                    *dialog = Dialog::new_usage(view);
+                    dialog.select_usage_destination(
+                        crate::tui::components::dialog::UsageDialogDestination {
+                            provider_id,
+                            canonical_account_id,
+                        },
+                    );
                 }
-                self.request_usage_refresh_for_account_id(&account_id, &provider_label);
+                self.update_usage_refresh_availability();
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
@@ -221,75 +224,87 @@ impl Multiplexer {
         self.invalidate(frame_plan.reason());
     }
 
-    /// Focused usage snapshot for a tab switch: exact account id when the
-    /// action carries one, label resolution only for empty ids (old
-    /// payloads). A non-empty but unknown id is an honest unavailable, never
-    /// a label-guessed sibling account.
-    fn focused_usage_snapshot_for_account_id(
-        &mut self,
-        account_id: &str,
-        provider_label: &str,
-    ) -> jackin_protocol::control::FocusedUsageView {
-        if account_id.is_empty() {
-            return self.focused_usage_snapshot_for_provider(Some(provider_label));
+    /// Open the broker-owned workspace publication without deriving inventory
+    /// from session focus or quota-bearing snapshots.
+    fn open_usage_dialog(&mut self) {
+        let projection = self.usage_projection_snapshot().cloned();
+        let error = self.usage_projection_error().map(str::to_owned);
+        let mut dialog = Dialog::new_usage(projection);
+        if let Some(error) = error {
+            dialog.apply_usage_error(error);
         }
-        if let Some(view) = self
-            .usage
-            .usage_cache
-            .focused_snapshot_for_account_id(account_id)
-        {
-            return view;
-        }
-        jackin_protocol::control::FocusedUsageView::unavailable(
-            "usage unavailable: account not cached",
-            chrono::Utc::now().timestamp(),
-        )
+        self.dialog_push(dialog);
+        self.update_usage_refresh_availability();
+        self.spawn_active_usage_account_refresh();
     }
 
-    /// Queue a refresh for a tab switch: exact account id when the action
-    /// carries one, label resolution only for empty ids (old payloads). A
-    /// non-empty but unrefreshable id queues nothing rather than refreshing
-    /// a label-guessed sibling account.
-    fn request_usage_refresh_for_account_id(&mut self, account_id: &str, provider_label: &str) {
-        if account_id.is_empty() {
-            self.request_usage_refresh_for_provider(Some(provider_label));
-            return;
-        }
-        let Some(target) = self.usage_refresh_target_for_account_id(account_id) else {
+    /// Refresh availability follows current publication and live admission.
+    pub(crate) fn update_usage_refresh_availability(&mut self) -> bool {
+        let destination = self
+            .dialog_top()
+            .and_then(Dialog::usage_destination)
+            .cloned();
+        let unavailable = self.usage_projection_snapshot().is_some()
+            && destination.as_ref().is_none_or(|destination| {
+                self.usage_refresh_target_for_destination(destination)
+                    .is_none()
+            });
+        self.dialog_top_mut()
+            .is_some_and(|dialog| dialog.apply_usage_refresh_unavailable(unavailable))
+    }
+
+    /// Canonical display identity never grants a credential capability.
+    fn request_selected_usage_refresh(&mut self) {
+        let destination = self
+            .dialog_top()
+            .and_then(Dialog::usage_destination)
+            .cloned();
+        let Some(target) = destination
+            .as_ref()
+            .and_then(|destination| self.usage_refresh_target_for_destination(destination))
+        else {
+            if let Some(dialog) = self.dialog_top_mut() {
+                dialog.apply_usage_refresh_unavailable(true);
+            }
             return;
         };
-        // Queue through the shared path so the open dialog gets the same
-        // refreshing treatment, then pin the exact id-resolved target: the
-        // display label must never route a refresh.
-        self.request_usage_refresh_for_provider(None);
+        if let Some(dialog) = self.dialog_top_mut() {
+            dialog.apply_usage_refresh_unavailable(false);
+        }
         self.usage.pending_usage_refresh = Some(target);
     }
 
-    /// Refresh target for the session holding the broker account behind a tab
-    /// id. The session's own provider label and capability keep the target
-    /// authoritative; the action's display label never routes a refresh.
-    fn usage_refresh_target_for_account_id(
+    /// Only an exact broker-published route already admitted to a live session
+    /// may refresh a selected account. View-only inventory stays inert.
+    fn usage_refresh_target_for_destination(
         &self,
-        account_id: &str,
+        destination: &crate::tui::components::dialog::UsageDialogDestination,
     ) -> Option<crate::usage::UsageRefreshTarget> {
-        let broker_account_id = self
-            .usage
-            .usage_cache
-            .broker_account_id_for_tab_id(account_id)?;
-        let session = self.session_supervisor.sessions.values().find(|session| {
-            session
-                .usage_capability
-                .as_ref()
-                .is_some_and(|capability| capability.account_id == broker_account_id)
-        })?;
-        Some(crate::usage::UsageRefreshTarget {
-            agent: session.agent.clone()?,
-            provider: session
+        let (_, account) = destination.account(self.usage_projection_snapshot()?)?;
+        let eligible = |session: &crate::session::Session| {
+            let agent = session.agent.as_deref()?;
+            let provider = session
                 .provider
                 .as_ref()
-                .map(|provider| provider.label.clone()),
-            capability: session.usage_capability.clone()?,
-        })
+                .map(|provider| provider.label.as_str());
+            let capability = session.usage_capability.as_ref()?;
+            if !account.refresh_capabilities.contains(capability)
+                || crate::usage::broker_surface_id(agent, provider)
+                    != Some(capability.surface_id.as_str())
+            {
+                return None;
+            }
+            Some(crate::usage::UsageRefreshTarget {
+                instance_id: agent.to_owned(),
+                agent: agent.to_owned(),
+                provider: provider.map(str::to_owned),
+                capability: capability.clone(),
+            })
+        };
+        self.active_focused_id()
+            .and_then(|id| self.session_supervisor.sessions.get(id))
+            .and_then(eligible)
+            .or_else(|| self.session_supervisor.sessions.values().find_map(eligible))
     }
 
     pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) -> bool {
@@ -352,6 +367,10 @@ impl Multiplexer {
         reply_tx: tokio::sync::oneshot::Sender<crate::attach_protocol::ControlResponse>,
         operation: Option<jackin_telemetry::operation::OperationGuard>,
     ) {
+        if reply_tx.is_closed() {
+            super::PendingExecReply::new(reply_tx, operation).cancel();
+            return;
+        }
         // Supersede any picker already in flight: deny its deferred reply (so
         // that client gets an answer instead of a closed socket) and drop its
         // now-stale dialog so confirm/cancel can't act on it.
@@ -370,6 +389,26 @@ impl Multiplexer {
         );
         self.control.pending_exec_reply = Some(super::PendingExecReply::new(reply_tx, operation));
         self.dialog_push(Dialog::ExecPicker(state));
+        self.invalidate(FullRedrawReason::DialogChange);
+    }
+
+    /// Reap requester-owned approval state even while the operator is idle.
+    pub(super) fn cancel_abandoned_exec_picker(&mut self) {
+        if !self
+            .control
+            .pending_exec_reply
+            .as_ref()
+            .is_some_and(super::PendingExecReply::is_closed)
+        {
+            return;
+        }
+        if let Some(reply) = self.control.pending_exec_reply.take() {
+            reply.cancel();
+        }
+        self.control
+            .dialog_stack
+            .retain(|dialog| !matches!(dialog, Dialog::ExecPicker(_)));
+        self.sync_widget_focus();
         self.invalidate(FullRedrawReason::DialogChange);
     }
 
@@ -415,9 +454,7 @@ impl Multiplexer {
                 self.invalidate_for(&Action::OpenGithubContext);
             }
             Action::OpenUsage => {
-                let view = self.focused_usage_snapshot();
-                self.dialog_push(Dialog::new_usage(view));
-                self.request_usage_refresh_for_provider(None);
+                self.open_usage_dialog();
                 self.invalidate_for(&Action::OpenUsage);
             }
             Action::OpenRenameTab(idx) => {
@@ -551,11 +588,18 @@ impl Multiplexer {
                         })
                         .unwrap_or_default();
                     if let Some(scroll) = self.dialog_top_mut().and_then(|d| d.body_scroll_mut()) {
+                        let before = (scroll.scroll_x, scroll.scroll_y);
                         if !crate::tui::scroll_input::apply_sgr_wheel_button(scroll, button, axes) {
                             return;
                         }
                         self.clamp_dialog_top_scroll();
-                        self.invalidate(FullRedrawReason::DialogChange);
+                        let changed = self
+                            .dialog_top_mut()
+                            .and_then(|d| d.body_scroll_mut())
+                            .is_some_and(|scroll| before != (scroll.scroll_x, scroll.scroll_y));
+                        if changed {
+                            self.invalidate(FullRedrawReason::DialogChange);
+                        }
                     }
                     return;
                 }
@@ -776,14 +820,12 @@ impl Multiplexer {
                 //   click on border / padding -> swallowed
                 //   click anywhere outside the box -> dismiss
                 //
-                // SGR mouse coords are 0-based; `box_rect` returns
-                // render-side coords that are 1-based (the values passed to
-                // `move_to`, which emits `\x1b[r;cH`). Pass row+1 / col+1 here
-                // so the dialog can classify the modal click in render coords.
+                // Parsed mouse positions and Ratatui modal hit regions share
+                // zero-based screen coordinates.
                 let term_rows = self.render.term_rows;
                 let term_cols = self.render.term_cols;
                 let Some(action) = self.dispatch_to_dialog_top(|dialog, github| {
-                    dialog.handle_click(row + 1, col + 1, term_rows, term_cols, github)
+                    dialog.handle_click(row, col, term_rows, term_cols, github)
                 }) else {
                     return;
                 };
@@ -1015,9 +1057,7 @@ impl Multiplexer {
                 self.clear_focused_pane();
             }
             PaletteCommandRoute::OpenUsage => {
-                let view = self.focused_usage_snapshot();
-                self.dialog_push(Dialog::new_usage(view));
-                self.request_usage_refresh_for_provider(None);
+                self.open_usage_dialog();
             }
         }
         self.invalidate(palette_route_frame_plan(route).reason());
@@ -1051,8 +1091,7 @@ pub(super) fn tab_bar_focus_key(bytes: &[u8]) -> Option<TabBarFocusKey> {
 /// never run with a partially-resolved credential set. The container reaches the
 /// host resolver at `/jackin/run/host.sock` (bind-mounted by the launch path).
 async fn run_exec_selected(
-    command: String,
-    args: Vec<String>,
+    invocation: crate::exec::ExecInvocation,
     selected: Vec<jackin_protocol::ExecBinding>,
 ) -> jackin_protocol::control::ServerMsg {
     use jackin_protocol::control::ServerMsg;
@@ -1071,7 +1110,7 @@ async fn run_exec_selected(
     // Redaction set borrows the resolved values — no second copy of secret
     // material; the strings already live in `resolved` for the env injection.
     let secrets: Vec<&str> = resolved.values().map(String::as_str).collect();
-    match crate::exec::execute_command(&command, &args, &resolved, &secrets).await {
+    match crate::exec::execute_command(&invocation, &resolved, &secrets).await {
         Ok((exit_code, stdout, stderr, redacted_count)) => ServerMsg::ExecResult {
             exit_code,
             stdout,

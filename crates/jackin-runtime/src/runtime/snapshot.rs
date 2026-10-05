@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use jackin_protocol::control::{
-    AccountUsageSnapshotView, ClientMsg, ControlRequest, ServerMsg, TabSnapshot,
+    ClientMsg, ControlRequest, ServerMsg, TabSnapshot, UsageAccountMembershipV1,
     frame as control_frame,
 };
 use serde::Deserialize;
@@ -116,30 +116,10 @@ pub fn fetch_snapshot_with_transport(
     }
 }
 
-pub fn fetch_usage_accounts(
-    paths: &JackinPaths,
-    container: &ContainerHandle,
-) -> Result<Option<Vec<AccountUsageSnapshotView>>> {
-    let path = socket_path(paths, container.name());
-    let mut direct_error = None;
-    if path.exists() {
-        match request_control_inner(&path, &ClientMsg::UsageAccountList).and_then(accounts_from_msg)
-        {
-            Ok(accounts) => return Ok(Some(accounts)),
-            Err(error) => direct_error = Some(error),
-        }
-    }
-
-    match fetch_usage_accounts_via_docker_exec(container) {
-        Ok(accounts) => Ok(accounts),
-        Err(exec_error) => match direct_error {
-            Some(error) => Err(exec_error.context(format!(
-                "direct socket usage accounts failed for {} ({error:#})",
-                path.display()
-            ))),
-            None => Err(exec_error),
-        },
-    }
+/// Membership authority is bound to the inspected immutable Docker identity.
+/// A container-name socket cannot establish that identity.
+pub fn fetch_usage_accounts(container: &ContainerHandle) -> Result<UsageAccountMembershipV1> {
+    fetch_usage_accounts_via_docker_exec(container)
 }
 
 pub(crate) fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<ServerMsg> {
@@ -198,16 +178,6 @@ fn snapshot_from_msg(msg: ServerMsg) -> Result<InstanceSnapshot> {
     }
 }
 
-fn accounts_from_msg(msg: ServerMsg) -> Result<Vec<AccountUsageSnapshotView>> {
-    match msg {
-        ServerMsg::UsageAccounts { accounts } => Ok(accounts),
-        other => bail!(
-            "daemon replied with {}; expected UsageAccounts",
-            other.kind()
-        ),
-    }
-}
-
 fn fetch_snapshot_via_docker_exec(container: &ContainerHandle) -> Result<Option<InstanceSnapshot>> {
     let output = run_docker_exec_capsule(container, snapshot_exec_script())?;
     if !output.status.success() {
@@ -226,7 +196,7 @@ fn fetch_snapshot_via_docker_exec(container: &ContainerHandle) -> Result<Option<
 
 fn fetch_usage_accounts_via_docker_exec(
     container: &ContainerHandle,
-) -> Result<Option<Vec<AccountUsageSnapshotView>>> {
+) -> Result<UsageAccountMembershipV1> {
     let output = run_docker_exec_capsule(container, usage_accounts_exec_script())?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -242,9 +212,9 @@ fn fetch_usage_accounts_via_docker_exec(
     }
     let stdout = String::from_utf8(output.stdout).context("usage accounts stdout is not UTF-8")?;
     if stdout.trim().is_empty() {
-        return Ok(None);
+        return Ok(UsageAccountMembershipV1::Unavailable);
     }
-    usage_accounts_from_cli_stdout(&stdout).map(Some)
+    usage_accounts_from_cli_stdout(&stdout)
 }
 
 fn stale_usage_subcommand_hint(container_name: &str, stderr: &str) -> Option<String> {
@@ -375,8 +345,14 @@ fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
     })
 }
 
-fn usage_accounts_from_cli_stdout(stdout: &str) -> Result<Vec<AccountUsageSnapshotView>> {
-    serde_json::from_str(stdout).context("parsing jackin-capsule usage accounts JSON")
+fn usage_accounts_from_cli_stdout(stdout: &str) -> Result<UsageAccountMembershipV1> {
+    let membership: UsageAccountMembershipV1 =
+        serde_json::from_str(stdout).context("parsing jackin-capsule usage membership JSON")?;
+    if let UsageAccountMembershipV1::Current { projection } = &membership {
+        UsageAccountMembershipV1::validate_current_projection(projection)
+            .map_err(anyhow::Error::msg)?;
+    }
+    Ok(membership)
 }
 
 #[cfg(test)]

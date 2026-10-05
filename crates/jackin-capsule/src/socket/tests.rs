@@ -5,6 +5,170 @@
 use super::*;
 use crate::protocol::control::ClientMsg;
 
+const FRAME_DEADLINE_CHILD: &str = "JACKIN_FRAME_DEADLINE_CHILD";
+const FRAME_DEADLINE_TEST: &str =
+    "socket::tests::real_uds_frames_share_one_deadline_and_release_connections";
+
+/// Exercise actual Unix sockets and wall time in a separate process. Clock
+/// advancement alone cannot establish that stalled socket owners get dropped.
+#[test]
+fn real_uds_frames_share_one_deadline_and_release_connections() -> Result<()> {
+    if std::env::var_os(FRAME_DEADLINE_CHILD).is_none() {
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .args(["--exact", FRAME_DEADLINE_TEST, "--nocapture"])
+            .env(FRAME_DEADLINE_CHILD, "1")
+            .status()?;
+        anyhow::ensure!(status.success(), "isolated frame deadline test failed");
+        return Ok(());
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(async {
+        let (a, b, c, d) = tokio::join!(
+            check_real_frame_deadline(true, true),
+            check_real_frame_deadline(true, false),
+            check_real_frame_deadline(false, true),
+            check_real_frame_deadline(false, false),
+        );
+        a?;
+        b?;
+        c?;
+        d?;
+        Ok(())
+    })
+}
+
+async fn check_real_frame_deadline(attach: bool, partial_prefix: bool) -> Result<()> {
+    use tokio::io::AsyncReadExt;
+
+    let tmp = tempfile::tempdir()?;
+    let socket_path = tmp.path().join("run/jackin.sock");
+    let (mut rx, limiter) = start_listener_at_with_limiter(&socket_path)?;
+    let mut client = UnixStream::connect(&socket_path).await?;
+    let (mut server, permit) = rx.recv().await.context("accepted connection")?;
+    assert_eq!(limiter.available_permits(), MAX_CONCURRENT_CLIENTS - 1);
+
+    let payload_len = 4u32 * 16 * 1024;
+    let prefix = payload_len.to_be_bytes();
+    let first = if attach {
+        crate::protocol::attach::TAG_INPUT
+    } else {
+        prefix[0]
+    };
+    client.write_all(&[first]).await?;
+    let mut tag = [0];
+    server.read_exact(&mut tag).await?;
+    let started = std::time::Instant::now();
+    let mut reader = tokio::spawn(async move {
+        let _permit = permit;
+        if attach {
+            crate::protocol::attach::read_client_frame(&mut server, tag[0])
+                .await
+                .map(|_| ())
+        } else {
+            read_control_msg(&mut server, tag[0]).await.map(|_| ())
+        }
+    });
+    let suffix = if attach { &prefix[..] } else { &prefix[1..] };
+    if partial_prefix {
+        client.write_all(&suffix[..1]).await?;
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        client.write_all(&suffix[1..]).await?;
+    } else {
+        client.write_all(suffix).await?;
+    }
+    // Every read makes progress within ten seconds. The entire frame does not.
+    for _ in 0..if partial_prefix { 2 } else { 3 } {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        client.write_all(&[b' '; 16 * 1024]).await?;
+    }
+    let result = match tokio::time::timeout(Duration::from_secs(3), &mut reader).await {
+        Ok(result) => result?,
+        Err(_) => {
+            reader.abort();
+            drop(reader.await);
+            anyhow::bail!("reader renewed its frame budget");
+        }
+    };
+    let error = result.expect_err("incomplete frame must expire");
+    assert!(format!("{error:#}").contains("timed out"), "{error:#}");
+    assert!(started.elapsed() >= Duration::from_secs(9));
+    assert!(started.elapsed() < Duration::from_secs(12));
+    assert_eq!(limiter.available_permits(), MAX_CONCURRENT_CLIENTS);
+    let mut byte = [0];
+    assert_eq!(client.read(&mut byte).await?, 0, "reader must drop socket");
+
+    // Cancellation must also release the stream and permit, then a reconnect
+    // must decode normally without inheriting the expired frame's deadline.
+    let mut canceled_client = UnixStream::connect(&socket_path).await?;
+    let (mut canceled_server, permit) = rx.recv().await.context("cancel connection")?;
+    let canceled = tokio::spawn(async move {
+        let _permit = permit;
+        if attach {
+            crate::protocol::attach::read_client_frame(&mut canceled_server, first)
+                .await
+                .map(|_| ())
+        } else {
+            read_control_msg(&mut canceled_server, 0).await.map(|_| ())
+        }
+    });
+    tokio::task::yield_now().await;
+    canceled.abort();
+    assert!(canceled.await.expect_err("reader canceled").is_cancelled());
+    assert_eq!(limiter.available_permits(), MAX_CONCURRENT_CLIENTS);
+    assert_eq!(canceled_client.read(&mut byte).await?, 0);
+
+    let fresh_client = UnixStream::connect(&socket_path).await?;
+    let (mut fresh_server, permit) = rx.recv().await.context("reconnect")?;
+    check_fragmented_fresh_frame(fresh_client, &mut fresh_server, attach, first).await?;
+    drop((fresh_server, permit));
+    assert_eq!(limiter.available_permits(), MAX_CONCURRENT_CLIENTS);
+    Ok(())
+}
+
+async fn check_fragmented_fresh_frame(
+    mut fresh_client: UnixStream,
+    fresh_server: &mut UnixStream,
+    attach: bool,
+    first: u8,
+) -> Result<()> {
+    let mut body = if attach {
+        vec![b'x'; 16 * 1024 + 1]
+    } else {
+        let mut body = br#"{"ctx":{"v":1},"msg":{"type":"status"}}"#.to_vec();
+        body.resize(16 * 1024 + 1, b' ');
+        body
+    };
+    let prefix = u32::try_from(body.len())?.to_be_bytes();
+    let writer = tokio::spawn(async move {
+        let suffix = if attach { &prefix[..] } else { &prefix[1..] };
+        fresh_client.write_all(&suffix[..1]).await?;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        fresh_client.write_all(&suffix[1..]).await?;
+        let final_byte = body.pop().context("last payload byte")?;
+        fresh_client.write_all(&body).await?;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        fresh_client.write_all(&[final_byte]).await?;
+        Ok::<_, anyhow::Error>(())
+    });
+    if attach {
+        let decoded = crate::protocol::attach::read_client_frame(fresh_server, first)
+            .await?
+            .context("fresh attach frame")?;
+        assert!(
+            matches!(decoded, crate::protocol::attach::ClientFrame::Input(bytes) if bytes == vec![b'x'; 16 * 1024 + 1])
+        );
+    } else {
+        assert!(matches!(
+            read_control_msg(fresh_server, prefix[0]).await?.msg,
+            ClientMsg::Status
+        ));
+    }
+    writer.await??;
+    Ok(())
+}
+
 const SOCKET_WIRE_CHILD: &str = "JACKIN_SOCKET_WIRE_CHILD";
 const SOCKET_WIRE_TEST: &str =
     "socket::tests::conformance_wire_real_listener_has_bounded_private_open_and_close";

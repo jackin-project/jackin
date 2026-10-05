@@ -29,6 +29,8 @@ pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 pub const JACKIN_AGENT_CODENAME_ENV_NAME: &str = "JACKIN_AGENT_CODENAME";
 /// Role key / selector for the running container.
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
+/// Verified Kimi CLI release baked into an image that supports the Kimi auth-slot contract.
+pub const JACKIN_KIMI_CLI_VERSION_ENV_NAME: &str = "JACKIN_KIMI_CLI_VERSION";
 /// Container working directory set at launch.
 pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
 /// Git co-author trailer text jackin❯ injects when configured.
@@ -246,6 +248,7 @@ pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_AGENT_ENV_NAME, None),
     (JACKIN_AGENT_CODENAME_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),
+    (JACKIN_KIMI_CLI_VERSION_ENV_NAME, None),
     (JACKIN_WORKDIR_ENV_NAME, None),
     (JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, None),
     (JACKIN_GIT_DCO_ENV_NAME, None),

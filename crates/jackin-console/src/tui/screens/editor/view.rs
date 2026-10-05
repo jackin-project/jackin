@@ -130,7 +130,7 @@ mod frame;
 pub(crate) use frame::{
     editor_body_area, editor_contextual_footer_items, editor_frame_areas,
     prepare_editor_for_render, prepare_editor_tab_for_area, render_editor_with_footer,
-    render_general_tab, render_roles_tab, render_secrets_tab,
+    render_general_tab, render_mounts_tab, render_roles_tab, render_secrets_tab,
 };
 
 #[must_use]

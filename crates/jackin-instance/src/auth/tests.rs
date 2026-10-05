@@ -9,9 +9,9 @@ use super::auth_directory::{
     target_lock_key_for_test,
 };
 use super::{
-    Agent, AuthProvisionOutcome, PermissionRepairFailure, RoleState, capture_selected_source,
-    inject_permission_repair_failure, repair_permissions, validate_sync_source_dir,
-    validate_sync_source_dir_for_provider,
+    Agent, AuthProvisionOutcome, KimiRuntimeAuthContext, PermissionRepairFailure, RoleState,
+    capture_selected_source, capture_selected_source_for_runtime, inject_permission_repair_failure,
+    repair_permissions, validate_sync_source_dir, validate_sync_source_dir_for_provider,
 };
 use crate::PrepareResolvers;
 use jackin_config::{AiProvider, AuthForwardMode, ProfileSelector};
@@ -48,6 +48,18 @@ fn claude_keychain_service_name_matches_claude_scheme() {
 }
 
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
+const KIMI_AUTH_CONFIG: &str = r#"
+[providers."managed:kimi-code"]
+type = "kimi"
+
+[providers."managed:kimi-code".oauth]
+key = "oauth/kimi-code"
+storage = "file"
+
+[models."kimi-k2"]
+model = "kimi-k2"
+max_context_size = 131072
+"#;
 
 #[cfg(unix)]
 fn private_snapshot_parent(temp: &tempfile::TempDir) -> std::path::PathBuf {
@@ -164,18 +176,6 @@ fn selected_snapshot_pins_claude_bytes_and_descriptor_revision() {
 }
 
 #[cfg(unix)]
-fn assert_kimi_snapshot_credentials(kimi_target: &Path) {
-    assert_eq!(
-        std::fs::read_to_string(kimi_target.join("config.toml")).unwrap(),
-        "version = \"old\"\n"
-    );
-    assert_eq!(
-        std::fs::read_to_string(kimi_target.join("credentials/token")).unwrap(),
-        "old-kimi"
-    );
-}
-
-#[cfg(unix)]
 #[test]
 fn selected_snapshot_pins_amp_kimi_and_opencode_material() {
     let temp = tempdir().unwrap();
@@ -212,20 +212,38 @@ fn selected_snapshot_pins_amp_kimi_and_opencode_material() {
 
     let kimi_source = temp.path().join("kimi");
     std::fs::create_dir_all(kimi_source.join("credentials")).unwrap();
-    std::fs::write(kimi_source.join("config.toml"), "version = \"old\"\n").unwrap();
-    std::fs::write(kimi_source.join("credentials/token"), "old-kimi").unwrap();
-    let kimi_snapshot = capture_selected_source(
+    std::fs::write(kimi_source.join("config.toml"), KIMI_AUTH_CONFIG).unwrap();
+    std::fs::write(
+        kimi_source.join("credentials/kimi-code.json"),
+        r#"{"access_token":"old-kimi"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        kimi_source.join("credentials/other-route.json"),
+        r#"{"access_token":"unselected-kimi"}"#,
+    )
+    .unwrap();
+    let kimi_runtime = KimiRuntimeAuthContext {
+        cli_version: jackin_config::KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION.to_owned(),
+        environment: std::collections::BTreeMap::new(),
+    };
+    let kimi_snapshot = capture_selected_source_for_runtime(
         Agent::Kimi,
         None,
         None,
         &kimi_source,
         temp.path(),
         &snapshot_parent,
+        Some(&kimi_runtime),
     )
     .unwrap()
     .expect("Kimi source snapshot");
-    std::fs::write(kimi_source.join("config.toml"), "version = \"new\"\n").unwrap();
-    std::fs::write(kimi_source.join("credentials/token"), "new-kimi").unwrap();
+    std::fs::write(kimi_source.join("config.toml"), "invalid = true\n").unwrap();
+    std::fs::write(
+        kimi_source.join("credentials/kimi-code.json"),
+        r#"{"access_token":"new-kimi"}"#,
+    )
+    .unwrap();
     let kimi_target = temp.path().join("role/kimi");
     let (outcome, mounted) = RoleState::provision_kimi_auth_from_source_dir(
         &kimi_target,
@@ -235,7 +253,24 @@ fn selected_snapshot_pins_amp_kimi_and_opencode_material() {
     .unwrap();
     assert_eq!(outcome, AuthProvisionOutcome::Synced);
     assert!(mounted);
-    assert_kimi_snapshot_credentials(&kimi_target);
+    let (_, expected_kimi_config) = jackin_config::kimi_runtime_auth_config(
+        KIMI_AUTH_CONFIG.as_bytes(),
+        jackin_config::KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        std::fs::read(kimi_target.join("config.toml")).unwrap(),
+        expected_kimi_config
+    );
+    assert_eq!(
+        std::fs::read_to_string(kimi_target.join("credentials/kimi-code.json")).unwrap(),
+        r#"{"access_token":"old-kimi"}"#
+    );
+    assert!(!kimi_target.join("credentials/other-route.json").exists());
+    kimi_snapshot
+        .verify_kimi_provisioned_source(&kimi_target)
+        .unwrap();
 
     let opencode_source = temp.path().join("opencode");
     std::fs::create_dir_all(&opencode_source).unwrap();
@@ -439,14 +474,14 @@ fn selected_snapshot_rejects_symlink_parent_traversal() {
 #[cfg(unix)]
 #[test]
 fn source_lock_timeout_is_bounded() {
+    use fs4::FileExt;
     use std::time::{Duration, Instant};
 
     let temp = tempdir().unwrap();
     let source = temp.path().join("codex");
     std::fs::create_dir_all(&source).unwrap();
-    let _holder = lock_source_dir_for_test(&source, Duration::from_millis(25))
-        .unwrap()
-        .expect("source lock holder");
+    let holder = std::fs::File::open(&source).unwrap();
+    FileExt::lock(&holder).unwrap();
 
     let started = Instant::now();
     let error = lock_source_dir_for_test(&source, Duration::from_millis(25)).unwrap_err();

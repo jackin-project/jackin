@@ -515,7 +515,7 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
 
 /// Pre-Task-3 workspaces may contain bare `op://Vault/Item/Field`
 /// strings written as scalar TOML values (not the inline-table
-/// `{ op = "...", path = "..." }` shape produced by the picker).
+/// legacy `{ op = "...", path = "..." }` shape formerly produced by the picker).
 /// They must deserialize without error as `EnvValue::Plain` so the
 /// user's config remains loadable; at the operator's pace they can
 /// re-pick via the TUI to get the pinned-UUID form.

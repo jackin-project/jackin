@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Container naming: generate stable names, class-family matching, and slug derivation.
+//! Container naming: generate stable names and derive descriptive slugs.
 //!
 //! Names encode workspace, role, and a random instance-id component so they
 //! are collision-free across concurrent launches of the same role. Not
@@ -60,26 +60,6 @@ pub fn container_name_with_id(
     debug_assert!(is_dns_label(&name));
     debug_assert!(name.len() <= ROLE_BASE_DNS_BUDGET);
     name
-}
-
-/// Recognize names of the shape `jk-<id>[-<workspace>]-<role>`
-/// produced by `new_container_name`. Scoping hook for `purge_class_data`.
-pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bool {
-    class_family_matches_with_slug(&compact_component(&selector.name, "role"), container_name)
-}
-
-/// Loop-friendly variant of [`class_family_matches`] for callers that
-/// precompute the slug once across many candidates — avoids one
-/// [`compact_component`] allocation per comparison.
-#[must_use]
-pub fn class_family_matches_with_slug(role_slug: &str, container_name: &str) -> bool {
-    let Some(rest) = container_name.strip_prefix(CONTAINER_PREFIX_DASH) else {
-        return false;
-    };
-    let Some((_, after_id)) = rest.split_once('-') else {
-        return false;
-    };
-    after_id.rsplit_once('-').map_or(after_id, |(_, role)| role) == role_slug
 }
 
 pub fn compact_component(input: &str, fallback: &str) -> String {

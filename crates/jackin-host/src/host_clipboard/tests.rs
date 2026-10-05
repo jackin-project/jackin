@@ -414,6 +414,10 @@ fn linux_clipboard_backend_reports_missing_display_bridge() {
     .expect_err("missing display bridge should explain setup");
 
     assert!(format!("{err:#}").contains("WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"));
+    assert_eq!(
+        err.downcast_ref::<jackin_protocol::attach::ClipboardImageError>(),
+        Some(&jackin_protocol::attach::ClipboardImageError::BackendUnavailable),
+    );
 }
 
 #[test]
@@ -479,4 +483,18 @@ fn linux_clipboard_backend_accepts_any_available_display_tool_pair() {
     // Both servers advertised, only one tool present → still accepted.
     validate_linux_clipboard_backend(true, true, true, false, "Linux host clipboard image reader")
         .expect("both servers with only wl-paste should work");
+}
+
+#[test]
+fn bounded_reader_preserves_typed_io_for_sanitized_spawn_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let missing = root.path().join("missing-clipboard-reader");
+    let error = read_command_stdout_bounded(&missing, std::iter::empty::<&str>(), 10, "image")
+        .expect_err("missing executable must fail");
+    assert_eq!(
+        error.downcast_ref::<jackin_protocol::attach::ClipboardImageError>(),
+        Some(&jackin_protocol::attach::ClipboardImageError::Io)
+    );
+    assert!(format!("{error:#}").contains("process spawn failed"));
+    assert!(!format!("{error:#}").contains(&missing.to_string_lossy().to_string()));
 }

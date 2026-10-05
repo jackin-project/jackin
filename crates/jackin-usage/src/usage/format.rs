@@ -12,11 +12,10 @@
 //! helper directly; tests under `usage/tests.rs` see them through
 //! `super::*` and do not need their own re-exports.
 
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::sync::mpsc::SyncSender;
+use std::time::Duration;
 
 use chrono::{DateTime, Local, TimeZone, Utc};
 
@@ -344,121 +343,90 @@ pub(super) fn run_cli_with_timeout(
     Ok(output.stdout)
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
 pub(super) fn run_cli_with_timeout_full(
     command: &str,
     args: &[&str],
     timeout: Duration,
 ) -> Result<CliOutput, String> {
     let operation = process_telemetry::ChildOperation::begin(command);
-    let Ok(mut child) = Command::new(command)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    else {
-        operation.spawn_failed();
-        return Err("usage command failed to start".to_owned());
-    };
-    let Some(stdout) = child.stdout.take() else {
-        drop(child.kill());
-        drop(child.wait());
-        operation.io_failed();
-        return Err("usage command output unavailable".to_owned());
-    };
-    let Some(stderr) = child.stderr.take() else {
-        drop(child.kill());
-        drop(child.wait());
-        operation.io_failed();
-        return Err("usage command output unavailable".to_owned());
-    };
-    let stdout_reader =
-        jackin_telemetry::spawn::thread_stream("usage.stdout", move || read_process_pipe(stdout));
-    let stderr_reader =
-        jackin_telemetry::spawn::thread_stream("usage.stderr", move || read_process_pipe(stderr));
-    let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let output =
-                    collect_cli_output(command, Some(status), stdout_reader, stderr_reader);
-                match &output {
-                    Ok(output) => operation.complete_status(output.exit_code, output.success),
-                    Err(_) => operation.io_failed(),
-                }
-                return output;
+    let request = jackin_process::ExecRequest::new(command, args)
+        .timeout(timeout)
+        .output_limits(PROCESS_OUTPUT_MAX, PROCESS_OUTPUT_MAX);
+    let output = match jackin_process::exec_sync(&request) {
+        Ok(output) => output,
+        Err(error) => {
+            if error.downcast_ref::<jackin_process::ExecStage>()
+                == Some(&jackin_process::ExecStage::Spawn)
+            {
+                operation.spawn_failed();
+                return Err("usage command failed to start".to_owned());
             }
-            Ok(None) if started.elapsed() >= timeout => {
-                drop(child.kill());
-                drop(child.wait());
-                drop(stdout_reader.join());
-                drop(stderr_reader.join());
-                operation.timed_out();
-                return Err("usage command timed out".to_owned());
-            }
-            Ok(None) => thread::sleep(Duration::from_millis(50)),
-            Err(err) if err.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                drop(stdout_reader.join());
-                drop(stderr_reader.join());
-                operation.io_failed();
-                return Err("usage command status unavailable".to_owned());
-            }
-            Err(_) => {
-                drop(child.kill());
-                drop(child.wait());
-                drop(stdout_reader.join());
-                drop(stderr_reader.join());
-                operation.io_failed();
-                return Err("usage command status failed".to_owned());
-            }
+            operation.io_failed();
+            return Err("usage command output failed".to_owned());
         }
+    };
+    if output.timed_out {
+        operation.timed_out();
+        return Err("usage command timed out".to_owned());
     }
-}
-
-pub(super) fn collect_cli_output(
-    command: &str,
-    status: Option<ExitStatus>,
-    stdout_reader: thread::JoinHandle<Result<String, String>>,
-    stderr_reader: thread::JoinHandle<Result<String, String>>,
-) -> Result<CliOutput, String> {
-    let stdout = stdout_reader
-        .join()
-        .map_err(|_| format!("{command} stdout reader panicked"))?;
-    let stderr = stderr_reader
-        .join()
-        .map_err(|_| format!("{command} stderr reader panicked"))?;
+    let (Ok(stdout), Ok(stderr)) = (
+        String::from_utf8(output.stdout),
+        String::from_utf8(output.stderr),
+    ) else {
+        operation.io_failed();
+        return Err("process output was not UTF-8".to_owned());
+    };
+    operation.complete_status(output.code, output.success);
     Ok(CliOutput {
-        success: status.is_none_or(|status| status.success()),
-        exit_code: status.and_then(|status| status.code()),
-        stdout: stdout?,
-        stderr: stderr?,
+        success: output.success,
+        exit_code: output.code,
+        stdout,
+        stderr,
     })
 }
 
-pub(super) fn read_process_pipe(mut pipe: impl Read) -> Result<String, String> {
-    let mut bytes = Vec::new();
-    let mut chunk = [0_u8; 8192];
-    let mut exceeded = false;
+/// Read one bounded RPC frame at a time. Rendezvous delivery keeps unsolicited
+/// output in the process pipe instead of retaining an unbounded message queue.
+pub(super) fn read_rpc_frames(
+    pipe: impl Read,
+    tx: SyncSender<Result<String, String>>,
+) {
+    let mut reader = BufReader::new(pipe);
     loop {
-        let count = pipe
-            .read(&mut chunk)
-            .map_err(|_| "process output read failed".to_owned())?;
-        if count == 0 {
-            break;
+        let mut bytes = Vec::new();
+        let result = (&mut reader)
+            .take((PROCESS_OUTPUT_MAX + 1) as u64)
+            .read_until(b'\n', &mut bytes)
+            .map_err(|_| "RPC output read failed".to_owned())
+            .and_then(|count| {
+                if count == 0 {
+                    return Ok(None);
+                }
+                if count > PROCESS_OUTPUT_MAX {
+                    return Err("RPC output exceeded limit".to_owned());
+                }
+                if bytes.last() == Some(&b'\n') {
+                    bytes.pop();
+                    if bytes.last() == Some(&b'\r') {
+                        bytes.pop();
+                    }
+                }
+                String::from_utf8(bytes)
+                    .map(Some)
+                    .map_err(|_| "RPC output was not UTF-8".to_owned())
+            });
+        let frame = match result {
+            Ok(Some(frame)) => Ok(frame),
+            Ok(None) => return,
+            Err(error) => Err(error),
+        };
+        let failed = frame.is_err();
+        if tx.send(frame).is_err() || failed {
+            return;
         }
-        let remaining = PROCESS_OUTPUT_MAX.saturating_sub(bytes.len());
-        bytes.extend_from_slice(&chunk[..count.min(remaining)]);
-        exceeded |= count > remaining;
     }
-    if exceeded {
-        return Err("process output exceeded limit".to_owned());
-    }
-    String::from_utf8(bytes).map_err(|_| "process output was not UTF-8".to_owned())
 }
+
 pub(super) fn dollar_amounts(text: &str) -> Vec<f64> {
     let mut values = Vec::new();
     let mut rest = text;
@@ -660,6 +628,58 @@ fn usage_money_cap_segment(
     }
 }
 
+fn count_quota_segments(counts: &jackin_protocol::control::CountQuota) -> [String; 2] {
+    // Exact counts are independent observations; never derive remaining by
+    // subtraction or recover quantities from formatted display labels.
+    let usage = match (counts.used, counts.limit) {
+        (Some(used), Some(limit)) => format!("{used} / {limit} requests used"),
+        (Some(used), None) => format!("{used} requests used; limit unknown"),
+        (None, Some(limit)) => format!("{limit} requests limit; usage unknown"),
+        (None, None) => "Request usage and limit unknown".to_owned(),
+    };
+    let remaining = counts.remaining.map_or_else(
+        || "Remaining requests unknown".to_owned(),
+        |remaining| format!("{remaining} requests left"),
+    );
+    [usage, remaining]
+}
+
+/// Shared exact count summary for canonical, Console, native and Capsule rows.
+#[must_use]
+pub fn usage_count_quota_summary(counts: &jackin_protocol::control::CountQuota) -> String {
+    count_quota_segments(counts).join(" · ")
+}
+
+/// Exact monetary observations; a missing cap is unknown rather than unlimited.
+#[must_use]
+pub fn usage_money_quota_summary(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
+    usage_money_amounts_summary(
+        bucket.used_money.as_ref(),
+        bucket.limit_money.as_ref(),
+        bucket.remaining_money.as_ref(),
+    )
+}
+
+/// Format the same exact observations from an account DTO or quota bucket.
+#[must_use]
+pub fn usage_money_amounts_summary(
+    used: Option<&jackin_protocol::control::Money>,
+    limit: Option<&jackin_protocol::control::Money>,
+    remaining: Option<&jackin_protocol::control::Money>,
+) -> String {
+    let usage = match (used, limit) {
+        (Some(used), Some(limit)) => format!("{used} / {limit} spent"),
+        (Some(used), None) => format!("{used} spent · Cap unknown"),
+        (None, Some(limit)) => format!("Cap {limit} · Spending unknown"),
+        (None, None) => "Spending and cap unknown".to_owned(),
+    };
+    let remaining = remaining.cloned().or_else(|| limit?.checked_sub(used?));
+    match remaining {
+        Some(remaining) => format!("{usage} · {remaining} remaining"),
+        None => format!("{usage} · Remaining allowance unknown"),
+    }
+}
+
 /// Build the shared limits-only presentation for one quota bucket. The segment
 /// choice/order matches the Capsule usage dialog exactly; the Capsule meter is
 /// prepended by the caller from [`UsageBucketPresentation::meter_percent`].
@@ -673,7 +693,43 @@ pub fn usage_bucket_presentation(
     let mut remaining_label = None;
     let mut meter_percent = None;
 
-    if bucket.status_slot == Some(StatusSlot::Spend) {
+    if let Some(counts) = &bucket.count_quota {
+        let [usage, remaining] = count_quota_segments(counts);
+        remaining_label = Some(remaining.clone());
+        segments.extend([usage, remaining]);
+        meter_percent = counts.remaining_percent();
+        if let Some(pace) = &bucket.pace_label {
+            segments.push(pace.clone());
+        }
+        if let Some(reset) = &bucket.reset_label {
+            segments.push(reset.clone());
+        }
+        if bucket.status != UsageSnapshotStatus::Fresh {
+            segments.push(usage_display_status_label(bucket.status).to_owned());
+        }
+    } else if bucket.used_money.is_some()
+        || bucket.limit_money.is_some()
+        || bucket.remaining_money.is_some()
+    {
+        let remaining = bucket.remaining_money.clone().or_else(|| {
+            bucket
+                .limit_money
+                .as_ref()?
+                .checked_sub(bucket.used_money.as_ref()?)
+        });
+        meter_percent = remaining
+            .as_ref()
+            .zip(bucket.limit_money.as_ref())
+            .and_then(|(remaining, cap)| remaining.remaining_percent_of(cap));
+        remaining_label = remaining.map(|remaining| format!("{remaining} remaining"));
+        segments.push(usage_money_quota_summary(bucket));
+        if let Some(reset) = &bucket.reset_label {
+            segments.push(reset.clone());
+        }
+        if bucket.status != UsageSnapshotStatus::Fresh {
+            segments.push(usage_display_status_label(bucket.status).to_owned());
+        }
+    } else if bucket.status_slot == Some(StatusSlot::Spend) {
         if let Some(remaining) = bucket.remaining_percent {
             // A remaining percent saturates at zero, so money over-100%
             // overage is invisible to it; the structured money ratio recovers
@@ -695,7 +751,7 @@ pub fn usage_bucket_presentation(
         if let Some(cap) = usage_money_cap_segment(
             bucket.used_label.as_deref(),
             bucket.limit_label.as_deref(),
-            "Monthly cap",
+            "Cap",
         ) {
             segments.push(cap);
         }

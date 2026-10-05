@@ -41,8 +41,11 @@ mod versions;
 
 pub use accounts::discovery::{
     CredentialEvidence, DiscoveredAccount, DiscoveryError, DiscoveryIssue, DiscoveryReport,
-    discover_account_directory, discover_default_accounts, discover_environment_accounts,
-    discover_environment_oauth_accounts,
+    KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION, KimiRuntimeAuthSlot, amp_credentials_path,
+    amp_credentials_path_from_presence, discover_account_directory, discover_default_accounts,
+    discover_environment_accounts, discover_environment_oauth_accounts,
+    kimi_credentials_value_has_access_token, kimi_runtime_auth_config, kimi_runtime_auth_slot,
+    kimi_runtime_credential_relative_path,
 };
 pub use accounts::zshrc::{
     DirectoryCandidate, ModelProfile, OpReadCandidate, UnresolvedEntry, UnresolvedKind,

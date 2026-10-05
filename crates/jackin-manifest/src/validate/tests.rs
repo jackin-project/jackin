@@ -1027,3 +1027,41 @@ fn prop_unknown_fields_rejected() {
         );
     });
 }
+
+#[test]
+fn every_registry_agent_has_a_valid_native_role_table() {
+    for agent in jackin_core::Agent::ALL {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            format!(
+                "version = \"v1alpha5\"\ndockerfile = \"Dockerfile\"\nagents = [\"{}\"]\n[{}]\n",
+                agent.slug(),
+                agent.slug()
+            ),
+        )
+        .unwrap();
+        let manifest = load_role_manifest(temp.path()).unwrap();
+        assert!(
+            manifest.has_agent_config(*agent),
+            "{} must have native role configuration",
+            agent.slug()
+        );
+        assert_eq!(manifest.supported_agents(), vec![*agent]);
+        assert!(validate_agent_consistency(&manifest).unwrap().is_empty());
+    }
+}
+
+#[test]
+fn native_role_tables_reject_unsupported_model_overrides() {
+    for slug in ["antigravity", "gemini", "cursor", "muse", "omp", "hermes"] {
+        let temp = tempdir().unwrap();
+        std::fs::write(temp.path().join("jackin.role.toml"), format!(
+            "version = \"v1alpha5\"\ndockerfile = \"Dockerfile\"\nagents = [\"{slug}\"]\n[{slug}]\nmodel = \"unsupported\"\n"
+        )).unwrap();
+        assert!(
+            load_role_manifest(temp.path()).is_err(),
+            "{slug} must reject unsupported role overrides"
+        );
+    }
+}

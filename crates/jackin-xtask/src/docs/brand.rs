@@ -10,7 +10,8 @@
 //!
 //! | Tree | Policy |
 //! |---|---|
-//! | Root `*.md` | include (non-recursive) |
+//! | Root documents registered in `ROOT_PROSE_DOCS` | include |
+//! | Unregistered root Markdown | exclude — operational inputs are not published prose |
 //! | `crates/*/README.md`, `crates/*/AGENTS.md`, `crates/AGENTS.md` | include |
 //! | `docs/content/**` (`*.md`/`*.mdx`) | include |
 //! | `roadmap/**/*.md` | include |
@@ -167,11 +168,12 @@ fn strip_urls(text: &str) -> String {
 }
 
 fn collect_prose_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in crate::fs_util::read_dir_sorted(root)? {
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-            out.push(path);
+    for doc in super::ROOT_PROSE_DOCS {
+        let path = root.join(doc);
+        if !path.is_file() {
+            bail!("owned root prose document missing: {}", path.display());
         }
+        out.push(path);
     }
     let crates_dir = root.join("crates");
     if crates_dir.is_dir() {

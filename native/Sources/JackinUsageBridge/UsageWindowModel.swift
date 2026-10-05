@@ -123,7 +123,7 @@ public struct UsageWindowModel: Equatable, Sendable {
     /// Selected provider content (nil for Overview / empty).
     public struct Content: Equatable, Sendable {
         public let surfaceId: String
-        /// Provider display name for detail head (from glance / surface — Rust only).
+        /// Provider display name for detail head (from Rust identity only).
         public let displayLabel: String
         /// Rust-owned icon key for the detail-head logo plate.
         public let iconKey: String?
@@ -156,16 +156,17 @@ public struct UsageWindowModel: Equatable, Sendable {
             self.selectedAccountKey = selectedAccountKey
         }
 
-        /// Selected account for detail-head subtitle (multi-account); else first.
+        /// Selected account for detail-head subtitle (multi-account).
         public var headAccount: PresentationStore.AccountRow? {
-            selectedAccountKey.flatMap { key in
-                accounts.first(where: { $0.accountKey == key })
-            } ?? accounts.first(where: \.selected) ?? accounts.first
+            if let selectedAccountKey {
+                return accounts.first(where: { $0.accountKey == selectedAccountKey })
+            }
+            return accounts.first(where: \.selected)
         }
     }
 
-    /// Rust-owned sidebar/Overview rows in canonical (Capsule tab) order.
-    public let sidebar: [PresentationStore.GlanceProviderRow]
+    /// Full Rust-owned provider groups in canonical inventory order.
+    public let sidebar: [PresentationStore.ProviderGroupRow]
     public let selection: Selection
     public let content: Content?
     /// No providers detected → the empty-state hint.
@@ -175,38 +176,43 @@ public struct UsageWindowModel: Equatable, Sendable {
     public static let emptyHint = "no agent credentials found"
 
     public init(
-        glanceRows: [PresentationStore.GlanceProviderRow],
+        providerGroups: [PresentationStore.ProviderGroupRow],
         surfaces: [PresentationStore.SurfaceRow],
         accounts: [PresentationStore.AccountRow],
-        providerGroups: [PresentationStore.ProviderGroupRow] = [],
         selection surfaceId: String?,
         accountSelection: String? = nil
     ) {
-        sidebar = glanceRows
-        isEmpty = glanceRows.isEmpty
-        // An invalid/disabled incoming selection falls back to Overview; a valid
-        // one resolves to that surface's Rust detail presentation + account rows.
+        sidebar = providerGroups
+        isEmpty = providerGroups.isEmpty
+        // An invalid incoming selection, including a removed account
+        // or an account inventory with no selected row, falls back to
+        // Overview. A valid one resolves to that surface's Rust detail
+        // presentation + account rows. Never use the first sibling as a
+        // replacement for an explicit account intent.
         if let surfaceId,
-            let surface = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
+            let group = providerGroups.first(where: { $0.surfaceId == surfaceId }),
+            let surface = surfaces.first(where: { $0.id == surfaceId }),
+            let identity = surface.identity,
+            accountSelection.map({ key in
+                accounts.contains {
+                    $0.surfaceId == surfaceId && $0.accountKey == key && $0.selected
+                }
+            })
+                ?? (!accounts.contains { $0.surfaceId == surfaceId }
+                    || accounts.contains { $0.surfaceId == surfaceId && $0.selected })
         {
             selection = .provider(surfaceId)
-            let glance = glanceRows.first(where: { $0.surfaceId == surfaceId })
-            let group = providerGroups.first(where: { $0.surfaceId == surfaceId })
-            if let identity = surface.identity {
-                content = Content(
-                    surfaceId: surfaceId,
-                    displayLabel: identity.providerTitle,
-                    iconKey: group?.iconKey ?? glance?.iconKey,
-                    fallbackGlyph: group?.fallbackGlyph ?? glance?.fallbackGlyph,
-                    usageURL: group?.usageURL ?? glance?.usageURL,
-                    identity: identity,
-                    detail: surface.detailPresentation,
-                    accounts: accounts.filter { $0.surfaceId == surfaceId },
-                    selectedAccountKey: accountSelection
-                )
-            } else {
-                content = nil
-            }
+            content = Content(
+                surfaceId: surfaceId,
+                displayLabel: identity.providerTitle,
+                iconKey: group.iconKey,
+                fallbackGlyph: group.fallbackGlyph,
+                usageURL: group.usageURL,
+                identity: identity,
+                detail: surface.detailPresentation,
+                accounts: accounts.filter { $0.surfaceId == surfaceId },
+                selectedAccountKey: accountSelection
+            )
         } else {
             selection = .overview
             content = nil

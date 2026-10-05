@@ -12,6 +12,98 @@ use tokio::{
 use super::{ClientFrame, handle_attach_client, initial_spawn_requests};
 use crate::protocol::attach::SpawnRequest;
 
+async fn exec_handshake() -> (
+    UnixStream,
+    tokio::sync::oneshot::Sender<super::ControlResponse>,
+    tokio::task::JoinHandle<jackin_telemetry::spawn::DetachedCompletion>,
+    Arc<Semaphore>,
+) {
+    let (mut server, mut client) = UnixStream::pair().expect("exec socket pair");
+    let peer_uid = server.peer_cred().expect("peer credentials").uid();
+    let request = jackin_protocol::control::ControlRequest {
+        ctx: jackin_protocol::TelemetryContext::v1(),
+        session_capability: None,
+        msg: jackin_protocol::control::ClientMsg::ExecCommand {
+            command: "approved-command".to_owned(),
+            args: vec![],
+        },
+    };
+    client
+        .write_all(&jackin_protocol::control::frame(&request))
+        .await
+        .expect("exec request");
+    let first_tag = server.read_u8().await.expect("dispatcher tag");
+    let (control_tx, mut control_rx) = mpsc::unbounded_channel();
+    let semaphore = Arc::new(Semaphore::new(1));
+    let permit = Arc::clone(&semaphore)
+        .acquire_owned()
+        .await
+        .expect("permit");
+    let handshake = tokio::spawn(super::perform_control_handshake(
+        server,
+        first_tag,
+        permit,
+        peer_uid,
+        control_tx,
+        std::time::Duration::from_millis(5),
+    ));
+    let dispatched = control_rx.recv().await.expect("exec dispatch");
+    let super::ControlReply::Once(reply_tx) = dispatched.reply else {
+        panic!("exec oneshot");
+    };
+    (client, reply_tx, handshake, semaphore)
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn exec_reply_lives_past_generic_rpc_deadline() {
+    let (mut client, reply_tx, handshake, semaphore) = exec_handshake().await;
+    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    assert!(
+        !reply_tx.is_closed(),
+        "EXEC must survive generic reply deadline"
+    );
+    assert_eq!(
+        semaphore.available_permits(),
+        0,
+        "live EXEC retains admission permit"
+    );
+    reply_tx
+        .send(super::ControlResponse {
+            msg: jackin_protocol::control::ServerMsg::ExecDenied {
+                reason: "test completion".to_owned(),
+            },
+            operation: None,
+            outcome: jackin_telemetry::schema::enums::OutcomeValue::Cancellation,
+            error_type: None,
+        })
+        .expect("complete long approval");
+    let mut response = Vec::new();
+    client
+        .read_to_end(&mut response)
+        .await
+        .expect("receive completion");
+    assert!(!response.is_empty());
+    assert_eq!(
+        handshake.await.expect("handshake task").outcome,
+        jackin_telemetry::schema::enums::OutcomeValue::Success
+    );
+    assert_eq!(semaphore.available_permits(), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn exec_peer_departure_closes_deferred_reply_and_releases_permit() {
+    let (client, mut reply_tx, handshake, semaphore) = exec_handshake().await;
+    drop(client);
+    tokio::time::timeout(std::time::Duration::from_secs(1), reply_tx.closed())
+        .await
+        .expect("requester departure cancels approval");
+    assert_eq!(
+        handshake.await.expect("handshake task").outcome,
+        jackin_telemetry::schema::enums::OutcomeValue::Cancellation
+    );
+    assert_eq!(semaphore.available_permits(), 1);
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn control_socket_exports_client_parent_server_and_completes_after_reply_write() {
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);

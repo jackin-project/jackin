@@ -24,10 +24,50 @@
 use super::*;
 use serde::Deserialize;
 
+const KIMI_PROFILE_USAGE_URL: &str = "https://api.kimi.com/coding/v1/usages";
+
 pub(crate) fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
     let has_local = home_path(".kimi-code").exists() || home_path(".kimi").exists();
     let has_token = token.is_some_and(|value| !value.is_empty());
-    let (provider_usage, provider_error) = split_fetch(token.map(fetch_kimi_usage));
+    kimi_snapshot_from_result(
+        agent,
+        has_token,
+        has_local,
+        token.map(fetch_kimi_usage),
+        false,
+        now,
+    )
+}
+
+pub(crate) fn kimi_profile_snapshot(agent: &str, token: &str, now: i64) -> FocusedUsageView {
+    kimi_profile_snapshot_with_fetch(agent, token, now, fetch_kimi_usage_at_url)
+}
+
+fn kimi_profile_snapshot_with_fetch(
+    agent: &str,
+    token: &str,
+    now: i64,
+    fetch: impl FnOnce(&str, &str) -> Result<KimiUsageResponse, String>,
+) -> FocusedUsageView {
+    kimi_snapshot_from_result(
+        agent,
+        !token.is_empty(),
+        false,
+        Some(fetch(token, KIMI_PROFILE_USAGE_URL)),
+        true,
+        now,
+    )
+}
+
+fn kimi_snapshot_from_result(
+    agent: &str,
+    has_token: bool,
+    has_local: bool,
+    result: Option<Result<KimiUsageResponse, String>>,
+    captured_profile: bool,
+    now: i64,
+) -> FocusedUsageView {
+    let (provider_usage, provider_error) = split_fetch(result);
     let (status, source, confidence) = provider_outcome(ProviderPresence {
         has_data: provider_usage.is_some(),
         has_secret: has_token || has_local,
@@ -77,7 +117,9 @@ pub(crate) fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> Focus
         username,
         plan_label,
         credential_origin: Some(
-            if has_token {
+            if captured_profile {
+                "Token · configured profile"
+            } else if has_token {
                 "API token · env KIMI_CODE_API_KEY"
             } else if has_local {
                 "API key · ~/.kimi-code"
@@ -582,7 +624,10 @@ pub(crate) fn kimi_window_seconds(label: &str, window: Option<&KimiWindow>) -> O
 }
 
 pub(crate) fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
-    let url = resolve_kimi_usages_url();
+    fetch_kimi_usage_at_url(token, &resolve_kimi_usages_url())
+}
+
+fn fetch_kimi_usage_at_url(token: &str, url: &str) -> Result<KimiUsageResponse, String> {
     provider_request(
         jackin_telemetry::schema::enums::ProviderName::Kimi,
         "GET",
@@ -590,7 +635,7 @@ pub(crate) fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String>
         || {
             let client = provider_http_client()?;
             let response = client
-                .get(&url)
+                .get(url)
                 .bearer_auth(token)
                 .header(reqwest::header::ACCEPT, "application/json")
                 .header(reqwest::header::USER_AGENT, "jackin-capsule/usage")
@@ -619,9 +664,8 @@ pub(crate) fn resolve_kimi_usages_url() -> String {
 }
 
 pub(crate) fn kimi_usages_url_from_base(base: Option<&str>) -> String {
-    const DEFAULT: &str = "https://api.kimi.com/coding/v1/usages";
     let Some(base) = base.map(str::trim).filter(|value| !value.is_empty()) else {
-        return DEFAULT.to_owned();
+        return KIMI_PROFILE_USAGE_URL.to_owned();
     };
     let normalized = normalize_url_or_host(base, "");
     let trimmed = normalized.trim_end_matches('/');

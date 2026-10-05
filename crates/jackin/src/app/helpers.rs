@@ -25,11 +25,15 @@ pub(super) fn emit_mount_heal_notices(resolved: &jackin_config::ResolvedWorkspac
 }
 
 pub(super) async fn resolve_role_to_container(
+    paths: &JackinPaths,
     class: &RoleSelector,
     docker: &impl DockerApi,
 ) -> Result<String> {
-    let candidates =
-        runtime::matching_family(class, &runtime::list_managed_role_names(docker).await?);
+    let candidates = runtime::matching_family(
+        paths,
+        class,
+        &runtime::list_managed_role_names(docker).await?,
+    )?;
     match candidates.len() {
         1 => Ok(candidates.into_iter().next().unwrap()),
         0 => anyhow::bail!("no managed container found for role `{}`", class.key()),

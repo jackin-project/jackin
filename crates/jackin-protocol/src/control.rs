@@ -20,6 +20,40 @@ use serde::{Deserialize, Serialize};
 use crate::TelemetryContext;
 use crate::agent_status::AgentStatusReport;
 
+/// Membership publication from the authenticated container's scoped usage relay.
+/// Host consumers bind its namespace to the admitted immutable container handle.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub enum UsageAccountMembershipV1 {
+    /// Valid, current issuer publication; an empty account set is authoritative.
+    Current {
+        /// Complete scoped canonical publication and its issuer generations.
+        projection: Box<crate::usage_broker::UsageProjectionV2>,
+    },
+    /// No currently accepted publication; historical rows remain evidence only.
+    Unavailable,
+    /// Scoped issuer explicitly revoked the prior publication authority.
+    Revoked,
+}
+
+impl UsageAccountMembershipV1 {
+    /// Require complete issuer provenance before a publication grants current membership.
+    /// Provisional or exhausted generations cannot grant current membership.
+    pub fn validate_current_projection(
+        projection: &crate::usage_broker::UsageProjectionV2,
+    ) -> Result<(), String> {
+        projection.validate()?;
+        if [&projection.projection_id, &projection.discovery_revision, &projection.broker_instance_id]
+            .into_iter().any(|value| value.trim().is_empty() || value.chars().any(char::is_control))
+            || projection.broker_generation == 0
+            || projection.broker_generation == u64::MAX
+        {
+            return Err("current usage membership issuer provenance is incomplete".to_owned());
+        }
+        Ok(())
+    }
+}
+
 /// Versioned request envelope for every capsule control RPC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControlRequest {
@@ -213,10 +247,10 @@ pub enum ServerMsg {
         /// Focused-pane usage/quota view.
         usage: Box<FocusedUsageView>,
     },
-    /// Account/quota snapshots known to the daemon cache.
+    /// Current membership accepted from this container's scoped usage issuer.
     UsageAccounts {
-        /// `accounts` field.
-        accounts: Vec<AccountUsageSnapshotView>,
+        /// Membership availability; historical quota rows cannot grant membership.
+        membership: UsageAccountMembershipV1,
     },
     /// Result of a `jackin-exec` invocation: the child's exit code and its
     /// (capped, secret-redacted) stdout/stderr. `redacted_count` reports how
@@ -530,6 +564,10 @@ pub struct TokenUsageSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// `AccountUsageSnapshotView` protocol type.
 pub struct AccountUsageSnapshotView {
+    /// Canonical account/provider binding; None denotes an unbound diagnostic.
+    pub account_identity: Option<UsageAccountIdentity>,
+    /// Catalog-authenticated logical evidence retained across stored history.
+    pub canonical_identity: Option<UsageCanonicalAccountIdentity>,
     /// `provider` field.
     pub provider: String,
     /// `account_label` field.
@@ -548,6 +586,18 @@ pub struct AccountUsageSnapshotView {
     pub limit_amount: Option<i64>,
     /// `limit_unit` field.
     pub limit_unit: Option<String>,
+    /// Exact request quota; independent of the signed monetary amount fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_quota: Option<CountQuota>,
+    /// Exact consumed monetary amount with its original denomination and scale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_money: Option<Money>,
+    /// Exact monetary cap; missing means the cap is unknown or absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_money: Option<Money>,
+    /// Exact remaining monetary amount, including negative overage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remaining_money: Option<Money>,
     /// `resets_at` field.
     pub resets_at: Option<i64>,
     /// `fetched_at` field.
@@ -560,9 +610,75 @@ pub struct AccountUsageSnapshotView {
     pub last_error: Option<String>,
 }
 
+/// Broker refresh route and accepted source revision proof, distinct from logical account identity.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UsageAccountIdentity {
+    /// Opaque host broker refresh route.
+    pub account_id: String,
+    /// Provider surface owning this account's quota.
+    pub surface_id: String,
+    /// Opaque accepted catalog source revision backing this observation.
+    /// Absent routes provide no revision proof for source-scoped cache reuse.
+    pub source_revision: Option<String>,
+}
+
+/// Authenticated logical account evidence, independent of routing revisions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum UsageCanonicalAccountSubject {
+    /// Stable provider-issued account identifier.
+    ProviderId(String),
+    /// Provider-authenticated stable non-secret handle.
+    ProviderStableHandle(String),
+    /// Stable opaque source identity when no provider subject exists.
+    SourceCapability(String),
+}
+
+/// Catalog-authenticated logical identity. Display labels and quota confidence
+/// never establish this evidence.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UsageCanonicalAccountIdentity {
+    /// Provider surface owning the logical account.
+    pub surface_id: String,
+    /// Exact authenticated provider or source subject.
+    pub subject: UsageCanonicalAccountSubject,
+}
+
+impl UsageCanonicalAccountIdentity {
+    /// Reject missing evidence without changing authenticated subject bytes.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.surface_id.trim().is_empty() {
+            return Err("canonical account identity has empty surface".into());
+        }
+        let value = match &self.subject {
+            UsageCanonicalAccountSubject::ProviderId(value)
+            | UsageCanonicalAccountSubject::ProviderStableHandle(value)
+            | UsageCanonicalAccountSubject::SourceCapability(value) => value,
+        };
+        if value.trim().is_empty() {
+            return Err("canonical account identity has empty subject".into());
+        }
+        Ok(())
+    }
+}
+
+impl From<&crate::usage_broker::UsageAccountCapability> for UsageAccountIdentity {
+    fn from(capability: &crate::usage_broker::UsageAccountCapability) -> Self {
+        Self {
+            account_id: capability.account_id.clone(),
+            surface_id: capability.surface_id.clone(),
+            source_revision: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// `FocusedUsageView` protocol type.
 pub struct FocusedUsageView {
+    /// Canonical account binding. None denotes an unbound provider diagnostic.
+    pub account_identity: Option<UsageAccountIdentity>,
+    /// Logical evidence stamped from the validated catalog, never a collector.
+    pub canonical_identity: Option<UsageCanonicalAccountIdentity>,
     /// `focused_agent` field.
     pub focused_agent: Option<String>,
     /// `focused_provider` field.
@@ -624,6 +740,8 @@ impl FocusedUsageView {
     pub fn unavailable(reason: impl Into<String>, now_epoch: i64) -> Self {
         let reason = reason.into();
         Self {
+            account_identity: None,
+            canonical_identity: None,
             focused_agent: None,
             focused_provider: None,
             account: FocusedAccountHeader {
@@ -668,7 +786,8 @@ impl FocusedUsageView {
     /// `Unavailable`, `None` source/confidence, empty buckets, empty account
     /// label, no username/plan/credential origin, and the exact `"refreshing"`
     /// status-bar/error and `"Refreshing"` updated strings. Surface decoration
-    /// of `focused_provider`/`focused_agent`/`tabs`/`provider_label` is allowed
+    /// of canonical `account_identity`, `focused_provider`, `focused_agent`,
+    /// `tabs`, and `provider_label` is allowed
     /// and does not make this false. A Fresh/Stale/Error view, any view carrying
     /// a bucket/account/credential, or a single matching display string is
     /// false. Host DTO code calls this so no looser host/Swift copy can drift.
@@ -735,74 +854,231 @@ pub enum StatusSlot {
 /// a bare `f64 + currency` representation invited.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Money {
-    /// Amount in the currency's minor unit (e.g. cents). `5331` with
-    /// `exponent = 2` is `53.31`.
+    /// Exact signed decimal coefficient. `5331` with `exponent = 2` is `53.31`;
+    /// `1` with `exponent = 3` is `0.001`, including subcent USD allowances.
     pub amount_minor: i64,
     /// ISO-4217 code (`"USD"`, `"SGD"`) or a non-standard credits label.
     pub currency: String,
-    /// Decimal places: minor = major × 10^exponent. Almost always `2`.
+    /// Decimal scale: value = `amount_minor` × 10^-exponent. Independent of
+    /// currency denomination; different scales can express the same amount.
     pub exponent: u8,
 }
 
 impl Money {
+    /// Construct an exact scaled amount.
     #[must_use]
-    /// `new` associated function.
     pub fn new(amount_minor: i64, currency: impl Into<String>, exponent: u8) -> Self {
-        Self {
-            amount_minor,
-            currency: currency.into(),
-            exponent,
+        Self { amount_minor, currency: currency.into(), exponent }
+    }
+
+    /// Bare compact amount. A nonzero amount never becomes a displayed zero.
+    #[must_use]
+    pub fn format_compact_amount(&self) -> String {
+        let rounded = self.rounded_magnitude(0);
+        if rounded == 0 && self.amount_minor != 0 {
+            if self.exponent >= 8 {
+                let (coefficient, exponent) = self.normalized_coefficient();
+                format!("{coefficient}e-{exponent}")
+            } else {
+                self.amount_with_precision(usize::from(self.exponent))
+            }
+        } else {
+            self.amount_with_precision(0)
         }
     }
 
-    /// Major-unit value (e.g. `53.31`). Pure scale conversion; no rounding loss
-    /// for the `<= 2` exponents these APIs use.
-    #[must_use]
-    pub fn major(&self) -> f64 {
-        self.amount_minor as f64 / 10f64.powi(i32::from(self.exponent))
-    }
-
-    /// Compact label for the width-constrained status bar: no minor units
-    /// (`$53`, `SGD 78`), rounded to the nearest major unit. The full-precision
-    /// form is the [`Display`](std::fmt::Display) impl.
+    /// Compact amount with its currency label, preserving nonzero fractions.
     #[must_use]
     pub fn format_compact(&self) -> String {
-        self.format_with_precision(0)
+        self.decorate_amount(&self.format_compact_amount())
     }
 
-    /// Bare major-unit amount, rounded, with no currency (`260`). Used for the
-    /// limit side of a `<used> of <limit>` headline where the currency is
-    /// already shown on the used side.
+    /// Exact numerical ordering, including every u8 exponent, when currencies match.
     #[must_use]
-    pub fn major_amount(&self) -> i64 {
-        self.major().round() as i64
+    pub fn exact_cmp(&self, other: &Money) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+        if self.currency != other.currency { return None; }
+        let sign = self.amount_minor.signum().cmp(&other.amount_minor.signum());
+        if sign != Ordering::Equal { return Some(sign); }
+        if self.amount_minor == 0 { return Some(Ordering::Equal); }
+        let exponent = self.exponent.max(other.exponent);
+        let mut left = self.amount_minor.unsigned_abs().to_string();
+        let mut right = other.amount_minor.unsigned_abs().to_string();
+        left.extend(std::iter::repeat_n('0', usize::from(exponent - self.exponent)));
+        right.extend(std::iter::repeat_n('0', usize::from(exponent - other.exponent)));
+        let magnitude = left.len().cmp(&right.len()).then_with(|| left.cmp(&right));
+        Some(if self.amount_minor < 0 { magnitude.reverse() } else { magnitude })
     }
 
-    /// Raw used percentage of `self` against `cap`, unclamped so over-100%
-    /// overage survives. Checked math: incompatible denominations, a
-    /// non-positive cap, or a failed division yield `None` instead of a
-    /// wrapped or fabricated value. The single money-ratio rule shared by the
-    /// canonical projection and the capsule bucket presentation, so both
-    /// surfaces recover the same overage magnitude.
+    /// Compare the exact ratio `self / cap * 100` with a percentage threshold.
+    /// Currency mismatch or a nonpositive cap has no defined quota ratio.
     #[must_use]
-    pub fn raw_percent_of(&self, cap: &Money) -> Option<i32> {
-        if self.currency != cap.currency || self.exponent != cap.exponent || cap.amount_minor <= 0 {
+    pub fn percent_cmp(&self, cap: &Money, percent: u8) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+        if self.currency != cap.currency || cap.amount_minor <= 0 {
             return None;
         }
-        let scaled = self.amount_minor.saturating_mul(100);
-        let raw = scaled.checked_div(cap.amount_minor)?;
-        Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
+        let left_coefficient = i128::from(self.amount_minor) * 100;
+        let right_coefficient = i128::from(cap.amount_minor) * i128::from(percent);
+        let sign = left_coefficient.signum().cmp(&right_coefficient.signum());
+        if sign != Ordering::Equal {
+            return Some(sign);
+        }
+        if left_coefficient == 0 {
+            return Some(Ordering::Equal);
+        }
+        let exponent = self.exponent.max(cap.exponent);
+        let mut left = left_coefficient.unsigned_abs().to_string();
+        let mut right = right_coefficient.unsigned_abs().to_string();
+        left.extend(std::iter::repeat_n('0', usize::from(exponent - self.exponent)));
+        right.extend(std::iter::repeat_n('0', usize::from(exponent - cap.exponent)));
+        let magnitude = left.len().cmp(&right.len()).then_with(|| left.cmp(&right));
+        Some(if left_coefficient < 0 { magnitude.reverse() } else { magnitude })
     }
 
-    fn format_with_precision(&self, prec: usize) -> String {
-        let value = self.major();
-        match self.currency.as_str() {
-            "USD" => format!("${value:.prec$}"),
-            code if code.len() == 3 && code.chars().all(|c| c.is_ascii_uppercase()) => {
-                format!("{code} {value:.prec$}")
-            }
-            other => format!("{value:.prec$} {other}"),
+    /// Exact sum, allowing different decimal scales.
+    /// The result removes decimal trailing zeros; zero has exponent zero.
+    /// Returns `None` if currencies differ, scale alignment or arithmetic
+    /// overflows `i128`, or the normalized result coefficient does not fit `i64`.
+    #[must_use]
+    pub fn checked_add(&self, other: &Money) -> Option<Money> {
+        self.checked_combine(other, false)
+    }
+
+    /// Exact difference `self - other`, allowing different decimal scales.
+    /// The result removes decimal trailing zeros; zero has exponent zero.
+    /// Returns `None` if currencies differ, scale alignment or arithmetic
+    /// overflows `i128`, or the normalized result coefficient does not fit `i64`.
+    #[must_use]
+    pub fn checked_sub(&self, other: &Money) -> Option<Money> {
+        self.checked_combine(other, true)
+    }
+
+    fn checked_combine(&self, other: &Money, subtract: bool) -> Option<Money> {
+        if self.currency != other.currency { return None; }
+        let (left, left_exp) = self.normalized_coefficient();
+        let (right, right_exp) = other.normalized_coefficient();
+        let mut exponent = left_exp.max(right_exp);
+        let align = |amount: i64, source_exp: u8| -> Option<i128> {
+            if amount == 0 { return Some(0); }
+            i128::from(amount).checked_mul(10_i128.checked_pow(u32::from(exponent - source_exp))?)
+        };
+        let left = align(left, left_exp)?;
+        let right = align(right, right_exp)?;
+        let mut amount = if subtract { left.checked_sub(right)? } else { left.checked_add(right)? };
+        if amount == 0 {
+            return Some(Money::new(0, self.currency.clone(), 0));
         }
+        while amount != 0 && exponent > 0 && amount % 10 == 0 {
+            amount /= 10;
+            exponent -= 1;
+        }
+        Some(Money::new(i64::try_from(amount).ok()?, self.currency.clone(), exponent))
+    }
+
+    fn normalized_coefficient(&self) -> (i64, u8) {
+        if self.amount_minor == 0 { return (0, 0); }
+        let mut coefficient = self.amount_minor;
+        let mut exponent = self.exponent;
+        while coefficient != 0 && exponent > 0 && coefficient % 10 == 0 {
+            coefficient /= 10;
+            exponent -= 1;
+        }
+        (coefficient, exponent)
+    }
+
+    /// Exact truncated percentage. Currency mismatch, nonpositive cap, or a
+    /// result outside i32 returns None; no fabricated saturated raw value.
+    #[must_use]
+    pub fn raw_percent_of(&self, cap: &Money) -> Option<i32> {
+        if self.currency != cap.currency || cap.amount_minor <= 0 { return None; }
+        let numerator = i128::from(self.amount_minor).abs() * 100;
+        let scale = i16::from(cap.exponent) - i16::from(self.exponent);
+        let negative = self.amount_minor < 0;
+        let largest = if negative { i128::from(i32::MAX) + 1 } else { i128::from(i32::MAX) };
+        let quotient = if scale >= 0 {
+            // Long division is bounded by 276 decimal digits. Its remainder
+            // stays below a positive i64 divisor, so multiplying it by ten is safe.
+            let mut digits = numerator.to_string();
+            let trailing_zeroes = usize::try_from(scale).ok()?;
+            digits.extend(std::iter::repeat_n('0', trailing_zeroes));
+            let divisor = i128::from(cap.amount_minor);
+            let mut remainder = 0_i128;
+            let mut quotient = 0_i128;
+            for digit in digits.bytes() {
+                remainder = remainder * 10 + i128::from(digit - b'0');
+                quotient = quotient * 10 + remainder / divisor;
+                remainder %= divisor;
+                if quotient > largest { return None; }
+            }
+            quotient
+        } else {
+            let denominator_digits = cap.amount_minor.to_string().len() + usize::from(scale.unsigned_abs());
+            if denominator_digits > numerator.to_string().len() {
+                0
+            } else {
+                let denominator = (i128::from(cap.amount_minor)).checked_mul(10_i128.checked_pow(u32::from(scale.unsigned_abs()))?)?;
+                numerator / denominator
+            }
+        };
+        let signed = if negative { -quotient } else { quotient };
+        i32::try_from(signed).ok()
+    }
+
+    /// Remaining meter geometry from exact amounts. Zero geometry does not
+    /// establish exhaustion: callers use exact comparison for semantic state.
+    #[must_use]
+    pub fn remaining_percent_of(&self, cap: &Money) -> Option<u8> {
+        if self.currency != cap.currency || cap.amount_minor <= 0 {
+            return None;
+        }
+        if self.amount_minor <= 0 {
+            return Some(0);
+        }
+        if self.exact_cmp(cap)? != std::cmp::Ordering::Less {
+            return Some(100);
+        }
+        u8::try_from(self.raw_percent_of(cap)?).ok()
+    }
+
+    fn rounded_magnitude(&self, precision: usize) -> u128 {
+        let magnitude = u128::from(self.amount_minor.unsigned_abs());
+        let exponent = usize::from(self.exponent);
+        if precision >= exponent { return magnitude; }
+        let discarded = exponent - precision;
+        if discarded >= 20 { return 0; }
+        let divisor = 10_u128.pow(discarded as u32);
+        magnitude / divisor + u128::from(magnitude % divisor >= divisor / 2)
+    }
+
+    fn amount_with_precision(&self, precision: usize) -> String {
+        let exponent = usize::from(self.exponent);
+        let mut digits = self.rounded_magnitude(precision).to_string();
+        if precision > exponent {
+            digits.extend(std::iter::repeat_n('0', precision - exponent));
+        }
+        if precision > 0 {
+            if digits.len() <= precision {
+                digits = format!("{}{}", "0".repeat(precision + 1 - digits.len()), digits);
+            }
+            digits.insert(digits.len() - precision, '.');
+        }
+        if self.amount_minor < 0 && self.rounded_magnitude(precision) != 0 {
+            digits.insert(0, '-');
+        }
+        digits
+    }
+
+    fn decorate_amount(&self, amount: &str) -> String {
+        match self.currency.as_str() {
+            "USD" => format!("${amount}"),
+            code if code.len() == 3 && code.chars().all(|c| c.is_ascii_uppercase()) => format!("{code} {amount}"),
+            other => format!("{amount} {other}"),
+        }
+    }
+
+    fn format_with_precision(&self, precision: usize) -> String {
+        self.decorate_amount(&self.amount_with_precision(precision))
     }
 }
 
@@ -828,6 +1104,59 @@ pub enum UsageSeverity {
     Warn,
     /// `Danger` variant.
     Danger,
+}
+
+/// Unit of a discrete allowance. Counts never travel as money.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CountQuotaUnit {
+    /// Number of requests.
+    Requests,
+}
+
+/// Calendar interpretation supplied for a discrete allowance.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CountQuotaPeriod {
+    /// Daily period resetting at midnight UTC.
+    UtcDaily,
+    /// Provider did not identify the period.
+    Unknown,
+}
+
+/// Source of the count allowance observation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CountQuotaProvenance {
+    /// Provider response supplied the observation.
+    ProviderReported,
+}
+
+/// Lossless discrete quota. Missing values stay unknown, including remaining.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CountQuota {
+    /// Observed consumed requests.
+    pub used: Option<u64>,
+    /// Published request limit.
+    pub limit: Option<u64>,
+    /// Exact remaining requests.
+    pub remaining: Option<u64>,
+    /// Discrete unit.
+    pub unit: CountQuotaUnit,
+    /// Provider window calendar interpretation.
+    pub period: CountQuotaPeriod,
+    /// Observation provenance.
+    pub provenance: CountQuotaProvenance,
+}
+
+impl CountQuota {
+    /// Remaining meter geometry, rounded down. Zero cap has no ratio.
+    #[must_use]
+    pub fn remaining_percent(&self) -> Option<u8> {
+        let limit = self.limit.filter(|limit| *limit != 0)?;
+        let remaining = self.remaining?;
+        Some(((u128::from(remaining) * 100 / u128::from(limit)).min(100)) as u8)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -861,12 +1190,32 @@ pub struct QuotaBucketView {
     /// is what keeps minor-unit values from rendering 100× too large.
     #[serde(default)]
     pub used_money: Option<Money>,
-    /// Structured cap behind `limit_label`, when monetary. `None` = uncapped.
+    /// Structured cap behind `limit_label`, when monetary. `None` means the
+    /// cap is unknown; it does not prove unlimited allowance or account funds.
     #[serde(default)]
     pub limit_money: Option<Money>,
+    /// Exact remaining monetary amount, including negative overage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remaining_money: Option<Money>,
+    /// Exact discrete allowance behind the display labels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_quota: Option<CountQuota>,
     /// API-reported severity for color-grading the meter / status chip.
     #[serde(default)]
     pub severity: UsageSeverity,
+}
+
+impl QuotaBucketView {
+    /// Reject contradictory discrete and monetary representations.
+    pub fn validate_count_representation(&self) -> Result<(), String> {
+        if self.count_quota.is_some() && (self.used_money.is_some() || self.limit_money.is_some() || self.remaining_money.is_some()) {
+            return Err(format!(
+                "quota bucket {} mixes count and money representations",
+                self.label
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// One already-grouped visual line of a [`UsageDetailRow`]. `leading` is the
@@ -928,17 +1277,14 @@ pub struct UsageDetailRow {
 /// `last_error`. Identity, activity, and focused-view freshness use a separate presentation.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UsageDetailPresentation {
-    /// Detail rows in producer order.
+    /// Detail rows in canonical order.
     pub rows: Vec<UsageDetailRow>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// `UsageProviderTab` protocol type.
 pub struct UsageProviderTab {
-    /// Stable canonical account id (`account_key_hash` over the provider and
-    /// account labels). Tab navigation and active-tab matching key on this;
-    /// `label` is display-only and repeats across same-provider accounts.
-    #[serde(default)]
+    /// Stable key of the canonical account/provider pair. Labels are display only.
     pub id: String,
     /// `label` field.
     pub label: String,

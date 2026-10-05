@@ -259,3 +259,177 @@ fn cursor_movement_encodes_four_digit_coords() {
 
     assert_eq!(backend.take_output(), b"\x1b[1000;1001H");
 }
+
+/// Exercise the real terminal diff and owned terminal model; assertions consume
+/// only emitted bytes, never backend cache state.
+fn render_model_metadata_frame(
+    terminal: &mut Terminal<SocketBackend>,
+    grid: &termpane::DamageGrid,
+    metadata: SgrMetadata,
+    width: u16,
+) -> Vec<u8> {
+    terminal.backend_mut().set_sgr_regions(
+        (metadata != SgrMetadata::default())
+            .then_some((Rect::new(0, 0, width, 1), metadata))
+            .into_iter()
+            .collect(),
+    );
+    let view = grid.scrollback_view(0, 1);
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                crate::tui::components::pane::PaneBodyWidget::view(&view),
+                frame.area(),
+            );
+        })
+        .unwrap();
+    terminal.backend_mut().take_output()
+}
+
+#[test]
+fn metadata_only_changes_repaint_unchanged_model_cell() {
+    let mut terminal = Terminal::new(SocketBackend::new(4, 1)).unwrap();
+    let mut grid = termpane::DamageGrid::new(1, 4, 0);
+    grid.process(b"\x1b[4:3;58;5;12;53mx");
+    let curly = SgrMetadata {
+        underline_style: termpane::UnderlineStyle::Curly,
+        underline_color: termpane::Color::Idx(12),
+        overline: true,
+    };
+    render_model_metadata_frame(&mut terminal, &grid, curly, 1);
+    grid.process(b"\x1b[H\x1b[4:5;58;2;12;34;56;55mx");
+    let dashed = SgrMetadata {
+        underline_style: termpane::UnderlineStyle::Dashed,
+        underline_color: termpane::Color::Rgb(12, 34, 56),
+        overline: false,
+    };
+    assert_eq!(
+        render_model_metadata_frame(&mut terminal, &grid, dashed, 1),
+        b"\x1b[1;1H\x1b[0m\x1b[4m\x1b[4:5m\x1b[58;2;12;34;56mx\x1b[?25l"
+    );
+    assert_eq!(
+        render_model_metadata_frame(&mut terminal, &grid, dashed, 1),
+        b"\x1b[?25l"
+    );
+    grid.process(b"\x1b[H\x1b[4;59mx");
+    assert_eq!(
+        render_model_metadata_frame(&mut terminal, &grid, SgrMetadata::default(), 1),
+        b"\x1b[1;1H\x1b[0m\x1b[4mx\x1b[?25l"
+    );
+}
+
+#[test]
+fn metadata_only_changes_repaint_wide_lead_without_erasing_tail() {
+    let mut terminal = Terminal::new(SocketBackend::new(4, 1)).unwrap();
+    let mut grid = termpane::DamageGrid::new(1, 4, 0);
+    grid.process("界Z".as_bytes());
+    render_model_metadata_frame(&mut terminal, &grid, SgrMetadata::default(), 2);
+    grid.process("\x1b[H\x1b[53m界".as_bytes());
+    let output = render_model_metadata_frame(
+        &mut terminal,
+        &grid,
+        SgrMetadata {
+            overline: true,
+            ..SgrMetadata::default()
+        },
+        2,
+    );
+    assert_eq!(output, "\x1b[1;1H\x1b[0m\x1b[53m界\x1b[?25l".as_bytes());
+    grid.process("\x1b[H\x1b[55m界".as_bytes());
+    assert_eq!(
+        render_model_metadata_frame(&mut terminal, &grid, SgrMetadata::default(), 2),
+        "\x1b[1;1H\x1b[0m界\x1b[?25l".as_bytes()
+    );
+}
+
+#[test]
+fn metadata_only_changes_repaint_never_emitted_blank() {
+    let mut terminal = Terminal::new(SocketBackend::new(4, 1)).unwrap();
+    let grid = termpane::DamageGrid::new(1, 4, 0);
+    render_model_metadata_frame(&mut terminal, &grid, SgrMetadata::default(), 1);
+    assert_eq!(
+        render_model_metadata_frame(
+            &mut terminal,
+            &grid,
+            SgrMetadata {
+                overline: true,
+                ..SgrMetadata::default()
+            },
+            1
+        ),
+        b"\x1b[1;1H\x1b[0m\x1b[53m \x1b[?25l"
+    );
+}
+
+#[test]
+fn wide_hyperlink_target_changes_repaint_same_glyph() {
+    let mut terminal = Terminal::new(SocketBackend::new(4, 1)).unwrap();
+    let mut grid = termpane::DamageGrid::new(1, 4, 0);
+    grid.process("界Z".as_bytes());
+    render_model_metadata_frame(&mut terminal, &grid, SgrMetadata::default(), 2);
+    for uri in ["https://one.test", "https://two.test"] {
+        terminal
+            .backend_mut()
+            .set_hyperlink_regions(vec![(Rect::new(0, 0, 2, 1), uri.to_owned())]);
+        let output = render_model_metadata_frame(&mut terminal, &grid, SgrMetadata::default(), 2);
+        assert_eq!(
+            output,
+            format!("\x1b]8;;{uri}\x1b\\\x1b[1;1H界\x1b]8;;\x1b\\\x1b[?25l").as_bytes()
+        );
+    }
+    assert_eq!(
+        render_model_metadata_frame(&mut terminal, &grid, SgrMetadata::default(), 2),
+        "\x1b[1;1H界\x1b[?25l".as_bytes()
+    );
+}
+
+#[test]
+fn natural_wide_metadata_damage_preserves_continuation() {
+    let mut terminal = Terminal::new(SocketBackend::new(4, 1)).unwrap();
+    terminal
+        .draw(|frame| frame.render_widget(Paragraph::new("界Z"), frame.area()))
+        .unwrap();
+    terminal.backend_mut().take_output();
+    terminal.backend_mut().set_sgr_regions(vec![(
+        Rect::new(0, 0, 2, 1),
+        SgrMetadata {
+            overline: true,
+            ..SgrMetadata::default()
+        },
+    )]);
+    terminal
+        .draw(|frame| frame.render_widget(Paragraph::new("界Z"), frame.area()))
+        .unwrap();
+    assert_eq!(
+        terminal.backend_mut().take_output(),
+        "\x1b[1;1H\x1b[0m\x1b[53m界\x1b[?25l".as_bytes()
+    );
+}
+
+#[test]
+fn overlapping_sgr_regions_share_damage_and_emission_precedence() {
+    let mut terminal = Terminal::new(SocketBackend::new(4, 1)).unwrap();
+    let styled = (
+        Rect::new(0, 0, 1, 1),
+        SgrMetadata {
+            overline: true,
+            ..SgrMetadata::default()
+        },
+    );
+    terminal.backend_mut().set_sgr_regions(vec![
+        (Rect::new(0, 0, 1, 1), SgrMetadata::default()),
+        styled,
+    ]);
+    terminal
+        .draw(|frame| frame.render_widget(Paragraph::new("x"), frame.area()))
+        .unwrap();
+    assert_eq!(terminal.backend_mut().take_output(), b"\x1b[1;1Hx\x1b[?25l");
+    terminal.backend_mut().set_sgr_regions(vec![styled]);
+    terminal
+        .draw(|frame| frame.render_widget(Paragraph::new("x"), frame.area()))
+        .unwrap();
+    assert_eq!(
+        terminal.backend_mut().take_output(),
+        b"\x1b[1;1H\x1b[0m\x1b[53mx\x1b[?25l"
+    );
+}

@@ -4,7 +4,8 @@
 //! boltffi-safe mirrors of protocol usage views (string enums, no secrets).
 
 use jackin_protocol::control::{
-    FocusedUsageView, Money, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+    CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit, FocusedUsageView, Money,
+    QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 use jackin_usage::host::{
     HostAccountDescriptor, HostDesktopInventory, HostDesktopProjection, HostDesktopProviderGroup,
@@ -66,13 +67,25 @@ pub(crate) fn discovery_diagnostic_dto(
     }
 }
 
-/// Monetary amount (minor units).
+/// Exact monetary decimal coefficient, currency, and base-10 exponent.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct MoneyDto {
     pub amount_minor: i64,
     pub currency: String,
     pub exponent: u8,
+}
+
+/// Lossless discrete allowance; absent values remain unknown, not zero.
+#[derive(Debug, Clone)]
+#[boltffi::data]
+pub struct CountQuotaDto {
+    pub used: Option<u64>,
+    pub limit: Option<u64>,
+    pub remaining: Option<u64>,
+    pub unit: String,
+    pub period: String,
+    pub provenance: String,
 }
 
 /// One quota / spend bucket.
@@ -90,6 +103,8 @@ pub struct QuotaBucketDto {
     pub status: String,
     pub used_money: Option<MoneyDto>,
     pub limit_money: Option<MoneyDto>,
+    pub remaining_money: Option<MoneyDto>,
+    pub count_quota: Option<CountQuotaDto>,
     pub severity: String,
     /// Rust-owned percentage segment text (segment 0), when present.
     pub remaining_label: Option<String>,
@@ -286,6 +301,11 @@ pub struct AccountDescriptorDto {
     pub last_error: Option<String>,
     pub dimmed: bool,
     pub accessibility_label: String,
+    pub count_quota: Option<CountQuotaDto>,
+    pub resets_at: Option<i64>,
+    pub used_money: Option<MoneyDto>,
+    pub limit_money: Option<MoneyDto>,
+    pub remaining_money: Option<MoneyDto>,
 }
 
 pub(crate) fn account_dto(row: HostAccountDescriptor) -> AccountDescriptorDto {
@@ -314,6 +334,11 @@ pub(crate) fn account_dto(row: HostAccountDescriptor) -> AccountDescriptorDto {
         last_error: row.last_error,
         dimmed: row.dimmed,
         accessibility_label: row.accessibility_label,
+        count_quota: row.count_quota.map(count_quota_dto),
+        resets_at: row.resets_at,
+        used_money: row.used_money.map(money_dto),
+        limit_money: row.limit_money.map(money_dto),
+        remaining_money: row.remaining_money.map(money_dto),
     }
 }
 
@@ -425,7 +450,7 @@ fn desktop_provider_projection_dto(
             .group
             .accounts
             .iter()
-            .find(|row| row.account_key == key)
+            .find(|row| row.account_key == key && row.selected)
     });
     DesktopProviderProjectionDto {
         group: desktop_provider_group_dto(projection.group.clone()),
@@ -709,6 +734,8 @@ fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {
         status: status_label(bucket.status).to_owned(),
         used_money: bucket.used_money.map(money_dto),
         limit_money: bucket.limit_money.map(money_dto),
+        remaining_money: bucket.remaining_money.map(money_dto),
+        count_quota: bucket.count_quota.map(count_quota_dto),
         severity: match bucket.severity {
             jackin_protocol::control::UsageSeverity::Normal => "normal",
             jackin_protocol::control::UsageSeverity::Warn => "warn",
@@ -719,6 +746,27 @@ fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {
         display_segments: presentation.display_segments,
         display_label: presentation.display_label,
         meter_percent: presentation.meter_percent,
+    }
+}
+
+fn count_quota_dto(quota: CountQuota) -> CountQuotaDto {
+    CountQuotaDto {
+        used: quota.used,
+        limit: quota.limit,
+        remaining: quota.remaining,
+        unit: match quota.unit {
+            CountQuotaUnit::Requests => "requests",
+        }
+        .to_owned(),
+        period: match quota.period {
+            CountQuotaPeriod::UtcDaily => "utc_daily",
+            CountQuotaPeriod::Unknown => "unknown",
+        }
+        .to_owned(),
+        provenance: match quota.provenance {
+            CountQuotaProvenance::ProviderReported => "provider_reported",
+        }
+        .to_owned(),
     }
 }
 
@@ -772,3 +820,9 @@ pub(crate) fn to_host_config(
         },
     })
 }
+
+#[cfg(test)]
+mod count_tests;
+
+#[cfg(test)]
+mod money_tests;

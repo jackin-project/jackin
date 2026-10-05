@@ -125,7 +125,24 @@ pub(crate) fn cursor_identity_from_cli_config(value: &serde_json::Value) -> Opti
 // ---------------------------------------------------------------------------
 
 pub(crate) fn cursor_dashboard_base() -> String {
-    env_value("CURSOR_API_ENDPOINT").unwrap_or_else(|| CURSOR_DEFAULT_DASHBOARD_BASE.to_owned())
+    cursor_dashboard_base_from_override(env_value("CURSOR_API_ENDPOINT").as_deref())
+}
+
+fn cursor_dashboard_base_from_override(endpoint: Option<&str>) -> String {
+    endpoint.unwrap_or(CURSOR_DEFAULT_DASHBOARD_BASE).to_owned()
+}
+
+struct CursorSnapshotRoute<'a> {
+    dashboard_base: &'a str,
+    session_enrichment: bool,
+}
+
+/// This dispatch supplies only the selected profile's native provider routes.
+fn cursor_profile_dispatch<T>(fetch: impl FnOnce(CursorSnapshotRoute<'_>) -> T) -> T {
+    fetch(CursorSnapshotRoute {
+        dashboard_base: CURSOR_DEFAULT_DASHBOARD_BASE,
+        session_enrichment: true,
+    })
 }
 
 /// True when enrichment-gated REST calls are allowed: OAuth-file auth against
@@ -1072,38 +1089,28 @@ pub(crate) fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> 
     )
 }
 
-/// Broker-refresh entry: `auth.json` at a registered profile root plus the
-/// sibling `cli-config.json` identity. Never touches the default home.
-pub(crate) fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> FocusedUsageView {
-    let auth = match read_json_file(auth_path)
-        .ok_or_else(|| "Cursor auth.json is missing or unreadable".to_owned())
-        .and_then(|value| {
-            cursor_auth_from_value(&value)
-                .ok_or_else(|| "Cursor access token is missing".to_owned())
-        }) {
-        Ok(auth) => auth,
-        Err(error) => {
-            return cursor_status_view(agent, None, now, UsageSnapshotStatus::NeedsSecret, &error);
-        }
-    };
-    let identity = auth_path
-        .parent()
-        .and_then(|root| read_json_file(&root.join("cli-config.json")))
-        .and_then(|value| cursor_cli_identity_from_value(&value));
-    cursor_snapshot_with_auth(
-        agent,
-        None,
-        &auth,
-        identity.as_deref(),
-        "OAuth · configured profile",
-        &cursor_dashboard_base(),
-        now,
-    )
+/// Refresh the captured profile token and identity without reading mutable files.
+pub(crate) fn cursor_profile_snapshot(
+    agent: &str,
+    auth: &CursorAuth,
+    identity: Option<&str>,
+    now: i64,
+) -> FocusedUsageView {
+    cursor_profile_dispatch(|route| {
+        cursor_snapshot_with_route(
+            agent,
+            None,
+            auth,
+            identity,
+            "OAuth · configured profile",
+            route,
+            now,
+        )
+    })
 }
 
-/// Personal snapshot from broker-minted material: the selected profile's
-/// token, identity, and origin — never ambient files. The dashboard base is
-/// explicit so hermetic tests can point the RPC at a dead port.
+/// Standalone personal snapshot with an explicit dashboard base. Ambient
+/// endpoint configuration determines whether session enrichment is enabled.
 pub(crate) fn cursor_snapshot_with_auth(
     agent: &str,
     provider: Option<&str>,
@@ -1113,6 +1120,30 @@ pub(crate) fn cursor_snapshot_with_auth(
     dashboard_base: &str,
     now: i64,
 ) -> FocusedUsageView {
+    cursor_snapshot_with_route(
+        agent,
+        provider,
+        auth,
+        identity,
+        credential_origin,
+        CursorSnapshotRoute {
+            dashboard_base,
+            session_enrichment: cursor_default_base(),
+        },
+        now,
+    )
+}
+
+fn cursor_snapshot_with_route(
+    agent: &str,
+    provider: Option<&str>,
+    auth: &CursorAuth,
+    identity: Option<&str>,
+    credential_origin: &str,
+    route: CursorSnapshotRoute<'_>,
+    now: i64,
+) -> FocusedUsageView {
+    let dashboard_base = route.dashboard_base;
     let token = auth.access_token.as_str();
     let (period, period_error) =
         split_fetch(Some(fetch_cursor_period_usage(dashboard_base, token)));
@@ -1121,7 +1152,7 @@ pub(crate) fn cursor_snapshot_with_auth(
         split_fetch(Some(fetch_cursor_credit_grants(dashboard_base, token)));
     let (sand, sand_error) = split_fetch(Some(fetch_cursor_sand_usage(dashboard_base, token)));
     // Session-REST enrichment only for OAuth-file auth against the default base.
-    let rest = auth.user_id.as_deref().filter(|_| cursor_default_base());
+    let rest = auth.user_id.as_deref().filter(|_| route.session_enrichment);
     let (summary, summary_error) =
         split_fetch(rest.map(|user| fetch_cursor_usage_summary(user, token)));
     let needs_requests = period.as_ref().is_none_or(cursor_needs_request_fallback);

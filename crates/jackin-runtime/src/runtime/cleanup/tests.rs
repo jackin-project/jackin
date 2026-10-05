@@ -18,22 +18,134 @@ fn gc_test_paths() -> JackinPaths {
     JackinPaths::for_tests(temp.path())
 }
 
-fn write_owned_cleanup_manifest(paths: &JackinPaths, role: &str, dind: &str) {
+fn network_id_for(container: &str) -> jackin_core::NetworkId {
+    let hash = container.bytes().fold(1u128, |hash, byte| {
+        hash.wrapping_mul(257).wrapping_add(u128::from(byte))
+    });
+    jackin_core::NetworkId::parse(&format!("{hash:064x}")).unwrap()
+}
+
+fn admit_fixture_network(docker: &FakeDockerClient, container: &str, name: &str) {
+    let id = network_id_for(container);
+    docker
+        .network_id_by_name
+        .borrow_mut()
+        .insert(name.to_owned(), id.clone());
+    docker
+        .inspect_network_queue
+        .borrow_mut()
+        .push_back(Some(NetworkRow {
+            id,
+            name: name.to_owned(),
+            labels: HashMap::from([(LABEL_ROLE_KEY.to_owned(), container.to_owned())]),
+        }));
+}
+
+fn fixture_daemon() -> jackin_core::DaemonServerId {
+    jackin_core::DaemonServerId::parse("jackin-test-daemon").unwrap()
+}
+
+fn fixture_lifetime(paths: &JackinPaths, owner: &str) -> crate::instance::SharedDockerLifetime {
+    crate::instance::SharedDockerLifetime::load(paths, &fixture_daemon(), owner)
+        .unwrap()
+        .unwrap()
+}
+
+fn fixture_lifetime_path(
+    paths: &JackinPaths,
+    lifetime: &crate::instance::SharedDockerLifetime,
+) -> std::path::PathBuf {
+    std::fs::read_dir(paths.jackin_home.join("shared-docker-lifetimes"))
+        .unwrap()
+        .map(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .join(format!("{}.json", lifetime.generation()))
+        })
+        .find(|path| path.exists())
+        .expect("saved generation record must exist")
+}
+
+fn admit_fixture_shared(
+    docker: &FakeDockerClient,
+    lifetime: &crate::instance::SharedDockerLifetime,
+) {
+    let labels = HashMap::from([
+        (
+            "jackin.shared-generation".to_owned(),
+            lifetime.generation().to_owned(),
+        ),
+        (
+            "jackin.shared-owner".to_owned(),
+            lifetime.namespace_owner().to_owned(),
+        ),
+        ("jackin.managed".to_owned(), "true".to_owned()),
+        (LABEL_ROLE_KEY.to_owned(), lifetime.owner().to_owned()),
+    ]);
+    if let (Some(name), Some(id)) = (lifetime.network_name(), lifetime.network_id()) {
+        docker
+            .network_id_by_name
+            .borrow_mut()
+            .insert(name.to_owned(), id.clone());
+        docker
+            .inspect_network_queue
+            .borrow_mut()
+            .push_back(Some(NetworkRow {
+                id: id.clone(),
+                name: name.to_owned(),
+                labels: labels.clone(),
+            }));
+    }
+    if let Some(name) = lifetime.certs_volume_name() {
+        docker.volumes_by_name.borrow_mut().insert(
+            name.to_owned(),
+            jackin_core::VolumeRow {
+                name: name.to_owned(),
+                labels,
+                driver: "local".to_owned(),
+            },
+        );
+    }
+}
+
+fn write_owned_cleanup_manifest(
+    paths: &JackinPaths,
+    role: &str,
+    dind: &str,
+) -> crate::instance::SharedDockerLifetime {
+    write_cleanup_manifest_for_role(paths, role, dind, "agent-smith")
+}
+
+fn write_cleanup_manifest_for_role(
+    paths: &JackinPaths,
+    role: &str,
+    dind: &str,
+    role_key: &str,
+) -> crate::instance::SharedDockerLifetime {
+    let mut lifetime =
+        crate::instance::SharedDockerLifetime::fresh(&fixture_daemon(), role, true, true).unwrap();
+    lifetime.save_pending(paths).unwrap();
+    lifetime.capture_network(network_id_for(role)).unwrap();
+    lifetime.capture_certs_volume().unwrap();
+    lifetime.save(paths).unwrap();
     let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: role,
         workspace_name: None,
         workspace_label: "workspace",
         workdir: "/workspace",
         host_workdir_fingerprint: "sha256:test",
-        role_key: "agent-smith",
+        role_key,
         role_display_name: "Agent Smith",
         agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
         docker: DockerResources {
+            role_container: role.to_owned(),
             dind_container: Some(dind.to_owned()),
-            ..DockerResources::from_container_name(role)
+            network: lifetime.network_name().unwrap().to_owned(),
+            certs_volume: lifetime.certs_volume_name().map(str::to_owned),
         },
         role_git_sha: None,
         base_image_ref: None,
@@ -43,8 +155,10 @@ fn write_owned_cleanup_manifest(paths: &JackinPaths, role: &str, dind: &str) {
     manifest.docker_identity = Some(crate::instance::DockerIdentity {
         role_container_id: role.to_owned(),
         dind_container_id: Some(dind.to_owned()),
+        network_id: Some(network_id_for(role)),
     });
     manifest.write(&paths.data_dir.join(role)).unwrap();
+    lifetime
 }
 
 #[tokio::test]
@@ -165,14 +279,45 @@ async fn cleanup_keeps_captured_role_and_dind_ids_after_same_name_replacement() 
         .await
         .handle
         .expect("DinD container has an ID");
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut lifetime =
+        crate::instance::SharedDockerLifetime::fresh(&fixture_daemon(), role, true, true).unwrap();
+    lifetime.save_pending(&paths).unwrap();
+    lifetime.capture_network(network_id_for(role)).unwrap();
+    lifetime.capture_certs_volume().unwrap();
+    let custody =
+        crate::runtime::launch::SharedDockerCreationCustody::adopt(&paths, lifetime.clone())
+            .unwrap();
+    admit_fixture_shared(&docker, &lifetime);
+    docker.volumes_by_name.borrow_mut().insert(
+        lifetime.certs_volume_name().unwrap().to_owned(),
+        jackin_core::VolumeRow {
+            name: lifetime.certs_volume_name().unwrap().to_owned(),
+            driver: "local".to_owned(),
+            labels: HashMap::from([
+                (
+                    "jackin.shared-generation".to_owned(),
+                    lifetime.generation().to_owned(),
+                ),
+                (
+                    "jackin.shared-owner".to_owned(),
+                    lifetime.namespace_owner().to_owned(),
+                ),
+                ("jackin.managed".to_owned(), "true".to_owned()),
+            ]),
+        },
+    );
     let cleanup = LoadCleanup::new(
+        &paths,
         role.to_owned(),
         dind.to_owned(),
-        "jk-agent-smith-dind-certs".to_owned(),
-        "jk-agent-smith-net".to_owned(),
-        std::env::temp_dir().join("jackin-cleanup-replacement-test"),
-    );
+        lifetime.certs_volume_name().unwrap().to_owned(),
+    )
+    .unwrap();
     cleanup.set_dind_handle(dind_handle);
+    cleanup.set_network_id(network_id_for(role));
+    cleanup.bind_shared_custody(custody);
 
     docker.container_id_by_name.borrow_mut().extend([
         (role.to_owned(), "replacement-role-id".to_owned()),
@@ -286,6 +431,8 @@ async fn eject_refuses_destructive_cleanup_without_dind_identity() {
 
 #[tokio::test]
 async fn eject_all_targets_only_requested_class_family() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let names = vec![
         "jk-k7p9m2xq-agentsmith".to_owned(),
@@ -293,7 +440,16 @@ async fn eject_all_targets_only_requested_class_family() {
         "jk-w9x8y7z6-chainargos-thearchitect".to_owned(),
     ];
 
-    let matched = matching_family(&selector, &names);
+    for name in &names[..2] {
+        write_cleanup_manifest_for_role(&paths, name, &format!("{name}-dind"), "agent-smith");
+    }
+    write_cleanup_manifest_for_role(
+        &paths,
+        &names[2],
+        &format!("{}-dind", names[2]),
+        "chainargos/the-architect",
+    );
+    let matched = matching_family(&paths, &selector, &names).unwrap();
 
     assert_eq!(
         matched,
@@ -307,58 +463,25 @@ async fn purge_all_removes_matching_state_directories() {
     let paths = JackinPaths::for_tests(temp.path());
     let primary = "jk-k7p9m2xq-agentsmith";
     let second = "jk-a1b2c3d4-workspace-agentsmith";
-    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
-        container_base: primary,
-        workspace_name: Some("workspace"),
-        workspace_label: "workspace",
-        workdir: "/workspace",
-        host_workdir_fingerprint: "sha256:test",
-        role_key: "agent-smith",
-        role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::Agent::Claude,
-        role_source_git: "https://example.invalid/agent-smith.git",
-        role_source_ref: None,
-        image_tag: "jk_agent-smith",
-        docker: DockerResources {
-            role_container: primary.into(),
-            dind_container: Some(format!("{primary}-dind")),
-            network: format!("{primary}-net"),
-            certs_volume: Some(format!("{primary}-dind-certs")),
-        },
-        role_git_sha: None,
-        base_image_ref: None,
-        base_image_digest: None,
-        supported_agents: vec![],
-    });
+    write_owned_cleanup_manifest(&paths, primary, &format!("{primary}-dind"));
+    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(primary))
+        .unwrap()
+        .unwrap();
     manifest.write(&paths.data_dir.join(primary)).unwrap();
     InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-    let second_manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
-        container_base: second,
-        workspace_name: Some("workspace"),
-        workspace_label: "workspace",
-        workdir: "/workspace",
-        host_workdir_fingerprint: "sha256:test",
-        role_key: "agent-smith",
-        role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::Agent::Claude,
-        role_source_git: "https://example.invalid/agent-smith.git",
-        role_source_ref: None,
-        image_tag: "jk_agent-smith",
-        docker: DockerResources {
-            role_container: second.into(),
-            dind_container: Some(format!("{second}-dind")),
-            network: format!("{second}-net"),
-            certs_volume: Some(format!("{second}-dind-certs")),
-        },
-        role_git_sha: None,
-        base_image_ref: None,
-        base_image_digest: None,
-        supported_agents: vec![],
-    });
+    write_owned_cleanup_manifest(&paths, second, &format!("{second}-dind"));
+    let second_manifest = InstanceManifest::read_optional(&paths.data_dir.join(second))
+        .unwrap()
+        .unwrap();
     second_manifest.write(&paths.data_dir.join(second)).unwrap();
     InstanceIndex::update_manifest(&paths.data_dir, &second_manifest).unwrap();
     let unrelated = "jk-w9x8y7z6-chainargos-thearchitect";
-    std::fs::create_dir_all(paths.data_dir.join(unrelated)).unwrap();
+    write_cleanup_manifest_for_role(
+        &paths,
+        unrelated,
+        &format!("{unrelated}-dind"),
+        "chainargos/the-architect",
+    );
     let selector = RoleSelector::new(None, "agent-smith");
 
     // FakeDockerClient with NotFound for all containers (safe to purge)
@@ -395,7 +518,7 @@ async fn purge_container_state_refuses_when_role_container_exists() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-agent-smith";
-    std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+    write_owned_cleanup_manifest(&paths, container, &format!("{container}-dind"));
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -422,7 +545,7 @@ async fn purge_container_state_refuses_when_dind_sidecar_exists() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-agent-smith";
-    std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+    write_owned_cleanup_manifest(&paths, container, &format!("{container}-dind"));
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::NotFound, // role container not found
@@ -458,7 +581,7 @@ async fn purge_container_state_refuses_for_active_non_running_states() {
     for (state, expected_phrase) in cases {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+        write_owned_cleanup_manifest(&paths, container, &format!("{container}-dind"));
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(VecDeque::from([state.clone()])),
             ..Default::default()
@@ -487,19 +610,45 @@ async fn eject_agent_removes_container_dind_and_network() {
     let paths = JackinPaths::for_tests(temp.path());
     write_owned_cleanup_manifest(&paths, "jk-agent-smith", "jk-agent-smith-dind");
 
+    admit_fixture_shared(&docker, &fixture_lifetime(&paths, "jk-agent-smith"));
+
     eject_role(&paths, "jk-agent-smith", &docker).await.unwrap();
 
     assert_eq!(
-        docker.recorded.borrow().clone(),
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .filter(|operation| !operation.starts_with("docker network inspect")
+                && !operation.starts_with("docker volume inspect")
+                && !operation.starts_with("docker info"))
+            .cloned()
+            .collect::<Vec<_>>(),
         vec![
             "docker inspect jk-agent-smith",
             "docker inspect jk-agent-smith-dind",
             "docker rm -f jk-agent-smith",
             "docker rm -f jk-agent-smith-dind",
-            "docker volume rm jk-agent-smith-dind-certs",
-            "docker network rm jk-agent-smith-net",
+            format!(
+                "docker volume rm {}",
+                fixture_lifetime(&paths, "jk-agent-smith")
+                    .certs_volume_name()
+                    .unwrap()
+            )
+            .as_str(),
+            format!(
+                "docker network rm {}",
+                fixture_lifetime(&paths, "jk-agent-smith")
+                    .network_name()
+                    .unwrap()
+            )
+            .as_str(),
         ]
     );
+    assert!(docker.bound_operations.borrow().contains(&format!(
+        "remove_network:{}",
+        network_id_for("jk-agent-smith")
+    )));
 }
 
 #[tokio::test]
@@ -514,48 +663,46 @@ async fn eject_agent_removes_manifest_recorded_sidecar_resources() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-agent-smith";
-    let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
-        container_base: container,
-        workspace_name: Some("workspace"),
-        workspace_label: "workspace",
-        workdir: "/workspace",
-        host_workdir_fingerprint: "sha256:test",
-        role_key: "agent-smith",
-        role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::Agent::Claude,
-        role_source_git: "https://example.invalid/agent-smith.git",
-        role_source_ref: None,
-        image_tag: "jk_agent-smith",
-        docker: DockerResources {
-            role_container: container.to_owned(),
-            dind_container: Some("jk-prewarm-dind-dind".to_owned()),
-            network: "jk-prewarm-dind-net".to_owned(),
-            certs_volume: Some("jk-prewarm-dind-certs".to_owned()),
-        },
-        role_git_sha: None,
-        base_image_ref: None,
-        base_image_digest: None,
-        supported_agents: vec![],
-    });
-    manifest.docker_identity = Some(crate::instance::DockerIdentity {
-        role_container_id: container.to_owned(),
-        dind_container_id: Some("jk-prewarm-dind-dind".to_owned()),
-    });
-    manifest.write(&paths.data_dir.join(container)).unwrap();
+    let lifetime = write_owned_cleanup_manifest(&paths, container, "jk-prewarm-dind-dind");
+    admit_fixture_shared(&docker, &lifetime);
 
     eject_role(&paths, container, &docker).await.unwrap();
 
     assert_eq!(
-        docker.recorded.borrow().clone(),
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .filter(|operation| !operation.starts_with("docker network inspect")
+                && !operation.starts_with("docker volume inspect")
+                && !operation.starts_with("docker info"))
+            .cloned()
+            .collect::<Vec<_>>(),
         vec![
             "docker inspect jk-agent-smith",
             "docker inspect jk-prewarm-dind-dind",
             "docker rm -f jk-agent-smith",
             "docker rm -f jk-prewarm-dind-dind",
-            "docker volume rm jk-prewarm-dind-certs",
-            "docker network rm jk-prewarm-dind-net",
+            format!(
+                "docker volume rm {}",
+                fixture_lifetime(&paths, "jk-agent-smith")
+                    .certs_volume_name()
+                    .unwrap()
+            )
+            .as_str(),
+            format!(
+                "docker network rm {}",
+                fixture_lifetime(&paths, "jk-agent-smith")
+                    .network_name()
+                    .unwrap()
+            )
+            .as_str(),
         ]
     );
+    assert!(docker.bound_operations.borrow().contains(&format!(
+        "remove_network:{}",
+        network_id_for("jk-agent-smith")
+    )));
 }
 
 #[tokio::test]
@@ -563,6 +710,8 @@ async fn eject_agent_ignores_missing_runtime_resources() {
     let docker = FakeDockerClient::default();
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+
+    write_owned_cleanup_manifest(&paths, "jk-agent-smith", "jk-agent-smith-dind");
 
     let error = eject_role(&paths, "jk-agent-smith", &docker)
         .await
@@ -661,6 +810,7 @@ async fn exile_all_ejects_all_managed_agents() {
         "jk-a1b2c3d4-myworkspace-agentsmith",
     ] {
         write_owned_cleanup_manifest(&paths, role, &format!("{role}-dind"));
+        admit_fixture_shared(&docker, &fixture_lifetime(&paths, role));
     }
     exile_all(&paths, &docker).await.unwrap();
 
@@ -678,20 +828,36 @@ async fn exile_all_ejects_all_managed_agents() {
             .iter()
             .any(|c| c.contains("docker rm -f jk-a1b2c3d4-myworkspace-agentsmith"))
     );
-    assert!(
-        docker
-            .recorded
-            .borrow()
-            .iter()
-            .any(|c| c.contains("docker volume rm jk-k7p9m2xq-agentsmith-dind-certs"))
-    );
-    assert!(
-        docker
-            .recorded
-            .borrow()
-            .iter()
-            .any(|c| c.contains("docker network rm jk-k7p9m2xq-agentsmith-net"))
-    );
+    assert!(docker.recorded.borrow().iter().any(|c| {
+        c.contains(
+            format!(
+                "docker volume rm {}",
+                fixture_lifetime(&paths, "jk-k7p9m2xq-agentsmith")
+                    .certs_volume_name()
+                    .unwrap()
+            )
+            .as_str(),
+        )
+    }));
+    assert!(docker.recorded.borrow().iter().any(|c| {
+        c.contains(
+            format!(
+                "docker network rm {}",
+                fixture_lifetime(&paths, "jk-k7p9m2xq-agentsmith")
+                    .network_name()
+                    .unwrap()
+            )
+            .as_str(),
+        )
+    }));
+    assert!(docker.bound_operations.borrow().contains(&format!(
+        "remove_network:{}",
+        network_id_for("jk-k7p9m2xq-agentsmith")
+    )));
+    assert!(docker.bound_operations.borrow().contains(&format!(
+        "remove_network:{}",
+        network_id_for("jk-a1b2c3d4-myworkspace-agentsmith")
+    )));
 }
 
 #[tokio::test]
@@ -734,26 +900,184 @@ async fn exile_all_continues_when_some_runtime_resources_are_missing() {
         "jk-a1b2c3d4-myworkspace-agentsmith",
     ] {
         write_owned_cleanup_manifest(&paths, role, &format!("{role}-dind"));
+        admit_fixture_shared(&docker, &fixture_lifetime(&paths, role));
     }
     exile_all(&paths, &docker).await.unwrap();
 
     assert_eq!(
-        docker.recorded.borrow().clone(),
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .filter(|operation| !operation.starts_with("docker network inspect")
+                && !operation.starts_with("docker volume inspect")
+                && !operation.starts_with("docker info"))
+            .cloned()
+            .collect::<Vec<_>>(),
         vec![
             "docker ps -a --filter jackin.kind=role",
             "docker inspect jk-k7p9m2xq-agentsmith",
             "docker inspect jk-k7p9m2xq-agentsmith-dind",
-            "docker rm -f jk-k7p9m2xq-agentsmith",
-            "docker rm -f jk-k7p9m2xq-agentsmith-dind",
-            "docker volume rm jk-k7p9m2xq-agentsmith-dind-certs",
-            "docker network rm jk-k7p9m2xq-agentsmith-net",
             "docker inspect jk-a1b2c3d4-myworkspace-agentsmith",
             "docker inspect jk-a1b2c3d4-myworkspace-agentsmith-dind",
+            "docker rm -f jk-k7p9m2xq-agentsmith",
+            "docker rm -f jk-k7p9m2xq-agentsmith-dind",
+            format!(
+                "docker volume rm {}",
+                fixture_lifetime(&paths, "jk-k7p9m2xq-agentsmith")
+                    .certs_volume_name()
+                    .unwrap()
+            )
+            .as_str(),
+            format!(
+                "docker network rm {}",
+                fixture_lifetime(&paths, "jk-k7p9m2xq-agentsmith")
+                    .network_name()
+                    .unwrap()
+            )
+            .as_str(),
             "docker rm -f jk-a1b2c3d4-myworkspace-agentsmith",
             "docker rm -f jk-a1b2c3d4-myworkspace-agentsmith-dind",
-            "docker volume rm jk-a1b2c3d4-myworkspace-agentsmith-dind-certs",
-            "docker network rm jk-a1b2c3d4-myworkspace-agentsmith-net",
+            format!(
+                "docker volume rm {}",
+                fixture_lifetime(&paths, "jk-a1b2c3d4-myworkspace-agentsmith")
+                    .certs_volume_name()
+                    .unwrap()
+            )
+            .as_str(),
+            format!(
+                "docker network rm {}",
+                fixture_lifetime(&paths, "jk-a1b2c3d4-myworkspace-agentsmith")
+                    .network_name()
+                    .unwrap()
+            )
+            .as_str(),
         ]
+    );
+    assert!(docker.bound_operations.borrow().contains(&format!(
+        "remove_network:{}",
+        network_id_for("jk-k7p9m2xq-agentsmith")
+    )));
+    assert!(docker.bound_operations.borrow().contains(&format!(
+        "remove_network:{}",
+        network_id_for("jk-a1b2c3d4-myworkspace-agentsmith")
+    )));
+}
+
+#[tokio::test]
+async fn exile_all_admits_every_identity_before_first_removal() {
+    for unavailable_by_id in [false, true] {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let first = "jk-aaaaaaaa-agentsmith";
+        let later = "jk-bbbbbbbb-agentsmith";
+        let docker = FakeDockerClient::default();
+        for container in [first, later] {
+            let dind = format!("{container}-dind");
+            write_owned_cleanup_manifest(&paths, container, &dind);
+            docker.inspect_state_by_name.borrow_mut().extend([
+                (container.to_owned(), ContainerState::Running),
+                (dind, ContainerState::Running),
+            ]);
+        }
+        let later_manifest = paths.data_dir.join(later).join(".jackin/instance.json");
+        if unavailable_by_id {
+            docker.inspect_by_id_queue.borrow_mut().extend([
+                ContainerState::Running,
+                ContainerState::Running,
+                ContainerState::InspectUnavailable("later immutable ID unavailable".to_owned()),
+            ]);
+        } else {
+            let mut manifest = InstanceManifest::read_optional(&paths.data_dir.join(later))
+                .unwrap()
+                .unwrap();
+            manifest.docker_identity = None;
+            manifest.write(&paths.data_dir.join(later)).unwrap();
+        }
+        let manifest_bytes = std::fs::read(&later_manifest).unwrap();
+
+        exile_all(&paths, &docker).await.unwrap_err();
+
+        assert_eq!(std::fs::read(later_manifest).unwrap(), manifest_bytes);
+        assert!(paths.data_dir.join(first).exists());
+        assert!(
+            !docker
+                .bound_operations
+                .borrow()
+                .iter()
+                .any(|operation| operation.starts_with("remove:"))
+        );
+        assert!(!docker.recorded.borrow().iter().any(
+            |operation| operation.starts_with("docker rm")
+                || operation.starts_with("docker network rm")
+                || operation.starts_with("docker volume rm")
+        ));
+        assert!(
+            docker
+                .bound_operations
+                .borrow()
+                .iter()
+                .any(|operation| operation.starts_with("inspect:")),
+            "earlier valid identity must be admitted before later rejection"
+        );
+    }
+}
+
+#[tokio::test]
+async fn exile_all_refuses_later_symlinked_socket_before_any_docker_mutation() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let first = "jk-aaaaaaaa-agentsmith";
+    let later = "jk-bbbbbbbb-agentsmith";
+    let docker = FakeDockerClient::default();
+    for container in [first, later] {
+        let sidecar = format!("{container}-dind");
+        write_owned_cleanup_manifest(&paths, container, &sidecar);
+        docker.inspect_state_by_name.borrow_mut().extend([
+            (container.to_owned(), ContainerState::Running),
+            (sidecar, ContainerState::Running),
+        ]);
+    }
+    let outside = temp.path().join("outside-sockets");
+    std::fs::create_dir_all(&outside).unwrap();
+    let canary = outside.join("retain");
+    std::fs::write(&canary, b"outside socket bytes").unwrap();
+    let sockets = paths.jackin_home.join("sockets");
+    std::fs::create_dir_all(&sockets).unwrap();
+    let socket_link = sockets.join(later);
+    std::os::unix::fs::symlink(&outside, &socket_link).unwrap();
+    let first_manifest = paths.data_dir.join(first).join(".jackin/instance.json");
+    let later_manifest = paths.data_dir.join(later).join(".jackin/instance.json");
+    let first_bytes = std::fs::read(&first_manifest).unwrap();
+    let later_bytes = std::fs::read(&later_manifest).unwrap();
+
+    exile_all(&paths, &docker).await.unwrap_err();
+
+    assert_eq!(std::fs::read(first_manifest).unwrap(), first_bytes);
+    assert_eq!(std::fs::read(later_manifest).unwrap(), later_bytes);
+    assert_eq!(std::fs::read(canary).unwrap(), b"outside socket bytes");
+    assert!(
+        std::fs::symlink_metadata(socket_link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(
+        !docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("remove:")
+                || operation.starts_with("remove_network:"))
+    );
+    assert!(
+        !docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("docker rm")
+                || operation.starts_with("docker network rm")
+                || operation.starts_with("docker volume rm"))
     );
 }
 
@@ -766,7 +1090,7 @@ async fn gc_removes_orphaned_dind_and_network() {
             // collect_labeled_dind: DinD sidecar with jackin.role label
             vec![ContainerRow {
                 name: "jk-agent-smith-dind".to_owned(),
-                id: "container-id".to_owned(),
+                id: "jk-agent-smith-dind".to_owned(),
                 labels: labels.clone(),
             }],
             // list_role_names (running): no running role containers
@@ -776,7 +1100,16 @@ async fn gc_removes_orphaned_dind_and_network() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&gc_test_paths(), &docker).await;
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    write_owned_cleanup_manifest(&paths, "jk-agent-smith", "jk-agent-smith-dind");
+    admit_fixture_shared(&docker, &fixture_lifetime(&paths, "jk-agent-smith"));
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert("jk-agent-smith-dind".to_owned(), ContainerState::Running);
+
+    gc_orphaned_resources(&paths, &docker).await;
 
     assert!(
         docker
@@ -790,26 +1123,38 @@ async fn gc_removes_orphaned_dind_and_network() {
             .recorded
             .borrow()
             .iter()
-            .any(|c| c.contains("docker rm -f jk-agent-smith"))
+            .any(|c| c == "docker inspect jk-agent-smith")
     );
-    assert!(
-        docker
-            .recorded
-            .borrow()
-            .iter()
-            .any(|c| c.contains("docker volume rm jk-agent-smith-dind-certs"))
-    );
-    assert!(
-        docker
-            .recorded
-            .borrow()
-            .iter()
-            .any(|c| c.contains("docker network rm jk-agent-smith-net"))
-    );
+    assert!(docker.recorded.borrow().iter().any(|c| {
+        c.contains(
+            format!(
+                "docker volume rm {}",
+                fixture_lifetime(&paths, "jk-agent-smith")
+                    .certs_volume_name()
+                    .unwrap()
+            )
+            .as_str(),
+        )
+    }));
+    assert!(docker.recorded.borrow().iter().any(|c| {
+        c.contains(
+            format!(
+                "docker network rm {}",
+                fixture_lifetime(&paths, "jk-agent-smith")
+                    .network_name()
+                    .unwrap()
+            )
+            .as_str(),
+        )
+    }));
+    assert!(docker.bound_operations.borrow().contains(&format!(
+        "remove_network:{}",
+        network_id_for("jk-agent-smith")
+    )));
 }
 
 #[tokio::test]
-async fn gc_removes_only_the_listed_sidecar_when_role_name_is_replaced() {
+async fn gc_retains_unowned_sidecar_when_role_name_is_replaced() {
     let mut labels = HashMap::new();
     labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-agent-smith".to_owned());
     let docker = FakeDockerClient {
@@ -835,10 +1180,7 @@ async fn gc_removes_only_the_listed_sidecar_when_role_name_is_replaced() {
 
     gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
-    assert_eq!(
-        docker.bound_operations.borrow().as_slice(),
-        ["remove:old-dind-id"]
-    );
+    assert!(docker.bound_operations.borrow().is_empty());
     assert!(
         !docker
             .bound_operations
@@ -920,13 +1262,16 @@ async fn gc_skips_dind_when_agent_is_stopped() {
 async fn gc_keeps_state_owned_prewarm_dind_resources() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    let lifetime = write_owned_cleanup_manifest(&paths, "jk-prewarm-dind", "jk-prewarm-dind-dind");
     crate::runtime::launch::write_prewarmed_dind_state(
         &paths,
         &crate::runtime::launch::DindSidecarPrewarm {
             dind: "jk-prewarm-dind-dind".to_owned(),
             dind_id: "prewarm-dind-id".to_owned(),
-            network: "jk-prewarm-dind-net".to_owned(),
-            certs_volume: "jk-prewarm-dind-certs".to_owned(),
+            network: lifetime.network_name().unwrap().to_owned(),
+            network_id: lifetime.network_id().unwrap().clone(),
+            lifetime_owner: lifetime.owner().to_owned(),
+            certs_volume: lifetime.certs_volume_name().unwrap().to_owned(),
             ready_ms: 1,
             kept: true,
         },
@@ -1035,6 +1380,7 @@ async fn gc_removes_orphaned_network_without_dind() {
         list_networks_queue: std::cell::RefCell::new(VecDeque::from([
             // gc_orphaned_networks: has a network with jackin.role label
             vec![NetworkRow {
+                id: network_id_for("jk-agent-smith"),
                 name: "jk-agent-smith-net".to_owned(),
                 labels: net_labels,
             }],
@@ -1042,14 +1388,373 @@ async fn gc_removes_orphaned_network_without_dind() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&gc_test_paths(), &docker).await;
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    write_owned_cleanup_manifest(&paths, "jk-agent-smith", "jk-agent-smith-dind");
+    admit_fixture_shared(&docker, &fixture_lifetime(&paths, "jk-agent-smith"));
+
+    let network = docker
+        .inspect_network_queue
+        .borrow()
+        .front()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .clone();
+    *docker.list_networks_queue.borrow_mut() = VecDeque::from([vec![network]]);
+    gc_orphaned_resources(&paths, &docker).await;
+
+    assert!(docker.recorded.borrow().iter().any(|c| {
+        c.contains(
+            format!(
+                "docker network rm {}",
+                fixture_lifetime(&paths, "jk-agent-smith")
+                    .network_name()
+                    .unwrap()
+            )
+            .as_str(),
+        )
+    }));
+    assert!(docker.bound_operations.borrow().contains(&format!(
+        "remove_network:{}",
+        network_id_for("jk-agent-smith")
+    )));
+}
+
+#[tokio::test]
+async fn gc_retains_network_without_persisted_ownership_identity() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container = "jk-agent-smith";
+    let id = network_id_for(container);
+    let docker = FakeDockerClient {
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![NetworkRow {
+            id: id.clone(),
+            name: "jk-agent-smith-net".to_owned(),
+            labels: HashMap::from([(LABEL_ROLE_KEY.to_owned(), container.to_owned())]),
+        }]])),
+        ..Default::default()
+    };
+    admit_fixture_network(&docker, container, "jk-agent-smith-net");
+
+    gc_orphaned_networks(&paths, &docker, None).await;
 
     assert!(
-        docker
+        !docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("remove_network:"))
+    );
+    assert!(
+        !docker
             .recorded
             .borrow()
             .iter()
-            .any(|c| c.contains("docker network rm jk-agent-smith-net"))
+            .any(|operation| operation.starts_with("docker network rm"))
+    );
+    assert_eq!(
+        docker.network_id_by_name.borrow().get("jk-agent-smith-net"),
+        Some(&id)
+    );
+}
+
+#[tokio::test]
+async fn load_cleanup_rejects_unadmitted_shared_custody_before_any_effect() {
+    for fault in [
+        "pending-network",
+        "pending-volume",
+        "durable-mismatch",
+        "corrupt-ledger",
+        "foreign-volume-labels",
+        "missing-dind-handle",
+        "missing-shared-custody",
+        "changed-daemon",
+    ] {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let owner = "jk-agent-smith";
+        let docker = FakeDockerClient::default();
+        let mut lifetime =
+            crate::instance::SharedDockerLifetime::fresh(&fixture_daemon(), owner, true, true)
+                .unwrap();
+        lifetime.save_pending(&paths).unwrap();
+        if fault != "pending-network" {
+            lifetime.capture_network(network_id_for(owner)).unwrap();
+        }
+        if fault != "pending-volume" && fault != "pending-network" {
+            lifetime.capture_certs_volume().unwrap();
+        }
+        let custody =
+            crate::runtime::launch::SharedDockerCreationCustody::adopt(&paths, lifetime.clone())
+                .unwrap();
+        let ledger = fixture_lifetime_path(&paths, &lifetime);
+        if fault == "durable-mismatch" {
+            let mut durable = serde_json::to_value(&lifetime).unwrap();
+            durable["certs_volume"] = serde_json::json!({"state": "pending", "name": lifetime.certs_volume_name().unwrap()});
+            std::fs::write(&ledger, serde_json::to_vec(&durable).unwrap()).unwrap();
+        } else if fault == "corrupt-ledger" {
+            std::fs::write(&ledger, b"{corrupt durable lifetime").unwrap();
+        }
+        let ledger_bytes = std::fs::read(&ledger).unwrap();
+        let socket = paths.jackin_home.join("sockets").join(owner);
+        std::fs::create_dir_all(&socket).unwrap();
+        let socket_config = socket.join("agent.toml");
+        std::fs::write(&socket_config, b"retain rollback socket").unwrap();
+        if lifetime.network_id().is_some() {
+            admit_fixture_shared(&docker, &lifetime);
+        }
+        let mut labels = HashMap::from([
+            (
+                "jackin.shared-generation".to_owned(),
+                lifetime.generation().to_owned(),
+            ),
+            (
+                "jackin.shared-owner".to_owned(),
+                lifetime.namespace_owner().to_owned(),
+            ),
+            ("jackin.managed".to_owned(), "true".to_owned()),
+        ]);
+        if fault == "foreign-volume-labels" {
+            labels.insert(
+                "jackin.shared-generation".to_owned(),
+                "foreign-generation".to_owned(),
+            );
+        }
+        let volume = lifetime.certs_volume_name().unwrap();
+        docker.volumes_by_name.borrow_mut().insert(
+            volume.to_owned(),
+            jackin_core::VolumeRow {
+                name: volume.to_owned(),
+                labels,
+                driver: "local".to_owned(),
+            },
+        );
+        let cleanup = LoadCleanup::new(
+            &paths,
+            owner.to_owned(),
+            "jk-agent-smith-dind".to_owned(),
+            volume.to_owned(),
+        )
+        .unwrap();
+        cleanup.set_role_handle(jackin_core::ContainerHandle::new(owner, "captured-role").unwrap());
+        if fault == "missing-dind-handle" {
+            cleanup.set_dind_required(true);
+        } else {
+            cleanup.set_dind_handle(
+                jackin_core::ContainerHandle::new("jk-agent-smith-dind", "captured-dind").unwrap(),
+            );
+        }
+        if let Some(network) = lifetime.network_id() {
+            cleanup.set_network_id(network.clone());
+        }
+        if fault != "missing-shared-custody" {
+            cleanup.bind_shared_custody(custody);
+        }
+
+        if fault == "changed-daemon" {
+            docker.set_daemon_server_id(
+                jackin_core::DaemonServerId::parse("different-daemon").unwrap(),
+            );
+        }
+        cleanup.run(&docker).await;
+
+        assert_eq!(std::fs::read(&ledger).unwrap(), ledger_bytes, "{fault}");
+        assert_eq!(
+            std::fs::read(socket_config).unwrap(),
+            b"retain rollback socket",
+            "{fault}"
+        );
+        assert!(
+            !docker
+                .bound_operations
+                .borrow()
+                .iter()
+                .any(|operation| operation.starts_with("remove:")
+                    || operation.starts_with("remove_network:")),
+            "{fault}"
+        );
+        assert!(
+            !docker
+                .recorded
+                .borrow()
+                .iter()
+                .any(|operation| operation.starts_with("docker rm")
+                    || operation.starts_with("docker network rm")
+                    || operation.starts_with("docker volume rm")),
+            "{fault}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn load_cleanup_refuses_exact_socket_symlink_before_any_docker_effect() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let owner = "jk-agent-smith";
+    let lifetime = write_owned_cleanup_manifest(&paths, owner, "jk-agent-smith-dind");
+    let custody =
+        crate::runtime::launch::SharedDockerCreationCustody::adopt(&paths, lifetime.clone())
+            .unwrap();
+    let ledger = fixture_lifetime_path(&paths, &lifetime);
+    let ledger_bytes = std::fs::read(&ledger).unwrap();
+    let outside = temp.path().join("outside-rollback-socket");
+    std::fs::create_dir_all(&outside).unwrap();
+    let config = outside.join("agent.toml");
+    std::fs::write(&config, b"retain outside socket config").unwrap();
+    let sockets = paths.jackin_home.join("sockets");
+    std::fs::create_dir_all(&sockets).unwrap();
+    let socket = sockets.join(owner);
+    std::os::unix::fs::symlink(&outside, &socket).unwrap();
+    let docker = FakeDockerClient::default();
+    admit_fixture_shared(&docker, &lifetime);
+    let cleanup = LoadCleanup::new(
+        &paths,
+        owner.to_owned(),
+        "jk-agent-smith-dind".to_owned(),
+        lifetime.certs_volume_name().unwrap().to_owned(),
+    )
+    .unwrap();
+    cleanup.set_role_handle(jackin_core::ContainerHandle::new(owner, "captured-role").unwrap());
+    cleanup.set_dind_handle(
+        jackin_core::ContainerHandle::new("jk-agent-smith-dind", "captured-dind").unwrap(),
+    );
+    cleanup.set_network_id(lifetime.network_id().unwrap().clone());
+    cleanup.bind_shared_custody(custody);
+
+    cleanup.run(&docker).await;
+
+    assert_eq!(std::fs::read(ledger).unwrap(), ledger_bytes);
+    assert_eq!(
+        std::fs::read(config).unwrap(),
+        b"retain outside socket config"
+    );
+    assert!(
+        std::fs::symlink_metadata(socket)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(
+        !docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("remove:")
+                || operation.starts_with("remove_network:"))
+    );
+    assert!(
+        !docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("docker rm")
+                || operation.starts_with("docker network rm")
+                || operation.starts_with("docker volume rm"))
+    );
+}
+
+#[tokio::test]
+async fn load_cleanup_retains_socket_created_after_absence_admission() {
+    thread_local! {
+        static APPEARING_SOCKET: std::cell::RefCell<Option<std::path::PathBuf>> = const { std::cell::RefCell::new(None) };
+    }
+    fn create_socket_during_removal(operation: &str) {
+        if operation.starts_with("docker rm -f jk-agent-smith") {
+            APPEARING_SOCKET.with(|slot| {
+                if let Some(path) = slot.borrow_mut().take() {
+                    std::fs::create_dir_all(&path).unwrap();
+                    std::fs::write(path.join("agent.toml"), b"new socket after admission").unwrap();
+                }
+            });
+        }
+    }
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let owner = "jk-agent-smith";
+    let lifetime = write_owned_cleanup_manifest(&paths, owner, "jk-agent-smith-dind");
+    let custody =
+        crate::runtime::launch::SharedDockerCreationCustody::adopt(&paths, lifetime.clone())
+            .unwrap();
+    let socket = paths.jackin_home.join("sockets").join(owner);
+    assert!(!socket.exists());
+    APPEARING_SOCKET.with(|slot| *slot.borrow_mut() = Some(socket.clone()));
+    let docker = FakeDockerClient {
+        operation_hook: Some(create_socket_during_removal),
+        ..Default::default()
+    };
+    admit_fixture_shared(&docker, &lifetime);
+    let cleanup = LoadCleanup::new(
+        &paths,
+        owner.to_owned(),
+        "jk-agent-smith-dind".to_owned(),
+        lifetime.certs_volume_name().unwrap().to_owned(),
+    )
+    .unwrap();
+    cleanup.set_role_handle(jackin_core::ContainerHandle::new(owner, "captured-role").unwrap());
+    cleanup.set_dind_handle(
+        jackin_core::ContainerHandle::new("jk-agent-smith-dind", "captured-dind").unwrap(),
+    );
+    cleanup.set_network_id(lifetime.network_id().unwrap().clone());
+    cleanup.bind_shared_custody(custody);
+
+    cleanup.run(&docker).await;
+
+    assert_eq!(
+        std::fs::read(socket.join("agent.toml")).unwrap(),
+        b"new socket after admission"
+    );
+    assert!(
+        docker
+            .bound_operations
+            .borrow()
+            .contains(&"remove:captured-role".to_owned()),
+        "hook must follow admitted Docker effects"
+    );
+    APPEARING_SOCKET
+        .with(|slot| assert!(slot.borrow().is_none(), "socket creation hook must fire"));
+}
+
+#[tokio::test]
+async fn load_cleanup_rolls_back_captured_network_without_container_handles() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container = "jk-agent-smith";
+    let docker = FakeDockerClient::default();
+    let id = network_id_for(container);
+    docker
+        .network_id_by_name
+        .borrow_mut()
+        .insert("jk-agent-smith-net".to_owned(), id.clone());
+    let cleanup = LoadCleanup::new(
+        &paths,
+        container.to_owned(),
+        "jk-agent-smith-dind".to_owned(),
+        "jk-agent-smith-dind-certs".to_owned(),
+    )
+    .unwrap();
+    cleanup.set_network_id(id.clone());
+
+    cleanup.run(&docker).await;
+
+    assert!(
+        docker
+            .bound_operations
+            .borrow()
+            .contains(&format!("remove_network:{id}"))
+    );
+    assert!(
+        !docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("remove:"))
+    );
+    assert!(
+        !docker
+            .network_id_by_name
+            .borrow()
+            .contains_key("jk-agent-smith-net")
     );
 }
 
@@ -1070,6 +1775,7 @@ async fn gc_preserves_network_when_role_container_is_stopped() {
         list_networks_queue: std::cell::RefCell::new(VecDeque::from([
             // gc_orphaned_networks: has a network with jackin.role label
             vec![NetworkRow {
+                id: network_id_for("jk-agent-smith"),
                 name: "jk-agent-smith-net".to_owned(),
                 labels: net_labels,
             }],
@@ -1100,12 +1806,12 @@ async fn gc_cleans_multiple_orphans() {
             vec![
                 ContainerRow {
                     name: "jk-agent-smith-dind".to_owned(),
-                    id: "container-id".to_owned(),
+                    id: "jk-agent-smith-dind".to_owned(),
                     labels: labels_smith,
                 },
                 ContainerRow {
                     name: "jk-neo-dind".to_owned(),
-                    id: "container-id".to_owned(),
+                    id: "jk-neo-dind".to_owned(),
                     labels: labels_neo,
                 },
             ],
@@ -1116,7 +1822,22 @@ async fn gc_cleans_multiple_orphans() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&gc_test_paths(), &docker).await;
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    write_owned_cleanup_manifest(&paths, "jk-agent-smith", "jk-agent-smith-dind");
+    admit_fixture_shared(&docker, &fixture_lifetime(&paths, "jk-agent-smith"));
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert("jk-agent-smith-dind".to_owned(), ContainerState::Running);
+    write_owned_cleanup_manifest(&paths, "jk-neo", "jk-neo-dind");
+    admit_fixture_shared(&docker, &fixture_lifetime(&paths, "jk-neo"));
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert("jk-neo-dind".to_owned(), ContainerState::Running);
+
+    gc_orphaned_resources(&paths, &docker).await;
 
     assert!(
         docker
@@ -1125,13 +1846,17 @@ async fn gc_cleans_multiple_orphans() {
             .iter()
             .any(|c| c.contains("docker rm -f jk-agent-smith-dind"))
     );
-    assert!(
-        docker
-            .recorded
-            .borrow()
-            .iter()
-            .any(|c| c.contains("docker volume rm jk-agent-smith-dind-certs"))
-    );
+    assert!(docker.recorded.borrow().iter().any(|c| {
+        c.contains(
+            format!(
+                "docker volume rm {}",
+                fixture_lifetime(&paths, "jk-agent-smith")
+                    .certs_volume_name()
+                    .unwrap()
+            )
+            .as_str(),
+        )
+    }));
     assert!(
         docker
             .recorded
@@ -1139,19 +1864,35 @@ async fn gc_cleans_multiple_orphans() {
             .iter()
             .any(|c| c.contains("docker rm -f jk-neo-dind"))
     );
+    assert!(docker.recorded.borrow().iter().any(|c| {
+        c.contains(
+            format!(
+                "docker volume rm {}",
+                fixture_lifetime(&paths, "jk-neo")
+                    .certs_volume_name()
+                    .unwrap()
+            )
+            .as_str(),
+        )
+    }));
+    assert!(docker.recorded.borrow().iter().any(|c| {
+        c.contains(
+            format!(
+                "docker network rm {}",
+                fixture_lifetime(&paths, "jk-neo").network_name().unwrap()
+            )
+            .as_str(),
+        )
+    }));
+    assert!(docker.bound_operations.borrow().contains(&format!(
+        "remove_network:{}",
+        network_id_for("jk-agent-smith")
+    )));
     assert!(
         docker
-            .recorded
+            .bound_operations
             .borrow()
-            .iter()
-            .any(|c| c.contains("docker volume rm jk-neo-dind-certs"))
-    );
-    assert!(
-        docker
-            .recorded
-            .borrow()
-            .iter()
-            .any(|c| c.contains("docker network rm jk-neo-net"))
+            .contains(&format!("remove_network:{}", network_id_for("jk-neo")))
     );
 }
 
@@ -1198,6 +1939,7 @@ async fn gc_does_not_panic_when_list_role_names_fails_in_orphaned_networks() {
                     // list_role_names call inside gc_orphaned_networks will fail via fail_with
         ])),
         list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![NetworkRow {
+            id: network_id_for("jk-agent-smith"),
             name: "jk-agent-smith-net".to_owned(),
             labels: net_labels,
         }]])),
@@ -1244,29 +1986,10 @@ async fn prune_dir_is_ok_when_directory_absent() {
 // ── prune_instances ──────────────────────────────────────────────────────
 
 fn make_instance_at(paths: &JackinPaths, container: &str, status: InstanceStatus) {
-    let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
-        container_base: container,
-        workspace_name: Some("ws"),
-        workspace_label: "ws",
-        workdir: "/ws",
-        host_workdir_fingerprint: "sha256:test",
-        role_key: "agent-smith",
-        role_display_name: "Agent Smith",
-        agent_runtime: jackin_core::Agent::Claude,
-        role_source_git: "https://example.invalid/agent-smith.git",
-        role_source_ref: None,
-        image_tag: "jk_agent-smith",
-        docker: DockerResources {
-            role_container: container.to_owned(),
-            dind_container: Some(format!("{container}-dind")),
-            network: format!("{container}-net"),
-            certs_volume: Some(format!("{container}-dind-certs")),
-        },
-        role_git_sha: None,
-        base_image_ref: None,
-        base_image_digest: None,
-        supported_agents: vec![],
-    });
+    write_owned_cleanup_manifest(paths, container, &format!("{container}-dind"));
+    let mut manifest = InstanceManifest::read_optional(&paths.data_dir.join(container))
+        .unwrap()
+        .unwrap();
     manifest.mark_status(status);
     let state_dir = paths.data_dir.join(container);
     std::fs::create_dir_all(&state_dir).unwrap();
@@ -1302,12 +2025,19 @@ async fn prune_instances_skips_when_docker_resources_present() {
     make_instance_at(&paths, container, InstanceStatus::CleanExited);
 
     // inspect_queue returns Running → container still exists → skip purge.
+    let index_path = paths.data_dir.join("instances.json");
+    let index_bytes = std::fs::read(&index_path).unwrap();
+    let manifest_path = paths.data_dir.join(container).join(".jackin/instance.json");
+    let manifest_bytes = std::fs::read(&manifest_path).unwrap();
+
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
     };
     let mut runner = FakeRunner::default();
-    prune_instances(&paths, &docker, &mut runner).await.unwrap();
+    prune_instances(&paths, &docker, &mut runner)
+        .await
+        .unwrap_err();
 
     assert!(paths.data_dir.join(container).exists());
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
@@ -1317,6 +2047,26 @@ async fn prune_instances_skips_when_docker_resources_present() {
             .iter()
             .any(|e| e.container_base == container)
     );
+    assert_eq!(std::fs::read(index_path).unwrap(), index_bytes);
+    assert!(runner.recorded.is_empty());
+    assert!(
+        !docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("remove:")
+                || operation.starts_with("remove_network:"))
+    );
+    assert!(
+        !docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("docker rm")
+                || operation.starts_with("docker network rm")
+                || operation.starts_with("docker volume rm"))
+    );
+    assert_eq!(std::fs::read(manifest_path).unwrap(), manifest_bytes);
 }
 
 #[tokio::test]
@@ -1354,6 +2104,101 @@ async fn prune_instances_reconciles_stale_active_to_crashed() {
     let manifest =
         InstanceManifest::read_optional_lossy(&paths.data_dir.join(container)).expect("manifest");
     assert_eq!(manifest.status, InstanceStatus::Crashed);
+}
+
+#[tokio::test]
+async fn normal_prune_preflight_preserves_payload_index_and_stale_active_manifest() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let stale_active = "jk-aaaaaaaa-agentsmith";
+    let earlier = "jk-bbbbbbbb-agentsmith";
+    let corrupt = "jk-cccccccc-agentsmith";
+    make_instance_at(&paths, stale_active, InstanceStatus::Active);
+    make_instance_at(&paths, earlier, InstanceStatus::CleanExited);
+    make_instance_at(&paths, corrupt, InstanceStatus::FailedSetup);
+    let earlier_state = paths.data_dir.join(earlier);
+    let clone =
+        crate::isolation::materialize::clone_path_for(&earlier_state, "/workspace", earlier);
+    std::fs::create_dir_all(&clone).unwrap();
+    let payload = clone.join("payload");
+    std::fs::write(&payload, b"retain earlier terminal clone").unwrap();
+    crate::isolation::state::write_records(
+        &earlier_state,
+        &[jackin_core::IsolationRecord {
+            workspace_name: None,
+            mount_dst: "/workspace".to_owned(),
+            original_src: temp.path().join("source").display().to_string(),
+            isolation: jackin_core::MountIsolation::Clone,
+            worktree_path: clone.display().to_string(),
+            scratch_branch: String::new(),
+            base_commit: String::new(),
+            selector_key: "agent-smith".to_owned(),
+            container_name: earlier.to_owned(),
+            cleanup_status: jackin_core::CleanupStatus::Active,
+        }],
+    )
+    .unwrap();
+    let corrupt_records = paths.data_dir.join(corrupt).join(".jackin/isolation.json");
+    std::fs::write(&corrupt_records, b"{later corrupt terminal records").unwrap();
+    let snapshots: Vec<_> = [
+        paths.data_dir.join("instances.json"),
+        paths
+            .data_dir
+            .join(stale_active)
+            .join(".jackin/instance.json"),
+        earlier_state.join(".jackin/instance.json"),
+        earlier_state.join(".jackin/isolation.json"),
+        paths.data_dir.join(corrupt).join(".jackin/instance.json"),
+        corrupt_records,
+        payload,
+    ]
+    .into_iter()
+    .map(|path| {
+        let bytes = std::fs::read(&path).unwrap();
+        (path, bytes)
+    })
+    .collect();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    prune_instances(&paths, &docker, &mut runner)
+        .await
+        .unwrap_err();
+
+    for (path, bytes) in snapshots {
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            bytes,
+            "changed {}",
+            path.display()
+        );
+    }
+    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(stale_active))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        manifest.status,
+        InstanceStatus::Active,
+        "failed admission must not reconcile stale Active state"
+    );
+    assert!(runner.recorded.is_empty());
+    assert!(
+        !docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("remove:")
+                || operation.starts_with("remove_network:"))
+    );
+    assert!(
+        !docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("docker rm")
+                || operation.starts_with("docker network rm")
+                || operation.starts_with("docker volume rm"))
+    );
 }
 
 #[tokio::test]
@@ -1611,10 +2456,8 @@ async fn prune_instances_removes_all_four_prunable_statuses() {
 }
 
 #[tokio::test]
-async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
-    // Purged tombstones are index-only entries — the state dir is already gone.
-    // purge_container_filesystem must tolerate NotFound so the tombstone is
-    // removed from the index without error.
+async fn prune_instances_retains_unowned_purged_tombstone_without_manifest() {
+    // An index tombstone alone supplies no persisted deletion authority.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-k7p9m2xq-agentsmith";
@@ -1646,18 +2489,43 @@ async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
     manifest.mark_status(InstanceStatus::Purged);
     InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 
+    let index_path = paths.data_dir.join("instances.json");
+    let index_bytes = std::fs::read(&index_path).unwrap();
+
     let docker = FakeDockerClient::default(); // inspect returns NotFound → allow purge
     let mut runner = FakeRunner::default();
-    prune_instances(&paths, &docker, &mut runner).await.unwrap();
+    prune_instances(&paths, &docker, &mut runner)
+        .await
+        .unwrap_err();
 
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
     assert!(
         index
             .instances
             .iter()
-            .all(|e| e.container_base != container),
-        "tombstone should be cleared from the index"
+            .any(|e| e.container_base == container),
+        "unknown tombstone custody must remain in the index"
     );
+    assert_eq!(std::fs::read(index_path).unwrap(), index_bytes);
+    assert!(runner.recorded.is_empty());
+    assert!(
+        !docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("remove:")
+                || operation.starts_with("remove_network:"))
+    );
+    assert!(
+        !docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("docker rm")
+                || operation.starts_with("docker network rm")
+                || operation.starts_with("docker volume rm"))
+    );
+    assert!(docker.recorded.borrow().is_empty());
 }
 
 #[tokio::test]
@@ -1678,7 +2546,7 @@ async fn prune_dir_returns_err_with_path_context_on_failure() {
 }
 
 #[tokio::test]
-async fn prune_all_instances_removes_data_dir_entirely() {
+async fn prune_all_instances_retains_unowned_lock_directory() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     std::fs::create_dir_all(&paths.data_dir).unwrap();
@@ -1699,16 +2567,27 @@ async fn prune_all_instances_removes_data_dir_entirely() {
     let mut runner = FakeRunner::default();
     prune_all_instances(&paths, &docker, &mut runner)
         .await
-        .unwrap();
+        .unwrap_err();
 
-    assert!(
-        !paths.data_dir.exists(),
-        "data_dir should be completely removed"
+    assert!(paths.data_dir.exists());
+    assert_eq!(
+        std::fs::read(paths.data_dir.join("jk-abc123-thearchitect.lock")).unwrap(),
+        b""
     );
+    assert_eq!(
+        std::fs::read(paths.data_dir.join("caffeinate.pid")).unwrap(),
+        b"99999"
+    );
+    assert_eq!(
+        std::fs::read(paths.data_dir.join("the-architect.locks/default.repo.lock")).unwrap(),
+        b""
+    );
+    assert!(docker.bound_operations.borrow().is_empty());
+    assert!(docker.recorded.borrow().is_empty());
 }
 
 #[tokio::test]
-async fn prune_all_instances_removes_data_dir_when_index_empty() {
+async fn prune_all_instances_retains_unowned_file_when_index_empty() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     std::fs::create_dir_all(&paths.data_dir).unwrap();
@@ -1718,9 +2597,766 @@ async fn prune_all_instances_removes_data_dir_when_index_empty() {
     let mut runner = FakeRunner::default();
     prune_all_instances(&paths, &docker, &mut runner)
         .await
+        .unwrap_err();
+
+    assert_eq!(
+        std::fs::read(paths.data_dir.join("jk-stale.lock")).unwrap(),
+        b""
+    );
+    assert!(docker.bound_operations.borrow().is_empty());
+    assert!(docker.recorded.borrow().is_empty());
+}
+
+#[tokio::test]
+async fn class_purge_uses_exact_persisted_role_namespace() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selected = "jk-aaaaaaaa-agentsmith";
+    let unrelated = "jk-bbbbbbbb-agentsmith";
+    write_cleanup_manifest_for_role(
+        &paths,
+        selected,
+        &format!("{selected}-dind"),
+        "alpha/agent-smith",
+    );
+    write_cleanup_manifest_for_role(
+        &paths,
+        unrelated,
+        &format!("{unrelated}-dind"),
+        "beta/agent-smith",
+    );
+    let retained_manifest = paths.data_dir.join(unrelated).join(".jackin/instance.json");
+    let retained_bytes = std::fs::read(&retained_manifest).unwrap();
+    let slug_collision = "jk-cccccccc-agentsmith";
+    write_cleanup_manifest_for_role(
+        &paths,
+        slug_collision,
+        &format!("{slug_collision}-dind"),
+        "alpha/agentsmith",
+    );
+    let collision_manifest = paths
+        .data_dir
+        .join(slug_collision)
+        .join(".jackin/instance.json");
+    let collision_bytes = std::fs::read(&collision_manifest).unwrap();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    purge_class_data(
+        &paths,
+        &RoleSelector::new(Some("alpha"), "agent-smith"),
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    assert!(!paths.data_dir.join(selected).exists());
+    assert_eq!(std::fs::read(retained_manifest).unwrap(), retained_bytes);
+    assert_eq!(std::fs::read(collision_manifest).unwrap(), collision_bytes);
+    assert!(docker.bound_operations.borrow().is_empty());
+}
+
+#[tokio::test]
+async fn local_and_class_purge_retain_live_shared_resources_without_containers() {
+    for class_purge in [false, true] {
+        for live_network in [false, true] {
+            let temp = tempdir().unwrap();
+            let paths = JackinPaths::for_tests(temp.path());
+            let container = "jk-aaaaaaaa-agentsmith";
+            let lifetime =
+                write_owned_cleanup_manifest(&paths, container, &format!("{container}-dind"));
+            let state = paths.data_dir.join(container);
+            let clone =
+                crate::isolation::materialize::clone_path_for(&state, "/workspace", container);
+            std::fs::create_dir_all(&clone).unwrap();
+            let payload = clone.join("payload");
+            std::fs::write(&payload, b"retain live shared custody").unwrap();
+            crate::isolation::state::write_records(
+                &state,
+                &[jackin_core::IsolationRecord {
+                    workspace_name: None,
+                    mount_dst: "/workspace".to_owned(),
+                    original_src: temp.path().join("source").display().to_string(),
+                    isolation: jackin_core::MountIsolation::Clone,
+                    worktree_path: clone.display().to_string(),
+                    scratch_branch: String::new(),
+                    base_commit: String::new(),
+                    selector_key: "agent-smith".to_owned(),
+                    container_name: container.to_owned(),
+                    cleanup_status: jackin_core::CleanupStatus::Active,
+                }],
+            )
+            .unwrap();
+            let socket = paths.jackin_home.join("sockets").join(container);
+            std::fs::create_dir_all(&socket).unwrap();
+            std::fs::write(socket.join("agent.toml"), b"retain socket configuration").unwrap();
+            let snapshots: Vec<_> = [
+                state.join(".jackin/instance.json"),
+                state.join(".jackin/isolation.json"),
+                payload,
+                socket.join("agent.toml"),
+                fixture_lifetime_path(&paths, &lifetime),
+            ]
+            .into_iter()
+            .map(|path| {
+                let bytes = std::fs::read(&path).unwrap();
+                (path, bytes)
+            })
+            .collect();
+            let docker = FakeDockerClient::default();
+            admit_fixture_shared(&docker, &lifetime);
+            if live_network {
+                docker.volumes_by_name.borrow_mut().clear();
+            } else {
+                docker.inspect_network_queue.borrow_mut().clear();
+                docker.network_id_by_name.borrow_mut().clear();
+            }
+            let mut runner = FakeRunner::default();
+
+            if class_purge {
+                purge_class_data(
+                    &paths,
+                    &RoleSelector::new(None, "agent-smith"),
+                    &docker,
+                    &mut runner,
+                )
+                .await
+                .unwrap_err();
+            } else {
+                purge_container_state(&paths, container, &docker, &mut runner)
+                    .await
+                    .unwrap_err();
+            }
+
+            for (path, bytes) in snapshots {
+                assert_eq!(
+                    std::fs::read(&path).unwrap(),
+                    bytes,
+                    "changed {}",
+                    path.display()
+                );
+            }
+            assert!(runner.recorded.is_empty());
+            assert!(
+                !docker
+                    .bound_operations
+                    .borrow()
+                    .iter()
+                    .any(|operation| operation.starts_with("remove:")
+                        || operation.starts_with("remove_network:"))
+            );
+            assert!(!docker.recorded.borrow().iter().any(|operation| {
+                operation.starts_with("docker rm")
+                    || operation.starts_with("docker network rm")
+                    || operation.starts_with("docker volume rm")
+            }));
+        }
+    }
+}
+
+#[tokio::test]
+async fn class_purge_admits_every_selected_target_before_filesystem_effects() {
+    for unavailable_backend in [false, true] {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let first = "jk-aaaaaaaa-agentsmith";
+        let later = "jk-bbbbbbbb-agentsmith";
+        for container in [first, later] {
+            write_owned_cleanup_manifest(&paths, container, &format!("{container}-dind"));
+            let socket = paths.jackin_home.join("sockets").join(container);
+            std::fs::create_dir_all(&socket).unwrap();
+            std::fs::write(socket.join("agent.toml"), container.as_bytes()).unwrap();
+        }
+        let first_state = paths.data_dir.join(first);
+        let clone =
+            crate::isolation::materialize::clone_path_for(&first_state, "/workspace", first);
+        std::fs::create_dir_all(&clone).unwrap();
+        let payload = clone.join("payload");
+        std::fs::write(&payload, b"recoverable earlier clone").unwrap();
+        crate::isolation::state::write_records(
+            &first_state,
+            &[jackin_core::IsolationRecord {
+                workspace_name: None,
+                mount_dst: "/workspace".to_owned(),
+                original_src: temp.path().join("source").display().to_string(),
+                isolation: jackin_core::MountIsolation::Clone,
+                worktree_path: clone.display().to_string(),
+                scratch_branch: String::new(),
+                base_commit: String::new(),
+                selector_key: "agent-smith".to_owned(),
+                container_name: first.to_owned(),
+                cleanup_status: jackin_core::CleanupStatus::Active,
+            }],
+        )
+        .unwrap();
+        let later_records = paths.data_dir.join(later).join(".jackin/isolation.json");
+        if unavailable_backend {
+            crate::isolation::state::write_records(&paths.data_dir.join(later), &[]).unwrap();
+        } else {
+            std::fs::write(&later_records, b"{corrupt later matching-role records").unwrap();
+        }
+        let snapshots: Vec<_> = [first, later]
+            .into_iter()
+            .flat_map(|container| {
+                [
+                    paths.data_dir.join(container).join(".jackin/instance.json"),
+                    paths
+                        .data_dir
+                        .join(container)
+                        .join(".jackin/isolation.json"),
+                    paths
+                        .jackin_home
+                        .join("sockets")
+                        .join(container)
+                        .join("agent.toml"),
+                ]
+            })
+            .map(|path| {
+                let bytes = std::fs::read(&path).unwrap();
+                (path, bytes)
+            })
+            .collect();
+        let docker = FakeDockerClient::default();
+        if unavailable_backend {
+            docker.inspect_state_by_name.borrow_mut().insert(
+                later.to_owned(),
+                ContainerState::InspectUnavailable("later backend unavailable".to_owned()),
+            );
+        }
+        let mut runner = FakeRunner::default();
+
+        purge_class_data(
+            &paths,
+            &RoleSelector::new(None, "agent-smith"),
+            &docker,
+            &mut runner,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            std::fs::read(payload).unwrap(),
+            b"recoverable earlier clone"
+        );
+        for (path, bytes) in snapshots {
+            assert_eq!(
+                std::fs::read(&path).unwrap(),
+                bytes,
+                "changed {}",
+                path.display()
+            );
+        }
+        assert!(runner.recorded.is_empty());
+        assert!(
+            !docker
+                .bound_operations
+                .borrow()
+                .iter()
+                .any(|operation| operation.starts_with("remove:")
+                    || operation.starts_with("remove_network:"))
+        );
+        assert!(!docker.recorded.borrow().iter().any(
+            |operation| operation.starts_with("docker rm")
+                || operation.starts_with("docker network rm")
+                || operation.starts_with("docker volume rm")
+        ));
+    }
+}
+
+#[tokio::test]
+async fn class_purge_cleans_isolation_for_truncated_role_name() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(
+        Some("alpha"),
+        "a-role-name-long-enough-to-exceed-the-container-dns-budget-completely",
+    );
+    let container = crate::instance::naming::container_name_with_id(None, &selector, "aaaaaaaa");
+    assert!(
+        !container.ends_with(&crate::instance::naming::compact_component(
+            &selector.name,
+            "role",
+        ))
+    );
+    write_cleanup_manifest_for_role(
+        &paths,
+        &container,
+        &format!("{container}-dind"),
+        &selector.key(),
+    );
+    let state = paths.data_dir.join(&container);
+    let clone = crate::isolation::materialize::clone_path_for(&state, "/workspace", &container);
+    std::fs::create_dir_all(&clone).unwrap();
+    std::fs::write(clone.join("payload"), b"owned clone").unwrap();
+    crate::isolation::state::write_records(
+        &state,
+        &[jackin_core::IsolationRecord {
+            workspace_name: None,
+            mount_dst: "/workspace".to_owned(),
+            original_src: temp.path().join("source").display().to_string(),
+            isolation: jackin_core::MountIsolation::Clone,
+            worktree_path: clone.display().to_string(),
+            scratch_branch: String::new(),
+            base_commit: String::new(),
+            selector_key: selector.key(),
+            container_name: container.clone(),
+            cleanup_status: jackin_core::CleanupStatus::Active,
+        }],
+    )
+    .unwrap();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    purge_class_data(&paths, &selector, &docker, &mut runner)
+        .await
         .unwrap();
 
-    assert!(!paths.data_dir.exists(), "data_dir removed");
+    assert!(!state.exists());
+    assert!(!clone.exists());
+    assert!(docker.bound_operations.borrow().is_empty());
+}
+
+#[tokio::test]
+async fn bulk_prune_refuses_unindexed_corrupt_manifest_before_docker_mutation() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = paths
+        .data_dir
+        .join("jk-aaaaaaaa-agentsmith/.jackin/instance.json");
+    std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+    std::fs::write(&manifest, b"{corrupt manifest").unwrap();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    prune_all_instances(&paths, &docker, &mut runner)
+        .await
+        .unwrap_err();
+
+    assert_eq!(std::fs::read(manifest).unwrap(), b"{corrupt manifest");
+    assert!(docker.recorded.borrow().is_empty());
+    assert!(docker.bound_operations.borrow().is_empty());
+    assert!(runner.recorded.is_empty());
+}
+
+#[tokio::test]
+async fn bulk_prune_refuses_unindexed_corrupt_records_before_docker_mutation() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container = "jk-aaaaaaaa-agentsmith";
+    write_owned_cleanup_manifest(&paths, container, &format!("{container}-dind"));
+    let manifest = paths.data_dir.join(container).join(".jackin/instance.json");
+    let manifest_bytes = std::fs::read(&manifest).unwrap();
+    let records = paths
+        .data_dir
+        .join(container)
+        .join(".jackin/isolation.json");
+    std::fs::write(&records, b"{corrupt isolation records").unwrap();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    prune_all_instances(&paths, &docker, &mut runner)
+        .await
+        .unwrap_err();
+
+    assert_eq!(std::fs::read(manifest).unwrap(), manifest_bytes);
+    assert_eq!(
+        std::fs::read(records).unwrap(),
+        b"{corrupt isolation records"
+    );
+    assert!(docker.recorded.borrow().is_empty());
+    assert!(docker.bound_operations.borrow().is_empty());
+    assert!(runner.recorded.is_empty());
+}
+
+#[tokio::test]
+async fn bulk_prune_preflight_preserves_migratable_v1_before_corrupt_sibling() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let historical = "jk-aaaaaaaa-agentsmith";
+    let corrupt = "jk-bbbbbbbb-agentsmith";
+    for container in [historical, corrupt] {
+        write_owned_cleanup_manifest(&paths, container, &format!("{container}-dind"));
+    }
+    let historical_records = paths
+        .data_dir
+        .join(historical)
+        .join(".jackin/isolation.json");
+    let bytes = serde_json::to_vec(&serde_json::json!({
+        "version": 1,
+        "records": [{
+            "workspace": "workspace",
+            "mount_dst": "/workspace",
+            "original_src": temp.path().join("source").display().to_string(),
+            "isolation": "clone",
+            "worktree_path": crate::isolation::materialize::clone_path_for(&paths.data_dir.join(historical), "/workspace", historical).display().to_string(),
+            "scratch_branch": "",
+            "base_commit": "",
+            "selector_key": "agent-smith",
+            "container_name": historical,
+            "cleanup_status": "active"
+        }]
+    })).unwrap();
+    std::fs::write(&historical_records, &bytes).unwrap();
+    let corrupt_records = paths.data_dir.join(corrupt).join(".jackin/isolation.json");
+    std::fs::write(&corrupt_records, b"{corrupt sibling").unwrap();
+    let historical_manifest = paths
+        .data_dir
+        .join(historical)
+        .join(".jackin/instance.json");
+    let manifest_bytes = std::fs::read(&historical_manifest).unwrap();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    prune_all_instances(&paths, &docker, &mut runner)
+        .await
+        .unwrap_err();
+
+    assert_eq!(std::fs::read(historical_records).unwrap(), bytes);
+    assert_eq!(std::fs::read(historical_manifest).unwrap(), manifest_bytes);
+    assert_eq!(std::fs::read(corrupt_records).unwrap(), b"{corrupt sibling");
+    assert!(docker.recorded.borrow().is_empty());
+    assert!(docker.bound_operations.borrow().is_empty());
+    assert!(runner.recorded.is_empty());
+}
+
+#[tokio::test]
+async fn bulk_prune_retains_failed_custody_and_removes_released_index_sibling() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let released = "jk-aaaaaaaa-agentsmith";
+    let retained = "jk-bbbbbbbb-agentsmith";
+    for container in [released, retained] {
+        write_owned_cleanup_manifest(&paths, container, &format!("{container}-dind"));
+        let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container))
+            .unwrap()
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+    }
+    let manifest = paths.data_dir.join(retained).join(".jackin/instance.json");
+    let manifest_bytes = std::fs::read(&manifest).unwrap();
+    let retained_state = paths.data_dir.join(retained);
+    let clone =
+        crate::isolation::materialize::clone_path_for(&retained_state, "/workspace", retained);
+    std::fs::create_dir_all(&clone).unwrap();
+    crate::isolation::state::write_records(
+        &retained_state,
+        &[jackin_core::IsolationRecord {
+            workspace_name: None,
+            mount_dst: "/workspace".to_owned(),
+            original_src: temp.path().join("source").display().to_string(),
+            isolation: jackin_core::MountIsolation::Clone,
+            worktree_path: clone.display().to_string(),
+            scratch_branch: String::new(),
+            base_commit: String::new(),
+            selector_key: "agent-smith".to_owned(),
+            container_name: retained.to_owned(),
+            cleanup_status: jackin_core::CleanupStatus::Active,
+        }],
+    )
+    .unwrap();
+    let records = retained_state.join(".jackin/isolation.json");
+    let record_bytes = std::fs::read(&records).unwrap();
+    let payload = clone.join("payload");
+    std::fs::write(&payload, b"retain recoverable data").unwrap();
+    let docker = FakeDockerClient::default();
+    docker.inspect_queue.borrow_mut().extend([
+        ContainerState::NotFound, // released role: global admission
+        ContainerState::NotFound, // released sidecar: global admission
+        ContainerState::NotFound, // retained role: global admission
+        ContainerState::NotFound, // retained sidecar: global admission
+        ContainerState::NotFound, // released role: filesystem purge
+        ContainerState::NotFound, // released sidecar: filesystem purge
+        ContainerState::InspectUnavailable("daemon unavailable after admission".to_owned()),
+    ]);
+    let mut runner = FakeRunner::default();
+
+    let error = prune_all_instances(&paths, &docker, &mut runner)
+        .await
+        .unwrap_err();
+
+    assert!(format!("{error:#}").contains(retained), "{error:#}");
+    assert_eq!(std::fs::read(manifest).unwrap(), manifest_bytes);
+    assert_eq!(std::fs::read(payload).unwrap(), b"retain recoverable data");
+    assert_eq!(std::fs::read(records).unwrap(), record_bytes);
+    assert!(!paths.data_dir.join(released).exists());
+    let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+    assert!(
+        !index
+            .instances
+            .iter()
+            .any(|entry| entry.container_base == released)
+    );
+    assert!(
+        index
+            .instances
+            .iter()
+            .any(|entry| entry.container_base == retained)
+    );
+    assert!(
+        !docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|operation| operation.starts_with("remove:")
+                || operation.starts_with("remove_network:"))
+    );
+}
+
+#[tokio::test]
+async fn aggregate_cleanup_census_rejects_unadmitted_active_lifetimes_before_effects() {
+    for bulk_prune in [false, true] {
+        for fault in [
+            "orphan",
+            "prewarm",
+            "pending-network",
+            "pending-volume",
+            "foreign-daemon",
+            "backend_mismatch",
+        ] {
+            let temp = tempdir().unwrap();
+            let paths = JackinPaths::for_tests(temp.path());
+            let earlier = "jk-aaaaaaaa-agentsmith";
+            let first = write_owned_cleanup_manifest(&paths, earlier, &format!("{earlier}-dind"));
+            let earlier_ledger = fixture_lifetime_path(&paths, &first);
+            let payload = paths.data_dir.join(earlier).join("payload");
+            std::fs::write(&payload, b"retain earlier admitted user state").unwrap();
+            let owner = if fault == "prewarm" {
+                "jk-prewarm-dind"
+            } else {
+                "jk-bbbbbbbb-agentsmith"
+            };
+            let daemon = if fault == "foreign-daemon" {
+                jackin_core::DaemonServerId::parse("foreign-test-daemon").unwrap()
+            } else {
+                fixture_daemon()
+            };
+            let shared_enabled = fault != "backend_mismatch";
+            let mut other = crate::instance::SharedDockerLifetime::fresh(
+                &daemon,
+                owner,
+                shared_enabled,
+                shared_enabled,
+            )
+            .unwrap();
+            other.save_pending(&paths).unwrap();
+            if shared_enabled && fault != "pending-network" {
+                other.capture_network(network_id_for(owner)).unwrap();
+            }
+            if shared_enabled && fault != "pending-network" && fault != "pending-volume" {
+                other.capture_certs_volume().unwrap();
+            }
+            other.save(&paths).unwrap();
+            if matches!(
+                fault,
+                "pending-network" | "pending-volume" | "backend_mismatch"
+            ) {
+                let mut manifest = InstanceManifest::read_optional(&paths.data_dir.join(earlier))
+                    .unwrap()
+                    .unwrap();
+                manifest.container_base = owner.to_owned();
+                manifest.docker = DockerResources {
+                    role_container: owner.to_owned(),
+                    dind_container: Some(format!("{owner}-dind")),
+                    network: other.network_name().unwrap_or_default().to_owned(),
+                    certs_volume: other.certs_volume_name().map(str::to_owned),
+                };
+                manifest.docker_identity = Some(crate::instance::DockerIdentity {
+                    role_container_id: owner.to_owned(),
+                    dind_container_id: Some(format!("{owner}-dind")),
+                    network_id: other.network_id().cloned(),
+                });
+                if manifest.backend.is_some() {
+                    manifest.backend = Some(crate::instance::BackendResources::Docker(
+                        manifest.docker.clone(),
+                    ));
+                }
+                if fault == "backend_mismatch" {
+                    manifest.docker_identity = None;
+                    manifest.docker.dind_container = None;
+                    manifest.backend = Some(crate::instance::BackendResources::AppleContainer(
+                        crate::instance::AppleContainerResources {
+                            container_name: owner.to_owned(),
+                            role_image_ref: "example.invalid/role:fixture".to_owned(),
+                            inner_docker_enabled: false,
+                        },
+                    ));
+                }
+                manifest.write(&paths.data_dir.join(owner)).unwrap();
+            }
+            let other_ledger = fixture_lifetime_path(&paths, &other);
+            let mut snapshots: Vec<_> = [
+                paths.data_dir.join(earlier).join(".jackin/instance.json"),
+                payload,
+                earlier_ledger,
+                other_ledger,
+            ]
+            .into_iter()
+            .map(|path| {
+                let bytes = std::fs::read(&path).unwrap();
+                (path, bytes)
+            })
+            .collect();
+            if matches!(
+                fault,
+                "pending-network" | "pending-volume" | "backend_mismatch"
+            ) {
+                let path = paths.data_dir.join(owner).join(".jackin/instance.json");
+                let bytes = std::fs::read(&path).unwrap();
+                snapshots.push((path, bytes));
+            }
+            let docker = FakeDockerClient::default();
+            docker.inspect_state_by_name.borrow_mut().extend([
+                (earlier.to_owned(), ContainerState::Running),
+                (format!("{earlier}-dind"), ContainerState::Running),
+            ]);
+            admit_fixture_shared(&docker, &first);
+            let mut runner = FakeRunner::default();
+
+            if bulk_prune {
+                prune_all_instances(&paths, &docker, &mut runner)
+                    .await
+                    .unwrap_err();
+            } else {
+                exile_all(&paths, &docker).await.unwrap_err();
+            }
+
+            for (path, bytes) in snapshots {
+                assert_eq!(
+                    std::fs::read(&path).unwrap(),
+                    bytes,
+                    "{fault}: changed {}",
+                    path.display()
+                );
+            }
+            assert!(runner.recorded.is_empty(), "{fault}");
+            assert!(
+                !docker
+                    .bound_operations
+                    .borrow()
+                    .iter()
+                    .any(|operation| operation.starts_with("remove:")
+                        || operation.starts_with("remove_network:")),
+                "{fault}"
+            );
+            assert!(
+                !docker
+                    .recorded
+                    .borrow()
+                    .iter()
+                    .any(|operation| operation.starts_with("docker rm")
+                        || operation.starts_with("docker network rm")
+                        || operation.starts_with("docker volume rm")),
+                "{fault}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn home_prune_rejects_active_corrupt_or_symlinked_lifetime_without_instance_data() {
+    for fault in ["active", "corrupt", "symlink"] {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let lifetime = crate::instance::SharedDockerLifetime::fresh(
+            &fixture_daemon(),
+            "jk-orphan",
+            false,
+            false,
+        )
+        .unwrap();
+        lifetime.save_pending(&paths).unwrap();
+        let ledger = fixture_lifetime_path(&paths, &lifetime);
+        let outside = temp.path().join("outside-ledger");
+        if fault == "corrupt" {
+            std::fs::write(&ledger, b"{corrupt census ledger").unwrap();
+        } else if fault == "symlink" {
+            std::fs::write(&outside, std::fs::read(&ledger).unwrap()).unwrap();
+            std::fs::remove_file(&ledger).unwrap();
+            std::os::unix::fs::symlink(&outside, &ledger).unwrap();
+        }
+        let bytes = std::fs::read(&ledger).unwrap();
+        assert!(!paths.data_dir.exists());
+
+        prune_jackin_home(&paths).unwrap_err();
+
+        assert_eq!(std::fs::read(&ledger).unwrap(), bytes, "{fault}");
+        assert!(!paths.data_dir.exists(), "{fault}");
+        if fault == "symlink" {
+            assert!(
+                std::fs::symlink_metadata(ledger)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
+            assert_eq!(std::fs::read(outside).unwrap(), bytes);
+        }
+    }
+}
+
+#[tokio::test]
+async fn home_prune_retains_index_only_active_custody_without_manifest_or_lifetime() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container = "jk-aaaaaaaa-agentsmith";
+    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+        container_base: container,
+        workspace_name: Some("ws"),
+        workspace_label: "ws",
+        workdir: "/ws",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "agent-smith",
+        role_display_name: "Agent Smith",
+        agent_runtime: jackin_core::Agent::Claude,
+        role_source_git: "https://example.invalid/agent-smith.git",
+        role_source_ref: None,
+        image_tag: "jk_agent-smith",
+        docker: DockerResources {
+            role_container: container.to_owned(),
+            dind_container: Some(format!("{container}-dind")),
+            network: format!("{container}-net"),
+            certs_volume: Some(format!("{container}-dind-certs")),
+        },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    });
+    let mut manifest = manifest;
+    manifest.mark_status(InstanceStatus::Active);
+    InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+    let index = paths.data_dir.join("instances.json");
+    let index_bytes = std::fs::read(&index).unwrap();
+    std::fs::create_dir_all(&paths.jackin_home).unwrap();
+    let marker = paths.jackin_home.join("retain-home-marker");
+    std::fs::write(&marker, b"retain index-only home custody").unwrap();
+    assert!(!paths.data_dir.join(container).exists());
+    assert!(!paths.jackin_home.join("shared-docker-lifetimes").exists());
+
+    prune_jackin_home(&paths).unwrap_err();
+
+    assert_eq!(std::fs::read(index).unwrap(), index_bytes);
+    assert_eq!(
+        std::fs::read(marker).unwrap(),
+        b"retain index-only home custody"
+    );
+    assert!(!paths.data_dir.join(container).exists());
+}
+
+#[tokio::test]
+async fn home_prune_removes_validated_retired_only_lifetime_store() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let lifetime =
+        crate::instance::SharedDockerLifetime::fresh(&fixture_daemon(), "jk-retired", false, false)
+            .unwrap();
+    lifetime.save_pending(&paths).unwrap();
+    lifetime.retire(&paths).unwrap();
+    assert!(!paths.data_dir.exists());
+
+    prune_jackin_home(&paths).unwrap();
+
+    assert!(!paths.jackin_home.exists());
 }
 
 // ── prune_jackin_home ────────────────────────────────────────────────────

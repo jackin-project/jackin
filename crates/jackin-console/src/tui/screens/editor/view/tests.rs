@@ -893,6 +893,86 @@ fn general_tab_clamps_horizontal_scroll_with_shared_scrollable_block() {
     assert!(editor.tab_scroll.offset_x() > 0);
 }
 
+#[test]
+fn general_scroll_frame_preserves_both_axis_bounds_for_next_input() {
+    let mut editor = EditorState::new_edit(
+        "ws".into(),
+        WorkspaceConfig {
+            workdir: format!("/workspace/{}", "long-path/".repeat(12)),
+            ..Default::default()
+        },
+    );
+    let area = Rect::new(0, 0, 42, 4);
+    prepare_editor_tab_for_area(area, &mut editor, &AppConfig::default());
+    editor.tab_scroll.scroll_by(isize::MAX, isize::MAX);
+    let maximum = (editor.tab_scroll.offset_x(), editor.tab_scroll.offset_y());
+    // Independent oracle: four rendered General lines, two visible rows.
+    assert_eq!(maximum.1, 2);
+    assert!(usize::from(maximum.0) < editor.pending.workdir.len());
+    let mut terminal = Terminal::new(TestBackend::new(42, 4)).unwrap();
+    terminal
+        .draw(|frame| render_general_tab(frame, area, &editor))
+        .unwrap();
+    let before = terminal.backend().buffer().clone();
+    editor.tab_scroll.scroll_by(1, 1);
+    terminal
+        .draw(|frame| render_general_tab(frame, area, &editor))
+        .unwrap();
+    assert_eq!(
+        (editor.tab_scroll.offset_x(), editor.tab_scroll.offset_y()),
+        maximum
+    );
+    assert_eq!(terminal.backend().buffer(), &before);
+
+    prepare_editor_tab_for_area(Rect::new(0, 0, 200, 10), &mut editor, &AppConfig::default());
+    editor.tab_scroll.scroll_by(1, 1);
+    assert_eq!(
+        (editor.tab_scroll.offset_x(), editor.tab_scroll.offset_y()),
+        (0, 0)
+    );
+}
+
+#[test]
+fn mounts_scroll_frame_keeps_horizontal_owner_separate_from_vertical_owner() {
+    let mut editor = EditorState::new_edit(
+        "ws".into(),
+        WorkspaceConfig {
+            mounts: (0..8)
+                .map(|index| MountConfig {
+                    src: format!("/host/{index}/{}", "long-path/".repeat(12)),
+                    dst: format!("/container/{index}"),
+                    readonly: false,
+                    isolation: jackin_config::MountIsolation::Shared,
+                })
+                .collect(),
+            ..Default::default()
+        },
+    );
+    editor.active_tab = EditorTab::Mounts;
+    let area = Rect::new(0, 0, 42, 6);
+    prepare_editor_tab_for_area(area, &mut editor, &AppConfig::default());
+    editor
+        .workspace_mounts_scroll
+        .scroll_by(isize::MAX, isize::MAX);
+    editor.tab_scroll.scroll_by(isize::MAX, isize::MAX);
+    assert!(editor.workspace_mounts_scroll.offset_x() > 0);
+    assert_eq!(editor.workspace_mounts_scroll.offset_y(), 0);
+    assert_eq!(editor.tab_scroll.offset_x(), 0);
+    // Header + eight destination/source pairs + spacer + add row = 19.
+    assert_eq!(editor.tab_scroll.offset_y(), 15);
+    let mut terminal = Terminal::new(TestBackend::new(42, 6)).unwrap();
+    terminal
+        .draw(|frame| render_mounts_tab(frame, area, &editor))
+        .unwrap();
+    let before = terminal.backend().buffer().clone();
+    editor.tab_scroll.scroll_by(1, 1);
+    editor.workspace_mounts_scroll.scroll_by(0, 1);
+    terminal
+        .draw(|frame| render_mounts_tab(frame, area, &editor))
+        .unwrap();
+    assert_eq!(terminal.backend().buffer(), &before);
+}
+
 // Tests for `editor` mounts tab render rendering.
 use super::render_editor_with_footer as render_editor;
 

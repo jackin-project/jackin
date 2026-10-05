@@ -142,7 +142,6 @@ pub fn selected_sidebar_scroll_areas(
         }
         SelectedSidebarTarget::SavedWorkspace(i) => {
             let summary = state.workspaces.get(i).cloned()?;
-            config.workspaces.get(&summary.name)?;
             let inputs = sidebar_inputs_for_workspace(&summary, config, state);
             Some(compute_sidebar_scroll_areas(right_pane, &inputs, config))
         }
@@ -257,12 +256,7 @@ pub fn global_rows_for_selected_row(
 ) -> Vec<jackin_config::GlobalMountRow> {
     match crate::tui::sidebar_layout::global_mount_rows_selection(
         state.selected_row(),
-        |idx| {
-            state
-                .workspaces
-                .get(idx)
-                .is_some_and(|summary| config.workspaces.contains_key(&summary.name))
-        },
+        |idx| state.workspaces.get(idx).is_some(),
         picker_role_from_state(state),
     ) {
         GlobalMountRowsSelection::CurrentDirectory => {

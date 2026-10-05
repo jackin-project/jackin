@@ -1446,3 +1446,23 @@ fn snapshot_editor_auth_tab_90x20() {
     let rendered = render_manager_state(&mut state, &config, &cwd, 90, 20);
     insta::assert_snapshot!("editor_auth_tab_90x20", rendered);
 }
+
+#[test]
+fn modal_backdrop_erases_underlying_content_with_blank_terminal_background() {
+    let buffer = draw(6, 2, |frame| {
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new("secret\nsecret").style(
+                ratatui::style::Style::default().add_modifier(
+                    ratatui::style::Modifier::BOLD | ratatui::style::Modifier::REVERSED,
+                ),
+            ),
+            frame.area(),
+        );
+        render_modal_backdrop(frame, frame.area());
+    });
+    for cell in buffer.content {
+        assert_eq!(cell.symbol(), " ");
+        assert_eq!(cell.bg, ratatui::style::Color::Reset);
+        assert!(cell.modifier.is_empty());
+    }
+}

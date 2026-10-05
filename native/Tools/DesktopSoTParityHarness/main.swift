@@ -121,7 +121,11 @@ struct DesktopSoTParityHarness {
             updatedLabel: "Updated now",
             lastError: nil,
             dimmed: false,
-            accessibilityLabel: "\(provider), \(label), Plan, \(pct)%, Resets in 3d"
-        )
+            accessibilityLabel: "\(provider), \(label), Plan, \(pct)%, Resets in 3d",
+            countQuota: nil,
+            resetsAt: nil,
+            usedMoney: nil,
+            limitMoney: nil,
+            remainingMoney: nil)
     }
 }

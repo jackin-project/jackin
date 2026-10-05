@@ -384,7 +384,7 @@ async fn unauthenticated_peer_is_rejected_before_resolution() {
 #[tokio::test]
 async fn non_linux_capsule_daemon_peer_authentication_fails_closed() {
     let (stream, _peer) = UnixStream::pair().expect("host socket pair");
-    let error = authenticate_caller(&stream, CallerAuth::CapsuleDaemon)
+    let error = authenticate_caller(&stream, CallerAuth::CapsuleDaemon(CapsulePeerIdentity {}))
         .expect_err("non-Linux host.sock relay must fail closed");
     assert!(error.to_string().contains("disabled on non-Linux"));
 }
@@ -393,18 +393,19 @@ async fn non_linux_capsule_daemon_peer_authentication_fails_closed() {
 #[test]
 fn container_init_peer_status_requires_exact_direct_container_nspid() {
     assert!(peer_is_container_init_process_status(
-        "Name:\tjackin-capsule\nNSpid:\t424242\t1\n"
+        "Name:\tjackin-capsule\nNSpid:\t424242\t1\n", 424242
     ));
     assert!(!peer_is_container_init_process_status(
-        "Name:\tagent\nNSpid:\t424243\t37\n"
+        "Name:\tagent\nNSpid:\t424243\t37\n", 424243
     ));
     assert!(!peer_is_container_init_process_status(
-        "Name:\tnested-init\nNSpid:\t424244\t9\t1\n"
+        "Name:\tnested-init\nNSpid:\t424244\t9\t1\n", 424244
     ));
     assert!(!peer_is_container_init_process_status(
-        "Name:\tmalformed\nNSpid:\t1\n"
+        "Name:\tmalformed\nNSpid:\t1\n", 1
     ));
-    assert!(!peer_is_container_init_process_status("Name:\tno-nspid\n"));
+    assert!(!peer_is_container_init_process_status("Name:\tno-nspid\n", 424242));
+    assert!(!peer_is_container_init_process_status("NSpid:\t999\t1\n", 424242));
 }
 
 #[tokio::test]
@@ -486,15 +487,75 @@ async fn unknown_name_is_rejected() {
     assert!(reply.get("error").is_some());
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
-async fn start_bound_for_container_creates_host_sock_before_returning() {
-    let temp = tempfile::tempdir().unwrap();
-    let handle = start_bound_for_container(temp.path(), "fixture", &[]).unwrap();
-    let sock = temp
-        .path()
-        .join("sockets")
-        .join("fixture")
-        .join("host.sock");
-    assert!(sock.exists());
-    handle.abort();
+async fn foreign_container_caller_never_reaches_approved_secret_resolver() {
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    // Exercise production authentication before request decode/resolution.
+    // A foreign PID, UID, recycled process, or namespace never owns this relay.
+    let process = Arc::new(std::fs::File::open(format!("/proc/{}", std::process::id())).unwrap());
+    let path = pinned_process_path(&process);
+    for mismatch in ["pid", "uid", "start_time", "namespace", "container_id"] {
+        let (mut client, server) = UnixStream::pair().unwrap();
+        let mut identity = CapsulePeerIdentity {
+            process: process.clone(),
+            namespace: Arc::new(std::fs::File::open(path.join("ns/pid")).unwrap()),
+            pid: std::process::id(),
+            uid: server.peer_cred().unwrap().uid(),
+            start_time: process_start_time(&path).unwrap(),
+            container_id: "a".repeat(64),
+        };
+        match mismatch {
+            "pid" => identity.pid = identity.pid.checked_add(1).unwrap(),
+            "uid" => identity.uid = identity.uid.checked_add(1).unwrap(),
+            "start_time" => identity.start_time = identity.start_time.checked_add(1).unwrap(),
+            "namespace" => identity.namespace = Arc::new(std::fs::File::open(path.join("ns/mnt")).unwrap()),
+            // A foreign runtime identity cannot own this local process.
+            "container_id" => {},
+            _ => unreachable!(),
+        }
+        let allowed = vec![ExecBinding {
+            name: "TOKEN".into(), kind: ExecKind::Op,
+            source: "op://approved/item/field".into(),
+        }];
+        client.write_all(&frame(&CredRequest {
+            ctx: jackin_protocol::TelemetryContext::v1(), refs: allowed.clone(),
+        })).await.unwrap();
+        let resolver_calls = Arc::new(AtomicUsize::new(0));
+        let provider_calls = Arc::new(AtomicUsize::new(0));
+        let resolver_counter = resolver_calls.clone();
+        let provider_counter = provider_calls.clone();
+        handle_connection_with_resolver(server, &allowed, CallerAuth::CapsuleDaemon(identity),
+            move |_refs| async move {
+                resolver_counter.fetch_add(1, Ordering::SeqCst);
+                provider_counter.fetch_add(1, Ordering::SeqCst);
+                Ok(std::collections::BTreeMap::new())
+            }).await.unwrap();
+        let mut byte = [0_u8; 1];
+        assert!(match client.read(&mut byte).await { Ok(read) => read == 0, Err(_) => true }, "{mismatch}");
+        assert_eq!(resolver_calls.load(Ordering::SeqCst), 0, "{mismatch}");
+        assert_eq!(provider_calls.load(Ordering::SeqCst), 0, "{mismatch}");
+    }
+}
+
+
+#[cfg(target_os = "linux")]
+#[test]
+fn local_cgroup_ownership_requires_exact_immutable_container_id() {
+    let owned = "a".repeat(64);
+    let foreign = "b".repeat(64);
+    assert!(process_belongs_to_container_cgroup(&format!("0::/docker/{owned}\n"), &owned));
+    assert!(process_belongs_to_container_cgroup(&format!("0::/system.slice/docker-{owned}.scope\n"), &owned));
+    for path in [format!("0::/docker/{foreign}\n"), format!("0::/docker/{owned}-suffix\n"), "0::/user.slice\n".into()] {
+        assert!(!process_belongs_to_container_cgroup(&path, &owned));
+    }
+    for path in [
+        format!("0::/docker/{foreign}/{owned}/child\n"),
+        format!("0::/docker/{foreign}/docker-{owned}.scope\n"),
+        format!("0::/docker/{owned}/child\n"),
+        format!("0::/unrecognized/docker-{owned}.scope\n"),
+    ] {
+        assert!(!process_belongs_to_container_cgroup(&path, &owned));
+    }
+    assert!(!process_belongs_to_container_cgroup("0::/docker/a\n", "a"));
 }

@@ -31,19 +31,10 @@ struct RichSurfaceTestGuard {
     _guard: MutexGuard<'static, ()>,
 }
 
-impl Drop for RichSurfaceTestGuard {
-    fn drop(&mut self) {
-        jackin_diagnostics::set_rich_surface_active(false);
-        jackin_diagnostics::set_host_screen_owned(false);
-    }
-}
-
 fn rich_surface_test_guard() -> RichSurfaceTestGuard {
     let guard = RICH_SURFACE_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    jackin_diagnostics::set_rich_surface_active(false);
-    jackin_diagnostics::set_host_screen_owned(false);
     RichSurfaceTestGuard { _guard: guard }
 }
 
@@ -67,11 +58,11 @@ fn build_output_is_suppressed_for_debug_or_rich_surface() {
     let _guard = rich_surface_test_guard();
     assert!(!should_stream_build_output(true));
 
-    jackin_diagnostics::set_rich_surface_active(true);
+    let rich = jackin_diagnostics::claim_rich_surface();
     assert!(!should_stream_build_output(false));
-    jackin_diagnostics::set_rich_surface_active(false);
+    drop(rich);
 
-    jackin_diagnostics::set_host_screen_owned(true);
+    let _host = jackin_diagnostics::claim_host_screen();
     assert!(!should_stream_build_output(false));
 }
 

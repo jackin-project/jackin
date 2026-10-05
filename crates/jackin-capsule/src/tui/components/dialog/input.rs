@@ -80,7 +80,33 @@ pub(super) fn exec_picker_handle_key(
     state: &mut crate::exec::ExecPickerState,
     key: &[u8],
 ) -> DialogAction {
+    use std::sync::atomic::Ordering;
     match key {
+        // Page keys inspect the authoritative argv without moving selection.
+        b"\x1b[5~" => {
+            state.argv_scroll
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |offset| {
+                    Some(offset.saturating_sub(1))
+                })
+                .ok();
+            DialogAction::Redraw
+        }
+        b"\x1b[6~" => {
+            state.argv_scroll
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |offset| {
+                    Some(offset.saturating_add(1))
+                })
+                .ok();
+            DialogAction::Redraw
+        }
+        b"\x1b[H" | b"\x1b[1~" => {
+            state.argv_scroll.store(0, Ordering::Relaxed);
+            DialogAction::Redraw
+        }
+        b"\x1b[F" | b"\x1b[4~" => {
+            state.argv_scroll.store(usize::MAX, Ordering::Relaxed);
+            DialogAction::Redraw
+        }
         b" " => {
             state.toggle_cursor();
             DialogAction::Redraw
@@ -97,8 +123,7 @@ pub(super) fn exec_picker_handle_key(
         }
         // Enter — confirm and resolve the selected credentials.
         b"\r" | b"\n" => DialogAction::ExecConfirm {
-            command: state.command.clone(),
-            args: state.args.clone(),
+            invocation: state.invocation.clone(),
             selected: state.selected_refs(),
         },
         // Esc / Ctrl+C — cancel, run nothing.

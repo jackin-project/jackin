@@ -182,9 +182,50 @@ pub(crate) fn claude_view_from_wave_with_rate_limit(
         ClaudeWaveResolution::Denied => (claude_denied_view(agent, provider, now), None),
         ClaudeWaveResolution::Missing => (claude_missing_view(agent, provider, now), None),
         ClaudeWaveResolution::Resolved(resolved) => {
-            claude_resolved_view(agent, provider, now, *resolved)
+            claude_resolved_view(
+                agent,
+                provider,
+                now,
+                *resolved,
+                ClaudeUsageAuthority::Ambient,
+            )
         }
     }
+}
+
+/// Captured profiles can query only their proven token authority.
+pub(crate) fn claude_profile_view_with_rate_limit(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    resolved: ClaudeResolved,
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    claude_resolved_view(
+        agent,
+        provider,
+        now,
+        resolved,
+        ClaudeUsageAuthority::CapturedProfile,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ClaudeUsageAuthority {
+    Ambient,
+    CapturedProfile,
+}
+
+fn claude_fetch_for_authority(
+    authority: ClaudeUsageAuthority,
+    oauth_result: Result<ClaudeOAuthUsageResponse, ProviderError>,
+    fetch_cli: impl FnOnce() -> Result<ClaudeCliUsage, ProviderError>,
+) -> (
+    Result<ClaudeOAuthUsageResponse, ProviderError>,
+    Option<Result<ClaudeCliUsage, ProviderError>>,
+) {
+    let cli_result = (matches!(authority, ClaudeUsageAuthority::Ambient) && oauth_result.is_err())
+        .then(fetch_cli);
+    (oauth_result, cli_result)
 }
 
 /// Terminal denial view: `NeedsLogin` with no bucket/account/plan/origin and the
@@ -276,12 +317,15 @@ fn claude_resolved_view(
     provider: Option<&str>,
     now: i64,
     resolved: ClaudeResolved,
+    authority: ClaudeUsageAuthority,
 ) -> (FocusedUsageView, Option<ProviderRateLimit>) {
-    let (oauth_quota, oauth_error) = split_provider_fetch(Some(
+    let (oauth_result, cli_result) = claude_fetch_for_authority(
+        authority,
         fetch_claude_oauth_usage(&resolved.access_token).map_err(ProviderError::from),
-    ));
-    let (cli_usage, cli_error) =
-        split_provider_fetch(oauth_quota.is_none().then(fetch_claude_cli_usage));
+        fetch_claude_cli_usage,
+    );
+    let (oauth_quota, oauth_error) = split_provider_fetch(Some(oauth_result));
+    let (cli_usage, cli_error) = split_provider_fetch(cli_result);
     let provider_error = claude_provider_error_label(oauth_error.as_ref(), cli_error.as_ref());
     let status = if oauth_quota.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
@@ -453,6 +497,7 @@ pub(crate) fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCr
 
 /// Raw Keychain lookup outcome for one service. Secret-free in its own labels
 /// (`json` carries the payload but the type is never formatted/logged).
+#[derive(Clone)]
 pub(crate) enum ClaudeKeychainRead {
     #[cfg(any(target_os = "macos", test))]
     Payload {
@@ -462,6 +507,8 @@ pub(crate) enum ClaudeKeychainRead {
     Missing,
     /// A matching item requires operator consent before its payload can be read.
     ConsentRequired,
+    /// The lookup could not complete; this is neither absence nor consent denial.
+    Unavailable,
 }
 
 /// Classify a macOS `OSStatus` from a Keychain lookup. Only an explicit user
@@ -516,11 +563,10 @@ pub(crate) fn read_claude_keychain_item(_service: &str) -> ClaudeKeychainRead {
     ClaudeKeychainRead::Missing
 }
 
-/// Process-lifetime Keychain coordination: serializes reader I/O so a consent
-/// sheet is prompted at most once per wave, and remembers services the operator
-/// explicitly denied so a denial is terminal for that service for the process
-/// (no retry-prompt storm). A *missing* item is never cached, so a later
-/// `claude /login` is picked up without an app restart (flow W5).
+/// One global lookup prevents concurrent consent sheets. Matching followers retain
+/// that flight's immutable
+/// result even after a later lookup starts. Only explicit denials persist between
+/// flights: new logins and rotated payloads are visible on the next refresh.
 #[derive(Default)]
 pub(crate) struct ClaudeKeychainState {
     inner: std::sync::Mutex<ClaudeKeychainInner>,
@@ -529,42 +575,111 @@ pub(crate) struct ClaudeKeychainState {
 #[derive(Default)]
 struct ClaudeKeychainInner {
     denied_services: std::collections::HashSet<String>,
-    /// Count of reader invocations — a test seam proving reads are shared and
-    /// each service is queried at most once per wave.
+    flight: Option<std::sync::Arc<ClaudeKeychainFlight>>,
     reads: u64,
+    #[cfg(test)]
+    joins: u64,
+}
+
+struct ClaudeKeychainFlight {
+    service: String,
+    owner: std::thread::ThreadId,
+    result: std::sync::Mutex<Option<ClaudeKeychainRead>>,
+    ready: std::sync::Condvar,
 }
 
 impl ClaudeKeychainState {
-    /// Resolve one Keychain read for `service` through `reader`, honoring the
-    /// process-terminal denial cache and serializing reader I/O.
     pub(crate) fn read_with<F>(&self, service: &str, reader: F) -> ClaudeKeychainRead
     where
         F: FnOnce(&str) -> ClaudeKeychainRead,
     {
+        let flight = loop {
+            let (flight, leader) = {
+                let mut inner = self
+                    .inner
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if inner.denied_services.contains(service) {
+                    return ClaudeKeychainRead::Denied;
+                }
+                if let Some(flight) = inner.flight.clone() {
+                    // A callback cannot wait on its own active lookup, even when
+                    // it recursively requests another service.
+                    if flight.owner == std::thread::current().id() {
+                        return ClaudeKeychainRead::Unavailable;
+                    }
+                    #[cfg(test)]
+                    {
+                        inner.joins += 1;
+                    }
+                    (flight, false)
+                } else {
+                    let flight = std::sync::Arc::new(ClaudeKeychainFlight {
+                        service: service.to_owned(),
+                        owner: std::thread::current().id(),
+                        result: std::sync::Mutex::new(None),
+                        ready: std::sync::Condvar::new(),
+                    });
+                    inner.flight = Some(flight.clone());
+                    inner.reads += 1;
+                    (flight, true)
+                }
+            };
+            if leader {
+                break flight;
+            }
+            let outcome = {
+                let mut result = flight
+                    .result
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                while result.is_none() {
+                    result = flight
+                        .ready
+                        .wait(result)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                }
+                result.as_ref().expect("completed Keychain flight").clone()
+            };
+            if flight.service == service {
+                return outcome;
+            }
+            // Other services serialize behind this flight, discard its result,
+            // and retry their own lookup. The FnOnce reader remains unused.
+        };
+
+        // Reader I/O and arbitrary injected callbacks never hold coordination locks.
+        // A panic still completes the flight so followers cannot remain stranded.
+        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reader(service)));
+        let outcome = match &read {
+            Ok(outcome) => outcome.clone(),
+            Err(_) => ClaudeKeychainRead::Unavailable,
+        };
+        *flight
+            .result
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(outcome);
         {
-            let inner = self
+            let mut inner = self
                 .inner
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if inner.denied_services.contains(service) {
-                return ClaudeKeychainRead::Denied;
+            if matches!(&read, Ok(ClaudeKeychainRead::Denied)) {
+                inner.denied_services.insert(service.to_owned());
+            }
+            if inner
+                .flight
+                .as_ref()
+                .is_some_and(|active| std::sync::Arc::ptr_eq(active, &flight))
+            {
+                inner.flight = None;
             }
         }
-        // Reader runs while holding the serialization lock so concurrent waves
-        // cannot open two consent sheets for the same service at once.
-        let mut inner = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if inner.denied_services.contains(service) {
-            return ClaudeKeychainRead::Denied;
+        flight.ready.notify_all();
+        match read {
+            Ok(outcome) => outcome,
+            Err(panic) => std::panic::resume_unwind(panic),
         }
-        inner.reads += 1;
-        let read = reader(service);
-        if matches!(read, ClaudeKeychainRead::Denied) {
-            inner.denied_services.insert(service.to_owned());
-        }
-        read
     }
 
     #[cfg(test)]
@@ -573,6 +688,14 @@ impl ClaudeKeychainState {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .reads
+    }
+
+    #[cfg(test)]
+    pub(crate) fn join_count(&self) -> u64 {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .joins
     }
 }
 
@@ -657,7 +780,9 @@ where
                 None => resolve_claude_fallback(scope, file_probe(), env_reader()),
             }
         }
-        ClaudeKeychainRead::Missing | ClaudeKeychainRead::ConsentRequired => {
+        ClaudeKeychainRead::Missing
+        | ClaudeKeychainRead::ConsentRequired
+        | ClaudeKeychainRead::Unavailable => {
             resolve_claude_fallback(scope, file_probe(), env_reader())
         }
     }
@@ -696,8 +821,14 @@ fn resolve_claude_fallback(
     ClaudeWaveResolution::Missing
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ClaudeOAuthEnvToken(String);
+
+impl std::fmt::Debug for ClaudeOAuthEnvToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ClaudeOAuthEnvToken([REDACTED])")
+    }
+}
 
 impl ClaudeOAuthEnvToken {
     pub(crate) fn new(value: String) -> Self {

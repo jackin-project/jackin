@@ -193,23 +193,24 @@ fn conformance_wire_console_reducer_preserves_ui_causality() -> anyhow::Result<(
 
 fn canonical_usage_publication() -> jackin_console::tui::state::UsageScreenState {
     use jackin_protocol::usage_broker::{
-        UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1, UsageProjectionRefreshStateV1,
-        UsageProjectionSchemaV1, UsageProjectionV1,
+        UsageIssueRecoverabilityV2, UsageIssueScopeV2, UsageIssueV2, UsageProjectionRefreshStateV2,
+        UsageProjectionSchemaV2, UsageProjectionV2,
     };
-    jackin_console::tui::state::UsageScreenState::from_projection(&UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+    jackin_console::tui::state::UsageScreenState::from_projection(&UsageProjectionV2 {
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "independent-console-publication".to_owned(),
         generated_at_epoch: 1_800_000_123,
         discovery_revision: "independent-discovery".to_owned(),
         broker_instance_id: "independent-broker".to_owned(),
         broker_generation: 7,
-        refresh_state: UsageProjectionRefreshStateV1::Idle,
+        refresh_state: UsageProjectionRefreshStateV2::Idle,
         providers: Vec::new(),
         unresolved: Vec::new(),
-        issues: vec![UsageIssueV1 {
+        unresolved_grants: Vec::new(),
+        issues: vec![UsageIssueV2 {
             code: "independent_failure".to_owned(),
-            scope: UsageIssueScopeV1::Projection,
-            recoverability: UsageIssueRecoverabilityV1::Retryable,
+            scope: UsageIssueScopeV2::Projection,
+            recoverability: UsageIssueRecoverabilityV2::Retryable,
             message: "independent broker diagnostic".to_owned(),
             retry_at_epoch: Some(1_800_000_456),
         }],
@@ -258,10 +259,8 @@ fn refresh_effect_retains_complete_publication_in_screen_and_cache() -> anyhow::
     let config = AppConfig::default();
     let mut state = jackin_console::tui::console::new_console_state(&config, temp.path())?;
     let ConsoleStage::Manager(manager) = &mut state.stage;
-    let mut screen = jackin_console::tui::state::UsageScreenState {
-        refresh_generation: 9,
-        ..jackin_console::tui::state::UsageScreenState::default()
-    };
+    let mut screen = jackin_console::tui::state::UsageScreenState::default();
+    screen.refresh_generation = 9;
     screen.begin_refresh(jackin_console::tui::runtime::ready_blocking_subscription((
         9,
         Ok(canonical_usage_publication()),
@@ -341,4 +340,35 @@ fn late_startup_completion_cannot_replace_newer_route_publication_or_failure() -
     );
     assert!(manager.usage_snapshot.canonical_projection.is_none());
     Ok(())
+}
+
+#[test]
+fn console_backend_drop_serializes_cursor_restore_on_unwind() {
+    use std::sync::{Arc, Mutex};
+
+    struct CursorWriter {
+        gate: Arc<Mutex<()>>,
+        events: Arc<Mutex<Vec<&'static str>>>,
+    }
+    impl Drop for CursorWriter {
+        fn drop(&mut self) {
+            assert!(self.gate.try_lock().is_err(), "cursor write must hold gate");
+            self.events.lock().unwrap().push("cursor restored");
+        }
+    }
+
+    let gate = Arc::new(Mutex::new(()));
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _terminal = OwnedConsoleTerminal {
+            terminal: Some(CursorWriter {
+                gate: Arc::clone(&gate),
+                events: Arc::clone(&events),
+            }),
+            activity: jackin_core::TerminalActivity::new(|| true, Arc::clone(&gate)),
+        };
+        panic!("console error path");
+    }));
+    assert!(result.is_err());
+    assert_eq!(*events.lock().unwrap(), ["cursor restored"]);
 }

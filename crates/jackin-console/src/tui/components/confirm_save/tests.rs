@@ -243,3 +243,20 @@ fn confirm_save_hint_spans_include_scroll_when_vertical_overflows() {
     assert!(spans.contains(&HintSpan::Key("↑↓/j/k")));
     assert!(spans.contains(&HintSpan::Text("scroll")));
 }
+
+#[test]
+fn confirm_save_terminal_reverse_tab_cycles_focus_without_committing() {
+    let mut state = sample_state();
+    for expected in [ConfirmSaveFocus::Save, ConfirmSaveFocus::Cancel] {
+        assert!(matches!(
+            state.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(state.focus, expected);
+    }
+    state.handle_key(KeyEvent::new(
+        KeyCode::BackTab,
+        KeyModifiers::SHIFT | KeyModifiers::CONTROL,
+    ));
+    assert_eq!(state.focus, ConfirmSaveFocus::Cancel);
+}

@@ -3,7 +3,7 @@ title: Kimi
 description: Register Kimi accounts and authorize them for workspaces
 ---
 
-Kimi profiles use `~/.kimi-code` by default. jackin❯ scans that location on first start and imports an account only when it finds credentials in `credentials/kimi-code.json`. Importing an account does not grant it to a workspace.
+Kimi profiles use `~/.kimi-code` by default. jackin❯ scans that location on first start and imports an account only when `config.toml` resolves to an OAuth credential file containing an access token. Under the verified Kimi CLI 2.1.1 contract, the default route uses `credentials/kimi-code.json`; a different route uses its deterministic route-specific sibling. Importing an account does not grant it to a workspace.
 
 ## Register and assign a profile
 
@@ -38,7 +38,7 @@ Use `--secret-ref '$KIMI_API_KEY'` to reference a host environment variable, or 
 
 ## Profile state
 
-Kimi's profile also includes `config.toml`, `credentials/`, and `device_id`. Keep those files together in the selected profile so the OAuth login, provider configuration, and device identity agree.
+Kimi's profile uses `config.toml` to select its OAuth route and credential file; it may also include `device_id`. jackin❯ captures the route-selected credential file and excludes sibling credential files. Keep the selected file with its config in the profile directory.
 
 ## Runtime trust prompts
 

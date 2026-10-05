@@ -703,3 +703,26 @@ fn keyboard_help_opens_on_question_mark_with_or_without_shift() {
         KeyModifiers::NONE
     )));
 }
+
+#[test]
+fn quit_confirm_area_reserves_footer_for_paint_and_hit_testing() {
+    let frame = Rect::new(7, 11, 80, 30);
+    let confirm = quit_confirm_state();
+    let rect = quit_confirm_area(frame, &confirm);
+    let body = Rect { height: frame.height - 1, ..frame };
+    assert_eq!(rect.y, body.y + (body.height - rect.height) / 2);
+    assert!(rect.bottom() <= body.bottom());
+    for (column, row) in [(rect.x, rect.y), (rect.right() - 1, rect.bottom() - 1)] {
+        let plan = modal_mouse_layer_plan(
+            mouse_at(MouseEventKind::Down(crossterm::event::MouseButton::Left), column, row),
+            ConsoleModalMouseLayerFacts {
+                quit_confirm_rect: Some(rect),
+                list_modal_rect: None,
+                list_modal_container_info: false,
+                startup_error_modal_active: false,
+            },
+        );
+        assert!(!plan.dismiss_quit_confirm, "painted edge click dismissed");
+    }
+    assert_eq!(quit_confirm_area(Rect::new(0, 0, 1, 1), &confirm).height, 0);
+}

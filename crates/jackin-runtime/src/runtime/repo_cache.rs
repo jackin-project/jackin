@@ -31,6 +31,11 @@ use super::identity::try_capture;
 /// arm in `console::tui::input::editor`.
 #[derive(Debug, thiserror::Error)]
 pub enum RepoError {
+    /// Configured source is not a supported remote Git URL. Do not retain
+    /// the input: URL userinfo can contain credentials.
+    #[error("role repository requires a supported remote Git URL")]
+    UnsafeGitUrl,
+
     /// `git clone` failed for any reason — host unreachable, auth required,
     /// repo missing, server-side error. The original anyhow chain is kept
     /// as the `#[source]` so `--debug` still surfaces it.
@@ -294,15 +299,14 @@ pub async fn register_agent_repo(
     runner: &mut impl CommandRunner,
     debug: bool,
 ) -> anyhow::Result<(CachedRepo, jackin_manifest::repo::ValidatedRoleRepo)> {
-    let normalized = normalize_github_url(git_url);
-    let git_url = normalized.as_str();
+    let git_url = RemoteGitUrl::parse(git_url)?;
     let cached_repo = CachedRepo::new(paths, selector);
     let legacy_root = role_cache_root(paths, selector);
     if cached_repo.repo_dir.join(".git").is_dir() || legacy_root.join(".git").is_dir() {
         let (cached_repo, validated_repo, _lock_file) = resolve_agent_repo_with(
             paths,
             selector,
-            git_url,
+            git_url.as_str(),
             runner,
             RepoResolveOptions::interactive(debug),
             || Ok(false),
@@ -350,14 +354,12 @@ pub async fn register_agent_repo(
         .tempdir_in(&paths.data_dir)?;
     let temp_repo = temp_dir.path().join("repo");
     let temp_repo_path = temp_repo.display().to_string();
-    let git_run_opts = RunOptions {
-        quiet: !debug,
-        ..RunOptions::default()
-    };
+    let git_run_opts = git_run_options(debug, true);
+    let clone_args = clone_args(&git_url, &temp_repo_path, None);
     runner
         .run(
             "git",
-            &["clone", git_url, &temp_repo_path],
+            &clone_args,
             None,
             &git_run_opts,
         )
@@ -400,11 +402,107 @@ pub fn normalize_github_url(url: &str) -> String {
 /// Build the argument list for `git clone`, optionally scoped to a single branch.
 /// `git clone -b <branch>` fetches only that branch, making the clone faster and
 /// leaving the working tree on the right branch without a separate checkout step.
-fn clone_args<'a>(git_url: &'a str, dest: &'a str, branch: Option<&'a str>) -> Vec<&'a str> {
+fn clone_args<'a>(git_url: &'a RemoteGitUrl, dest: &'a str, branch: Option<&'a str>) -> Vec<&'a str> {
     branch.map_or_else(
-        || vec!["clone", git_url, dest],
-        |b| vec!["clone", "-b", b, git_url, dest],
+        || vec!["clone", "--", git_url.as_str(), dest],
+        |b| vec!["clone", "-b", b, "--", git_url.as_str(), dest],
     )
+}
+
+/// Only validated remote sources can enter the clone argument builder.
+struct RemoteGitUrl(String);
+
+impl RemoteGitUrl {
+    fn parse(input: &str) -> Result<Self, RepoError> {
+        if input.is_empty()
+            || input.starts_with('-')
+            || input.chars().any(|c| c.is_whitespace() || c.is_control())
+            || input.contains('\\')
+        {
+            return Err(RepoError::UnsafeGitUrl);
+        }
+        let valid = if let Some((scheme, remote)) = input.split_once("://") {
+            matches!(scheme, "https" | "ssh" | "git" | "git+ssh")
+                && remote_authority_valid(remote.split_once('/').map_or(remote, |(authority, _)| authority))
+        } else {
+            // SCP syntax requires a user and a remote host, never a local
+            // pathname containing a colon or a remote-helper prefix.
+            let split = if input
+                .split_once('@')
+                .is_some_and(|(_, remote)| remote.starts_with('['))
+            {
+                input
+                    .split_once("]:")
+                    .map(|(authority, path)| (&input[..authority.len() + 1], path))
+            } else {
+                input.split_once(':')
+            };
+            split.is_some_and(|(authority, path)| {
+                !path.is_empty()
+                    && authority.contains('@')
+                    && remote_authority_valid(authority)
+            })
+        };
+        if !valid {
+            return Err(RepoError::UnsafeGitUrl);
+        }
+        Ok(Self(normalize_github_url(input)))
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+fn remote_authority_valid(authority: &str) -> bool {
+    let host_port = if let Some((user, host)) = authority.split_once('@') {
+        if user.is_empty()
+            || user.starts_with('-')
+            || user.contains(['/', '?', '#', '[', ']'])
+            || host.contains('@')
+        {
+            return false;
+        }
+        host
+    } else {
+        authority
+    };
+    let (host, port) = if let Some(ipv6) = host_port.strip_prefix('[') {
+        let Some((host, suffix)) = ipv6.split_once(']') else {
+            return false;
+        };
+        if host.parse::<std::net::Ipv6Addr>().is_err() {
+            return false;
+        }
+        (host, suffix.strip_prefix(':').or((suffix.is_empty()).then_some("")))
+    } else {
+        let (host, port) = host_port.split_once(':').unwrap_or((host_port, ""));
+        if !host.bytes().all(|c| c.is_ascii_alphanumeric() || b".-".contains(&c)) {
+            return false;
+        }
+        (host, Some(port))
+    };
+    !host.is_empty()
+        && !host.starts_with('-')
+        && port.is_some_and(|port| port.bytes().all(|c| c.is_ascii_digit()))
+}
+
+fn git_run_options(debug: bool, non_interactive: bool) -> RunOptions {
+    // Git's git+ssh URL alias uses the ssh transport. GIT_ALLOW_PROTOCOL
+    // denies every other transport even if inherited Git config enables it.
+    let mut extra_env = vec![(
+        "GIT_ALLOW_PROTOCOL".to_owned(),
+        "https:ssh:git".to_owned(),
+    )];
+    if non_interactive {
+        extra_env.push(("GIT_TERMINAL_PROMPT".to_owned(), "0".to_owned()));
+    }
+    RunOptions {
+        quiet: !debug,
+        extra_env,
+        null_stdin: non_interactive,
+        ..RunOptions::default()
+    }
 }
 
 /// Whether the git subprocess may surface interactive prompts (SSH
@@ -507,8 +605,7 @@ pub(super) async fn resolve_agent_repo_with(
     jackin_manifest::repo::ValidatedRoleRepo,
     RepoLock,
 )> {
-    let normalized = normalize_github_url(git_url);
-    let git_url = normalized.as_str();
+    let git_url = RemoteGitUrl::parse(git_url)?;
     let cached_repo = opts.branch_override.as_deref().map_or_else(
         || CachedRepo::new(paths, selector),
         |branch| CachedRepo::for_branch(paths, selector, branch),
@@ -556,16 +653,7 @@ pub(super) async fn resolve_agent_repo_with(
 
     let non_interactive = matches!(opts.git_interactivity, GitInteractivity::NonInteractive)
         || jackin_diagnostics::rich_surface_active();
-    let git_run_opts = RunOptions {
-        quiet: !opts.debug,
-        extra_env: if non_interactive {
-            vec![("GIT_TERMINAL_PROMPT".to_owned(), "0".to_owned())]
-        } else {
-            Vec::new()
-        },
-        null_stdin: non_interactive,
-        ..RunOptions::default()
-    };
+    let git_run_opts = git_run_options(opts.debug, non_interactive);
 
     if opts.branch_override.is_none() {
         migrate_legacy_default_cache(paths, selector, &cached_repo)?;
@@ -580,14 +668,14 @@ pub(super) async fn resolve_agent_repo_with(
                 None,
             )
             .await?;
-        if !repo_matches(git_url, &remote_url) {
+        if !repo_matches(git_url.as_str(), &remote_url) {
             jackin_telemetry::cache::decision(
                 jackin_telemetry::schema::enums::CacheName::RoleRepository,
                 jackin_telemetry::schema::enums::CacheResult::Stale,
             );
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
-                let clone_args = clone_args(git_url, &repo_path, opts.branch_override.as_deref());
+                let clone_args = clone_args(&git_url, &repo_path, opts.branch_override.as_deref());
                 runner
                     .run("git", &clone_args, None, &git_run_opts)
                     .await
@@ -699,7 +787,7 @@ pub(super) async fn resolve_agent_repo_with(
             jackin_telemetry::schema::enums::CacheName::RoleRepository,
             jackin_telemetry::schema::enums::CacheResult::Miss,
         );
-        let clone_args = clone_args(git_url, &repo_path, opts.branch_override.as_deref());
+        let clone_args = clone_args(&git_url, &repo_path, opts.branch_override.as_deref());
         runner
             .run("git", &clone_args, None, &git_run_opts)
             .await

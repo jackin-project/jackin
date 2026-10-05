@@ -4,6 +4,10 @@ use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus};
 
 use super::*;
 
+mod identity_admission;
+mod source_cache_authority;
+mod typed_membership;
+
 type ResolverCall = (Option<String>, Option<String>, Vec<String>);
 
 #[derive(Default)]
@@ -209,12 +213,15 @@ fn disc_claude_keychain_consent_is_not_reported_missing() {
         sources: vec![DiscoveredCredentialSource::Profile {
             surface: HostSurfaceId::Claude,
             agent: Agent::Claude,
+            provider: "anthropic".to_owned(),
+            selector: None,
             root,
             operator_home: home,
             account_label: Some("work".to_owned()),
             source_id: "source-0001".to_owned(),
             capability_id: "capability-1".to_owned(),
             provenance: BTreeSet::from(["account work".to_owned()]),
+            configured_account_ids: BTreeSet::from(["work".to_owned()]),
         }],
     };
 
@@ -230,6 +237,67 @@ fn disc_claude_keychain_consent_is_not_reported_missing() {
     assert_eq!(
         validated.diagnostics[0].issue.id(),
         "keychain_consent_required"
+    );
+}
+
+struct UnavailableKeychainReader;
+
+impl ProfileCredentialReader for UnavailableKeychainReader {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+    fn exists(&self, _path: &Path) -> bool {
+        false
+    }
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        ProfileReadOutcome::Unavailable
+    }
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        ProfileReadOutcome::Unavailable
+    }
+}
+
+#[test]
+fn disc_claude_keychain_unavailable_is_not_absence_denial_or_consent() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let catalog = UsageDiscoveryCatalog {
+        config_generation: None,
+        candidates: Vec::new(),
+        diagnostics: Vec::new(),
+        sources: vec![DiscoveredCredentialSource::Profile {
+            surface: HostSurfaceId::Claude,
+            agent: Agent::Claude,
+            provider: "anthropic".to_owned(),
+            selector: None,
+            root: home.join(".claude"),
+            operator_home: home,
+            account_label: Some("work".to_owned()),
+            source_id: "source-unavailable".to_owned(),
+            capability_id: "capability-unavailable".to_owned(),
+            provenance: BTreeSet::from(["account work".to_owned()]),
+            configured_account_ids: BTreeSet::from(["work".to_owned()]),
+        }],
+    };
+    let validated =
+        validate_usage_sources_with_reader(catalog, &NoEnvResolver, &UnavailableKeychainReader);
+    assert!(validated.accounts.is_empty());
+    assert!(validated.bindings.is_empty());
+    assert_eq!(validated.diagnostics.len(), 1);
+    assert_eq!(
+        validated.diagnostics[0].issue,
+        UsageDiscoveryIssue::CredentialUnavailable
+    );
+    assert_eq!(
+        validated.diagnostics[0].issue.id(),
+        "credential_unavailable"
+    );
+    assert_eq!(
+        validated.diagnostics[0].issue.display_message(),
+        "Credential access is temporarily unavailable"
     );
 }
 
@@ -258,6 +326,32 @@ fn write_registry(config_root: &Path, entries: &[(&str, Agent, &Path)]) {
         toml::to_string(&config).unwrap(),
     )
     .unwrap();
+}
+
+fn write_kimi_auth_route(directory: &Path, base_url: &str, oauth_host: &str) -> PathBuf {
+    use sha2::Digest as _;
+
+    let hash_input = format!(
+        "{{\"oauthHost\":{},\"baseUrl\":{}}}",
+        serde_json::to_string(oauth_host).unwrap(),
+        serde_json::to_string(base_url).unwrap()
+    );
+    let digest = sha2::Sha256::digest(hash_input.as_bytes());
+    let hash = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let slot_key = format!("oauth/kimi-code-env-{}", &hash[..16]);
+    let credential = directory.join(format!("credentials/kimi-code-env-{}.json", &hash[..16]));
+    let config = format!(
+        "[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"{base_url}\"\n\
+[providers.\"managed:kimi-code\".oauth]\nkey = \"{slot_key}\"\nstorage = \"file\"\noauth_host = \"{oauth_host}\"\n\
+[models.\"kimi-k2\"]\nmodel = \"kimi-k2\"\nmax_context_size = 131072\n"
+    );
+    std::fs::create_dir_all(directory).unwrap();
+    std::fs::create_dir_all(directory.join("credentials")).unwrap();
+    std::fs::write(directory.join("config.toml"), config).unwrap();
+    credential
 }
 
 #[test]
@@ -542,21 +636,25 @@ fn disc_scope_capsule_uses_only_forwarded_capabilities() {
         &UsageDiscoveryScope::Capsule {
             forwarded_accounts: vec![
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "claude".to_owned(),
                     capability_id: "cap-1".to_owned(),
                     account_label: Some("account@example.test".to_owned()),
                 },
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "claude".to_owned(),
                     capability_id: "cap-1".to_owned(),
                     account_label: Some("account@example.test".to_owned()),
                 },
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "opencode".to_owned(),
                     capability_id: "cap-2".to_owned(),
                     account_label: None,
                 },
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "bogus".to_owned(),
                     capability_id: "skipped".to_owned(),
                     account_label: None,
@@ -586,22 +684,26 @@ fn disc_scope_capsule_admits_newly_wired_surfaces() {
         &UsageDiscoveryScope::Capsule {
             forwarded_accounts: vec![
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "cursor".to_owned(),
                     capability_id: "cap-cursor".to_owned(),
                     account_label: Some("cursor@example.test".to_owned()),
                 },
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "google".to_owned(),
                     capability_id: "cap-google".to_owned(),
                     account_label: None,
                 },
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "openrouter".to_owned(),
                     capability_id: "cap-openrouter".to_owned(),
                     account_label: None,
                 },
                 // No collector, registry, or discovery entry exists.
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "copilot".to_owned(),
                     capability_id: "skipped".to_owned(),
                     account_label: None,
@@ -628,11 +730,29 @@ fn disc_same_provider_sources_with_same_labels_keep_source_capabilities_distinct
         &UsageDiscoveryScope::Capsule {
             forwarded_accounts: vec![
                 ForwardedUsageAccount {
+                    canonical_identity: Some(
+                        CanonicalAccountIdentity {
+                            surface: HostSurfaceId::Codex,
+                            subject: CanonicalAccountSubject::SourceCapability(
+                                "authenticated-source-a".to_owned(),
+                            ),
+                        }
+                        .protocol_identity(),
+                    ),
                     surface_id: "codex".to_owned(),
                     capability_id: "capability-a".to_owned(),
                     account_label: Some("same@example.test".to_owned()),
                 },
                 ForwardedUsageAccount {
+                    canonical_identity: Some(
+                        CanonicalAccountIdentity {
+                            surface: HostSurfaceId::Codex,
+                            subject: CanonicalAccountSubject::SourceCapability(
+                                "authenticated-source-b".to_owned(),
+                            ),
+                        }
+                        .protocol_identity(),
+                    ),
                     surface_id: "codex".to_owned(),
                     capability_id: "capability-b".to_owned(),
                     account_label: Some("same@example.test".to_owned()),
@@ -671,17 +791,19 @@ fn disc_same_provider_sources_with_same_labels_keep_source_capabilities_distinct
 }
 
 #[test]
-fn disc_unresolved_same_labels_do_not_overwrite_discovered_views() {
+fn disc_unresolved_authoritative_labels_do_not_mint_authenticated_accounts() {
     let temp = tempfile::tempdir().unwrap();
     let catalog = discover_usage_sources(
         &UsageDiscoveryScope::Capsule {
             forwarded_accounts: vec![
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "codex".to_owned(),
                     capability_id: "capability-a".to_owned(),
                     account_label: None,
                 },
                 ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "codex".to_owned(),
                     capability_id: "capability-b".to_owned(),
                     account_label: None,
@@ -711,15 +833,9 @@ fn disc_unresolved_same_labels_do_not_overwrite_discovered_views() {
         runtime.record_discovered_snapshot(binding, view);
     }
 
-    assert_eq!(runtime.discovered_views.len(), 2);
-    assert_eq!(
-        runtime
-            .discovered_views
-            .values()
-            .map(|view| view.status_bar_label.as_str())
-            .collect::<BTreeSet<_>>(),
-        BTreeSet::from(["source-0", "source-1"])
-    );
+    assert!(runtime.discovered_views.is_empty());
+    assert!(runtime.discovery.as_ref().unwrap().accounts.is_empty());
+    assert_eq!(runtime.discovered_provider_views.len(), 1);
 }
 
 fn write_codex_only_global(config_root: &Path, codex_root: &Path) {
@@ -948,12 +1064,15 @@ fn disc_source_kimi_profile_requires_credentials_in_selected_root() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
     let kimi_root = temp.path().join("kimi-profile");
-    std::fs::create_dir_all(&kimi_root).unwrap();
     std::fs::create_dir_all(&config_root).unwrap();
     write_registry(&config_root, &[("kimi", Agent::Kimi, &kimi_root)]);
-    std::fs::create_dir_all(kimi_root.join("credentials")).unwrap();
+    let selected_credential = write_kimi_auth_route(
+        &kimi_root,
+        "https://api.kimi.com/coding/tenant/v1",
+        "https://auth.kimi.com/tenant",
+    );
     std::fs::write(
-        kimi_root.join("credentials/kimi-code.json"),
+        selected_credential,
         r#"{"access_token":"selected-kimi-token"}"#,
     )
     .unwrap();
@@ -973,9 +1092,35 @@ fn disc_source_kimi_profile_requires_credentials_in_selected_root() {
         "{:?}",
         validated.diagnostics
     );
-    assert_eq!(validated.accounts.len(), 1);
-    assert_eq!(validated.accounts[0].account_label, "kimi");
+    assert!(validated.accounts.is_empty());
     assert_eq!(validated.bindings.len(), 1);
+    assert!(validated.bindings[0].identity.is_none());
+    let proof = validated.bindings[0].profile_material.as_ref().unwrap();
+    let config = std::fs::read(kimi_root.join("config.toml")).unwrap();
+    let slot = jackin_config::kimi_runtime_auth_slot(
+        &config,
+        jackin_config::KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION,
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    let slot_descriptor = serde_json::json!({"kimi_runtime_auth_slot": slot});
+    assert_eq!(
+        proof.source,
+        jackin_core::profile_credential_source_identity(
+            Agent::Kimi,
+            "moonshot",
+            &kimi_root,
+            Some(&slot_descriptor),
+        )
+    );
+    assert_eq!(
+        proof.material_revision,
+        jackin_core::profile_credential_material_revision(
+            Agent::Kimi,
+            br#"{"access_token":"selected-kimi-token"}"#
+        )
+        .unwrap()
+    );
 }
 
 #[test]
@@ -983,10 +1128,21 @@ fn disc_kimi_missing_selected_credentials_never_uses_other_home_profile() {
     let temp = tempfile::tempdir().unwrap();
     let selected = temp.path().join("selected");
     let home = temp.path().join("home");
-    let ambient = home.join(".kimi/credentials");
+    let ambient = home.join(".kimi-code/credentials");
     let config_root = temp.path().join("config");
-    std::fs::create_dir_all(&selected).unwrap();
+    let selected_credential = write_kimi_auth_route(
+        &selected,
+        "https://api.kimi.com/coding/tenant/v1",
+        "https://auth.kimi.com/tenant",
+    );
     std::fs::create_dir_all(&ambient).unwrap();
+    std::fs::create_dir_all(selected.join("credentials")).unwrap();
+    // This valid default-route token must not satisfy the selected custom route.
+    std::fs::write(
+        selected.join("credentials/kimi-code.json"),
+        r#"{"access_token":"wrong-route-secret"}"#,
+    )
+    .unwrap();
     std::fs::write(
         ambient.join("kimi-code.json"),
         r#"{"access_token":"ambient-secret"}"#,
@@ -1002,6 +1158,7 @@ fn disc_kimi_missing_selected_credentials_never_uses_other_home_profile() {
     )
     .unwrap();
     let validated = validate_usage_sources(catalog, &NoEnvResolver);
+    assert!(!selected_credential.exists());
     assert!(validated.bindings.is_empty());
     assert!(
         validated
@@ -1020,7 +1177,7 @@ fn disc_amp_composite_profile_reads_selected_data_root() {
     std::fs::create_dir_all(&data).unwrap();
     std::fs::write(
         data.join("secrets.json"),
-        r#"{"apiKey@work@example.test":"selected-secret"}"#,
+        r#"{"apiKey@https://ampcode.com/":"selected-secret"}"#,
     )
     .unwrap();
     write_registry(&config_root, &[("amp-work", Agent::Amp, &selected)]);
@@ -1038,8 +1195,22 @@ fn disc_amp_composite_profile_reads_selected_data_root() {
         "{:?}",
         validated.diagnostics
     );
-    assert_eq!(validated.accounts.len(), 1);
-    assert_eq!(validated.accounts[0].account_label, "work@example.test");
+    assert!(validated.accounts.is_empty());
+    assert_eq!(validated.bindings.len(), 1);
+    assert!(validated.bindings[0].identity.is_none());
+    let proof = validated.bindings[0].profile_material.as_ref().unwrap();
+    assert_eq!(
+        proof.source,
+        jackin_core::profile_credential_source_identity(Agent::Amp, "amp", &data, None)
+    );
+    assert_eq!(
+        proof.material_revision,
+        jackin_core::profile_credential_material_revision(
+            Agent::Amp,
+            br#"{"apiKey@https://ampcode.com/":"selected-secret"}"#
+        )
+        .unwrap()
+    );
     assert!(!format!("{validated:?}").contains("selected-secret"));
 }
 
@@ -1149,13 +1320,20 @@ fn disc_dedup_legacy_shared_snapshot_never_creates_active_row() {
     )
     .unwrap();
     let store = temp.path().join("missing.db");
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: Vec::new(),
+    };
 
     let catalog = crate::host::accounts::materialize_account_catalog(
         &[],
         &BTreeMap::new(),
         &BTreeMap::new(),
         &store,
-        Some(&[]),
+        Some(&discovery),
     )
     .unwrap();
 
@@ -1200,8 +1378,12 @@ fn disc_cursor_token_profile_binds_refreshable_material() {
     assert_eq!(validated.accounts[0].account_label, "work@example.test");
     assert_eq!(validated.bindings.len(), 1);
     match &validated.bindings[0].source {
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => {
-            assert_eq!(auth_path, &cursor_root.join("auth.json"));
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor {
+            auth,
+            identity,
+        }) => {
+            assert!(!auth.access_token.is_empty());
+            assert_eq!(identity.as_deref(), Some("work@example.test"));
         }
         _ => panic!("cursor token profile must bind refreshable material"),
     }
@@ -1451,17 +1633,20 @@ fn disc_material_less_profile_binding_is_unpollable() {
         DiscoveredCredentialSource::Profile {
             surface: HostSurfaceId::Meta,
             agent: Agent::Muse,
+            provider: "meta".to_owned(),
+            selector: None,
             root: muse,
             operator_home: temp.path().to_path_buf(),
             account_label: None,
             source_id: "source-muse".to_owned(),
             capability_id: "cap-muse".to_owned(),
             provenance: BTreeSet::new(),
+            configured_account_ids: BTreeSet::new(),
         },
         &NoEnvResolver,
         &reader,
     );
-    assert!(matches!(parts.5, ValidatedCredentialSource::Unpollable));
+    assert!(matches!(parts.6, ValidatedCredentialSource::Unpollable));
     // omp: attribution-only presence, no material → Unpollable as well.
     let omp = temp.path().join("omp");
     std::fs::create_dir_all(omp.join("agent")).unwrap();
@@ -1470,17 +1655,20 @@ fn disc_material_less_profile_binding_is_unpollable() {
         DiscoveredCredentialSource::Profile {
             surface: HostSurfaceId::OpenRouter,
             agent: Agent::Omp,
+            provider: "openrouter".to_owned(),
+            selector: None,
             root: omp,
             operator_home: temp.path().to_path_buf(),
             account_label: None,
             source_id: "source-omp".to_owned(),
             capability_id: "cap-omp".to_owned(),
             provenance: BTreeSet::new(),
+            configured_account_ids: BTreeSet::new(),
         },
         &NoEnvResolver,
         &reader,
     );
-    assert!(matches!(parts.5, ValidatedCredentialSource::Unpollable));
+    assert!(matches!(parts.6, ValidatedCredentialSource::Unpollable));
 }
 
 #[test]
@@ -1510,7 +1698,9 @@ fn test_binding(
         source_id: "source-test".to_owned(),
         capability_id: "cap-test".to_owned(),
         credential_revision: "credential-revision-test".to_owned(),
+        profile_material: None,
         provenance: BTreeSet::new(),
+        configured_account_ids: BTreeSet::new(),
         source,
     }
 }
@@ -1526,7 +1716,13 @@ fn refresh_cursor_binding_dispatches_to_collector() {
     std::fs::write(&auth_path, r#"{"accessToken":"fixture-opaque-token"}"#).unwrap();
     let binding = test_binding(
         HostSurfaceId::Cursor,
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }),
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor {
+            auth: crate::usage::cursor_auth_from_value(
+                &serde_json::json!({"accessToken": "fixture-opaque-token"}),
+            )
+            .unwrap(),
+            identity: None,
+        }),
     );
     match refresh_credential_binding(&binding, &NoEnvResolver) {
         ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
@@ -1701,6 +1897,116 @@ fn discover_with(
 }
 
 #[test]
+fn disc_shared_profile_failed_diagnostic_keeps_exact_configured_ids() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let profile = temp.path().join("codex-shared");
+    let mut config = AppConfig::default();
+    for (id, name) in [
+        ("grant-one", "Display | one"),
+        ("grant-two", "Display, account two"),
+    ] {
+        config.accounts.insert(
+            id.to_owned(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: name.to_owned(),
+                provider: AiProvider::OpenAi,
+                credential: AccountCredential::Profile {
+                    agent: Agent::Codex,
+                    directory: profile.clone(),
+                    xdg_roots: None,
+                    source_selector: None,
+                },
+            },
+        );
+    }
+    std::fs::create_dir_all(&config_root).unwrap();
+    std::fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+
+    let resolver = FakeEnvResolver::default();
+    let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+    let expected = BTreeSet::from(["grant-one".to_owned(), "grant-two".to_owned()]);
+    assert!(resolver.calls.lock().unwrap().is_empty());
+    assert_eq!(catalog.candidates.len(), 1);
+    assert_eq!(catalog.candidates[0].configured_account_ids, expected);
+    let source_ids = catalog
+        .sources
+        .iter()
+        .map(|source| match source {
+            DiscoveredCredentialSource::Profile {
+                configured_account_ids,
+                ..
+            }
+            | DiscoveredCredentialSource::Env {
+                configured_account_ids,
+                ..
+            }
+            | DiscoveredCredentialSource::Capability {
+                configured_account_ids,
+                ..
+            } => configured_account_ids,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(source_ids, vec![&expected]);
+
+    let validated =
+        validate_usage_sources_with_reader(catalog, &resolver, &RecordingProfileReader::default());
+    assert!(validated.accounts.is_empty());
+    assert!(validated.bindings.is_empty());
+    assert_eq!(validated.diagnostics.len(), 1);
+    assert_eq!(validated.diagnostics[0].configured_account_ids, expected);
+
+    // Display names and punctuation only affect the human scope label. The
+    // diagnostic association remains the exact registry IDs above.
+    assert!(
+        validated.diagnostics[0]
+            .scope_label
+            .contains("account grant-one")
+    );
+    assert!(
+        validated.diagnostics[0]
+            .scope_label
+            .contains("account grant-two")
+    );
+    assert!(
+        !validated.diagnostics[0]
+            .scope_label
+            .contains("Display | one")
+    );
+    assert!(
+        !validated.diagnostics[0]
+            .scope_label
+            .contains("Display, account two")
+    );
+
+    config.accounts.get_mut("grant-one").unwrap().name = "renamed; delimiter".to_owned();
+    config.accounts.get_mut("grant-two").unwrap().name = "renamed | second".to_owned();
+    std::fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let renamed_catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
+    assert_eq!(
+        renamed_catalog.candidates[0].configured_account_ids,
+        expected
+    );
+    let renamed = validate_usage_sources_with_reader(
+        renamed_catalog,
+        &resolver,
+        &RecordingProfileReader::default(),
+    );
+    assert_eq!(renamed.diagnostics.len(), 1);
+    assert_eq!(renamed.diagnostics[0].configured_account_ids, expected);
+    assert!(resolver.calls.lock().unwrap().is_empty());
+}
+
+#[test]
 fn disc_env_key_account_resolves_through_isolated_alias() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
@@ -1728,9 +2034,9 @@ fn disc_env_key_account_resolves_through_isolated_alias() {
     );
 
     let validated = validate_usage_sources(catalog, &resolver);
-    assert_eq!(validated.accounts.len(), 1);
+    assert!(validated.accounts.is_empty());
     assert_eq!(validated.bindings.len(), 1);
-    assert!(validated.bindings[0].identity.is_some());
+    assert!(validated.bindings[0].identity.is_none());
     // Canonical ownership remains separate from exact provider dispatch.
     assert!(matches!(
         validated.bindings[0].source,
@@ -1741,7 +2047,7 @@ fn disc_env_key_account_resolves_through_isolated_alias() {
         } if key == "OPENAI_API_KEY" && dispatch_key == "OPENAI_API_KEY"
     ));
     assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
-    assert_eq!(validated.unresolved_capabilities().count(), 0);
+    assert_eq!(validated.unresolved_capabilities().count(), 1);
 }
 
 #[test]
@@ -1782,7 +2088,7 @@ fn disc_oauth_token_account_resolves_through_isolated_alias() {
         vec!["JACKIN_USAGE_ACCOUNT_CLAUDE_CODE_OAUTH_TOKEN"]
     );
     let validated = validate_usage_sources(catalog, &resolver);
-    assert_eq!(validated.accounts.len(), 1);
+    assert!(validated.accounts.is_empty());
     assert!(matches!(
         validated.bindings[0].source,
         ValidatedCredentialSource::Env { ref key, .. } if key == "ANTHROPIC_API_KEY"
@@ -1795,7 +2101,7 @@ fn disc_oauth_token_account_resolves_through_isolated_alias() {
 }
 
 #[test]
-fn disc_mixed_profile_and_env_same_provider_merge_to_one_identity() {
+fn disc_anonymous_env_key_cannot_borrow_same_provider_profile_identity() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
     let profile = temp.path().join("codex-shared");
@@ -1826,24 +2132,36 @@ fn disc_mixed_profile_and_env_same_provider_merge_to_one_identity() {
     assert_eq!(validated.accounts[0].account_label, "same@example.test");
     assert_eq!(
         validated.accounts[0].provenance,
-        vec!["account codex-key", "account codex-profile"]
+        vec!["account codex-profile"]
     );
-    assert_eq!(validated.accounts[0].source_ids.len(), 2);
+    assert_eq!(validated.accounts[0].source_ids.len(), 1);
     assert!(matches!(
         validated.accounts[0].identity.subject,
         CanonicalAccountSubject::ProviderId(_)
     ));
     assert_eq!(validated.bindings.len(), 2);
     assert_eq!(
-        validated.bindings[0].identity,
-        validated.bindings[1].identity
+        validated
+            .bindings
+            .iter()
+            .filter(|binding| binding.identity.is_some())
+            .count(),
+        1
     );
-    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
-    assert_eq!(validated.unresolved_capabilities().count(), 0);
+    assert_eq!(
+        validated
+            .bindings
+            .iter()
+            .filter(|binding| binding.identity.is_none())
+            .count(),
+        1
+    );
+    assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 2);
+    assert_eq!(validated.unresolved_capabilities().count(), 1);
 }
 
 #[test]
-fn disc_distinct_env_keys_same_provider_keep_distinct_identities() {
+fn disc_distinct_anonymous_env_keys_keep_distinct_unresolved_capabilities() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
     write_accounts_config(
@@ -1859,7 +2177,8 @@ fn disc_distinct_env_keys_same_provider_keep_distinct_identities() {
     assert_eq!(catalog.candidates.len(), 2);
 
     let validated = validate_usage_sources(catalog, &resolver);
-    assert_eq!(validated.accounts.len(), 2);
+    assert!(validated.accounts.is_empty());
+    assert_eq!(validated.unresolved_capabilities().count(), 2);
     assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 2);
 }
 
@@ -1881,13 +2200,13 @@ fn disc_same_env_key_through_two_accounts_dedupes_to_one_source() {
     assert_eq!(catalog.candidates[0].provenance.len(), 2);
 
     let validated = validate_usage_sources(catalog, &resolver);
-    assert_eq!(validated.accounts.len(), 1);
-    assert_eq!(validated.accounts[0].provenance.len(), 2);
+    assert!(validated.accounts.is_empty());
+    assert_eq!(validated.bindings[0].provenance.len(), 2);
     assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
 }
 
 #[test]
-fn disc_env_key_without_profile_keeps_own_source_scoped_row() {
+fn disc_anonymous_env_key_without_profile_retains_capability_without_account_row() {
     let temp = tempfile::tempdir().unwrap();
     let config_root = temp.path().join("config");
     write_accounts_config(
@@ -1899,13 +2218,9 @@ fn disc_env_key_without_profile_keeps_own_source_scoped_row() {
     let catalog = discover_with(&config_root, &temp.path().join("home"), &resolver);
 
     let validated = validate_usage_sources(catalog, &resolver);
-    assert_eq!(validated.accounts.len(), 1);
-    assert!(matches!(
-        validated.accounts[0].identity.subject,
-        CanonicalAccountSubject::SourceCapability(_)
-    ));
+    assert!(validated.accounts.is_empty());
     assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 1);
-    assert_eq!(validated.unresolved_capabilities().count(), 0);
+    assert_eq!(validated.unresolved_capabilities().count(), 1);
 }
 
 #[test]
@@ -1940,8 +2255,9 @@ fn disc_env_key_with_two_provider_identities_stays_separate() {
     let validated =
         validate_usage_sources_with_reader(catalog, &resolver, &RecordingProfileReader::default());
 
-    // Ambiguous targets are never guessed: the key keeps its own row.
-    assert_eq!(validated.accounts.len(), 3);
+    // Neither authenticated sibling supplies proof for the anonymous key.
+    assert_eq!(validated.accounts.len(), 2);
+    assert_eq!(validated.unresolved_capabilities().count(), 1);
     assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 3);
 }
 
@@ -1955,8 +2271,8 @@ fn disc_env_key_does_not_attach_to_label_only_profile() {
         &[("codex-profile", Agent::Codex, &profile)],
         &[("codex-key", AiProvider::OpenAi, "fixture-openai-key")],
     );
-    // OAuth material without any provider-issued id or label: the profile
-    // mints a source-scoped identity, which is not an attach target.
+    // OAuth material without provider identity and a configured display name
+    // remains anonymous; the key cannot borrow an identity from that name.
     std::fs::create_dir_all(&profile).unwrap();
     std::fs::write(
         profile.join("auth.json"),
@@ -1969,11 +2285,8 @@ fn disc_env_key_does_not_attach_to_label_only_profile() {
     let validated =
         validate_usage_sources_with_reader(catalog, &resolver, &RecordingProfileReader::default());
 
-    assert_eq!(validated.accounts.len(), 2);
-    assert!(validated.accounts.iter().all(|account| matches!(
-        account.identity.subject,
-        CanonicalAccountSubject::SourceCapability(_)
-    )));
+    assert!(validated.accounts.is_empty());
+    assert_eq!(validated.unresolved_capabilities().count(), 2);
     assert_eq!(crate::host::usage_broker_capabilities(&validated).len(), 2);
 }
 
@@ -2004,4 +2317,400 @@ fn refresh_gemini_binding_dispatches_to_collector() {
         }
         other => panic!("deleted gemini creds must need secret: {other:?}"),
     }
+}
+
+mod disabled_open;
+
+#[test]
+fn profile_descriptor_preserves_provider_and_full_selector() {
+    let root = PathBuf::from("/synthetic/profiles/store");
+    let key = |provider: &str, entry: &str, profile: Option<&str>| CredentialSourceKey::Profile {
+        agent: Agent::Hermes,
+        provider: provider.to_owned(),
+        selector: Some((entry.to_owned(), profile.map(str::to_owned))),
+        root: root.clone(),
+    };
+    let base = source_capability_id(
+        HostSurfaceId::OpenRouter,
+        &key("openrouter", "account", Some("first")),
+    );
+    for changed in [
+        key("openrouter ", "account", Some("first")),
+        key("openrouter", "account ", Some("first")),
+        key("openrouter", "account", Some("second")),
+        key("openrouter", "account", None),
+    ] {
+        assert_ne!(
+            base,
+            source_capability_id(HostSurfaceId::OpenRouter, &changed)
+        );
+    }
+}
+
+struct RotatingCodexProfileReader {
+    reads: std::cell::Cell<usize>,
+}
+
+impl ProfileCredentialReader for RotatingCodexProfileReader {
+    fn read(&self, _path: &Path) -> ProfileReadOutcome {
+        let read = self.reads.get();
+        self.reads.set(read + 1);
+        ProfileReadOutcome::Bytes(if read == 0 {
+            br#"{"tokens":{"access_token":"captured-fixture","account_id":" exact-id "}}"#.to_vec()
+        } else {
+            br#"{"tokens":{"access_token":"rotated-fixture","account_id":"replacement"}}"#.to_vec()
+        })
+    }
+    fn exists(&self, _path: &Path) -> bool {
+        false
+    }
+    fn read_claude_keychain(
+        &self,
+        _scope: &jackin_core::ClaudeKeychainScope,
+    ) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+    fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+        ProfileReadOutcome::Missing
+    }
+}
+
+#[test]
+fn profile_proof_and_dispatch_material_share_one_captured_read() {
+    let root = PathBuf::from("/synthetic/codex/profile");
+    let reader = RotatingCodexProfileReader {
+        reads: std::cell::Cell::new(0),
+    };
+    let catalog = UsageDiscoveryCatalog {
+        config_generation: None,
+        candidates: Vec::new(),
+        diagnostics: Vec::new(),
+        sources: vec![DiscoveredCredentialSource::Profile {
+            surface: HostSurfaceId::Codex,
+            agent: Agent::Codex,
+            provider: "openai".to_owned(),
+            selector: None,
+            root: root.clone(),
+            operator_home: PathBuf::from("/synthetic/home"),
+            account_label: Some("presentation-only".to_owned()),
+            source_id: "source-ordinal".to_owned(),
+            capability_id: "exact-source".to_owned(),
+            provenance: BTreeSet::new(),
+            configured_account_ids: BTreeSet::from(["registered".to_owned()]),
+        }],
+    };
+    let discovery = validate_usage_sources_with_reader(catalog, &NoEnvResolver, &reader);
+    assert_eq!(reader.reads.get(), 1);
+    assert_eq!(discovery.bindings.len(), 1);
+    let binding = &discovery.bindings[0];
+    assert_eq!(
+        binding.identity.as_ref().unwrap().subject,
+        CanonicalAccountSubject::ProviderId(" exact-id ".to_owned())
+    );
+    let proof = binding.profile_material.as_ref().unwrap();
+    assert_eq!(
+        proof.source,
+        jackin_core::profile_credential_source_identity(Agent::Codex, "openai", &root, None)
+    );
+    assert_eq!(
+        proof.material_revision,
+        jackin_core::profile_credential_material_revision(
+            Agent::Codex,
+            br#"{"tokens":{"access_token":"captured-fixture","account_id":" exact-id "}}"#
+        )
+        .unwrap()
+    );
+    match &binding.source {
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Codex { credentials }) => {
+            assert_eq!(credentials.access_token, "captured-fixture");
+        }
+        _ => panic!("captured profile must carry captured material"),
+    }
+}
+
+#[test]
+fn claude_metadata_cannot_substitute_for_primary_credentials() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("claude");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join(".claude.json"),
+        br#"{"claudeAiOauth":{"accessToken":"metadata-fixture"}}"#,
+    )
+    .unwrap();
+    struct MissingKeychainReader(RecordingProfileReader);
+    impl ProfileCredentialReader for MissingKeychainReader {
+        fn read(&self, path: &Path) -> ProfileReadOutcome {
+            self.0.read(path)
+        }
+        fn exists(&self, path: &Path) -> bool {
+            self.0.exists(path)
+        }
+        fn read_claude_keychain(
+            &self,
+            _scope: &jackin_core::ClaudeKeychainScope,
+        ) -> ProfileReadOutcome {
+            ProfileReadOutcome::Missing
+        }
+        fn read_antigravity_keychain(&self) -> ProfileReadOutcome {
+            ProfileReadOutcome::Missing
+        }
+    }
+    let reader = MissingKeychainReader(RecordingProfileReader::default());
+    assert!(matches!(
+        claude_profile_identity(&reader, &root, temp.path()),
+        ProfileValidation::Missing
+    ));
+    assert!(
+        captured_profile_material(
+            &reader,
+            Agent::Claude,
+            "anthropic",
+            None,
+            &root,
+            temp.path()
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn profile_discovery_uses_explicit_xdg_data_root_for_selected_instance() {
+    let mut config = AppConfig::default();
+    for (id, agent, provider) in [
+        ("amp", Agent::Amp, AiProvider::Amp),
+        ("opencode", Agent::Opencode, AiProvider::Opencode),
+    ] {
+        config.accounts.insert(
+            id.to_owned(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: "presentation label".to_owned(),
+                provider,
+                credential: AccountCredential::Profile {
+                    agent,
+                    directory: PathBuf::from("/synthetic/nominal"),
+                    xdg_roots: Some(jackin_config::XdgRoots {
+                        data: PathBuf::from("/synthetic/selected/data"),
+                        config: PathBuf::from("/synthetic/selected/config"),
+                        cache: PathBuf::from("/synthetic/selected/cache"),
+                    }),
+                    source_selector: None,
+                },
+            },
+        );
+    }
+    let mut candidates = BTreeMap::new();
+    let mut diagnostics = Vec::new();
+    enumerate_registered_accounts(
+        &config,
+        Path::new("/synthetic/home"),
+        &NoEnvResolver,
+        &mut candidates,
+        &mut diagnostics,
+    );
+    let catalog = materialize_catalog(None, candidates, diagnostics);
+    assert!(catalog.diagnostics.is_empty());
+    assert_eq!(catalog.sources.len(), 2);
+    for source in catalog.sources {
+        let DiscoveredCredentialSource::Profile {
+            agent,
+            root,
+            configured_account_ids,
+            ..
+        } = source
+        else {
+            panic!("profile expected");
+        };
+        assert_eq!(
+            root,
+            PathBuf::from("/synthetic/selected/data").join(agent.slug())
+        );
+        assert_eq!(
+            configured_account_ids,
+            BTreeSet::from([agent.slug().to_owned()])
+        );
+    }
+}
+
+struct RevisionEvidenceResolver(ProviderCredentialSourceMaterial);
+
+impl ProviderCredentialEnvResolver for RevisionEvidenceResolver {
+    fn resolve_provider_credentials(
+        &self,
+        _config: &AppConfig,
+        _workspace: Option<&WorkspaceName>,
+        _role: Option<&str>,
+        _keys: &[UsageCredentialEnvName],
+    ) -> Vec<ProviderCredentialEnvResolution> {
+        Vec::new()
+    }
+
+    fn source_material(
+        &self,
+        _surface: HostSurfaceId,
+        _key: &str,
+        _handle: &OpaqueCredentialHandle,
+    ) -> Option<ProviderCredentialSourceMaterial> {
+        Some(self.0.clone())
+    }
+}
+
+#[test]
+fn env_catalog_revision_binds_exact_source_and_captured_material() {
+    let revision = |source, material_fingerprint: &str| {
+        let resolver = RevisionEvidenceResolver(ProviderCredentialSourceMaterial {
+            source,
+            material_fingerprint: material_fingerprint.to_owned(),
+        });
+        let discovery = validate_usage_sources_with_reader(
+            UsageDiscoveryCatalog {
+                config_generation: None,
+                candidates: Vec::new(),
+                diagnostics: Vec::new(),
+                sources: vec![DiscoveredCredentialSource::Env {
+                    surface: HostSurfaceId::Codex,
+                    handle: OpaqueCredentialHandle::new("same-handle"),
+                    key: "OPENAI_API_KEY".to_owned(),
+                    dispatch_key: "OPENAI_API_KEY".to_owned(),
+                    launch_keys: BTreeSet::from(["OPENAI_API_KEY".to_owned()]),
+                    kind: UsageCredentialKind::ApiKey,
+                    account_label: None,
+                    source_id: "same-source-ordinal".to_owned(),
+                    capability_id: "same-capability".to_owned(),
+                    provenance: BTreeSet::new(),
+                    configured_account_ids: BTreeSet::from(["registered".to_owned()]),
+                }],
+            },
+            &resolver,
+            &RecordingProfileReader::default(),
+        );
+        assert!(discovery.diagnostics.is_empty());
+        assert_eq!(discovery.bindings.len(), 1);
+        discovery.bindings[0].credential_revision.clone()
+    };
+    let source = UsageCredentialSourceIdentity::OnePassword {
+        reference: "op://synthetic-vault/synthetic-item/token".to_owned(),
+        account: Some("selected-account".to_owned()),
+    };
+    let original = revision(source.clone(), "synthetic-token-fingerprint");
+    assert_eq!(
+        original,
+        revision(source.clone(), "synthetic-token-fingerprint")
+    );
+    assert_ne!(
+        original,
+        revision(source.clone(), "rotated-token-fingerprint")
+    );
+    for changed_source in [
+        UsageCredentialSourceIdentity::OnePassword {
+            reference: "op://synthetic-vault/replacement-item/token".to_owned(),
+            account: Some("selected-account".to_owned()),
+        },
+        UsageCredentialSourceIdentity::OnePassword {
+            reference: "op://synthetic-vault/synthetic-item/token".to_owned(),
+            account: Some("different-account".to_owned()),
+        },
+        UsageCredentialSourceIdentity::HostEnv {
+            name: "SYNTHETIC_TOKEN".to_owned(),
+        },
+        UsageCredentialSourceIdentity::Literal,
+    ] {
+        assert_ne!(
+            original,
+            revision(changed_source, "synthetic-token-fingerprint")
+        );
+    }
+}
+
+#[test]
+fn amp_profile_accepts_only_one_canonical_server_credential() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("secrets.json");
+    let reader = RecordingProfileReader::default();
+    for malformed in [
+        serde_json::json!({"apiKey@https://foreign.example/": "foreign-fixture"}),
+        serde_json::json!({"mcpAuth@https://mcp.example/": "mcp-fixture"}),
+        serde_json::json!({"apiKey@https://ampcode.com": "first-fixture", "apiKey@https://ampcode.com/": "second-fixture"}),
+    ] {
+        std::fs::write(&path, malformed.to_string()).unwrap();
+        assert!(matches!(
+            amp_profile_identity(&reader, &path),
+            ProfileValidation::Malformed
+        ));
+    }
+    std::fs::write(
+        &path,
+        serde_json::json!({
+            "apiKey@https://foreign.example/": "foreign-fixture",
+            "mcpAuth@https://mcp.example/": "mcp-fixture",
+            "apiKey@https://ampcode.com": " exact-canonical-fixture ",
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let ProfileValidation::Anonymous(Some(material)) = amp_profile_identity(&reader, &path) else {
+        panic!(
+            "canonical server credential must remain anonymous until provider identity evidence"
+        );
+    };
+    let ProfileCredentialMaterial::Amp { key } = *material else {
+        panic!("Amp material expected");
+    };
+    assert_eq!(key, " exact-canonical-fixture ");
+}
+
+#[test]
+fn opencode_native_auth_cannot_supply_a_different_declared_provider() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_root = temp.path().join("config");
+    let profile = temp.path().join("opencode-profile");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::fs::write(
+        profile.join("auth.json"),
+        br#"{"opencode-go":{"type":"api","key":"native-opencode-fixture"}}"#,
+    )
+    .unwrap();
+    let account = jackin_config::AccountConfig {
+        enabled: true,
+        name: "presentation-only".to_owned(),
+        provider: AiProvider::OpenAi,
+        credential: AccountCredential::Profile {
+            agent: Agent::Opencode,
+            directory: profile,
+            xdg_roots: None,
+            source_selector: None,
+        },
+    };
+    assert!(account.supports_agent(Agent::Opencode));
+    let mut config = AppConfig::default();
+    config
+        .accounts
+        .insert("selected-openai".to_owned(), account);
+    std::fs::create_dir_all(&config_root).unwrap();
+    std::fs::write(
+        config_root.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let resolver = FakeEnvResolver::default();
+    let catalog = discover_with(&config_root, temp.path(), &resolver);
+    assert!(catalog.diagnostics.is_empty());
+    assert_eq!(catalog.candidates.len(), 1);
+    let reader = RecordingProfileReader::default();
+    let validated = validate_usage_sources_with_reader(catalog, &resolver, &reader);
+    assert!(validated.bindings.is_empty());
+    assert!(validated.accounts.is_empty());
+    assert!(crate::host::usage_broker_capabilities(&validated).is_empty());
+    assert_eq!(validated.diagnostics.len(), 1);
+    assert_eq!(
+        validated.diagnostics[0].issue,
+        UsageDiscoveryIssue::CredentialMalformed
+    );
+    assert_eq!(
+        validated.diagnostics[0].configured_account_ids,
+        BTreeSet::from(["selected-openai".to_owned()])
+    );
+    assert!(reader.reads.lock().unwrap().is_empty());
+    assert!(resolver.calls.lock().unwrap().is_empty());
 }

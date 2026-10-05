@@ -74,3 +74,19 @@ fn forced_terminal_restore_resets_other_host_modes() {
     assert!(rendered.contains("\x1b[?2004l"));
     assert!(rendered.contains("\x1b[?25h"));
 }
+
+
+#[test]
+fn input_poll_preserves_poisoned_queue_and_reports_owner_disconnect() {
+    let event = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let (input, sender) = LaunchInput::queued_for_test([event.clone()]);
+    let receiver = Arc::clone(&input.rx);
+    assert!(std::thread::spawn(move || {
+        let _guard = receiver.lock().unwrap();
+        panic!("poison launch input receiver");
+    }).join().is_err());
+    assert_eq!(input.try_recv().unwrap(), Some(event));
+    assert!(input.try_recv().unwrap().is_none());
+    drop(sender);
+    assert!(input.try_recv().unwrap_err().to_string().contains("disconnected"));
+}

@@ -41,6 +41,7 @@ pub enum LaunchMessage {
     RenderTick {
         advance_frame: bool,
         build_log_area: Option<Rect>,
+        build_log_debug_mode: bool,
         build_log_lines: Vec<String>,
         build_log_active: bool,
     },

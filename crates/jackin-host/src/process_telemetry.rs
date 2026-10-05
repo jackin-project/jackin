@@ -96,7 +96,7 @@ impl Drop for ChildOperation {
 #[cfg(any(target_os = "linux", test))]
 pub(crate) fn spawn_sync(
     request: &ExecRequest,
-) -> anyhow::Result<(ChildOperation, std::process::Child)> {
+) -> anyhow::Result<(ChildOperation, jackin_process::SyncChild)> {
     let operation = ChildOperation {
         operation: Some(operation(request)),
     };

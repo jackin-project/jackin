@@ -30,15 +30,19 @@ pub(crate) use account_identity::{
     AccountConfigRevision, GenerationLeaseViolation, ensure_current_or_remove_stale_container,
 };
 mod launch_dind;
+#[cfg(test)]
+pub(crate) use launch_dind::SharedDockerCreationCustody;
 pub use launch_dind::DIND_IMAGE;
 pub(super) use launch_dind::create_role_network;
 pub(crate) use launch_dind::prewarmed_dind_state_container_name;
 pub use launch_dind::{
     DindSidecarPrewarm, prewarm_dind_sidecar_container_with_paths, write_prewarmed_dind_state,
 };
+pub(crate) use launch_dind::prewarm_dind_sidecar_container_under_lock;
+pub(crate) use launch_dind::{retire_prewarm_projection, try_lock_prewarmed_dind};
 use launch_dind::{adopt_prewarmed_dind_sidecar, run_dind_sidecar_headless};
 #[cfg(not(test))]
-pub(crate) use launch_dind::{prewarmed_dind_state_is_live, try_lock_prewarmed_dind};
+pub(crate) use launch_dind::prewarmed_dind_state_is_live;
 
 mod launch_slot;
 #[cfg(test)]
@@ -73,6 +77,7 @@ pub use launch_pipeline::launch_phases::{
     GrantPhaseInput, GrantsValidated, ImagePhaseClass, ImagePhaseClassified, classify_image_phase,
     validate_launch_grants,
 };
+
 
 #[cfg(test)]
 use crate::instance::InstanceStatus;
@@ -245,7 +250,7 @@ use progress_helpers::{
 pub(crate) use mounts::{
     Backend, agent_mounts, apple_agent_mounts, build_workspace_mount_strings,
     build_workspace_mounts, ensure_apple_provider_authority_not_exposed, github_config_mount,
-    resolve_backend,
+    ensure_controller_transport_supported, resolve_backend,
 };
 
 #[cfg(test)]

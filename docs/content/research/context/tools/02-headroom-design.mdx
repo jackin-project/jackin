@@ -9,7 +9,7 @@ Cutoff: **2026-09-23 UTC**. Reviewed release: [Headroom v0.38.0](https://github.
 
 ## Question and scope
 
-Can Jackin reuse the existing Rust implementation while retaining ownership of execution, recovery, configuration, and provider authentication?
+Can jackin❯ reuse the existing Rust implementation while retaining ownership of execution, recovery, configuration, and provider authentication?
 
 ## Method
 
@@ -29,19 +29,19 @@ The [workspace](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/Cargo.t
 
 ### Feature and dependency reality
 
-The [core manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml) declares internal crate version **0.1.0**, not product version 0.38.0. ML is enabled by default; `default-features = false` excludes optional ONNX/embedding/classifier dependencies. The remaining core still includes tokenizers, grammars, SQLite, and network-capable dependencies. Feature exclusion is not proof of a small binary, offline operation, or a successful build on every Jackin target.
+The [core manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml) declares internal crate version **0.1.0**, not product version 0.38.0. ML is enabled by default; `default-features = false` excludes optional ONNX/embedding/classifier dependencies. The remaining core still includes tokenizers, grammars, SQLite, and network-capable dependencies. Feature exclusion is not proof of a small binary, offline operation, or a successful build on every jackin❯ target.
 
-The source explicitly distinguishes parity with the Python implementation from information preservation. Matching upstream output can reproduce upstream omissions. Jackin therefore needs independent fidelity tests, not just parity fixtures.
+The source explicitly distinguishes parity with the Python implementation from information preservation. Matching upstream output can reproduce upstream omissions. jackin❯ therefore needs independent fidelity tests, not just parity fixtures.
 
 ### Evidence and operational interpretation
 
-No independent accepted-task result tied to this exact release and a proposed Jackin profile was established. Payload compression counters are not a control trajectory. A proxy benchmark configured to rewrite more historical content cannot qualify a selected-transform integration, and a selected-transform test cannot qualify the whole proxy. See [evidence eligibility](/research/context/tools/07-evidence-and-claims/).
+No independent accepted-task result tied to this exact release and a proposed jackin❯ profile was established. Payload compression counters are not a control trajectory. A proxy benchmark configured to rewrite more historical content cannot qualify a selected-transform integration, and a selected-transform test cannot qualify the whole proxy. See [evidence eligibility](/research/context/tools/07-evidence-and-claims/).
 
 ## Implications for jackin❯
 
 **Best part:** typed transformations of large structured observations, with explicit recovery and result metadata. Keep source code, diffs, requirements, and acceptance evidence raw until separately qualified.
 
-**Integration choice:** try a commit-pinned `headroom-core` dependency inside an optional Jackin worker. Start with ML disabled and a small transform allowlist. Measure cold startup, allocations, concurrency, payload limits, and model/artifact access. Do not expose upstream types as Jackin's durable public API.
+**Integration choice:** try a commit-pinned `headroom-core` dependency inside an optional jackin❯ worker. Start with ML disabled and a small transform allowlist. Measure cold startup, allocations, concurrency, payload limits, and model/artifact access. Do not expose upstream types as the durable public API of jackin❯.
 
 **Reuse before rewrite:** request upstream feature decomposition or a smaller supported kernel API when necessary. Extract licensed, tested source only when the library cannot satisfy a demonstrated boundary requirement. Do not rewrite the algorithms merely to avoid a Python wrapper that this integration does not need.
 
@@ -58,5 +58,5 @@ Release, workspace, core manifest, and exported APIs are linked inline at the re
 ## Related work
 
 - [Six-tool comparison](/research/context/tools/05-head-to-head/)
-- [Jackin integration](/research/context/tools/11-jackin-integration/)
+- [jackin❯ integration](/research/context/tools/11-jackin-integration/)
 - [Engine reuse matrix](/research/context/engine/09-reuse-decision-matrix/)

@@ -143,8 +143,29 @@ pub async fn assess_worktree(
         return Ok(WorktreeState::Dirty);
     }
 
+    let branches = assess_branches(worktree_path, base_commit, runner, &mut log).await;
+    if branches != WorktreeState::Clean {
+        return Ok(branches);
+    }
+
+    Ok(assess_detached_head(worktree_path, base_commit, runner, &mut log).await)
+}
+
+struct BranchRef<'a> {
+    name: &'a str,
+    tip: &'a str,
+    upstream: &'a str,
+    track: &'a str,
+}
+
+async fn assess_branches(
+    worktree_path: &str,
+    base_commit: &str,
+    runner: &mut impl CommandRunner,
+    log: &mut impl FnMut(&str),
+) -> WorktreeState {
     // Enumerate every local branch and classify each. Columns are tab-separated:
-    //   refname:short  objectname  upstream:short  upstream:track
+    //   refname  objectname  upstream  upstream:track
     // upstream:track is the literal "[gone]" when the upstream ref no longer
     // resolves locally (remote branch deleted after a merge, then pruned).
     let raw = match runner
@@ -154,7 +175,7 @@ pub async fn assess_worktree(
                 "-C",
                 worktree_path,
                 "for-each-ref",
-                "--format=%(refname:short)%09%(objectname)%09%(upstream:short)%09%(upstream:track)",
+                "--format=%(refname)%09%(objectname)%09%(upstream)%09%(upstream:track)%09END",
                 "refs/heads/",
             ],
             None,
@@ -166,7 +187,7 @@ pub async fn assess_worktree(
             log(&format!(
                 "assess: for-each-ref refs/heads/ failed for {worktree_path}: {e}; preserving as unpushed (cannot enumerate branches)"
             ));
-            return Ok(WorktreeState::Unpushed);
+            return WorktreeState::Unpushed;
         }
     };
     if raw.trim().is_empty() {
@@ -175,7 +196,7 @@ pub async fn assess_worktree(
         log(&format!(
             "assess: for-each-ref refs/heads/ returned no branches for {worktree_path}; preserving as unpushed"
         ));
-        return Ok(WorktreeState::Unpushed);
+        return WorktreeState::Unpushed;
     }
 
     for line in raw.lines() {
@@ -183,73 +204,135 @@ pub async fn assess_worktree(
         if line.is_empty() {
             continue;
         }
-        // `split('\t')` keeps trailing empty fields — the column count is fixed at four.
+        // A terminal sentinel preserves empty fields through runner whitespace trimming.
         let mut parts = line.split('\t');
         let name = parts.next().unwrap_or("");
         let tip = parts.next().unwrap_or("").trim();
         let upstream = parts.next().unwrap_or("").trim();
         let track = parts.next().unwrap_or("").trim();
+        let sentinel = parts.next().unwrap_or("");
 
-        if name.is_empty() || tip.is_empty() {
+        if name.is_empty() || tip.is_empty() || sentinel != "END" || parts.next().is_some() {
             log(&format!(
                 "assess: malformed for-each-ref row for {worktree_path}: {line:?}; preserving as unpushed"
             ));
-            return Ok(WorktreeState::Unpushed);
+            return WorktreeState::Unpushed;
         }
 
-        if tip == base_commit {
-            // Branch tip at the recorded base — no work was done on this branch.
-            continue;
+        if branch_is_unpushed(
+            worktree_path,
+            BranchRef {
+                name,
+                tip,
+                upstream,
+                track,
+            },
+            base_commit,
+            runner,
+            log,
+        )
+        .await
+        {
+            return WorktreeState::Unpushed;
         }
+    }
 
-        if upstream.is_empty() {
-            log(&format!(
-                "assess: branch {name} in {worktree_path} is ahead of base with no upstream; preserving as unpushed"
-            ));
-            return Ok(WorktreeState::Unpushed);
-        }
+    WorktreeState::Clean
+}
 
-        // `[gone]`/`gone` means the upstream ref is configured but its
-        // remote-tracking ref was pruned. Treat as safe — squash-merge with
-        // remote-branch deletion is the dominant GitHub workflow and there is no
-        // purely-local proof it was merged; the host repo's reflog still holds
-        // the commits if a remote branch was deleted by mistake.
-        if track == "[gone]" || track == "gone" {
-            log(&format!(
-                "assess: branch {name} in {worktree_path} has upstream={upstream} marked gone; treating as merged-and-pruned (safe)"
-            ));
-            continue;
-        }
+async fn branch_is_unpushed(
+    worktree_path: &str,
+    branch: BranchRef<'_>,
+    base_commit: &str,
+    runner: &mut impl CommandRunner,
+    log: &mut impl FnMut(&str),
+) -> bool {
+    let BranchRef {
+        name,
+        tip,
+        upstream,
+        track,
+    } = branch;
+    if tip == base_commit {
+        // Branch tip at the recorded base — no work was done on this branch.
+        return false;
+    }
+    if upstream.is_empty() {
+        log(&format!(
+            "assess: branch {name} in {worktree_path} is ahead of base with no upstream; preserving as unpushed"
+        ));
+        return true;
+    }
 
-        let ahead = match runner
+    // A pruned upstream proves nothing about merge or push. Require every
+    // commit at the captured tip to remain reachable from a remote ref.
+    if track == "[gone]" || track == "gone" {
+        let unreachable = match runner
             .capture(
                 "git",
                 &[
                     "-C",
                     worktree_path,
                     "rev-list",
-                    &format!("{upstream}..{name}"),
+                    "--not",
+                    "--remotes",
+                    "--not",
+                    "--end-of-options",
+                    tip,
                 ],
                 None,
             )
             .await
         {
-            Ok(s) => s,
-            Err(e) => {
+            Ok(output) => output,
+            Err(error) => {
                 log(&format!(
-                    "assess: rev-list {upstream}..{name} failed for {worktree_path}: {e}; preserving as unpushed (cannot verify all commits pushed)"
+                    "assess: remote reachability check for branch {name} in {worktree_path} failed: {error}; preserving as unpushed"
                 ));
-                return Ok(WorktreeState::Unpushed);
+                return true;
             }
         };
-        if !ahead.trim().is_empty() {
+        if !unreachable.trim().is_empty() {
             log(&format!(
-                "assess: branch {name} in {worktree_path} has commits past upstream {upstream}; preserving as unpushed"
+                "assess: branch {name} in {worktree_path} has a gone upstream and commits unreachable from remote refs; preserving as unpushed"
             ));
-            return Ok(WorktreeState::Unpushed);
+            return true;
         }
+        return false;
     }
 
+    let range = format!("{upstream}..{tip}");
+    let ahead = match runner
+        .capture(
+            "git",
+            &["-C", worktree_path, "rev-list", "--end-of-options", &range],
+            None,
+        )
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            log(&format!(
+                "assess: rev-list {upstream}..{name} failed for {worktree_path}: {e}; preserving as unpushed (cannot verify all commits pushed)"
+            ));
+            return true;
+        }
+    };
+    if !ahead.trim().is_empty() {
+        log(&format!(
+            "assess: branch {name} in {worktree_path} has commits past upstream {upstream}; preserving as unpushed"
+        ));
+        return true;
+    }
+    false
+}
+
+async fn assess_detached_head(
+    worktree_path: &str,
+    base_commit: &str,
+    runner: &mut impl CommandRunner,
+    log: &mut impl FnMut(&str),
+) -> WorktreeState {
     // Detached-HEAD guard: commits made while HEAD is detached don't appear
     // under refs/heads/ and slip past the branch loop. `symbolic-ref --quiet
     // HEAD` exits 0 on an attached branch and fails on a detached HEAD.
@@ -278,16 +361,16 @@ pub async fn assess_worktree(
                     sha = head_sha.trim(),
                     base = base_commit.trim(),
                 ));
-                return Ok(WorktreeState::Unpushed);
+                return WorktreeState::Unpushed;
             }
             Err(e) => {
                 log(&format!(
                     "assess: rev-parse HEAD failed for {worktree_path}: {e}; preserving as unpushed (cannot verify detached HEAD state)"
                 ));
-                return Ok(WorktreeState::Unpushed);
+                return WorktreeState::Unpushed;
             }
         }
     }
 
-    Ok(WorktreeState::Clean)
+    WorktreeState::Clean
 }

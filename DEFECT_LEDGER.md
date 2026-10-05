@@ -1,8 +1,8 @@
 # Defect → gate ledger
 
 One row per escaped defect — a bug that reached an operator or the installed
-panic hooks (capsule `crates/jackin-usage/src/logging.rs` panic hook / host
-`crates/jackin-diagnostics/src/run.rs` `run.error_typed("panic", …)`).
+panic hooks (capsule [`crates/jackin-usage/src/logging.rs`](crates/jackin-usage/src/logging.rs) panic hook / host
+[`crates/jackin-diagnostics/src/run.rs`](crates/jackin-diagnostics/src/run.rs) `run.error_typed("panic", …)`).
 
 Append-only. Reviewed when choosing the next lint family adoption.
 

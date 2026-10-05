@@ -875,3 +875,33 @@ fn visibility_editor_tab_bar_alias_stays_hidden() {
     // j/J FocusContent alias is HiddenAlias: no standalone glyph appears.
     assert!(!keys.iter().any(|key| key == "J"), "{keys:?}");
 }
+
+fn assert_reverse_tab<A>(map: &TermrockKeymap<A>)
+where
+    A: Clone + Copy + PartialEq + std::fmt::Debug + 'static,
+{
+    let expected = map.dispatch(KeyChord::plain(KeyCode::BackTab));
+    assert!(expected.is_some(), "reverse traversal must be bound");
+    for modifiers in [KeyModifiers::NONE, KeyModifiers::SHIFT] {
+        let event = KeyEvent::new(KeyCode::BackTab, modifiers);
+        assert_eq!(map.dispatch(KeyChord::from(event)), expected);
+        assert_eq!(bridged_keymap_action(map, event), expected);
+    }
+    for modifiers in [
+        KeyModifiers::SHIFT | KeyModifiers::CONTROL,
+        KeyModifiers::SHIFT | KeyModifiers::ALT,
+    ] {
+        let event = KeyEvent::new(KeyCode::BackTab, modifiers);
+        assert_eq!(map.dispatch(KeyChord::from(event)), None);
+        assert_eq!(bridged_keymap_action(map, event), None);
+    }
+}
+
+#[test]
+fn reverse_tab_accepts_terminal_shift_modifier_on_every_bound_surface() {
+    assert_reverse_tab(&EDITOR_TAB_BAR_KEYMAP);
+    assert_reverse_tab(&EDITOR_CONTENT_KEYMAP);
+    assert_reverse_tab(&SETTINGS_TAB_BAR_KEYMAP);
+    assert_reverse_tab(&SETTINGS_CONTENT_SHELL_KEYMAP);
+    assert_reverse_tab(&PREVIEW_PANE_KEYMAP);
+}

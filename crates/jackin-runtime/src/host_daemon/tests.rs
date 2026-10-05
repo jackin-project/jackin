@@ -1,6 +1,8 @@
 use super::*;
 use jackin_protocol::control::{AgentState, PaneSnapshot, TabSnapshot};
 
+mod wire_overlap;
+
 #[derive(Debug, Default)]
 struct RecordingNotifier {
     notifications: Vec<AttentionNotification>,
@@ -205,6 +207,27 @@ fn daemon_socket_exports_client_parent_server_and_completes_after_response_write
 
 #[test]
 fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<()> {
+    let overlap = wire_overlap::ParentOverlap::start_if_requested()?;
+    // A global subscriber owns the whole process, including concurrent tests.
+    // Give the real exporter its own process so every received span is ours.
+    const WIRE_CHILD: &str = "JACKIN_DAEMON_WIRE_TEST_CHILD";
+    if std::env::var_os(WIRE_CHILD).is_none() {
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg("host_daemon::tests::conformance_wire_real_daemon_socket_exports_bounded_parented_rpc")
+            .arg("--nocapture")
+            .env(WIRE_CHILD, "1");
+        if let Some(overlap) = overlap.as_ref() {
+            command.env(wire_overlap::ENDPOINT, overlap.endpoint());
+        }
+        let status = command.status()?;
+        if let Some(overlap) = overlap {
+            overlap.finish()?;
+        }
+        anyhow::ensure!(status.success(), "isolated daemon wire test failed");
+        return Ok(());
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -214,6 +237,7 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
         &testbed.endpoint(),
         jackin_diagnostics::ServiceIdentity::DAEMON,
     )?;
+    wire_overlap::collector_ready(overlap.as_ref())?;
     let (temp, _paths, layout) = layout();
     ensure_run_dir(&layout)?;
     let listener = UnixListener::bind(&layout.socket_path)?;
@@ -324,14 +348,28 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
         Vec::<String>::new()
     );
     assert_eq!(testbed.legacy_namespace_violations(), Vec::<String>::new());
+    if let Some(overlap) = overlap {
+        overlap.finish()?;
+    }
     Ok(())
 }
 
 #[test]
-fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
-    use std::net::Shutdown;
-    use std::os::fd::AsFd;
+fn daemon_wire_fixture_isolates_unrelated_production_request() -> Result<()> {
+    wire_overlap::assert_isolated_collector()
+}
 
+#[test]
+fn daemon_response_write_failure_marks_server_failure() {
+    assert_daemon_response_write_failure(false, "writing daemon response");
+}
+
+#[test]
+fn daemon_response_terminator_failure_marks_server_failure() {
+    assert_daemon_response_write_failure(true, "terminating daemon response");
+}
+
+fn assert_daemon_response_write_failure(reject_terminator: bool, expected_context: &str) {
     let (_temp, _paths, layout) = layout();
     let mut attention = AttentionAdapter::new(RecordingNotifier::default());
     let mut context = TelemetryContext::v1();
@@ -344,34 +382,67 @@ fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
         ctx: context,
         kind: DaemonRequestKind::Status,
     };
-    let (mut client, mut server) = UnixStream::pair().expect("daemon socket pair");
-    serde_json::to_writer(&mut client, &request).expect("write daemon request");
-    client.write_all(b"\n").expect("terminate daemon request");
-    // WHY: Shutdown::Both alone lets macOS accept short response writes into the
-    // kernel buffer (write "succeeds", test flakes). SO_LINGER=0 RST forces EPIPE
-    // on the peer write path portably.
-    let linger = nix::libc::linger {
-        l_onoff: 1,
-        l_linger: 0,
+    let mut wire = serde_json::to_vec(&request).expect("serialize daemon request");
+    wire.push(b'\n');
+    // AF_UNIX peer closure and SO_LINGER do not guarantee an immediate failed
+    // write on macOS. Inject the write error at the actual response boundary.
+    struct BrokenResponseWriter {
+        reject_terminator: bool,
+        accepted: Vec<u8>,
+    }
+    impl Write for BrokenResponseWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if !self.reject_terminator || bytes == b"\n" {
+                return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+            }
+            self.accepted.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut writer = BrokenResponseWriter {
+        reject_terminator,
+        accepted: Vec::new(),
     };
-    nix::sys::socket::setsockopt(&client.as_fd(), nix::sys::socket::sockopt::Linger, &linger)
-        .expect("SO_LINGER");
-    client
-        .shutdown(Shutdown::Both)
-        .expect("close daemon client");
-    drop(client);
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let guard = tracing::subscriber::set_default(subscriber);
-    handle_stream(
-        &mut server,
+    let error = handle_request_io(
+        wire.as_slice(),
+        &mut writer,
         &layout,
         "test-build",
         &CoredumpPolicy::Disabled,
         &mut attention,
     )
-    .expect_err("closed client must fail the daemon response write");
+    .expect_err("failed daemon response write must propagate");
+    assert_eq!(error.to_string(), expected_context);
+    if reject_terminator {
+        let response: DaemonResponse = serde_json::from_slice(&writer.accepted)
+            .expect("complete JSON response precedes the failed terminator");
+        assert_eq!(response.id, request.id);
+        assert!(matches!(response.kind, DaemonResponseKind::Status(_)));
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::BrokenPipe
+        );
+    } else {
+        assert!(writer.accepted.is_empty());
+        assert_eq!(
+            error
+                .downcast_ref::<serde_json::Error>()
+                .unwrap()
+                .io_error_kind(),
+            Some(std::io::ErrorKind::BrokenPipe)
+        );
+    }
     drop(guard);
     export.force_flush();
+    let spans = export.finished_spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "rpc.server");
     assert_eq!(export.error_span_count(), 1);
 }
 

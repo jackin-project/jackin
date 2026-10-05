@@ -5,9 +5,10 @@
 //! entrypoint shell. The shell entrypoint remains responsible for
 //! sourcing role hooks and `exec`-ing the selected agent.
 
+use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io;
+use std::io::{self, Read as _, Write as _};
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
@@ -393,20 +394,21 @@ fn run_agent_setup() -> Result<()> {
     // Home emptiness is the gate: first seed copies auth; subsequent starts
     // leave in-container credentials untouched (agent refreshes tokens in-place
     // inside the durable home). No external marker file.
-    let materialization = match agent.as_str() {
-        "claude" => setup_claude(mode),
-        "codex" => setup_codex(mode),
-        "amp" => setup_amp(mode),
-        "kimi" => setup_kimi(mode),
-        "opencode" => setup_opencode(mode),
-        "grok" => setup_grok(mode),
-        "antigravity" => setup_antigravity(mode),
-        "gemini" => setup_gemini(mode),
-        "cursor" => setup_cursor(mode),
-        "muse" => setup_muse(mode),
-        "omp" => setup_omp(mode),
-        "hermes" => setup_hermes(mode),
-        other => bail!("unknown JACKIN_AGENT: {other}"),
+    let materialization = match jackin_core::Agent::from_slug(&agent)
+        .with_context(|| format!("unknown JACKIN_AGENT: {agent}"))?
+    {
+        jackin_core::Agent::Claude => setup_claude(mode),
+        jackin_core::Agent::Codex => setup_codex(mode),
+        jackin_core::Agent::Amp => setup_amp(mode),
+        jackin_core::Agent::Kimi => setup_kimi(mode),
+        jackin_core::Agent::Opencode => setup_opencode(mode),
+        jackin_core::Agent::Grok => setup_grok(mode),
+        jackin_core::Agent::Antigravity => setup_antigravity(mode),
+        jackin_core::Agent::Gemini => setup_gemini(mode),
+        jackin_core::Agent::Cursor => setup_cursor(mode),
+        jackin_core::Agent::Muse => setup_muse(mode),
+        jackin_core::Agent::Omp => setup_omp(mode),
+        jackin_core::Agent::Hermes => setup_hermes(mode),
     };
     emit_capsule_auth_provision(&agent, mode, materialization.as_ref());
     materialization?;
@@ -883,14 +885,16 @@ fn setup_amp(mode: AuthMode) -> Result<AuthMaterialization> {
 
 /// Kimi is the one sync-capable agent whose credential store is a directory, so
 /// it cannot use [`seed_forwarded_credential`]. It applies the same closed mode
-/// policy to the whole store: sync seeds/reuses it, environment modes and ignore
-/// remove it so stale credentials cannot silently override the selected mode.
+/// policy to the selected store: sync refreshes the admitted auth slot on every
+/// start; environment modes and ignore clear it so stale credentials cannot
+/// silently override the selected mode.
 fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
     use jackin_telemetry::schema::enums::{
         CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
     };
-    let target = Path::new("/home/agent/.kimi-code");
-    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Kimi, target)?.is_first_seed();
+    let target = nonempty_env("KIMI_CODE_HOME")
+        .map(PathBuf::from)
+        .context("KIMI_CODE_HOME must select the admitted Kimi instance home")?;
     let forwarded = forwarded_dir(container_paths::KIMI_CODE_DIR);
     let forwarded_present = forwarded.is_dir() && dir_nonempty(&forwarded)?;
     if matches!(mode, AuthMode::Ignore) {
@@ -907,7 +911,7 @@ fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
         if target.exists() {
             fs::remove_dir_all(target).context("failed to clear Kimi credential store")?;
         }
-        let available = nonempty_env("KIMI_CODE_API_KEY").is_some();
+        let available = nonempty_env(jackin_core::KIMI_API_KEY_ENV_NAME).is_some();
         return Ok(AuthMaterialization {
             source: if available {
                 Source::Environment
@@ -923,20 +927,17 @@ fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
         });
     }
     let mut copied = false;
-    if first_seed {
-        if forwarded_present {
-            copy_dir_contents(&forwarded, target)?;
-            copied = true;
-        } else {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] kimi: no forwarded credential and no api key in env - agent will require interactive login"
-            ));
-        }
-    } else if forwarded_present && !(target.is_dir() && dir_nonempty(target)?) {
-        copy_dir_contents(&forwarded, target)?;
+    if forwarded_present {
+        refresh_kimi_auth_from_forwarded(&forwarded, &target)?;
         copied = true;
+    } else {
+        ensure_real_directory(&target, true)?;
+        clear_kimi_auth_state(&target)?;
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] kimi: no forwarded credential and no api key in env - agent will require interactive login"
+        ));
     }
-    let available = target.is_dir() && dir_nonempty(target)?;
+    let available = copied;
     Ok(AuthMaterialization {
         source: if copied {
             Source::AgentHome
@@ -952,6 +953,260 @@ fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
         },
         error: (!available).then_some(ErrorType::CredentialUnavailable),
     })
+}
+
+fn refresh_kimi_auth_from_forwarded(forwarded: &Path, target: &Path) -> Result<()> {
+    const MAX_KIMI_AUTH_FILE_BYTES: u64 = 8 * 1024 * 1024;
+
+    ensure_real_directory(forwarded, false)?;
+    ensure_real_directory(&forwarded.join("credentials"), false)?;
+    let config_path = forwarded.join("config.toml");
+    let config_bytes = read_regular_file_bounded(&config_path, MAX_KIMI_AUTH_FILE_BYTES)
+        .context("reading forwarded Kimi config.toml")?;
+    let cli_version = nonempty_env(jackin_core::JACKIN_KIMI_CLI_VERSION_ENV_NAME)
+        .context("selected image has no verified Kimi CLI version")?;
+    let environment: BTreeMap<String, String> = std::env::vars().collect();
+    for name in [
+        "KIMI_CODE_BASE_URL",
+        "KIMI_CODE_OAUTH_HOST",
+        "KIMI_OAUTH_HOST",
+    ] {
+        anyhow::ensure!(
+            !environment.contains_key(name),
+            "Kimi profile sync cannot admit route override {name}"
+        );
+    }
+    let (slot, canonical_config) =
+        jackin_config::kimi_runtime_auth_config(&config_bytes, &cli_version, &environment)
+            .context("resolving forwarded Kimi auth slot")?;
+    anyhow::ensure!(
+        config_bytes == canonical_config,
+        "forwarded Kimi config is not the captured canonical projection"
+    );
+    let relative = &slot.credential_relative_path;
+    anyhow::ensure!(
+        relative.is_relative()
+            && relative.components().count() == 2
+            && relative
+                .components()
+                .next()
+                .is_some_and(|component| { component.as_os_str() == "credentials" }),
+        "resolved Kimi auth slot is outside credentials/"
+    );
+    ensure_only_selected_kimi_credential(
+        &forwarded.join("credentials"),
+        relative
+            .file_name()
+            .context("resolved Kimi credential filename is missing")?,
+    )?;
+    let credential_path = forwarded.join(relative);
+    let credential_bytes = read_regular_file_bounded(&credential_path, MAX_KIMI_AUTH_FILE_BYTES)
+        .context("reading selected forwarded Kimi credentials")?;
+    let credential_value: serde_json::Value = serde_json::from_slice(&credential_bytes)
+        .context("selected forwarded Kimi credentials are malformed JSON")?;
+    anyhow::ensure!(
+        jackin_config::kimi_credentials_value_has_access_token(&credential_value),
+        "selected forwarded Kimi credentials have no access token"
+    );
+
+    validate_kimi_home_target(target)?;
+    ensure_real_directory(target, true)?;
+    let target_credentials = target.join("credentials");
+    ensure_real_directory(&target_credentials, true)?;
+    clear_directory_contents(&target_credentials)?;
+    let target_credential = target.join(relative);
+    replace_private_file(&target_credential, &credential_bytes)?;
+    match read_optional_regular_file(&forwarded.join("device_id"), MAX_KIMI_AUTH_FILE_BYTES)? {
+        Some(device_id) => replace_private_file(&target.join("device_id"), &device_id)?,
+        None => remove_kimi_auth_file(&target.join("device_id"))?,
+    }
+    // Publish config last: the CLI cannot resolve the new route until its
+    // selected credential file has already been refreshed from the snapshot.
+    replace_private_file(&target.join("config.toml"), &canonical_config)?;
+    Ok(())
+}
+
+fn clear_kimi_auth_state(target: &Path) -> Result<()> {
+    let credentials = target.join("credentials");
+    match fs::symlink_metadata(&credentials) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.is_dir() && !metadata.file_type().is_symlink(),
+                "Kimi credentials target is not a real directory"
+            );
+            clear_directory_contents(&credentials)?;
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error).context("checking Kimi credentials target"),
+    }
+    remove_kimi_auth_file(&target.join("config.toml"))?;
+    remove_kimi_auth_file(&target.join("device_id"))?;
+    Ok(())
+}
+
+fn remove_kimi_auth_file(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                !metadata.is_dir(),
+                "Kimi auth file path is a directory: {}",
+                path.display()
+            );
+            fs::remove_file(path).with_context(|| format!("removing {}", path.display()))
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("checking {}", path.display())),
+    }
+}
+
+fn clear_directory_contents(path: &Path) -> Result<()> {
+    let mut entries = fs::read_dir(path)
+        .with_context(|| format!("reading {}", path.display()))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let child = entry.path();
+        let metadata = fs::symlink_metadata(&child)
+            .with_context(|| format!("checking {}", child.display()))?;
+        if metadata.file_type().is_symlink() || metadata.is_file() {
+            fs::remove_file(&child).with_context(|| format!("removing {}", child.display()))?;
+        } else if metadata.is_dir() {
+            fs::remove_dir_all(&child).with_context(|| format!("removing {}", child.display()))?;
+        } else {
+            bail!("Kimi auth directory contains an unsupported file type");
+        }
+    }
+    Ok(())
+}
+
+fn ensure_only_selected_kimi_credential(credentials: &Path, selected_name: &OsStr) -> Result<()> {
+    let entries = fs::read_dir(credentials)
+        .with_context(|| format!("reading {}", credentials.display()))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    anyhow::ensure!(
+        entries.len() == 1 && entries[0].file_name() == selected_name,
+        "forwarded Kimi credential directory contains an unproved credential"
+    );
+    let metadata = fs::symlink_metadata(entries[0].path())?;
+    anyhow::ensure!(
+        metadata.is_file() && !metadata.file_type().is_symlink(),
+        "forwarded Kimi credential is not a regular file"
+    );
+    Ok(())
+}
+
+fn validate_kimi_home_target(target: &Path) -> Result<()> {
+    let relative = target
+        .strip_prefix("/home/agent")
+        .context("KIMI_CODE_HOME must be inside /home/agent")?;
+    anyhow::ensure!(
+        !relative.as_os_str().is_empty()
+            && relative
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_))),
+        "KIMI_CODE_HOME must be a per-instance directory under /home/agent"
+    );
+    Ok(())
+}
+
+fn ensure_real_directory(path: &Path, create: bool) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.is_dir() && !metadata.file_type().is_symlink(),
+                "{} is not a real directory",
+                path.display()
+            );
+            Ok(())
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound && create => {
+            fs::create_dir_all(path).with_context(|| format!("creating {}", path.display()))?;
+            let metadata = fs::symlink_metadata(path)
+                .with_context(|| format!("checking {}", path.display()))?;
+            anyhow::ensure!(
+                metadata.is_dir() && !metadata.file_type().is_symlink(),
+                "{} is not a real directory",
+                path.display()
+            );
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(0o700);
+            fs::set_permissions(path, permissions)
+                .with_context(|| format!("restricting {}", path.display()))
+        }
+        Err(error) => Err(error).with_context(|| format!("checking {}", path.display())),
+    }
+}
+
+fn read_regular_file_bounded(path: &Path, limit: u64) -> Result<Vec<u8>> {
+    let metadata =
+        fs::symlink_metadata(path).with_context(|| format!("checking {}", path.display()))?;
+    anyhow::ensure!(
+        metadata.is_file() && !metadata.file_type().is_symlink(),
+        "{} is not a regular file",
+        path.display()
+    );
+    let file = fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let mut bytes = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("reading {}", path.display()))?;
+    anyhow::ensure!(
+        bytes.len() as u64 <= limit,
+        "{} is too large",
+        path.display()
+    );
+    Ok(bytes)
+}
+
+fn read_optional_regular_file(path: &Path, limit: u64) -> Result<Option<Vec<u8>>> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.is_file() && !metadata.file_type().is_symlink(),
+                "{} is not a regular file",
+                path.display()
+            );
+            read_regular_file_bounded(path, limit).map(Some)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("checking {}", path.display())),
+    }
+}
+
+fn replace_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let parent = path
+        .parent()
+        .context("Kimi credential file has no parent directory")?;
+    ensure_real_directory(parent, true)?;
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => anyhow::ensure!(
+            metadata.is_file() && !metadata.file_type().is_symlink(),
+            "{} is not a regular file",
+            path.display()
+        ),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error).with_context(|| format!("checking {}", path.display())),
+    }
+    let mut staged = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("staging {}", path.display()))?;
+    staged
+        .as_file()
+        .set_permissions(fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("restricting staged {}", path.display()))?;
+    staged
+        .write_all(bytes)
+        .with_context(|| format!("writing staged {}", path.display()))?;
+    staged
+        .as_file()
+        .sync_all()
+        .with_context(|| format!("syncing staged {}", path.display()))?;
+    staged
+        .persist(path)
+        .map_err(|error| error.error)
+        .with_context(|| format!("publishing {}", path.display()))?;
+    Ok(())
 }
 
 fn setup_opencode(mode: AuthMode) -> Result<AuthMaterialization> {

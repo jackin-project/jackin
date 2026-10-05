@@ -142,7 +142,7 @@ public struct DiscoveryDiagnosticDto: Hashable, Equatable, Sendable {
     }
 }
 
-/// Monetary amount (minor units).
+/// Exact monetary decimal coefficient, currency, and base-10 exponent.
 public struct MoneyDto: Hashable, Equatable, Sendable {
     public var amountMinor: Int64
     public var currency: String
@@ -165,6 +165,52 @@ public struct MoneyDto: Hashable, Equatable, Sendable {
     }
 }
 
+/// Lossless discrete allowance; absent values remain unknown, not zero.
+public struct CountQuotaDto: Hashable, Equatable, Sendable {
+    public var used: UInt64?
+    public var limit: UInt64?
+    public var remaining: UInt64?
+    public var unit: String
+    public var period: String
+    public var provenance: String
+
+    public init(
+        used: UInt64?,
+        limit: UInt64?,
+        remaining: UInt64?,
+        unit: String,
+        period: String,
+        provenance: String
+    ) {
+        self.used = used
+        self.limit = limit
+        self.remaining = remaining
+        self.unit = unit
+        self.period = period
+        self.provenance = provenance
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> CountQuotaDto {
+        CountQuotaDto(
+            used: reader.readOptional { reader in reader.readU64() },
+            limit: reader.readOptional { reader in reader.readU64() },
+            remaining: reader.readOptional { reader in reader.readU64() },
+            unit: reader.readString(),
+            period: reader.readString(),
+            provenance: reader.readString()
+        )
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeOptional(self.used) { writer, boltffiValue0 in writer.writeU64(boltffiValue0) }
+        writer.writeOptional(self.limit) { writer, boltffiValue0 in writer.writeU64(boltffiValue0) }
+        writer.writeOptional(self.remaining) { writer, boltffiValue0 in writer.writeU64(boltffiValue0) }
+        writer.writeString(self.unit)
+        writer.writeString(self.period)
+        writer.writeString(self.provenance)
+    }
+}
+
 /// One quota / spend bucket.
 public struct QuotaBucketDto: Hashable, Equatable, Sendable {
     public var label: String
@@ -178,6 +224,8 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
     public var status: String
     public var usedMoney: MoneyDto?
     public var limitMoney: MoneyDto?
+    public var remainingMoney: MoneyDto?
+    public var countQuota: CountQuotaDto?
     public var severity: String
     /// Rust-owned percentage segment text (segment 0), when present.
     public var remainingLabel: String?
@@ -200,6 +248,8 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
         status: String,
         usedMoney: MoneyDto?,
         limitMoney: MoneyDto?,
+        remainingMoney: MoneyDto?,
+        countQuota: CountQuotaDto?,
         severity: String,
         remainingLabel: String?,
         displaySegments: [String],
@@ -217,6 +267,8 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
         self.status = status
         self.usedMoney = usedMoney
         self.limitMoney = limitMoney
+        self.remainingMoney = remainingMoney
+        self.countQuota = countQuota
         self.severity = severity
         self.remainingLabel = remainingLabel
         self.displaySegments = displaySegments
@@ -237,6 +289,8 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
             status: reader.readString(),
             usedMoney: reader.readOptional { reader in MoneyDto.decode(from: &reader) },
             limitMoney: reader.readOptional { reader in MoneyDto.decode(from: &reader) },
+            remainingMoney: reader.readOptional { reader in MoneyDto.decode(from: &reader) },
+            countQuota: reader.readOptional { reader in CountQuotaDto.decode(from: &reader) },
             severity: reader.readString(),
             remainingLabel: reader.readOptional { reader in reader.readString() },
             displaySegments: reader.readArray { reader in reader.readString() },
@@ -257,6 +311,8 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
         writer.writeString(self.status)
         writer.writeOptional(self.usedMoney) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
         writer.writeOptional(self.limitMoney) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeOptional(self.remainingMoney) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeOptional(self.countQuota) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
         writer.writeString(self.severity)
         writer.writeOptional(self.remainingLabel) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeArray(self.displaySegments) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
@@ -742,6 +798,11 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
     public var lastError: String?
     public var dimmed: Bool
     public var accessibilityLabel: String
+    public var countQuota: CountQuotaDto?
+    public var resetsAt: Int64?
+    public var usedMoney: MoneyDto?
+    public var limitMoney: MoneyDto?
+    public var remainingMoney: MoneyDto?
 
     public init(
         surfaceId: String,
@@ -767,7 +828,12 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
         updatedLabel: String,
         lastError: String?,
         dimmed: Bool,
-        accessibilityLabel: String
+        accessibilityLabel: String,
+        countQuota: CountQuotaDto?,
+        resetsAt: Int64?,
+        usedMoney: MoneyDto?,
+        limitMoney: MoneyDto?,
+        remainingMoney: MoneyDto?
     ) {
         self.surfaceId = surfaceId
         self.providerColumnLabel = providerColumnLabel
@@ -793,6 +859,11 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
         self.lastError = lastError
         self.dimmed = dimmed
         self.accessibilityLabel = accessibilityLabel
+        self.countQuota = countQuota
+        self.resetsAt = resetsAt
+        self.usedMoney = usedMoney
+        self.limitMoney = limitMoney
+        self.remainingMoney = remainingMoney
     }
 
     @inlinable static func decode(from reader: inout WireReader) -> AccountDescriptorDto {
@@ -820,7 +891,12 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
             updatedLabel: reader.readString(),
             lastError: reader.readOptional { reader in reader.readString() },
             dimmed: reader.readBool(),
-            accessibilityLabel: reader.readString()
+            accessibilityLabel: reader.readString(),
+            countQuota: reader.readOptional { reader in CountQuotaDto.decode(from: &reader) },
+            resetsAt: reader.readOptional { reader in reader.readI64() },
+            usedMoney: reader.readOptional { reader in MoneyDto.decode(from: &reader) },
+            limitMoney: reader.readOptional { reader in MoneyDto.decode(from: &reader) },
+            remainingMoney: reader.readOptional { reader in MoneyDto.decode(from: &reader) }
         )
     }
 
@@ -849,6 +925,11 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
         writer.writeOptional(self.lastError) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeBool(self.dimmed)
         writer.writeString(self.accessibilityLabel)
+        writer.writeOptional(self.countQuota) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeOptional(self.resetsAt) { writer, boltffiValue0 in writer.writeI64(boltffiValue0) }
+        writer.writeOptional(self.usedMoney) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeOptional(self.limitMoney) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeOptional(self.remainingMoney) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
     }
 }
 

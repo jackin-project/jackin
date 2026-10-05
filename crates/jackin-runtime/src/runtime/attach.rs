@@ -691,13 +691,14 @@ pub(super) async fn reconnect_or_create_session_with_focus_with_lease(
         runner,
         &container,
         None,
+        None,
     )
     .await
 }
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "restore threads exact Docker ownership, account revision, and pending entry leases"
+    reason = "launch transfers its existing relay lifetime into the common attach boundary"
 )]
 pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease(
     paths: &JackinPaths,
@@ -707,6 +708,7 @@ pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     container: &ContainerHandle,
+    usage_relay: Option<&crate::usage_relay::UsageRelayGuard>,
     entry_claim: Option<&super::universe::EntryClaim>,
 ) -> anyhow::Result<()> {
     validate_recorded_role_handle(paths, container_name, container)
@@ -718,6 +720,17 @@ pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease
     admission_lease
         .ensure_current(paths)
         .map_err(mark_reconnect_admission_failure)?;
+    // Fresh host inventory belongs to every foreground attach. Launch already
+    // owns a relay with its exact staged credential proofs; reconnect restores
+    // that immutable authority rather than resolving current host secrets.
+    let reconnected_usage_relay_guard = if usage_relay.is_none() {
+        Some(
+            start_reconnected_usage_relay(paths, container_name, admission_lease, container)
+                .await?,
+        )
+    } else {
+        None
+    };
     if let Some(claim) = entry_claim {
         claim
             .activate()
@@ -730,6 +743,9 @@ pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease
             super::host_attach::run_host_attach_session(paths, container, None, focus_session, &[])
                 .await;
         jackin_diagnostics::reassert_alt_screen();
+        if let Some(guard) = reconnected_usage_relay_guard {
+            guard.shutdown().await;
+        }
         admission_lease
             .ensure_current(paths)
             .map_err(mark_reconnect_admission_failure)?;
@@ -785,10 +801,29 @@ pub(super) async fn reconnect_or_create_session_with_container_handle_with_lease
     // The capsule has detached; re-claim the alt screen before any post-attach
     // work so the exit flow does not flash the operator's shell.
     jackin_diagnostics::reassert_alt_screen();
+    if let Some(guard) = reconnected_usage_relay_guard {
+        guard.shutdown().await;
+    }
     admission_lease
         .ensure_current(paths)
         .map_err(mark_reconnect_admission_failure)?;
     outcome
+}
+
+async fn start_reconnected_usage_relay(
+    paths: &JackinPaths,
+    container_name: &str,
+    admission_lease: &super::launch::AccountConfigRevision,
+    container: &ContainerHandle,
+) -> anyhow::Result<crate::usage_relay::UsageRelayGuard> {
+    let prepared = crate::usage_relay::prepare_for_reconnect(paths, container_name, container)
+        .await
+        .map_err(mark_reconnect_admission_failure)?;
+    admission_lease
+        .ensure_current(paths)
+        .map_err(mark_reconnect_admission_failure)?;
+    crate::usage_relay::start_docker_tunnel(container, prepared)
+        .map_err(mark_reconnect_admission_failure)
 }
 
 pub(super) async fn start_or_reconnect_capsule_client(
@@ -828,34 +863,6 @@ pub(super) async fn start_or_reconnect_capsule_client_with_lease(
     .map(|_| ())
 }
 
-async fn inspect_restore_container(
-    paths: &JackinPaths,
-    container_name: &str,
-    docker: &impl DockerApi,
-    known_container: Option<&ContainerHandle>,
-) -> anyhow::Result<(ContainerState, Option<ContainerHandle>)> {
-    let (inspect, inspect_handle) = if let Some(container) = known_container {
-        validate_recorded_role_handle(paths, container_name, container)?;
-        let current =
-            super::cleanup::resolve_role_handle_for_state(paths, container_name, docker).await?;
-        anyhow::ensure!(
-            current == *container,
-            "Docker ownership identity changed for {container_name}"
-        );
-        (
-            docker.inspect_container_by_id(container).await,
-            Some(container.clone()),
-        )
-    } else {
-        let inspection = docker.inspect_container_by_name(container_name).await;
-        (inspection.state, inspection.handle)
-    };
-    if let Some(container) = &inspect_handle {
-        validate_recorded_role_handle(paths, container_name, container)?;
-    }
-    Ok((inspect, inspect_handle))
-}
-
 async fn start_or_reconnect_capsule_client_with_handle_with_lease(
     paths: &JackinPaths,
     container_name: &str,
@@ -878,8 +885,25 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
         "restore_inspect",
         Some(container_name),
     );
-    let (inspect, inspect_handle) =
-        inspect_restore_container(paths, container_name, docker, known_container).await?;
+    let (inspect, inspect_handle) = if let Some(container) = known_container {
+        validate_recorded_role_handle(paths, container_name, container)?;
+        let current =
+            super::cleanup::resolve_role_handle_for_state(paths, container_name, docker).await?;
+        anyhow::ensure!(
+            current == *container,
+            "Docker ownership identity changed for {container_name}"
+        );
+        (
+            docker.inspect_container_by_id(container).await,
+            Some(container.clone()),
+        )
+    } else {
+        let inspection = docker.inspect_container_by_name(container_name).await;
+        (inspection.state, inspection.handle)
+    };
+    if let Some(container) = &inspect_handle {
+        validate_recorded_role_handle(paths, container_name, container)?;
+    }
     let inspect_label = inspect.short_label();
     jackin_diagnostics::active_timing_done(
         jackin_diagnostics::DiagnosticStage::Capsule,
@@ -927,7 +951,7 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
                     docker,
                 )
                 .await?;
-                let net_missing = if let Ok(None) = docker.inspect_network(&resources.network).await
+                let net_missing = if let Ok(None) = docker.inspect_network_by_name(&resources.network).await
                 {
                     true
                 } else {
@@ -996,6 +1020,7 @@ async fn start_or_reconnect_capsule_client_with_handle_with_lease(
         docker,
         runner,
         &container,
+        None,
         entry_claim,
     )
     .await?;
@@ -1233,6 +1258,8 @@ pub async fn spawn_shell_session(
     set_role_terminal_title(paths, container_name);
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     admission_lease.ensure_current(paths)?;
+    let usage_relay_guard =
+        start_reconnected_usage_relay(paths, container_name, &admission_lease, &container).await?;
     if super::host_attach::host_attach_enabled(paths) {
         let result = super::host_attach::run_host_attach_session(
             paths,
@@ -1246,6 +1273,7 @@ pub async fn spawn_shell_session(
         admission_lease.ensure_current(paths)?;
         eprintln!();
         result?;
+        usage_relay_guard.shutdown().await;
         return finalize_reconnected_foreground_session_with_handle(
             paths,
             container_name,
@@ -1306,6 +1334,7 @@ pub async fn spawn_shell_session(
     admission_lease.ensure_current(paths)?;
     eprintln!();
     result?;
+    usage_relay_guard.shutdown().await;
     finalize_reconnected_foreground_session_with_handle(
         paths,
         container_name,
@@ -1369,6 +1398,8 @@ pub async fn spawn_agent_session(
     // Each transport encodes them only on the path that consumes it.
     set_role_terminal_title(paths, container_name);
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
+    let usage_relay_guard =
+        start_reconnected_usage_relay(paths, container_name, &admission_lease, &container).await?;
     if super::host_attach::host_attach_enabled(paths) {
         let mut session_env_overrides: Vec<(String, String)> =
             git_policy_env_pairs(git_coauthor_trailer, git_dco)
@@ -1390,6 +1421,7 @@ pub async fn spawn_agent_session(
         admission_lease.ensure_current(paths)?;
         eprintln!();
         result?;
+        usage_relay_guard.shutdown().await;
         return finalize_reconnected_foreground_session_with_handle(
             paths,
             container_name,
@@ -1457,6 +1489,7 @@ pub async fn spawn_agent_session(
     admission_lease.ensure_current(paths)?;
     eprintln!();
     result?;
+    usage_relay_guard.shutdown().await;
     finalize_reconnected_foreground_session_with_handle(
         paths,
         container_name,
@@ -1616,6 +1649,7 @@ async fn hardline_docker_agent_with_focus_with_lease(
         docker,
         runner,
         container,
+        None,
         entry_claim,
     )
     .await;
@@ -1773,6 +1807,7 @@ pub(super) async fn finalize_reconnected_foreground_session_with_handle(
             docker,
             runner,
             container,
+            None,
             None,
         )
         .await?;
@@ -2022,7 +2057,7 @@ enum DockerNetworkState {
 }
 
 async fn inspect_docker_network(docker: &impl DockerApi, network: &str) -> DockerNetworkState {
-    match docker.inspect_network(network).await {
+    match docker.inspect_network_by_name(network).await {
         Ok(Some(_)) => DockerNetworkState::Present,
         Ok(None) => DockerNetworkState::NotFound,
         Err(e) => DockerNetworkState::InspectUnavailable(e.to_string()),

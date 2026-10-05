@@ -11,8 +11,8 @@
 //! mirroring the recipe's focus routing. The secret field stays on the
 //! console's existing masked-input rows (plan 010 recorded the
 //! `password_input` adoption as a behavior-preserving carve-out), and all
-//! jackin❯ auth domain branches (op-refs, literals, source folders,
-//! generated tokens) stay — the recipe covers field anatomy only.
+//! named-account credential sources (op-refs, literals, and profile folders)
+//! remain — the recipe covers field anatomy only.
 
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -26,9 +26,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::tui::auth::{
-    AuthKind, AuthMode, auth_mode_requires_credential, auth_mode_supports_source_folder,
-};
+use crate::tui::auth::{AuthKind, AuthMode, auth_mode_supports_source_folder};
 use crate::tui::components::TextInputState;
 use crate::tui::components::editor_rows::{
     AuthSourceFolderDisplay, AuthSourceFolderKind, cursor_span,
@@ -215,6 +213,7 @@ pub fn auth_form_key_plan_with_source_folder(
 #[derive(Debug)]
 pub struct AuthForm<V: AuthCredential> {
     pub kind: AuthKind,
+    pub provider: Option<jackin_config::AiProvider>,
     pub mode: Option<AuthMode>,
     pub credential: CredentialInput<V::Ref>,
     pub source_folder: Option<PathBuf>,
@@ -236,6 +235,7 @@ impl<V: AuthCredential> AuthForm<V> {
     pub const fn new(kind: AuthKind) -> Self {
         Self {
             kind,
+            provider: None,
             mode: None,
             credential: CredentialInput::None,
             source_folder: None,
@@ -249,12 +249,40 @@ impl<V: AuthCredential> AuthForm<V> {
         let credential = credential.map_or(CredentialInput::None, V::into_credential_input);
         Self {
             kind,
+            provider: None,
             mode: Some(mode),
             credential,
             source_folder: None,
             source_folder_fallback: None,
             _value: PhantomData,
         }
+    }
+
+    #[must_use]
+    pub fn with_provider(mut self, provider: jackin_config::AiProvider) -> Self {
+        self.provider = Some(provider);
+        self
+    }
+
+    pub fn required_env_var(&self, mode: AuthMode) -> Option<&'static str> {
+        if mode == AuthMode::ApiKey && matches!(self.kind, AuthKind::Omp | AuthKind::Hermes) {
+            let account = jackin_config::AccountConfig {
+                enabled: true,
+                name: String::new(),
+                provider: self.provider?,
+                credential: jackin_config::AccountCredential::ApiKey {
+                    value: jackin_core::EnvValue::Plain(String::new()),
+                    base_url: None,
+                    model: None,
+                },
+            };
+            let agent = crate::tui::auth_config::auth_kind_agent(self.kind)?;
+            return account
+                .resolved_credential_descriptor(agent)
+                .ok()
+                .map(|route| route.env_name);
+        }
+        self.kind.required_env_var(mode)
     }
 
     #[must_use]
@@ -277,7 +305,7 @@ impl<V: AuthCredential> AuthForm<V> {
             self.kind,
         );
         self.mode = Some(mode);
-        if !mode_requires_credential(self.kind, mode) {
+        if self.required_env_var(mode).is_none() {
             self.credential = CredentialInput::None;
         }
     }
@@ -307,8 +335,8 @@ impl<V: AuthCredential> AuthForm<V> {
     }
 
     /// Whether the credential input block should be shown.
-    pub const fn shows_credential_block(&self) -> bool {
-        matches!(self.mode, Some(mode) if mode_requires_credential(self.kind, mode))
+    pub fn shows_credential_block(&self) -> bool {
+        matches!(self.mode, Some(mode) if self.required_env_var(mode).is_some())
     }
 
     pub fn cycle_mode(&mut self) {
@@ -334,7 +362,12 @@ impl<V: AuthCredential> AuthForm<V> {
     }
 
     /// Modes the user can pick.
-    pub const fn available_modes(&self) -> &'static [AuthMode] {
+    pub fn available_modes(&self) -> &'static [AuthMode] {
+        if matches!(self.kind, AuthKind::Omp | AuthKind::Hermes)
+            && self.provider == Some(jackin_config::AiProvider::Amp)
+        {
+            return &[AuthMode::Sync];
+        }
         self.kind.supported_modes()
     }
 
@@ -350,7 +383,7 @@ impl<V: AuthCredential> AuthForm<V> {
                 .as_ref()
                 .is_some_and(|path| !path.as_os_str().is_empty());
         }
-        if !mode_requires_credential(self.kind, mode) {
+        if self.required_env_var(mode).is_none() {
             return self.kind == AuthKind::Github;
         }
         match &self.credential {
@@ -366,7 +399,7 @@ impl<V: AuthCredential> AuthForm<V> {
             return None;
         }
         let mode = self.mode?;
-        let env_var_name = self.kind.required_env_var(mode);
+        let env_var_name = self.required_env_var(mode);
         let env_value = match &self.credential {
             CredentialInput::None => None,
             CredentialInput::Literal(value) => Some(V::from_plain(value.clone())),
@@ -379,10 +412,6 @@ impl<V: AuthCredential> AuthForm<V> {
             source_folder: self.source_folder.clone(),
         })
     }
-}
-
-const fn mode_requires_credential(kind: AuthKind, mode: AuthMode) -> bool {
-    auth_mode_requires_credential(kind, mode)
 }
 
 /// Operator-facing slug for an [`AuthMode`].
@@ -453,6 +482,9 @@ impl FormLine {
 #[must_use]
 pub fn required_height<V: AuthCredential>(form: &AuthForm<V>) -> u16 {
     let mut inner: u16 = 5;
+    if matches!(form.kind, AuthKind::Omp | AuthKind::Hermes) && form.provider.is_some() {
+        inner += 1;
+    }
     if form.shows_source_folder() {
         inner += 1;
     }
@@ -466,6 +498,11 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
     let mut lines: Vec<FormLine> = Vec::new();
 
     lines.push(FormLine::left(Line::from("")));
+    if matches!(form.kind, AuthKind::Omp | AuthKind::Hermes)
+        && let Some(provider) = form.provider
+    {
+        lines.push(FormLine::left(Line::from(format!("  Provider {provider}"))));
+    }
 
     let mode_text = if form.kind == AuthKind::Github && form.mode == Some(AuthMode::Sync) {
         "sync"
@@ -493,7 +530,7 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
     }
 
     if form.shows_credential_block()
-        && let Some(env_var) = form.mode.and_then(|mode| form.kind.required_env_var(mode))
+        && let Some(env_var) = form.mode.and_then(|mode| form.required_env_var(mode))
     {
         lines.push(FormLine::left(credential_env_line(
             env_var,

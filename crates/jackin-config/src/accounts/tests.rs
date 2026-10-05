@@ -979,19 +979,23 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
                 .push(account);
         }
     };
-    // Kimi has no folder var → two instances rejected.
+    // Kimi's Dir-kind KIMI_CODE_HOME isolates each instance.
     add_pair(&mut cfg, Agent::Kimi, "kimi");
-    let error = resolve_launch(
+    let instances = resolve_launch(
         &cfg,
         Some(&ws),
         "smith",
         Some(&["kimi-a".to_owned(), "kimi-b".to_owned()]),
         None,
     )
-    .unwrap_err();
-    assert!(
-        error.to_string().contains("no config-folder env var"),
-        "unexpected kimi rejection: {error}"
+    .unwrap();
+    assert_eq!(instances.len(), 2);
+    assert_eq!(
+        instances
+            .iter()
+            .map(|instance| instance.config_id.as_str())
+            .collect::<Vec<_>>(),
+        ["kimi-a", "kimi-b"]
     );
     // Amp is `XdgRoot`-kind → two instances rejected with the XDG reason.
     add_pair(&mut cfg, Agent::Amp, "amp");

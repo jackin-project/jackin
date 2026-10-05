@@ -1,9 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `UsageDialogTab` type and usage method family extracted from the dialog
-//! coordinator. Free type re-exported from parent. `usage_tab_index_at` and
-//! `usage_provider_tab_target` promoted per plan.
+//! Canonical usage publication and stable account selection for the usage modal.
+
+use jackin_protocol::usage_broker::{
+    UsageAccountV2, UsageProjectionV2, UsageProviderV2, UsageUnresolvedGrantV2,
+};
+
+use super::Dialog;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageDialogTab {
@@ -11,200 +15,397 @@ pub enum UsageDialogTab {
     Provider,
 }
 
-use super::Dialog;
+/// Display destination only. Refresh authority remains daemon-owned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageDialogDestination {
+    pub provider_id: String,
+    pub canonical_account_id: String,
+}
 
-impl Dialog {
-    /// Accent colour for a usage bucket's meter by severity. `Normal` keeps the
-    /// default (no accent → phosphor green); `Warn`/`Danger` grade toward amber
-    /// and red so an account approaching its cap reads as such at a glance.
-    fn usage_severity_accent(
-        severity: jackin_protocol::control::UsageSeverity,
-    ) -> Option<ratatui::style::Color> {
-        match severity {
-            jackin_protocol::control::UsageSeverity::Normal => None,
-            jackin_protocol::control::UsageSeverity::Warn => Some(jackin_tui::tokens::DEBUG_AMBER),
-            jackin_protocol::control::UsageSeverity::Danger => Some(
-                termrock::style::DesignSystem::default()
-                    .style(termrock::style::Role::Danger)
-                    .fg
-                    .unwrap_or_default(),
-            ),
+impl UsageDialogDestination {
+    pub(crate) fn account<'a>(
+        &self,
+        projection: &'a UsageProjectionV2,
+    ) -> Option<(&'a UsageProviderV2, &'a UsageAccountV2)> {
+        let provider = projection
+            .providers
+            .iter()
+            .find(|provider| provider.provider_id == self.provider_id)?;
+        let account = provider
+            .accounts
+            .iter()
+            .find(|account| account.canonical_account_id == self.canonical_account_id)?;
+        Some((provider, account))
+    }
+}
+
+/// Display selection is either a canonical account or an unresolved configured grant.
+/// A grant identity never carries canonical identity or refresh authority.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UsageDialogTarget {
+    Account(UsageDialogDestination),
+    UnresolvedGrant {
+        configured_account_id: String,
+        surface_id: String,
+    },
+}
+
+impl UsageDialogTarget {
+    pub(crate) fn canonical_destination(&self) -> Option<&UsageDialogDestination> {
+        match self {
+            Self::Account(account) => Some(account),
+            Self::UnresolvedGrant { .. } => None,
         }
     }
 
-    pub(crate) fn usage_state(
+    pub(crate) fn unresolved_grant<'a>(
         &self,
-    ) -> Option<crate::tui::components::container_info_surface::ContainerInfoState> {
+        projection: &'a UsageProjectionV2,
+    ) -> Option<&'a UsageUnresolvedGrantV2> {
+        let Self::UnresolvedGrant {
+            configured_account_id,
+            surface_id,
+        } = self
+        else {
+            return None;
+        };
+        projection.unresolved_grants.iter().find(|grant| {
+            grant.configured_account_id == *configured_account_id && grant.surface_id == *surface_id
+        })
+    }
+
+    fn exists(&self, projection: &UsageProjectionV2) -> bool {
+        match self {
+            Self::Account(account) => account.account(projection).is_some(),
+            Self::UnresolvedGrant { .. } => self.unresolved_grant(projection).is_some(),
+        }
+    }
+}
+
+/// Owned canonical rendering snapshot. Labels never encode state or geometry.
+#[derive(Debug, Clone)]
+pub(crate) struct UsageDialogState {
+    pub projection: Option<Box<UsageProjectionV2>>,
+    pub destination: Option<UsageDialogTarget>,
+    pub notice: Option<String>,
+    pub transport_error: Option<String>,
+    pub refresh_unavailable: bool,
+    pub scroll: termrock::scroll::DialogScroll,
+}
+
+pub(crate) fn usage_destinations(projection: &UsageProjectionV2) -> Vec<UsageDialogTarget> {
+    projection
+        .providers
+        .iter()
+        .flat_map(|provider| {
+            provider.accounts.iter().map(|account| {
+                UsageDialogTarget::Account(UsageDialogDestination {
+                    provider_id: provider.provider_id.clone(),
+                    canonical_account_id: account.canonical_account_id.clone(),
+                })
+            })
+        })
+        .chain(projection.unresolved_grants.iter().map(|grant| {
+            UsageDialogTarget::UnresolvedGrant {
+                configured_account_id: grant.configured_account_id.clone(),
+                surface_id: grant.surface_id.clone(),
+            }
+        }))
+        .collect()
+}
+
+impl Dialog {
+    pub(crate) fn usage_state(&self) -> Option<UsageDialogState> {
         let Self::Usage {
-            view,
+            projection,
             selected,
+            destination,
+            notice,
+            transport_error,
+            refresh_unavailable,
             scroll,
             ..
         } = self
         else {
             return None;
         };
-        if *selected == UsageDialogTab::Overview {
-            return Some(Self::usage_overview_state(view, scroll.clone()));
-        }
-        // Rust owns every provider-card field, string, and order so this dialog
-        // and the native Desktop Usage window stay parity-locked. The three
-        // machine-labelled identity rows let the TUI lay out the Rust projection
-        // without restoring the duplicate detail rows Plan 005 removed.
-        let provider_title =
-            jackin_usage::usage::provider_display_label(&view.account.provider_label);
-        let identity =
-            jackin_usage::usage::usage_identity_presentation(provider_title, view, false);
-        let presentation = jackin_usage::usage::usage_detail_presentation(view);
-        let mut rows = Vec::with_capacity(presentation.rows.len().saturating_add(3));
-        rows.push(
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                super::USAGE_IDENTITY_PROVIDER_ROW,
-                identity.provider_title,
-            ),
-        );
-        rows.push(
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                super::USAGE_IDENTITY_ACCOUNT_ROW,
-                identity.account_label,
-            ),
-        );
-        rows.push(
-            crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                super::USAGE_IDENTITY_ACTIVITY_ROW,
-                identity.activity_label,
-            ),
-        );
-        for row in &presentation.rows {
-            let value = match row.meter_percent {
-                Some(meter_percent) => {
-                    format!("{} {}", Self::usage_meter(meter_percent), row.display_label)
-                }
-                None => row.display_label.clone(),
-            };
-            let mut info_row =
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    row.label.clone(),
-                    value,
-                );
-            if let Some(accent) = Self::usage_severity_accent(row.severity) {
-                info_row = info_row.accent(accent);
-            }
-            rows.push(info_row);
-        }
-        let mut state =
-            crate::tui::components::container_info_surface::ContainerInfoState::new("Usage", rows);
-        state.scroll = scroll.clone();
-        Some(state)
-    }
-
-    fn usage_overview_state(
-        view: &jackin_protocol::control::FocusedUsageView,
-        scroll: termrock::scroll::DialogScroll,
-    ) -> crate::tui::components::container_info_surface::ContainerInfoState {
-        let mut rows = Vec::new();
-        if view.tabs.is_empty() {
-            let message = view
-                .last_error
-                .as_deref()
-                .unwrap_or("usage unavailable")
-                .to_owned();
-            rows.push(
-                crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                    "Providers",
-                    message,
-                ),
-            );
-        } else {
-            for tab in &view.tabs {
-                // One quota-focused line per provider, matching the Overview
-                // preview: "<provider>  <quota summary / lifecycle>". The
-                // account identity lives in the focused header above, not on
-                // every row. status_label is the daemon-enriched
-                // "Session 37% left · Resets in 1h 21m" (or a lifecycle word).
-                let quota = if tab.status_label.trim().is_empty() {
-                    "status unavailable"
-                } else {
-                    tab.status_label.trim()
-                };
-                let value = quota.to_owned();
-                rows.push(
-                    crate::tui::components::container_info_surface::ContainerInfoRow::new(
-                        Self::usage_provider_header_label(&tab.label),
-                        value,
-                    ),
-                );
-            }
-        }
-        let mut state =
-            crate::tui::components::container_info_surface::ContainerInfoState::new("Usage", rows);
-        state.scroll = scroll;
-        state
-    }
-
-    fn usage_provider_header_label(label: &str) -> String {
-        crate::tui::components::dialog_widgets::usage_provider_display_label(label).to_owned()
+        Some(UsageDialogState {
+            projection: projection.clone(),
+            destination: (*selected == UsageDialogTab::Provider)
+                .then(|| destination.clone())
+                .flatten(),
+            notice: notice.clone(),
+            transport_error: transport_error.clone(),
+            refresh_unavailable: *refresh_unavailable,
+            scroll: scroll.clone(),
+        })
     }
 
     pub(super) fn usage_tab_index_at(
-        view: &jackin_protocol::control::FocusedUsageView,
+        projection: Option<&UsageProjectionV2>,
+        destination: Option<&UsageDialogTarget>,
         selected: UsageDialogTab,
         area: ratatui::layout::Rect,
         row: u16,
         col: u16,
     ) -> Option<usize> {
         let inner = crate::tui::components::dialog_widgets::usage_dialog_inner_area(area);
-        let tabs = crate::tui::components::dialog_widgets::usage_tab_strip_labels(view, selected);
+        let tabs = crate::tui::components::dialog_widgets::usage_tab_strip_labels(
+            projection,
+            destination,
+            selected,
+        );
         let tab_area = crate::tui::components::dialog_widgets::usage_tab_strip_area(inner, &tabs);
-        let row0 = if row == tab_area.y.saturating_add(1) {
-            row.saturating_sub(1)
-        } else {
-            row
-        };
-        let col0 = if col >= tab_area.x.saturating_add(1) {
-            col.saturating_sub(1)
-        } else {
-            col
-        };
-        if row0 != tab_area.y {
+        if row != tab_area.y {
             return None;
         }
-        crate::tui::components::dialog_widgets::usage_tab_strip_index_at(&tabs, tab_area, col0)
+        crate::tui::components::dialog_widgets::usage_tab_strip_index_at(&tabs, tab_area, col)
     }
 
     pub(super) fn usage_provider_tab_target(
         &mut self,
         step: isize,
-    ) -> Option<jackin_protocol::control::UsageProviderTab> {
-        let Self::Usage { view, selected, .. } = self else {
+    ) -> Option<UsageDialogDestination> {
+        let Self::Usage {
+            projection,
+            selected,
+            destination,
+            notice,
+            refresh_unavailable,
+            scroll,
+            ..
+        } = self
+        else {
             return None;
         };
-        if view.tabs.is_empty() {
+        let targets = projection
+            .as_deref()
+            .map(usage_destinations)
+            .unwrap_or_default();
+        if targets.is_empty() {
             return None;
         }
-        if *selected == UsageDialogTab::Overview {
-            // tabs is non-empty (guarded above), so first/last are always Some.
-            let target = if step >= 0 {
-                view.tabs.first()
-            } else {
-                view.tabs.last()
-            };
-            return target.cloned();
-        }
-        let current = view.tabs.iter().position(|tab| tab.active).unwrap_or(0);
-        if step < 0 && current == 0 {
-            *selected = UsageDialogTab::Overview;
-            return None;
-        }
-        let next = if step >= 0 && current + 1 >= view.tabs.len() {
-            *selected = UsageDialogTab::Overview;
-            return None;
-        } else if step >= 0 {
-            current + 1
+        let current = if *selected == UsageDialogTab::Provider {
+            destination
+                .as_ref()
+                .and_then(|destination| targets.iter().position(|target| target == destination))
+                .map(|index| index + 1)
+                .unwrap_or(0)
         } else {
-            current - 1
+            0
         };
-        view.tabs.get(next).cloned()
+        let count = targets.len() + 1;
+        let next = if step >= 0 {
+            (current + 1) % count
+        } else {
+            (current + count - 1) % count
+        };
+        *notice = None;
+        *scroll = termrock::scroll::DialogScroll::new();
+        if next == 0 {
+            *selected = UsageDialogTab::Overview;
+            *destination = None;
+            *refresh_unavailable = false;
+            None
+        } else {
+            match targets.get(next - 1).cloned()? {
+                UsageDialogTarget::Account(account) => Some(account),
+                target @ UsageDialogTarget::UnresolvedGrant { .. } => {
+                    *selected = UsageDialogTab::Provider;
+                    *destination = Some(target);
+                    *refresh_unavailable = true;
+                    None
+                }
+            }
+        }
+    }
+
+    pub(super) fn select_usage_tab_target(
+        &mut self,
+        target: UsageDialogTarget,
+    ) -> super::DialogAction {
+        match target {
+            UsageDialogTarget::Account(account) => super::DialogAction::SwitchUsageProvider {
+                provider_id: account.provider_id,
+                canonical_account_id: account.canonical_account_id,
+            },
+            target @ UsageDialogTarget::UnresolvedGrant { .. } => {
+                self.select_usage_target(target);
+                super::DialogAction::Redraw
+            }
+        }
+    }
+
+    /// Select only an exact currently published canonical account.
+    pub fn select_usage_destination(&mut self, target: UsageDialogDestination) -> bool {
+        self.select_usage_target(UsageDialogTarget::Account(target))
+    }
+
+    pub fn select_usage_target(&mut self, target: UsageDialogTarget) -> bool {
+        let Self::Usage {
+            projection,
+            selected,
+            destination,
+            notice,
+            refresh_unavailable,
+            scroll,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        *refresh_unavailable = false;
+        if !projection
+            .as_deref()
+            .is_some_and(|projection| target.exists(projection))
+        {
+            *selected = UsageDialogTab::Overview;
+            *destination = None;
+            *notice = Some("Selected account unavailable; showing Overview".to_owned());
+            *scroll = termrock::scroll::DialogScroll::new();
+            return false;
+        }
+        *selected = UsageDialogTab::Provider;
+        *refresh_unavailable = matches!(target, UsageDialogTarget::UnresolvedGrant { .. });
+        *destination = Some(target);
+        *notice = None;
+        *scroll = termrock::scroll::DialogScroll::new();
+        true
+    }
+
+    /// A successful read replaces canonical data and clears a prior transport error.
+    pub fn apply_usage_projection(&mut self, publication: UsageProjectionV2) -> bool {
+        self.apply_usage_snapshot(Some(publication), None)
+    }
+
+    /// Apply one complete daemon read state atomically. Retained data plus an
+    /// unchanged transport error must not oscillate between recovered/failed.
+    pub fn apply_usage_snapshot(
+        &mut self,
+        publication: Option<UsageProjectionV2>,
+        error: Option<String>,
+    ) -> bool {
+        let Self::Usage {
+            projection,
+            selected,
+            destination,
+            notice,
+            transport_error,
+            refresh_unavailable,
+            scroll,
+            hovered_tab,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        let error_changed = *transport_error != error;
+        *transport_error = error;
+        let Some(publication) = publication else {
+            return error_changed;
+        };
+        if projection.as_deref() == Some(&publication) {
+            return error_changed;
+        }
+        let removed = destination
+            .as_ref()
+            .is_some_and(|destination| !destination.exists(&publication));
+        *projection = Some(Box::new(publication));
+        if removed {
+            *refresh_unavailable = false;
+            *destination = None;
+            *selected = UsageDialogTab::Overview;
+            *notice = Some("Previously selected account unavailable; showing Overview".to_owned());
+        }
+        *hovered_tab = None;
+        *scroll = termrock::scroll::DialogScroll::new();
+        true
+    }
+
+    /// Transient read failure preserves authorized last-good inventory.
+    pub fn apply_usage_error(&mut self, error: String) -> bool {
+        let Self::Usage {
+            transport_error, ..
+        } = self
+        else {
+            return false;
+        };
+        if transport_error.as_ref() == Some(&error) {
+            return false;
+        }
+        *transport_error = Some(error);
+        true
+    }
+
+    /// Manual refresh route feedback is independent of selection and read failures.
+    pub fn apply_usage_refresh_unavailable(&mut self, unavailable: bool) -> bool {
+        let Self::Usage {
+            refresh_unavailable,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        if *refresh_unavailable == unavailable {
+            return false;
+        }
+        *refresh_unavailable = unavailable;
+        true
+    }
+
+    pub fn apply_usage_notice(&mut self, message: String) -> bool {
+        let Self::Usage { notice, .. } = self else {
+            return false;
+        };
+        if notice.as_ref() == Some(&message) {
+            return false;
+        }
+        *notice = Some(message);
+        true
+    }
+
+    /// Revoked authorization invalidates the retained inventory itself.
+    pub fn revoke_usage_projection(&mut self, error: String) -> bool {
+        let Self::Usage {
+            projection,
+            destination,
+            selected,
+            transport_error,
+            refresh_unavailable,
+            notice,
+            hovered_tab,
+            scroll,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        let changed = projection.is_some()
+            || destination.is_some()
+            || *selected != UsageDialogTab::Overview
+            || *refresh_unavailable
+            || transport_error.as_ref() != Some(&error);
+        *projection = None;
+        *refresh_unavailable = false;
+        *destination = None;
+        *selected = UsageDialogTab::Overview;
+        *notice = None;
+        *transport_error = Some(error);
+        *hovered_tab = None;
+        *scroll = termrock::scroll::DialogScroll::new();
+        changed
+    }
+
+    pub fn usage_destination(&self) -> Option<&UsageDialogDestination> {
+        let Self::Usage {
+            selected: UsageDialogTab::Provider,
+            destination,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        destination.as_ref()?.canonical_destination()
     }
 
     #[cfg(test)]
@@ -215,36 +416,50 @@ impl Dialog {
         Some(*selected)
     }
 
-    fn usage_meter(remaining_percent: u8) -> String {
-        const WIDTH: usize = 32;
-        let remaining = usize::from(remaining_percent.min(100));
-        let filled = if remaining >= 100 {
-            WIDTH
-        } else {
-            remaining * WIDTH / 100
-        };
-        format!(
-            "{}{}",
-            "█".repeat(filled),
-            "·".repeat(WIDTH.saturating_sub(filled))
-        )
+    #[must_use]
+    pub fn new_usage(projection: Option<UsageProjectionV2>) -> Self {
+        Self::new_usage_with_destination(projection, None)
     }
 
     #[must_use]
-    pub fn new_usage(view: jackin_protocol::control::FocusedUsageView) -> Self {
-        Self::new_usage_with_tab(view, UsageDialogTab::Provider)
-    }
-
-    pub(crate) fn new_usage_with_tab(
-        view: jackin_protocol::control::FocusedUsageView,
-        selected: UsageDialogTab,
+    pub fn new_usage_with_destination(
+        projection: Option<UsageProjectionV2>,
+        destination: Option<UsageDialogDestination>,
     ) -> Self {
-        Self::Usage {
-            view: Box::new(view),
-            selected,
+        let mut dialog = Self::Usage {
+            projection: projection.map(Box::new),
+            selected: UsageDialogTab::Overview,
+            destination: None,
+            notice: None,
+            transport_error: None,
+            refresh_unavailable: false,
             tab_bar_focused: true,
             hovered_tab: None,
             scroll: termrock::scroll::DialogScroll::new(),
+        };
+        if let Some(destination) = destination {
+            dialog.select_usage_destination(destination);
         }
+        dialog
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_usage_with_tab(
+        projection: Option<UsageProjectionV2>,
+        selected: UsageDialogTab,
+    ) -> Self {
+        let destination = if selected == UsageDialogTab::Provider {
+            projection.as_ref().and_then(|projection| {
+                usage_destinations(projection)
+                    .into_iter()
+                    .find_map(|target| match target {
+                        UsageDialogTarget::Account(account) => Some(account),
+                        UsageDialogTarget::UnresolvedGrant { .. } => None,
+                    })
+            })
+        } else {
+            None
+        };
+        Self::new_usage_with_destination(projection, destination)
     }
 }

@@ -17,12 +17,46 @@ use jackin_protocol::control::{
 };
 use jackin_protocol::usage_broker::{
     UsageCatalogEntry, UsageCredentialScope, UsageCredentialSourceIdentity,
-    UsageCredentialSourceProof, UsageFreshnessPhaseV1, UsageIdentityKindV1,
-    UsageProjectionRefreshStateV1, UsageRefreshPhase, usage_credential_material_fingerprint,
+    UsageCredentialSourceProof, UsageFreshnessPhaseV2, UsageProjectionRefreshStateV2,
+    UsageRefreshPhase, usage_credential_material_fingerprint,
 };
 
 use super::*;
 use crate::host::{ForwardedUsageAccount, ProviderCredentialEnvResolution};
+
+#[test]
+fn catalog_revision_validation_checks_logical_proof_and_rejects_duplicate_routes() {
+    let catalog = discover_usage_sources(
+        &UsageDiscoveryScope::Capsule {
+            forwarded_accounts: vec![ForwardedUsageAccount {
+                canonical_identity: Some(jackin_protocol::control::UsageCanonicalAccountIdentity {
+                    surface_id: "claude".to_owned(),
+                    subject: jackin_protocol::control::UsageCanonicalAccountSubject::ProviderId(
+                        "validated-host-subject".to_owned(),
+                    ),
+                }),
+                surface_id: "claude".to_owned(),
+                capability_id: "exact-host-route".to_owned(),
+                account_label: Some("same-label".to_owned()),
+            }],
+        },
+        &FixedHandleResolver,
+    )
+    .unwrap();
+    let discovery = validate_usage_sources(catalog, &FixedHandleResolver);
+    let accepted = usage_catalog_entries(&discovery);
+    assert!(ensure_catalog_matches(&discovery, "empty", &accepted).is_ok());
+    let mut forged = accepted.clone();
+    forged[0].canonical_identity.as_mut().unwrap().subject =
+        jackin_protocol::control::UsageCanonicalAccountSubject::ProviderId(
+            "forged-subject".to_owned(),
+        );
+    assert_eq!(forged[0].capability, accepted[0].capability);
+    assert_eq!(forged[0].revision, accepted[0].revision);
+    assert!(ensure_catalog_matches(&discovery, "empty", &forged).is_err());
+    let duplicate = vec![accepted[0].clone(), accepted[0].clone()];
+    assert!(ensure_catalog_matches(&discovery, "empty", &duplicate).is_err());
+}
 
 struct CountingExecutor {
     calls: AtomicUsize,
@@ -103,6 +137,7 @@ fn quota_view() -> FocusedUsageView {
     view.account.provider_label = "Claude".to_owned();
     view.account.account_label = "account@example.test".to_owned();
     view.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
@@ -114,8 +149,24 @@ fn quota_view() -> FocusedUsageView {
         status: UsageSnapshotStatus::Fresh,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }];
+    view
+}
+
+fn catalog_admitted_snapshot(
+    capability: &UsageAccountCapability,
+    canonical_identity: Option<jackin_protocol::control::UsageCanonicalAccountIdentity>,
+    source_revision: Option<&str>,
+) -> FocusedUsageView {
+    let mut view = quota_view();
+    view.canonical_identity = canonical_identity;
+    view.account_identity = Some(jackin_protocol::control::UsageAccountIdentity {
+        account_id: capability.account_id.clone(),
+        surface_id: capability.surface_id.clone(),
+        source_revision: source_revision.map(str::to_owned),
+    });
     view
 }
 
@@ -135,7 +186,9 @@ fn env_scope(
     material: &ProviderCredentialSourceMaterial,
 ) -> UsageCredentialScope {
     UsageCredentialScope {
+        profiles: BTreeSet::new(),
         sources: BTreeSet::from([UsageCredentialSourceProof {
+            instance_id: "instance-fixture".to_owned(),
             account_id: account_id.to_owned(),
             surface_id: surface_id.to_owned(),
             key: key.to_owned(),
@@ -153,12 +206,14 @@ fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
     };
     let staged = env_material("JACKIN_AGENT_A_KEY", "S1");
     let binding = ValidatedCredentialBinding {
+        profile_material: None,
         surface: HostSurfaceId::Amp,
         identity: None,
         source_id: "source-a".to_owned(),
         capability_id: "capability-a".to_owned(),
         credential_revision: "credential-revision-a".to_owned(),
         provenance: BTreeSet::from(["account shared-account".to_owned()]),
+        configured_account_ids: BTreeSet::from(["shared-account".to_owned()]),
         source: ValidatedCredentialSource::Env {
             handle: OpaqueCredentialHandle::new("handle-a"),
             key: "AMP_API_KEY".to_owned(),
@@ -225,6 +280,7 @@ fn launch_scope_fails_closed_on_rotation_repoint_and_mixed_agent_source() {
     assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
 
     let mixed_scope = UsageCredentialScope {
+        profiles: BTreeSet::new(),
         sources: staged_scope
             .sources
             .iter()
@@ -249,12 +305,14 @@ fn launch_scope_accepts_provider_native_zhipu_alias_for_canonical_zai_binding() 
         bindings: Mutex::new(BTreeMap::from([(
             capability.clone(),
             vec![ValidatedCredentialBinding {
+                profile_material: None,
                 surface: HostSurfaceId::Zai,
                 identity: None,
                 source_id: "source-zai".to_owned(),
                 capability_id: "capability-zai".to_owned(),
                 credential_revision: "credential-revision-zai".to_owned(),
                 provenance: BTreeSet::from(["account zhipu-account".to_owned()]),
+                configured_account_ids: BTreeSet::from(["zhipu-account".to_owned()]),
                 source: ValidatedCredentialSource::Env {
                     handle: OpaqueCredentialHandle::new("handle-zai"),
                     key: "ZAI_API_KEY".to_owned(),
@@ -369,12 +427,14 @@ impl ProviderCredentialEnvResolver for TypedRateLimitResolver {
 #[test]
 fn refresh_binding_outcome_carries_typed_rate_limit_into_broker() {
     let binding = ValidatedCredentialBinding {
+        profile_material: None,
         surface: HostSurfaceId::Claude,
         identity: None,
         source_id: "source-typed-rate-limit".to_owned(),
         capability_id: "capability-typed-rate-limit".to_owned(),
         credential_revision: "credential-revision-typed-rate-limit".to_owned(),
         provenance: BTreeSet::new(),
+        configured_account_ids: BTreeSet::new(),
         source: ValidatedCredentialSource::Env {
             handle: OpaqueCredentialHandle::new("typed-rate-limit-handle"),
             key: "CLAUDE_API_KEY".to_owned(),
@@ -431,6 +491,7 @@ fn background_rediscovery_does_not_start_manual_retry_or_admit_mismatch() {
     let resolver = RetryRecordingResolver::default();
     let scope = UsageDiscoveryScope::Capsule {
         forwarded_accounts: vec![ForwardedUsageAccount {
+            canonical_identity: None,
             surface_id: "claude".to_owned(),
             capability_id: "different-capability".to_owned(),
             account_label: Some("other@example.test".to_owned()),
@@ -460,6 +521,8 @@ fn discovery_executor_rejects_catalog_that_does_not_match_current_scope() {
     };
     let error = executor
         .validate_catalog(&[UsageCatalogEntry {
+            canonical_identity: None,
+            provenance_count: 0,
             capability: capability(),
             revision: "mismatched".to_owned(),
         }])
@@ -627,7 +690,9 @@ fn broker_failure_without_snapshot_surfaces_honest_gap_in_snapshot() {
         .unwrap(),
         &FixedHandleResolver,
     );
-    assert_eq!(validated.accounts.len(), 1);
+    // An API key with no resolver identity is source presence, not an
+    // authenticated account. The configured label remains diagnostic only.
+    assert!(validated.accounts.is_empty());
     let capabilities = usage_broker_capabilities(&validated);
     assert_eq!(capabilities.len(), 1);
 
@@ -649,14 +714,23 @@ fn broker_failure_without_snapshot_surfaces_honest_gap_in_snapshot() {
     let view = runtime.snapshot("codex").unwrap();
     assert!(!view.is_refreshing_placeholder());
     assert_eq!(view.status, UsageSnapshotStatus::Unavailable);
-    assert_eq!(view.account.account_label, "codex-key");
+    assert!(view.account.account_label.is_empty());
+    assert!(runtime.list_accounts(Some("codex")).unwrap().is_empty());
     assert_eq!(
         view.last_error.as_deref(),
         Some("Grok billing requires an authenticated profile")
     );
 
     // A later success still replaces the recorded error view.
-    let mut fresh = quota_view();
+    let entry = usage_catalog_entries(runtime.discovery.as_ref().unwrap())
+        .into_iter()
+        .find(|entry| entry.capability == capabilities[0])
+        .unwrap();
+    let mut fresh = catalog_admitted_snapshot(
+        &capabilities[0],
+        entry.canonical_identity.clone(),
+        Some(&entry.revision),
+    );
     fresh.account.provider_label = "OpenAI / Codex".to_owned();
     runtime
         .apply_broker_generation(UsageGenerationView {
@@ -678,6 +752,7 @@ fn broker_failure_for_anonymous_source_stays_surface_scoped() {
         discover_usage_sources(
             &UsageDiscoveryScope::Capsule {
                 forwarded_accounts: vec![ForwardedUsageAccount {
+                    canonical_identity: None,
                     surface_id: "codex".to_owned(),
                     capability_id: "capability-a".to_owned(),
                     account_label: None,
@@ -725,6 +800,30 @@ fn broker_failure_for_anonymous_source_stays_surface_scoped() {
 )]
 fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+    use jackin_protocol::usage_broker::UsageProfileSourceProof;
+
+    let profile_material = ProfileCredentialSourceMaterial {
+        source: jackin_core::profile_credential_source_identity(
+            jackin_core::Agent::Amp,
+            "amp",
+            std::path::Path::new("/fixture/profiles/amp"),
+            None,
+        ),
+        material_revision: jackin_core::profile_credential_material_revision(
+            jackin_core::Agent::Amp,
+            br#"{"apiKey@https://ampcode.com/":"profile-secret"}"#,
+        ).expect("synthetic JSON"),
+    };
+    let profile_scope = UsageCredentialScope {
+        sources: BTreeSet::new(),
+        profiles: BTreeSet::from([UsageProfileSourceProof {
+            instance_id: "instance-profile".to_owned(),
+            account_id: "account-profile".to_owned(),
+            surface_id: "amp".to_owned(),
+            source: profile_material.source.clone(),
+            material_revision: profile_material.material_revision.clone(),
+        }]),
+    };
 
     let profile_identity = CanonicalAccountIdentity {
         surface: HostSurfaceId::Amp,
@@ -748,6 +847,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         candidates: Vec::new(),
         bindings: vec![
             ValidatedCredentialBinding {
+                profile_material: Some(profile_material.clone()),
                 surface: HostSurfaceId::Amp,
                 identity: Some(profile_identity),
                 source_id: "profile-source".to_owned(),
@@ -757,6 +857,7 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                     scope.to_owned(),
                     "account account-profile".to_owned(),
                 ]),
+                configured_account_ids: BTreeSet::from(["account-profile".to_owned()]),
                 source: ValidatedCredentialSource::Profile(
                     super::super::discovery::ProfileCredentialMaterial::Amp {
                         key: "profile-secret".to_owned(),
@@ -764,12 +865,14 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 ),
             },
             ValidatedCredentialBinding {
+                profile_material: None,
                 surface: HostSurfaceId::Amp,
                 identity: Some(env_identity),
                 source_id: "env-source".to_owned(),
                 capability_id: "env-capability".to_owned(),
                 credential_revision: "env-revision".to_owned(),
                 provenance: BTreeSet::from([scope.to_owned(), "account account-env".to_owned()]),
+                configured_account_ids: BTreeSet::from(["account-env".to_owned()]),
                 source: ValidatedCredentialSource::Env {
                     handle: OpaqueCredentialHandle::new("env-handle"),
                     key: "AMP_API_KEY".to_owned(),
@@ -793,11 +896,10 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         &discovery,
         scope,
         &ForwardedUsageSources {
-            selected_account_ids: BTreeSet::new(),
-            selected_account_surfaces: BTreeMap::new(),
-            profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
+            selected_account_ids: BTreeSet::from(["account-profile".to_owned()]),
+            selected_account_surfaces: BTreeMap::from([("account-profile".to_owned(), "amp".to_owned())]),
             env_keys: BTreeSet::new(),
-            credential_scope: UsageCredentialScope::default(),
+            credential_scope: profile_scope.clone(),
         },
     );
     assert_eq!(profile_only, vec![profile_capability.clone()]);
@@ -808,7 +910,6 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::new(),
             selected_account_surfaces: BTreeMap::new(),
-            profile_surface_ids: BTreeSet::new(),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
             credential_scope: UsageCredentialScope::default(),
         },
@@ -824,9 +925,8 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 "account-profile".to_owned(),
                 "amp".to_owned(),
             )]),
-            profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::new(),
-            credential_scope: UsageCredentialScope::default(),
+            credential_scope: profile_scope.clone(),
         },
     );
     assert_eq!(selected_profile, vec![profile_capability.clone()]);
@@ -834,10 +934,11 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
     let selected_env_sources = ForwardedUsageSources {
         selected_account_ids: BTreeSet::from(["account-env".to_owned()]),
         selected_account_surfaces: BTreeMap::from([("account-env".to_owned(), "amp".to_owned())]),
-        profile_surface_ids: BTreeSet::new(),
         env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
         credential_scope: UsageCredentialScope {
+            profiles: BTreeSet::new(),
             sources: BTreeSet::from([UsageCredentialSourceProof {
+                instance_id: "instance-fixture".to_owned(),
                 account_id: "account-env".to_owned(),
                 surface_id: "amp".to_owned(),
                 key: "AMP_API_KEY".to_owned(),
@@ -882,9 +983,8 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
                 "account-profile".to_owned(),
                 "codex".to_owned(),
             )]),
-            profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::new(),
-            credential_scope: UsageCredentialScope::default(),
+            credential_scope: profile_scope.clone(),
         },
     );
     assert!(
@@ -898,9 +998,8 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         &ForwardedUsageSources {
             selected_account_ids: BTreeSet::from(["account-does-not-exist".to_owned()]),
             selected_account_surfaces: BTreeMap::new(),
-            profile_surface_ids: BTreeSet::from(["amp".to_owned()]),
             env_keys: BTreeSet::from(["AMP_API_KEY".to_owned()]),
-            credential_scope: UsageCredentialScope::default(),
+            credential_scope: profile_scope,
         },
     );
     assert!(wrong_account.is_empty());
@@ -914,12 +1013,16 @@ fn forwarded_scope_selects_only_accounts_backed_by_forwarded_sources() {
         None
     );
 
-    let publication = publication_identity_metadata(&discovery);
-    assert_eq!(
-        publication[&profile_capability].identity_kind,
-        UsageIdentityKindV1::ProviderStableHandle
-    );
-    assert_eq!(publication[&profile_capability].provenance_count, 2);
+    let publication = usage_catalog_entries(&discovery);
+    let profile = publication
+        .iter()
+        .find(|entry| entry.capability == profile_capability)
+        .unwrap();
+    assert!(matches!(
+        profile.canonical_identity.as_ref().unwrap().subject,
+        jackin_protocol::control::UsageCanonicalAccountSubject::ProviderStableHandle(_)
+    ));
+    assert_eq!(profile.provenance_count, 1);
 }
 
 #[test]
@@ -932,12 +1035,14 @@ fn selected_routes_require_exact_source_proofs_and_same_identity() {
     };
     let material = env_material("ZAI_HOST_SECRET", "zai-secret");
     let binding = |key: &str, handle: &str| ValidatedCredentialBinding {
+        profile_material: None,
         surface: HostSurfaceId::Zai,
         identity: Some(identity.clone()),
         source_id: format!("source-{handle}"),
         capability_id: format!("capability-{handle}"),
         credential_revision: format!("revision-{handle}"),
         provenance: BTreeSet::from(["account zai".to_owned()]),
+        configured_account_ids: BTreeSet::from(["zai".to_owned()]),
         source: ValidatedCredentialSource::Env {
             handle: OpaqueCredentialHandle::new(handle),
             key: "ZAI_API_KEY".to_owned(),
@@ -959,11 +1064,12 @@ fn selected_routes_require_exact_source_proofs_and_same_identity() {
     let staged = ForwardedUsageSources {
         selected_account_ids: BTreeSet::from(["zai".to_owned()]),
         selected_account_surfaces: BTreeMap::from([("zai".to_owned(), "zai".to_owned())]),
-        profile_surface_ids: BTreeSet::new(),
         env_keys: BTreeSet::from(["ZHIPU_API_KEY".to_owned(), "ZAI_API_KEY".to_owned()]),
         credential_scope: UsageCredentialScope {
+            profiles: BTreeSet::new(),
             sources: BTreeSet::from([
                 UsageCredentialSourceProof {
+                    instance_id: "instance-fixture".to_owned(),
                     account_id: "zai".to_owned(),
                     surface_id: "zai".to_owned(),
                     key: "Z_AI_API_KEY".to_owned(),
@@ -971,6 +1077,7 @@ fn selected_routes_require_exact_source_proofs_and_same_identity() {
                     material_fingerprint: material.material_fingerprint.clone(),
                 },
                 UsageCredentialSourceProof {
+                    instance_id: "instance-fixture".to_owned(),
                     account_id: "zai".to_owned(),
                     surface_id: "zai".to_owned(),
                     key: "ZAI_API_KEY".to_owned(),
@@ -1043,6 +1150,7 @@ fn selected_routes_require_exact_source_proofs_and_same_identity() {
         bindings: vec![
             discovery.bindings[0].clone(),
             ValidatedCredentialBinding {
+                profile_material: None,
                 identity: Some(CanonicalAccountIdentity {
                     surface: HostSurfaceId::Zai,
                     subject: CanonicalAccountSubject::ProviderStableHandle(
@@ -1079,12 +1187,14 @@ fn grouped_broker_authorization_accepts_sibling_proofs_and_rejects_conflicts() {
                    identity: Option<CanonicalAccountIdentity>,
                    material: &ProviderCredentialSourceMaterial| {
         ValidatedCredentialBinding {
+            profile_material: None,
             surface: HostSurfaceId::Zai,
             identity,
             source_id: format!("source-{handle}"),
             capability_id: format!("capability-{handle}"),
             credential_revision: format!("revision-{handle}"),
             provenance: BTreeSet::from(["account zai".to_owned()]),
+            configured_account_ids: BTreeSet::from(["zai".to_owned()]),
             source: ValidatedCredentialSource::Env {
                 handle: OpaqueCredentialHandle::new(handle),
                 key: "ZAI_API_KEY".to_owned(),
@@ -1096,8 +1206,10 @@ fn grouped_broker_authorization_accepts_sibling_proofs_and_rejects_conflicts() {
     };
     let bindings = vec![binding("zai", Some(identity.clone()), &material)];
     let valid = UsageCredentialScope {
+        profiles: BTreeSet::new(),
         sources: BTreeSet::from([
             UsageCredentialSourceProof {
+                instance_id: "instance-fixture".to_owned(),
                 account_id: "zai".to_owned(),
                 surface_id: "zai".to_owned(),
                 key: "ZHIPU_API_KEY".to_owned(),
@@ -1105,6 +1217,7 @@ fn grouped_broker_authorization_accepts_sibling_proofs_and_rejects_conflicts() {
                 material_fingerprint: material.material_fingerprint.clone(),
             },
             UsageCredentialSourceProof {
+                instance_id: "instance-fixture".to_owned(),
                 account_id: "zai".to_owned(),
                 surface_id: "zai".to_owned(),
                 key: "ZAI_API_KEY".to_owned(),
@@ -1117,6 +1230,7 @@ fn grouped_broker_authorization_accepts_sibling_proofs_and_rejects_conflicts() {
 
     let mut unrelated = valid.clone();
     unrelated.sources.insert(UsageCredentialSourceProof {
+        instance_id: "instance-fixture".to_owned(),
         account_id: "other-account".to_owned(),
         surface_id: "zai".to_owned(),
         key: "Z_AI_API_KEY".to_owned(),
@@ -1128,6 +1242,7 @@ fn grouped_broker_authorization_accepts_sibling_proofs_and_rejects_conflicts() {
     let conflicting_material = env_material("ZAI_HOST_SECRET", "different-secret");
     let mut conflict = valid.clone();
     conflict.sources.insert(UsageCredentialSourceProof {
+        instance_id: "instance-fixture".to_owned(),
         account_id: "zai".to_owned(),
         surface_id: "zai".to_owned(),
         key: "ZHIPU_API_KEY".to_owned(),
@@ -1200,12 +1315,14 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
     let material_b = env_material("SOURCE_B", "secret-b");
     let binding = |handle: &str, key: &str, material: &ProviderCredentialSourceMaterial| {
         ValidatedCredentialBinding {
+            profile_material: None,
             surface: HostSurfaceId::Zai,
             identity: None,
             source_id: format!("source-{handle}"),
             capability_id: "capability-zai".to_owned(),
             credential_revision: format!("revision-{handle}"),
             provenance: BTreeSet::from(["account zai".to_owned()]),
+            configured_account_ids: BTreeSet::from(["zai".to_owned()]),
             source: ValidatedCredentialSource::Env {
                 handle: OpaqueCredentialHandle::new(handle),
                 key: "ZAI_API_KEY".to_owned(),
@@ -1248,15 +1365,17 @@ fn scoped_probe_refreshes_exact_binding_selected_by_later_sibling_proof() {
 }
 
 #[test]
-fn mixed_profile_and_env_group_fails_closed_without_changing_pure_profile() {
+fn mixed_profile_and_env_group_and_unproven_pure_profile_fail_closed() {
     let material = env_material("AMP_SOURCE", "amp-secret");
     let profile = ValidatedCredentialBinding {
+        profile_material: None,
         surface: HostSurfaceId::Amp,
         identity: None,
         source_id: "profile".to_owned(),
         capability_id: "capability".to_owned(),
         credential_revision: "profile-revision".to_owned(),
         provenance: BTreeSet::from(["account shared".to_owned()]),
+        configured_account_ids: BTreeSet::from(["shared".to_owned()]),
         source: ValidatedCredentialSource::Profile(
             super::super::discovery::ProfileCredentialMaterial::Amp {
                 key: "profile-secret".to_owned(),
@@ -1264,12 +1383,14 @@ fn mixed_profile_and_env_group_fails_closed_without_changing_pure_profile() {
         ),
     };
     let env = ValidatedCredentialBinding {
+        profile_material: None,
         surface: HostSurfaceId::Amp,
         identity: None,
         source_id: "env".to_owned(),
         capability_id: "capability".to_owned(),
         credential_revision: "env-revision".to_owned(),
         provenance: BTreeSet::from(["account shared".to_owned()]),
+        configured_account_ids: BTreeSet::from(["shared".to_owned()]),
         source: ValidatedCredentialSource::Env {
             handle: OpaqueCredentialHandle::new("env-handle"),
             key: "AMP_API_KEY".to_owned(),
@@ -1281,7 +1402,16 @@ fn mixed_profile_and_env_group_fails_closed_without_changing_pure_profile() {
     let bindings = vec![profile.clone(), env];
     let scope = env_scope("shared", "amp", "AMP_API_KEY", &material);
     assert!(authorize_credential_binding_group(&bindings, "amp", &scope).is_none());
-    assert!(authorize_credential_binding_group(&[profile], "amp", &scope).is_some());
+    for denied_scope in [scope, UsageCredentialScope::default()] {
+        let mut calls = 0;
+        assert!(dispatch_authorized_binding(
+            std::slice::from_ref(&profile),
+            "amp",
+            Some(&denied_scope),
+            |_| { calls += 1; },
+        ).is_none());
+        assert_eq!(calls, 0, "unproven profile must not dispatch a provider");
+    }
 }
 
 #[test]
@@ -1293,12 +1423,14 @@ fn capability_identity_keeps_distinct_and_anonymous_sources_separate() {
                 handle: &str|
      -> ValidatedCredentialBinding {
         ValidatedCredentialBinding {
+            profile_material: None,
             surface: HostSurfaceId::Zai,
             identity,
             source_id: capability_id.to_owned(),
             capability_id: capability_id.to_owned(),
             credential_revision: "revision".to_owned(),
             provenance: BTreeSet::from(["account zai".to_owned()]),
+            configured_account_ids: BTreeSet::from(["zai".to_owned()]),
             source: ValidatedCredentialSource::Env {
                 handle: OpaqueCredentialHandle::new(handle),
                 key: "ZAI_API_KEY".to_owned(),
@@ -1339,10 +1471,642 @@ fn capability_identity_keeps_distinct_and_anonymous_sources_separate() {
 }
 
 #[test]
+fn broker_catalog_counts_unique_binding_capabilities_even_without_provenance() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let identity = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Claude,
+        subject: CanonicalAccountSubject::ProviderStableHandle("account@example.test".to_owned()),
+    };
+    let binding = |capability_id: &str,
+                   credential_revision: &str,
+                   provenance: BTreeSet<String>| -> ValidatedCredentialBinding {
+        ValidatedCredentialBinding {
+            profile_material: None,
+            surface: HostSurfaceId::Claude,
+            identity: Some(identity.clone()),
+            source_id: format!("source-{capability_id}-{credential_revision}"),
+            capability_id: capability_id.to_owned(),
+            credential_revision: credential_revision.to_owned(),
+            provenance,
+            configured_account_ids: BTreeSet::new(),
+            source: ValidatedCredentialSource::Unpollable,
+        }
+    };
+    let anonymous_binding = |source_id: &str,
+                             credential_revision: &str| -> ValidatedCredentialBinding {
+        ValidatedCredentialBinding {
+            profile_material: None,
+            surface: HostSurfaceId::Claude,
+            identity: None,
+            source_id: source_id.to_owned(),
+            capability_id: "anonymous-source".to_owned(),
+            credential_revision: credential_revision.to_owned(),
+            provenance: BTreeSet::new(),
+            configured_account_ids: BTreeSet::new(),
+            source: ValidatedCredentialSource::Unpollable,
+        }
+    };
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![
+            binding("source-a", "revision-a", BTreeSet::new()),
+            binding("source-b", "revision-b", BTreeSet::new()),
+            binding(
+                "source-a",
+                "revision-a-alias",
+                BTreeSet::from(["same account scope".to_owned()]),
+            ),
+            anonymous_binding("anonymous-a", "revision-anonymous-a"),
+            anonymous_binding("anonymous-b", "revision-anonymous-b"),
+        ],
+    };
+
+    let entries = usage_catalog_entries(&discovery);
+    assert_eq!(entries.len(), 2);
+    let authenticated_entry = entries
+        .iter()
+        .find(|entry| entry.canonical_identity.is_some())
+        .unwrap();
+    assert_eq!(
+        authenticated_entry.provenance_count, 2,
+        "count unique admitted source capabilities, including empty-provenance sources"
+    );
+    let anonymous_entry = entries
+        .iter()
+        .find(|entry| entry.canonical_identity.is_none())
+        .unwrap();
+    assert_eq!(anonymous_entry.provenance_count, 1);
+}
+
+#[test]
+fn broker_admission_rejects_stale_weak_source_after_material_replacement() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let identity = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Claude,
+        subject: CanonicalAccountSubject::SourceCapability("capability-current".to_owned()),
+    };
+    let binding = ValidatedCredentialBinding {
+        profile_material: None,
+        surface: HostSurfaceId::Claude,
+        identity: Some(identity),
+        source_id: "source-current".to_owned(),
+        capability_id: "capability-current".to_owned(),
+        credential_revision: "material-current".to_owned(),
+        provenance: BTreeSet::new(),
+        configured_account_ids: BTreeSet::new(),
+        source: ValidatedCredentialSource::Env {
+            handle: OpaqueCredentialHandle::new("current-handle"),
+            key: "CLAUDE_API_KEY".to_owned(),
+            dispatch_key: "CLAUDE_API_KEY".to_owned(),
+            launch_keys: BTreeSet::from(["CLAUDE_API_KEY".to_owned()]),
+            material: Some(env_material("CLAUDE_API_KEY", "material-current")),
+        },
+    };
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![binding],
+    };
+    let capability = capability_for_binding(&discovery.bindings[0], None);
+    let entry = usage_catalog_entries(&discovery)
+        .into_iter()
+        .find(|entry| entry.capability == capability)
+        .unwrap();
+    let current_revision = entry.revision.clone();
+    let canonical_identity = entry.canonical_identity.clone();
+    let temp = tempfile::tempdir().unwrap();
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
+        .unwrap();
+    runtime.discovery = Some(discovery);
+
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: capability.clone(),
+            generation: 1,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(catalog_admitted_snapshot(
+                &capability,
+                canonical_identity.clone(),
+                Some("material-revision-old"),
+            )),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    assert!(runtime.discovered_views.is_empty());
+    assert!(runtime.discovered_provider_views.is_empty());
+    assert!(runtime.broker_generations.is_empty());
+
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: capability.clone(),
+            generation: 2,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(catalog_admitted_snapshot(
+                &capability,
+                canonical_identity,
+                Some(&current_revision),
+            )),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    assert_eq!(runtime.discovered_views.len(), 1);
+    assert!(runtime.discovered_provider_views.is_empty());
+    assert_eq!(
+        runtime
+            .broker_generations
+            .get(&capability)
+            .and_then(|state| state.snapshot.as_ref())
+            .map(|snapshot| snapshot.status),
+        Some(UsageSnapshotStatus::Fresh)
+    );
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One admission matrix covers accepted stale typed identity plus proof and route rejection."
+)]
+fn broker_admission_retains_strong_old_revision_and_rejects_wrong_proof_or_route() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let identity = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Claude,
+        subject: CanonicalAccountSubject::ProviderStableHandle("stable-account".to_owned()),
+    };
+    let binding = ValidatedCredentialBinding {
+        profile_material: None,
+        surface: HostSurfaceId::Claude,
+        identity: Some(identity),
+        source_id: "source-strong".to_owned(),
+        capability_id: "capability-strong".to_owned(),
+        credential_revision: "credential-strong".to_owned(),
+        provenance: BTreeSet::new(),
+        configured_account_ids: BTreeSet::new(),
+        source: ValidatedCredentialSource::Unpollable,
+    };
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![binding],
+    };
+    let capability = capability_for_binding(&discovery.bindings[0], None);
+    let entry = usage_catalog_entries(&discovery)
+        .into_iter()
+        .find(|entry| entry.capability == capability)
+        .unwrap();
+    let current_revision = entry.revision.clone();
+    let canonical_identity = entry.canonical_identity.clone().unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
+        .unwrap();
+    runtime.discovery = Some(discovery);
+
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: capability.clone(),
+            generation: 7,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(catalog_admitted_snapshot(
+                &capability,
+                Some(canonical_identity.clone()),
+                Some("revision-before-restamp"),
+            )),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    assert_eq!(
+        runtime
+            .broker_generations
+            .get(&capability)
+            .and_then(|state| state.snapshot.as_ref())
+            .map(|snapshot| snapshot.status),
+        Some(UsageSnapshotStatus::Stale),
+        "strong identity admits an old route but caches it as stale"
+    );
+    assert_eq!(
+        runtime
+            .discovered_views
+            .values()
+            .next()
+            .map(|snapshot| snapshot.status),
+        Some(UsageSnapshotStatus::Stale)
+    );
+    assert_eq!(
+        runtime
+            .discovered_views
+            .values()
+            .next()
+            .and_then(|snapshot| snapshot.account_identity.as_ref())
+            .and_then(|route| route.source_revision.as_deref()),
+        Some(current_revision.as_str()),
+        "accepted strong snapshots are restamped to the current catalog revision"
+    );
+
+    let wrong_proof = jackin_protocol::control::UsageCanonicalAccountIdentity {
+        surface_id: "claude".to_owned(),
+        subject: jackin_protocol::control::UsageCanonicalAccountSubject::ProviderId(
+            "wrong-account".to_owned(),
+        ),
+    };
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: capability.clone(),
+            generation: 8,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(catalog_admitted_snapshot(
+                &capability,
+                Some(wrong_proof),
+                Some(&current_revision),
+            )),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    assert_eq!(
+        runtime.broker_generations[&capability].generation,
+        7,
+        "wrong typed canonical proof must not replace cached state"
+    );
+
+    let mut wrong_route = catalog_admitted_snapshot(
+        &capability,
+        Some(canonical_identity.clone()),
+        Some(&current_revision),
+    );
+    wrong_route.account_identity.as_mut().unwrap().account_id = "wrong-route".to_owned();
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: capability.clone(),
+            generation: 9,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(wrong_route),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    assert_eq!(runtime.broker_generations.len(), 1);
+    assert_eq!(runtime.discovered_views.len(), 1);
+
+    for (generation, status) in [
+        (10, UsageSnapshotStatus::Unsupported),
+        (11, UsageSnapshotStatus::NeedsLogin),
+        (12, UsageSnapshotStatus::NeedsSecret),
+        (13, UsageSnapshotStatus::Error),
+    ] {
+        let message = format!("diagnostic-{generation}");
+        let mut diagnostic = catalog_admitted_snapshot(
+            &capability,
+            Some(canonical_identity.clone()),
+            Some("revision-before-restamp"),
+        );
+        diagnostic.status = status;
+        diagnostic.buckets.clear();
+        diagnostic.last_error = Some(message.clone());
+        runtime
+            .apply_broker_generation(UsageGenerationView {
+                capability: capability.clone(),
+                generation,
+                phase: UsageRefreshPhase::Completed,
+                snapshot: Some(diagnostic),
+                error: None,
+                retry_at_epoch: None,
+            })
+            .unwrap();
+
+        let cached = runtime.broker_generations[&capability].snapshot.as_ref().unwrap();
+        assert_eq!(cached.status, status);
+        assert!(cached.buckets.is_empty());
+        assert_eq!(cached.last_error.as_deref(), Some(message.as_str()));
+        assert_eq!(cached.source, UsageSource::ProviderApi);
+        assert_eq!(cached.confidence, UsageConfidence::Authoritative);
+
+        let discovered = runtime.discovered_views.values().next().unwrap();
+        assert_eq!(discovered.status, status);
+        assert!(discovered.buckets.is_empty());
+        assert_eq!(discovered.last_error.as_deref(), Some(message.as_str()));
+        assert_eq!(discovered.source, UsageSource::ProviderApi);
+        assert_eq!(discovered.confidence, UsageConfidence::Authoritative);
+    }
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One failure matrix proves strong retention and weak replacement behavior through the full account catalog."
+)]
+fn broker_failure_without_snapshot_retains_strong_quota_but_rejects_replaced_weak_quota() {
+    use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
+
+    let account = |identity: &CanonicalAccountIdentity, source_id: &str| {
+        super::super::discovery::DiscoveredAccountDescriptor {
+            surface_id: identity.surface.id().to_owned(),
+            account_key: identity.account_key(),
+            account_label: "principal@example.test".to_owned(),
+            provenance: vec!["fixture source".to_owned()],
+            source_ids: vec![source_id.to_owned()],
+            identity: identity.clone(),
+        }
+    };
+
+    let strong_identity = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Claude,
+        subject: CanonicalAccountSubject::ProviderId("strong-principal".to_owned()),
+    };
+    let strong_binding = ValidatedCredentialBinding {
+        profile_material: None,
+        surface: HostSurfaceId::Claude,
+        identity: Some(strong_identity.clone()),
+        source_id: "strong-source".to_owned(),
+        capability_id: "strong-capability".to_owned(),
+        credential_revision: "strong-credential".to_owned(),
+        provenance: BTreeSet::new(),
+        configured_account_ids: BTreeSet::new(),
+        source: ValidatedCredentialSource::Unpollable,
+    };
+    let strong_discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: vec![account(&strong_identity, "strong-source")],
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![strong_binding],
+    };
+    let strong_capability = capability_for_binding(&strong_discovery.bindings[0], None);
+    let strong_entry = usage_catalog_entries(&strong_discovery)
+        .into_iter()
+        .find(|entry| entry.capability == strong_capability)
+        .unwrap();
+    let strong_revision = strong_entry.revision.clone();
+    let strong_proof = strong_entry.canonical_identity.clone().unwrap();
+
+    let strong_temp = tempfile::tempdir().unwrap();
+    let mut strong_runtime = HostUsageRuntime::new();
+    strong_runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(strong_temp.path()))
+        .unwrap();
+    strong_runtime.discovery = Some(strong_discovery);
+    strong_runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: strong_capability.clone(),
+            generation: 1,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(catalog_admitted_snapshot(
+                &strong_capability,
+                Some(strong_proof.clone()),
+                Some("strong-route-before-revision"),
+            )),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    assert!(!strong_runtime.discovered_views.values().next().unwrap().buckets.is_empty());
+
+    let strong_error = "strong principal probe failed";
+    strong_runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: strong_capability.clone(),
+            generation: 2,
+            phase: UsageRefreshPhase::Failed,
+            snapshot: None,
+            error: Some(UsageCoordinationError {
+                kind: UsageCoordinationErrorKind::ProviderUnavailable,
+                message: strong_error.to_owned(),
+            }),
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    let retained = strong_runtime.discovered_views.values().next().unwrap();
+    assert_eq!(retained.status, UsageSnapshotStatus::Stale);
+    assert!(!retained.buckets.is_empty());
+    assert!(retained
+        .buckets
+        .iter()
+        .all(|bucket| bucket.status == UsageSnapshotStatus::Stale));
+    assert_eq!(retained.last_error.as_deref(), Some(strong_error));
+    assert_eq!(retained.canonical_identity.as_ref(), Some(&strong_proof));
+    assert_eq!(
+        retained
+            .account_identity
+            .as_ref()
+            .and_then(|route| route.source_revision.as_deref()),
+        Some(strong_revision.as_str())
+    );
+
+    let weak_identity = CanonicalAccountIdentity {
+        surface: HostSurfaceId::Claude,
+        subject: CanonicalAccountSubject::SourceCapability("weak-source".to_owned()),
+    };
+    let weak_binding = |credential_revision: &str| ValidatedCredentialBinding {
+        profile_material: None,
+        surface: HostSurfaceId::Claude,
+        identity: Some(weak_identity.clone()),
+        source_id: "weak-source".to_owned(),
+        capability_id: "weak-capability".to_owned(),
+        credential_revision: credential_revision.to_owned(),
+        provenance: BTreeSet::new(),
+        configured_account_ids: BTreeSet::new(),
+        source: ValidatedCredentialSource::Unpollable,
+    };
+    let old_weak_discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: vec![account(&weak_identity, "weak-source")],
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![weak_binding("weak-revision-old")],
+    };
+    let current_weak_discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: vec![account(&weak_identity, "weak-source")],
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![weak_binding("weak-revision-current")],
+    };
+    let weak_capability = capability_for_binding(&old_weak_discovery.bindings[0], None);
+    assert_eq!(
+        weak_capability,
+        capability_for_binding(&current_weak_discovery.bindings[0], None)
+    );
+    let old_weak_entry = usage_catalog_entries(&old_weak_discovery)
+        .into_iter()
+        .find(|entry| entry.capability == weak_capability)
+        .unwrap();
+    let current_weak_entry = usage_catalog_entries(&current_weak_discovery)
+        .into_iter()
+        .find(|entry| entry.capability == weak_capability)
+        .unwrap();
+    assert_ne!(old_weak_entry.revision, current_weak_entry.revision);
+
+    let weak_temp = tempfile::tempdir().unwrap();
+    let mut weak_runtime = HostUsageRuntime::new();
+    weak_runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(weak_temp.path()))
+        .unwrap();
+    weak_runtime.discovery = Some(old_weak_discovery);
+    weak_runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: weak_capability.clone(),
+            generation: 1,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(catalog_admitted_snapshot(
+                &weak_capability,
+                old_weak_entry.canonical_identity.clone(),
+                Some(&old_weak_entry.revision),
+            )),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    assert!(!weak_runtime.discovered_views.values().next().unwrap().buckets.is_empty());
+
+    weak_runtime.discovery = Some(current_weak_discovery);
+    let weak_error = "weak source was replaced";
+    weak_runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: weak_capability.clone(),
+            generation: 2,
+            phase: UsageRefreshPhase::Failed,
+            snapshot: None,
+            error: Some(UsageCoordinationError {
+                kind: UsageCoordinationErrorKind::NeedsSecret,
+                message: weak_error.to_owned(),
+            }),
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    let replaced = weak_runtime.discovered_views.values().next().unwrap();
+    assert_eq!(replaced.status, UsageSnapshotStatus::NeedsSecret);
+    assert!(replaced.buckets.is_empty());
+    assert_eq!(replaced.last_error.as_deref(), Some(weak_error));
+    assert_eq!(
+        replaced.canonical_identity,
+        current_weak_entry.canonical_identity
+    );
+    assert_eq!(
+        replaced
+            .account_identity
+            .as_ref()
+            .and_then(|route| route.source_revision.as_deref()),
+        Some(current_weak_entry.revision.as_str())
+    );
+}
+
+#[test]
+fn broker_admission_settles_current_invalid_weak_terminal_but_preserves_newer_generation() {
+    let binding = ValidatedCredentialBinding {
+        profile_material: None,
+        surface: HostSurfaceId::Claude,
+        identity: None,
+        source_id: "source-anonymous".to_owned(),
+        capability_id: "capability-anonymous".to_owned(),
+        credential_revision: "credential-current".to_owned(),
+        provenance: BTreeSet::new(),
+        configured_account_ids: BTreeSet::new(),
+        source: ValidatedCredentialSource::Unpollable,
+    };
+    let discovery = ValidatedUsageDiscovery {
+        config_generation: None,
+        accounts: Vec::new(),
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: vec![binding],
+    };
+    let capability = capability_for_binding(&discovery.bindings[0], None);
+    let temp = tempfile::tempdir().unwrap();
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open(crate::host::HostRuntimeConfig::under_data_dir(temp.path()))
+        .unwrap();
+    runtime.discovery = Some(discovery);
+    runtime
+        .broker_phases
+        .insert(capability.clone(), UsageRefreshPhase::Queued);
+
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: capability.clone(),
+            generation: 1,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(catalog_admitted_snapshot(
+                &capability,
+                None,
+                Some("revision-before-replacement"),
+            )),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    assert!(!runtime.broker_refresh_in_progress());
+    assert!(runtime.last_refresh.is_some());
+    assert!(runtime.broker_generations.is_empty());
+    assert!(runtime.discovered_provider_views.is_empty());
+
+    runtime.last_refresh = None;
+    runtime
+        .broker_phases
+        .insert(capability.clone(), UsageRefreshPhase::Updating);
+    runtime.broker_generations.insert(
+        capability.clone(),
+        UsageGenerationView {
+            capability: capability.clone(),
+            generation: 2,
+            phase: UsageRefreshPhase::Updating,
+            snapshot: None,
+            error: None,
+            retry_at_epoch: None,
+        },
+    );
+    let newer_capability = runtime
+        .broker_generations
+        .keys()
+        .next()
+        .cloned()
+        .unwrap();
+    runtime
+        .apply_broker_generation(UsageGenerationView {
+            capability: newer_capability.clone(),
+            generation: 1,
+            phase: UsageRefreshPhase::Completed,
+            snapshot: Some(catalog_admitted_snapshot(
+                &newer_capability,
+                None,
+                Some("revision-before-replacement"),
+            )),
+            error: None,
+            retry_at_epoch: None,
+        })
+        .unwrap();
+    assert_eq!(
+        runtime.broker_phases.values().next().copied(),
+        Some(UsageRefreshPhase::Updating)
+    );
+    assert_eq!(
+        runtime.broker_generations.values().next().unwrap().generation,
+        2
+    );
+    assert!(runtime.last_refresh.is_none());
+}
+
+#[test]
 fn rotated_catalog_revision_rejects_in_flight_broker_result() {
     use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
 
     let binding = ValidatedCredentialBinding {
+        profile_material: None,
         surface: HostSurfaceId::Claude,
         identity: Some(CanonicalAccountIdentity {
             surface: HostSurfaceId::Claude,
@@ -1352,7 +2116,8 @@ fn rotated_catalog_revision_rejects_in_flight_broker_result() {
         capability_id: "capability-0001".to_owned(),
         credential_revision: "credential-revision".to_owned(),
         provenance: BTreeSet::from(["account work".to_owned()]),
-        source: ValidatedCredentialSource::Capability,
+        configured_account_ids: BTreeSet::from(["work".to_owned()]),
+        source: ValidatedCredentialSource::Unpollable,
     };
     let old_capability = capability_for_binding(&binding, Some("generation-old"));
     let current_capability = capability_for_binding(&binding, Some("generation-current"));
@@ -1391,6 +2156,7 @@ fn broker_catalog_admits_current_identity_and_rejects_stale_identity() {
     use crate::host::{CanonicalAccountIdentity, CanonicalAccountSubject, HostSurfaceId};
 
     let binding = ValidatedCredentialBinding {
+        profile_material: None,
         surface: HostSurfaceId::Claude,
         identity: Some(CanonicalAccountIdentity {
             surface: HostSurfaceId::Claude,
@@ -1400,6 +2166,7 @@ fn broker_catalog_admits_current_identity_and_rejects_stale_identity() {
         capability_id: "capability-0001".to_owned(),
         credential_revision: "credential-revision".to_owned(),
         provenance: BTreeSet::from(["account work".to_owned()]),
+        configured_account_ids: BTreeSet::from(["work".to_owned()]),
         source: ValidatedCredentialSource::Capability,
     };
     let stale = capability_for_binding(&binding, Some("generation-stale"));
@@ -1419,6 +2186,8 @@ fn broker_catalog_admits_current_identity_and_rejects_stale_identity() {
         .reconcile_catalog(
             "generation-current".to_owned(),
             vec![UsageCatalogEntry {
+                canonical_identity: None,
+                provenance_count: 0,
                 capability: current.clone(),
                 revision: "credential-current".to_owned(),
             }],
@@ -1442,6 +2211,7 @@ fn broker_catalog_match_requires_full_revision_and_entry_revisions() {
         diagnostics: Vec::new(),
         candidates: Vec::new(),
         bindings: vec![ValidatedCredentialBinding {
+            profile_material: None,
             surface: HostSurfaceId::Claude,
             identity: Some(CanonicalAccountIdentity {
                 surface: HostSurfaceId::Claude,
@@ -1451,6 +2221,7 @@ fn broker_catalog_match_requires_full_revision_and_entry_revisions() {
             capability_id: "capability-0001".to_owned(),
             credential_revision: "credential-revision-a".to_owned(),
             provenance: BTreeSet::from(["account work".to_owned()]),
+            configured_account_ids: BTreeSet::from(["work".to_owned()]),
             source: ValidatedCredentialSource::Capability,
         }],
     };
@@ -1521,10 +2292,14 @@ fn concurrent_catalog_rotations_publish_one_complete_revision() {
     let account_a = capability();
     let account_b = second_capability();
     let entry_a = UsageCatalogEntry {
+        canonical_identity: None,
+        provenance_count: 0,
         capability: account_a.clone(),
         revision: "entry-a".to_owned(),
     };
     let entry_b = UsageCatalogEntry {
+        canonical_identity: None,
+        provenance_count: 0,
         capability: account_b.clone(),
         revision: "entry-b".to_owned(),
     };
@@ -1607,10 +2382,14 @@ fn catalog_cas_rejects_a_stale_rotation_after_a_newer_winner() {
     .unwrap();
     let lease = client.current_projection().unwrap().projection_id;
     let winning = UsageCatalogEntry {
+        canonical_identity: None,
+        provenance_count: 0,
         capability: capability(),
         revision: "entry-winning".to_owned(),
     };
     let stale = UsageCatalogEntry {
+        canonical_identity: None,
+        provenance_count: 0,
         capability: second_capability(),
         revision: "entry-stale".to_owned(),
     };
@@ -1661,6 +2440,8 @@ fn existing_broker_reconcile_revokes_without_returning_stale_projection() {
     )
     .unwrap();
     let entry = UsageCatalogEntry {
+        canonical_identity: None,
+        provenance_count: 0,
         capability: capability(),
         revision: "credential-a".to_owned(),
     };
@@ -1708,7 +2489,7 @@ fn broker_client_scoped_operation_requires_relay_and_never_probes() {
         .current_for_capability(UsageAccountCapability {
             account_id: "account-a".to_owned(),
             surface_id: "claude".to_owned(),
-        })
+        }, "fixture-instance".to_owned())
         .unwrap_err();
     assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
@@ -1807,6 +2588,50 @@ fn stale_lease_descriptor_cannot_renew_or_clean_successor_files() {
     let current: BrokerLease = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
     assert_eq!(current.instance_id, successor_id);
     assert!(socket_path.exists());
+}
+
+#[test]
+fn socket_alias_directory_rejects_symlink_without_mutating_target() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join("target");
+    let alias = temp.path().join("alias");
+    fs::create_dir(&target).unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+    symlink(&target, &alias).unwrap();
+
+    assert!(private_alias_directory(&alias).is_err());
+    assert_eq!(fs::metadata(&target).unwrap().mode() & 0o777, 0o755);
+    assert!(
+        fs::symlink_metadata(&alias)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+#[test]
+fn socket_alias_directory_creates_and_repairs_owned_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let alias = temp.path().join("alias");
+    let directory = private_alias_directory(&alias).unwrap();
+    assert_eq!(directory.metadata().unwrap().mode() & 0o777, 0o700);
+    drop(directory);
+
+    fs::set_permissions(&alias, fs::Permissions::from_mode(0o755)).unwrap();
+    let directory = private_alias_directory(&alias).unwrap();
+    assert_eq!(directory.metadata().unwrap().mode() & 0o777, 0o700);
+}
+
+#[test]
+fn socket_alias_directory_rejects_regular_file_without_mutating_mode() {
+    let temp = tempfile::tempdir().unwrap();
+    let alias = temp.path().join("alias");
+    fs::write(&alias, b"foreign object").unwrap();
+    fs::set_permissions(&alias, fs::Permissions::from_mode(0o644)).unwrap();
+
+    assert!(private_alias_directory(&alias).is_err());
+    assert_eq!(fs::metadata(&alias).unwrap().mode() & 0o777, 0o644);
+    assert_eq!(fs::read(&alias).unwrap(), b"foreign object");
 }
 
 #[test]
@@ -2105,7 +2930,7 @@ fn healthy_accounts_publish_while_one_account_stalls() {
     assert!(partial.broker_generation > before.broker_generation);
     assert_eq!(
         partial.refresh_state,
-        UsageProjectionRefreshStateV1::Refreshing
+        UsageProjectionRefreshStateV2::Refreshing
     );
     let providers = partial
         .providers
@@ -2118,7 +2943,7 @@ fn healthy_accounts_publish_while_one_account_stalls() {
         .iter()
         .find(|account| account.canonical_account_id == "abc123")
         .unwrap();
-    assert_eq!(fast_account.freshness.phase, UsageFreshnessPhaseV1::Current);
+    assert_eq!(fast_account.freshness.phase, UsageFreshnessPhaseV2::Current);
     assert!(!fast_account.windows.is_empty());
     let slow_account = partial.providers[1]
         .accounts
@@ -2127,7 +2952,7 @@ fn healthy_accounts_publish_while_one_account_stalls() {
         .unwrap();
     assert_eq!(
         slow_account.freshness.phase,
-        UsageFreshnessPhaseV1::Refreshing
+        UsageFreshnessPhaseV2::Refreshing
     );
     assert!(slow_account.windows.is_empty());
 
@@ -2147,13 +2972,13 @@ fn healthy_accounts_publish_while_one_account_stalls() {
     settled.validate().unwrap();
     assert_eq!(settled.discovery_revision, before.discovery_revision);
     assert!(settled.broker_generation > partial.broker_generation);
-    assert_eq!(settled.refresh_state, UsageProjectionRefreshStateV1::Idle);
+    assert_eq!(settled.refresh_state, UsageProjectionRefreshStateV2::Idle);
     assert!(
         settled
             .providers
             .iter()
             .flat_map(|provider| &provider.accounts)
-            .all(|account| account.freshness.phase == UsageFreshnessPhaseV1::Current)
+            .all(|account| account.freshness.phase == UsageFreshnessPhaseV2::Current)
     );
 }
 
@@ -2202,14 +3027,14 @@ fn projection_refresh_runs_due_checks_and_join_settles() {
         let observed = client
             .join_publication(target.clone(), Duration::from_secs(5))
             .unwrap();
-        if observed.refresh_state == UsageProjectionRefreshStateV1::Idle
+        if observed.refresh_state == UsageProjectionRefreshStateV2::Idle
             || Instant::now() >= deadline
         {
             break observed;
         }
         target = observed.projection_id.clone();
     };
-    assert_eq!(settled.refresh_state, UsageProjectionRefreshStateV1::Idle);
+    assert_eq!(settled.refresh_state, UsageProjectionRefreshStateV2::Idle);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
 
     // A superseded or unknown publication id returns the latest publication.
@@ -2243,7 +3068,7 @@ fn join_publication_timeout_leaves_broker_ownership_intact() {
         thread::park_timeout(Duration::from_millis(250));
         let second = client.current_projection().unwrap();
         if first.projection_id == second.projection_id
-            && second.refresh_state == UsageProjectionRefreshStateV1::Refreshing
+            && second.refresh_state == UsageProjectionRefreshStateV2::Refreshing
         {
             break second;
         }
@@ -2260,7 +3085,7 @@ fn join_publication_timeout_leaves_broker_ownership_intact() {
     let settled = client
         .join_publication(refreshing.projection_id, Duration::from_secs(5))
         .unwrap();
-    assert_eq!(settled.refresh_state, UsageProjectionRefreshStateV1::Idle);
+    assert_eq!(settled.refresh_state, UsageProjectionRefreshStateV2::Idle);
     assert!(settled.broker_generation > refreshing.broker_generation);
 }
 
@@ -2322,6 +3147,7 @@ fn scripted_discovery(
             .iter()
             .enumerate()
             .map(|(index, (label, surface))| ValidatedCredentialBinding {
+                profile_material: None,
                 surface: *surface,
                 identity: Some(CanonicalAccountIdentity {
                     surface: *surface,
@@ -2331,6 +3157,7 @@ fn scripted_discovery(
                 capability_id: format!("capability-{index}-{label}"),
                 credential_revision: format!("credential-revision-{index}-{label}"),
                 provenance: BTreeSet::from(["workspace sample role test".to_owned()]),
+                configured_account_ids: BTreeSet::new(),
                 source: ValidatedCredentialSource::Capability,
             })
             .collect(),
@@ -2352,6 +3179,306 @@ fn counting_broker(data_dir: &Path) -> UsageBrokerClient {
         }),
     )
     .unwrap()
+}
+
+#[test]
+fn normal_activation_publishes_missing_and_outdated_catalog_once() {
+    for outdated in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+        let client = counting_broker(temp.path());
+        if outdated {
+            let stale =
+                scripted_discovery(Some("old-config"), &[("old-account", HostSurfaceId::Codex)]);
+            client
+                .reconcile_catalog("old-config".to_owned(), usage_catalog_entries(&stale))
+                .unwrap();
+        }
+        let mut accepted = scripted_discovery(
+            Some("accepted-config"),
+            &[("exact-account", HostSurfaceId::Claude)],
+        );
+        accepted.bindings[0]
+            .provenance
+            .insert("workspace second role test".to_owned());
+        let mut scans = 0;
+        let mut discover = || {
+            scans += 1;
+            Ok(accepted.clone())
+        };
+        let mut published = Vec::new();
+        let mut reconcile =
+            |client: &UsageBrokerClient, lease, revision, entries: Vec<UsageCatalogEntry>| {
+                published = entries.clone();
+                client.reconcile_catalog_if_projection(lease, revision, entries)
+            };
+        let handle = discover_and_ensure_usage_broker_with_hooks(
+            &config,
+            &activation_scope(&temp),
+            &mut discover,
+            &mut reconcile,
+        )
+        .unwrap();
+        assert_eq!(scans, 1);
+        assert_eq!(published.len(), 1);
+        assert_eq!(
+            published[0].provenance_count, 1,
+            "two configuration scopes share one unique credential source"
+        );
+        assert_eq!(
+            published[0].canonical_identity,
+            Some(jackin_protocol::control::UsageCanonicalAccountIdentity {
+                surface_id: "claude".to_owned(),
+                subject:
+                    jackin_protocol::control::UsageCanonicalAccountSubject::ProviderStableHandle(
+                        "exact-account".to_owned()
+                    ),
+            })
+        );
+        assert_eq!(usage_catalog_entries(&handle.discovery), published);
+        let projection = handle.client.current_projection().unwrap();
+        assert_eq!(projection.discovery_revision, "accepted-config");
+        assert_eq!(handle.catalog_lease, projection.projection_id);
+        assert_eq!(
+            handle.capabilities,
+            usage_broker_capabilities(&handle.discovery)
+        );
+    }
+}
+
+#[derive(Clone)]
+struct ActivationDeniedSource(Arc<AtomicUsize>);
+
+impl crate::host::ProviderCredentialSecretSource for ActivationDeniedSource {
+    fn lookup_declaration(
+        &self,
+        config: &AppConfig,
+        _: Option<&WorkspaceName>,
+        _: Option<&str>,
+        entry: UsageCredentialEnvName,
+    ) -> Option<jackin_config::EnvValue> {
+        config.env.get(entry.name).cloned()
+    }
+
+    fn resolve_secret(
+        &self,
+        config: &AppConfig,
+        _: Option<&WorkspaceName>,
+        _: Option<&str>,
+        entry: UsageCredentialEnvName,
+    ) -> Option<crate::host::ProviderCredentialSecretResolution> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Some(crate::host::ProviderCredentialSecretResolution {
+            declaration: config.env.get(entry.name)?.clone(),
+            outcome: crate::host::ProviderCredentialSecretOutcome::InteractionRequired,
+        })
+    }
+}
+
+#[test]
+fn normal_activation_conflict_discards_scan_without_repeating_denied_source() {
+    for changed_source in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+        let client = counting_broker(temp.path());
+        let protected_calls = Arc::new(AtomicUsize::new(0));
+        let resolver = crate::host::CachedProviderCredentialResolver::new(ActivationDeniedSource(
+            Arc::clone(&protected_calls),
+        ));
+        let mut scans = 0;
+        let mut discover = || {
+            scans += 1;
+            let mut secret_config = AppConfig::default();
+            secret_config.env.insert(
+                "ZAI_API_KEY".to_owned(),
+                jackin_config::EnvValue::Plain(
+                    if changed_source && scans == 2 {
+                        "changed-source"
+                    } else {
+                        "same-source"
+                    }
+                    .to_owned(),
+                ),
+            );
+            let outcome = resolver.resolve_provider_credentials(
+                &secret_config,
+                None,
+                None,
+                &[UsageCredentialEnvName {
+                    name: "ZAI_API_KEY",
+                    owner: jackin_core::UsageCredentialOwner::Zai,
+                }],
+            );
+            assert_eq!(
+                outcome[0].outcome,
+                super::super::ProviderCredentialEnvOutcome::InteractionRequired
+            );
+            if scans == 1 {
+                // A publisher that does not hold activate.lock wins DURING
+                // discovery. Reading its lease after this scan would lose
+                // the conflict and overwrite it with the stale account.
+                let winner =
+                    scripted_discovery(Some("winner-config"), &[("winner", HostSurfaceId::Codex)]);
+                client
+                    .reconcile_catalog("winner-config".to_owned(), usage_catalog_entries(&winner))
+                    .unwrap();
+                Ok(scripted_discovery(
+                    Some("losing-config"),
+                    &[("loser", HostSurfaceId::Amp)],
+                ))
+            } else {
+                Ok(scripted_discovery(
+                    Some("current-config"),
+                    &[("current", HostSurfaceId::Claude)],
+                ))
+            }
+        };
+        let mut attempts = Vec::new();
+        let mut reconcile = |client: &UsageBrokerClient, lease, revision: String, entries| {
+            attempts.push(revision.clone());
+            client.reconcile_catalog_if_projection(lease, revision, entries)
+        };
+        let handle = discover_and_ensure_usage_broker_with_hooks(
+            &config,
+            &activation_scope(&temp),
+            &mut discover,
+            &mut reconcile,
+        )
+        .unwrap();
+        assert_eq!(scans, 2);
+        assert_eq!(attempts, ["losing-config", "current-config"]);
+        assert_eq!(
+            protected_calls.load(Ordering::SeqCst),
+            if changed_source { 2 } else { 1 }
+        );
+        assert_eq!(
+            handle.discovery.config_generation.as_deref(),
+            Some("current-config")
+        );
+        assert_eq!(
+            handle
+                .client
+                .current_projection()
+                .unwrap()
+                .discovery_revision,
+            "current-config"
+        );
+    }
+}
+
+#[test]
+fn normal_activation_discovery_failure_preserves_publication() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+    let client = counting_broker(temp.path());
+    let before = client.current_projection().unwrap();
+    let mut discover = || Err(unavailable());
+    let mut reconcile =
+        |_: &UsageBrokerClient, _: Option<String>, _: String, _: Vec<UsageCatalogEntry>| {
+            panic!("failed discovery must not publish caller fallback")
+        };
+    assert!(
+        discover_and_ensure_usage_broker_with_hooks(
+            &config,
+            &activation_scope(&temp),
+            &mut discover,
+            &mut reconcile,
+        )
+        .is_err()
+    );
+    assert_eq!(
+        client.current_projection().unwrap().projection_id,
+        before.projection_id
+    );
+}
+
+#[test]
+fn normal_activation_degraded_config_cannot_revoke_catalog() {
+    use crate::host::{UsageDiscoveryDiagnostic, UsageDiscoveryIssue};
+
+    for issue in [
+        UsageDiscoveryIssue::ConfigUnreadable,
+        UsageDiscoveryIssue::ConfigInvalid,
+        UsageDiscoveryIssue::ConfigVersionUnsupported,
+        UsageDiscoveryIssue::ConfigTransientConflict,
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let config = UsageBrokerConfig::for_data_dir(temp.path().to_owned());
+        let client = counting_broker(temp.path());
+        let valid = scripted_discovery(Some("valid-config"), &[("valid", HostSurfaceId::Claude)]);
+        let before = client
+            .reconcile_catalog("valid-config".to_owned(), usage_catalog_entries(&valid))
+            .unwrap();
+        let mut degraded = scripted_discovery(Some("fallback-config"), &[]);
+        degraded.diagnostics.push(UsageDiscoveryDiagnostic {
+            surface_id: None,
+            scope_label: "host config".to_owned(),
+            configured_account_ids: BTreeSet::new(),
+            issue,
+        });
+        let mut discover = || Ok(degraded.clone());
+        let mut reconcile =
+            |_: &UsageBrokerClient, _: Option<String>, _: String, _: Vec<UsageCatalogEntry>| {
+                panic!("diagnostic fallback config must not revoke accepted catalog")
+            };
+        assert!(
+            discover_and_ensure_usage_broker_with_hooks(
+                &config,
+                &activation_scope(&temp),
+                &mut discover,
+                &mut reconcile,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            client.current_projection().unwrap().projection_id,
+            before.projection_id
+        );
+    }
+}
+
+#[test]
+fn normal_activation_public_api_reuses_accepted_full_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let _client = counting_broker(temp.path());
+    let accepted_identity = jackin_protocol::control::UsageCanonicalAccountIdentity {
+        surface_id: "claude".to_owned(),
+        subject: jackin_protocol::control::UsageCanonicalAccountSubject::ProviderId(
+            "exact-authenticated-account".to_owned(),
+        ),
+    };
+    let scope = UsageDiscoveryScope::Capsule {
+        forwarded_accounts: vec![ForwardedUsageAccount {
+            canonical_identity: Some(accepted_identity.clone()),
+            surface_id: "claude".to_owned(),
+            capability_id: "exact-forwarded-route".to_owned(),
+            account_label: Some("display-only-label".to_owned()),
+        }],
+    };
+    let handle = discover_and_ensure_usage_broker(
+        UsageBrokerConfig::for_data_dir(temp.path().to_owned()),
+        scope.clone(),
+        Arc::new(NoEnvResolver),
+    )
+    .unwrap();
+    let catalog = usage_catalog_entries(&handle.discovery);
+    assert_eq!(catalog.len(), 1);
+    assert_eq!(catalog[0].canonical_identity, Some(accepted_identity));
+    assert_eq!(catalog[0].provenance_count, 1);
+    let mut runtime = crate::host::HostUsageRuntime::new();
+    let mut runtime_config = crate::host::HostRuntimeConfig::under_data_dir(temp.path());
+    runtime_config.discovery_scope = scope;
+    runtime
+        .open_with_validated_discovery(runtime_config, handle.discovery)
+        .unwrap();
+    assert_eq!(
+        usage_catalog_entries(&runtime.validated_discovery().unwrap()),
+        catalog
+    );
+    assert_eq!(
+        handle.client.current_projection().unwrap().projection_id,
+        handle.catalog_lease
+    );
 }
 
 #[test]
@@ -2526,7 +3653,7 @@ fn catalog_conflict_fails_closed_after_bounded_retries() {
               _expected_projection_id: Option<String>,
               _catalog_revision: String,
               _entries: Vec<UsageCatalogEntry>|
-              -> Result<UsageProjectionV1, UsageCoordinationError> {
+              -> Result<UsageProjectionV2, UsageCoordinationError> {
             reconciles.fetch_add(1, Ordering::SeqCst);
             Err(UsageCoordinationError {
                 kind: UsageCoordinationErrorKind::CatalogRevisionConflict,
@@ -2744,10 +3871,14 @@ fn sequential_reconcile_after_fresh_read_still_accepts_last_writer() {
     )
     .unwrap();
     let fresh = UsageCatalogEntry {
+        canonical_identity: None,
+        provenance_count: 0,
         capability: capability(),
         revision: "entry-fresh".to_owned(),
     };
     let stale = UsageCatalogEntry {
+        canonical_identity: None,
+        provenance_count: 0,
         capability: second_capability(),
         revision: "entry-stale".to_owned(),
     };
@@ -2768,4 +3899,94 @@ fn sequential_reconcile_after_fresh_read_still_accepts_last_writer() {
         )
         .unwrap();
     assert_eq!(overwritten.discovery_revision, "catalog-stale");
+}
+
+#[tokio::test]
+async fn async_scoped_client_cancel_closes_broker_socket() {
+    use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
+    for scoped in [true, false] {
+        let temp = tempfile::tempdir_in("/tmp").unwrap();
+        let socket = temp.path().join("async-relay.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let client = UsageBrokerClient::at(socket, env!("CARGO_PKG_VERSION").to_owned());
+        let call = tokio::spawn(async move {
+            if scoped {
+                drop(
+                    client
+                        .execute_scoped_async(
+                            UsageBrokerOperation::CurrentProjection,
+                            UsageCredentialScope::default(),
+                            tokio::time::Instant::now() + Duration::from_secs(30),
+                        )
+                        .await,
+                );
+            } else {
+                drop(
+                    client
+                        .current_projection_async(
+                            tokio::time::Instant::now() + Duration::from_secs(30),
+                        )
+                        .await,
+                );
+            }
+        });
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut reader = tokio::io::BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        let request: UsageBrokerRequest = serde_json::from_str(&line).unwrap();
+        assert_eq!(
+            request.launch_credential_scope,
+            scoped.then(UsageCredentialScope::default)
+        );
+        call.abort();
+        assert!(call.await.unwrap_err().is_cancelled());
+        assert!(reader.get_mut().write_all(b"response\n").await.is_err());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn async_client_pending_connect_resumed_after_deadline_sends_no_frame() {
+    use std::future::Future as _;
+    use std::io::Read as _;
+    let temp = tempfile::tempdir_in("/tmp").unwrap();
+    let socket = temp.path().join("deadline.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let client = UsageBrokerClient::at(socket, env!("CARGO_PKG_VERSION").to_owned());
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    let call = client.execute_scoped_async(
+        UsageBrokerOperation::Refresh {
+            capability: UsageAccountCapability {
+                account_id: "expired-admitted".to_owned(),
+                surface_id: "openrouter".to_owned(),
+            },
+            observed_generation: 0,
+            force: true,
+        },
+        UsageCredentialScope::default(),
+        deadline,
+    );
+    tokio::pin!(call);
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(
+        call.as_mut().poll(&mut context).is_pending(),
+        "connect must await reactor readiness"
+    );
+    let (mut broker_stream, _) = listener.accept().unwrap();
+    broker_stream.set_nonblocking(false).unwrap();
+    broker_stream
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    tokio::time::advance(Duration::from_secs(2)).await;
+    assert_eq!(
+        call.await.unwrap_err().kind,
+        UsageCoordinationErrorKind::Unavailable
+    );
+    let mut bytes = [0; 1];
+    assert_eq!(
+        broker_stream.read(&mut bytes).unwrap(),
+        0,
+        "expired connect resumption must close before writing any broker frame"
+    );
 }

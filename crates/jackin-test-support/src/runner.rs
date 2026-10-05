@@ -135,6 +135,27 @@ impl CommandRunner for FakeRunner {
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 
+    async fn capture_with_options(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&std::path::Path>,
+        opts: &RunOptions,
+    ) -> anyhow::Result<String> {
+        if let Some(directory) = &opts.pinned_cwd {
+            anyhow::ensure!(
+                cwd.is_none(),
+                "pinned command cannot also select a pathname cwd"
+            );
+            anyhow::ensure!(
+                directory.metadata()?.is_dir(),
+                "pinned cwd must be an open directory"
+            );
+        }
+        self.run_options.push(opts.clone());
+        self.capture(program, args, cwd).await
+    }
+
     async fn capture_secret(
         &mut self,
         program: &str,

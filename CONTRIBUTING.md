@@ -22,7 +22,7 @@ Employer contributions: confirm authorization before submitting. Use personal em
 ## Git hooks
 
 Pre-commit checks run via [hk](https://hk.jdx.dev) (`hk.pkl` at the repo
-root; hk 2.0.1 pinned in `mise.toml`/`mise.lock`). Install per checkout —
+root; hk 2.0.1 pinned in [`mise.toml`](mise.toml)/`mise.lock`). Install per checkout —
 idempotent, safe to re-run:
 
 ```sh
@@ -169,3 +169,11 @@ cargo xtask ci --fast
 Local builds outside CI default to the package version for `JACKIN_VERSION` / `JACKIN_CAPSULE_VERSION` so each commit does not invalidate every build-meta consumer and capsule cache entry. GitHub Actions sets `CI`, so release, preview, construct, and CI builds still stamp the real `<version>+<sha>`. Set `JACKIN_VERSION_OVERRIDE=<value>` only when you need an explicit local version.
 
 Fmt fail → `cargo fmt`, re-check. See [TESTING.md](TESTING.md).
+
+## Security changes
+
+Before changing credential provisioning, runtime isolation, or shell guards, read the
+[contributor security implementation](docs/content/reference/security-implementation.mdx).
+It maps threats to enforcing functions and distinguishes shell guard controls from
+container and per-session boundaries. Preserve fail-closed credential handling and
+document the exact enforcement and residual risk of changed controls.

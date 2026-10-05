@@ -25,9 +25,10 @@ fn selected_source_capture_binds_worker_bytes_and_revision_across_source_replace
     std::fs::write(source.join("auth.json"), SELECTED).unwrap();
     let binding = selected_codex(&source);
     let captured = capture_selected_account_sources(
-        std::slice::from_ref(&binding),
+        &[binding.clone()],
         fixture.path(),
         &fixture.path().join("role"),
+        None,
     )
     .unwrap();
     let revision = captured[0].selected_source_revision().unwrap().to_owned();
@@ -53,9 +54,13 @@ fn selected_source_capture_binds_worker_bytes_and_revision_across_source_replace
         Some(source.as_path())
     );
 
-    let refreshed =
-        capture_selected_account_sources(&[binding], fixture.path(), &fixture.path().join("role"))
-            .unwrap();
+    let refreshed = capture_selected_account_sources(
+        &[binding],
+        fixture.path(),
+        &fixture.path().join("role"),
+        None,
+    )
+    .unwrap();
     assert_ne!(
         refreshed[0].selected_source_revision(),
         Some(revision.as_str())
@@ -82,12 +87,17 @@ fn selected_source_descriptor_cannot_change_after_capture() {
         &[selected_codex(&source)],
         fixture.path(),
         &fixture.path().join("role"),
+        None,
     )
     .unwrap();
     captured[0].source_provider = Some(jackin_config::AiProvider::Anthropic);
-    let error =
-        capture_selected_account_sources(&captured, fixture.path(), &fixture.path().join("role"))
-            .unwrap_err();
+    let error = capture_selected_account_sources(
+        &captured,
+        fixture.path(),
+        &fixture.path().join("role"),
+        None,
+    )
+    .unwrap_err();
     assert!(format!("{error:#}").contains("descriptor changed after credential capture"));
 }
 
@@ -99,6 +109,7 @@ fn selected_source_absence_fails_before_a_worker_can_reopen_a_new_source() {
         &[selected_codex(&source)],
         fixture.path(),
         &fixture.path().join("role"),
+        None,
     )
     .unwrap_err();
     assert!(format!("{error:#}").contains("credentials disappeared before capture"));
@@ -136,7 +147,8 @@ fn xdg_selected_sources_are_captured_before_worker_source_replacement() {
             binding.source_provider = Some(jackin_config::AiProvider::Opencode);
         }
         let root = fixture.path().join("role");
-        let captured = capture_selected_account_sources(&[binding], fixture.path(), &root).unwrap();
+        let captured =
+            capture_selected_account_sources(&[binding], fixture.path(), &root, None).unwrap();
         assert!(captured[0].selected_source_revision().is_some());
         assert_eq!(
             captured[0]

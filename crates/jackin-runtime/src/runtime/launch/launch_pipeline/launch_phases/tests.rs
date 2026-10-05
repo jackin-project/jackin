@@ -33,6 +33,41 @@ fn test_manifest(container: &str) -> InstanceManifest {
 }
 
 #[test]
+fn cleanup_constructor_binds_socket_to_explicit_paths() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::resolve_with_env(
+        &temp.path().join("operator-home"),
+        Some(temp.path().join("selected-jackin-home").as_os_str()),
+        None,
+    );
+    let cleanup = LoadCleanup::new(
+        &paths,
+        "jk-owned-role".into(),
+        "jk-owned-role-dind".into(),
+        "jk-owned-role-certs".into(),
+    )
+    .unwrap();
+    assert_eq!(cleanup.trusted_paths().jackin_home, paths.jackin_home);
+    assert_eq!(cleanup.trusted_paths().home_dir, paths.home_dir);
+    assert_eq!(
+        cleanup.socket_dir(),
+        paths.jackin_home.join("sockets/jk-owned-role")
+    );
+}
+
+#[test]
+fn cleanup_constructor_rejects_role_path_fragments() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    for name in ["", ".", "..", "../other", "other/role", "other\\role", "role name"] {
+        assert!(
+            LoadCleanup::new(&paths, name.into(), "dind".into(), "certs".into()).is_err(),
+            "invalid cleanup role accepted: {name:?}"
+        );
+    }
+}
+
+#[test]
 fn grant_phase_rejects_root_sudo_without_docker_io() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -74,6 +109,8 @@ fn grant_phase_rejects_root_sudo_without_docker_io() {
 
 #[tokio::test]
 async fn captured_sidecar_cleanup_removes_owned_resources() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
     let docker = FakeDockerClient {
         inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
             "jk-role-dind".to_owned(),
@@ -82,12 +119,11 @@ async fn captured_sidecar_cleanup_removes_owned_resources() {
         ..Default::default()
     };
     let cleanup = LoadCleanup::new(
+        &paths,
         "jk-role".into(),
         "jk-role-dind".into(),
         "jk-role-certs".into(),
-        "jk-role-net".into(),
-        std::env::temp_dir().join("jackin-suite-a-sock"),
-    );
+    ).unwrap();
     cleanup.set_dind_handle(ContainerHandle::new("jk-role-dind", "jk-role-dind-id").unwrap());
     cleanup.run(&docker).await;
     let recorded = docker.recorded.borrow();
@@ -129,12 +165,11 @@ async fn mid_pipeline_failed_setup_still_runs_cleanup() {
         ..Default::default()
     };
     let cleanup = LoadCleanup::new(
+        &paths,
         container.into(),
         format!("{container}-dind"),
         format!("{container}-certs"),
-        format!("{container}-net"),
-        paths.jackin_home.join("sockets").join(container),
-    );
+    ).unwrap();
     cleanup.set_dind_handle(
         ContainerHandle::new(format!("{container}-dind"), "failed-setup-dind-id").unwrap(),
     );
@@ -168,8 +203,9 @@ async fn mid_pipeline_failed_setup_still_runs_cleanup() {
 #[tokio::test]
 async fn post_start_failure_preserves_terminal_role_evidence_but_cleans_sidecars() {
     let temp = tempdir().unwrap();
-    let socket_dir = temp.path().join("socket");
-    std::fs::create_dir(&socket_dir).unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let socket_dir = paths.jackin_home.join("sockets/jk-failed-start");
+    std::fs::create_dir_all(&socket_dir).unwrap();
     std::fs::write(socket_dir.join("agent.toml"), "bounded evidence").unwrap();
     let docker = FakeDockerClient {
         inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
@@ -183,12 +219,11 @@ async fn post_start_failure_preserves_terminal_role_evidence_but_cleans_sidecars
         ..Default::default()
     };
     let cleanup = LoadCleanup::new(
+        &paths,
         "jk-failed-start".into(),
         "jk-failed-start-dind".into(),
         "jk-failed-start-certs".into(),
-        "jk-failed-start-net".into(),
-        socket_dir.clone(),
-    );
+    ).unwrap();
     cleanup.set_dind_handle(
         ContainerHandle::new("jk-failed-start-dind", "failed-start-dind-id").unwrap(),
     );
@@ -225,8 +260,9 @@ async fn post_start_failure_preserves_terminal_role_evidence_but_cleans_sidecars
 #[tokio::test]
 async fn post_start_failure_cleans_live_role_and_private_socket() {
     let temp = tempdir().unwrap();
-    let socket_dir = temp.path().join("socket");
-    std::fs::create_dir(&socket_dir).unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let socket_dir = paths.jackin_home.join("sockets/jk-live-start");
+    std::fs::create_dir_all(&socket_dir).unwrap();
     let docker = FakeDockerClient {
         inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
             "jk-live-start".to_owned(),
@@ -236,12 +272,11 @@ async fn post_start_failure_cleans_live_role_and_private_socket() {
         ..Default::default()
     };
     let cleanup = LoadCleanup::new(
+        &paths,
         "jk-live-start".into(),
         "jk-live-start-dind".into(),
         "jk-live-start-certs".into(),
-        "jk-live-start-net".into(),
-        socket_dir.clone(),
-    );
+    ).unwrap();
 
     cleanup
         .set_dind_handle(ContainerHandle::new("jk-live-start-dind", "live-start-dind-id").unwrap());

@@ -5,23 +5,23 @@ description: "A measured, reuse-first context-engine design with explicit host, 
 
 **Research state:** Incomplete
 
-External-tool research cutoff: **2026-09-23 UTC**. The [six-tool dossier](/research/context/tools/) and [current release register](/research/context/tools/08-current-release-register/) cover Caveman, RTK, LeanCTX, Ponytail, Headroom, and LemonCrow. The [Jackin integration strategy](/research/context/tools/11-jackin-integration/) and [reuse matrix](/research/context/engine/09-reuse-decision-matrix/) govern current dependency choices. This is still a design, not implemented or benchmark-qualified behavior.
+External-tool research cutoff: **2026-09-23 UTC**. The [six-tool dossier](/research/context/tools/) and [current release register](/research/context/tools/08-current-release-register/) cover Caveman, RTK, LeanCTX, Ponytail, Headroom, and LemonCrow. The [jackin❯ integration strategy](/research/context/tools/11-jackin-integration/) and [reuse matrix](/research/context/engine/09-reuse-decision-matrix/) govern current dependency choices. This is still a design, not implemented or benchmark-qualified behavior.
 
 ## Research question
 
-What should Jackin own, reuse, and automatically activate to reduce resource consumption per accepted task without weakening correctness, recovery, cache behavior, or capsule isolation?
+What should jackin❯ own, reuse, and automatically activate to reduce resource consumption per accepted task without weakening correctness, recovery, cache behavior, or capsule isolation?
 
 ## Headline findings
 
 ### Thesis
 
-Build the narrow Jackin-specific control and evidence contracts. Reuse appropriate upstream implementations behind replaceable boundaries. Do not adopt six global installers, make a complete external runtime mandatory, or rewrite a usable Rust library merely because its product also has a Python wrapper.
+Build the narrow jackin❯-specific control and evidence contracts. Reuse appropriate upstream implementations behind replaceable boundaries. Do not adopt six global installers, make a complete external runtime mandatory, or rewrite a usable Rust library merely because its product also has a Python wrapper.
 
 The current recommendation is a selected `headroom-core` transform spike, restricted LeanCTX and LemonCrow retrieval comparisons, qualified RTK command filtering, and restrained instruction assets inspired by Ponytail and Caveman. These are architecture candidates, not a performance ranking. [Current comparison](/research/context/tools/05-head-to-head/).
 
 ### What capsule ownership actually provides
 
-Jackin can generate capsule-local configuration, package immutable artifacts, supervise workers, scope state, and connect observations to usage records. It cannot infer complete model-bound traffic merely from a PTY or container. A native agent tool that does not pass through a proven hook or MCP route remains outside the optimization boundary.
+jackin❯ can generate capsule-local configuration, package immutable artifacts, supervise workers, scope state, and connect observations to usage records. It cannot infer complete model-bound traffic merely from a PTY or container. A native agent tool that does not pass through a proven hook or MCP route remains outside the optimization boundary.
 
 Therefore every capability needs an explicit activation probe. Changing terminal display is not changing model input. Adding MCP tools does not make native tools disappear. An installed hook is not proof that its output replacement was accepted. [Host-specific implementation plan](/research/context/tools/11-jackin-integration/).
 
@@ -52,7 +52,7 @@ Keep the selected model, reasoning effort, native execution, editing, approvals,
 
 ## Limitations and open questions
 
-The remaining decisions require executable proof: dependency resolution on Jackin targets, real host result replacement, recovery after compaction/resume, concurrent worktree isolation, native read-before-edit behavior, and net benefit after schema, indexing, recovery, and extra-turn costs. Public APIs and released fixes are narrower evidence than those tests.
+The remaining decisions require executable proof: dependency resolution on jackin❯ targets, real host result replacement, recovery after compaction/resume, concurrent worktree isolation, native read-before-edit behavior, and net benefit after schema, indexing, recovery, and extra-turn costs. Public APIs and released fixes are narrower evidence than those tests.
 
 ## How to read
 

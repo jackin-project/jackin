@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 use crate::tui::run::{RichDriver, RichRenderer};
-use crate::tui::subscriptions::SharedView;
+use crate::tui::subscriptions::{SharedView, lock_view};
 use crate::{
     LaunchDiagnostics, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchMessage,
     LaunchStage, PromptContextLine, PromptResult, StageStatus, initial_view, update_launch_view,
@@ -30,6 +30,7 @@ pub struct LaunchProgress {
     diagnostics: Arc<dyn LaunchDiagnostics>,
     renderer: Renderer,
     view: SharedView,
+    #[cfg(test)]
     host: &'static dyn LaunchHostTerminal,
     cancel_token: CancellationToken,
 }
@@ -65,6 +66,7 @@ impl LaunchProgress {
             diagnostics,
             renderer,
             view,
+            #[cfg(test)]
             host,
             cancel_token,
         })
@@ -76,6 +78,7 @@ impl LaunchProgress {
             diagnostics,
             renderer: Renderer::Test,
             view: Arc::new(std::sync::Mutex::new(initial_view())),
+            #[cfg(test)]
             host: crate::test_support::test_host_terminal(),
             cancel_token: CancellationToken::new(),
         }
@@ -91,9 +94,7 @@ impl LaunchProgress {
     }
 
     fn update_view(&self, msg: LaunchMessage) {
-        if let Ok(mut view) = self.view.lock() {
-            let _dirty = update_launch_view(&mut view, msg);
-        }
+        let _dirty = update_launch_view(&mut lock_view(&self.view), msg);
     }
 
     pub fn started(&mut self, identity: LaunchIdentity) {
@@ -163,12 +164,7 @@ impl LaunchProgress {
         // the single-threaded runtime — a blocking read would never let the
         // render task run, so the popup would neither draw nor receive the key.
         if matches!(self.renderer, Renderer::Rich(_)) {
-            loop {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                if failure_acknowledged(&self.view) {
-                    break;
-                }
-            }
+            wait_for_failure_acknowledgement(&self.view, &self.cancel_token).await;
         }
     }
 
@@ -193,14 +189,9 @@ impl LaunchProgress {
     /// no-op for the test renderer.
     pub fn finish(&mut self) {
         if let Renderer::Rich(driver) = &mut self.renderer {
-            // Signal the task to stop drawing; it exits on its next tick and
-            // drops its renderer (any stray final frame is wiped by the
-            // capsule's clear-on-attach). Detach the handle — we do not block.
+            // Stop and synchronize with drawing/input before releasing the
+            // lease; the capsule inherits a terminal with no launch writers.
             driver.stop_detached();
-            // The interactive attach must inherit the terminal, not be
-            // captured, so clear the rich-surface flag now regardless of when
-            // the task's renderer finally drops.
-            self.host.set_rich_surface_active(false);
             self.renderer = Renderer::Done;
         }
     }
@@ -289,19 +280,23 @@ impl LaunchProgress {
 impl Drop for LaunchProgress {
     fn drop(&mut self) {
         // Dropped without an explicit finish (e.g. an error path): stop the
-        // render task. Its renderer drops when the task exits, restoring the
-        // terminal — the host-screen guard is the ultimate safety net.
+        // render task and synchronously release its input and terminal lease.
         if let Renderer::Rich(driver) = &self.renderer {
             driver.request_stop();
-            self.host.set_rich_surface_active(false);
         }
     }
 }
 
 fn failure_acknowledged(view: &SharedView) -> bool {
-    match view.lock() {
-        Ok(view) => view.failure_ack,
-        Err(poisoned) => poisoned.into_inner().failure_ack,
+    lock_view(view).failure_ack
+}
+
+pub(crate) async fn wait_for_failure_acknowledgement(view: &SharedView, cancel: &CancellationToken) {
+    while !failure_acknowledged(view) {
+        tokio::select! {
+            () = cancel.cancelled() => return,
+            () = tokio::time::sleep(Duration::from_millis(50)) => {}
+        }
     }
 }
 

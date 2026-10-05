@@ -3,6 +3,8 @@ title: Kimi
 description: Register a Kimi provider account and authorize Claude Code to use it
 ---
 
+For Kimi Code, obtain a membership key in the [Kimi Code Console](https://www.kimi.com/code/docs/en/#obtaining-an-api-key). Each key is shown only at creation; save it privately before closing the dialog. Membership keys and general Open Platform API keys belong to different products.
+
 Register the provider key as a named account, then grant it to each workspace that may use it. Provider credentials follow the same account allowlist as native agent profiles.
 
 ## Register the key
@@ -11,10 +13,10 @@ The following command reads the key from a masked prompt and records the explici
 
 ```bash
 jackin account add moonshot-work --provider moonshot --api-key \
-  --base-url https://api.kimi.com/coding --model kimi-for-coding
+  --base-url https://api.kimi.ai/coding/ --model k3-256k
 ```
 
-Use `--secret-ref '$KIMI_API_KEY'` to reference an existing environment variable, or `--secret-ref 'op://Work/Kimi/api-key'` for a 1Password reference. Use the endpoint and model appropriate to your provider account.
+Use `--secret-ref '$KIMI_API_KEY'` to reference an existing environment variable, or `--secret-ref 'op://Work/Kimi/api-key'` for a 1Password reference. The endpoint and model above follow the [official Claude Code guide](https://www.kimi.com/code/docs/en/third-party-tools/claude-code), checked on 2026-10-03. This example selects the overseas endpoint. The [provider overview](https://www.kimi.com/code/docs/en/) also lists the China endpoint `https://api.kimi.com/coding/`. Select the region and supported model appropriate to your account; other membership tiers/models may need a different supported model. Check your [membership quota](https://www.kimi.com/code/docs/en/kimi-code/membership.html): the host login and all API keys share the allowance. A newly registered account does not create quota.
 
 ## Authorize a workspace
 

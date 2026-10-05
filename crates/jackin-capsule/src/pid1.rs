@@ -1,129 +1,65 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! PID 1 responsibilities inside the container: reap orphaned child processes
-//! and forward signals to managed children.
+//! PID 1 responsibility inside the container: reap orphaned child processes.
 //!
 //! Not responsible for: spawning agent processes (see `session`) or daemon
 //! lifecycle (see `daemon`).
 //!
-//! Key invariant: every child registered via `register_managed_child` must
-//! be reaped; unregistered orphans are reaped without SIGCHLD delivery.
+//! Key invariant: the shared child registry protects owned exit statuses.
+//! Spawn registration and orphan reaping hold the same coordination lock.
 
-/// PID 1 zombie reaping and signal forwarding.
+use jackin_process::child_ownership;
+/// PID 1 zombie reaping.
 ///
 /// Linux: when a process whose parent has exited becomes an orphan, it is
 /// re-parented to PID 1. PID 1 MUST call waitpid to reap those zombies or
 /// they accumulate in the process table. Tokio does not do this automatically.
-use nix::sys::signal::{SigSet, Signal};
-use std::collections::HashSet;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Condvar, Mutex, OnceLock};
 
-#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
-use nix::sys::wait::{Id, waitid};
-use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+static REAPER_THREAD: OnceLock<std::thread::JoinHandle<()>> = OnceLock::new();
+static REAPER_WAKE: OnceLock<(Mutex<bool>, Condvar)> = OnceLock::new();
+
+fn reaper_wake() -> &'static (Mutex<bool>, Condvar) {
+    REAPER_WAKE.get_or_init(|| (Mutex::new(false), Condvar::new()))
+}
+
+#[cfg(not(target_os = "linux"))]
+use nix::sys::wait::WaitStatus;
+use nix::sys::wait::{WaitPidFlag, waitpid};
 use nix::unistd::Pid;
-
-static MANAGED_CHILDREN: OnceLock<Mutex<HashSet<i32>>> = OnceLock::new();
-
-fn managed_children() -> &'static Mutex<HashSet<i32>> {
-    MANAGED_CHILDREN.get_or_init(|| Mutex::new(HashSet::new()))
-}
-
-pub fn register_managed_child(pid: u32) {
-    let Ok(pid) = i32::try_from(pid) else {
-        record_io_error();
-        return;
-    };
-    match managed_children().lock() {
-        Ok(mut children) => {
-            children.insert(pid);
-        }
-        Err(_poisoned) => {
-            // Poisoned mutex: every subsequent register/unregister silently
-            // no-ops, and `is_managed_child` returns false for live pids —
-            // the PID-1 reaper then races session owners for their children
-            // (the exact bug `reap_zombies_does_not_steal_registered_session_child`
-            // pins). Surface so the operator can restart the daemon.
-            record_panic_error();
-        }
-    }
-}
-
-pub fn unregister_managed_child(pid: u32) {
-    let Ok(pid) = i32::try_from(pid) else {
-        record_io_error();
-        return;
-    };
-    match managed_children().lock() {
-        Ok(mut children) => {
-            children.remove(&pid);
-        }
-        Err(_poisoned) => {
-            record_panic_error();
-        }
-    }
-}
-
-#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
-fn is_managed_child(pid: Pid) -> bool {
-    match managed_children().lock() {
-        Ok(children) => children.contains(&pid.as_raw()),
-        Err(_poisoned) => {
-            record_panic_error();
-            false
-        }
-    }
-}
 
 /// PID 1 zombie reaper. tokio's signal handler cannot cover this
 /// because grandchildren of the daemon (agent-spawned helpers) re-parent
 /// to PID 1 on parent death and only the init process can reap them.
 /// Call once at startup; intentionally never joined — the thread dies
 /// with PID 1.
-pub fn install_sigchld_reaper() {
-    // Block SIGCHLD in the main thread; the dedicated reaper thread uses
-    // sigwait so it wakes only on SIGCHLD without racing with tokio's signal
-    // machinery. thread_block failure is a programming error (invalid
-    // sigset) — expect rather than silently drop so the daemon does
-    // not start with a half-installed handler.
-    let mut mask = SigSet::empty();
-    mask.add(Signal::SIGCHLD);
-    if let Err(_error) = mask.thread_block() {
-        record_io_error();
-        return;
-    }
-
+pub fn install_child_reaper() {
     let open =
         jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
     let reaper = jackin_telemetry::spawn::thread_stream_named("zombie-reaper".into(), move || {
-        let mut sigset = SigSet::empty();
-        sigset.add(Signal::SIGCHLD);
         loop {
-            // Block until SIGCHLD arrives. sigwait can return EINTR
-            // on signal-handler interrupt — sleep briefly so a tight
-            // loop does not hammer the kernel queue, then retry. A
-            // non-EINTR error is unexpected (corrupt sigset, ENOSYS
-            // on a stripped kernel) and warrants a typed error.
-            match sigset.wait() {
-                Ok(_) => reap_zombies(),
-                Err(nix::errno::Errno::EINTR) => {
-                    record_io_error();
-                    let _retry = jackin_telemetry::record_retry_scheduled();
-                }
-                Err(_error) => {
-                    record_io_error();
-                    let _retry = jackin_telemetry::record_retry_scheduled();
-                    #[expect(
-                        clippy::disallowed_methods,
-                        reason = "zombie reaper owns its OS thread and is not the multiplexer render thread"
-                    )]
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
+            reap_zombies();
+            let (ready, changed) = reaper_wake();
+            let mut ready = ready
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !*ready {
+                // Periodic sweeps also cover orphan exits whose SIGCHLD was
+                // delivered to an earlier runtime/telemetry thread. The reaper
+                // owns this OS thread; blocking never stalls a runtime worker.
+                ready = changed
+                    .wait_timeout(ready, std::time::Duration::from_millis(100))
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .0;
             }
+            *ready = false;
         }
     });
-    if reaper.is_ok() {
+    if let Ok(thread) = reaper {
+        let _already_installed = REAPER_THREAD.set(thread);
+        child_ownership::install_reaper_wakeup(wake_reaper);
+        wake_reaper();
         jackin_telemetry::stream::complete_success(open);
     } else {
         record_io_error();
@@ -134,65 +70,75 @@ pub fn install_sigchld_reaper() {
     }
 }
 
+fn wake_reaper() {
+    let (ready, changed) = reaper_wake();
+    *ready
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
+    changed.notify_one();
+}
+
 pub(crate) fn reap_zombies() {
-    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    #[cfg(target_os = "linux")]
     {
-        reap_zombies_linux();
+        child_ownership::coordinate(reap_zombies_linux);
     }
-    #[cfg(not(all(target_os = "linux", not(target_env = "uclibc"))))]
+    #[cfg(not(target_os = "linux"))]
     {
-        reap_zombies_unfiltered();
+        child_ownership::coordinate(|registry| {
+            // Platforms without Linux child enumeration cannot inspect
+            // all unowned PIDs. Defer broad reaping while owners exist.
+            if registry.is_empty() {
+                reap_zombies_unfiltered();
+            }
+        });
     }
 }
 
-#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
-fn reap_zombies_linux() {
-    let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
-    // WNOWAIT leaves a peeked child waitable, so waitid(Id::All) keeps
-    // returning the same managed pid head-of-queue. Track skipped pids
-    // and break only when the kernel re-presents one we already saw —
-    // that means every remaining zombie is managed and orphans behind
-    // them (if any) cannot be reached via Id::All peek.
-    // Lazy: most SIGCHLD wakes find no zombies (ECHILD on the first
-    // waitid). Skipping the HashSet allocation in that path keeps the
-    // per-signal cost flat.
-    let mut skipped: Option<HashSet<i32>> = None;
-    loop {
-        match waitid(Id::All, flags) {
-            Ok(WaitStatus::StillAlive) | Err(nix::errno::Errno::ECHILD) => break,
-            Ok(status) => {
-                let Some(pid) = status.pid() else {
-                    break;
-                };
-                if is_managed_child(pid) {
-                    let set = skipped.get_or_insert_with(HashSet::new);
-                    if !set.insert(pid.as_raw()) {
-                        break;
-                    }
-                    continue;
-                }
-                match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
-                    Ok(WaitStatus::StillAlive) => break,
-                    Ok(_) => {}
-                    Err(nix::errno::Errno::ECHILD) => break,
-                    Err(_error) => {
-                        record_io_error();
-                        break;
-                    }
-                }
-            }
-            // ECHILD already matched above. Any other errno indicates a
-            // kernel/libc bug (EINVAL, EFAULT) we cannot recover from —
-            // export a typed error, then break to avoid spinning.
+#[cfg(target_os = "linux")]
+fn reap_zombies_linux(registry: &mut child_ownership::ChildRegistry) {
+    // Enumerate every thread's direct/adopted children instead of peeking
+    // P_ALL: a registered zombie at its head can otherwise hide unrelated
+    // orphans indefinitely while descendants keep its owner's pipes open.
+    let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
+        record_io_error();
+        return;
+    };
+    for task in tasks {
+        let Ok(task) = task else {
+            record_io_error();
+            continue;
+        };
+        let children = match std::fs::read_to_string(task.path().join("children")) {
+            Ok(children) => children,
+            // A worker can exit between the directory listing and read.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(_error) => {
                 record_io_error();
-                break;
+                continue;
+            }
+        };
+        for child in children.split_whitespace() {
+            let Ok(pid) = child.parse::<u32>() else {
+                record_io_error();
+                continue;
+            };
+            if registry.contains(pid) {
+                continue;
+            }
+            let Ok(pid) = i32::try_from(pid) else {
+                record_io_error();
+                continue;
+            };
+            match waitpid(Pid::from_raw(pid), Some(WaitPidFlag::WNOHANG)) {
+                Ok(_) | Err(nix::errno::Errno::ECHILD) => {}
+                Err(_error) => record_io_error(),
             }
         }
     }
 }
 
-#[cfg(not(all(target_os = "linux", not(target_env = "uclibc"))))]
+#[cfg(not(target_os = "linux"))]
 fn reap_zombies_unfiltered() {
     loop {
         match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
@@ -210,10 +156,6 @@ fn reap_zombies_unfiltered() {
 fn record_io_error() {
     let _error =
         jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
-}
-
-fn record_panic_error() {
-    let _error = jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::Panic);
 }
 
 #[cfg(test)]

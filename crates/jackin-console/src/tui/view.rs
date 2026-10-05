@@ -390,7 +390,8 @@ pub fn render_header(frame: &mut Frame<'_>, area: Rect, title: &str) {
 }
 
 pub fn render_modal_backdrop(frame: &mut Frame<'_>, area: Rect) {
-    frame.render_widget(termrock::widgets::Backdrop::default(), area);
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.render_widget(termrock::widgets::Backdrop::reset(), area);
 }
 
 #[must_use]

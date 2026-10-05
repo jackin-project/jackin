@@ -3,7 +3,7 @@
 
 import XCTest
 
-/// Platform-lane contract: both SDK lanes are recorded in the manifest and
+/// Platform-lane contract: shipping identity and forward-lane state are recorded in the manifest and
 /// the native README, `UIDesignRequiresCompatibility` never ships, and any
 /// post-26.0 symbol the component map lists is reachable only behind a guard.
 final class PlatformLaneTests: XCTestCase {
@@ -30,16 +30,23 @@ final class PlatformLaneTests: XCTestCase {
                 "\(name) must record the macOS 26.0 minimum deployment target"
             )
             XCTAssertTrue(
-                content.contains("Xcode 26.6"),
-                "\(name) must record the shipping lane (Xcode 26.6)"
+                content.contains("Xcode 27.0") && content.contains("27A266a"),
+                "\(name) must record the stable shipping lane (Xcode 27.0 build 27A266a)"
             )
             XCTAssertTrue(
-                content.contains("macOS 26.5 SDK"),
+                content.contains("macOS 27.0 SDK") && content.contains("26A425"),
                 "\(name) must record the shipping SDK"
             )
             XCTAssertTrue(
-                content.contains("Xcode 27") && content.contains("nonblocking"),
-                "\(name) must record the nonblocking Xcode 27 forward-validation lane"
+                content.contains("Swift 6.4")
+                    && content.contains("swiftlang-6.4.0.34.1")
+                    && content.contains("clang-2100.3.34.1"),
+                "\(name) must record the exact shipping Swift/compiler builds"
+            )
+            XCTAssertTrue(
+                content.lowercased().contains("forward-validation lane:")
+                    && content.contains("unimplemented") && content.contains("nonblocking"),
+                "\(name) must record the unimplemented nonblocking forward-validation lane"
             )
         }
     }

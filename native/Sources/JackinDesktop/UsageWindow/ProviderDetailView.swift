@@ -144,9 +144,7 @@ public struct ProviderDetailView: View {
     private var accountSelection: Binding<String> {
         Binding(
             get: {
-                content.accounts.first(where: \.selected)?.accountKey
-                    ?? content.accounts.first?.accountKey
-                    ?? ""
+                content.headAccount?.accountKey ?? ""
             },
             set: { onSelectAccount(content.surfaceId, $0) }
         )

@@ -24,7 +24,13 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
         uid: 2_001,
         gid: 2_001,
     };
-    let authorization = UsageRelayAuthorization::for_peer(forced_peer, shared.clone());
+    let mut authorization = UsageRelayAuthorization::for_peer(forced_peer, shared.clone());
+    authorization
+        .by_instance
+        .insert("session-b".to_owned(), shared.clone());
+    authorization
+        .by_peer
+        .insert((2_002, 2_002), ("session-b".to_owned(), shared.clone()));
     let proxy = tokio::spawn(async move {
         run_at_with_peer(
             &proxy_socket,
@@ -37,27 +43,63 @@ async fn broker_client_stdio_proxy_multiplexes_out_of_order_responses() {
         .await
     });
     wait_for_socket(&socket).await;
+    let mut requests = BufReader::new(host_request_reader);
+    let denied = send_request(
+        socket.clone(),
+        UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-b".to_owned(),
+            capability: shared.clone(),
+        },
+    )
+    .await;
+    assert!(matches!(
+        denied,
+        UsageBrokerResponse::Error { error }
+            if error.kind == UsageCoordinationErrorKind::Unauthorized
+    ));
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(50),
+            read_frame::<_, UsageRelayTunnelMessage>(&mut requests),
+        )
+        .await
+        .is_err()
+    );
 
     let first = tokio::spawn(send_request(
         socket.clone(),
         UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
             capability: shared.clone(),
         },
     ));
     let second = tokio::spawn(send_request(
         socket,
         UsageBrokerOperation::RefreshForCapability {
+            instance_id: "session-a".to_owned(),
             capability: shared,
             observed_generation: 0,
             force: true,
         },
     ));
-    let mut requests = BufReader::new(host_request_reader);
     let mut frames = Vec::new();
     for _ in 0..2 {
         let mut line = String::new();
         requests.read_line(&mut line).await.unwrap();
-        frames.push(serde_json::from_str::<UsageRelayTunnelRequest>(line.trim()).unwrap());
+        let UsageRelayTunnelMessage::Request { request } =
+            serde_json::from_str(line.trim()).unwrap()
+        else {
+            panic!("unexpected cancellation");
+        };
+        assert_eq!(request.instance_id.as_deref(), Some("session-a"));
+        match &request.request.operation {
+            UsageBrokerOperation::CurrentForCapability { instance_id, .. }
+            | UsageBrokerOperation::RefreshForCapability { instance_id, .. } => {
+                assert_eq!(instance_id, "session-a");
+            }
+            operation => panic!("unexpected operation: {operation:?}"),
+        }
+        frames.push(request);
     }
     frames.reverse();
     for frame in frames {
@@ -131,6 +173,7 @@ fn usage_relay_binds_session_peer_to_its_capability() {
         supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
         Some(peer_a),
         &UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
             capability: account_a,
         },
     ));
@@ -138,6 +181,7 @@ fn usage_relay_binds_session_peer_to_its_capability() {
         supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
         Some(peer_a),
         &UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
             capability: account_b.clone(),
         },
     ));
@@ -145,6 +189,7 @@ fn usage_relay_binds_session_peer_to_its_capability() {
         supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
         Some(peer_b),
         &UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-b".to_owned(),
             capability: account_b,
         },
     ));
@@ -152,6 +197,7 @@ fn usage_relay_binds_session_peer_to_its_capability() {
         supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
         None,
         &UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
             capability: capability("account-a"),
         },
     ));
@@ -174,6 +220,7 @@ fn usage_relay_rejects_agent_root_but_accepts_capsule_supervisor() {
     };
     let authorization = UsageRelayAuthorization::from_config(&config).unwrap();
     let operation = UsageBrokerOperation::CurrentForCapability {
+        instance_id: "session-a".to_owned(),
         capability: account,
     };
 
@@ -240,6 +287,8 @@ fn usage_relay_rejects_host_only_catalog_reconciliation() {
         catalog_revision: "catalog-2".to_owned(),
         entries: vec![UsageCatalogEntry {
             capability: account,
+            canonical_identity: None,
+            provenance_count: 0,
             revision: "credential-2".to_owned(),
         }],
     };
@@ -383,6 +432,7 @@ fn parse_supervisor_pid_defaults_and_rejects_invalid_values() {
 fn usage_relay_supervisor_pid_parameter_selects_the_root_bypass() {
     let (authorization, account) = single_session_authorization(2_001, 2_001, "account-a");
     let operation = UsageBrokerOperation::CurrentForCapability {
+        instance_id: "session-a".to_owned(),
         capability: account,
     };
     let apple_supervisor = Some(PeerIdentity {
@@ -436,13 +486,18 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
     let client = tokio::spawn(send_request(
         socket,
         UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
             capability: account_a.clone(),
         },
     ));
     let mut requests = BufReader::new(host_request_reader);
     let mut line = String::new();
     requests.read_line(&mut line).await.unwrap();
-    let frame = serde_json::from_str::<UsageRelayTunnelRequest>(line.trim()).unwrap();
+    let UsageRelayTunnelMessage::Request { request: frame } =
+        serde_json::from_str(line.trim()).unwrap()
+    else {
+        panic!("unexpected cancellation");
+    };
     let response = UsageRelayTunnelResponse {
         request_id: frame.request_id,
         response: UsageBrokerResponse::Error {
@@ -469,6 +524,7 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
             gid: 0,
         },
         UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
             capability: account_a.clone(),
         },
     )
@@ -485,6 +541,7 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
         supervisor(supervisor_pid),
         root_peer(supervisor_pid, Some(SUPERVISOR_START_TIME + 1)),
         UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
             capability: account_a.clone(),
         },
     )
@@ -505,6 +562,7 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
             gid: 2_001,
         },
         UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
             capability: capability("account-b"),
         },
     )
@@ -586,6 +644,7 @@ fn root_peer(pid: u32, start_time: Option<u64>) -> PeerIdentity {
 fn supervisor_binding_rejects_pid_reuse_with_different_start_time() {
     let (authorization, account) = single_session_authorization(2_001, 2_001, "account-a");
     let operation = UsageBrokerOperation::CurrentForCapability {
+        instance_id: "session-a".to_owned(),
         capability: account,
     };
     let binding = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
@@ -610,6 +669,7 @@ fn supervisor_binding_rejects_pid_reuse_with_different_start_time() {
 fn supervisor_binding_fails_closed_when_start_time_unknown() {
     let (authorization, account) = single_session_authorization(2_001, 2_001, "account-a");
     let operation = UsageBrokerOperation::CurrentForCapability {
+        instance_id: "session-a".to_owned(),
         capability: account,
     };
 
@@ -677,4 +737,544 @@ fn parse_proc_stat_start_time_skips_comm_with_parens_and_spaces() {
     let stat = format!("42 (my ) proc) {}", fields.join(" "));
     assert_eq!(parse_proc_stat_start_time(&stat), Some(987_654));
     assert_eq!(parse_proc_stat_start_time("bogus"), None);
+}
+
+#[test]
+fn workspace_inventory_requires_exact_supervisor_even_without_launch_instances() {
+    let authorization = UsageRelayAuthorization::from_config(&CapsuleConfig::default()).unwrap();
+    let root = PeerIdentity {
+        pid: Some(DEFAULT_CAPSULE_SUPERVISOR_PID),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 0,
+        gid: 0,
+    };
+    let operation = UsageBrokerOperation::CurrentProjectionForSurface;
+    let supervisor = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
+    assert!(authorization.authorizes(supervisor, Some(root), &operation));
+    assert!(!authorization.authorizes(
+        supervisor,
+        Some(PeerIdentity {
+            uid: 2_001,
+            gid: 2_001,
+            ..root
+        }),
+        &operation
+    ));
+    assert!(!authorization.authorizes(
+        supervisor,
+        Some(PeerIdentity {
+            start_time: Some(SUPERVISOR_START_TIME + 1),
+            ..root
+        }),
+        &operation
+    ));
+    assert!(!authorization.authorizes(supervisor, None, &operation));
+    assert!(!authorization.authorizes(
+        supervisor,
+        Some(root),
+        &UsageBrokerOperation::RequestRefreshForSurface {
+            force: true,
+            observed_projection_id: None
+        }
+    ));
+}
+
+#[tokio::test]
+async fn local_deadline_covers_partial_frame_without_tunnel_dispatch() {
+    let (mut client, server) = UnixStream::pair().unwrap();
+    let (requests, mut request_rx) = mpsc::channel(TUNNEL_CAPACITY);
+    let pending: Pending = Arc::new(Mutex::new(BTreeMap::new()));
+    client.write_all(b"{\"operation\":").await.unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        handle_local(
+            server,
+            LocalRequestOwner {
+                request_id: 1,
+                requests,
+                pending: Arc::clone(&pending),
+                supervisor: supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
+                authorization: Arc::new(UsageRelayAuthorization::default()),
+                peer: None,
+                deadline: Instant::now() + Duration::from_millis(20),
+                cancellations: mpsc::channel(TUNNEL_CAPACITY).0,
+                failed_cancellation: mpsc::channel(1).0,
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(pending.lock().await.is_empty());
+    assert!(request_rx.recv().await.is_none());
+    let mut byte = [0];
+    assert_eq!(client.read(&mut byte).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn local_deadline_covers_saturated_queue_and_removes_pending() {
+    let (mut client, server) = UnixStream::pair().unwrap();
+    let (requests, mut request_rx) = mpsc::channel(1);
+    let pending: Pending = Arc::new(Mutex::new(BTreeMap::new()));
+    let peer = PeerIdentity {
+        pid: Some(9),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let account = capability("shared");
+    let request = UsageBrokerRequest {
+        protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+        build_id: env!("CARGO_PKG_VERSION").to_owned(),
+        operation: UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
+            capability: account.clone(),
+        },
+        launch_credential_scope: None,
+    };
+    requests
+        .send((
+            Instant::now() + RESPONSE_TIMEOUT,
+            UsageRelayTunnelRequest {
+                instance_id: Some("session-a".to_owned()),
+                expires_at_unix_ms: u64::MAX,
+                request_id: 0,
+                request: request.clone(),
+            },
+        ))
+        .await
+        .unwrap();
+    write_frame(&mut client, &request).await.unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        handle_local(
+            server,
+            LocalRequestOwner {
+                request_id: 1,
+                requests,
+                pending: Arc::clone(&pending),
+                supervisor: supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
+                authorization: Arc::new(UsageRelayAuthorization::for_peer(peer, account)),
+                peer: Some(peer),
+                deadline: Instant::now() + Duration::from_millis(20),
+                cancellations: mpsc::channel(TUNNEL_CAPACITY).0,
+                failed_cancellation: mpsc::channel(1).0,
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(pending.lock().await.is_empty());
+    assert_eq!(request_rx.recv().await.unwrap().1.request_id, 0);
+    assert!(request_rx.recv().await.is_none());
+}
+
+#[tokio::test]
+async fn proxy_admission_bounds_partial_clients_and_owner_drop_closes_them() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("usage.sock");
+    let (_host_response_writer, proxy_input) = tokio::io::duplex(64 * 1024);
+    let (proxy_output, _host_request_reader) = tokio::io::duplex(64 * 1024);
+    let proxy_socket = socket.clone();
+    let proxy = tokio::spawn(async move {
+        run_at_with_peer(
+            &proxy_socket,
+            supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
+            UsageRelayAuthorization::default(),
+            None,
+            proxy_input,
+            proxy_output,
+        )
+        .await
+    });
+    wait_for_socket(&socket).await;
+    let mut clients = Vec::new();
+    for _ in 0..TUNNEL_CAPACITY {
+        clients.push(UnixStream::connect(&socket).await.unwrap());
+    }
+    let mut overflow = UnixStream::connect(&socket).await.unwrap();
+    let mut byte = [0];
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), overflow.read(&mut byte))
+            .await
+            .unwrap()
+            .unwrap(),
+        0
+    );
+    proxy.abort();
+    drop(proxy.await);
+    for mut client in clients {
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), client.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn guest_deadline_emits_cancel_for_already_forwarded_request_on_live_tunnel() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("usage.sock");
+    let (_host_response_writer, proxy_input) = tokio::io::duplex(64 * 1024);
+    let (proxy_output, host_request_reader) = tokio::io::duplex(64 * 1024);
+    let proxy_socket = socket.clone();
+    let peer = PeerIdentity {
+        pid: Some(9),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let account = capability("pending");
+    let authorization = UsageRelayAuthorization::for_peer(peer, account.clone());
+    let proxy = tokio::spawn(async move {
+        run_at_with_peer(
+            &proxy_socket,
+            supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
+            authorization,
+            Some(peer),
+            proxy_input,
+            proxy_output,
+        )
+        .await
+    });
+    wait_for_socket(&socket).await;
+    let mut client = UnixStream::connect(&socket).await.unwrap();
+    write_frame(
+        &mut client,
+        &UsageBrokerRequest {
+            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+            build_id: env!("CARGO_PKG_VERSION").to_owned(),
+            operation: UsageBrokerOperation::RefreshForCapability {
+                instance_id: "session-a".to_owned(),
+                capability: account,
+                observed_generation: 0,
+                force: true,
+            },
+            launch_credential_scope: None,
+        },
+    )
+    .await
+    .unwrap();
+    let mut tunnel = BufReader::new(host_request_reader);
+    let UsageRelayTunnelMessage::Request { request } = read_frame(&mut tunnel).await.unwrap()
+    else {
+        panic!("expected forwarded request");
+    };
+    tokio::time::advance(RESPONSE_TIMEOUT).await;
+    let cancellation: UsageRelayTunnelMessage = read_frame(&mut tunnel).await.unwrap();
+    assert_eq!(
+        cancellation,
+        UsageRelayTunnelMessage::Cancel {
+            request_id: request.request_id
+        }
+    );
+    assert!(
+        !proxy.is_finished(),
+        "request expiry must preserve a writable tunnel"
+    );
+    proxy.abort();
+    drop(proxy.await);
+}
+
+#[tokio::test]
+async fn forwarded_local_full_close_cancels_without_waiting_for_deadline() {
+    let (mut client, server) = UnixStream::pair().unwrap();
+    let (requests, mut request_rx) = mpsc::channel(TUNNEL_CAPACITY);
+    let (cancellations, mut cancellation_rx) = mpsc::channel(TUNNEL_CAPACITY);
+    let peer = PeerIdentity {
+        pid: Some(9),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let account = capability("pending");
+    let pending: Pending = Arc::new(Mutex::new(BTreeMap::new()));
+    let handler = tokio::spawn(handle_local(
+        server,
+        LocalRequestOwner {
+            request_id: 77,
+            requests,
+            pending: Arc::clone(&pending),
+            supervisor: supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
+            authorization: Arc::new(UsageRelayAuthorization::for_peer(peer, account.clone())),
+            peer: Some(peer),
+            deadline: Instant::now() + RESPONSE_TIMEOUT,
+            cancellations,
+            failed_cancellation: mpsc::channel(1).0,
+        },
+    ));
+    write_frame(
+        &mut client,
+        &UsageBrokerRequest {
+            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+            build_id: env!("CARGO_PKG_VERSION").to_owned(),
+            operation: UsageBrokerOperation::CurrentForCapability {
+                instance_id: "session-a".to_owned(),
+                capability: account,
+            },
+            launch_credential_scope: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(request_rx.recv().await.unwrap().1.request_id, 77);
+    drop(client);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(1), cancellation_rx.recv())
+            .await
+            .unwrap(),
+        Some(77)
+    );
+    handler.await.unwrap();
+    assert!(pending.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn protocol_write_half_close_keeps_request_and_response_writer_live() {
+    let (mut client, server) = UnixStream::pair().unwrap();
+    let (requests, mut request_rx) = mpsc::channel(TUNNEL_CAPACITY);
+    let (cancellations, mut cancellation_rx) = mpsc::channel(TUNNEL_CAPACITY);
+    let peer = PeerIdentity {
+        pid: Some(9),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let account = capability("pending");
+    let pending: Pending = Arc::new(Mutex::new(BTreeMap::new()));
+    let handler = tokio::spawn(handle_local(
+        server,
+        LocalRequestOwner {
+            request_id: 78,
+            requests,
+            pending: Arc::clone(&pending),
+            supervisor: supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
+            authorization: Arc::new(UsageRelayAuthorization::for_peer(peer, account.clone())),
+            peer: Some(peer),
+            deadline: Instant::now() + RESPONSE_TIMEOUT,
+            cancellations,
+            failed_cancellation: mpsc::channel(1).0,
+        },
+    ));
+    write_frame(
+        &mut client,
+        &UsageBrokerRequest {
+            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+            build_id: env!("CARGO_PKG_VERSION").to_owned(),
+            operation: UsageBrokerOperation::CurrentForCapability {
+                instance_id: "session-a".to_owned(),
+                capability: account,
+            },
+            launch_credential_scope: None,
+        },
+    )
+    .await
+    .unwrap();
+    client.shutdown().await.unwrap();
+    request_rx.recv().await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), cancellation_rx.recv())
+            .await
+            .is_err()
+    );
+    assert!(!handler.is_finished());
+    let expected = unavailable_response();
+    pending
+        .lock()
+        .await
+        .remove(&78)
+        .unwrap()
+        .send(expected.clone())
+        .unwrap();
+    let response: UsageBrokerResponse = tokio::time::timeout(
+        Duration::from_secs(1),
+        read_frame(&mut BufReader::new(client)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(response, expected);
+    handler.await.unwrap();
+    assert!(cancellation_rx.recv().await.is_none());
+}
+
+#[test]
+fn usage_relay_checks_peer_instance_and_supervisor_selector() {
+    let (authorization, account) = single_session_authorization(2_001, 2_001, "account-a");
+    let session_peer = Some(PeerIdentity {
+        pid: Some(9),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 2_001,
+        gid: 2_001,
+    });
+    let supervisor_peer = Some(PeerIdentity {
+        pid: Some(1),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 0,
+        gid: 0,
+    });
+    let supervisor = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
+    for mut operation in [
+        UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-b".to_owned(),
+            capability: account.clone(),
+        },
+        UsageBrokerOperation::RefreshForCapability {
+            instance_id: "session-b".to_owned(),
+            capability: account.clone(),
+            observed_generation: 0,
+            force: true,
+        },
+        UsageBrokerOperation::JoinForCapability {
+            instance_id: "session-b".to_owned(),
+            capability: account.clone(),
+            generation: 1,
+            timeout_ms: 100,
+        },
+    ] {
+        assert!(!authorization.authorizes(supervisor, supervisor_peer, &operation));
+        assert_eq!(
+            authorization.stamp_operation(supervisor, session_peer, &mut operation),
+            None,
+        );
+        match &mut operation {
+            UsageBrokerOperation::CurrentForCapability { instance_id, .. }
+            | UsageBrokerOperation::RefreshForCapability { instance_id, .. }
+            | UsageBrokerOperation::JoinForCapability { instance_id, .. } => {
+                assert_eq!(instance_id, "session-b");
+                instance_id.clear();
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            authorization.stamp_operation(supervisor, session_peer, &mut operation),
+            None,
+        );
+        match &mut operation {
+            UsageBrokerOperation::CurrentForCapability { instance_id, .. }
+            | UsageBrokerOperation::RefreshForCapability { instance_id, .. }
+            | UsageBrokerOperation::JoinForCapability { instance_id, .. } => {
+                *instance_id = "session-a".to_owned();
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            authorization.stamp_operation(supervisor, session_peer, &mut operation),
+            Some(Some("session-a".to_owned())),
+        );
+        match &operation {
+            UsageBrokerOperation::CurrentForCapability { instance_id, .. }
+            | UsageBrokerOperation::RefreshForCapability { instance_id, .. }
+            | UsageBrokerOperation::JoinForCapability { instance_id, .. } => {
+                assert_eq!(instance_id, "session-a");
+            }
+            _ => unreachable!(),
+        }
+        assert!(authorization.authorizes(supervisor, supervisor_peer, &operation));
+    }
+    for operation in [
+        UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-b".to_owned(),
+            capability: account.clone(),
+        },
+        UsageBrokerOperation::CurrentForCapability {
+            instance_id: "session-a".to_owned(),
+            capability: capability("wrong-account"),
+        },
+        UsageBrokerOperation::Current {
+            capability: account.clone(),
+        },
+        UsageBrokerOperation::Refresh {
+            capability: account.clone(),
+            observed_generation: 0,
+            force: true,
+        },
+        UsageBrokerOperation::Join {
+            capability: account,
+            generation: 1,
+            timeout_ms: 100,
+        },
+    ] {
+        assert!(!authorization.authorizes(supervisor, supervisor_peer, &operation));
+    }
+    assert_eq!(
+        authorization.stamp_operation(
+            supervisor,
+            session_peer,
+            &mut UsageBrokerOperation::Current {
+                capability: capability("account-a"),
+            },
+        ),
+        Some(Some("session-a".to_owned())),
+    );
+    assert_eq!(
+        authorization.stamp_operation(
+            supervisor,
+            supervisor_peer,
+            &mut UsageBrokerOperation::CurrentProjectionForSurface,
+        ),
+        Some(None),
+    );
+    assert!(!authorization.authorizes(
+        supervisor,
+        session_peer,
+        &UsageBrokerOperation::CurrentProjectionForSurface,
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn admitted_guest_request_first_polled_after_expiry_never_queues() {
+    let (mut client, server) = UnixStream::pair().unwrap();
+    let peer = PeerIdentity {
+        pid: Some(9),
+        start_time: Some(SUPERVISOR_START_TIME),
+        uid: 2_001,
+        gid: 2_001,
+    };
+    let account = capability("expired-admitted");
+    write_frame(
+        &mut client,
+        &UsageBrokerRequest {
+            protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
+            build_id: env!("CARGO_PKG_VERSION").to_owned(),
+            operation: UsageBrokerOperation::RefreshForCapability {
+                capability: account.clone(),
+                instance_id: "session-a".to_owned(),
+                observed_generation: 0,
+                force: true,
+            },
+            launch_credential_scope: None,
+        },
+    )
+    .await
+    .unwrap();
+    server.readable().await.unwrap();
+    let (requests, mut request_rx) = mpsc::channel(TUNNEL_CAPACITY);
+    let (cancellations, mut cancellation_rx) = mpsc::channel(TUNNEL_CAPACITY);
+    let pending: Pending = Arc::new(Mutex::new(BTreeMap::new()));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let call = handle_local(
+        server,
+        LocalRequestOwner {
+            request_id: 90,
+            requests,
+            pending: Arc::clone(&pending),
+            supervisor: supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID),
+            authorization: Arc::new(UsageRelayAuthorization::for_peer(peer, account)),
+            peer: Some(peer),
+            deadline,
+            cancellations,
+            failed_cancellation: mpsc::channel(1).0,
+        },
+    );
+    tokio::time::advance(Duration::from_secs(2)).await;
+    call.await;
+    assert!(
+        request_rx.recv().await.is_none(),
+        "expired guest work must never reach tunnel queue"
+    );
+    assert!(pending.lock().await.is_empty());
+    assert_eq!(cancellation_rx.recv().await, Some(90));
 }

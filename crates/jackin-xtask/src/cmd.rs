@@ -36,14 +36,28 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
 /// that stream leaves GitHub Actions silent until the build exits, which makes
 /// an otherwise healthy image build indistinguishable from a stalled job.
 pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
+    run_streaming_request(cmd, None)
+}
+
+/// Run a streaming command with a bounded wall-clock wait.
+pub(crate) fn run_streaming_timeout(cmd: &mut Command, timeout: Duration) -> Result<()> {
+    run_streaming_request(cmd, Some(timeout))
+}
+
+fn run_streaming_request(cmd: &mut Command, timeout: Option<Duration>) -> Result<()> {
     let display = display_command(cmd);
     let mut request = exec_request(cmd);
     request.stdout_mode = jackin_process::StdioMode::Inherit;
     request.stderr_mode = jackin_process::StdioMode::Inherit;
+    if let Some(timeout) = timeout {
+        request = request.timeout(timeout);
+    }
     let result =
         jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
     if result.success {
         Ok(())
+    } else if result.timed_out {
+        Err(anyhow!("{display} timed out"))
     } else {
         Err(anyhow!("{display} failed with code {:?}", result.code))
     }
@@ -178,6 +192,16 @@ pub(crate) fn command(program: impl AsRef<OsStr>) -> Command {
 pub(crate) fn output_raw(cmd: &mut Command) -> Result<jackin_process::ExecResult> {
     let display = display_command(cmd);
     jackin_process::exec_sync(&exec_request(cmd)).with_context(|| format!("running {display}"))
+}
+
+/// Capture both streams while preserving a bounded preflight deadline.
+pub(crate) fn output_raw_timeout(
+    cmd: &mut Command,
+    timeout: Duration,
+) -> Result<jackin_process::ExecResult> {
+    let display = display_command(cmd);
+    jackin_process::exec_sync(&exec_request(cmd).timeout(timeout))
+        .with_context(|| format!("running {display}"))
 }
 
 pub(crate) fn display_command(cmd: &Command) -> String {

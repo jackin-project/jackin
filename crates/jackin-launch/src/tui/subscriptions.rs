@@ -4,7 +4,7 @@
 )]
 //! Launch cockpit input handling.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
@@ -16,8 +16,8 @@ use termrock::scroll::ScrollAxes;
 use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::build_log_dialog::{
-    build_log_scrollbar_top_offset_for_row_cached, refresh_build_log_layout, viewport_height,
-    viewport_width,
+    build_log_scrollbar_top_offset_at_cached, build_log_scrollbar_top_offset_for_row_cached,
+    refresh_build_log_layout, viewport_height, viewport_width,
 };
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state,
@@ -38,6 +38,12 @@ const BUILD_LOG_SCROLL_STEP: usize = 3;
 const BUILD_LOG_PAGE_STEP: usize = 10;
 
 pub type SharedView = Arc<Mutex<LaunchView>>;
+
+// Publishers, render ticks and input must recover together: recovery only in
+// the acknowledgement waiter leaves it waiting for producers that skip poison.
+pub(crate) fn lock_view(view: &SharedView) -> MutexGuard<'_, LaunchView> {
+    view.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// What the render task should do after draining cockpit input this tick.
 #[derive(Debug, PartialEq, Eq)]
@@ -236,8 +242,8 @@ fn apply_failure_body_key_scroll(
     clamp_failure_scroll(view, ctx);
 }
 
-fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
-    refresh_build_log_layout(view, area, false);
+fn update_build_log_scroll(view: &mut LaunchView, area: Rect, debug_mode: bool, delta: isize) {
+    refresh_build_log_layout(view, area, debug_mode, false);
     let _dirty = update_launch_view(
         view,
         LaunchMessage::BuildLogScrolled {
@@ -247,8 +253,8 @@ fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
     );
 }
 
-fn build_log_scroll_axes(view: &LaunchView, area: Rect) -> ScrollAxes {
-    let box_area = crate::tui::components::build_log_dialog::build_log_box_area(area);
+fn build_log_scroll_axes(view: &LaunchView, area: Rect, debug_mode: bool) -> ScrollAxes {
+    let box_area = crate::tui::components::build_log_dialog::build_log_box_area(area, debug_mode);
     let viewport_w = viewport_width(box_area);
     let viewport_h = viewport_height(box_area);
     ScrollAxes {
@@ -262,27 +268,34 @@ fn build_log_scroll_axes(view: &LaunchView, area: Rect) -> ScrollAxes {
 fn update_build_log_mouse_scroll(
     view: &mut LaunchView,
     area: Rect,
+    debug_mode: bool,
     kind: MouseEventKind,
     modifiers: KeyModifiers,
 ) -> bool {
-    refresh_build_log_layout(view, area, false);
+    refresh_build_log_layout(view, area, debug_mode, false);
     let Some(delta) = termrock::scroll::mouse_scroll_delta(
         kind.into(),
         modifiers.into(),
-        build_log_scroll_axes(view, area),
+        build_log_scroll_axes(view, area, debug_mode),
     ) else {
         return false;
     };
     update_build_log_scroll(
         view,
         area,
+        debug_mode,
         -(isize::from(delta.amount)) * isize::try_from(BUILD_LOG_SCROLL_STEP).unwrap_or(1),
     );
     true
 }
 
-fn update_build_log_scroll_from_top_offset(view: &mut LaunchView, area: Rect, top_offset: usize) {
-    refresh_build_log_layout(view, area, false);
+fn update_build_log_scroll_from_top_offset(
+    view: &mut LaunchView,
+    area: Rect,
+    debug_mode: bool,
+    top_offset: usize,
+) {
+    refresh_build_log_layout(view, area, debug_mode, false);
     let _dirty = update_launch_view(
         view,
         LaunchMessage::BuildLogScrollSetFromTop {
@@ -403,12 +416,21 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.terminal.set_pointer_shape(false);
         }
     } else if v.build_log_open {
-        refresh_build_log_layout(v, ctx.area, false);
-        if let Some(top_offset) =
-            build_log_scrollbar_top_offset_for_row_cached(v, ctx.area, col, row)
-        {
+        refresh_build_log_layout(v, ctx.area, ctx.terminal.is_debug_mode(), false);
+        if let Some(top_offset) = build_log_scrollbar_top_offset_at_cached(
+            v,
+            ctx.area,
+            ctx.terminal.is_debug_mode(),
+            col,
+            row,
+        ) {
             let _dirty = update_launch_view(v, LaunchMessage::BuildLogScrollDragChanged(true));
-            update_build_log_scroll_from_top_offset(v, ctx.area, top_offset);
+            update_build_log_scroll_from_top_offset(
+                v,
+                ctx.area,
+                ctx.terminal.is_debug_mode(),
+                top_offset,
+            );
         }
         // Plain body clicks are swallowed while the build log owns the overlay.
         // Close stays keyboard-only (`Esc`); scrollbar hits remain interactive.
@@ -425,6 +447,18 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
     } else if !v.build_log_lines.is_empty() && hit_activity(v, col, row) {
         let _dirty = update_launch_view(v, LaunchMessage::BuildLogOpened);
         ctx.terminal.set_pointer_shape(false);
+    }
+}
+
+fn handle_build_log_mouse_drag(v: &mut LaunchView, area: Rect, debug_mode: bool, row: u16) {
+    if !(v.build_log_open && v.build_log_scroll_dragging) {
+        return;
+    }
+    refresh_build_log_layout(v, area, debug_mode, false);
+    if let Some(top_offset) =
+        build_log_scrollbar_top_offset_for_row_cached(v, area, debug_mode, row)
+    {
+        update_build_log_scroll_from_top_offset(v, area, debug_mode, top_offset);
     }
 }
 
@@ -565,7 +599,7 @@ pub fn handle_cockpit_input(
     run_id: &str,
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
-    _cancel_token: &CancellationToken,
+    cancel_token: &CancellationToken,
     input: &LaunchInput,
 ) -> CockpitOutcome {
     let area = current_terminal_area();
@@ -575,10 +609,16 @@ pub fn handle_cockpit_input(
         terminal,
         jackin_version,
     };
-    while let Some(ev) = input.try_recv() {
-        let Ok(mut v) = view.lock() else {
-            return CockpitOutcome::Continue;
+    loop {
+        let ev = match input.try_recv() {
+            Ok(Some(ev)) => ev,
+            Ok(None) => break,
+            Err(_) => {
+                cancel_token.cancel();
+                break;
+            }
         };
+        let mut v = lock_view(view);
         // Ctrl+C: immediate hard stop. The render task restores the terminal
         // and exits at once — no cleanup, no waiting on in-flight work. Checked
         // before the quit-confirm modal so it wins even while that dialog is
@@ -659,12 +699,7 @@ pub fn handle_cockpit_input(
                     MouseEventKind::Drag(MouseButton::Left)
                         if v.build_log_open && v.build_log_scroll_dragging =>
                     {
-                        refresh_build_log_layout(&mut v, area, false);
-                        if let Some(top_offset) =
-                            build_log_scrollbar_top_offset_for_row_cached(&v, area, m.column, m.row)
-                        {
-                            update_build_log_scroll_from_top_offset(&mut v, area, top_offset);
-                        }
+                        handle_build_log_mouse_drag(&mut v, area, terminal.is_debug_mode(), m.row);
                     }
                     MouseEventKind::Up(MouseButton::Left) if v.build_log_scroll_dragging => {
                         let _dirty = update_launch_view(
@@ -682,8 +717,13 @@ pub fn handle_cockpit_input(
                         apply_failure_body_wheel_scroll(&mut v, ctx, kind, m.modifiers);
                     }
                     kind if v.build_log_open => {
-                        let _consumed =
-                            update_build_log_mouse_scroll(&mut v, area, kind, m.modifiers);
+                        let _consumed = update_build_log_mouse_scroll(
+                            &mut v,
+                            area,
+                            terminal.is_debug_mode(),
+                            kind,
+                            m.modifiers,
+                        );
                     }
                     // The Debug-info dialog scrolls its own body on the wheel
                     // (both axes) via the shared handler; offsets clamp at render.
@@ -809,7 +849,8 @@ pub fn handle_cockpit_input(
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => {
                 use crate::tui::keymap::{BUILD_LOG_KEYMAP, BuildLogAction};
-                let vertical = build_log_scroll_axes(&v, area).vertical;
+                refresh_build_log_layout(&mut v, area, terminal.is_debug_mode(), false);
+                let vertical = build_log_scroll_axes(&v, area, terminal.is_debug_mode()).vertical;
                 match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(termrock::input::KeyEvent::from(k)))
                 {
                     Some(BuildLogAction::Close) => {
@@ -819,16 +860,26 @@ pub fn handle_cockpit_input(
                         }
                     }
                     Some(BuildLogAction::ScrollUp) if vertical => {
-                        update_build_log_scroll(&mut v, area, 1);
+                        update_build_log_scroll(&mut v, area, terminal.is_debug_mode(), 1);
                     }
                     Some(BuildLogAction::ScrollDown) if vertical => {
-                        update_build_log_scroll(&mut v, area, -1);
+                        update_build_log_scroll(&mut v, area, terminal.is_debug_mode(), -1);
                     }
                     Some(BuildLogAction::PageUp) if vertical => {
-                        update_build_log_scroll(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
+                        update_build_log_scroll(
+                            &mut v,
+                            area,
+                            terminal.is_debug_mode(),
+                            BUILD_LOG_PAGE_STEP as isize,
+                        );
                     }
                     Some(BuildLogAction::PageDown) if vertical => {
-                        update_build_log_scroll(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
+                        update_build_log_scroll(
+                            &mut v,
+                            area,
+                            terminal.is_debug_mode(),
+                            -(BUILD_LOG_PAGE_STEP as isize),
+                        );
                     }
                     _ => {}
                 }

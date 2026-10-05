@@ -263,3 +263,122 @@ fn default_input_rejects_incompatible_agent_without_losing_input() {
         Some(SettingsModal::AuthTextInput { .. })
     ));
 }
+
+#[test]
+fn new_multi_provider_accounts_choose_issuer_independently_of_agent() {
+    use crate::tui::auth::{AuthKind, AuthMode};
+    use jackin_config::{AccountCredential, AiProvider};
+    for (kind, agent) in [
+        (AuthKind::Omp, jackin_core::Agent::Omp),
+        (AuthKind::Hermes, jackin_core::Agent::Hermes),
+    ] {
+        let (mut auth, mut env) = state();
+        auth.selected = crate::tui::screens::settings::model::ACCOUNT_KINDS
+            .iter()
+            .position(|candidate| *candidate == kind)
+            .unwrap();
+        open_settings_auth_form(&mut auth, &env);
+        assert!(
+            matches!(auth.modal_ref(), Some(SettingsModal::AuthProviderPicker { kind: selected_kind, .. }) if *selected_kind == kind)
+        );
+        modal_key(&mut auth, &mut env, KeyCode::Esc);
+        assert!(auth.pending.is_empty());
+        assert!(!auth.has_modal());
+        open_settings_auth_form(&mut auth, &env);
+        let Some(SettingsModal::AuthProviderPicker { selected, .. }) = auth.modal_mut() else {
+            panic!("provider picker")
+        };
+        *selected = AiProvider::ALL
+            .iter()
+            .position(|p| *p == AiProvider::OpenRouter)
+            .unwrap();
+        modal_key(&mut auth, &mut env, KeyCode::Enter);
+        let Some(SettingsModal::AuthForm { state: form, .. }) = auth.modal_mut() else {
+            panic!("account form")
+        };
+        assert_eq!(form.kind, kind);
+        assert_eq!(form.provider, Some(AiProvider::OpenRouter));
+        form.set_source_folder("/synthetic/profile".into());
+        let Some(SettingsModal::AuthForm { state: form, .. }) = auth.take_modal() else {
+            panic!("account form")
+        };
+        persist_settings_auth_form(&mut auth, &mut env, &form);
+        assert!(
+            matches!(&auth.pending["openrouter-1"].credential, AccountCredential::Profile { agent: owner, .. } if *owner == agent)
+        );
+        auth.selected = 0;
+        open_settings_auth_form(&mut auth, &env);
+        let Some(SettingsModal::AuthForm {
+            state: mut form, ..
+        }) = auth.take_modal()
+        else {
+            panic!("existing form")
+        };
+        assert_eq!(form.provider, Some(AiProvider::OpenRouter));
+        form.set_mode(AuthMode::ApiKey);
+        assert!(form.shows_credential_block());
+        assert!(!form.can_save());
+        assert_eq!(
+            form.required_env_var(AuthMode::ApiKey),
+            Some(jackin_core::OPENROUTER_API_KEY_ENV_NAME)
+        );
+        form.set_literal("synthetic-key".into());
+        persist_settings_auth_form(&mut auth, &mut env, &form);
+        assert_eq!(auth.pending.len(), 1);
+        assert_eq!(
+            auth.pending["openrouter-1"].provider,
+            AiProvider::OpenRouter
+        );
+        assert!(matches!(
+            &auth.pending["openrouter-1"].credential,
+            AccountCredential::ApiKey { .. }
+        ));
+        assert_eq!(
+            auth.pending["openrouter-1"]
+                .resolved_credential_descriptor(agent)
+                .unwrap()
+                .env_name,
+            jackin_core::OPENROUTER_API_KEY_ENV_NAME
+        );
+    }
+}
+
+#[test]
+fn multi_provider_onepassword_uses_selected_issuer_route() {
+    for kind in [
+        crate::tui::auth::AuthKind::Omp,
+        crate::tui::auth::AuthKind::Hermes,
+    ] {
+        let (mut auth, mut env) = state();
+        let form = AuthForm::from_existing(kind, crate::tui::auth::AuthMode::ApiKey, None)
+            .with_provider(jackin_config::AiProvider::OpenRouter);
+        auth.set_modal(SettingsModal::AuthForm {
+            target: AuthFormTarget::Workspace { kind },
+            state: Box::new(form),
+            focus: AuthFormFocus::CredentialSource,
+            literal_buffer: String::new(),
+        });
+        modal_key(&mut auth, &mut env, KeyCode::Enter);
+        assert!(
+            matches!(auth.modal_ref(), Some(SettingsModal::AuthSourcePicker { state }) if state.key == jackin_core::OPENROUTER_API_KEY_ENV_NAME)
+        );
+        let reference = jackin_core::OpRef {
+            op: "op://Synthetic/Account/key".into(),
+            path: "Synthetic/Account/key".into(),
+            account: None,
+            on_demand: false,
+        };
+        apply_op_picker_to_settings_auth_form_committed(&mut auth, reference.clone());
+        let Some(SettingsModal::AuthForm { state: form, .. }) = auth.take_modal() else {
+            panic!("restored form")
+        };
+        persist_settings_auth_form(&mut auth, &mut env, &form);
+        assert_eq!(
+            auth.pending["openrouter-1"].provider,
+            jackin_config::AiProvider::OpenRouter
+        );
+        assert!(
+            matches!(&auth.pending["openrouter-1"].credential, jackin_config::AccountCredential::ApiKey { value: jackin_core::EnvValue::OpRef(value), .. } if value == &reference)
+        );
+    }
+}

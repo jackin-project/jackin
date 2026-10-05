@@ -274,3 +274,32 @@ fn kimi_usages_url_normalizes_coding_base_variants() {
         "https://proxy.test/kimi/coding/v1/usages"
     );
 }
+
+#[test]
+fn captured_profile_fetch_uses_native_route_and_exact_token() {
+    let foreign_url = kimi_usages_url_from_base(Some("https://foreign.example/coding/v1"));
+    assert_eq!(foreign_url, "https://foreign.example/coding/v1/usages");
+    let mut native_calls = 0;
+    let mut foreign_calls = 0;
+    let view = kimi_profile_snapshot_with_fetch(
+        "kimi",
+        " exact-fixture-token ",
+        1_781_728_000,
+        |token, url| {
+            if url == foreign_url {
+                foreign_calls += 1;
+            } else {
+                native_calls += 1;
+            }
+            assert_eq!(url, "https://api.kimi.com/coding/v1/usages");
+            assert_eq!(token, " exact-fixture-token ");
+            Err("owned fixture failure".to_owned())
+        },
+    );
+    assert_eq!(native_calls, 1);
+    assert_eq!(foreign_calls, 0);
+    assert_eq!(
+        view.credential_origin.as_deref(),
+        Some("Token · configured profile")
+    );
+}

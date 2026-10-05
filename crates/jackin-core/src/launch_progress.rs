@@ -278,6 +278,127 @@ impl LaunchCancelled {
 
 // --- Port traits ---
 
+/// Permission to read input or draw while this terminal scope is foreground.
+#[derive(Clone)]
+pub struct TerminalActivity {
+    check: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
+    gate: std::sync::Arc<std::sync::Mutex<()>>,
+}
+
+impl TerminalActivity {
+    /// Share the terminal owner's activity check and serialization gate.
+    pub fn new(
+        check: impl Fn() -> bool + Send + Sync + 'static,
+        gate: std::sync::Arc<std::sync::Mutex<()>>,
+    ) -> Self {
+        Self {
+            check: std::sync::Arc::new(check),
+            gate,
+        }
+    }
+
+    /// Check foreground status; use `run_if_active` to protect terminal work.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        (self.check)()
+    }
+
+    /// Share serialization with low-level foreground process restoration.
+    #[must_use]
+    pub fn serialization_gate(&self) -> std::sync::Arc<std::sync::Mutex<()>> {
+        std::sync::Arc::clone(&self.gate)
+    }
+
+    /// Serialize terminal cleanup even after this scope loses foreground.
+    /// The callback must not acquire or release a scope using the same gate.
+    pub fn run_exclusive<T>(&self, work: impl FnOnce() -> T) -> T {
+        let _gate = self
+            .gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        work()
+    }
+
+    /// Execute only while foreground, excluding ownership acquisition/release.
+    /// The callback must not acquire or release a scope using the same gate.
+    pub fn run_if_active<T>(&self, work: impl FnOnce() -> T) -> Option<T> {
+        let _gate = self
+            .gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.is_active().then(work)
+    }
+}
+
+impl std::fmt::Debug for TerminalActivity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TerminalActivity").finish_non_exhaustive()
+    }
+}
+
+/// A terminal ownership lease released exactly once when its scope ends.
+#[must_use = "dropping the guard releases terminal ownership"]
+pub struct TerminalOwnershipGuard {
+    release: Option<Box<dyn FnOnce() + Send>>,
+    activity: TerminalActivity,
+}
+
+impl TerminalOwnershipGuard {
+    /// Create a lease with its owning terminal's release action.
+    pub fn new(release: impl FnOnce() + Send + 'static) -> Self {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let active = std::sync::Arc::new(AtomicBool::new(true));
+        let check = std::sync::Arc::clone(&active);
+        let gate = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let activity = TerminalActivity::new(
+            move || check.load(Ordering::Acquire),
+            std::sync::Arc::clone(&gate),
+        );
+        Self::new_with_activity(
+            move || {
+                let _gate = gate
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                active.store(false, Ordering::Release);
+                release();
+            },
+            activity,
+        )
+    }
+
+    /// Create a lease whose release action coordinates with the activity gate.
+    pub fn new_with_activity(
+        release: impl FnOnce() + Send + 'static,
+        activity: TerminalActivity,
+    ) -> Self {
+        Self {
+            release: Some(Box::new(release)),
+            activity,
+        }
+    }
+
+    /// Clone the permission used by this scope's input reader and renderer.
+    #[must_use]
+    pub fn activity(&self) -> TerminalActivity {
+        self.activity.clone()
+    }
+}
+
+impl std::fmt::Debug for TerminalOwnershipGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TerminalOwnershipGuard")
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for TerminalOwnershipGuard {
+    fn drop(&mut self) {
+        if let Some(release) = self.release.take() {
+            release();
+        }
+    }
+}
+
 /// Launch progress and correlation port for one invocation.
 pub trait LaunchDiagnostics: Send + Sync {
     /// Stable invocation identifier for this launch.
@@ -292,8 +413,8 @@ pub trait LaunchDiagnostics: Send + Sync {
 
 /// Host terminal side-effects available during launch (clipboard, pointer, debug).
 pub trait LaunchHostTerminal: Send + Sync {
-    /// Mark whether a rich TUI surface currently owns the terminal.
-    fn set_rich_surface_active(&self, active: bool);
+    /// Acquire a rich TUI surface and its terminal modes for this scope.
+    fn acquire_rich_surface(&self) -> std::io::Result<TerminalOwnershipGuard>;
     /// Whether the host already owns the alternate screen.
     fn host_screen_owned(&self) -> bool;
     /// Whether verbose debug logging is enabled for this process.
@@ -329,4 +450,23 @@ pub trait LaunchOutputSink: Send + Sync {
     fn warp_out(&self, host_screen_owned: bool);
     /// End-of-warp caption with optional elapsed duration.
     fn warp_end_caption(&self, elapsed: Option<std::time::Duration>, host_screen_owned: bool);
+}
+
+#[cfg(test)]
+mod terminal_activity_tests {
+    use super::TerminalActivity;
+    use std::sync::{Arc, Mutex, TryLockError};
+
+    #[test]
+    fn inactive_activity_still_serializes_retiring_terminal_cleanup() {
+        let gate = Arc::new(Mutex::new(()));
+        let activity = TerminalActivity::new(|| false, Arc::clone(&gate));
+        assert_eq!(activity.run_if_active(|| 1), None);
+        let result = activity.run_exclusive(|| {
+            assert!(matches!(gate.try_lock(), Err(TryLockError::WouldBlock)));
+            "cleaned up"
+        });
+        assert_eq!(result, "cleaned up");
+        std::assert_matches!(gate.try_lock(), Ok(_));
+    }
 }

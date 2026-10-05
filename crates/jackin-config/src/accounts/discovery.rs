@@ -3,10 +3,15 @@
 
 //! Credential discovery reports locations, never credential values.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
+use anyhow::Context as _;
 use jackin_core::{Agent, MOONSHOT_API_KEY_ENV_NAME};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use super::{AiProvider, ProfileSelector};
 
@@ -57,7 +62,7 @@ fn endpoint_variables(provider: AiProvider) -> &'static [&'static str] {
 
 fn environment_base_url(
     provider: AiProvider,
-    environment: &std::collections::BTreeMap<String, String>,
+    environment: &BTreeMap<String, String>,
 ) -> Option<String> {
     endpoint_variables(provider).iter().find_map(|name| {
         environment
@@ -70,7 +75,7 @@ fn environment_base_url(
 /// Find provider API-key sources and their endpoint overrides in an explicit
 /// environment snapshot. Secret values never leave this boundary.
 pub(crate) fn discover_environment_account_candidates(
-    environment: &std::collections::BTreeMap<String, String>,
+    environment: &BTreeMap<String, String>,
 ) -> Vec<EnvironmentAccountCandidate> {
     [
         (AiProvider::Anthropic, &["ANTHROPIC_API_KEY"][..]),
@@ -130,7 +135,7 @@ pub(crate) fn discover_environment_account_candidates(
 /// Find provider API-key references in an explicit environment snapshot.
 /// Returns variable names only; values never leave this boundary.
 pub fn discover_environment_accounts(
-    environment: &std::collections::BTreeMap<String, String>,
+    environment: &BTreeMap<String, String>,
 ) -> Vec<(AiProvider, String)> {
     discover_environment_account_candidates(environment)
         .into_iter()
@@ -140,7 +145,7 @@ pub fn discover_environment_accounts(
 
 /// Discover supported subscription-token references without copying their values.
 pub fn discover_environment_oauth_accounts(
-    environment: &std::collections::BTreeMap<String, String>,
+    environment: &BTreeMap<String, String>,
 ) -> Vec<(Agent, String)> {
     let name = jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME;
     environment
@@ -309,20 +314,22 @@ fn inspect_directory(
         }
     });
     // Alias-style Amp accounts set both XDG roots beneath one selected folder.
-    if agent == Agent::Amp && !file.exists() {
-        let nested = directory.join("data/amp/secrets.json");
-        if nested.exists() {
-            file = nested;
-        }
+    // Keep the root credential authoritative when both locations exist; launch
+    // and usage proof use this same selected path.
+    if agent == Agent::Amp {
+        file = amp_credentials_path(directory);
     }
-    // Kimi rotates the live grant into per-environment siblings
-    // (`credentials/kimi-code-env-<id>.json`) while the base file keeps a
-    // drained placeholder; a stale base file must not hide the live grant.
-    if agent == Agent::Kimi
-        && !matches!(&read_credentials(&file), Ok(Some(value)) if has_credentials(agent, value))
-        && let Some(live) = newest_kimi_env_credentials(&directory.join("credentials"))
-    {
-        file = live;
+    if agent == Agent::Kimi {
+        let config_path = directory.join("config.toml");
+        let config_bytes = read_kimi_config(&config_path)?;
+        let env = BTreeMap::new();
+        let relative = kimi_runtime_credential_relative_path(
+            &config_bytes,
+            KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION,
+            &env,
+        )
+        .map_err(|_| DiscoveryError::Unsupported("Kimi runtime auth route is not verified"))?;
+        file = directory.join(relative);
     }
     let file_result = read_credentials(&file);
     if let Ok(Some(value)) = &file_result
@@ -495,39 +502,509 @@ fn map_store_error(error: super::stores::StoreError) -> DiscoveryError {
 // `discover_store_credentials` API + `account scan` import can be layered
 // here without touching the matchers above.
 
-/// Newest Kimi per-environment credential file, if any.
+/// Only Kimi CLI 2.1.1 has a verified route-to-file contract in this build.
+/// Image labels carry the exact version; other versions must fail closed.
+pub const KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION: &str = "2.1.1";
+
+const DEFAULT_KIMI_CODE_BASE_URL: &str = "https://api.kimi.com/coding/v1";
+const DEFAULT_KIMI_CODE_OAUTH_HOST: &str = "https://auth.kimi.com";
+
+/// The route and credential file selected by one verified Kimi CLI contract.
+/// Persist this value with credential proofs so host admission and capsule
+/// materialization use the same runtime selector.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct KimiRuntimeAuthSlot {
+    /// Exact CLI release whose selection behavior was verified.
+    pub cli_version: String,
+    /// Effective OAuth host after CLI defaults and environment overrides.
+    pub oauth_host: String,
+    /// Effective API base URL after CLI defaults and environment overrides.
+    pub base_url: String,
+    /// Exact OAuth storage key selected by Kimi 2.1.1.
+    pub oauth_key: String,
+    /// Credential file selected beneath the profile root.
+    pub credential_relative_path: PathBuf,
+    /// Digest of the canonical, projected config materialized for this slot.
+    pub runtime_config_sha256: String,
+}
+
+/// Resolve the exact managed Kimi Code credential path for the verified CLI
+/// contract. The returned path is relative to the profile root and includes
+/// `credentials/`.
 ///
-/// Bounded directory scan: only `kimi-code-env-*.json` regular files are
-/// considered, newest first by mtime (name order breaks ties and covers
-/// mtime failures deterministically). Returns `None` when the directory
-/// cannot be listed.
-fn newest_kimi_env_credentials(dir: &Path) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(dir).ok()?;
-    let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = entries
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name();
-            let name = name.to_str()?;
-            let is_env_grant = name.starts_with("kimi-code-env-")
-                && entry.path().extension().is_some_and(|ext| ext == "json");
-            if !is_env_grant {
-                return None;
+/// Kimi CLI 2.1.1 resolves the managed OAuth slot from the effective
+/// `(oauthHost, baseUrl)` pair. It uses `credentials/kimi-code.json` for the
+/// default pair and a deterministic SHA-256-derived sibling otherwise.
+///
+/// # Errors
+/// Rejects unknown CLI versions, malformed config, unsupported providers, and
+/// non-file OAuth storage. No filesystem recency heuristic is used.
+pub fn kimi_runtime_auth_slot(
+    config_toml: &[u8],
+    cli_version: &str,
+    environment: &BTreeMap<String, String>,
+) -> anyhow::Result<KimiRuntimeAuthSlot> {
+    Ok(kimi_runtime_auth_config(config_toml, cli_version, environment)?.0)
+}
+
+/// Resolve a Kimi slot and project the profile into the exact safe config
+/// materialized into its runtime home. The projection contains one managed
+/// OAuth provider and only model aliases bound to that provider.
+pub fn kimi_runtime_auth_config(
+    config_toml: &[u8],
+    cli_version: &str,
+    environment: &BTreeMap<String, String>,
+) -> anyhow::Result<(KimiRuntimeAuthSlot, Vec<u8>)> {
+    anyhow::ensure!(
+        cli_version == KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION,
+        "Kimi CLI version {cli_version} has no verified OAuth slot contract"
+    );
+    reject_unproven_kimi_environment(environment)?;
+
+    let config_text = std::str::from_utf8(config_toml).context("Kimi config is not UTF-8")?;
+    let config: toml::Value = toml::from_str(config_text).context("Kimi config is malformed")?;
+    let root = config
+        .as_table()
+        .context("Kimi config root must be a table")?;
+    let provider = config
+        .get("providers")
+        .and_then(toml::Value::as_table)
+        .and_then(|providers| providers.get("managed:kimi-code"))
+        .and_then(toml::Value::as_table)
+        .context("Kimi managed provider config is missing")?;
+    anyhow::ensure!(
+        provider.get("type").and_then(toml::Value::as_str) == Some("kimi"),
+        "Kimi managed provider type is unsupported"
+    );
+    let oauth = provider
+        .get("oauth")
+        .and_then(toml::Value::as_table)
+        .context("Kimi managed OAuth ref is missing")?;
+    anyhow::ensure!(
+        oauth.get("storage").and_then(toml::Value::as_str) == Some("file"),
+        "Kimi managed OAuth storage must explicitly be file-backed"
+    );
+    let configured_key = oauth
+        .get("key")
+        .and_then(toml::Value::as_str)
+        .filter(|key| !key.trim().is_empty())
+        .context("Kimi managed OAuth key is invalid")?;
+
+    let configured_base_url = optional_normalized_string(provider, "base_url")?;
+    let configured_oauth_host = optional_normalized_string(oauth, "oauth_host")?;
+    let _configured_default_provider = optional_normalized_string(root, "default_provider")?;
+    for name in environment.keys().filter(|name| {
+        name.starts_with("KIMI") && (name.ends_with("BASE_URL") || name.ends_with("OAUTH_HOST"))
+    }) {
+        anyhow::ensure!(
+            [
+                "KIMI_CODE_BASE_URL",
+                "KIMI_CODE_OAUTH_HOST",
+                "KIMI_OAUTH_HOST"
+            ]
+            .contains(&name.as_str()),
+            "unsupported Kimi route environment variable {name}"
+        );
+    }
+    let env_base_url = nonempty_route_env(environment, "KIMI_CODE_BASE_URL")?;
+    if let Some(base_url) = &env_base_url {
+        anyhow::ensure!(
+            base_url.trim() == base_url,
+            "Kimi base URL override has leading or trailing whitespace"
+        );
+    }
+    let code_oauth_host = nonempty_route_env(environment, "KIMI_CODE_OAUTH_HOST")?;
+    let legacy_oauth_host = nonempty_route_env(environment, "KIMI_OAUTH_HOST")?;
+    anyhow::ensure!(
+        code_oauth_host.is_none()
+            || legacy_oauth_host.is_none()
+            || code_oauth_host == legacy_oauth_host,
+        "conflicting Kimi OAuth host environment variables"
+    );
+    let env_oauth_host = code_oauth_host.or(legacy_oauth_host);
+    let has_environment_override = env_base_url.is_some() || env_oauth_host.is_some();
+
+    let base_url = env_base_url
+        .as_deref()
+        .or(configured_base_url.as_deref())
+        .unwrap_or(DEFAULT_KIMI_CODE_BASE_URL)
+        .trim_end_matches('/');
+    // 2.1.1 drops a configured OAuth host whenever either recognized runtime
+    // endpoint override is present; an OAuth-host-only override still leaves
+    // the configured base URL intact.
+    let oauth_host = if has_environment_override {
+        env_oauth_host
+            .as_deref()
+            .unwrap_or(DEFAULT_KIMI_CODE_OAUTH_HOST)
+    } else {
+        configured_oauth_host
+            .as_deref()
+            .unwrap_or(DEFAULT_KIMI_CODE_OAUTH_HOST)
+    };
+    let oauth_host = oauth_host.trim().trim_end_matches('/');
+    anyhow::ensure!(!base_url.is_empty(), "Kimi base URL is empty");
+    anyhow::ensure!(!oauth_host.is_empty(), "Kimi OAuth host is empty");
+
+    let (oauth_key, credential_relative_path) = kimi_oauth_slot_identity(oauth_host, base_url)?;
+    anyhow::ensure!(
+        configured_key == oauth_key,
+        "Kimi managed OAuth key does not match its effective route"
+    );
+    let (models, default_model) = project_kimi_models(root)?;
+    let projected = project_kimi_root(
+        root,
+        models,
+        default_model,
+        base_url,
+        oauth_host,
+        &oauth_key,
+    );
+    let mut runtime_config =
+        toml::to_string(&projected).context("serializing canonical Kimi runtime config")?;
+    runtime_config.push('\n');
+    let runtime_config_sha256 = hex::encode(Sha256::digest(runtime_config.as_bytes()));
+
+    let slot = KimiRuntimeAuthSlot {
+        cli_version: cli_version.to_owned(),
+        oauth_host: oauth_host.to_owned(),
+        base_url: base_url.to_owned(),
+        oauth_key,
+        credential_relative_path,
+        runtime_config_sha256,
+    };
+    Ok((slot, runtime_config.into_bytes()))
+}
+
+fn reject_unproven_kimi_environment(environment: &BTreeMap<String, String>) -> anyhow::Result<()> {
+    const AUTH_ENV_NAMES: &[&str] = &[
+        "KIMI_API_KEY",
+        "KIMI_BASE_URL",
+        "KIMI_CODE_CUSTOM_HEADERS",
+        "KIMI_WEB_SEARCH_API_KEY",
+        "KIMI_WEB_SEARCH_BASE_URL",
+        "KIMI_WEB_FETCH_API_KEY",
+        "KIMI_WEB_FETCH_BASE_URL",
+        "KIMI_REGISTRY_API_KEY",
+        "KIMI_DISABLE_OAUTH_LOCK",
+        "KIMI_SECONDARY_MODEL",
+        "KIMI_CODE_PLUGIN_MARKETPLACE_URL",
+        "KIMI_CODE_PLUGIN_MARKETPLACE_FROM_DEV_SERVER",
+        "KIMI_CODE_PASSWORD",
+        "KIMI_CODE_REMOTE_CONTROL_RELAY_URL",
+    ];
+    for name in environment.keys() {
+        anyhow::ensure!(
+            !name.starts_with("KIMI_MODEL_") && !AUTH_ENV_NAMES.contains(&name.as_str()),
+            "Kimi auth or model-routing environment variable {name} is not admitted for profile sync"
+        );
+    }
+    Ok(())
+}
+
+fn kimi_oauth_slot_identity(oauth_host: &str, base_url: &str) -> anyhow::Result<(String, PathBuf)> {
+    if oauth_host == DEFAULT_KIMI_CODE_OAUTH_HOST && base_url == DEFAULT_KIMI_CODE_BASE_URL {
+        return Ok((
+            "oauth/kimi-code".to_owned(),
+            PathBuf::from("credentials/kimi-code.json"),
+        ));
+    }
+    // Property order is part of Kimi 2.1.1's JSON.stringify hash input.
+    let oauth_host_json = serde_json::to_string(oauth_host)?;
+    let base_url_json = serde_json::to_string(base_url)?;
+    let hash_input = format!("{{\"oauthHost\":{oauth_host_json},\"baseUrl\":{base_url_json}}}");
+    let hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
+    let hash_prefix = hash
+        .get(..16)
+        .context("Kimi auth slot hash has an invalid length")?;
+    let key = format!("oauth/kimi-code-env-{hash_prefix}");
+    Ok((
+        key.clone(),
+        PathBuf::from(format!("credentials/kimi-code-env-{hash_prefix}.json")),
+    ))
+}
+
+fn project_kimi_models(
+    root: &toml::map::Map<String, toml::Value>,
+) -> anyhow::Result<(toml::Value, String)> {
+    let source_models = root
+        .get("models")
+        .and_then(toml::Value::as_table)
+        .context("Kimi profile has no model aliases bound to the managed provider")?;
+    let mut models = toml::map::Map::new();
+    for (alias, value) in source_models {
+        let Some(model) = value.as_table() else {
+            continue;
+        };
+        let Some(projected) = project_kimi_model(model)? else {
+            continue;
+        };
+        models.insert(alias.clone(), toml::Value::Table(projected));
+    }
+    anyhow::ensure!(
+        !models.is_empty(),
+        "Kimi profile has no safe model aliases bound to the managed provider"
+    );
+
+    let configured_default = optional_normalized_string(root, "default_model")?;
+    let default_model = configured_default
+        .filter(|alias| models.contains_key(alias))
+        .or_else(|| models.keys().next().cloned())
+        .context("Kimi profile has no admitted default model alias")?;
+    Ok((toml::Value::Table(models), default_model))
+}
+
+fn project_kimi_model(
+    model: &toml::map::Map<String, toml::Value>,
+) -> anyhow::Result<Option<toml::map::Map<String, toml::Value>>> {
+    // A model-level credential or endpoint takes precedence over provider
+    // OAuth in Kimi 2.1.1. Exclude that alias from the runtime projection.
+    for name in ["api_key", "oauth", "base_url"] {
+        if normalized_field(model, name)?.is_some() {
+            return Ok(None);
+        }
+    }
+    for name in ["provider", "provider_id"] {
+        if optional_normalized_string(model, name)?
+            .is_some_and(|provider| provider != "managed:kimi-code")
+        {
+            return Ok(None);
+        }
+    }
+    let Some(model_name) = optional_normalized_string(model, "model")? else {
+        return Ok(None);
+    };
+    let Some(max_context_size) = normalized_field(model, "max_context_size")? else {
+        return Ok(None);
+    };
+    if max_context_size.as_integer().is_none_or(|size| size <= 0) {
+        return Ok(None);
+    }
+
+    let mut projected = toml::map::Map::new();
+    projected.insert("provider".to_owned(), "managed:kimi-code".into());
+    projected.insert("provider_id".to_owned(), "managed:kimi-code".into());
+    projected.insert("model".to_owned(), model_name.into());
+    projected.insert("max_context_size".to_owned(), max_context_size.clone());
+    for name in [
+        "name",
+        "aliases",
+        "max_input_size",
+        "max_output_size",
+        "capabilities",
+        "display_name",
+        "reasoning_key",
+        "protocol",
+        "adaptive_thinking",
+        "beta_api",
+        "support_efforts",
+        "default_effort",
+        "off_effort",
+    ] {
+        if let Some(value) = normalized_field(model, name)? {
+            projected.insert(name.to_owned(), value.clone());
+        }
+    }
+    if let Some(overrides) = normalized_field(model, "overrides")? {
+        let Some(overrides) = overrides.as_table() else {
+            return Ok(None);
+        };
+        let mut safe_overrides = toml::map::Map::new();
+        for name in [
+            "max_context_size",
+            "max_input_size",
+            "max_output_size",
+            "capabilities",
+            "display_name",
+            "reasoning_key",
+            "adaptive_thinking",
+            "support_efforts",
+            "default_effort",
+            "off_effort",
+        ] {
+            if let Some(value) = normalized_field(overrides, name)? {
+                safe_overrides.insert(name.to_owned(), value.clone());
             }
-            // A newer directory with a `.json` suffix is not a credential
-            // file.  Keep it out of the mtime ordering so it cannot hide a
-            // valid live grant when the selected path is read below.
-            if !entry.file_type().ok()?.is_file() {
-                return None;
-            }
-            let mtime = entry
-                .metadata()
-                .and_then(|m| m.modified())
-                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-            Some((mtime, entry.path()))
+        }
+        if !safe_overrides.is_empty() {
+            projected.insert("overrides".to_owned(), toml::Value::Table(safe_overrides));
+        }
+    }
+    Ok(Some(projected))
+}
+
+fn project_kimi_root(
+    source: &toml::map::Map<String, toml::Value>,
+    models: toml::Value,
+    default_model: String,
+    base_url: &str,
+    oauth_host: &str,
+    oauth_key: &str,
+) -> toml::Value {
+    let mut root = source.clone();
+    for key in [
+        "providers",
+        "models",
+        "default_model",
+        "defaultModel",
+        "default_provider",
+        "defaultProvider",
+        "services",
+        "secondary_model",
+        "secondaryModel",
+        "api_key",
+        "apiKey",
+        "api_key_env",
+        "apiKeyEnv",
+        "oauth",
+        "base_url",
+        "baseUrl",
+        "custom_headers",
+        "customHeaders",
+        "env",
+        "source",
+    ] {
+        root.remove(key);
+    }
+
+    let mut oauth = toml::map::Map::new();
+    oauth.insert("storage".to_owned(), "file".into());
+    oauth.insert("key".to_owned(), oauth_key.into());
+    oauth.insert("oauth_host".to_owned(), oauth_host.into());
+    let mut provider = toml::map::Map::new();
+    provider.insert("type".to_owned(), "kimi".into());
+    provider.insert("base_url".to_owned(), base_url.into());
+    provider.insert("oauth".to_owned(), toml::Value::Table(oauth));
+    let mut providers = toml::map::Map::new();
+    providers.insert("managed:kimi-code".to_owned(), toml::Value::Table(provider));
+    root.insert("providers".to_owned(), toml::Value::Table(providers));
+    root.insert("models".to_owned(), models);
+    root.insert("default_provider".to_owned(), "managed:kimi-code".into());
+    root.insert("default_model".to_owned(), default_model.into());
+    toml::Value::Table(root)
+}
+
+fn normalized_field<'a>(
+    table: &'a toml::map::Map<String, toml::Value>,
+    snake_name: &str,
+) -> anyhow::Result<Option<&'a toml::Value>> {
+    let camel_name = snake_to_camel(snake_name);
+    if camel_name != snake_name && table.contains_key(snake_name) && table.contains_key(&camel_name)
+    {
+        anyhow::bail!("Kimi config duplicates {snake_name} as {camel_name}");
+    }
+    Ok(table.get(snake_name).or_else(|| table.get(&camel_name)))
+}
+
+fn optional_normalized_string(
+    table: &toml::map::Map<String, toml::Value>,
+    snake_name: &str,
+) -> anyhow::Result<Option<String>> {
+    normalized_field(table, snake_name)?
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .with_context(|| format!("Kimi config field {snake_name} is not a string"))
         })
-        .collect();
-    candidates.sort();
-    candidates.pop().map(|(_, path)| path)
+        .transpose()
+}
+
+fn snake_to_camel(snake_name: &str) -> String {
+    let mut camel = String::with_capacity(snake_name.len());
+    let mut uppercase_next = false;
+    for character in snake_name.chars() {
+        if character == '_' {
+            uppercase_next = true;
+        } else if uppercase_next {
+            camel.extend(character.to_uppercase());
+            uppercase_next = false;
+        } else {
+            camel.push(character);
+        }
+    }
+    camel
+}
+
+/// Resolve the exact managed Kimi Code credential path for a verified CLI.
+pub fn kimi_runtime_credential_relative_path(
+    config_toml: &[u8],
+    cli_version: &str,
+    environment: &BTreeMap<String, String>,
+) -> anyhow::Result<PathBuf> {
+    Ok(kimi_runtime_auth_slot(config_toml, cli_version, environment)?.credential_relative_path)
+}
+
+fn nonempty_route_env(
+    environment: &BTreeMap<String, String>,
+    name: &str,
+) -> anyhow::Result<Option<String>> {
+    environment
+        .get(name)
+        .map(|value| {
+            anyhow::ensure!(
+                !value.trim().is_empty(),
+                "Kimi route environment variable {name} is empty"
+            );
+            Ok(value.to_owned())
+        })
+        .transpose()
+}
+
+fn read_kimi_config(path: &Path) -> Result<Vec<u8>, DiscoveryError> {
+    const LIMIT: u64 = 1024 * 1024;
+    let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            DiscoveryError::Malformed
+        } else {
+            DiscoveryError::Unreadable
+        }
+    })?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(DiscoveryError::Unreadable);
+    }
+    let bytes = crate::persist::read_bounded_file(path, LIMIT + 1)
+        .map_err(|_| DiscoveryError::Unreadable)?;
+    if bytes.len() as u64 > LIMIT {
+        return Err(DiscoveryError::TooLarge);
+    }
+    Ok(bytes)
+}
+
+/// Select the Amp credential file with the same precedence used by discovery,
+/// launch capture, and usage identity. A root `secrets.json` wins whenever it
+/// exists; the XDG `data/amp` file is the fallback.
+#[must_use]
+pub fn amp_credentials_path(directory: &Path) -> PathBuf {
+    amp_credentials_path_from_presence(
+        directory,
+        directory.join("secrets.json").exists(),
+        directory.join("data/amp/secrets.json").exists(),
+    )
+}
+
+/// Select the Amp credential path from already observed file-presence facts.
+/// This lets protected readers share discovery's precedence without reopening
+/// credential contents through an unprotected path.
+#[must_use]
+pub fn amp_credentials_path_from_presence(
+    directory: &Path,
+    root_file_exists: bool,
+    nested_file_exists: bool,
+) -> PathBuf {
+    if root_file_exists {
+        directory.join("secrets.json")
+    } else if nested_file_exists {
+        directory.join("data/amp/secrets.json")
+    } else {
+        directory.join("secrets.json")
+    }
+}
+
+/// Whether a Kimi credential object contains the access-token field used by
+/// discovery to identify a live grant.
+#[must_use]
+pub fn kimi_credentials_value_has_access_token(value: &Value) -> bool {
+    nonempty(value.get("access_token"))
 }
 
 fn read_credentials(path: &Path) -> Result<Option<Value>, DiscoveryError> {
@@ -566,12 +1043,8 @@ fn has_credentials(agent: Agent, value: &Value) -> bool {
         Agent::Codex => {
             nonempty(value.get("OPENAI_API_KEY")) || nonempty(value.pointer("/tokens/access_token"))
         }
-        Agent::Amp => value.as_object().is_some_and(|entries| {
-            entries
-                .iter()
-                .any(|(key, value)| key.starts_with("apiKey@") && nonempty(Some(value)))
-        }),
-        Agent::Kimi => nonempty(value.get("access_token")),
+        Agent::Amp => jackin_core::amp_profile_credential_payload(value).is_ok(),
+        Agent::Kimi => kimi_credentials_value_has_access_token(value),
         Agent::Grok => value.as_object().is_some_and(|entries| {
             entries.iter().any(|(scope, entry)| {
                 (scope.starts_with("https://auth.x.ai::") || scope.contains("/sign-in"))
@@ -598,12 +1071,17 @@ fn has_credentials(agent: Agent, value: &Value) -> bool {
 #[cfg(target_os = "macos")]
 fn keychain_service_exists(service: &str) -> bool {
     // No -w/-g: query metadata only and discard it, avoiding secret extraction.
-    std::process::Command::new("/usr/bin/security")
-        .args(["find-generic-password", "-s", service])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
+    let child = {
+        let _native_spawn = jackin_process_directory::native_spawn_guard();
+        std::process::Command::new("/usr/bin/security")
+            .args(["find-generic-password", "-s", service])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+    };
+    child
+        .and_then(|mut child| child.wait())
         .is_ok_and(|status| status.success())
 }
 

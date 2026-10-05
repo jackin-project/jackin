@@ -731,31 +731,12 @@ pub fn handle_editor_modal(
         Modal::ErrorPopup { state: popup_state } => {
             match dismissible_modal_plan(popup_state.handle_key(key.into())) {
                 DismissibleModalPlan::Dismiss => {
-                    // A source-folder validation rejection stacks this popup
-                    // directly over the auth source-folder picker. Dismissing it
-                    // returns to that picker so the operator can pick another
-                    // folder, rather than tearing down the whole auth flow.
-                    if matches!(
-                        editor.modal_parents.last(),
-                        Some(Modal::FileBrowser {
-                            target: FileBrowserTarget::AuthFormSourceFolder,
-                            ..
-                        })
-                    ) {
-                        editor.pop_modal_chain();
-                        return EditorModalOutcome::Continue;
+                    // Error popups dismiss one modal level. Keeping suspended
+                    // parents intact preserves every picker/form return path.
+                    if !editor.has_modal_parent() {
+                        editor.save_flow = EditorSaveFlow::Idle;
                     }
-                    editor.clear_modal_chain();
-                    editor.save_flow = EditorSaveFlow::Idle;
-                    // If the popup was raised by a failed OpPicker commit
-                    // for the auth form, the form's state was re-stashed
-                    // into the modal parent stack instead of being
-                    // re-mounted directly — restore it now so the operator
-                    // lands back on the form with the prior credential
-                    // unchanged, ready to retry through the source picker.
-                    if editor.has_modal_parent() {
-                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
-                    }
+                    editor.pop_modal_chain();
                 }
                 DismissibleModalPlan::Continue => {}
             }
@@ -792,7 +773,7 @@ pub fn handle_editor_modal(
         } => {
             match source_picker_plan(source.handle_key(key)) {
                 SourcePickerPlan::Plain => {
-                    let Some((scope, key)) = env_key.take() else {
+                    let Some((scope, key)) = env_key.clone() else {
                         editor.clear_modal_chain();
                         return EditorModalOutcome::Continue;
                     };
@@ -805,7 +786,7 @@ pub fn handle_editor_modal(
                     });
                 }
                 SourcePickerPlan::Op => {
-                    let Some((scope, key)) = env_key.take() else {
+                    let Some((scope, key)) = env_key.clone() else {
                         editor.clear_modal_chain();
                         return EditorModalOutcome::Continue;
                     };
@@ -856,13 +837,10 @@ pub fn handle_editor_modal(
                 InlinePickerPlan::Commit(crate::tui::op_picker::OpPickerSelection::Existing(
                     op_ref,
                 )) => {
-                    // Auth-form round trip wins over the Secrets-tab
-                    // dispatch: the auth form sets
-                    // the modal parent stack exactly when it's the
-                    // caller, so the two paths can never collide.
-                    if editor.has_modal_parent() {
-                        // Close the OpPicker — the auth form stays stashed on
-                        // modal_parents so the _committed / _failed helpers find it.
+                    // The picker carries its Secrets destination explicitly.
+                    // Auth validation is available only with an auth-form parent;
+                    // other suspended modals never identify the caller.
+                    if secrets_target.is_none() && editor.has_auth_form_parent() {
                         editor.dismiss_active_modal();
                         return EditorModalOutcome::ValidateOpRef(op_ref);
                     }
@@ -892,14 +870,7 @@ pub fn handle_editor_modal(
                     }
                 }
                 InlinePickerPlan::Dismiss => {
-                    // Auth-form round trip: re-mount the form
-                    // unchanged. Mirrors the Commit branch — the two
-                    // callers (Secrets-tab `P`, auth-form Enter) are
-                    // disambiguated by the modal parent stack.
-                    if editor.has_modal_parent() {
-                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
-                        return EditorModalOutcome::Continue;
-                    }
+                    // Both callers return to their immediate suspended parent.
                     editor.pop_modal_chain();
                 }
                 InlinePickerPlan::Continue => {}

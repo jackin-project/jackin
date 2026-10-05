@@ -4,7 +4,7 @@
 /// `SettingsAuthState` impls + helper fns.
 use super::{
     AccountScanOutcome, AccountScanState, AccountScanSummary, AuthKind, BTreeMap,
-    GlobalMountsState, SettingsAuthRestorePendingForm, SettingsAuthSaveRefs, SettingsAuthSlot,
+    GlobalMountsState, SettingsAuthResumeAfterError, SettingsAuthSaveRefs, SettingsAuthSlot,
     SettingsAuthState, SettingsEnvState, SettingsPanelChangeCount, SettingsPanelDirty,
     SettingsPanelDiscard, SettingsPanelMarkSaved, SettingsPanelTakeError, SettingsState,
 };
@@ -355,11 +355,16 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsPanelTakeError
     }
 }
 
-impl<EnvValue, Modal, PendingOpCommit> SettingsAuthRestorePendingForm
+impl<EnvValue, Modal, PendingOpCommit> SettingsAuthResumeAfterError
     for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
 {
-    fn restore_pending_auth_form(&mut self) {
-        Self::restore_pending_auth_form(self);
+    fn resume_auth_after_error(&mut self) {
+        // Settings errors overlay the modal chain; dismissing one does not
+        // close the picker/input underneath. Async credential validation can
+        // consume its picker first, leaving only a suspended form to resume.
+        if !self.modals.is_open() {
+            self.restore_pending_auth_form();
+        }
     }
 }
 

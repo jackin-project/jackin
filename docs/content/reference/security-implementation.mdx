@@ -2,78 +2,77 @@
 title: "Security Implementation"
 ---
 
-This document describes jackin❯ security implementation from a contributor perspective. It covers the threat model, the specific functions that enforce security invariants, the external tools bundled in the construct image, and the high-autonomy launch flags used for all five agent runtimes.
+Contributor map of threats, enforcing functions, shell guard controls, and agent approval settings. Follow the linked source symbols rather than fixed line numbers. These are implementation boundaries in a research project, not a production security certification.
 
 ## Threat model
 
-| Threat | Defended? | Where in code | Residual risk |
+| Threat | Enforcement | Source | Residual risk |
 |---|---|---|---|
-| Agent reads/writes files on host | Yes | Mount scoping in <RepoFile path="crates/jackin-config/src/mounts.rs">crates/jackin-config/src/mounts.rs</RepoFile> | Explicitly mounted rw paths |
-| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> | TOCTOU window between symlink check and file use |
-| Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/research/platform/isolation/smolvm-backend/) | Shared kernel; future microVM work addresses this |
-| Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/roadmap/network-egress-policy/) | Open egress by default today |
-| Supply chain (capsule binary) | SHA256 + signed manifest | <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> | See [signed releases](/roadmap/security-threat-model-and-signed-releases/) |
+| Agent accesses unmounted host files | Mount selection and validation | <RepoFile path="crates/jackin-config/src/mounts.rs">mount configuration</RepoFile> | Mounted paths expose their contents; writable mounts permit modification. Container escape remains a separate threat. |
+| Credential reads/writes redirected by symlinks | Unix descriptor-relative auth directory operations, ownership/type checks, no-follow opens | <RepoFile path="crates/jackin-instance/src/auth.rs">auth provisioning</RepoFile> | Credentials intentionally granted to a session can be read by that session. Non-Unix helpers do not provide the same Unix descriptor guarantees. |
+| Agent reads another session's credential/state | Per-session identity, capability restrictions, required Landlock filesystem boundary | <RepoFile path="crates/jackin-capsule/src/process_isolation.rs">process isolation</RepoFile> | Capsule supervisor is trusted. Filesystem confinement is not a kernel escape defense. |
+| Agent exfiltrates over network | Selected Docker network grant; allowlist uses `firewall-apply` before session launch | <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">Docker policy</RepoFile>, <RepoFile path="crates/jackin-capsule/src/firewall.rs">firewall</RepoFile> | Open networking permits egress; permitted destinations can receive data. Network isolation is not an unconditional guarantee. |
+| Container escape / privilege escalation | Selected Docker hardening profile and grants | <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">Docker policy</RepoFile> | Shared kernel and explicit privilege grants; see [Docker hardening contract](/roadmap/docker-runtime-hardening-contract/). |
+| Capsule binary substitution | SHA256 and signed manifest verification | <RepoFile path="crates/jackin-image/src/capsule_binary.rs">capsule binary verification</RepoFile> | Trust remains in release identity and verification roots; see [signed releases](/roadmap/security-threat-model-and-signed-releases/). |
 
-## Security functions
+## Credential security functions
 
-All six functions live in <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> and are called during credential provisioning at every `jackin load` / `jackin console` launch.
+Functions below live in <RepoFile path="crates/jackin-instance/src/auth.rs">auth provisioning</RepoFile>. Launch executes the provisioning paths relevant to the selected account and integration, rather than calling every function unconditionally.
 
-### `reject_symlink` (line 925)
+### `reject_symlink` and `reject_auth_path`
 
-Uses `symlink_metadata` (lstat, not stat — the call does not follow the symlink) to detect symlinks at `path` before any write or chmod. An agent-controlled role-state directory is mounted read-write into the container; a compromised role can plant a symlink between launches to redirect credential writes to arbitrary host paths. `reject_symlink` is called unconditionally before every write path and at the top of every `provision_*` function. No-ops on `ENOENT`. Returns an operator-readable error naming the path and suggesting the operator remove the symlink and retry.
+`reject_symlink` inspects the final path with `symlink_metadata`, without following it. `reject_auth_path` also checks existing parent directories, rejecting symlinks and non-directories while allowing the documented macOS platform root aliases. A pathname precheck alone is not a race-proof write boundary.
 
-### `repair_permissions` (line 1012)
+On Unix, the `auth_directory` module supplies the stronger boundary: locked directory descriptors, no-follow opens, descriptor-relative operations, ownership/type validation, and inode identity checks. Source credential reads use this boundary too; changing only a final-path symlink check cannot replace it.
 
-Tightens existing credential files to `0o600` on Unix via `set_permissions`. Uses `symlink_metadata` (lstat) before calling `set_permissions` so it never chmods through a symlink. Errors (permission denied, stat failure) are logged via `eprintln!` rather than returned — callers are mid-Sync and must not abort the launch, but a silent chmod failure on a credential file is a security regression that must surface.
+### `repair_permissions`
 
-### `write_private_bytes` / `write_private_file` (lines 951, 947)
+Restricts an existing credential file to `0o600` on Unix through `auth_directory::repair_file_permissions`. Missing optional files are allowed. Inspection, chmod, or verification failure returns an error and aborts provisioning; callers must propagate that error.
 
-Atomically writes bytes with `0o600` permissions. Calls `reject_symlink` at entry. Uses `tempfile::NamedTempFile` (opens with `O_EXCL` internally, so a pre-planted symlink at the temp path is impossible because `O_EXCL` fails on any existing path) with a random suffix, sets permissions on the temp file before rename. Closes the TOCTOU window completely: no intermediate state where a world-readable file exists at the destination path.
+### `write_private_bytes` / `write_private_file`
 
-### `create_private_file_if_absent` (line 986)
+On Unix, `write_private_file` delegates to `write_private_bytes`, then `auth_directory::replace_private_file`. The implementation creates a private temporary file relative to the locked parent, writes and syncs it, renames within that parent, and syncs the directory. Identical existing content is verified and its permissions repaired without replacing the inode. The non-Unix branch checks the path and writes directly; it does not supply the same atomic replacement guarantee.
 
-Race-free skeleton seeding via `O_CREAT|O_EXCL`. Used to seed `{}` into `account_json` before the Claude CLI runs so the downstream consumer never sees a missing file. Returns `Ok(())` on `EEXIST` without touching existing content. The `O_EXCL` flag prevents any race between a missing-file check and the create.
+### `create_private_file_if_absent`
 
-### `host_home_is_real` (line 231)
+Seeds private skeleton state without replacing existing content. Unix uses descriptor-relative `O_CREAT|O_EXCL|O_NOFOLLOW` creation. On an existing-file collision it validates ownership, regular-file type, and identity before accepting the existing file. A symlink or invalid file is not a successful collision.
 
-Gates host-binary shellouts (`gh auth token`, macOS `security` keychain) on whether `host_home` matches the value returned by `directories::BaseDirs::new().home_dir()`. Keeps integration tests hermetic (they pass temp dirs as `host_home`) while allowing the real `gh` and `security` binaries in production runs. Without this gate, tests would shell out to the operator's installed `gh` and contaminate results.
+### `host_home_is_real`
 
-### `parse_gh_hosts_yml` (line 346)
+Gates host-binary credential shellouts on whether the supplied home matches the operating system's real home directory. Temporary-home tests therefore do not read the operator's `gh` or macOS Keychain credentials. This is an isolation gate for host integration, not account authorization.
 
-Uses `serde_yaml_ng` to parse `~/.config/gh/hosts.yml`. Returns `None` on any malformed input, including a document that has a `github.com` block but no `oauth_token` field, or one where `oauth_token` is empty/whitespace. Partial results are never returned: silently accepting half-parsed scalars would land bogus credentials in the container's `hosts.yml` and surface as unrelated authentication failures mid-session.
+### `parse_gh_hosts_yml`
 
-## External security tools
+Parses GitHub CLI state using `serde_yaml_ng` and accepts a nonempty token for `github.com`. Malformed or absent token data returns `None`. GitHub credentials remain separate from coding-agent account authorization.
 
-Both tools are installed in the construct image and active in every container session by default.
+## Shell guard controls
 
-### shellfirm
+<RepoFile path="docker/construct/Dockerfile">The construct image</RepoFile> installs shellfirm from pinned source in a builder stage and tirith from a checksum-verified release archive. <RepoFile path="docker/construct/zshrc">zsh</RepoFile> and <RepoFile path="docker/construct/fish-config.fish">fish</RepoFile> initialize their shell hooks by default.
 
-Intercepts dangerous shell commands at the shell level before execution, blocking `rm -rf /`, `chmod 777`, `curl | bash`, and similar patterns. CI prepares the pinned binary before Docker Buildx runs, stages it in the construct context as `prebuilt/shellfirm`, and <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> copies that binary into the image at line 5. Shell hook wired in <RepoFile path="docker/construct/zshrc">docker/construct/zshrc</RepoFile> and <RepoFile path="docker/construct/fish-config.fish">docker/construct/fish-config.fish</RepoFile>.
+- **shellfirm:** shell command guard initialized by `shellfirm init`. Set `JACKIN_DISABLE_SHELLFIRM=1` before shell startup to skip that hook.
+- **tirith:** shell command guard initialized by `tirith init --shell`. Set `JACKIN_DISABLE_TIRITH=1` before shell startup to skip that hook.
 
-Protects against both accidental operator mistakes and agent-generated destructive commands. Disable per-session by setting `JACKIN_DISABLE_SHELLFIRM=1` in the container environment.
+These hooks apply in shells that load the configuration. Direct process execution, other shells, and agent tool calls need not pass through them. They are advisory command guards, not container runtime scanners or an enforcement boundary against a malicious agent. Disabling a hook changes shell guarding; it does not alter mount validation, credential authorization, Landlock rules, or the selected Docker network policy.
 
-### tirith
+## Agent approval settings
 
-Security scanner that validates container runtime state against a policy. Guards against configuration drift and unexpected privilege escalation during a session. Downloaded in <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> at line 61 via a SHA256-verified curl + `tar` extraction. Shell hook wired in the same shell config files as shellfirm.
+<RepoFile path="docker/runtime/entrypoint.sh">The runtime entrypoint</RepoFile> contains these explicit launch branches:
 
-Disable per-session by setting `JACKIN_DISABLE_TIRITH=1` in the container environment.
+| Agent | Approval setting |
+|---|---|
+| Claude Code | `--dangerously-skip-permissions` plus `skipDangerousModePermissionPrompt: true` |
+| Codex | `--dangerously-bypass-approvals-and-sandbox` |
+| Amp | `--dangerously-allow-all` |
+| Kimi | `--yolo` |
+| OpenCode | `OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'`; per-session setup in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">runtime setup</RepoFile> |
+| Grok | `--always-approve` |
 
-## High-autonomy launch flags
+This table describes those source branches; it does not establish launch behavior for every runtime in the agent registry. Inspect the runtime's actual adapter before extending the table.
 
-jackin❯ launches each agent with flags that remove tool-approval prompts. These are defined in <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> and applied at container start before the agent binary runs.
+Approval bypass permits edits and tool calls without the agent's usual approval prompts. Authentication, user questions, planning, updates, and runtime failures may still require attention. To change the flags, customize the runtime entrypoint in the derived image; role arguments are not proof that an earlier bypass flag was removed.
 
-| Agent | Configuration | Where |
-|---|---|---|
-| Claude | `--dangerously-skip-permissions` CLI flag + `skipDangerousModePermissionPrompt: true` in settings JSON | line 41 |
-| Codex | `--dangerously-bypass-approvals-and-sandbox` CLI flag | line 47 |
-| Amp | `--dangerously-allow-all` CLI flag | line 53 |
-| Kimi | `--yolo` CLI flag (auto-approves all tool actions) | line 58 |
-| OpenCode | `OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'` env var + `~/.config/opencode/opencode.json` written with `"permission": "allow"` by capsule runtime setup | line 64 + <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> |
+## Container and session boundary contract
 
-When any of these configurations are active: jackin❯ still enforces mount scoping, network isolation, and the host Docker socket exclusion. The flags remove tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures. Operators who need the approval prompts restored can rebuild the derived image without the high-autonomy flags by customising the entrypoint hook.
+The operator chooses mounts, authorized accounts, and Docker grants. Writable mounts permit intentional agent edits. Session isolation confines agents to admitted roots and separates credential slots; the capsule supervisor remains trusted. The role launch does not mount the host Docker socket; an explicitly enabled Docker-in-Docker integration is a separate capability.
 
-## Container boundary contract
-
-The operator is responsible for what they mount. Explicitly mounted read-write paths are accessible to the agent — this is intentional and documented in the [Mounts guide](/guides/mounts/). The security model defends against the agent escaping the defined mount scope, not against the agent using what the operator chose to expose.
-
-The YOLO flags above reduce friction at the cost of prompt-level damage prevention. The remaining guarantees (mount scoping, network isolation, no host Docker socket) hold regardless of flag state.
+Agent approval settings and shell guards provide different controls. Neither determines the effective network grant, repairs an unsafe mount, authorizes an account, or protects against a kernel escape. Security changes must preserve the enforcing function's fail-closed behavior and identify the exact boundary and residual risk they change. See the [Security model](/guides/security-model/) for the operator-facing contract.

@@ -201,6 +201,7 @@ pub fn render_text_input(frame: &mut Frame<'_>, area: Rect, state: &TextInputSta
     };
     if let Some(secret) = &state.secret {
         let mut secret = secret.clone();
+        secret.set_focused(true);
         frame.render_stateful_widget(
             &termrock::widgets::PasswordInput::new(&state.label, &theme),
             input_area,
@@ -215,6 +216,7 @@ pub fn render_text_input(frame: &mut Frame<'_>, area: Rect, state: &TextInputSta
         format!("Already exists in {}", state.forbidden_label)
     };
     let mut input = state.input.clone();
+    input.set_focused(true);
     frame.render_stateful_widget(
         &TextInput::new(&state.label, &theme)
             .placeholder("")
@@ -331,15 +333,9 @@ impl ConfirmState {
 
     #[must_use]
     pub fn required_height(&self) -> u16 {
-        let content = match &self.kind {
-            ConfirmKind::Default { prompt } => prompt.lines().count().max(1),
-            ConfirmKind::Details {
-                prompt,
-                rows,
-                notes,
-            } => prompt.lines().count().max(1) + rows.len() + notes.len() + 2,
-        };
-        u16::try_from(content.saturating_add(4)).unwrap_or(u16::MAX)
+        // Count the exact body supplied to Dialog. Its normal rhythm needs
+        // two border rows, three spacing rows, and one action row.
+        u16::try_from(confirm_text(self).lines.len().saturating_add(6)).unwrap_or(u16::MAX)
     }
 
     #[must_use]
@@ -377,14 +373,16 @@ fn confirm_text(state: &ConfirmState) -> Text<'static> {
             rows,
             notes,
         } => {
-            let mut lines = vec![Line::from(prompt.clone()), Line::default()];
-            lines.extend(
-                rows.iter()
-                    .map(|(label, value)| Line::from(format!("{label}: {value}"))),
-            );
+            let mut lines = Text::from(prompt.clone()).lines;
+            lines.push(Line::default());
+            for (label, value) in rows {
+                lines.extend(Text::from(format!("{label}: {value}")).lines);
+            }
             if !notes.is_empty() {
                 lines.push(Line::default());
-                lines.extend(notes.iter().cloned().map(Line::from));
+                for note in notes {
+                    lines.extend(Text::from(note.clone()).lines);
+                }
             }
             Text::from(lines)
         }
@@ -541,7 +539,7 @@ impl ErrorPopupState {
             .lines()
             .map(|line| termrock::text::display_cols(line).max(1).div_ceil(width))
             .sum::<usize>();
-        u16::try_from(rows.saturating_add(4))
+        u16::try_from(rows.saturating_add(6))
             .unwrap_or(u16::MAX)
             .min(max_rows.max(3))
     }

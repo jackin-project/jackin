@@ -23,6 +23,7 @@ mod ci_toolchain;
 mod clippy_affected;
 mod cmd;
 mod construct;
+mod consumer_ci_gate;
 mod container_paths_gate;
 mod desktop;
 mod docs;
@@ -96,6 +97,9 @@ enum Command {
     /// Resolve affected crates and reusable test inputs in one CI step.
     #[command(name = "ci-route")]
     CiRoute(ci_route::CiRouteArgs),
+    /// Execute and verify a required product acceptance lane.
+    #[command(name = "consumer-ci-gate")]
+    ConsumerCiGate(consumer_ci_gate::ConsumerCiGateArgs),
     /// Run Clippy over the crates affected by worktree changes.
     ///
     /// Pre-commit hook entry point (`mise run clippy-affected`): selects
@@ -331,6 +335,7 @@ fn main() -> ExitCode {
         Command::CiJunit(args) => ci_junit::run(args),
         Command::CiResult(command) => ci_result::run(command),
         Command::CiRoute(args) => ci_route::run(args),
+        Command::ConsumerCiGate(args) => consumer_ci_gate::run(args),
         Command::CiStage(args) => ci_stage::run(args),
         Command::CiTarget(command) => ci_target::run(command),
         Command::CiToolchain(command) => ci_toolchain::run(command),

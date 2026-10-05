@@ -22,8 +22,9 @@ use jackin_launch::build_log::DiagnosticsBuildLogSink;
 use jackin_manifest::repo::CachedRepo;
 
 use crate::runtime::naming::{
-    LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
-    image_name_for_branch, role_base_image_name, short_git_sha,
+    LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_KIMI_AUTH_SLOT_CONTRACT,
+    LABEL_IMAGE_ROLE_GIT_SHA, image_name, image_name_for_branch, role_base_image_name,
+    short_git_sha,
 };
 use crate::runtime::progress::{LaunchProgress, LaunchStage};
 
@@ -466,6 +467,13 @@ pub(crate) async fn build_agent_image(
     let recipe_labels = recipe_labels(&recipe, &recipe_hash);
 
     let mut build_args = local_image_build_args();
+    let kimi_expected_version_arg = runtime_binaries
+        .prefetched_agent_versions
+        .get(&Agent::Kimi)
+        .map(|version| format!("JACKIN_EXPECTED_KIMI_VERSION={version}"));
+    if let Some(arg) = &kimi_expected_version_arg {
+        build_args.extend(["--build-arg", arg.as_str()]);
+    }
 
     // --pull semantics:
     //
@@ -501,6 +509,13 @@ pub(crate) async fn build_agent_image(
         .collect();
     for label in &agent_version_labels {
         build_args.extend(["--label", label]);
+    }
+    let kimi_contract_label = runtime_binaries
+        .prefetched_agent_versions
+        .get(&Agent::Kimi)
+        .map(|version| format!("{LABEL_IMAGE_KIMI_AUTH_SLOT_CONTRACT}={version}"));
+    if let Some(label) = &kimi_contract_label {
+        build_args.extend(["--label", label.as_str()]);
     }
     let output_arg = local_image_output_arg(&image);
     build_args.extend([

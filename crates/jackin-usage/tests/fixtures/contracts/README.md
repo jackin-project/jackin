@@ -1,11 +1,20 @@
 # Unified usage contract fixtures
 
-These secret-free fixtures freeze Plan 001 vocabulary before production V1 types and
-surfaces land.
+These secret-free fixtures freeze the current canonical projection contract and its
+secret-free payload shape.
 
-- `usage-projection-v1-current.json`: valid canonical V1 shape.
-- `usage-projection-v1-invalid.json`: unknown-major, missing-field, and percent-
-  invariant failures.
+The broker protocol marker is `v4`; the projection DTO graph uses schema value `2` and
+V2 type names. Durable projection envelopes use schema `3`; schema `1` and `2` envelopes
+are rejected and quarantined. Account rows require `refresh_capabilities`, and
+`source_capability` is a valid identity kind.
+
+An unversioned selected-account file is rewritten as versioned preferences while
+retaining its saved keys under `reselection_required`. The host keeps those accounts
+unselected until an explicit account choice clears the marker.
+
+- `usage-projection-v2-current.json`: valid canonical V2 shape.
+- `usage-projection-v2-invalid.json`: legacy V1, unknown-major, missing-field, and
+  percent-invariant failures.
 - `provider-call-allowlist.json`: every currently classified production provider call.
   `legacy_bypass` is debt for its owning migration plan, not approval to add another.
 - `surface-matrix.json`: required state/dimension families for later golden suites.

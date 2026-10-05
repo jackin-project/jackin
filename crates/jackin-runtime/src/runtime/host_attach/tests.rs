@@ -126,9 +126,9 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
         &mut client,
         &mut operations,
         Err(anyhow::anyhow!(
-            "Linux host clipboard image reader needs WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"
+            jackin_protocol::attach::ClipboardImageError::BackendUnavailable
         )),
-        "host clipboard does not contain a readable image",
+        jackin_protocol::attach::ClipboardImageError::NoReadableImage,
         "host clipboard image probe failed",
     )
     .await;
@@ -154,6 +154,61 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
 }
 
 #[tokio::test]
+async fn clipboard_probe_outcomes_keep_type_and_guidance() {
+    use jackin_protocol::attach::ClipboardImageError;
+    let cases = [
+        (Ok(None), ClipboardImageError::NoReadableImage),
+        (
+            Err(
+                anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+                    .context("reading host image"),
+            ),
+            ClipboardImageError::Io,
+        ),
+        (
+            Err(anyhow::anyhow!(ClipboardImageError::BackendUnavailable).context("missing bridge")),
+            ClipboardImageError::BackendUnavailable,
+        ),
+        (
+            Err(anyhow::anyhow!(
+                "empty metadata reading offset digest display magic"
+            )),
+            ClipboardImageError::Other(
+                "probe failed: empty metadata reading offset digest display magic".to_owned(),
+            ),
+        ),
+    ];
+    for (probe, expected) in cases {
+        let (mut client, mut server) = duplex(4096);
+        let mut operations = HashMap::new();
+        write_clipboard_image_request_result(
+            &mut client,
+            &mut operations,
+            probe,
+            ClipboardImageError::NoReadableImage,
+            "probe failed",
+        )
+        .await;
+        drop(client);
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        let frame = read_client_frame(&mut server, tag[0])
+            .await
+            .unwrap()
+            .unwrap();
+        let ClientFrame::AttachControl(AttachControlRequest {
+            operation: AttachControlOperation::ClipboardImageError(actual),
+            ..
+        }) = frame
+        else {
+            panic!("expected clipboard error outcome");
+        };
+        assert_eq!(actual, expected);
+        assert_eq!(server.read(&mut tag).await.unwrap(), 0);
+    }
+}
+
+#[tokio::test]
 async fn explicit_clipboard_path_request_mentions_file_url_support() {
     let (mut client, mut server) = duplex(4096);
     let mut operations = HashMap::new();
@@ -162,7 +217,7 @@ async fn explicit_clipboard_path_request_mentions_file_url_support() {
         &mut client,
         &mut operations,
         Ok(None),
-        "host clipboard text is not an absolute readable image path or file:// image URL",
+        jackin_protocol::attach::ClipboardImageError::NoReadableImagePath,
         "host clipboard image path probe failed",
     )
     .await;
@@ -182,8 +237,15 @@ async fn explicit_clipboard_path_request_mentions_file_url_support() {
         panic!("expected ClipboardImageError");
     };
 
-    assert_eq!(error.reason_code(), "io");
-    assert!(error.message().contains("host I/O failed"));
+    assert_eq!(
+        error,
+        jackin_protocol::attach::ClipboardImageError::NoReadableImagePath
+    );
+    assert!(
+        error
+            .message()
+            .contains("absolute readable image path or file:// image URL")
+    );
     assert_eq!(server.read(&mut tag).await.unwrap(), 0);
 }
 
@@ -1275,8 +1337,18 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
 
     let writer = async {
         let mut operations = HashMap::new();
-        send_clipboard_image_error(&mut client, &mut operations, &message).await?;
-        send_clipboard_image_error(&mut client, &mut operations, "   ").await
+        send_clipboard_image_error(
+            &mut client,
+            &mut operations,
+            jackin_protocol::attach::ClipboardImageError::Other(message.clone()),
+        )
+        .await?;
+        send_clipboard_image_error(
+            &mut client,
+            &mut operations,
+            jackin_protocol::attach::ClipboardImageError::Other("   ".to_owned()),
+        )
+        .await
     };
     let first_frame = async {
         let mut tag = [0u8; 1];

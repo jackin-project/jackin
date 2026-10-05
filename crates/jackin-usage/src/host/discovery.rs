@@ -138,6 +138,8 @@ pub struct HostCredentialRootRow {
 /// One account capability explicitly forwarded into a Capsule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForwardedUsageAccount {
+    /// Logical authentication evidence supplied by the accepted host catalog.
+    pub canonical_identity: Option<jackin_protocol::control::UsageCanonicalAccountIdentity>,
     /// Stable provider surface id.
     pub surface_id: String,
     /// Opaque broker-issued capability id; never credential material.
@@ -325,6 +327,8 @@ pub enum UsageDiscoveryIssue {
     CredentialMissing,
     /// Protected credential access was denied/unavailable.
     CredentialDenied,
+    /// Credential lookup could not complete; retry may succeed later.
+    CredentialUnavailable,
     /// A Keychain item exists but the operator has not approved access.
     KeychainConsentRequired,
     /// Credential source is malformed.
@@ -344,6 +348,7 @@ impl UsageDiscoveryIssue {
             Self::ConfigTransientConflict => "config_transient_conflict",
             Self::CredentialMissing => "credential_missing",
             Self::CredentialDenied => "credential_denied",
+            Self::CredentialUnavailable => "credential_unavailable",
             Self::KeychainConsentRequired => "keychain_consent_required",
             Self::CredentialMalformed => "credential_malformed",
             Self::InteractionRequired => "interaction_required",
@@ -360,6 +365,7 @@ impl UsageDiscoveryIssue {
             Self::ConfigTransientConflict => "Configuration changed while it was being read",
             Self::CredentialMissing => "Credentials are missing",
             Self::CredentialDenied => "Credential access was denied",
+            Self::CredentialUnavailable => "Credential access is temporarily unavailable",
             Self::KeychainConsentRequired => {
                 "Keychain consent required; approve jackin in Keychain Access"
             }
@@ -376,6 +382,8 @@ pub struct UsageDiscoveryDiagnostic {
     pub surface_id: Option<String>,
     /// Rust-composed scope label (`account …`, `workspace …`).
     pub scope_label: String,
+    /// Exact configured account registry IDs contributing this diagnostic.
+    pub configured_account_ids: BTreeSet<String>,
     /// Stable machine-readable category.
     pub issue: UsageDiscoveryIssue,
 }
@@ -393,6 +401,8 @@ pub struct UsageSourceCandidateDescriptor {
     pub capability_id: String,
     /// Every config scope that resolved to this source.
     pub provenance: Vec<String>,
+    /// Exact configured account registry IDs resolving to this source.
+    pub configured_account_ids: BTreeSet<String>,
 }
 
 /// One complete source discovery generation.
@@ -405,6 +415,83 @@ pub struct UsageDiscoveryCatalog {
     /// Isolated config/credential diagnostics.
     pub diagnostics: Vec<UsageDiscoveryDiagnostic>,
     pub(super) sources: Vec<DiscoveredCredentialSource>,
+}
+
+/// Enumerate configured usage sources without accessing credential material.
+///
+/// Disabled runtimes retain declaration inventory; authentication and broker
+/// admission remain deferred until a live discovery scan.
+pub fn discover_usage_inventory(
+    scope: &UsageDiscoveryScope,
+) -> Result<ValidatedUsageDiscovery, String> {
+    let (config_generation, candidates, diagnostics) = match scope {
+        UsageDiscoveryScope::HostDesktop {
+            config_root,
+            operator_home,
+        } => {
+            let paths =
+                JackinPaths::resolve_with_env(operator_home, None, Some(config_root.as_os_str()));
+            let snapshot = jackin_config::load_read_only_config_snapshot(&paths)
+                .map_err(|_| "config snapshot unavailable".to_owned())?;
+            let generation = snapshot.generation.as_str().to_owned();
+            let diagnostics = config_diagnostics(&snapshot);
+            let candidates = snapshot
+                .config
+                .accounts
+                .iter()
+                .filter(|(_, account)| account.enabled)
+                .map(|(id, account)| {
+                    let surface = provider_surface(account.provider);
+                    let credential_kind = match &account.credential {
+                        AccountCredential::Profile { .. } => UsageCredentialKind::Profile,
+                        AccountCredential::ApiKey { .. } => UsageCredentialKind::ApiKey,
+                        AccountCredential::OAuthToken { .. } => UsageCredentialKind::OAuthToken,
+                    };
+                    // Inventory identifiers cannot authorize a provider call.
+                    // Bind them to the entire declaration generation without
+                    // exporting paths, credential values, or source coordinates.
+                    let source_id = jackin_core::account_key_hash(
+                        surface.id(),
+                        &format!("inventory-v1:{}:{generation}:{id}", id.len()),
+                    );
+                    let source_id = source_id
+                        .strip_prefix("sha256:")
+                        .unwrap_or(&source_id)
+                        .to_owned();
+                    let mut provenance = BTreeSet::from([format!("account {id}")]);
+                    for (name, workspace) in &snapshot.config.workspaces {
+                        if workspace.accounts.contains(id) {
+                            provenance.insert(format!("workspace {name}"));
+                        }
+                    }
+                    UsageSourceCandidateDescriptor {
+                        surface_id: surface.id().to_owned(),
+                        credential_kind,
+                        capability_id: source_id.clone(),
+                        source_id,
+                        provenance: provenance.into_iter().collect(),
+                        configured_account_ids: BTreeSet::from([id.clone()]),
+                    }
+                })
+                .collect();
+            (Some(generation), candidates, diagnostics)
+        }
+        UsageDiscoveryScope::Capsule { forwarded_accounts } => {
+            let catalog = discover_forwarded_sources(forwarded_accounts);
+            (
+                catalog.config_generation,
+                catalog.candidates,
+                catalog.diagnostics,
+            )
+        }
+    };
+    Ok(ValidatedUsageDiscovery {
+        config_generation,
+        accounts: Vec::new(),
+        candidates,
+        diagnostics,
+        bindings: Vec::new(),
+    })
 }
 
 /// One post-auth canonical account discovered from current config membership.
@@ -444,10 +531,30 @@ impl ValidatedUsageDiscovery {
         self.candidates.iter().filter(|candidate| {
             self.bindings.iter().any(|binding| {
                 binding.capability_id == candidate.capability_id && binding.identity.is_none()
-            })
+            }) || self.candidate_is_deferred(candidate)
         })
     }
 
+    pub(super) fn candidate_is_deferred(&self, candidate: &UsageSourceCandidateDescriptor) -> bool {
+        !self
+            .bindings
+            .iter()
+            .any(|binding| binding.capability_id == candidate.capability_id)
+            && !self.diagnostics.iter().any(|diagnostic| {
+                diagnostic.surface_id.as_deref() == Some(candidate.surface_id.as_str())
+                    && !diagnostic
+                        .configured_account_ids
+                        .is_disjoint(&candidate.configured_account_ids)
+            })
+    }
+
+    /// Configured sources whose protected lookup has not been attempted.
+    #[must_use]
+    pub fn has_deferred_sources(&self, surface_id: &str) -> bool {
+        self.candidates.iter().any(|candidate| {
+            candidate.surface_id == surface_id && self.candidate_is_deferred(candidate)
+        })
+    }
     pub(super) fn canonical_aliases(
         &self,
     ) -> impl Iterator<Item = (&str, &CanonicalAccountIdentity)> {
@@ -473,6 +580,8 @@ impl std::fmt::Debug for ValidatedUsageDiscovery {
     }
 }
 
+pub(super) use jackin_core::ProfileCredentialSourceMaterial;
+
 #[derive(Clone)]
 pub(super) struct ValidatedCredentialBinding {
     pub surface: HostSurfaceId,
@@ -480,7 +589,9 @@ pub(super) struct ValidatedCredentialBinding {
     pub source_id: String,
     pub capability_id: String,
     pub credential_revision: String,
+    pub profile_material: Option<ProfileCredentialSourceMaterial>,
     pub provenance: BTreeSet<String>,
+    pub configured_account_ids: BTreeSet<String>,
     pub source: ValidatedCredentialSource,
 }
 
@@ -511,22 +622,23 @@ pub(super) enum ProfileCredentialMaterial {
     Claude(crate::usage::ClaudeResolved),
     Codex {
         credentials: crate::usage::CodexOAuthCredentials,
-        root: PathBuf,
     },
     Amp {
         key: String,
     },
     Grok {
-        auth_path: PathBuf,
+        auth: serde_json::Value,
+        identity: Option<String>,
     },
     Kimi {
         token: String,
     },
     OpenCode {
-        auth_path: PathBuf,
+        token: String,
     },
     Cursor {
-        auth_path: PathBuf,
+        auth: crate::usage::CursorAuth,
+        identity: Option<String>,
     },
     Gemini {
         creds_path: PathBuf,
@@ -552,6 +664,8 @@ impl std::fmt::Debug for UsageDiscoveryCatalog {
 enum CredentialSourceKey {
     Profile {
         agent: Agent,
+        provider: String,
+        selector: Option<(String, Option<String>)>,
         root: PathBuf,
     },
     Env {
@@ -573,12 +687,15 @@ pub(super) enum DiscoveredCredentialSource {
     Profile {
         surface: HostSurfaceId,
         agent: Agent,
+        provider: String,
+        selector: Option<jackin_config::ProfileSelector>,
         root: PathBuf,
         operator_home: PathBuf,
         account_label: Option<String>,
         source_id: String,
         capability_id: String,
         provenance: BTreeSet<String>,
+        configured_account_ids: BTreeSet<String>,
     },
     Env {
         surface: HostSurfaceId,
@@ -591,19 +708,24 @@ pub(super) enum DiscoveredCredentialSource {
         source_id: String,
         capability_id: String,
         provenance: BTreeSet<String>,
+        configured_account_ids: BTreeSet<String>,
     },
     Capability {
         surface: HostSurfaceId,
+        canonical_identity: Option<jackin_protocol::control::UsageCanonicalAccountIdentity>,
         account_label: Option<String>,
         source_id: String,
         capability_id: String,
+        configured_account_ids: BTreeSet<String>,
     },
 }
 
 struct CandidateAccumulator {
+    canonical_identity: Option<jackin_protocol::control::UsageCanonicalAccountIdentity>,
     surface: HostSurfaceId,
     kind: UsageCredentialKind,
     provenance: BTreeSet<String>,
+    configured_account_ids: BTreeSet<String>,
     env_keys: BTreeSet<String>,
     account_label: Option<String>,
     operator_home: Option<PathBuf>,
@@ -612,10 +734,14 @@ struct CandidateAccumulator {
 fn merge_env_candidate(
     candidate: &mut CandidateAccumulator,
     provenance: &BTreeSet<String>,
+    configured_account_ids: &BTreeSet<String>,
     env_key: &str,
     account_label: Option<&str>,
 ) {
     candidate.provenance.extend(provenance.clone());
+    candidate
+        .configured_account_ids
+        .extend(configured_account_ids.iter().cloned());
     candidate.env_keys.insert(env_key.to_owned());
     if candidate.account_label.is_none() {
         candidate.account_label = account_label.map(str::to_owned);
@@ -665,6 +791,8 @@ fn discover_host_sources(
 
 fn discover_forwarded_sources(accounts: &[ForwardedUsageAccount]) -> UsageDiscoveryCatalog {
     let mut candidates = BTreeMap::<CredentialSourceKey, CandidateAccumulator>::new();
+    let mut rejected = BTreeSet::new();
+    let mut diagnostics = Vec::new();
     for account in accounts {
         let Some(surface) = HostSurfaceId::from_id(&account.surface_id) else {
             continue;
@@ -674,21 +802,55 @@ fn discover_forwarded_sources(accounts: &[ForwardedUsageAccount]) -> UsageDiscov
         if !HostSurfaceId::ALL.contains(&surface) {
             continue;
         }
-        candidates
-            .entry(CredentialSourceKey::Capability {
-                surface,
-                id: account.capability_id.clone(),
+        if account.capability_id.is_empty()
+            || account.capability_id.len() > 128
+            || !account.capability_id.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
             })
+        {
+            diagnostics.push(source_diagnostic(
+                surface,
+                &BTreeSet::new(),
+                &BTreeSet::from(["forwarded to Capsule".to_owned()]),
+                UsageDiscoveryIssue::CredentialMalformed,
+            ));
+            continue;
+        }
+        let key = CredentialSourceKey::Capability {
+            surface,
+            id: account.capability_id.clone(),
+        };
+        if rejected.contains(&key) {
+            continue;
+        }
+        if candidates
+            .get(&key)
+            .is_some_and(|existing| existing.canonical_identity != account.canonical_identity)
+        {
+            candidates.remove(&key);
+            rejected.insert(key);
+            diagnostics.push(source_diagnostic(
+                surface,
+                &BTreeSet::new(),
+                &BTreeSet::from(["forwarded to Capsule".to_owned()]),
+                UsageDiscoveryIssue::CredentialMalformed,
+            ));
+            continue;
+        }
+        candidates
+            .entry(key)
             .or_insert_with(|| CandidateAccumulator {
+                canonical_identity: account.canonical_identity.clone(),
                 surface,
                 kind: UsageCredentialKind::ForwardedCapability,
                 provenance: BTreeSet::from(["forwarded to Capsule".to_owned()]),
+                configured_account_ids: BTreeSet::new(),
                 env_keys: BTreeSet::new(),
                 account_label: account.account_label.clone(),
                 operator_home: None,
             });
     }
-    materialize_catalog(None, candidates, Vec::new())
+    materialize_catalog(None, candidates, diagnostics)
 }
 
 /// Discovery-isolated alias for one governed registry entry.
@@ -782,6 +944,7 @@ fn enumerate_registered_accounts(
         }
         let surface = provider_surface(account.provider);
         let canonical_owner = canonical_owner_for_account(surface, account.provider);
+        let configured_account_ids = BTreeSet::from([id.clone()]);
         let mut provenance = BTreeSet::from([format!("account {id}")]);
         for (workspace_name, workspace) in &config.workspaces {
             if workspace.accounts.contains(id) {
@@ -799,25 +962,44 @@ fn enumerate_registered_accounts(
         // Profile discovery remains the baseline path. It does not need an
         // env route and must not invoke the protected env resolver.
         if let AccountCredential::Profile {
-            agent, directory, ..
+            agent,
+            directory,
+            xdg_roots,
+            source_selector,
         } = &account.credential
         {
-            let root = resolve_profile_root(operator_home, directory);
+            let root = xdg_roots
+                .as_ref()
+                .filter(|_| matches!(agent, Agent::Amp | Agent::Opencode))
+                .map_or_else(
+                    || resolve_profile_root(operator_home, directory),
+                    |roots| roots.data.join(agent.slug()),
+                );
+            let selector = source_selector
+                .as_ref()
+                .map(|selector| (selector.entry.clone(), selector.profile.clone()));
             candidates
                 .entry(CredentialSourceKey::Profile {
                     agent: *agent,
+                    provider: account.provider.slug().to_owned(),
+                    selector,
                     root,
                 })
                 .and_modify(|candidate| {
                     candidate.provenance.extend(provenance.clone());
+                    candidate
+                        .configured_account_ids
+                        .extend(configured_account_ids.iter().cloned());
                     if candidate.account_label.is_none() {
                         candidate.account_label = label.clone();
                     }
                 })
                 .or_insert_with(|| CandidateAccumulator {
+                    canonical_identity: None,
                     surface,
                     kind: UsageCredentialKind::Profile,
                     provenance,
+                    configured_account_ids,
                     env_keys: BTreeSet::new(),
                     account_label: label.clone(),
                     operator_home: Some(operator_home.to_path_buf()),
@@ -900,14 +1082,17 @@ fn enumerate_registered_accounts(
                             merge_env_candidate(
                                 candidate,
                                 &provenance,
+                                &configured_account_ids,
                                 entry.name,
                                 label.as_deref(),
                             );
                         })
                         .or_insert_with(|| CandidateAccumulator {
+                            canonical_identity: None,
                             surface,
                             kind,
                             provenance: provenance.clone(),
+                            configured_account_ids: configured_account_ids.clone(),
                             env_keys: BTreeSet::from([entry.name.to_owned()]),
                             account_label: label.clone(),
                             operator_home: None,
@@ -1001,6 +1186,7 @@ fn account_diagnostic(
     UsageDiscoveryDiagnostic {
         surface_id: Some(surface.id().to_owned()),
         scope_label: format!("account {account_id}"),
+        configured_account_ids: BTreeSet::from([account_id.to_owned()]),
         issue,
     }
 }
@@ -1018,6 +1204,7 @@ fn config_diagnostics(snapshot: &ReadOnlyConfigSnapshot) -> Vec<UsageDiscoveryDi
                     format!("workspace {name}")
                 }
             },
+            configured_account_ids: BTreeSet::new(),
             issue: match diagnostic.issue {
                 ConfigSourceIssue::Unreadable => UsageDiscoveryIssue::ConfigUnreadable,
                 ConfigSourceIssue::UnsupportedVersion => {
@@ -1054,17 +1241,27 @@ fn materialize_catalog(
             source_id: source_id.clone(),
             capability_id: capability_id.clone(),
             provenance,
+            configured_account_ids: candidate.configured_account_ids.clone(),
         });
         let source = match key {
-            CredentialSourceKey::Profile { agent, root } => DiscoveredCredentialSource::Profile {
+            CredentialSourceKey::Profile {
+                agent,
+                provider,
+                selector,
+                root,
+            } => DiscoveredCredentialSource::Profile {
                 surface: candidate.surface,
                 agent,
+                provider,
+                selector: selector
+                    .map(|(entry, profile)| jackin_config::ProfileSelector { entry, profile }),
                 root,
                 operator_home: candidate.operator_home.unwrap_or_default(),
                 account_label: candidate.account_label,
                 source_id,
                 capability_id,
                 provenance: candidate.provenance,
+                configured_account_ids: candidate.configured_account_ids,
             },
             CredentialSourceKey::Env {
                 surface,
@@ -1082,13 +1279,16 @@ fn materialize_catalog(
                 source_id,
                 capability_id,
                 provenance: candidate.provenance,
+                configured_account_ids: candidate.configured_account_ids,
             },
             CredentialSourceKey::Capability { surface, id } => {
                 DiscoveredCredentialSource::Capability {
                     surface,
+                    canonical_identity: candidate.canonical_identity,
                     account_label: candidate.account_label,
                     source_id,
                     capability_id: id,
+                    configured_account_ids: candidate.configured_account_ids,
                 }
             }
         };
@@ -1107,8 +1307,24 @@ fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourceKey) -> St
         return id.clone();
     }
     let evidence = match key {
-        CredentialSourceKey::Profile { agent, root } => {
-            format!("profile-v1:{}:{}", agent.slug(), root.to_string_lossy())
+        CredentialSourceKey::Profile {
+            agent,
+            provider,
+            selector,
+            root,
+        } => {
+            let selector = profile_selector_value(selector.as_ref());
+            let source = jackin_core::profile_credential_source_identity(
+                *agent,
+                provider,
+                root,
+                selector.as_ref(),
+            );
+            format!(
+                "profile-v2:{}:{}",
+                agent.slug(),
+                source.descriptor_fingerprint
+            )
         }
         CredentialSourceKey::Env {
             surface,
@@ -1137,6 +1353,7 @@ fn source_capability_id(surface: HostSurfaceId, key: &CredentialSourceKey) -> St
 enum ProfileReadOutcome {
     Bytes(Vec<u8>),
     Missing,
+    Unavailable,
     Denied,
     ConsentRequired,
 }
@@ -1234,13 +1451,16 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
     }
 
     fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome {
-        match crate::usage::read_claude_keychain_item(&scope.service) {
+        match crate::usage::claude_keychain_state()
+            .read_with(&scope.service, crate::usage::read_claude_keychain_item)
+        {
             #[cfg(any(target_os = "macos", test))]
             crate::usage::ClaudeKeychainRead::Payload { json } => {
                 ProfileReadOutcome::Bytes(json.into_bytes())
             }
             crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
             crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
+            crate::usage::ClaudeKeychainRead::Unavailable => ProfileReadOutcome::Unavailable,
             crate::usage::ClaudeKeychainRead::ConsentRequired => {
                 ProfileReadOutcome::ConsentRequired
             }
@@ -1268,6 +1488,9 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
                     crate::usage::ClaudeKeychainRead::Payload { .. } => ProfileReadOutcome::Missing,
                     crate::usage::ClaudeKeychainRead::Denied => ProfileReadOutcome::Denied,
                     crate::usage::ClaudeKeychainRead::Missing => ProfileReadOutcome::Missing,
+                    crate::usage::ClaudeKeychainRead::Unavailable => {
+                        ProfileReadOutcome::Unavailable
+                    }
                     crate::usage::ClaudeKeychainRead::ConsentRequired => {
                         ProfileReadOutcome::ConsentRequired
                     }
@@ -1282,6 +1505,10 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
 }
 
 enum ProfileValidation {
+    ProvenIdentity {
+        identity: CanonicalAccountIdentity,
+        account_label: Option<String>,
+    },
     Authenticated {
         provider_id: Option<String>,
         account_label: Option<String>,
@@ -1289,6 +1516,7 @@ enum ProfileValidation {
     },
     Anonymous(Option<Box<ProfileCredentialMaterial>>),
     Missing,
+    Unavailable,
     Denied,
     ConsentRequired,
     Malformed,
@@ -1325,47 +1553,10 @@ fn validate_usage_sources_with_reader(
         .into_iter()
         .map(|source| validate_source(source, env_resolver, &profile_reader))
         .collect();
-    // Provider-issued identities per surface, from any source form. An
-    // anonymous env/key credential carries no identity evidence of its own;
-    // when exactly one same-surface provider identity exists, the key joins
-    // that canonical account instead of minting a source-scoped row.
-    let mut strong = BTreeMap::<HostSurfaceId, BTreeSet<CanonicalAccountIdentity>>::new();
-    for (surface, _, _, _, _, _, outcome) in &validated {
-        if let ProfileValidation::Authenticated {
-            provider_id: Some(id),
-            ..
-        } = outcome
-            && !id.trim().is_empty()
-        {
-            strong
-                .entry(*surface)
-                .or_default()
-                .insert(CanonicalAccountIdentity {
-                    surface: *surface,
-                    subject: CanonicalAccountSubject::ProviderId(id.trim().to_owned()),
-                });
-        }
-    }
-    let (primary, attachable): (Vec<ValidatedSourceParts>, Vec<ValidatedSourceParts>) = validated
-        .into_iter()
-        .partition(|parts| !is_attachable_env_source(&parts.5, &parts.6));
-    // Strong sources accumulate first so canonical labels come from
-    // authenticated evidence, never from an attached anonymous key.
-    for parts in primary {
-        accumulate_validated_source(parts, None, &mut diagnostics, &mut bindings, &mut accounts);
-    }
-    for parts in attachable {
-        let attach_to = match strong.get(&parts.0) {
-            Some(ids) if ids.len() == 1 => ids.iter().next().cloned(),
-            _ => None,
-        };
-        accumulate_validated_source(
-            parts,
-            attach_to,
-            &mut diagnostics,
-            &mut bindings,
-            &mut accounts,
-        );
+    // Each source supplies its own authentication evidence. Another source
+    // sharing its provider cannot prove which account an anonymous key owns.
+    for parts in validated {
+        accumulate_validated_source(parts, &mut diagnostics, &mut bindings, &mut accounts);
     }
 
     let accounts = accounts
@@ -1389,79 +1580,51 @@ fn validate_usage_sources_with_reader(
     }
 }
 
-/// Whether an env/key source proved no identity of its own.
-///
-/// Anonymous API-key/OAuth-token credentials are bearer material without
-/// local identity evidence. Unlike profiles (distinct local logins) and
-/// forwarded capabilities (a separate trust domain), they may join the one
-/// same-surface provider-authenticated account when it exists.
-fn is_attachable_env_source(
-    source: &ValidatedCredentialSource,
-    outcome: &ProfileValidation,
-) -> bool {
-    if !matches!(source, ValidatedCredentialSource::Env { .. }) {
-        return false;
-    }
-    match outcome {
-        ProfileValidation::Authenticated { provider_id, .. } => {
-            provider_id.as_deref().is_none_or(|id| id.trim().is_empty())
-        }
-        ProfileValidation::Anonymous(_) => true,
-        ProfileValidation::Missing
-        | ProfileValidation::Denied
-        | ProfileValidation::ConsentRequired
-        | ProfileValidation::Malformed => false,
-    }
-}
-
 fn accumulate_validated_source(
     parts: ValidatedSourceParts,
-    attach_to: Option<CanonicalAccountIdentity>,
     diagnostics: &mut Vec<UsageDiscoveryDiagnostic>,
     bindings: &mut Vec<ValidatedCredentialBinding>,
     accounts: &mut BTreeMap<CanonicalAccountIdentity, AccountAccumulator>,
 ) {
-    let (surface, source_id, capability_id, credential_revision, provenance, source, outcome) =
-        parts;
-    if let Some(identity) = attach_to {
-        let label = match &outcome {
-            ProfileValidation::Authenticated {
-                provider_id,
-                account_label,
-                ..
-            } => account_label
-                .as_deref()
-                .map(str::trim)
-                .filter(|label| !label.is_empty())
-                .map(str::to_owned)
-                .or_else(|| provider_id.clone())
-                .unwrap_or_default(),
-            _ => String::new(),
-        };
-        let entry = accounts.entry(identity.clone()).or_insert_with(|| {
-            // Unreachable: the strong target accumulates first and always
-            // mints its account. The fallback keeps the merge total.
-            AccountAccumulator {
-                label,
-                provenance: BTreeSet::new(),
-                source_ids: BTreeSet::new(),
-            }
-        });
-        entry.provenance.extend(provenance.iter().cloned());
-        entry.source_ids.insert(source_id.clone());
-        bindings.push(ValidatedCredentialBinding {
-            surface,
-            identity: Some(identity),
-            source_id,
-            capability_id,
-            credential_revision,
-            provenance,
-            source,
-        });
-        return;
-    }
-
+    let (
+        surface,
+        source_id,
+        capability_id,
+        credential_revision,
+        provenance,
+        configured_account_ids,
+        source,
+        profile_material,
+        outcome,
+    ) = parts;
     match outcome {
+        ProfileValidation::ProvenIdentity {
+            identity,
+            account_label,
+        } => {
+            let entry = accounts
+                .entry(identity.clone())
+                .or_insert_with(|| AccountAccumulator {
+                    label: account_label
+                        .filter(|label| !label.trim().is_empty())
+                        .unwrap_or_else(|| "Authenticated account".to_owned()),
+                    provenance: BTreeSet::new(),
+                    source_ids: BTreeSet::new(),
+                });
+            entry.provenance.extend(provenance.iter().cloned());
+            entry.source_ids.insert(source_id.clone());
+            bindings.push(ValidatedCredentialBinding {
+                surface,
+                identity: Some(identity),
+                source_id,
+                capability_id,
+                credential_revision,
+                profile_material,
+                provenance,
+                configured_account_ids,
+                source,
+            });
+        }
         ProfileValidation::Authenticated {
             provider_id,
             account_label,
@@ -1469,8 +1632,8 @@ fn accumulate_validated_source(
         } => {
             let subject = provider_id
                 .as_ref()
-                .filter(|id| !id.trim().is_empty())
-                .map(|id| CanonicalAccountSubject::ProviderId(id.trim().to_owned()))
+                .filter(|id| !id.is_empty())
+                .map(|id| CanonicalAccountSubject::ProviderId(id.clone()))
                 .or_else(|| {
                     account_label
                         .as_ref()
@@ -1489,7 +1652,9 @@ fn accumulate_validated_source(
                     source_id,
                     capability_id,
                     credential_revision,
+                    profile_material,
                     provenance,
+                    configured_account_ids,
                     source,
                 });
                 return;
@@ -1517,7 +1682,9 @@ fn accumulate_validated_source(
                 source_id,
                 capability_id,
                 credential_revision,
+                profile_material,
                 provenance,
+                configured_account_ids,
                 source,
             });
         }
@@ -1527,26 +1694,38 @@ fn accumulate_validated_source(
             source_id,
             capability_id,
             credential_revision,
+            profile_material,
             provenance,
+            configured_account_ids,
             source,
         }),
         ProfileValidation::Missing => diagnostics.push(source_diagnostic(
             surface,
+            &configured_account_ids,
             &provenance,
             UsageDiscoveryIssue::CredentialMissing,
         )),
+        ProfileValidation::Unavailable => diagnostics.push(source_diagnostic(
+            surface,
+            &configured_account_ids,
+            &provenance,
+            UsageDiscoveryIssue::CredentialUnavailable,
+        )),
         ProfileValidation::Denied => diagnostics.push(source_diagnostic(
             surface,
+            &configured_account_ids,
             &provenance,
             UsageDiscoveryIssue::CredentialDenied,
         )),
         ProfileValidation::ConsentRequired => diagnostics.push(source_diagnostic(
             surface,
+            &configured_account_ids,
             &provenance,
             UsageDiscoveryIssue::KeychainConsentRequired,
         )),
         ProfileValidation::Malformed => diagnostics.push(source_diagnostic(
             surface,
+            &configured_account_ids,
             &provenance,
             UsageDiscoveryIssue::CredentialMalformed,
         )),
@@ -1559,7 +1738,9 @@ type ValidatedSourceParts = (
     String,
     String,
     BTreeSet<String>,
+    BTreeSet<String>,
     ValidatedCredentialSource,
+    Option<ProfileCredentialSourceMaterial>,
     ProfileValidation,
 );
 
@@ -1572,16 +1753,73 @@ fn validate_source(
         DiscoveredCredentialSource::Profile {
             surface,
             agent,
+            provider,
+            selector,
             root,
             operator_home,
-            account_label,
+            account_label: _,
             source_id,
             capability_id,
             provenance,
+            configured_account_ids,
         } => {
-            let outcome = profile_identity(profile_reader, agent, &root, &operator_home);
-            let credential_revision =
-                profile_credential_revision(profile_reader, agent, &root, &operator_home);
+            // The implemented OpenCode collector owns native OpenCode billing.
+            // A compatible multi-provider store cannot authorize that collector
+            // under a different issuer's surface.
+            if agent == Agent::Opencode && provider != AiProvider::Opencode.slug() {
+                return (
+                    surface,
+                    source_id,
+                    capability_id,
+                    opaque_credential_revision("unsupported-opencode-profile-provider"),
+                    provenance,
+                    configured_account_ids,
+                    ValidatedCredentialSource::Capability,
+                    None,
+                    ProfileValidation::Malformed,
+                );
+            }
+            let root = effective_profile_root(profile_reader, agent, &root);
+            let selected_kimi_slot = if agent == Agent::Kimi {
+                selected_kimi_auth_slot(profile_reader, &root)
+            } else {
+                None
+            };
+            let selected_kimi_path = selected_kimi_slot
+                .as_ref()
+                .map(|slot| root.join(&slot.credential_relative_path));
+            let mut outcome = profile_identity_for_selected_kimi_slot(
+                profile_reader,
+                agent,
+                &root,
+                &operator_home,
+                selected_kimi_slot.as_ref(),
+            );
+            let profile_material = captured_profile_material_for_selected_kimi_slot(
+                profile_reader,
+                agent,
+                &provider,
+                selector.as_ref(),
+                &root,
+                &operator_home,
+                selected_kimi_slot.as_ref(),
+            );
+            if profile_material.is_none()
+                && agent != Agent::Antigravity
+                && matches!(
+                    &outcome,
+                    ProfileValidation::Authenticated { .. } | ProfileValidation::Anonymous(_)
+                )
+            {
+                outcome = ProfileValidation::Malformed;
+            }
+            let credential_revision = profile_credential_revision(
+                profile_reader,
+                agent,
+                &root,
+                &operator_home,
+                selected_kimi_path.as_deref(),
+            );
             let source = match &outcome {
                 ProfileValidation::Authenticated { material, .. }
                 | ProfileValidation::Anonymous(material) => material.clone().map_or(
@@ -1593,36 +1831,15 @@ fn validate_source(
                 ),
                 _ => ValidatedCredentialSource::Capability,
             };
-            let outcome = match outcome {
-                ProfileValidation::Authenticated {
-                    provider_id,
-                    account_label: auth_label,
-                    material,
-                } => ProfileValidation::Authenticated {
-                    provider_id,
-                    account_label: auth_label.or(account_label),
-                    material,
-                },
-                ProfileValidation::Anonymous(_) => {
-                    if let Some(label) = account_label {
-                        ProfileValidation::Authenticated {
-                            account_label: Some(label),
-                            provider_id: None,
-                            material: None,
-                        }
-                    } else {
-                        outcome
-                    }
-                }
-                other => other,
-            };
             (
                 surface,
                 source_id,
                 capability_id,
                 credential_revision,
                 provenance,
+                configured_account_ids,
                 source,
+                profile_material,
                 outcome,
             )
         }
@@ -1633,10 +1850,11 @@ fn validate_source(
             dispatch_key,
             launch_keys,
             kind: _,
-            account_label,
+            account_label: _,
             source_id,
             capability_id,
             provenance,
+            configured_account_ids,
         } => {
             let material = env_resolver.source_material(surface, &key, &handle);
             let outcome = match env_resolver.identify_provider_credential(surface, &handle) {
@@ -1645,37 +1863,33 @@ fn validate_source(
                     account_label: auth_label,
                 } => ProfileValidation::Authenticated {
                     provider_id,
-                    account_label: auth_label.or(account_label),
+                    account_label: auth_label,
                     material: None,
                 },
-                ProviderCredentialIdentityOutcome::Anonymous => {
-                    if let Some(label) = account_label {
-                        ProfileValidation::Authenticated {
-                            account_label: Some(label),
-                            provider_id: None,
-                            material: None,
-                        }
-                    } else {
-                        ProfileValidation::Anonymous(None)
-                    }
-                }
+                ProviderCredentialIdentityOutcome::Anonymous => ProfileValidation::Anonymous(None),
                 ProviderCredentialIdentityOutcome::Missing => ProfileValidation::Missing,
                 ProviderCredentialIdentityOutcome::Denied => ProfileValidation::Denied,
                 ProviderCredentialIdentityOutcome::Malformed => ProfileValidation::Malformed,
             };
-            let credential_revision = opaque_credential_revision(&format!(
-                "env:{}:{}:{}:{}",
-                surface.id(),
-                key,
-                dispatch_key,
-                handle.0
-            ));
+            let revision_evidence = serde_json::json!({
+                "kind": "env-v4",
+                "surface": surface.id(),
+                "key": key,
+                "dispatch_key": dispatch_key,
+                "handle": handle.0,
+                "material": material.as_ref().map(|material| serde_json::json!({
+                    "source": material.source,
+                    "material_fingerprint": material.material_fingerprint,
+                })),
+            });
+            let credential_revision = opaque_credential_revision(&revision_evidence.to_string());
             (
                 surface,
                 source_id,
                 capability_id,
                 credential_revision,
                 provenance,
+                configured_account_ids,
                 ValidatedCredentialSource::Env {
                     handle,
                     key,
@@ -1683,30 +1897,38 @@ fn validate_source(
                     launch_keys,
                     material,
                 },
+                None,
                 outcome,
             )
         }
         DiscoveredCredentialSource::Capability {
             surface,
+            canonical_identity,
             account_label,
             source_id,
             capability_id,
+            configured_account_ids,
         } => {
             let provenance = BTreeSet::from(["forwarded to Capsule".to_owned()]);
-            let outcome = account_label.map_or(ProfileValidation::Anonymous(None), |label| {
-                ProfileValidation::Authenticated {
-                    provider_id: None,
-                    account_label: Some(label),
-                    material: None,
-                }
-            });
+            let outcome = match canonical_identity {
+                Some(evidence) => CanonicalAccountIdentity::from_protocol(surface, &evidence)
+                    .map_or(ProfileValidation::Malformed, |identity| {
+                        ProfileValidation::ProvenIdentity {
+                            identity,
+                            account_label,
+                        }
+                    }),
+                None => ProfileValidation::Anonymous(None),
+            };
             (
                 surface,
                 source_id,
                 capability_id.clone(),
                 opaque_credential_revision(&format!("capability:{capability_id}")),
                 provenance,
+                configured_account_ids,
                 ValidatedCredentialSource::Capability,
+                None,
                 outcome,
             )
         }
@@ -1715,12 +1937,14 @@ fn validate_source(
 
 fn source_diagnostic(
     surface: HostSurfaceId,
+    configured_account_ids: &BTreeSet<String>,
     provenance: &BTreeSet<String>,
     issue: UsageDiscoveryIssue,
 ) -> UsageDiscoveryDiagnostic {
     UsageDiscoveryDiagnostic {
         surface_id: Some(surface.id().to_owned()),
         scope_label: provenance.iter().cloned().collect::<Vec<_>>().join(", "),
+        configured_account_ids: configured_account_ids.clone(),
         issue,
     }
 }
@@ -1729,11 +1953,142 @@ fn source_diagnostic(
 /// profile source. The path-derived source id is intentionally not enough:
 /// providers frequently rotate tokens in place without changing the profile
 /// path or account identity.
+fn profile_selector_value(
+    selector: Option<&(String, Option<String>)>,
+) -> Option<serde_json::Value> {
+    selector.map(|(entry, profile)| {
+        let mut value = serde_json::json!({"entry": entry});
+        if let Some(profile) = profile {
+            value["profile"] = serde_json::Value::String(profile.clone());
+        }
+        value
+    })
+}
+
+fn effective_profile_root(
+    reader: &dyn ProfileCredentialReader,
+    agent: Agent,
+    root: &Path,
+) -> PathBuf {
+    if agent == Agent::Amp {
+        let source = jackin_config::amp_credentials_path_from_presence(
+            root,
+            reader.exists(&root.join("secrets.json")),
+            reader.exists(&root.join("data/amp/secrets.json")),
+        );
+        source.parent().unwrap_or(root).to_path_buf()
+    } else {
+        root.to_path_buf()
+    }
+}
+
+fn selected_kimi_auth_slot(
+    reader: &dyn ProfileCredentialReader,
+    root: &Path,
+) -> Option<jackin_config::KimiRuntimeAuthSlot> {
+    let ProfileReadOutcome::Bytes(config) = reader.read(&root.join("config.toml")) else {
+        return None;
+    };
+    // Kimi route overrides are account-owned and stripped from profile-backed
+    // agent sessions, so the effective profile environment has no route vars.
+    let effective_environment = BTreeMap::new();
+    Some(
+        jackin_config::kimi_runtime_auth_slot(
+            &config,
+            jackin_config::KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION,
+            &effective_environment,
+        )
+        .ok()?,
+    )
+}
+
+/// Hash the same primary payload consumed by identity/material validation.
+/// Protected material never implements Debug or escapes through descriptors.
+#[cfg(test)]
+fn captured_profile_material(
+    reader: &dyn ProfileCredentialReader,
+    agent: Agent,
+    provider: &str,
+    selector: Option<&jackin_config::ProfileSelector>,
+    root: &Path,
+    operator_home: &Path,
+) -> Option<ProfileCredentialSourceMaterial> {
+    let selected_kimi_slot = if agent == Agent::Kimi {
+        selected_kimi_auth_slot(reader, root)
+    } else {
+        None
+    };
+    captured_profile_material_for_selected_kimi_slot(
+        reader,
+        agent,
+        provider,
+        selector,
+        root,
+        operator_home,
+        selected_kimi_slot.as_ref(),
+    )
+}
+
+fn captured_profile_material_for_selected_kimi_slot(
+    reader: &dyn ProfileCredentialReader,
+    agent: Agent,
+    provider: &str,
+    selector: Option<&jackin_config::ProfileSelector>,
+    root: &Path,
+    operator_home: &Path,
+    selected_kimi_slot: Option<&jackin_config::KimiRuntimeAuthSlot>,
+) -> Option<ProfileCredentialSourceMaterial> {
+    let raw = match agent {
+        Agent::Claude => claude_primary_read(reader, root, operator_home),
+        Agent::Codex
+        | Agent::Grok
+        | Agent::Opencode
+        | Agent::Cursor
+        | Agent::Muse
+        | Agent::Hermes => reader.read(&root.join("auth.json")),
+        Agent::Amp => reader.read(&root.join("secrets.json")),
+        Agent::Kimi => reader.read(&root.join(&selected_kimi_slot?.credential_relative_path)),
+        Agent::Gemini => reader.read(&root.join("oauth_creds.json")),
+        Agent::Omp => reader.read(&root.join("agent/agent.db")),
+        // Presence-only grant cannot attest to material forwarded to a Capsule.
+        Agent::Antigravity => return None,
+    };
+    let ProfileReadOutcome::Bytes(bytes) = raw else {
+        return None;
+    };
+    let material_revision =
+        jackin_core::profile_credential_material_revision(agent, &bytes).ok()?;
+    let configured_selector = selector.map(serde_json::to_value).transpose().ok()?;
+    let selector = if let Some(slot) = selected_kimi_slot {
+        let mut descriptor = serde_json::Map::new();
+        if let Some(configured) = configured_selector {
+            descriptor.insert("profile".to_owned(), configured);
+        }
+        descriptor.insert(
+            "kimi_runtime_auth_slot".to_owned(),
+            serde_json::to_value(slot).ok()?,
+        );
+        Some(serde_json::Value::Object(descriptor))
+    } else {
+        configured_selector
+    };
+    Some(ProfileCredentialSourceMaterial {
+        source: jackin_core::profile_credential_source_identity(
+            agent,
+            provider,
+            root,
+            selector.as_ref(),
+        ),
+        material_revision,
+    })
+}
+
 fn profile_credential_revision(
     reader: &dyn ProfileCredentialReader,
     agent: Agent,
     root: &Path,
     operator_home: &Path,
+    selected_kimi_path: Option<&Path>,
 ) -> String {
     let mut evidence = Vec::new();
     let mut file = |label: &str, path: PathBuf| {
@@ -1758,15 +2113,18 @@ fn profile_credential_revision(
         }
         Agent::Codex => file("codex.auth", root.join("auth.json")),
         Agent::Amp => {
-            let direct = root.join("secrets.json");
-            let path = if reader.exists(&direct) {
-                direct
-            } else {
-                root.join("data/amp/secrets.json")
-            };
+            let path = root.join("secrets.json");
             file("amp.secrets", path);
         }
-        Agent::Kimi => file("kimi.credentials", root.join("credentials/kimi-code.json")),
+        Agent::Kimi => {
+            let Some(path) = selected_kimi_path else {
+                return opaque_credential_revision("kimi.credentials:missing-selected-path");
+            };
+            let path = path.to_path_buf();
+            let relative = path.strip_prefix(root).unwrap_or(path.as_path());
+            let label = format!("kimi.credentials:{}", relative.display());
+            file(&label, path);
+        }
         Agent::Grok => file("grok.auth", root.join("auth.json")),
         Agent::Opencode => file("opencode.auth", root.join("auth.json")),
         Agent::Antigravity => append_profile_read(
@@ -1797,6 +2155,7 @@ fn append_profile_read(evidence: &mut Vec<String>, label: &str, outcome: Profile
         }
         ProfileReadOutcome::Missing => evidence.push(format!("{label}:missing")),
         ProfileReadOutcome::Denied => evidence.push(format!("{label}:denied")),
+        ProfileReadOutcome::Unavailable => evidence.push(format!("{label}:unavailable")),
         ProfileReadOutcome::ConsentRequired => {
             evidence.push(format!("{label}:consent-required"));
         }
@@ -1808,26 +2167,46 @@ fn opaque_credential_revision(evidence: &str) -> String {
     hashed.strip_prefix("sha256:").unwrap_or(&hashed).to_owned()
 }
 
+#[cfg(test)]
 fn profile_identity(
     reader: &dyn ProfileCredentialReader,
     agent: Agent,
     root: &Path,
     operator_home: &Path,
 ) -> ProfileValidation {
+    let selected_kimi_slot = if agent == Agent::Kimi {
+        selected_kimi_auth_slot(reader, root)
+    } else {
+        None
+    };
+    profile_identity_for_selected_kimi_slot(
+        reader,
+        agent,
+        root,
+        operator_home,
+        selected_kimi_slot.as_ref(),
+    )
+}
+
+fn profile_identity_for_selected_kimi_slot(
+    reader: &dyn ProfileCredentialReader,
+    agent: Agent,
+    root: &Path,
+    operator_home: &Path,
+    selected_kimi_slot: Option<&jackin_config::KimiRuntimeAuthSlot>,
+) -> ProfileValidation {
     match agent {
         Agent::Claude => claude_profile_identity(reader, root, operator_home),
         Agent::Codex => codex_profile_identity(reader, &root.join("auth.json")),
         Agent::Amp => {
-            let direct = root.join("secrets.json");
-            let path = if reader.exists(&direct) {
-                direct
-            } else {
-                root.join("data/amp/secrets.json")
-            };
+            let path = root.join("secrets.json");
             amp_profile_identity(reader, &path)
         }
         Agent::Kimi => {
-            let value = match read_json(reader, &root.join("credentials/kimi-code.json")) {
+            let Some(slot) = selected_kimi_slot else {
+                return ProfileValidation::Missing;
+            };
+            let value = match read_json(reader, &root.join(&slot.credential_relative_path)) {
                 Ok(Some(value)) => value,
                 Ok(None) => return ProfileValidation::Missing,
                 Err(outcome) => return outcome,
@@ -1883,8 +2262,7 @@ fn anonymous_when_present(reader: &dyn ProfileCredentialReader, path: &Path) -> 
 
 /// Cursor identity comes from the sibling `cli-config.json` (`authInfo`
 /// email), verified locally; token presence in `auth.json` is proven at
-/// discovery and the path is kept as refresh material, so refresh re-reads
-/// the registered root instead of a stale discovery-time copy. A
+/// discovery; captured token and identity stay together through refresh. A
 /// present-but-tokenless `auth.json` is malformed, never an anonymous
 /// binding refresh cannot serve.
 fn cursor_profile_identity(reader: &dyn ProfileCredentialReader, root: &Path) -> ProfileValidation {
@@ -1894,14 +2272,17 @@ fn cursor_profile_identity(reader: &dyn ProfileCredentialReader, root: &Path) ->
         Ok(None) => return ProfileValidation::Missing,
         Err(outcome) => return outcome,
     };
-    if crate::usage::cursor_auth_from_value(&value).is_none() {
+    let Some(auth) = crate::usage::cursor_auth_from_value(&value) else {
         return ProfileValidation::Malformed;
-    }
-    let material = Some(Box::new(ProfileCredentialMaterial::Cursor { auth_path }));
+    };
     let label = read_json(reader, &root.join("cli-config.json"))
         .ok()
         .flatten()
         .and_then(|config| crate::usage::cursor_cli_identity_from_value(&config));
+    let material = Some(Box::new(ProfileCredentialMaterial::Cursor {
+        auth,
+        identity: label.clone(),
+    }));
     match label {
         Some(label) => ProfileValidation::Authenticated {
             provider_id: None,
@@ -1945,6 +2326,7 @@ fn antigravity_profile_identity(reader: &dyn ProfileCredentialReader) -> Profile
             ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::Antigravity)))
         }
         ProfileReadOutcome::Missing => ProfileValidation::Missing,
+        ProfileReadOutcome::Unavailable => ProfileValidation::Unavailable,
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
         ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
     }
@@ -1994,6 +2376,7 @@ fn opencode_profile_identity(
                 ProfileValidation::Missing
             }
         }
+        ProfileReadOutcome::Unavailable => ProfileValidation::Unavailable,
         ProfileReadOutcome::Denied => ProfileValidation::Denied,
         ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
         ProfileReadOutcome::Bytes(bytes) => {
@@ -2019,11 +2402,34 @@ fn opencode_profile_identity(
             if kind != Some("api") || key.is_none() {
                 return ProfileValidation::Malformed;
             }
+            let Ok(token) = crate::usage::opencode_api_key_from_value(&value) else {
+                return ProfileValidation::Malformed;
+            };
             ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::OpenCode {
-                auth_path: path.to_path_buf(),
+                token,
             })))
         }
     }
+}
+
+fn claude_primary_read(
+    reader: &dyn ProfileCredentialReader,
+    root: &Path,
+    operator_home: &Path,
+) -> ProfileReadOutcome {
+    match reader.read(&root.join(".credentials.json")) {
+        ProfileReadOutcome::Bytes(bytes)
+            if !std::str::from_utf8(&bytes).is_ok_and(|text| text.trim().is_empty()) =>
+        {
+            return ProfileReadOutcome::Bytes(bytes);
+        }
+        ProfileReadOutcome::Bytes(_) | ProfileReadOutcome::Missing => {}
+        outcome => return outcome,
+    }
+    let Some(scope) = jackin_core::claude_keychain_scope(root, operator_home, operator_home) else {
+        return ProfileReadOutcome::Missing;
+    };
+    reader.read_claude_keychain(&scope)
 }
 
 fn claude_profile_identity(
@@ -2031,19 +2437,30 @@ fn claude_profile_identity(
     root: &Path,
     operator_home: &Path,
 ) -> ProfileValidation {
-    let mut paths = vec![root.join(".credentials.json"), root.join(".claude.json")];
+    let value = match claude_primary_read(reader, root, operator_home) {
+        ProfileReadOutcome::Bytes(bytes) => {
+            match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                Ok(value) => value,
+                Err(_) => return ProfileValidation::Malformed,
+            }
+        }
+        ProfileReadOutcome::Missing => return ProfileValidation::Missing,
+        ProfileReadOutcome::Unavailable => return ProfileValidation::Unavailable,
+        ProfileReadOutcome::Denied => return ProfileValidation::Denied,
+        ProfileReadOutcome::ConsentRequired => return ProfileValidation::ConsentRequired,
+    };
+    let Some(credential) = crate::usage::claude_oauth_from_value(&value) else {
+        return ProfileValidation::Malformed;
+    };
+    let mut account_label = crate::usage::claude_email_from_value(&value);
+    let mut organization_type = crate::usage::claude_organization_type_from_value(&value);
+    let mut paths = vec![root.join(".claude.json")];
     if root == operator_home.join(".claude") {
         paths.push(operator_home.join(".claude.json"));
     }
-    let mut credential = None;
-    let mut account_label = None;
-    let mut organization_type = None;
     for path in paths {
         match read_json(reader, &path) {
             Ok(Some(value)) => {
-                if credential.is_none() {
-                    credential = crate::usage::claude_oauth_from_value(&value);
-                }
                 if account_label.is_none() {
                     account_label = crate::usage::claude_email_from_value(&value);
                 }
@@ -2052,67 +2469,27 @@ fn claude_profile_identity(
                 }
             }
             Ok(None) => {}
-            Err(ProfileValidation::Denied) => return ProfileValidation::Denied,
-            Err(ProfileValidation::ConsentRequired) => return ProfileValidation::ConsentRequired,
-            Err(_) => return ProfileValidation::Malformed,
+            Err(outcome) => return outcome,
         }
     }
-    if let Some(credential) = credential {
-        let is_anonymous = account_label.is_none() && credential.refresh_token.is_none();
-        let material = Some(Box::new(ProfileCredentialMaterial::Claude(
-            crate::usage::ClaudeResolved {
-                access_token: credential.access_token,
-                subscription_type: credential.subscription_type,
-                account_email: account_label.clone(),
-                organization_type,
-                credential_origin: "OAuth · configured profile".to_owned(),
-                is_anonymous,
-            },
-        )));
-        return account_label.map_or(ProfileValidation::Anonymous(material.clone()), |label| {
-            ProfileValidation::Authenticated {
-                provider_id: None,
-                account_label: Some(label),
-                material,
-            }
-        });
-    }
-    let current_dir = operator_home;
-    let Some(scope) = jackin_core::claude_keychain_scope(root, operator_home, current_dir) else {
-        return ProfileValidation::Malformed;
-    };
-    match reader.read_claude_keychain(&scope) {
-        ProfileReadOutcome::Bytes(bytes) => {
-            let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-                return ProfileValidation::Malformed;
-            };
-            let Some(credential) = crate::usage::claude_oauth_from_value(&value) else {
-                return ProfileValidation::Malformed;
-            };
-            let account_label = crate::usage::claude_email_from_value(&value);
-            let is_anonymous = account_label.is_none() && credential.refresh_token.is_none();
-            let material = Some(Box::new(ProfileCredentialMaterial::Claude(
-                crate::usage::ClaudeResolved {
-                    access_token: credential.access_token,
-                    subscription_type: credential.subscription_type,
-                    account_email: account_label.clone(),
-                    organization_type: crate::usage::claude_organization_type_from_value(&value),
-                    credential_origin: "OAuth · configured profile".to_owned(),
-                    is_anonymous,
-                },
-            )));
-            account_label.map_or(ProfileValidation::Anonymous(material.clone()), |label| {
-                ProfileValidation::Authenticated {
-                    provider_id: None,
-                    account_label: Some(label),
-                    material,
-                }
-            })
+    let is_anonymous = account_label.is_none() && credential.refresh_token.is_none();
+    let material = Some(Box::new(ProfileCredentialMaterial::Claude(
+        crate::usage::ClaudeResolved {
+            access_token: credential.access_token,
+            subscription_type: credential.subscription_type,
+            account_email: account_label.clone(),
+            organization_type,
+            credential_origin: "OAuth · configured profile".to_owned(),
+            is_anonymous,
+        },
+    )));
+    account_label.map_or(ProfileValidation::Anonymous(material.clone()), |label| {
+        ProfileValidation::Authenticated {
+            provider_id: None,
+            account_label: Some(label),
+            material,
         }
-        ProfileReadOutcome::Missing => ProfileValidation::Missing,
-        ProfileReadOutcome::Denied => ProfileValidation::Denied,
-        ProfileReadOutcome::ConsentRequired => ProfileValidation::ConsentRequired,
-    }
+    })
 }
 
 fn codex_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
@@ -2126,7 +2503,6 @@ fn codex_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> 
     };
     let material = Some(Box::new(ProfileCredentialMaterial::Codex {
         credentials: credentials.clone(),
-        root: path.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
     }));
     if credentials.account_id.is_none() && credentials.account_label.is_none() {
         ProfileValidation::Anonymous(material)
@@ -2145,37 +2521,18 @@ fn amp_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> Pr
         Ok(None) => return ProfileValidation::Missing,
         Err(outcome) => return outcome,
     };
-    let Some(object) = value.as_object() else {
+    let Ok(payload) = jackin_core::amp_profile_credential_payload(&value) else {
         return ProfileValidation::Malformed;
     };
-    let labeled = object.iter().find_map(|(key, value)| {
-        let label = key.strip_prefix("apiKey@")?.trim();
-        let secret = value.as_str()?.trim();
-        (!label.is_empty() && !secret.is_empty()).then(|| (label.to_owned(), secret.to_owned()))
-    });
-    let fallback_key = object.values().find_map(|value| {
-        value
-            .as_str()
-            .map(str::trim)
-            .filter(|secret| !secret.is_empty())
-            .map(str::to_owned)
-    });
-    let Some(key) = labeled
-        .as_ref()
-        .map(|(_, key)| key.clone())
-        .or(fallback_key)
+    let Some(key) = payload
+        .get("apiKey@https://ampcode.com/")
+        .and_then(serde_json::Value::as_str)
     else {
         return ProfileValidation::Malformed;
     };
-    let material = Some(Box::new(ProfileCredentialMaterial::Amp { key }));
-    labeled.map_or(
-        ProfileValidation::Anonymous(material.clone()),
-        |(label, _)| ProfileValidation::Authenticated {
-            provider_id: None,
-            account_label: Some(label),
-            material,
-        },
-    )
+    ProfileValidation::Anonymous(Some(Box::new(ProfileCredentialMaterial::Amp {
+        key: key.to_owned(),
+    })))
 }
 
 fn grok_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> ProfileValidation {
@@ -2184,17 +2541,21 @@ fn grok_profile_identity(reader: &dyn ProfileCredentialReader, path: &Path) -> P
         Ok(None) => return ProfileValidation::Missing,
         Err(outcome) => return outcome,
     };
+    if crate::usage::grok_bearer_token_from_value(&value, chrono::Utc::now().timestamp()).is_err() {
+        return ProfileValidation::Malformed;
+    }
+    let identity = first_recursive_string(&value, &["email", "user_id", "team_id"]);
     let material = Some(Box::new(ProfileCredentialMaterial::Grok {
-        auth_path: path.to_path_buf(),
+        auth: value,
+        identity: identity.clone(),
     }));
-    first_recursive_string(&value, &["email", "user_id", "team_id"]).map_or(
-        ProfileValidation::Anonymous(material.clone()),
-        |label| ProfileValidation::Authenticated {
+    identity.map_or(ProfileValidation::Anonymous(material.clone()), |label| {
+        ProfileValidation::Authenticated {
             provider_id: None,
             account_label: Some(label),
             material,
-        },
-    )
+        }
+    })
 }
 
 fn read_json(
@@ -2206,6 +2567,7 @@ fn read_json(
             .map(Some)
             .map_err(|_| ProfileValidation::Malformed),
         ProfileReadOutcome::Missing => Ok(None),
+        ProfileReadOutcome::Unavailable => Err(ProfileValidation::Unavailable),
         ProfileReadOutcome::Denied => Err(ProfileValidation::Denied),
         ProfileReadOutcome::ConsentRequired => Err(ProfileValidation::ConsentRequired),
     }
@@ -2261,22 +2623,20 @@ pub(super) fn refresh_credential_binding(
             None,
         ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Claude(resolved)) => {
-            crate::usage::claude_view_from_wave_with_rate_limit(
+            crate::usage::claude_profile_view_with_rate_limit(
                 binding.surface.agent_slug(),
                 binding.surface.provider_label(),
                 chrono::Utc::now().timestamp(),
-                crate::usage::ClaudeWaveResolution::Resolved(Box::new(resolved.clone())),
+                resolved.clone(),
             )
         }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Codex {
-            credentials,
-            root,
-        }) => crate::usage::codex_profile_snapshot_with_rate_limit(
-            binding.surface.agent_slug(),
-            credentials,
-            root,
-            chrono::Utc::now().timestamp(),
-        ),
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Codex { credentials }) => {
+            crate::usage::codex_profile_snapshot_with_rate_limit(
+                binding.surface.agent_slug(),
+                credentials,
+                chrono::Utc::now().timestamp(),
+            )
+        }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Amp { key }) => (
             crate::usage::amp_api_key_snapshot(
                 binding.surface.agent_slug(),
@@ -2285,43 +2645,41 @@ pub(super) fn refresh_credential_binding(
             ),
             None,
         ),
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Grok { auth_path }) => {
-            let now = chrono::Utc::now().timestamp();
-            let result = crate::usage::fetch_grok_rest_billing(auth_path, now)
-                .map(|response| crate::usage::GrokBillingSnapshot::Rest(Box::new(response)));
-            crate::usage::grok_snapshot_from_rpc_result_with_rate_limit(
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Grok { auth, identity }) => {
+            crate::usage::grok_profile_snapshot(
                 binding.surface.agent_slug(),
-                now,
-                auth_path,
-                true,
-                false,
-                false,
-                result,
+                auth,
+                identity.as_deref(),
+                chrono::Utc::now().timestamp(),
             )
         }
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Kimi { token }) => {
             let now = chrono::Utc::now().timestamp();
             (
-                crate::usage::kimi_snapshot(
+                crate::usage::kimi_profile_snapshot(
                     binding.surface.agent_slug(),
-                    Some(token.as_str()),
+                    token.as_str(),
                     now,
                 ),
                 None,
             )
         }
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { auth_path }) => (
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::OpenCode { token }) => (
             crate::usage::opencode_profile_snapshot(
                 binding.surface.agent_slug(),
-                auth_path,
+                token,
                 chrono::Utc::now().timestamp(),
             ),
             None,
         ),
-        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor { auth_path }) => (
+        ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Cursor {
+            auth,
+            identity,
+        }) => (
             crate::usage::cursor_profile_snapshot(
                 binding.surface.agent_slug(),
-                auth_path,
+                auth,
+                identity.as_deref(),
                 chrono::Utc::now().timestamp(),
             ),
             None,
@@ -2449,11 +2807,27 @@ impl HostUsageRuntime {
         binding: &ValidatedCredentialBinding,
         mut view: FocusedUsageView,
     ) {
-        let identity = binding.identity.clone().or_else(|| {
-            CanonicalAccountIdentity::from_view(binding.surface, &view).map(|_| {
-                CanonicalAccountIdentity::source_capability(binding.surface, &binding.capability_id)
-            })
-        });
+        // Provider quota/presentation cannot manufacture authentication
+        // evidence. Only the validated source binding authorizes membership.
+        let identity = binding.identity.clone();
+        view.canonical_identity = identity
+            .as_ref()
+            .map(CanonicalAccountIdentity::protocol_identity);
+        let capability = super::broker::capability_for_binding(
+            binding,
+            self.discovery
+                .as_ref()
+                .and_then(|discovery| discovery.config_generation.as_deref()),
+        );
+        view.account_identity = Some((&capability).into());
+        if let Some(route_identity) = view.account_identity.as_mut() {
+            route_identity.source_revision = self.discovery.as_ref().and_then(|discovery| {
+                super::broker::usage_catalog_entries(discovery)
+                    .into_iter()
+                    .find(|entry| entry.capability == capability)
+                    .map(|entry| entry.revision)
+            });
+        }
         let Some(identity) = identity else {
             let error = view.last_error.clone();
             let kind = if error.is_some() {
@@ -2465,7 +2839,14 @@ impl HostUsageRuntime {
             self.push_event(kind, Some(binding.surface.id()), error);
             return;
         };
-        if view.account.account_label.trim().is_empty()
+        // Unsupported/error snapshots carry diagnostic labels, not new
+        // identity evidence. Retain the independently authenticated label.
+        if (view.account.account_label.trim().is_empty()
+            || matches!(
+                view.confidence,
+                jackin_protocol::control::UsageConfidence::None
+                    | jackin_protocol::control::UsageConfidence::PresenceOnly
+            ))
             && let Some(account) = self.discovery.as_ref().and_then(|discovery| {
                 discovery
                     .accounts

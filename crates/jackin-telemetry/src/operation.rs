@@ -266,6 +266,14 @@ impl OperationGuard {
         outcome: schema::enums::OutcomeValue,
         error_type: Option<schema::enums::ErrorType>,
     ) {
+        self.complete_borrowed(outcome, error_type);
+    }
+
+    pub(crate) fn complete_borrowed(
+        &self,
+        outcome: schema::enums::OutcomeValue,
+        error_type: Option<schema::enums::ErrorType>,
+    ) {
         if !valid_completion(outcome, error_type) {
             health::reject(health::Signal::Trace, Rejection::InvalidValue);
             self.record_completion(

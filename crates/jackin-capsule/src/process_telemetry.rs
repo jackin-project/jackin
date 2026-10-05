@@ -20,8 +20,12 @@ fn operation(
     )
 }
 
-fn complete(operation: jackin_telemetry::OperationGuard, result: &anyhow::Result<ExecResult>) {
-    let completion = match result {
+fn completion(
+    operation: &jackin_telemetry::OperationGuard,
+    result: &anyhow::Result<ExecResult>,
+    accepted: &[i32],
+) -> (OutcomeValue, Option<ErrorType>) {
+    match result {
         Ok(output) => {
             if let Some(code) = output.code {
                 let _attribute = operation.set_attr(jackin_telemetry::Attr {
@@ -31,15 +35,26 @@ fn complete(operation: jackin_telemetry::OperationGuard, result: &anyhow::Result
             }
             if output.timed_out {
                 (OutcomeValue::Timeout, Some(ErrorType::Timeout))
-            } else if output.success {
+            } else if output.code.is_some_and(|code| accepted.contains(&code)) {
                 (OutcomeValue::Success, None)
             } else {
                 (OutcomeValue::Failure, Some(ErrorType::ProcessExitNonzero))
             }
         }
-        Err(_) => (OutcomeValue::Failure, Some(ErrorType::ProcessSpawnError)),
-    };
-    operation.complete(completion.0, completion.1);
+        Err(error) => (
+            OutcomeValue::Failure,
+            Some(
+                if matches!(
+                    error.downcast_ref::<jackin_process::ExecStage>(),
+                    Some(jackin_process::ExecStage::Spawn),
+                ) {
+                    ErrorType::ProcessSpawnError
+                } else {
+                    ErrorType::IoError
+                },
+            ),
+        ),
+    }
 }
 
 pub(crate) struct ChildOperation {
@@ -75,10 +90,6 @@ impl ChildOperation {
         }
     }
 
-    pub(crate) fn complete_reaped(self) {
-        self.finish(OutcomeValue::Success, None);
-    }
-
     pub(crate) fn complete_timeout(self) {
         self.finish(OutcomeValue::Timeout, Some(ErrorType::Timeout));
     }
@@ -105,7 +116,7 @@ impl Drop for ChildOperation {
 
 pub(crate) fn spawn_sync(
     request: &ExecRequest,
-) -> anyhow::Result<(ChildOperation, std::process::Child)> {
+) -> anyhow::Result<(ChildOperation, jackin_process::SyncChild)> {
     let operation = ChildOperation::begin(request);
     let Ok(child) = jackin_process::spawn_sync(request) else {
         operation.complete_spawn_failure();
@@ -115,19 +126,37 @@ pub(crate) fn spawn_sync(
 }
 
 pub(crate) fn exec_sync(request: &ExecRequest) -> anyhow::Result<ExecResult> {
+    exec_sync_accepted(request, &[0])
+}
+
+/// Preserve stable failure types without retaining command paths, arguments,
+/// operating-system messages, or captured stderr in the returned error chain.
+pub(crate) fn exec_sync_accepted(
+    request: &ExecRequest,
+    accepted: &[i32],
+) -> anyhow::Result<ExecResult> {
     let operation = operation(request, None);
     let result = jackin_process::exec_sync(request);
-    complete(operation, &result);
-    result.map_err(|_| anyhow::anyhow!("process spawn failed"))
+    let (outcome, error_type) = completion(&operation, &result, accepted);
+    operation.complete(outcome, error_type);
+    result.map_err(|error| {
+        if let Some(stage) = error.downcast_ref::<jackin_process::ExecStage>() {
+            anyhow::Error::new(*stage)
+        } else {
+            anyhow::Error::new(std::io::Error::other("process I/O failed"))
+        }
+    })
 }
 
 pub(crate) async fn exec_async_as(
     request: &ExecRequest,
     executable: ProcessExecutableName,
 ) -> anyhow::Result<ExecResult> {
-    let operation = operation(request, Some(executable));
+    let operation =
+        jackin_telemetry::process::ProcessOperationGuard::new(operation(request, Some(executable)));
     let result = jackin_process::exec_async(request).await;
-    complete(operation, &result);
+    let (outcome, error_type) = completion(&operation, &result, &[0]);
+    operation.complete(outcome, error_type);
     result.map_err(|_| anyhow::anyhow!("process spawn failed"))
 }
 

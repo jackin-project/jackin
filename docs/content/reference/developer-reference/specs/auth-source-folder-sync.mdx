@@ -12,7 +12,7 @@ A profile account stores `AccountCredential::Profile { agent, directory }`. The 
 | Claude Code | `CLAUDE_CONFIG_DIR`; local `.credentials.json` or that directory's exact macOS Keychain scope |
 | Codex | `CODEX_HOME`, containing `auth.json` |
 | Amp | Data directory containing `secrets.json`, or a profile root with `data/amp` and `config/amp` children |
-| Kimi | Configuration directory containing `credentials/kimi-code.json` |
+| Kimi | Configuration directory containing `config.toml`, optional `device_id`, and the credential file selected by the verified Kimi CLI 2.1.1 route (`credentials/kimi-code.json` for the default route; a deterministic route-specific sibling otherwise) |
 | OpenCode | Data directory containing `auth.json` |
 | Grok | Configuration directory containing agent authentication state |
 

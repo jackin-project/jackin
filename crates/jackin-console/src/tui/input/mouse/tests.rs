@@ -962,6 +962,59 @@ fn selected_demo_state(config: &jackin_config::AppConfig) -> ManagerState<'stati
     state
 }
 
+#[test]
+fn global_mount_scroll_survives_selected_workspace_config_disappearing() {
+    let mut config = config_with_scrollable_workspace_and_global_mounts();
+    let mut state = selected_demo_state(&config);
+    config.workspaces.remove("demo");
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+    terminal
+        .draw(|frame| {
+            crate::tui::screens::workspaces::view::list::render_list_body(
+                frame,
+                Rect::new(0, 2, 100, 26),
+                &state,
+                &config,
+                std::path::Path::new("/tmp"),
+            );
+        })
+        .unwrap();
+    // Locate the painted panel, independently of the input geometry helpers.
+    let buffer = terminal.backend().buffer();
+    let point = (0..30)
+        .find_map(|row| {
+            let painted = (0..100)
+                .map(|column| buffer[(column, row)].symbol())
+                .collect::<String>();
+            painted.find("Global mounts").map(|byte_index| {
+                (
+                    u16::try_from(painted[..byte_index].chars().count()).unwrap() + 1,
+                    row + 1,
+                )
+            })
+        })
+        .expect("global panel must remain painted after config removal");
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollRight, point.0, point.1),
+        term(100),
+        Some(&config),
+    );
+    assert_eq!(
+        state.list_global_mounts_scroll.offset_x(),
+        MOUSE_HORIZONTAL_SCROLL_STEP
+    );
+    assert_eq!(state.list_scroll_focus(), Some(MountScrollFocus::Global));
+    assert_eq!(state.list_mounts_scroll.offset_x(), 0);
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollLeft, point.0, point.1),
+        term(100),
+        Some(&config),
+    );
+    assert_eq!(state.list_global_mounts_scroll.offset_x(), 0);
+}
+
 fn current_dir_state_at(path: &std::path::Path) -> ManagerState<'static> {
     let config = jackin_config::AppConfig::default();
     ManagerState::from_config(&config, path)
@@ -1395,6 +1448,36 @@ fn editor_mounts_tab_horizontal_wheel_requires_mounts_tab() {
         editor.workspace_mounts_scroll.offset_x(),
         MOUSE_HORIZONTAL_SCROLL_STEP
     );
+}
+
+#[test]
+fn mounts_wheel_updates_only_each_scroll_owners_axis() {
+    let config = config_with_scrollable_workspace_and_global_mounts();
+    let mut workspace = config.workspaces["demo"].clone();
+    workspace.mounts = vec![workspace.mounts[0].clone(); 20];
+    let mut editor = EditorState::new_edit("demo".into(), workspace);
+    editor.active_tab = EditorTab::Mounts;
+    let content = editor.content_area(term(100));
+    crate::tui::screens::editor::view::prepare_editor_tab_for_area(content, &mut editor, &config);
+    let mut state = list_state();
+    state.stage = ManagerStage::Editor(editor);
+    for kind in [MouseEventKind::ScrollRight, MouseEventKind::ScrollDown] {
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(kind, content.x + 2, content.y + 1),
+            term(100),
+            Some(&config),
+        );
+    }
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("editor expected")
+    };
+    assert!(editor.workspace_mounts_scroll.offset_x() > 0);
+    assert!(editor.tab_scroll.offset_y() > 0);
+    assert!(!editor.workspace_mounts_scroll.overflows_y());
+    assert!(!editor.tab_scroll.overflows_x());
+    assert_eq!(editor.workspace_mounts_scroll.offset_y(), 0);
+    assert_eq!(editor.tab_scroll.offset_x(), 0);
 }
 
 #[test]

@@ -44,6 +44,8 @@ use tempfile::tempdir;
 mod common;
 #[path = "dind_e2e/diagnostics.rs"]
 mod diagnostics;
+#[path = "multi_account_tabs_e2e/production_capsule_proof.rs"]
+mod production_capsule_proof;
 #[expect(
     dead_code,
     reason = "shared dind_e2e harness: this suite uses part of it"
@@ -74,6 +76,7 @@ const ENDPOINT_A: &str = "https://openai-a.example.invalid/v1";
 const ENDPOINT_B: &str = "https://openai-b.example.invalid/v1";
 const MODEL_A: &str = "gpt-s3-a";
 const MODEL_B: &str = "gpt-s3-b";
+const RECONNECT_INPUT: &str = "s3-reconnect-pty-input-accepted";
 
 /// Fail before the interactive launch if Cargo did not build the broker binary.
 fn require_broker_sibling(jackin: &str) {
@@ -155,6 +158,10 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         }
     };
     assert_phase_ab(&phase_ab, &workspace_dir).unwrap();
+    assert!(
+        stdout.contains("s3-agent-#"),
+        "production Capsule must paint live agent PTY output"
+    );
 
     // Phase C: the killed client left the container running; `hardline`
     // reattaches to the same sessions with bindings intact.
@@ -168,16 +175,21 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         &phase_ab,
     );
 
-    // Phase D: removing the container makes `hardline` restore it; the
-    // default launch set boots again with correct bindings.
+    // Remove only this fixture's process probes before restore; fresh dumps
+    // must prove restored credentials rather than reuse pre-stop evidence.
+    for dump in env_dumps(&workspace_dir) {
+        std::fs::remove_file(dump).unwrap();
+    }
+    // Phase D: removing the container makes `hardline` restore every pane.
     run("docker", &["rm", "-f", container.as_str()], None);
     let restore_outcome: RestoreOutcome = Arc::new(Mutex::new(None));
     let restore_worker = {
         let restore_outcome = Arc::clone(&restore_outcome);
         let home = home.clone();
         let workspace_dir = workspace_dir.clone();
+        let expected = phase_ab.bindings.clone();
         std::thread::spawn(move || {
-            let observed = observe_restore(&home);
+            let observed = observe_restore(&home, &expected);
             if observed.is_ok() {
                 std::fs::write(workspace_dir.join("s3-restored.txt"), "restored").unwrap();
             }
@@ -207,7 +219,25 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         .take()
         .expect("restore observer must record an outcome")
         .expect("restore must serve bound sessions");
-    assert_restore_bindings(&bindings);
+    assert_eq!(
+        bindings, phase_ab.bindings,
+        "restore must preserve every pane's explicit account binding"
+    );
+    let restored_container = running_container_name().expect("restored container must run");
+    wait_for(
+        Duration::from_mins(4),
+        "fresh restored credential probes",
+        || env_dumps(&workspace_dir).len() == phase_ab.bindings.len(),
+    )
+    .unwrap();
+    assert_phase_ab(
+        &PhaseAB {
+            container: restored_container.clone(),
+            bindings,
+        },
+        &workspace_dir,
+    )
+    .unwrap();
 }
 
 /// Run the boot + split + new-tab PTY session; returns the observer outcome
@@ -325,17 +355,25 @@ struct PhaseAB {
     bindings: Vec<(String, String)>,
 }
 
-fn completed_reconnect(home: &Path, container: &str, phase_ab: &PhaseAB) -> Arc<AtomicBool> {
+fn completed_reconnect(
+    home: &Path,
+    workspace: &Path,
+    container: &str,
+    phase_ab: &PhaseAB,
+) -> Arc<AtomicBool> {
     let done = Arc::new(AtomicBool::new(false));
     let worker_done = Arc::clone(&done);
     let home = home.to_path_buf();
     let container = container.to_owned();
     let want = phase_ab.bindings.clone();
+    let workspace = workspace.to_path_buf();
     std::thread::spawn(move || {
         let paths = JackinPaths::resolve_with_env(&home, None, None);
         let deadline = Instant::now() + Duration::from_mins(3);
         while Instant::now() < deadline {
-            if snapshot_bindings(&paths, &container).is_some_and(|got| got == want) {
+            if snapshot_bindings(&paths, &container).is_some_and(|got| got == want)
+                && reconnect_input_received(&workspace)
+            {
                 worker_done.store(true, Ordering::Release);
                 return;
             }
@@ -343,6 +381,16 @@ fn completed_reconnect(home: &Path, container: &str, phase_ab: &PhaseAB) -> Arc<
         }
     });
     done
+}
+
+fn reconnect_input_received(workspace: &Path) -> bool {
+    std::fs::read_dir(workspace).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry.file_name().to_string_lossy().starts_with("s3-got-")
+                && std::fs::read_to_string(entry.path())
+                    .is_ok_and(|body| body.lines().any(|line| line == RECONNECT_INPUT))
+        })
+    })
 }
 
 fn snapshot_bindings(paths: &JackinPaths, container: &str) -> Option<Vec<(String, String)>> {
@@ -385,6 +433,9 @@ fn observe_boot_split_newtab(home: &Path, workspace: &Path) -> Result<PhaseAB, S
         let bindings = snapshot_bindings(&paths, &container)?;
         (bindings.len() == 5).then_some(bindings)
     })?;
+    // The host launch owns the live stdio relay. Prove it while attached,
+    // before the observer asks the PTY runner to stop the host client.
+    production_capsule_proof::assert_runtime(&container, home, &[CANARY_A, CANARY_B, CANARY_C])?;
     Ok(PhaseAB {
         container,
         bindings,
@@ -465,6 +516,15 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
                 !value.contains(CANARY_C),
                 "codex pane leaks {CANARY_C} via {name}"
             );
+            let foreign = if env.get("OPENAI_API_KEY").is_some_and(|key| key == CANARY_A) {
+                CANARY_B
+            } else {
+                CANARY_A
+            };
+            assert!(
+                !value.contains(foreign),
+                "codex pane leaks another account via {name}"
+            );
         }
     }
     assert_eq!(
@@ -510,14 +570,21 @@ fn phase_c_reconnect(
     container: &str,
     phase_ab: &PhaseAB,
 ) {
-    let reconnect_done = completed_reconnect(home, container, phase_ab);
+    let reconnect_done = completed_reconnect(home, workspace_dir, container, phase_ab);
     // Five live sessions make explicit-selector `hardline` prompt under a
     // PTY; answer Reconnect (option 1) like the operator would.
-    let script = [PtyScriptStep {
-        wait_for: "Choose [1/4]",
-        input: "1\r",
-        wait_for_file: "",
-    }];
+    let script = [
+        PtyScriptStep {
+            wait_for: "Choose [1/4]",
+            input: "1\r",
+            wait_for_file: "",
+        },
+        PtyScriptStep {
+            wait_for: "s3-agent-#",
+            input: "s3-reconnect-pty-input-accepted\r",
+            wait_for_file: "",
+        },
+    ];
     let reconnected = run_in_pty_until_file(
         jackin,
         &["hardline", container],
@@ -558,35 +625,25 @@ fn assert_reconnect_snapshot(
     Ok(())
 }
 
-fn observe_restore(home: &Path) -> Result<Vec<(String, String)>, String> {
-    // Restore recreates the container and boots the default launch set;
-    // session ids are fresh but every binding must be a known account.
+fn observe_restore(
+    home: &Path,
+    expected: &[(String, String)],
+) -> Result<Vec<(String, String)>, String> {
+    // Restore may allocate fresh session IDs; every saved pane binding stays exact.
     let new_container = wait_for_value(Duration::from_mins(6), "the restored container", || {
         running_container_name()
     })?;
-    wait_for_value(Duration::from_mins(4), "restored bound sessions", || {
+    let bindings = wait_for_value(Duration::from_mins(4), "restored bound sessions", || {
         let paths = JackinPaths::resolve_with_env(home, None, None);
         let bindings = snapshot_bindings(&paths, &new_container)?;
-        (bindings.len() >= 3).then_some(bindings)
-    })
-}
-
-fn assert_restore_bindings(bindings: &[(String, String)]) {
-    let allowed = BTreeSet::from([
-        ("cx-a-inst".to_owned(), "cx-a".to_owned()),
-        ("cx-b-inst".to_owned(), "cx-b".to_owned()),
-        ("oc-c-inst".to_owned(), "oc-c".to_owned()),
-    ]);
-    for binding in bindings {
-        assert!(
-            allowed.contains(binding),
-            "restored pane carries unexpected binding {binding:?}"
-        );
-    }
-    assert!(
-        bindings.len() >= 3,
-        "restore must boot at least the default launch set, got {bindings:?}"
-    );
+        (bindings == expected).then_some(bindings)
+    })?;
+    production_capsule_proof::assert_runtime(
+        &new_container,
+        home,
+        &[CANARY_A, CANARY_B, CANARY_C],
+    )?;
+    Ok(bindings)
 }
 
 fn env_dumps(workspace: &Path) -> Vec<PathBuf> {
@@ -853,7 +910,8 @@ while ! mkdir "/workspace/s3-seq-$i" 2>/dev/null; do
   i=$((i + 1))
 done
 ME="{agent}-$$"
-env | sort > "/workspace/s3-env-$ME.txt"
+env | sort > "/workspace/.s3-env-$ME.tmp"
+mv "/workspace/.s3-env-$ME.tmp" "/workspace/s3-env-$ME.txt"
 echo "s3-agent-#$i-ready:$ME"
 while IFS= read -r line; do
   printf '%s\n' "$line" >> "/workspace/s3-got-$ME.txt"

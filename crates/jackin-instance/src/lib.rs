@@ -5,25 +5,31 @@
 
 use anyhow::Context;
 use jackin_config::{AuthForwardMode, GithubAuthMode, ProfileSelector};
-use jackin_core::JackinPaths;
+use jackin_core::{JackinPaths, ProfileCredentialSourceMaterial};
 use jackin_manifest::RoleManifest;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
 mod auth;
-pub use auth::{AuthMountLease, validate_sync_source_dir};
+pub use auth::{AuthMountLease, KimiRuntimeAuthContext, validate_sync_source_dir};
 mod error;
 pub use error::{InstanceError, SyncSourceValidationError};
 pub mod manifest;
 pub mod naming;
 mod process_telemetry;
+mod shared_docker_lifetime;
 pub use manifest::{
-    AdmittedInstance, AppleContainerResources, BackendResources, DockerIdentity, DockerResources,
-    InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery, InstanceStatus,
-    NewInstanceManifest, RegistrationState, SessionRecord, SessionStatus,
+    AdmittedInstance, AppleAuthorityBinding, AppleContainerResources, BackendResources,
+    DockerIdentity, DockerResources, InstanceIndex, InstanceIndexEntry, InstanceManifest,
+    InstanceQuery, InstanceStatus, NewInstanceManifest, RegistrationState, SessionRecord,
+    SessionStatus,
 };
-pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
+pub use naming::{container_name_with_id, new_container_name, runtime_slug};
+pub use shared_docker_lifetime::{
+    SharedCertsVolumeCustody, SharedContainerCustody, SharedDockerLifetime, SharedDockerOwnerKind,
+    SharedNetworkCustody,
+};
 
 /// Outcome of the `.claude.json` provisioning step, so callers can surface
 /// a one-time notice when host credentials are forwarded.
@@ -246,6 +252,9 @@ pub struct ProvisionedInstanceAuth {
     pub cache_source_dir: Option<PathBuf>,
     /// Per-instance container-relative XDG cache root.
     pub container_cache_rel: Option<String>,
+    /// Typed proof for the primary credential material captured for this slot.
+    /// Present only for a captured `Sync` source that is actually forwarded.
+    pub profile_material: Option<ProfileCredentialSourceMaterial>,
 }
 
 /// Container-visible layout for one provisioned slot, derived from the
@@ -414,6 +423,14 @@ impl ProvisionedInstanceAuth {
         forward_auth: bool,
         layout: SlotLayout,
     ) -> Self {
+        let profile_material = (binding.mode == AuthForwardMode::Sync && forward_auth)
+            .then(|| {
+                binding
+                    .selected_source
+                    .as_ref()
+                    .and_then(auth::SelectedAuthSourceSnapshot::profile_material)
+            })
+            .flatten();
         Self {
             agent: binding.agent,
             account_id: binding.account_id.clone(),
@@ -427,7 +444,14 @@ impl ProvisionedInstanceAuth {
             folder_target: layout.folder_target,
             cache_source_dir: None,
             container_cache_rel: None,
+            profile_material,
         }
+    }
+
+    /// Clone the typed proof without exposing snapshot ownership.
+    #[must_use]
+    pub fn profile_material(&self) -> Option<ProfileCredentialSourceMaterial> {
+        self.profile_material.clone()
     }
 
     fn with_xdg_cache(
@@ -679,6 +703,7 @@ fn capture_selected_account_sources(
     bindings: &[InstanceAuthBinding],
     host_home: &Path,
     role_root: &Path,
+    kimi_runtime: Option<&KimiRuntimeAuthContext>,
 ) -> anyhow::Result<Vec<InstanceAuthBinding>> {
     validate_selected_account_sources(bindings, host_home)?;
     let snapshot_parent = role_root.join("provider-config/source-snapshots");
@@ -693,7 +718,7 @@ fn capture_selected_account_sources(
                     agent: binding.agent,
                     provider: binding.source_provider,
                     selector: binding.source_selector.clone(),
-                    source_dir: source_dir.clone(),
+                    source_dir: source_dir.to_path_buf(),
                 };
                 if let Some(snapshot) = &binding.selected_source {
                     anyhow::ensure!(
@@ -703,13 +728,22 @@ fn capture_selected_account_sources(
                     );
                 } else {
                     admitted.selected_source = Some(
-                        auth::capture_selected_source(
+                        auth::capture_selected_source_for_runtime(
                             binding.agent,
                             binding.source_provider,
                             binding.source_selector.as_ref(),
                             &source_dir,
                             host_home,
                             &snapshot_parent,
+                            if binding.agent == jackin_core::Agent::Kimi {
+                                Some(kimi_runtime.ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "selected Kimi image auth-slot contract is required"
+                                    )
+                                })?)
+                            } else {
+                                None
+                            },
                         )?
                         .with_context(|| {
                             format!(
@@ -1035,6 +1069,30 @@ impl RoleState {
         host_home: &Path,
         agent: jackin_core::Agent,
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
+        Self::prepare_for_bindings_with_kimi_runtime(
+            paths,
+            container_name,
+            manifest,
+            bindings,
+            github,
+            host_home,
+            agent,
+            None,
+        )
+    }
+
+    /// Provision explicit bindings with the selected Kimi image's verified
+    /// runtime auth-slot contract, when a Kimi profile source is admitted.
+    pub fn prepare_for_bindings_with_kimi_runtime(
+        paths: &JackinPaths,
+        container_name: &str,
+        manifest: &RoleManifest,
+        bindings: &[InstanceAuthBinding],
+        github: &GithubAuthContext,
+        host_home: &Path,
+        agent: jackin_core::Agent,
+        kimi_runtime: Option<&KimiRuntimeAuthContext>,
+    ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
         let gh_config_dir = root.join(".config/gh");
         let home_dir = root.join("home");
@@ -1048,7 +1106,7 @@ impl RoleState {
 
         let hosts_yml = gh_config_dir.join("hosts.yml");
         let github_context = github.clone();
-        let bindings = capture_selected_account_sources(bindings, host_home, &root)?;
+        let bindings = capture_selected_account_sources(bindings, host_home, &root, kimi_runtime)?;
 
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
@@ -1238,6 +1296,24 @@ impl RoleState {
         bindings: &[InstanceAuthBinding],
         host_home: &Path,
     ) -> anyhow::Result<usize> {
+        Self::prewarm_auth_for_bindings_with_kimi_runtime(
+            paths,
+            container_name,
+            bindings,
+            host_home,
+            None,
+        )
+    }
+
+    /// Prewarm explicit auth bindings with the selected image's Kimi route
+    /// contract when a Kimi profile source is among the siblings.
+    pub fn prewarm_auth_for_bindings_with_kimi_runtime(
+        paths: &JackinPaths,
+        container_name: &str,
+        bindings: &[InstanceAuthBinding],
+        host_home: &Path,
+        kimi_runtime: Option<&KimiRuntimeAuthContext>,
+    ) -> anyhow::Result<usize> {
         let root = paths.data_dir.join(container_name);
         let home_dir = root.join("home");
         let jackin_state_dir = root.join("state");
@@ -1245,7 +1321,7 @@ impl RoleState {
         std::fs::create_dir_all(&home_dir)?;
         std::fs::create_dir_all(&jackin_state_dir)?;
 
-        let bindings = capture_selected_account_sources(bindings, host_home, &root)?;
+        let bindings = capture_selected_account_sources(bindings, host_home, &root, kimi_runtime)?;
 
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
@@ -1545,7 +1621,13 @@ impl RoleState {
         std::fs::create_dir_all(&kimi_dir)?;
         std::fs::create_dir_all(&kimi_home_dir)?;
         let (outcome, forward_auth) = if let Some(source_dir) = sync_source_dir {
-            Self::provision_kimi_auth_from_source_dir(&kimi_dir, mode, source_dir)?
+            let provision = Self::provision_kimi_auth_from_source_dir(&kimi_dir, mode, source_dir)?;
+            if mode == AuthForwardMode::Sync
+                && let Some(snapshot) = &binding.selected_source
+            {
+                snapshot.verify_kimi_provisioned_source(&kimi_dir)?;
+            }
+            provision
         } else {
             Self::provision_kimi_auth(&kimi_dir, mode, host_home)?
         };
@@ -1975,3 +2057,62 @@ mod tests;
 
 #[cfg(all(test, unix))]
 mod selected_source_tests;
+
+#[cfg(all(test, unix))]
+mod profile_snapshot_slot_tests {
+    use super::*;
+
+    #[test]
+    fn profile_material_enters_only_forwarded_sync_slots_from_capture() -> anyhow::Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let source = fixture.path().join("codex-source");
+        std::fs::create_dir(&source)?;
+        std::fs::write(
+            source.join("auth.json"),
+            br#"{"tokens":{"access":"fixture"}}"#,
+        )?;
+        let mut binding = InstanceAuthBinding::new(
+            "captured-account",
+            jackin_core::Agent::Codex,
+            AuthForwardMode::Sync,
+            Some(source),
+        );
+        binding.source_provider = Some(jackin_config::AiProvider::OpenAi);
+        let role = fixture.path().join("role");
+        let captured = capture_selected_account_sources(&[binding], fixture.path(), &role, None)?;
+        let home = role.join("home");
+        std::fs::create_dir_all(&home)?;
+        let (slot, outcome) =
+            RoleState::provision_codex_slot(&role, &home, fixture.path(), &captured[0], None)?;
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(slot.forward_auth);
+        let material = slot
+            .profile_material
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("captured Sync slot lost profile material"))?;
+        assert_eq!(slot.profile_material(), Some(material));
+
+        let mut api_key_binding = captured[0].clone();
+        api_key_binding.mode = AuthForwardMode::ApiKey;
+        let (api_key_slot, _) = RoleState::provision_codex_slot(
+            &role,
+            &home,
+            fixture.path(),
+            &api_key_binding,
+            Some("api-key"),
+        )?;
+        assert!(api_key_slot.profile_material.is_none());
+
+        let ambient_binding = InstanceAuthBinding::new(
+            "ambient-account",
+            jackin_core::Agent::Codex,
+            AuthForwardMode::Sync,
+            None,
+        );
+        let layout = slot_layout(ambient_binding.agent, "codex", ".codex", Some("ambient"));
+        let ambient_slot =
+            ProvisionedInstanceAuth::new(&ambient_binding, None, Vec::new(), true, layout);
+        assert!(ambient_slot.profile_material.is_none());
+        Ok(())
+    }
+}

@@ -370,5 +370,7 @@ pub fn apply_state_outcome(
 
 /// Open a resolved git web URL in the host browser.
 pub fn open_git_url(url: &str) {
+    #[cfg(unix)]
+    let _native_spawn = jackin_process_directory::native_spawn_guard();
     drop(open::that_detached(url));
 }

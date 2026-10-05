@@ -29,7 +29,9 @@
 //!
 //! On Linux, the listener also authenticates the socket peer with safe
 //! `SO_PEERCRED` (`UnixStream::peer_cred`) and accepts only the container's
-//! init process with an `NSpid` vector exactly `[host_pid, 1]`. This requires
+//! launch-owned init PID and UID, with a pinned process start time and PID
+//! namespace, local kernel cgroup ownership by the immutable Docker ID,
+//! plus an `NSpid` vector exactly `[host_pid, 1]`. This requires
 //! the one container PID namespace directly hosted by the launch process and
 //! rejects nested PID namespaces. That binds credential resolution to the
 //! daemon path that already enforces the operator picker. Non-Linux hosts fail
@@ -41,108 +43,37 @@
 use anyhow::{Context as _, Result};
 use jackin_protocol::control::frame;
 use jackin_protocol::{CredReply, CredRequest, ExecBinding, ExecKind};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
-/// Start the host.sock listener.
-///
-/// Returns a `JoinHandle` the caller can cancel or await. The socket file is
-/// created at `sock_path`; the caller is responsible for ensuring the parent
-/// directory is already bind-mounted into the container.
-///
-/// `allowed_bindings` is the exhaustive set of credential refs the operator
-/// configured for this session. Only refs in this set are resolved; any
-/// incoming request that references an unknown (name, kind, source) triple
-/// is rejected, preventing escalation from a compromised in-container process.
-#[expect(
-    clippy::print_stderr,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub fn start(
-    sock_path: PathBuf,
-    allowed_bindings: Vec<ExecBinding>,
-) -> tokio::task::JoinHandle<()> {
-    jackin_telemetry::spawn::spawn_stream("exec_host.connection", async move {
-        if run_listener(&sock_path, &allowed_bindings, CallerAuth::CapsuleDaemon)
-            .await
-            .is_err()
-        {
-            // A returned error is a startup failure (bind/chmod/mkdir) — the
-            // accept loop never returns otherwise. It means jackin-exec
-            // credential resolution is unavailable for the whole session, so
-            // surface it on the always-on tier rather than only under --debug.
-            eprintln!("[jackin] warning: jackin-exec credential resolver unavailable");
-        }
-    })
-}
-
-/// Start the host.sock listener for a named container.
-///
-/// Resolves the per-container socket path under
-/// `<jackin_home>/sockets/<container>/host.sock`, maps the operator's
-/// `exec_bindings` to the allowed-resolution set, and spawns the listener.
-/// Docker uses this asynchronous bind because its runtime mount is a
-/// directory; Apple uses [`start_bound_for_container`] for its file mount.
-pub fn start_for_container(
+/// Start a relay bound to the immutable container created by this launch.
+/// Runtime inspection brackets capture so PID recycling during capture fails closed.
+pub async fn start_for_container(
+    docker: &impl jackin_docker::docker_client::DockerApi,
     jackin_home: &Path,
-    container_name: &str,
-    exec_bindings: &[ExecBinding],
-) -> tokio::task::JoinHandle<()> {
-    let sock_path = jackin_home
-        .join("sockets")
-        .join(container_name)
-        .join("host.sock");
-    start(sock_path, exec_bindings.to_vec())
-}
-
-/// Bind the host.sock listener before an Apple Container launch.
-///
-/// Apple Container requires a Unix socket to be mounted as an individual file;
-/// the source must therefore exist before `container run` inspects mounts.
-#[expect(
-    clippy::print_stderr,
-    reason = "documented residual allow; prefer expect when site is lint-true"
-)]
-pub fn start_bound_for_container(
-    jackin_home: &Path,
-    container_name: &str,
+    container: &jackin_docker::docker_client::ContainerHandle,
     exec_bindings: &[ExecBinding],
 ) -> Result<tokio::task::JoinHandle<()>> {
-    let sock_path = jackin_home
-        .join("sockets")
-        .join(container_name)
-        .join("host.sock");
-    let open =
-        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
-    let listener = match bind_listener(&sock_path) {
-        Ok(listener) => listener,
-        Err(error) => {
-            jackin_telemetry::stream::complete_error(
-                open,
-                jackin_telemetry::schema::enums::ErrorType::IoError,
-            );
-            return Err(error);
-        }
-    };
-    jackin_telemetry::stream::complete_success(open);
+    ensure_caller_auth_supported()?;
+    let init_pid = docker.container_init_pid_by_id(container).await?;
+    let identity = CapsulePeerIdentity::capture(container, init_pid)?;
+    anyhow::ensure!(docker.container_init_pid_by_id(container).await? == init_pid,
+        "container init changed during credential relay authentication");
+    let caller_auth = CallerAuth::CapsuleDaemon(identity);
+    let sock_path = jackin_home.join("sockets").join(container.name()).join("host.sock");
+    let listener = bind_listener(&sock_path)?;
     let allowed_bindings = exec_bindings.to_vec();
-    Ok(jackin_telemetry::spawn::spawn_stream(
-        "exec_host.connection",
-        async move {
-            if run_bound_listener(listener, &allowed_bindings, CallerAuth::CapsuleDaemon)
-                .await
-                .is_err()
-            {
-                eprintln!("[jackin] warning: jackin-exec credential resolver unavailable");
-            }
-        },
-    ))
+    Ok(jackin_telemetry::spawn::spawn_stream("exec_host.connection", async move {
+        drop(run_bound_listener(listener, &allowed_bindings, caller_auth).await);
+    }))
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum CallerAuth {
-    CapsuleDaemon,
+    CapsuleDaemon(CapsulePeerIdentity),
     #[cfg(all(test, target_os = "linux"))]
     PeerPid(u32),
     #[cfg(all(test, not(target_os = "linux")))]
@@ -164,27 +95,6 @@ pub(crate) fn ensure_caller_auth_supported() -> Result<()> {
     }
 }
 
-async fn run_listener(
-    sock_path: &Path,
-    allowed_bindings: &[ExecBinding],
-    caller_auth: CallerAuth,
-) -> Result<()> {
-    let open =
-        jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
-    let listener = match bind_listener(sock_path) {
-        Ok(listener) => listener,
-        Err(error) => {
-            jackin_telemetry::stream::complete_error(
-                open,
-                jackin_telemetry::schema::enums::ErrorType::IoError,
-            );
-            return Err(error);
-        }
-    };
-    jackin_telemetry::stream::complete_success(open);
-    run_bound_listener(listener, allowed_bindings, caller_auth).await
-}
-
 async fn run_bound_listener(
     listener: UnixListener,
     allowed_bindings: &[ExecBinding],
@@ -194,7 +104,7 @@ async fn run_bound_listener(
 
     loop {
         if let Ok((stream, _)) = listener.accept().await {
-            if handle_connection(stream, allowed_bindings, caller_auth)
+            if handle_connection(stream, allowed_bindings, caller_auth.clone())
                 .await
                 .is_err()
             {
@@ -232,10 +142,25 @@ fn bind_listener(sock_path: &Path) -> Result<UnixListener> {
 }
 
 async fn handle_connection(
-    mut stream: UnixStream,
+    stream: UnixStream,
     allowed_bindings: &[ExecBinding],
     caller_auth: CallerAuth,
 ) -> Result<()> {
+    handle_connection_with_resolver(stream, allowed_bindings, caller_auth, |refs| async move {
+        resolve_all(&refs).await
+    }).await
+}
+
+async fn handle_connection_with_resolver<F, Fut>(
+    mut stream: UnixStream,
+    allowed_bindings: &[ExecBinding],
+    caller_auth: CallerAuth,
+    resolve: F,
+) -> Result<()>
+where
+    F: FnOnce(Vec<ExecBinding>) -> Fut,
+    Fut: Future<Output = Result<std::collections::BTreeMap<String, String>>>,
+{
     const MAX_REQ: usize = 512 * 1024;
     let attrs = [
         jackin_telemetry::Attr {
@@ -328,7 +253,7 @@ async fn handle_connection(
         approved_refs.push(approved.clone());
     }
 
-    let reply = if let Ok(values) = resolve_all(&approved_refs).await {
+    let reply = if let Ok(values) = resolve(approved_refs).await {
         CredReply::Ok { values }
     } else {
         CredReply::Error {
@@ -393,7 +318,7 @@ fn record_rpc_error(operation: Option<&jackin_telemetry::OperationGuard>) {
 
 fn authenticate_caller(stream: &UnixStream, caller_auth: CallerAuth) -> Result<()> {
     match caller_auth {
-        CallerAuth::CapsuleDaemon => authenticate_capsule_daemon_peer(stream),
+        CallerAuth::CapsuleDaemon(expected) => authenticate_capsule_daemon_peer(stream, &expected),
         #[cfg(all(test, target_os = "linux"))]
         CallerAuth::PeerPid(expected) => {
             let actual = peer_pid(stream)?;
@@ -417,30 +342,107 @@ fn peer_pid(stream: &UnixStream) -> Result<u32> {
     u32::try_from(pid).context("peer pid was negative")
 }
 
+/// Captured only after runtime inspection of the launch-owned immutable ID.
+#[derive(Clone, Debug)]
+struct CapsulePeerIdentity {
+    #[cfg(target_os = "linux")]
+    process: std::sync::Arc<std::fs::File>,
+    #[cfg(target_os = "linux")]
+    namespace: std::sync::Arc<std::fs::File>,
+    #[cfg(target_os = "linux")]
+    pid: u32,
+    #[cfg(target_os = "linux")]
+    uid: u32,
+    #[cfg(target_os = "linux")]
+    start_time: u64,
+    #[cfg(target_os = "linux")]
+    container_id: String,
+}
+
+impl CapsulePeerIdentity {
+    fn capture(container: &jackin_docker::docker_client::ContainerHandle, pid: u32) -> Result<Self> {
+        anyhow::ensure!(!container.id().is_empty(), "immutable container ID is required");
+        #[cfg(target_os = "linux")]
+        {
+            anyhow::ensure!(pid > 0, "runtime container init PID is unavailable");
+            let process = std::sync::Arc::new(std::fs::File::open(format!("/proc/{pid}"))?);
+            let path = pinned_process_path(&process);
+            let cgroup = std::fs::read_to_string(path.join("cgroup"))?;
+            anyhow::ensure!(process_belongs_to_container_cgroup(&cgroup, container.id()),
+                "runtime init PID lacks local immutable container ownership proof");
+            let status = std::fs::read_to_string(path.join("status"))?;
+            anyhow::ensure!(peer_is_container_init_process_status(&status, pid), "runtime PID is not a direct container init");
+            let uid = status.lines().find_map(|line| line.strip_prefix("Uid:"))
+                .and_then(|uids| uids.split_whitespace().nth(1))
+                .and_then(|uid| uid.parse().ok())
+                .context("container init effective UID is unavailable")?;
+            let start_time = process_start_time(&path)?;
+            let namespace = std::sync::Arc::new(std::fs::File::open(path.join("ns/pid"))?);
+            Ok(Self { process, namespace, pid, uid, start_time, container_id: container.id().to_owned() })
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = pid;
+            ensure_caller_auth_supported()?;
+            anyhow::bail!("container caller identity is unavailable")
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
-fn authenticate_capsule_daemon_peer(stream: &UnixStream) -> Result<()> {
-    let pid = peer_pid(stream)?;
-    anyhow::ensure!(
-        peer_is_container_init_process(pid)?,
-        "peer pid {pid} is not the capsule daemon container init process"
-    );
+fn pinned_process_path(process: &std::fs::File) -> PathBuf {
+    use std::os::fd::AsRawFd;
+    PathBuf::from(format!("/proc/self/fd/{}", process.as_raw_fd()))
+}
+
+#[cfg(target_os = "linux")]
+fn process_start_time(path: &Path) -> Result<u64> {
+    let stat = std::fs::read_to_string(path.join("stat"))?;
+    stat.rsplit_once(')').and_then(|(_, rest)| rest.split_whitespace().nth(19))
+        .context("process start time missing")?.parse().context("invalid process start time")
+}
+
+#[cfg(target_os = "linux")]
+fn authenticate_capsule_daemon_peer(stream: &UnixStream, expected: &CapsulePeerIdentity) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let cred = stream.peer_cred().context("reading peer credentials")?;
+    anyhow::ensure!(peer_pid(stream)? == expected.pid && cred.uid() == expected.uid,
+        "credential caller does not own this container relay");
+    let path = pinned_process_path(&expected.process);
+    anyhow::ensure!(process_start_time(&path)? == expected.start_time,
+        "container init process identity changed");
+    let namespace = std::fs::metadata(path.join("ns/pid"))?;
+    let pinned = expected.namespace.metadata()?;
+    anyhow::ensure!(namespace.dev() == pinned.dev() && namespace.ino() == pinned.ino(),
+        "container PID namespace identity changed");
+    anyhow::ensure!(process_belongs_to_container_cgroup(&std::fs::read_to_string(path.join("cgroup"))?, &expected.container_id),
+        "caller lacks local immutable container ownership proof");
+    anyhow::ensure!(peer_is_container_init_process_status(&std::fs::read_to_string(path.join("status"))?, expected.pid),
+        "caller is not this container init");
     Ok(())
 }
 
 #[cfg(not(target_os = "linux"))]
-fn authenticate_capsule_daemon_peer(_stream: &UnixStream) -> Result<()> {
+fn authenticate_capsule_daemon_peer(_stream: &UnixStream, _expected: &CapsulePeerIdentity) -> Result<()> {
     ensure_caller_auth_supported()
 }
 
 #[cfg(target_os = "linux")]
-fn peer_is_container_init_process(pid: u32) -> Result<bool> {
-    let status = std::fs::read_to_string(format!("/proc/{pid}/status"))
-        .with_context(|| format!("reading /proc/{pid}/status"))?;
-    Ok(peer_is_container_init_process_status(&status))
+fn process_belongs_to_container_cgroup(cgroup: &str, container_id: &str) -> bool {
+    // Full Docker IDs only. A remote daemon's host PID is meaningless locally;
+    // its immutable ID must also own the local process's kernel cgroup path.
+    if container_id.len() != 64 || !container_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return false;
+    }
+    let cgroupfs = format!("/docker/{container_id}");
+    let systemd = format!("/system.slice/docker-{container_id}.scope");
+    cgroup.lines().any(|line| {
+        line.splitn(3, ':').nth(2).is_some_and(|path| path == cgroupfs || path == systemd)
+    })
 }
 
 #[cfg(target_os = "linux")]
-fn peer_is_container_init_process_status(status: &str) -> bool {
+fn peer_is_container_init_process_status(status: &str, expected_pid: u32) -> bool {
     status
         .lines()
         .find_map(|line| line.strip_prefix("NSpid:"))
@@ -448,7 +450,7 @@ fn peer_is_container_init_process_status(status: &str) -> bool {
             let mut ids = value.split_whitespace();
             let host_pid = ids.next().and_then(|value| value.parse::<u32>().ok());
             let container_pid = ids.next();
-            host_pid.is_some_and(|pid| pid > 0)
+            host_pid == Some(expected_pid) && expected_pid > 0
                 && container_pid == Some("1")
                 && ids.next().is_none()
         })

@@ -22,6 +22,7 @@ jackin-diagnostics = { workspace = true }
 jackin-telemetry = { workspace = true }
 jackin-env = { workspace = true }
 jackin-protocol = { workspace = true }
+jackin-usage = { workspace = true }
 termrock = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync"] }
 nix = { workspace = true, features = ["term"] }
@@ -46,3 +47,6 @@ test-support = ["jackin-config/test-support"]
 
 [lints]
 workspace = true
+
+[target.'cfg(unix)'.dependencies]
+jackin-process-directory = { workspace = true }

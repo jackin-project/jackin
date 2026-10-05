@@ -1,0 +1,11 @@
+warning: blocking call `std::fs::read` reachable from render path: render
+  --> $DIR/render_match_guard.rs:3:15
+   |
+LL |         () if std::fs::read("$TEST_BUILD_DIR/x").is_ok() => {},
+   |               ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: render/draw path must not perform blocking I/O, process spawn, sleep, or std::sync locks
+   = note: `#[warn(render_thread_purity)]` on by default
+
+warning: 1 warning emitted
+

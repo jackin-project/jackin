@@ -13,37 +13,20 @@ import XCTest
 /// No formatting
 /// logic is duplicated here.
 final class UsageWindowModelTests: XCTestCase {
-    private func glance(
-        _ surfaceId: String, headline: String = "H"
-    )
-        -> PresentationStore
-        .GlanceProviderRow
-    {
-        PresentationStore.GlanceProviderRow(
+    private func group(_ surfaceId: String) -> PresentationStore.ProviderGroupRow {
+        PresentationStore.ProviderGroupRow(
             surfaceId: surfaceId,
+            displayLabel: "label:\(surfaceId)",
             iconKey: surfaceId,
             fallbackGlyph: "?",
             usageURL: "https://example.test/usage",
-            displayLabel: "label:\(surfaceId)",
-            accountLabel: "acct:\(surfaceId)",
-            planLabel: nil,
-            glanceRemainingPercent: nil,
-            barLabel: "bar:\(surfaceId)",
-            headline: headline,
-            resetLabel: nil,
-            compactResetLabel: nil,
-            exactReset: nil,
-            statusWord: "fresh",
-            isRefreshing: false,
-            statusLabel: "status:\(surfaceId)",
-            severity: "normal",
-            updatedLabel: "u",
-            activityLabel: "activity:\(surfaceId)",
-            activityKind: "idle",
+            accountColumnLabel: "—",
+            planOrStatusLabel: "—",
+            remainingLabel: "—",
+            resetDisplayLabel: "—",
+            accounts: [],
             accessibilityLabel: "accessibility:\(surfaceId)",
-            lastError: nil,
-            dimmed: false
-        )
+            lastError: nil)
     }
 
     private func line(leading: String? = nil, trailing: String? = nil) -> UsagePresentationLine {
@@ -128,14 +111,18 @@ final class UsageWindowModelTests: XCTestCase {
             updatedLabel: "Updated now",
             lastError: nil,
             dimmed: false,
-            accessibilityLabel: "acct:\(key)"
-        )
+            accessibilityLabel: "acct:\(key)",
+            countQuota: nil,
+            resetsAt: nil,
+            usedMoney: nil,
+            limitMoney: nil,
+            remainingMoney: nil)
     }
 
     func testSidebarOrderAndOverviewSelection() {
-        let rows = ["codex", "claude", "amp", "grok", "zai", "kimi", "minimax"].map { glance($0) }
+        let rows = ["codex", "claude", "amp", "grok", "zai", "kimi", "minimax"].map { group($0) }
         let model = UsageWindowModel(
-            glanceRows: rows,
+            providerGroups: rows,
             surfaces: [],
             accounts: [],
             selection: nil
@@ -152,7 +139,7 @@ final class UsageWindowModelTests: XCTestCase {
             detailRow("bucket:0", kind: .bucket, label: "Weekly", lines: [line(leading: "40")]),
         ])
         let model = UsageWindowModel(
-            glanceRows: [glance("codex")],
+            providerGroups: [group("codex")],
             surfaces: [surface("codex", detail: detail)],
             accounts: [],
             selection: "codex"
@@ -162,15 +149,24 @@ final class UsageWindowModelTests: XCTestCase {
         XCTAssertEqual(model.content?.detail.rows.map(\.rowId), ["focused", "bucket:0"])
     }
 
-    func testDisabledIncomingSelectionFallsBackToOverview() {
+    func testCompactDisabledIncomingSelectionRemainsInFullInventory() {
         let model = UsageWindowModel(
-            glanceRows: [glance("codex")],
+            providerGroups: [group("codex")],
             surfaces: [surface("codex", enabled: false)],
             accounts: [],
             selection: "codex"
         )
-        XCTAssertEqual(model.selection, .overview)
-        XCTAssertNil(model.content)
+        XCTAssertEqual(model.selection, .provider("codex"))
+        XCTAssertEqual(model.content?.surfaceId, "codex")
+
+        let providerSelectionWithoutRustSelection = UsageWindowModel(
+            providerGroups: [group("codex")],
+            surfaces: [surface("codex", detail: .empty)],
+            accounts: [account("codex", key: "b", selected: false)],
+            selection: "codex"
+        )
+        XCTAssertEqual(providerSelectionWithoutRustSelection.selection, .overview)
+        XCTAssertNil(providerSelectionWithoutRustSelection.content?.headAccount)
     }
 
     func testDetailRowAndLineOrderFlattenedExactlyOnce() {
@@ -186,7 +182,7 @@ final class UsageWindowModelTests: XCTestCase {
             ]
         )
         let model = UsageWindowModel(
-            glanceRows: [glance("codex")],
+            providerGroups: [group("codex")],
             surfaces: [surface("codex", detail: UsageDetailPresentation(rows: [bucket]))],
             accounts: [],
             selection: "codex"
@@ -210,7 +206,7 @@ final class UsageWindowModelTests: XCTestCase {
             detailRow("bucket:1", kind: .bucket, label: "Weekly", lines: [line(leading: "20")]),
         ])
         let model = UsageWindowModel(
-            glanceRows: [glance("codex")],
+            providerGroups: [group("codex")],
             surfaces: [surface("codex", detail: detail)],
             accounts: [],
             selection: "codex"
@@ -229,7 +225,7 @@ final class UsageWindowModelTests: XCTestCase {
                 "detail", kind: .detail, label: "Detail", lines: [line(leading: "upstream 503")]),
         ])
         let model = UsageWindowModel(
-            glanceRows: [glance("codex")],
+            providerGroups: [group("codex")],
             surfaces: [surface("codex", detail: detail)],
             accounts: [],
             selection: "codex"
@@ -241,8 +237,21 @@ final class UsageWindowModelTests: XCTestCase {
         XCTAssertEqual(rows.last?.rowId, "detail")
     }
 
+    func testMissingPublishedIdentityDoesNotClaimProviderDestination() {
+        var incomplete = surface("google")
+        incomplete.identity = nil
+        let model = UsageWindowModel(
+            providerGroups: [group("google")],
+            surfaces: [incomplete],
+            accounts: [],
+            selection: "google")
+        XCTAssertEqual(model.selection, .overview)
+        XCTAssertNil(model.content)
+        XCTAssertFalse(model.isEmpty)
+    }
+
     func testEmptyEnabledSet() {
-        let model = UsageWindowModel(glanceRows: [], surfaces: [], accounts: [], selection: nil)
+        let model = UsageWindowModel(providerGroups: [], surfaces: [], accounts: [], selection: nil)
         XCTAssertTrue(model.isEmpty)
         XCTAssertEqual(model.selection, .overview)
         XCTAssertEqual(UsageWindowModel.emptyHint, "no agent credentials found")
@@ -254,7 +263,7 @@ final class UsageWindowModelTests: XCTestCase {
             account("codex", key: "b", selected: false),
         ]
         let model = UsageWindowModel(
-            glanceRows: [glance("codex")],
+            providerGroups: [group("codex")],
             surfaces: [surface("codex", detail: .empty)],
             accounts: accounts,
             selection: "codex"
@@ -264,13 +273,26 @@ final class UsageWindowModelTests: XCTestCase {
         XCTAssertEqual(model.content?.headAccount?.accountKey, "a")
 
         let selected = UsageWindowModel(
-            glanceRows: [glance("codex")],
+            providerGroups: [group("codex")],
             surfaces: [surface("codex", detail: .empty)],
             accounts: accounts,
             selection: "codex",
             accountSelection: "b"
         )
-        XCTAssertEqual(selected.content?.headAccount?.accountKey, "b")
+        XCTAssertEqual(selected.selection, .overview)
+        XCTAssertNil(selected.content)
+    }
+
+    func testRemovedAccountSelectionReturnsToOverviewWithoutSiblingFallback() {
+        let model = UsageWindowModel(
+            providerGroups: [group("codex")],
+            surfaces: [surface("codex", detail: .empty)],
+            accounts: [account("codex", key: "b", selected: false)],
+            selection: "codex",
+            accountSelection: "a"
+        )
+        XCTAssertEqual(model.selection, .overview)
+        XCTAssertNil(model.content)
     }
 
     func testSentinelRowsTransmittedUnchanged() {
@@ -290,7 +312,7 @@ final class UsageWindowModelTests: XCTestCase {
         )
         let detail = UsageDetailPresentation(rows: [grokPlan, ampDaily])
         let model = UsageWindowModel(
-            glanceRows: [glance("amp")],
+            providerGroups: [group("amp")],
             surfaces: [surface("amp", detail: detail)],
             accounts: [],
             selection: "amp"

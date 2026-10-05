@@ -245,39 +245,12 @@ pub(crate) async fn resolve_running_container_from_context(
 
     let mut candidates =
         indexed_hardline_candidates(paths, name, ws, &allowed_classes, docker).await?;
-    if candidates.is_empty() {
-        let running = runtime::list_running_agent_names(docker).await?;
-        candidates = allowed_classes
-            .iter()
-            .flat_map(|class| runtime::matching_family(class, &running))
-            .map(|name| HardlineCandidate {
-                name,
-                state: runtime::ContainerState::Running,
-            })
-            .collect();
-    }
     candidates.sort_by(|a, b| a.name.cmp(&b.name));
     candidates.dedup_by(|a, b| a.name == b.name);
     let names: Vec<String> = candidates.iter().map(|c| c.name.clone()).collect();
 
     if let Some(last) = ws.last_role.as_deref()
-        && let Some(preferred) =
-            preferred_indexed_container(paths, name, ws, last, &names).or_else(|| {
-                // Random instance IDs leave no deterministic primary
-                // name; match by the role component inside container_base.
-                let last_class = RoleSelector::parse(last).ok()?;
-                let role_slug = instance::naming::compact_component(&last_class.name, "role");
-                let mut family = names
-                    .iter()
-                    .filter(|n| instance::naming::class_family_matches_with_slug(&role_slug, n));
-                let first = family.next()?.clone();
-                // Commit only when unambiguous — multiple matches must
-                // still reach the prompt branch below.
-                if family.next().is_some() {
-                    return None;
-                }
-                Some(first)
-            })
+        && let Some(preferred) = preferred_indexed_container(paths, name, ws, last, &names)
     {
         return Ok(preferred);
     }

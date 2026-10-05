@@ -1,0 +1,27 @@
+{
+  "status": "authored; execution pending compiler lease and active macOS GUI",
+  "baselineFilter": "PopoverRetainedFailureTests",
+  "mutants": [
+    {
+      "id": "hide-retained-error",
+      "path": "native/Sources/JackinDesktop/PopoverRoot.swift",
+      "before": "if let error = provider.refreshError {",
+      "after": "if let error = provider.refreshError, provider.surface.detailPresentation.rows.isEmpty {",
+      "killedBy": "testHostedRetainedFailureRendersValuesAndInvokesGlobalRetry"
+    },
+    {
+      "id": "discard-last-good-limits",
+      "path": "native/Sources/JackinDesktop/PopoverRoot.swift",
+      "before": "let limitRows = surface.detailPresentation.rows.filter { $0.kind == .bucket }",
+      "after": "let limitRows = provider.refreshError == nil ? surface.detailPresentation.rows.filter { $0.kind == .bucket } : []",
+      "killedBy": "testHostedRetainedFailureRendersValuesAndInvokesGlobalRetry"
+    },
+    {
+      "id": "route-global-retry-to-provider",
+      "path": "native/Sources/JackinDesktop/PopoverRoot.swift",
+      "before": "Button(\"Retry\", action: retryLastOperation)\n                        .disabled(store.isOpening || store.refreshInProgress)\n                        .accessibilityIdentifier(\"popover.refresh-retry\")",
+      "after": "Button(\"Retry\") { store.refresh(surfaceId: provider.surfaceId) }\n                        .disabled(store.isOpening || store.refreshInProgress)\n                        .accessibilityIdentifier(\"popover.refresh-retry\")",
+      "killedBy": "testHostedRetainedFailureRendersValuesAndInvokesGlobalRetry"
+    }
+  ]
+}

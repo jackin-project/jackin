@@ -10,13 +10,14 @@
 //! the attach socket via [`SocketBackend::take_output`].
 //!
 //! Chrome, dialogs, and pane bodies all render through this backend today.
-//! Ratatui's previous buffer is the only pane-body diff state.
+//! Ratatui diffs glyphs and basic styles; this backend retains emitted cells
+//! so sidecar SGR changes can repaint cells absent from that diff.
 
-use std::io;
+use std::{collections::BTreeMap, io};
 
 use ratatui::{
     backend::{Backend, ClearType},
-    buffer::Cell,
+    buffer::{Cell, CellWidth},
     layout::{Position, Size},
     style::{Color, Modifier},
 };
@@ -33,6 +34,10 @@ pub struct SocketBackend {
     /// with the same style don't re-emit SGR sequences.
     current_style: CellStyle,
     current_metadata: SgrMetadata,
+    /// Last emitted glyphs, used to repaint metadata-only changes.
+    rendered_cells: BTreeMap<(u16, u16), Cell>,
+    rendered_metadata: BTreeMap<(u16, u16), SgrMetadata>,
+    rendered_links: BTreeMap<(u16, u16), String>,
     /// Hyperlinked cell rects for the current frame: the encoder emits
     /// `OSC 8` open/close brackets around exactly these cells during cell
     /// emission (§3.4 — no raw overlay writes). Consumed by the next `draw`.
@@ -77,6 +82,9 @@ impl SocketBackend {
             output: Vec::with_capacity(65536),
             current_style: CellStyle::default(),
             current_metadata: SgrMetadata::default(),
+            rendered_cells: BTreeMap::new(),
+            rendered_metadata: BTreeMap::new(),
+            rendered_links: BTreeMap::new(),
             hyperlink_regions: Vec::new(),
             sgr_regions: Vec::new(),
             suppress_clear_escapes: false,
@@ -110,6 +118,9 @@ impl SocketBackend {
     /// Update the terminal size. Called when the daemon receives a resize event.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         self.size = (cols, rows);
+        self.rendered_cells.clear();
+        self.rendered_metadata.clear();
+        self.rendered_links.clear();
         self.current_style = CellStyle::default();
         self.current_metadata = SgrMetadata::default();
     }
@@ -124,6 +135,76 @@ impl SocketBackend {
     pub fn drain_output_into(&mut self, target: &mut Vec<u8>) {
         target.extend_from_slice(&self.output);
         self.output.clear();
+    }
+
+    /// Merge the Ratatui diff with damage from attributes outside its cells.
+    fn frame_cell_changes<'a, I>(
+        &mut self,
+        content: I,
+        sgr_regions: &[(ratatui::layout::Rect, SgrMetadata)],
+        regions: &[(ratatui::layout::Rect, String)],
+    ) -> BTreeMap<(u16, u16), (Cell, bool)>
+    where
+        I: Iterator<Item = (u16, u16, &'a Cell)>,
+    {
+        // A sidecar attribute must participate in damage even when Ratatui's
+        // glyph/basic-style diff is empty. Retain only emitted cells and merge
+        // changed SGR coordinates into this frame's ordered emission stream.
+        let mut changed_cells = BTreeMap::new();
+        for (x, y, cell) in content {
+            for tail_x in x.saturating_add(1)..x.saturating_add(cell.cell_width()) {
+                self.rendered_cells.remove(&(y, tail_x));
+            }
+            self.rendered_cells.insert((y, x), cell.clone());
+            changed_cells.insert((y, x), (cell.clone(), true));
+        }
+        let mut metadata_by_cell = BTreeMap::new();
+        for (rect, metadata) in sgr_regions {
+            for y in rect.top()..rect.bottom().min(self.size.1) {
+                for x in rect.left()..rect.right().min(self.size.0) {
+                    metadata_by_cell.entry((y, x)).or_insert(*metadata);
+                }
+            }
+        }
+        metadata_by_cell.retain(|_, metadata| *metadata != SgrMetadata::default());
+        for coordinate in self.rendered_metadata.keys().chain(metadata_by_cell.keys()) {
+            if self.rendered_metadata.get(coordinate) != metadata_by_cell.get(coordinate) {
+                changed_cells.entry(*coordinate).or_insert_with(|| {
+                    (
+                        self.rendered_cells
+                            .get(coordinate)
+                            .cloned()
+                            .unwrap_or_default(),
+                        false,
+                    )
+                });
+            }
+        }
+        self.rendered_metadata = metadata_by_cell;
+        let mut links_by_cell = BTreeMap::new();
+        for (rect, uri) in regions {
+            for y in rect.top()..rect.bottom().min(self.size.1) {
+                for x in rect.left()..rect.right().min(self.size.0) {
+                    links_by_cell.entry((y, x)).or_insert_with(|| uri.clone());
+                }
+            }
+        }
+        for coordinate in self.rendered_links.keys().chain(links_by_cell.keys()) {
+            if self.rendered_links.get(coordinate) != links_by_cell.get(coordinate) {
+                changed_cells.entry(*coordinate).or_insert_with(|| {
+                    (
+                        self.rendered_cells
+                            .get(coordinate)
+                            .cloned()
+                            .unwrap_or_default(),
+                        false,
+                    )
+                });
+            }
+        }
+        self.rendered_links = links_by_cell;
+
+        changed_cells
     }
 
     /// Write the SGR sequence for `style` if it differs from the last one emitted.
@@ -305,7 +386,22 @@ impl Backend for SocketBackend {
         let sgr_regions = std::mem::take(&mut self.sgr_regions);
         let mut open_link: Option<usize> = None;
 
-        for (x, y, cell) in content {
+        let changed_cells = self.frame_cell_changes(content, &sgr_regions, &regions);
+
+        for ((y, x), (cell, from_diff)) in changed_cells {
+            // Wide continuation coordinates carry metadata too, but writing a
+            // blank there would erase the lead glyph's second column. The
+            // model-forced width remains authoritative, including emoji whose
+            // Unicode width disagrees with the terminal model.
+            let covered_by_wide_lead = self
+                .rendered_cells
+                .range((y, 0)..(y, x))
+                .next_back()
+                .is_some_and(|((_, lead_x), lead)| lead_x.saturating_add(lead.cell_width()) > x);
+            if covered_by_wide_lead && !from_diff {
+                continue;
+            }
+
             let row = y + 1; // 1-based terminal row
             let col = x + 1; // 1-based terminal column
 
@@ -324,9 +420,10 @@ impl Backend for SocketBackend {
                 }
                 open_link = desired_link;
             }
-            let metadata = sgr_regions
-                .iter()
-                .find_map(|(rect, metadata)| rect.contains(Position { x, y }).then_some(*metadata))
+            let metadata = self
+                .rendered_metadata
+                .get(&(y, x))
+                .copied()
                 .unwrap_or_default();
 
             // Emit cursor position only when we are not already there.
@@ -343,7 +440,7 @@ impl Backend for SocketBackend {
                 cursor_row = Some(row);
             }
 
-            self.apply_style(CellStyle::from_cell(cell), metadata);
+            self.apply_style(CellStyle::from_cell(&cell), metadata);
             let sym = cell.symbol();
             self.output.extend_from_slice(sym.as_bytes());
 
@@ -408,6 +505,9 @@ impl Backend for SocketBackend {
     fn clear_region(&mut self, clear_type: ClearType) -> Result<(), Self::Error> {
         let seq: &[u8] = match clear_type {
             ClearType::All => {
+                self.rendered_cells.clear();
+                self.rendered_metadata.clear();
+                self.rendered_links.clear();
                 self.current_style = CellStyle::default();
                 self.current_metadata = SgrMetadata::default();
                 if self.suppress_clear_escapes {

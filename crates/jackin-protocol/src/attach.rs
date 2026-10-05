@@ -633,6 +633,10 @@ pub enum ClipboardImageError {
     DuplicateTransfer,
     /// Host clipboard backend (xclip/wl-paste/etc.) was unavailable.
     BackendUnavailable,
+    /// Host clipboard contains no supported readable image.
+    NoReadableImage,
+    /// Host clipboard text is not a readable absolute image path or file URL.
+    NoReadableImagePath,
     /// Host filesystem or clipboard I/O failed.
     Io,
     /// Host probe/response failed or any other free-form failure.
@@ -640,7 +644,7 @@ pub enum ClipboardImageError {
 }
 
 impl ClipboardImageError {
-    /// Operator-facing message (also the wire payload).
+    /// Operator-facing message; the wire preserves the typed kind separately.
     #[must_use]
     pub fn message(&self) -> &str {
         match self {
@@ -654,6 +658,10 @@ impl ClipboardImageError {
             Self::MissingTransfer => "clipboard image transfer has no active start",
             Self::DuplicateTransfer => "clipboard image transfer already active",
             Self::BackendUnavailable => "host clipboard backend unavailable (xclip/wl-paste)",
+            Self::NoReadableImage => "host clipboard does not contain a readable image",
+            Self::NoReadableImagePath => {
+                "host clipboard text is not an absolute readable image path or file:// image URL"
+            }
             Self::Io => "clipboard image host I/O failed while reading/writing",
             Self::Other(message) => message.as_str(),
         }
@@ -671,63 +679,73 @@ impl ClipboardImageError {
             Self::MissingTransfer => "missing-transfer",
             Self::DuplicateTransfer => "duplicate-transfer",
             Self::BackendUnavailable => "backend-unavailable",
+            Self::NoReadableImage => "no-readable-image",
+            Self::NoReadableImagePath => "no-readable-image-path",
             Self::Io => "io",
             Self::Other(_) => "other",
         }
     }
 
-    /// Classify a free-form host/capsule message into a typed kind.
-    /// Unknown shapes become [`Self::Other`].
-    #[must_use]
-    pub fn from_message(message: String) -> Self {
-        let lower = message.to_ascii_lowercase();
-        if lower.contains("empty") {
-            Self::Empty
-        } else if lower.contains("exceeds cap")
-            || lower.contains("too large")
-            || lower.contains("over cap")
-        {
-            Self::TooLarge
-        } else if lower.contains("magic")
-            || lower.contains("signature")
-            || lower.contains("not an image")
-            || lower.contains("unsupported image")
-        {
-            Self::UnsupportedFormat
-        } else if lower.contains("sha-256") || lower.contains("digest") {
-            Self::DigestMismatch
-        } else if lower.contains("offset") || lower.contains("did not match expected") {
-            Self::ChunkSequence
-        } else if lower.contains("no active start") {
-            Self::MissingTransfer
-        } else if lower.contains("already active") {
-            Self::DuplicateTransfer
-        } else if lower.contains("display")
-            || lower.contains("wayland")
-            || lower.contains("xclip")
-            || lower.contains("wl-paste")
-            || lower.contains("wl-copy")
-        {
-            Self::BackendUnavailable
-        } else if lower.contains("create")
-            || lower.contains("creating")
-            || lower.contains("open")
-            || lower.contains("opening")
-            || lower.contains("write")
-            || lower.contains("writing")
-            || lower.contains("flush")
-            || lower.contains("flushing")
-            || lower.contains("permission")
-            || lower.contains("metadata")
-            || lower.contains("read")
-            || lower.contains("reading")
-        {
-            Self::Io
-        } else {
-            Self::Other(message)
+    fn encode_payload(&self) -> Result<Vec<u8>> {
+        let (tag, message) = match self {
+            Self::Empty => (1, None),
+            Self::TooLarge => (2, None),
+            Self::UnsupportedFormat => (3, None),
+            Self::DigestMismatch => (4, None),
+            Self::ChunkSequence => (5, None),
+            Self::MissingTransfer => (6, None),
+            Self::DuplicateTransfer => (7, None),
+            Self::BackendUnavailable => (8, None),
+            Self::Io => (9, None),
+            Self::NoReadableImage => (10, None),
+            Self::NoReadableImagePath => (11, None),
+            Self::Other(message) => (12, Some(message.as_bytes())),
+        };
+        let mut payload = vec![tag];
+        if let Some(message) = message {
+            if message.is_empty() || message.len() > MAX_CLIPBOARD_IMAGE_ERROR_BYTES {
+                bail!("clipboard image error message is outside the bounded range");
+            }
+            payload.extend_from_slice(message);
         }
+        Ok(payload)
+    }
+
+    fn decode_payload(payload: &[u8]) -> Result<Self> {
+        let Some((&tag, message)) = payload.split_first() else {
+            bail!("clipboard image error kind is missing");
+        };
+        if tag == 12 {
+            if message.is_empty() || message.len() > MAX_CLIPBOARD_IMAGE_ERROR_BYTES {
+                bail!("clipboard image error message is outside the bounded range");
+            }
+            return Ok(Self::Other(
+                std::str::from_utf8(message)
+                    .context("clipboard image error message is not valid UTF-8")?
+                    .to_owned(),
+            ));
+        }
+        if !message.is_empty() {
+            bail!("typed clipboard image error has trailing bytes");
+        }
+        Ok(match tag {
+            1 => Self::Empty,
+            2 => Self::TooLarge,
+            3 => Self::UnsupportedFormat,
+            4 => Self::DigestMismatch,
+            5 => Self::ChunkSequence,
+            6 => Self::MissingTransfer,
+            7 => Self::DuplicateTransfer,
+            8 => Self::BackendUnavailable,
+            9 => Self::Io,
+            10 => Self::NoReadableImage,
+            11 => Self::NoReadableImagePath,
+            other => bail!("unknown clipboard image error kind {other}"),
+        })
     }
 }
+
+impl std::error::Error for ClipboardImageError {}
 
 impl std::fmt::Display for ClipboardImageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1033,17 +1051,7 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
         ClientFrame::ClipboardImageChunk(chunk) => encode_clipboard_image_chunk(chunk),
         ClientFrame::ClipboardImageEnd(end) => encode_clipboard_image_end(end),
         ClientFrame::ClipboardImageError(error) => {
-            let message = error.message().as_bytes();
-            if message.is_empty() {
-                bail!("clipboard image error message is empty");
-            }
-            if message.len() > MAX_CLIPBOARD_IMAGE_ERROR_BYTES {
-                bail!(
-                    "clipboard image error message {} exceeds cap {MAX_CLIPBOARD_IMAGE_ERROR_BYTES}",
-                    message.len()
-                );
-            }
-            encode(TAG_CLIPBOARD_IMAGE_ERROR, message)
+            encode(TAG_CLIPBOARD_IMAGE_ERROR, &error.encode_payload()?)
         }
         ClientFrame::HostNotice(message) => {
             let message = message.as_bytes();
@@ -1219,8 +1227,10 @@ async fn read_framed_payload<R>(stream: &mut R, first_byte: u8) -> Result<Option
 where
     R: AsyncRead + Unpin,
 {
+    // Prefix and payload consume one budget; receiving a chunk cannot renew it.
+    let deadline = tokio::time::Instant::now() + FRAME_READ_TIMEOUT;
     let mut len_buf = [0u8; 4];
-    match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(&mut len_buf)).await {
+    match tokio::time::timeout_at(deadline, stream.read_exact(&mut len_buf)).await {
         Ok(Ok(_)) => {}
         Ok(Err(e)) => {
             // Clean EOF (peer closed before sending any length byte) is
@@ -1252,7 +1262,7 @@ where
         let Some(dest) = chunk.get_mut(..n) else {
             bail!("attach frame: chunk slice out of range");
         };
-        match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(dest)).await {
+        match tokio::time::timeout_at(deadline, stream.read_exact(dest)).await {
             Ok(Ok(_)) => {}
             Ok(Err(e)) => {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -1495,18 +1505,7 @@ fn decode_client_legacy(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
             })
         }
         TAG_CLIPBOARD_IMAGE_ERROR => {
-            if payload.is_empty() {
-                bail!("clipboard image error message is empty");
-            }
-            if payload.len() > MAX_CLIPBOARD_IMAGE_ERROR_BYTES {
-                bail!(
-                    "clipboard image error message length {} exceeds cap {MAX_CLIPBOARD_IMAGE_ERROR_BYTES}",
-                    payload.len()
-                );
-            }
-            let message = std::str::from_utf8(&payload)
-                .context("clipboard image error message is not valid UTF-8")?;
-            ClientFrame::ClipboardImageError(ClipboardImageError::from_message(message.to_owned()))
+            ClientFrame::ClipboardImageError(ClipboardImageError::decode_payload(&payload)?)
         }
         TAG_HOST_NOTICE => {
             if payload.is_empty() {

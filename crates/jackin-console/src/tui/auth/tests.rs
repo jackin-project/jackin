@@ -111,7 +111,7 @@ fn required_env_vars_match_auth_kind_table() {
 fn kimi_required_env_vars_match_runtime_table() {
     assert_eq!(
         AuthKind::Kimi.required_env_var(AuthMode::ApiKey),
-        Some(jackin_core::KIMI_CODE_API_KEY_ENV_NAME)
+        Some(jackin_core::KIMI_API_KEY_ENV_NAME)
     );
     assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::Sync), None);
     assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::Ignore), None);

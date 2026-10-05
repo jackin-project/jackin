@@ -26,7 +26,10 @@ Output is the list of unique trailers, with `Signed-off-by` first, then `Co-auth
 
 ## Integration in squash merge flow
 
-See the squash-merge guidance under `.github/` ("PR squash merge messages" and the "Trailer extraction helper" section).
+See [PULL_REQUESTS.md — Agent-only rules](../../PULL_REQUESTS.md#agent-only-rules)
+for squash-only merge messages and required DCO/attribution trailers.
+`.github/` contains generated workflow configuration; contributor policy lives
+in the root guide.
 
 Typical pattern:
 

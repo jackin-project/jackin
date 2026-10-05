@@ -14,11 +14,13 @@
     reason = "runtime cleanup and GC report operator-visible warnings and results"
 )]
 
+use anyhow::Context as _;
 use super::prune_output;
 use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
+use crate::isolation::safe_remove::OwnedRemoval;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
-use jackin_core::{CommandRunner, ContainerHandle};
+use jackin_core::{CommandRunner, ContainerHandle, NetworkId};
 use jackin_docker::docker_client::{ContainerState, DockerApi, RemoveImageOutcome};
 use owo_colors::OwoColorize;
 
@@ -28,7 +30,6 @@ use super::naming::{
     LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_KIND_ROLE, LABEL_MANAGED,
     LABEL_ROLE_KEY,
 };
-use crate::instance::naming::{dind_certs_volume, role_network_name};
 
 struct CleanupTiming {
     name: &'static str,
@@ -58,6 +59,65 @@ fn cleanup_failure(_message: impl AsRef<str>) {
         jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
 }
 
+fn read_cleanup_manifest(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> anyhow::Result<InstanceManifest> {
+    let mut components = std::path::Path::new(container_name).components();
+    anyhow::ensure!(
+        matches!(components.next(), Some(std::path::Component::Normal(name)) if name == std::ffi::OsStr::new(container_name))
+            && components.next().is_none(),
+        "invalid instance directory name; refusing cleanup"
+    );
+    let state_dir = paths.data_dir.join(container_name);
+    let metadata_dir = state_dir.join(".jackin");
+    for directory in [&paths.data_dir, &state_dir, &metadata_dir] {
+        match std::fs::symlink_metadata(directory) {
+            Ok(metadata) => anyhow::ensure!(
+                metadata.is_dir() && !metadata.file_type().is_symlink(),
+                "aliased instance directory at {}; refusing cleanup",
+                directory.display()
+            ),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let manifest_path = state_dir.join(".jackin/instance.json");
+    match std::fs::symlink_metadata(&manifest_path) {
+        Ok(metadata) => anyhow::ensure!(
+            metadata.is_file() && !metadata.file_type().is_symlink(),
+            "aliased instance manifest at {}; refusing cleanup",
+            manifest_path.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let manifest = InstanceManifest::read_optional(&state_dir)?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "instance ownership manifest unavailable for {container_name}; retaining custody"
+        )
+    })?;
+    anyhow::ensure!(
+        manifest.container_base == container_name
+            && manifest.docker.role_container == container_name,
+        "instance ownership directory differs from manifest"
+    );
+    RoleSelector::parse(&manifest.role_key).map_err(|error| {
+        anyhow::Error::new(error).context(format!(
+            "invalid persisted role identity at {}; refusing cleanup",
+            state_dir.display()
+        ))
+    })?;
+    anyhow::ensure!(
+        !matches!(
+            super::backend::backend_for_manifest(Some(&manifest)),
+            InstanceBackend::AppleContainer
+        ) || manifest.docker_identity.is_none(),
+        "contradictory Apple and Docker ownership identity; retaining custody"
+    );
+    Ok(manifest)
+}
+
 pub async fn purge_class_data(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -65,39 +125,47 @@ pub async fn purge_class_data(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let _timing = cleanup_timing("class_data");
-    if !paths.data_dir.exists() {
-        return Ok(());
-    }
 
     // Drive each filesystem teardown to completion, then batch the
     // index update for whichever containers succeeded. Returning early
     // on the first failure without recording the prior successes would
     // leave the index claiming the already-deleted state dirs still
     // hold their pre-purge status.
-    let role_slug = crate::instance::naming::compact_component(&selector.name, "role");
-    let mut matched = Vec::new();
-    let mut first_error: Option<anyhow::Error> = None;
-    for entry in std::fs::read_dir(&paths.data_dir)? {
-        let entry = entry?;
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        if !crate::instance::naming::class_family_matches_with_slug(&role_slug, &file_name) {
-            continue;
+    let inventory = cleanup_instance_inventory(paths)?;
+    let mut plans = Vec::new();
+    for manifest in inventory {
+        if RoleSelector::parse(&manifest.role_key)? == *selector {
+            let name = manifest.container_base;
+            let plan = admit_container_purge(paths, &name, docker).await?;
+            plans.push((name, plan));
         }
-        match purge_container_filesystem(paths, &file_name, docker, runner).await {
+    }
+    let mut matched = Vec::new();
+    let mut retained = Vec::new();
+    for (file_name, plan) in plans {
+        match apply_container_purge(plan, runner).await {
             Ok(()) => matched.push(file_name),
             Err(error) => {
                 cleanup_failure(format!("class data purge failed: {error}"));
-                first_error = Some(error);
-                break;
+                retained.push(RetainedInstanceState {
+                    container_base: file_name,
+                    cause: error,
+                });
             }
         }
     }
     let refs: Vec<&str> = matched.iter().map(String::as_str).collect();
-    let mark_err = InstanceIndex::mark_many_purged(&paths.data_dir, &refs);
-    if let Some(err) = first_error {
-        return Err(err);
+    if let Err(cause) = InstanceIndex::mark_many_purged(&paths.data_dir, &refs) {
+        retained.push(RetainedInstanceState {
+            container_base: "instance index".to_owned(),
+            cause,
+        });
     }
-    mark_err
+    if retained.is_empty() {
+        Ok(())
+    } else {
+        Err(InstanceCleanupFailures { retained }.into())
+    }
 }
 
 pub async fn purge_container_state(
@@ -121,25 +189,111 @@ async fn purge_container_filesystem(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let _timing = cleanup_timing("container_filesystem");
-    super::coordination::ensure_prunable_async(paths, &paths.data_dir.join(container_name)).await?;
-    ensure_backend_absent_for_purge(paths, container_name, docker).await?;
-    crate::isolation::cleanup::purge_isolated_for_container(
-        &paths.data_dir.join(container_name),
-        runner,
-    )
-    .await?;
+    let plan = admit_container_purge(paths, container_name, docker).await?;
+    apply_container_purge(plan, runner).await
+}
+
+struct ContainerPurgePlan {
+    paths: JackinPaths,
+    state_dir: std::path::PathBuf,
+    state: OwnedRemoval,
+    socket: OwnedRemoval,
+    shared_lifetime: Option<crate::instance::SharedDockerLifetime>,
+}
+
+async fn admit_container_purge(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<ContainerPurgePlan> {
+    let state = admit_container_state_removal(paths, container_name).await?;
+    admit_container_purge_with_state(paths, container_name, docker, state).await
+}
+
+async fn admit_container_state_removal(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> anyhow::Result<OwnedRemoval> {
     let state_dir = paths.data_dir.join(container_name);
+    super::coordination::ensure_prunable_async(paths, &state_dir).await?;
+    let root = paths.data_dir.clone();
+    let admitted_dir = state_dir.clone();
+    jackin_telemetry::spawn::joined_blocking(move || {
+        OwnedRemoval::admit_contained(&root, &admitted_dir)
+    })
+    .await
+    .map_err(std::io::Error::other)?
+    .map_err(anyhow::Error::from)
+}
+
+async fn admit_container_purge_with_state(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+    state: OwnedRemoval,
+) -> anyhow::Result<ContainerPurgePlan> {
+    let state_dir = paths.data_dir.join(container_name);
+    let manifest = read_cleanup_manifest(paths, container_name)?;
+    ensure_backend_absent_for_purge(paths, container_name, docker).await?;
+    crate::isolation::state::read_records(&state_dir)?;
+    let shared_lifetime = if matches!(
+        super::backend::backend_for_manifest(Some(&manifest)),
+        InstanceBackend::Docker
+    ) {
+        let shared =
+            resolve_shared_cleanup_for_state(paths, container_name, &manifest.docker, docker)
+                .await?;
+        anyhow::ensure!(
+            shared.network.is_none() && shared.volume.is_none(),
+            "shared Docker resources still exist for {container_name}; retaining instance custody"
+        );
+        ensure_shared_plan_current(paths, &shared, docker).await?;
+        Some(shared.lifetime)
+    } else { None };
+    let socket = admit_socket_removal(paths, container_name).await?;
+    Ok(ContainerPurgePlan {
+        paths: paths.clone(),
+        state_dir,
+        state,
+        socket,
+        shared_lifetime,
+    })
+}
+
+async fn apply_container_purge(
+    mut plan: ContainerPurgePlan,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    if let Some(lifetime) = &plan.shared_lifetime {
+        if !lifetime.is_retired() {
+            let daemon = crate::instance::SharedDockerLifetime::load_for_cleanup(
+                &plan.paths,
+                lifetime.daemon_server_id(),
+                lifetime.owner(),
+            )?;
+            anyhow::ensure!(daemon.as_ref() == Some(lifetime), "shared Docker custody changed before local purge");
+            plan.shared_lifetime = Some(lifetime.begin_retirement(&plan.paths)?);
+        }
+    }
+    crate::isolation::cleanup::purge_isolated_for_container(&plan.state_dir, runner).await?;
     // Owned-validated-path removal: the container name is operator/index
     // input, so deletion is containment-bound to the data dir and fd-pinned
     // (`O_NOFOLLOW` at every level). Escapes and symlinks are refused
     // loudly instead of followed; a missing dir is still a no-op.
-    crate::isolation::safe_remove::safe_remove_dir_contained(&paths.data_dir, &state_dir)?;
     // Remove the host-side bind-mount dir (~/.jackin/sockets/<container>/)
     // that holds the daemon socket and Capsule launch config. Skipping it
     // here leaks stale `agent.toml` across load/purge cycles; a future
     // launch with the same container basename would bind-mount the old
     // contents before the host's mkdir + write overwrites them.
-    remove_socket_dir(paths, container_name).await;
+    remove_admitted_socket(plan.socket).await?;
+    jackin_telemetry::spawn::joined_blocking(move || plan.state.remove())
+        .await
+        .map_err(std::io::Error::other)??;
+    if let Some(lifetime) = plan.shared_lifetime {
+        if !lifetime.is_retired() {
+            lifetime.retire(&plan.paths)?;
+        }
+    }
     // Coordination inodes live outside the purged runtime state and persist.
     Ok(())
 }
@@ -190,11 +344,8 @@ pub(crate) async fn eject_docker_role_with_handles(
     role_handle: &ContainerHandle,
     dind_handle: Option<&ContainerHandle>,
 ) -> anyhow::Result<()> {
-    // Persisted state must authorize reconnect/eject handles too. Handles
-    // supplied by an in-flight launch without a manifest remain captured
-    // creation identities, rather than a restart name lookup.
-    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
-    if let Some(manifest) = manifest.as_ref() {
+    let manifest = read_cleanup_manifest(paths, container_name)?;
+    {
         let identity = manifest.docker_identity.as_ref().ok_or_else(|| anyhow::anyhow!(
             "Docker ownership identity unavailable for {container_name}; refusing destructive cleanup"
         ))?;
@@ -210,10 +361,7 @@ pub(crate) async fn eject_docker_role_with_handles(
             );
         }
     }
-    let resources = manifest.map_or_else(
-        || DockerResources::from_container_name(container_name),
-        |manifest| manifest.docker,
-    );
+    let resources = manifest.docker;
     eject_docker_role_with_resources(
         paths,
         container_name,
@@ -250,6 +398,16 @@ async fn eject_docker_role_with_resources(
             dind_handle.name()
         );
     }
+    crate::isolation::state::read_records(&paths.data_dir.join(container_name))?;
+    let mut shared = resolve_shared_cleanup_for_state(paths, container_name, resources, docker).await?;
+    anyhow::ensure!(shared.role.as_ref().is_none_or(|handle| handle.id() == role_handle.id()),
+        "role container differs from durable shared lifetime for {container_name}");
+    anyhow::ensure!(shared.dind.as_ref().map(ContainerHandle::id) == dind_handle.map(ContainerHandle::id),
+        "DinD container differs from durable shared lifetime for {container_name}");
+    let socket = admit_socket_removal(paths, container_name).await?;
+    ensure_shared_plan_current(paths, &shared, docker).await?;
+    shared.lifetime = shared.lifetime.begin_retirement(paths)?;
+    ensure_shared_plan_current(paths, &shared, docker).await?;
 
     // Remove containers first so the network has no active endpoints.
     docker.remove_container_by_id(role_handle).await?;
@@ -262,19 +420,23 @@ async fn eject_docker_role_with_resources(
     }
 
     // Volume and network are independent of each other once containers are gone.
-    if let Some(certs_volume) = resources.certs_volume.as_deref() {
+    if let Some(certs_volume) = shared.volume.as_deref() {
         docker.remove_volume(certs_volume).await?;
+        anyhow::ensure!(docker.inspect_volume_by_name(certs_volume).await?.is_none(),
+            "certificate volume {certs_volume} remains after removal; retaining shared custody");
     }
-    docker.remove_network(&resources.network).await?;
+    if let Some(network) = shared.network {
+        docker.remove_network_by_id(&network).await?;
+    }
 
-    // Best-effort host-side socket dir cleanup. Same reason as
+    // Host-side socket dir cleanup. Same reason as
     // purge_container_filesystem above: the daemon socket and the
     // bind-mounted Capsule launch config live under
     // ~/.jackin/sockets/<container>/ and must be removed alongside the
     // docker-side teardown so re-launching the same container basename
     // does not inherit stale state.
-    remove_socket_dir(paths, container_name).await;
-
+    remove_admitted_socket(socket).await?;
+    shared.lifetime.retire(paths)?;
     Ok(())
 }
 
@@ -289,41 +451,17 @@ pub(crate) async fn resolve_cleanup_handles_for_state(
     Option<ContainerHandle>,
     Option<ContainerHandle>,
 )> {
-    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
-    let resources = manifest.as_ref().map_or_else(
-        || DockerResources::from_container_name(container_name),
-        |manifest| manifest.docker.clone(),
-    );
-    let identity = manifest
-        .as_ref()
-        .and_then(|manifest| manifest.docker_identity.as_ref());
+    let manifest = read_cleanup_manifest(paths, container_name)?;
+    let resources = manifest.docker.clone();
+    let shared = resolve_shared_cleanup_for_state(paths, container_name, &resources, docker).await?;
     if let Some(known) = known_role {
-        let identity = identity.ok_or_else(|| {
-            anyhow::anyhow!("Docker ownership identity unavailable for {container_name}")
-        })?;
         anyhow::ensure!(
-            known.name() == container_name && known.id() == identity.role_container_id,
+            known.name() == container_name
+                && shared.role.as_ref().is_some_and(|captured| captured.id() == known.id()),
             "role container ownership identity mismatch before destructive cleanup for {container_name}"
         );
     }
-    let role = resolve_owned_container_handle(
-        docker,
-        container_name,
-        identity.map(|identity| identity.role_container_id.as_str()),
-    )
-    .await?;
-    let dind = match resources.dind_container.as_deref() {
-        Some(name) => {
-            resolve_owned_container_handle(
-                docker,
-                name,
-                identity.and_then(|identity| identity.dind_container_id.as_deref()),
-            )
-            .await?
-        }
-        None => None,
-    };
-    Ok((resources, role, dind))
+    Ok((resources, shared.role, shared.dind))
 }
 
 /// Resolve only identities belonging to the recorded launch. A name lookup
@@ -343,12 +481,9 @@ pub(crate) async fn resolve_optional_role_handle_for_state(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<ContainerHandle>> {
-    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
-    let expected_id = manifest
-        .as_ref()
-        .and_then(|manifest| manifest.docker_identity.as_ref())
-        .map(|identity| identity.role_container_id.as_str());
-    resolve_owned_container_handle(docker, container_name, expected_id).await
+    let manifest = read_cleanup_manifest(paths, container_name)?;
+    let shared = resolve_shared_cleanup_for_state(paths, container_name, &manifest.docker, docker).await?;
+    Ok(shared.role)
 }
 
 pub(crate) async fn resolve_dind_handle_for_state(
@@ -356,64 +491,296 @@ pub(crate) async fn resolve_dind_handle_for_state(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<ContainerHandle>> {
-    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
-    let resources = manifest.as_ref().map_or_else(
-        || DockerResources::from_container_name(container_name),
-        |manifest| manifest.docker.clone(),
-    );
-    let expected_id = manifest
-        .as_ref()
-        .and_then(|manifest| manifest.docker_identity.as_ref())
-        .and_then(|identity| identity.dind_container_id.as_deref());
-    match resources.dind_container.as_deref() {
-        Some(name) => resolve_owned_container_handle(docker, name, expected_id).await,
-        None => Ok(None),
-    }
-}
-
-async fn resolve_owned_container_handle(
-    docker: &impl DockerApi,
-    name: &str,
-    expected_id: Option<&str>,
-) -> anyhow::Result<Option<ContainerHandle>> {
-    let Some(handle) = resolve_optional_container_handle(docker, name).await? else {
-        return Ok(None);
-    };
-    let expected_id = expected_id.filter(|id| !id.is_empty()).ok_or_else(|| anyhow::anyhow!(
-        "Docker ownership identity unavailable for {name}; refusing lifecycle changes; recover the original launch identity explicitly"
-    ))?;
-    anyhow::ensure!(
-        handle.id() == expected_id,
-        "Docker ownership identity mismatch for {name}: recorded {expected_id}, found {}; refusing lifecycle changes",
-        handle.id()
-    );
-    Ok(Some(ContainerHandle::new(name, expected_id)?))
-}
-
-pub(crate) async fn resolve_optional_container_handle(
-    docker: &impl DockerApi,
-    name: &str,
-) -> anyhow::Result<Option<ContainerHandle>> {
-    let inspection = docker.inspect_container_by_name(name).await;
-    match inspection.handle {
-        Some(handle) => Ok(Some(handle)),
-        None if matches!(inspection.state, ContainerState::NotFound) => Ok(None),
-        None => anyhow::bail!(
-            "cannot resolve container {name}: {}",
-            inspection.state.inspect_label()
-        ),
-    }
+    let manifest = read_cleanup_manifest(paths, container_name)?;
+    let shared = resolve_shared_cleanup_for_state(paths, container_name, &manifest.docker, docker).await?;
+    Ok(shared.dind)
 }
 
 pub(crate) fn docker_resources_for_state(
     paths: &JackinPaths,
     container_name: &str,
 ) -> anyhow::Result<DockerResources> {
-    let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
-    Ok(manifest.map_or_else(
-        || DockerResources::from_container_name(container_name),
-        |manifest| manifest.docker,
-    ))
+    let manifest = read_cleanup_manifest(paths, container_name)?;
+    Ok(manifest.docker)
+}
+
+pub(crate) struct SharedCleanupPlan {
+    pub(crate) lifetime: crate::instance::SharedDockerLifetime,
+    pub(crate) role: Option<ContainerHandle>,
+    pub(crate) dind: Option<ContainerHandle>,
+    pub(crate) network: Option<NetworkId>,
+    pub(crate) volume: Option<String>,
+}
+
+pub(crate) async fn reconcile_shared_lifetime(
+    paths: &JackinPaths,
+    mut lifetime: crate::instance::SharedDockerLifetime,
+    docker: &impl DockerApi,
+) -> anyhow::Result<SharedCleanupPlan> {
+    use crate::instance::{SharedCertsVolumeCustody, SharedNetworkCustody};
+
+    let daemon = docker.daemon_server_id().await?;
+    anyhow::ensure!(&daemon == lifetime.daemon_server_id(),
+        "Docker daemon differs from shared lifetime; retaining generation {}", lifetime.generation());
+    let rows = docker.list_containers(&[], true).await
+        .context("listing containers to reconcile shared lifetime custody")?;
+    let mut generation_rows = Vec::new();
+    for row in &rows {
+        if row.labels.get("jackin.shared-generation").map(String::as_str) == Some(lifetime.generation()) {
+            generation_rows.push(row);
+        }
+    }
+    let role = reconcile_lifetime_container(&mut lifetime, false, &rows, docker, paths).await?;
+    let dind = reconcile_lifetime_container(&mut lifetime, true, &rows, docker, paths).await?;
+    for row in generation_rows {
+        let expected = [role.as_ref(), dind.as_ref()].into_iter().flatten()
+            .any(|handle| handle.id() == row.id && handle.name() == row.name);
+        anyhow::ensure!(expected,
+            "unknown container {} carries shared generation {}; retaining custody",
+            row.name, lifetime.generation());
+    }
+
+    let network_rows = docker.list_networks(&[]).await
+        .context("listing networks to reconcile shared lifetime custody")?;
+    let network = match lifetime.network().clone() {
+        SharedNetworkCustody::Disabled => None,
+        SharedNetworkCustody::Pending { name } => {
+            let candidates = network_rows.iter().filter(|row| {
+                row.name == name
+                    || row.labels.get("jackin.shared-generation").map(String::as_str) == Some(lifetime.generation())
+            }).collect::<Vec<_>>();
+            match candidates.as_slice() {
+                [] => None,
+                [row] => {
+                    validate_shared_network(row, &lifetime, &name)?;
+                    lifetime.capture_network(row.id.clone())?;
+                    lifetime.save(paths)?;
+                    Some(row.id.clone())
+                }
+                _ => anyhow::bail!("multiple networks claim shared generation {}; retaining custody", lifetime.generation()),
+            }
+        }
+        SharedNetworkCustody::Owned { name, id } => {
+            let candidates = network_rows.iter().filter(|row| {
+                row.id == id || row.name == name
+                    || row.labels.get("jackin.shared-generation").map(String::as_str) == Some(lifetime.generation())
+            }).collect::<Vec<_>>();
+            match candidates.as_slice() {
+                [] => None,
+                [row] => {
+                    validate_shared_network(row, &lifetime, &name)?;
+                    anyhow::ensure!(row.id == id, "shared network ID changed for generation {}", lifetime.generation());
+                    Some(id)
+                }
+                _ => anyhow::bail!("multiple networks claim shared generation {}; retaining custody", lifetime.generation()),
+            }
+        }
+    };
+
+    let volume = match lifetime.certs_volume().clone() {
+        SharedCertsVolumeCustody::Disabled => None,
+        SharedCertsVolumeCustody::Pending { name } | SharedCertsVolumeCustody::Owned { name } => {
+            match docker.inspect_volume_by_name(&name).await? {
+                None => None,
+                Some(row) => {
+                    let labels = shared_resource_labels(&lifetime);
+                    anyhow::ensure!(row.name == name && row.driver == "local" && row.labels == labels,
+                        "certificate volume ownership differs from shared generation {}; retaining custody", lifetime.generation());
+                    if matches!(lifetime.certs_volume(), SharedCertsVolumeCustody::Pending { .. }) {
+                        lifetime.capture_certs_volume()?;
+                        lifetime.save(paths)?;
+                    }
+                    Some(name)
+                }
+            }
+        }
+    };
+    let final_daemon = docker.daemon_server_id().await?;
+    anyhow::ensure!(final_daemon == daemon, "Docker daemon identity changed during shared lifetime reconciliation");
+    if lifetime.is_retired() {
+        anyhow::ensure!(role.is_none() && dind.is_none() && network.is_none() && volume.is_none(),
+            "retired shared generation {} has a Docker resource present; retaining local state", lifetime.generation());
+    }
+    Ok(SharedCleanupPlan { lifetime, role, dind, network, volume })
+}
+
+async fn reconcile_lifetime_container(
+    lifetime: &mut crate::instance::SharedDockerLifetime,
+    dind: bool,
+    rows: &[jackin_core::ContainerRow],
+    docker: &impl DockerApi,
+    paths: &JackinPaths,
+) -> anyhow::Result<Option<ContainerHandle>> {
+    use crate::instance::{SharedContainerCustody, SharedDockerOwnerKind};
+    let custody = if dind { lifetime.dind_container().clone() } else { lifetime.role_container().clone() };
+    let (name, captured_id) = match custody {
+        SharedContainerCustody::Disabled => return Ok(None),
+        SharedContainerCustody::Pending { name } => (name, None),
+        SharedContainerCustody::Owned { name, id } => (name, Some(id)),
+    };
+    let kind = if dind {
+        if lifetime.namespace_owner_kind() == SharedDockerOwnerKind::Prewarm { "prewarm-dind" } else { "dind" }
+    } else { "role" };
+    let mut labels = shared_resource_labels(lifetime);
+    labels.insert("jackin.kind".to_owned(), kind.to_owned());
+    if dind && lifetime.namespace_owner_kind() == SharedDockerOwnerKind::Role {
+        labels.insert("jackin.role".to_owned(), lifetime.namespace_owner().to_owned());
+    }
+    if dind && lifetime.namespace_owner_kind() == SharedDockerOwnerKind::Prewarm {
+        labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+    }
+    let candidates = rows.iter().filter(|row| {
+        row.name == name
+            || captured_id.as_deref() == Some(row.id.as_str())
+            || (row.labels.get("jackin.shared-generation").map(String::as_str) == Some(lifetime.generation())
+                && row.labels.get("jackin.kind").map(String::as_str) == Some(kind))
+    }).collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [] => Ok(None),
+        [row] => {
+            anyhow::ensure!(row.name == name, "shared container name changed for generation {}", lifetime.generation());
+            anyhow::ensure!(labels.iter().all(|(key, value)| row.labels.get(key) == Some(value)),
+                "shared container labels differ for generation {}; retaining custody", lifetime.generation());
+            if let Some(expected_id) = captured_id.as_deref() {
+                anyhow::ensure!(row.id == expected_id, "shared container ID changed for generation {}; retaining custody", lifetime.generation());
+            } else {
+                lifetime.capture_container(dind, &row.id)?;
+                lifetime.save(paths)?;
+            }
+            let handle = row.handle().context("shared container has invalid immutable ID")?;
+            match docker.inspect_container_by_id(&handle).await {
+                ContainerState::InspectUnavailable(reason) => anyhow::bail!("cannot verify shared container identity: {reason}"),
+                ContainerState::NotFound => anyhow::bail!("shared container disappeared during custody reconciliation"),
+                _ => Ok(Some(handle)),
+            }
+        }
+        _ => anyhow::bail!("multiple containers claim shared generation {}; retaining custody", lifetime.generation()),
+    }
+}
+
+fn shared_resource_labels(
+    lifetime: &crate::instance::SharedDockerLifetime,
+) -> std::collections::HashMap<String, String> {
+    std::collections::HashMap::from([
+        ("jackin.shared-generation".to_owned(), lifetime.generation().to_owned()),
+        ("jackin.shared-owner".to_owned(), lifetime.namespace_owner().to_owned()),
+        ("jackin.managed".to_owned(), "true".to_owned()),
+    ])
+}
+
+fn validate_shared_network(
+    row: &jackin_core::NetworkRow,
+    lifetime: &crate::instance::SharedDockerLifetime,
+    expected_name: &str,
+) -> anyhow::Result<()> {
+    let labels = shared_network_labels(lifetime);
+    anyhow::ensure!(row.name == expected_name && row.labels == labels,
+        "network ownership differs from shared generation {}; retaining custody", lifetime.generation());
+    Ok(())
+}
+
+fn shared_network_labels(
+    lifetime: &crate::instance::SharedDockerLifetime,
+) -> std::collections::HashMap<String, String> {
+    let mut labels = shared_resource_labels(lifetime);
+    match lifetime.namespace_owner_kind() {
+        crate::instance::SharedDockerOwnerKind::Role => {
+            labels.insert("jackin.role".to_owned(), lifetime.namespace_owner().to_owned());
+        }
+        crate::instance::SharedDockerOwnerKind::Prewarm => {
+            labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+            labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+        }
+    }
+    labels
+}
+
+pub(crate) async fn resolve_shared_cleanup_for_state(
+    paths: &JackinPaths,
+    container_name: &str,
+    resources: &DockerResources,
+    docker: &impl DockerApi,
+) -> anyhow::Result<SharedCleanupPlan> {
+    let daemon = docker.daemon_server_id().await?;
+    let manifest = read_cleanup_manifest(paths, container_name)?;
+    let lifetime = if let Some(lifetime) = crate::instance::SharedDockerLifetime::load_for_cleanup(
+        paths, &daemon, container_name,
+    )? {
+        lifetime
+    } else {
+        let identity = manifest.docker_identity.as_ref();
+        let mut retired = crate::instance::SharedDockerLifetime::retired_for_owner(paths, &daemon, container_name)?
+            .into_iter()
+            .filter(|lifetime| {
+                lifetime.owner_kind() == crate::instance::SharedDockerOwnerKind::Role
+                    && lifetime.network_name().unwrap_or_default() == resources.network
+                    && lifetime.certs_volume_name() == resources.certs_volume.as_deref()
+                    && lifetime.dind_container_name() == resources.dind_container.as_deref()
+                    && identity.is_none_or(|identity| {
+                        matches!(lifetime.role_container(), crate::instance::SharedContainerCustody::Owned { id, .. } if identity.role_container_id == *id)
+                            && identity.dind_container_id.as_deref() == match lifetime.dind_container() {
+                                crate::instance::SharedContainerCustody::Owned { id, .. } => Some(id.as_str()),
+                                crate::instance::SharedContainerCustody::Pending { .. } | crate::instance::SharedContainerCustody::Disabled => None,
+                            }
+                            && identity.network_id.as_ref() == lifetime.network_id()
+                    })
+            })
+            .collect::<Vec<_>>();
+        anyhow::ensure!(retired.len() == 1,
+            "shared Docker lifetime unavailable or ambiguous for {container_name}; retaining custody");
+        retired.remove(0)
+    };
+    anyhow::ensure!(
+        resources.role_container == container_name
+            && resources.dind_container.as_deref() == match lifetime.dind_container() {
+                crate::instance::SharedContainerCustody::Disabled => None,
+                crate::instance::SharedContainerCustody::Pending { name }
+                | crate::instance::SharedContainerCustody::Owned { name, .. } => Some(name.as_str()),
+            }
+            && resources.certs_volume.as_deref() == lifetime.certs_volume_name()
+            && resources.network == lifetime.network_name().unwrap_or_default(),
+        "manifest physical resource names differ from shared lifetime for {container_name}"
+    );
+    if let Some(identity) = manifest.docker_identity.as_ref() {
+        anyhow::ensure!(
+            matches!(lifetime.role_container(), crate::instance::SharedContainerCustody::Owned { id, .. } if identity.role_container_id == *id),
+            "role ID differs from shared lifetime for {container_name}"
+        );
+        anyhow::ensure!(
+            identity.dind_container_id.as_deref() == match lifetime.dind_container() {
+                crate::instance::SharedContainerCustody::Owned { id, .. } => Some(id.as_str()),
+                crate::instance::SharedContainerCustody::Pending { .. } | crate::instance::SharedContainerCustody::Disabled => None,
+            },
+            "DinD ID differs from shared lifetime for {container_name}"
+        );
+        anyhow::ensure!(identity.network_id.as_ref() == lifetime.network_id(),
+            "network ID differs from shared lifetime for {container_name}");
+    }
+    reconcile_shared_lifetime(paths, lifetime, docker).await
+}
+
+pub(crate) async fn ensure_shared_plan_current(
+    paths: &JackinPaths,
+    plan: &SharedCleanupPlan,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
+    let daemon = docker.daemon_server_id().await?;
+    anyhow::ensure!(
+        &daemon == plan.lifetime.daemon_server_id(),
+        "Docker daemon changed after cleanup admission"
+    );
+    let durable = if plan.lifetime.is_retired() {
+        crate::instance::SharedDockerLifetime::retired_for_owner(paths, &daemon, plan.lifetime.owner())?
+            .into_iter()
+            .find(|lifetime| lifetime.generation() == plan.lifetime.generation())
+    } else {
+        crate::instance::SharedDockerLifetime::load_for_cleanup(paths, &daemon, plan.lifetime.owner())?
+    };
+    anyhow::ensure!(
+        durable.as_ref() == Some(&plan.lifetime),
+        "shared Docker custody changed after cleanup admission"
+    );
+    Ok(())
 }
 
 async fn ensure_backend_absent_for_purge(
@@ -436,30 +803,39 @@ async fn ensure_backend_absent_for_purge(
 }
 
 /// Remove the host-side bind-mount directory used to expose the daemon
-/// socket and Capsule launch config into the container. Best-effort:
-/// any failure is logged to stderr but does not abort the surrounding
-/// teardown — the docker-side resources are already gone, and a
-/// half-removed `~/.jackin/sockets/<container>/` is no worse than the
-/// pre-fix steady state.
-async fn remove_socket_dir(paths: &JackinPaths, container_name: &str) {
+/// socket and Capsule launch config into the container. A failure retains the
+/// instance custody record so the host-side cleanup can be retried.
+pub(crate) async fn admit_socket_removal(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> anyhow::Result<OwnedRemoval> {
     let paths = paths.clone();
     let dir = paths.jackin_home.join("sockets").join(container_name);
     let displayed = dir.clone();
     let result = jackin_telemetry::spawn::joined_blocking(move || {
         super::coordination::ensure_prunable(&paths, &dir).and_then(|()| {
-            crate::isolation::safe_remove::safe_remove_dir_contained(&paths.jackin_home, &dir)
+            OwnedRemoval::admit_contained(&paths.jackin_home, &dir)
         })
     })
     .await;
     let error = match result {
-        Ok(Ok(())) => return,
+        Ok(Ok(removal)) => return Ok(removal),
         Ok(Err(error)) => error,
         Err(error) => std::io::Error::other(error),
     };
-    eprintln!(
-        "jackin: warning: failed to remove socket dir {}: {error}",
+    Err(anyhow::Error::new(error).context(format!(
+        "failed to admit socket dir {}; retaining instance custody",
         displayed.display()
-    );
+    )))
+}
+
+pub(crate) async fn remove_admitted_socket(
+    socket: OwnedRemoval,
+) -> anyhow::Result<()> {
+    jackin_telemetry::spawn::joined_blocking(move || socket.remove())
+        .await
+        .map_err(std::io::Error::other)??;
+    Ok(())
 }
 
 // ── Orphaned resource garbage collection ─────────────────────────────────
@@ -524,7 +900,7 @@ pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
 
     if sidecars.is_empty() {
         // No orphaned DinD sidecars — still check for orphaned networks.
-        gc_orphaned_networks(docker, None).await;
+        gc_orphaned_networks(paths, docker, None).await;
         gc_orphaned_prewarm_dind(paths, docker).await;
         return;
     }
@@ -548,13 +924,45 @@ pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
     let orphaned = filter_orphaned_dind(sidecars, &existing);
 
     for info in &orphaned {
-        let certs_volume = dind_certs_volume(&info.role);
-        let network = role_network_name(&info.role);
+        let (resources, role, dind) =
+            match resolve_cleanup_handles_for_state(paths, &info.role, None, docker).await {
+                Ok(resources) => resources,
+                Err(error) => {
+                    eprintln!("jackin: GC retained {}: {error}", info.role);
+                    continue;
+                }
+            };
+        let Some(dind) = dind else {
+            eprintln!(
+                "jackin: GC retained {}: recorded sidecar identity is absent",
+                info.role
+            );
+            continue;
+        };
+        if role.is_some() || dind.id() != info.handle.id() || dind.name() != info.handle.name() {
+            eprintln!(
+                "jackin: GC retained {}: live role or sidecar identity mismatch",
+                info.role
+            );
+            continue;
+        }
+        let shared =
+            match resolve_shared_cleanup_for_state(paths, &info.role, &resources, docker).await {
+                Ok(shared) => shared,
+                Err(error) => {
+                    eprintln!("jackin: GC retained {}: {error}", info.role);
+                    continue;
+                }
+            };
+        if let Err(error) = ensure_shared_plan_current(paths, &shared, docker).await {
+            eprintln!("jackin: GC retained {}: {error}", info.role);
+            continue;
+        }
 
         // The role is absent by definition of `orphaned`. Remove only the
         // sidecar row's immutable ID; resolving/removing the role by name
         // could destroy a same-name replacement created after the listing.
-        let r1 = docker.remove_container_by_id(&info.handle).await;
+        let r1 = docker.remove_container_by_id(&dind).await;
         if let Err(err) = &r1 {
             eprintln!(
                 "  {} GC of dind sidecar for {}: {err}; refusing shared-resource cleanup",
@@ -574,9 +982,23 @@ pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
             );
             continue;
         }
+        let volume = shared.volume;
+        let network = shared.network;
         let (r3, r4) = tokio::join!(
-            docker.remove_volume(&certs_volume),
-            docker.remove_network(&network),
+            async {
+                if let Some(volume) = volume.as_deref() {
+                    docker.remove_volume(volume).await
+                } else {
+                    Ok(())
+                }
+            },
+            async {
+                if let Some(network) = network {
+                    docker.remove_network_by_id(&network).await
+                } else {
+                    Ok(())
+                }
+            },
         );
         let results = [&r1, &r3, &r4];
         for (result, label) in results
@@ -601,7 +1023,7 @@ pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl Doc
     }
 
     let existing_set: std::collections::HashSet<String> = existing.into_iter().collect();
-    gc_orphaned_networks(docker, Some(&existing_set)).await;
+    gc_orphaned_networks(paths, docker, Some(&existing_set)).await;
     gc_orphaned_prewarm_dind(paths, docker).await;
 }
 
@@ -636,34 +1058,11 @@ async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerApi) 
         if row.name != "jk-prewarm-dind-dind" {
             continue;
         }
-        let certs_volume = "jk-prewarm-dind-certs";
-        let network = "jk-prewarm-dind-net";
-        let Ok(handle) = row.handle() else {
-            eprintln!(
-                "  {} GC of prewarm sidecar {} skipped: Docker row had no immutable ID",
-                "warning:".yellow().bold(),
-                row.name
-            );
-            continue;
-        };
-        let (r1, r2, r3) = tokio::join!(
-            docker.remove_container_by_id(&handle),
-            docker.remove_volume(certs_volume),
-            docker.remove_network(network),
+        // No retained generation receipt authorizes this orphan's shared resources.
+        eprintln!(
+            "jackin: GC retained prewarm sidecar {}: shared resource generation identity unavailable",
+            row.name
         );
-        for (result, label) in [&r1, &r2, &r3].iter().zip([
-            "prewarm sidecar",
-            "prewarm certs volume",
-            "prewarm network",
-        ]) {
-            if let Err(err) = result {
-                eprintln!(
-                    "  {} GC of {label} for {}: {err}",
-                    "warning:".yellow().bold(),
-                    row.name
-                );
-            }
-        }
     }
 }
 
@@ -672,6 +1071,7 @@ async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerApi) 
 /// role names; pass `None` to fetch fresh (used when no `DinD` sidecars were
 /// found and the list was never retrieved).
 async fn gc_orphaned_networks(
+    paths: &JackinPaths,
     docker: &impl DockerApi,
     existing: Option<&std::collections::HashSet<String>>,
 ) {
@@ -688,14 +1088,14 @@ async fn gc_orphaned_networks(
         }
     };
 
-    let networks: Vec<(String, String)> = net_rows
+    let networks: Vec<(NetworkId, String, String)> = net_rows
         .into_iter()
         .filter_map(|n| {
             let role = n.labels.get(LABEL_ROLE_KEY)?.clone();
             if role.is_empty() {
                 return None;
             }
-            Some((n.name, role))
+            Some((n.id, n.name, role))
         })
         .collect();
 
@@ -720,7 +1120,7 @@ async fn gc_orphaned_networks(
         std::borrow::Cow::Owned(fetched)
     };
 
-    for (net_name, role) in networks {
+    for (network_id, net_name, role) in networks {
         if existing_set.contains(&role) {
             continue;
         }
@@ -732,7 +1132,32 @@ async fn gc_orphaned_networks(
             );
             continue;
         }
-        if let Err(err) = docker.remove_network(&net_name).await {
+        let resources = match docker_resources_for_state(paths, &role) {
+            Ok(resources) => resources,
+            Err(error) => {
+                eprintln!("jackin: GC retained network {net_name}: {error}");
+                continue;
+            }
+        };
+        let shared = match resolve_shared_cleanup_for_state(paths, &role, &resources, docker).await
+        {
+            Ok(shared) if shared.network.as_ref() == Some(&network_id) => shared,
+            Ok(_) => {
+                eprintln!(
+                    "jackin: GC retained network {net_name}: generation identity mismatch or absent"
+                );
+                continue;
+            }
+            Err(error) => {
+                eprintln!("jackin: GC retained network {net_name}: {error}");
+                continue;
+            }
+        };
+        if let Err(error) = ensure_shared_plan_current(paths, &shared, docker).await {
+            eprintln!("jackin: GC retained network {net_name}: {error}");
+            continue;
+        }
+        if let Err(err) = docker.remove_network_by_id(&network_id).await {
             eprintln!(
                 "  {} GC of network {net_name}: {err}",
                 "warning:".yellow().bold()
@@ -743,47 +1168,157 @@ async fn gc_orphaned_networks(
 
 pub async fn exile_all(paths: &JackinPaths, docker: &impl DockerApi) -> anyhow::Result<()> {
     let _timing = cleanup_timing("exile_all");
+    let _prewarm_writer = super::launch::try_lock_prewarmed_dind(paths)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("prewarm/adoption writer is active; retry aggregate cleanup"))?;
+    let inventory = cleanup_instance_inventory(paths)?;
+    admit_aggregate_shared_inventory(paths, &inventory, docker).await?;
+    for manifest in &inventory {
+        crate::isolation::state::read_records(&paths.data_dir.join(&manifest.container_base))?;
+    }
     let mut names = prune_output::start("Finding", "managed containers")
         .complete(list_managed_role_names(docker).await, |error| {
             format!("could not list containers: {error}")
         })?;
-    for name in apple_container_instance_names(paths)? {
+    for manifest in &inventory {
+        let name = manifest.container_base.clone();
         if !names.iter().any(|existing| existing == &name) {
             names.push(name);
         }
     }
+    for lifetime in crate::instance::SharedDockerLifetime::inventory_all(paths)? {
+        if !names.iter().any(|existing| existing == lifetime.owner()) {
+            names.push(lifetime.owner().to_owned());
+        }
+    }
 
+    // Admission is complete before the first effect: a later invalid owner or
+    // unavailable inspection cannot follow an earlier successful removal.
+    let mut plans = Vec::new();
     for name in &names {
-        prune_output::start("Stopping", name)
-            .complete(eject_role(paths, name, docker).await, |error| {
-                format!("could not remove Docker resources: {error}")
-            })?;
+        let manifest = inventory
+            .iter()
+            .find(|manifest| manifest.container_base == *name);
+        if let Some(manifest) = manifest
+            && matches!(super::backend::backend_for_manifest(Some(manifest)), InstanceBackend::AppleContainer)
+        {
+            super::backend::AppleContainerBackend::production()
+                .ensure_absent_for_purge(paths, name)
+                .await?;
+            continue;
+        }
+        let daemon = docker.daemon_server_id().await?;
+        let lifetime = crate::instance::SharedDockerLifetime::load_for_cleanup(paths, &daemon, name)?
+            .ok_or_else(|| anyhow::anyhow!("shared Docker custody unavailable for {name}; refusing aggregate cleanup"))?;
+        let shared = if let Some(manifest) = manifest {
+            anyhow::ensure!(matches!(super::backend::backend_for_manifest(Some(manifest)), InstanceBackend::Docker),
+                "Docker lifetime conflicts with backend for {name}");
+            resolve_shared_cleanup_for_state(paths, name, &manifest.docker, docker).await?
+        } else {
+            reconcile_shared_lifetime(paths, lifetime, docker).await?
+        };
+        anyhow::ensure!(shared.lifetime.owner_kind() == crate::instance::SharedDockerOwnerKind::Role
+            || manifest.is_none(), "prewarm lifetime unexpectedly has an instance manifest for {name}");
+        let socket = if shared.lifetime.owner_kind() == crate::instance::SharedDockerOwnerKind::Role {
+            Some(admit_socket_removal(paths, name).await?)
+        } else {
+            None
+        };
+        plans.push(DockerCleanupPlan {
+            container_base: name.clone(),
+            shared,
+            socket,
+        });
+    }
+
+    for plan in &plans {
+        ensure_shared_plan_current(paths, &plan.shared, docker).await?;
+    }
+    let mut retained = Vec::new();
+    for plan in plans {
+        let name = plan.container_base.clone();
+        let result = apply_docker_cleanup_plan(paths, docker, plan).await;
+        if let Err(cause) = prune_output::start("Stopping", &name).complete(result, |error| {
+            format!("could not remove Docker resources: {error}")
+        }) {
+            retained.push(RetainedInstanceState {
+                container_base: name,
+                cause,
+            });
+        }
+    }
+    if !retained.is_empty() {
+        return Err(InstanceCleanupFailures { retained }.into());
     }
     Ok(())
 }
 
-fn apple_container_instance_names(paths: &JackinPaths) -> anyhow::Result<Vec<String>> {
-    if !paths.data_dir.exists() {
-        return Ok(vec![]);
+async fn admit_aggregate_shared_inventory(
+    paths: &JackinPaths,
+    inventory: &[InstanceManifest],
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
+    let lifetimes = crate::instance::SharedDockerLifetime::inventory_all(paths)?;
+    if lifetimes.is_empty() {
+        return Ok(());
     }
-    let mut names = Vec::new();
-    for entry in std::fs::read_dir(&paths.data_dir)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().to_string();
-        let Some(manifest) = InstanceManifest::read_optional_lossy(&entry.path()) else {
-            continue;
-        };
-        if matches!(
-            super::backend::backend_for_manifest(Some(&manifest)),
-            InstanceBackend::AppleContainer
-        ) {
-            names.push(name);
+    let daemon = docker.daemon_server_id().await?;
+    for lifetime in lifetimes {
+        anyhow::ensure!(
+            lifetime.daemon_server_id() == &daemon,
+            "shared Docker custody belongs to another daemon; retaining generation {}",
+            lifetime.generation()
+        );
+        let manifest = inventory
+            .iter()
+            .find(|manifest| manifest.container_base == lifetime.owner())
+            ;
+        if let Some(manifest) = manifest {
+            anyhow::ensure!(matches!(super::backend::backend_for_manifest(Some(manifest)), InstanceBackend::Docker),
+                "shared Docker custody conflicts with backend for {}; retaining generation {}", lifetime.owner(), lifetime.generation());
+            anyhow::ensure!(lifetime.owner_kind() == crate::instance::SharedDockerOwnerKind::Role,
+                "prewarm custody conflicts with instance manifest for {}; retaining generation {}", lifetime.owner(), lifetime.generation());
         }
     }
-    Ok(names)
+    Ok(())
+}
+
+struct DockerCleanupPlan {
+    container_base: String,
+    shared: SharedCleanupPlan,
+    socket: Option<OwnedRemoval>,
+}
+
+async fn apply_docker_cleanup_plan(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    mut plan: DockerCleanupPlan,
+) -> anyhow::Result<()> {
+    ensure_shared_plan_current(paths, &plan.shared, docker).await?;
+    plan.shared.lifetime = plan.shared.lifetime.begin_retirement(paths)?;
+    ensure_shared_plan_current(paths, &plan.shared, docker).await?;
+    if let Some(role) = &plan.shared.role {
+        docker.remove_container_by_id(role).await?;
+    }
+    if let Some(dind) = &plan.shared.dind {
+        docker.remove_container_by_id(dind).await?;
+    }
+    if let Some(volume) = &plan.shared.volume {
+        docker.remove_volume(volume).await?;
+        anyhow::ensure!(docker.inspect_volume_by_name(volume).await?.is_none(),
+            "certificate volume {volume} remains after removal; retaining shared custody");
+    }
+    if let Some(network) = &plan.shared.network {
+        docker.remove_network_by_id(network).await?;
+    }
+    if let Some(socket) = plan.socket {
+        remove_admitted_socket(socket).await?;
+    }
+    if plan.shared.lifetime.owner_kind() == crate::instance::SharedDockerOwnerKind::Prewarm {
+        super::launch::retire_prewarm_projection(paths, &plan.shared.lifetime)?;
+    }
+    plan.shared.lifetime.retire(paths)?;
+    Ok(())
 }
 
 // ── Prune ────────────────────────────────────────────────────────────────────
@@ -833,6 +1368,18 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
 
 pub fn prune_jackin_home(paths: &JackinPaths) -> anyhow::Result<()> {
     super::coordination::ensure_prunable(paths, &paths.jackin_home)?;
+    anyhow::ensure!(
+        crate::instance::SharedDockerLifetime::inventory_all(paths)?.is_empty(),
+        "shared Docker custody remains; refusing to remove runtime home"
+    );
+    match std::fs::symlink_metadata(&paths.data_dir) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+        Ok(_) => anyhow::bail!(
+            "instance data remains at {}; refusing to remove runtime home",
+            paths.data_dir.display()
+        ),
+    }
     let _timing = cleanup_timing("runtime_home");
     prune_output::section("Runtime Home", "removing remaining runtime state");
     let row = prune_output::start("Deleting", "runtime home");
@@ -948,44 +1495,38 @@ pub async fn prune_instances(
 ) -> anyhow::Result<()> {
     let _timing = cleanup_timing("instances");
     prune_output::section("Instances", "scanning terminal instance state");
-    let index = prune_output::start("Reading", "instance index")
-        .complete(InstanceIndex::read_or_rebuild(&paths.data_dir), |error| {
-            format!("could not read instance index: {error}")
-        })?;
-
-    // D9: reconcile stale Active rows whose Docker container is gone.
-    // A crash mid-session can leave an instance in Active status with no
-    // running container. Detect these and transition them to Crashed so they
-    // appear as restore candidates on the next launch.
-    let stale_active: Vec<String> = index
-        .instances
-        .iter()
-        .filter(|e| e.status == InstanceStatus::Active)
-        .map(|e| e.container_base.clone())
-        .collect();
-    for container_base in stale_active {
+    // Inventory and every target proof are read-only. A missing index does
+    // not authorize publishing a rebuild before later ownership is known.
+    let inventory = cleanup_instance_inventory(paths)?;
+    if paths.data_dir.join("instances.json").try_exists()? {
+        let index = InstanceIndex::read(&paths.data_dir)?;
+        for entry in index.instances {
+            anyhow::ensure!(
+                inventory
+                    .iter()
+                    .any(|manifest| manifest.container_base == entry.container_base),
+                "instance ownership manifest unavailable for {}; retaining index custody",
+                entry.container_base
+            );
+        }
+    }
+    let mut stale_manifests = Vec::new();
+    for manifest in &inventory {
+        if manifest.status != InstanceStatus::Active {
+            continue;
+        }
+        crate::isolation::state::read_records(&paths.data_dir.join(&manifest.container_base))?;
         if matches!(
-            docker
-                .inspect_container_by_name(&container_base)
-                .await
-                .state,
-            ContainerState::NotFound
+            super::backend::backend_for_manifest(Some(manifest)),
+            InstanceBackend::Docker
         ) {
-            let state_dir = paths.data_dir.join(&container_base);
-            if let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) {
-                manifest.mark_status(InstanceStatus::Crashed);
-                if let Err(err) = manifest.write(&state_dir) {
-                    eprintln!(
-                        "{} could not update manifest for stale active instance {container_base}: {err}",
-                        "warning:".yellow().bold()
-                    );
-                } else if let Err(err) = InstanceIndex::update_manifest(&paths.data_dir, &manifest)
-                {
-                    eprintln!(
-                        "{} could not update index for stale active instance {container_base}: {err}",
-                        "warning:".yellow().bold()
-                    );
-                }
+            let (_, role, _) =
+                resolve_cleanup_handles_for_state(paths, &manifest.container_base, None, docker)
+                    .await?;
+            if role.is_none() {
+                let mut stale = manifest.clone();
+                stale.mark_status(InstanceStatus::Crashed);
+                stale_manifests.push(stale);
             }
         }
     }
@@ -997,19 +1538,29 @@ pub async fn prune_instances(
         InstanceStatus::Purged,
     ];
 
-    let candidates: Vec<String> = index
-        .instances
-        .iter()
-        .filter(|e| prunable.contains(&e.status))
-        .map(|e| e.container_base.clone())
-        .collect();
+    let mut plans = Vec::new();
+    for manifest in &inventory {
+        if prunable.contains(&manifest.status) {
+            let name = manifest.container_base.clone();
+            let plan = admit_container_purge(paths, &name, docker).await?;
+            plans.push((name, plan));
+        }
+    }
+
+    // Stale-active reconciliation starts only after every selected cleanup
+    // target has been admitted. Native manifest/index transactions must keep
+    // these two durable writes together under the same lifecycle custody.
+    for manifest in stale_manifests {
+        manifest.write(&paths.data_dir.join(&manifest.container_base))?;
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest)?;
+    }
 
     let mut removed: Vec<String> = Vec::new();
     let mut skipped: Vec<(String, anyhow::Error)> = Vec::new();
 
-    for container_base in candidates {
+    for (container_base, plan) in plans {
         let row = prune_output::start("Deleting", &container_base);
-        match purge_container_filesystem(paths, &container_base, docker, runner).await {
+        match apply_container_purge(plan, runner).await {
             Ok(()) => {
                 row.ok();
                 removed.push(container_base);
@@ -1023,39 +1574,32 @@ pub async fn prune_instances(
 
     if !removed.is_empty() {
         let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
-        let index_updated = match InstanceIndex::remove_many(&paths.data_dir, &refs) {
-            Ok(()) => true,
-            Err(err) => {
-                eprintln!(
-                    "{} instance index could not be updated: {err:#}; run `jackin prune instances` again to retry",
-                    "warning:".yellow().bold()
-                );
-                false
-            }
-        };
-        if index_updated {
-            prune_output::ok(format!("pruned {} instance(s)", removed.len()));
-        } else {
-            prune_output::ok(format!(
-                "removed state for {} instance(s); index not updated",
-                removed.len()
-            ));
+        if let Err(error) = InstanceIndex::remove_many(&paths.data_dir, &refs) {
+            skipped.push(("instance index".to_owned(), error));
         }
+        prune_output::ok(format!("removed state for {} instance(s)", removed.len()));
     } else if skipped.is_empty() {
         prune_output::ok("no instances to prune");
     }
 
     if !skipped.is_empty() {
-        prune_output::skip(format!(
-            "skipped {} instance(s); Docker resources still present",
+        prune_output::failed(format!(
+            "cleanup incomplete for {} target(s)",
             skipped.len()
         ));
         for (name, error) in &skipped {
             eprintln!("  {name}: {error}");
         }
-        eprintln!(
-            "Use `jackin eject <selector> --purge` to remove Docker resources and state together."
-        );
+        return Err(InstanceCleanupFailures {
+            retained: skipped
+                .into_iter()
+                .map(|(container_base, cause)| RetainedInstanceState {
+                    container_base,
+                    cause,
+                })
+                .collect(),
+        }
+        .into());
     }
 
     Ok(())
@@ -1070,6 +1614,17 @@ pub async fn prune_all_instances(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     super::coordination::ensure_prunable_async(paths, &paths.data_dir).await?;
+    // Establish complete filesystem custody before stopping any resources.
+    // An index can omit orphaned state; it cannot authorize deleting that state.
+    let inventory = cleanup_instance_inventory(paths)?;
+    let mut admitted_states = Vec::with_capacity(inventory.len());
+    for manifest in &inventory {
+        crate::isolation::state::read_records(&paths.data_dir.join(&manifest.container_base))?;
+        admitted_states.push((
+            manifest.container_base.clone(),
+            admit_container_state_removal(paths, &manifest.container_base).await?,
+        ));
+    }
     prune_output::section(
         "Instances",
         "stopping managed containers and removing all state",
@@ -1078,38 +1633,50 @@ pub async fn prune_all_instances(
 
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
 
-    let index = prune_output::start("Reading", "instance index")
-        .complete(InstanceIndex::read_or_rebuild(&paths.data_dir), |error| {
-            format!("could not read instance index: {error}")
-        })?;
-    if index.instances.is_empty() {
+    if inventory.is_empty() {
         prune_output::ok("no instances to prune");
     } else {
-        let containers: Vec<String> = index
-            .instances
-            .iter()
-            .map(|e| e.container_base.clone())
-            .collect();
+        let containers: Vec<String> = inventory.iter().map(|e| e.container_base.clone()).collect();
 
-        let mut cleanup_failures = 0usize;
-        for container_base in &containers {
-            let row = prune_output::start("Deleting", container_base);
-            if let Err(err) =
-                purge_container_filesystem(paths, container_base, docker, runner).await
-            {
-                cleanup_failures += 1;
+        let mut released = Vec::new();
+        let mut retained = Vec::new();
+        for (container_base, state) in admitted_states {
+            let row = prune_output::start("Deleting", &container_base);
+            let result =
+                match admit_container_purge_with_state(paths, &container_base, docker, state).await
+                {
+                    Ok(plan) => apply_container_purge(plan, runner).await,
+                    Err(error) => Err(error),
+                };
+            if let Err(err) = result {
                 row.failed(format!("isolation cleanup failed: {err}"));
+                retained.push(RetainedInstanceState {
+                    container_base: container_base.clone(),
+                    cause: err,
+                });
             } else {
                 row.ok();
+                released.push(container_base);
             }
         }
-        if cleanup_failures == 0 {
+        if retained.is_empty() {
             prune_output::ok(format!("pruned {} instance(s)", containers.len()));
         } else {
             prune_output::failed(format!(
                 "pruned {} instance(s), cleanup failed for {cleanup_failures}",
-                containers.len()
+                released.len(),
+                cleanup_failures = retained.len(),
             ));
+            // Record completed siblings while keeping every failed manifest
+            // and isolation record recoverable. Never erase their parent.
+            let released_names: Vec<&str> = released.iter().map(String::as_str).collect();
+            if let Err(error) = InstanceIndex::remove_many(&paths.data_dir, &released_names) {
+                retained.push(RetainedInstanceState {
+                    container_base: "instance index".to_owned(),
+                    cause: error,
+                });
+            }
+            return Err(InstanceCleanupFailures { retained }.into());
         }
     }
 
@@ -1121,6 +1688,104 @@ pub async fn prune_all_instances(
         )));
     }
     Ok(())
+}
+
+#[derive(Debug)]
+struct RetainedInstanceState {
+    container_base: String,
+    cause: anyhow::Error,
+}
+
+#[derive(Debug)]
+struct InstanceCleanupFailures {
+    retained: Vec<RetainedInstanceState>,
+}
+
+impl std::fmt::Display for InstanceCleanupFailures {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "instance cleanup incomplete; retained recoverable state"
+        )?;
+        for failure in &self.retained {
+            write!(
+                formatter,
+                "; {}: {:#}",
+                failure.container_base, failure.cause
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for InstanceCleanupFailures {}
+
+/// Every state directory requires an exact persisted identity. Missing,
+/// malformed, aliased, or symlinked state remains unknown and cannot be purged.
+fn cleanup_instance_inventory(paths: &JackinPaths) -> anyhow::Result<Vec<InstanceManifest>> {
+    match std::fs::symlink_metadata(&paths.data_dir) {
+        Ok(metadata) => anyhow::ensure!(
+            metadata.is_dir() && !metadata.file_type().is_symlink(),
+            "instance data is not an owned directory at {}; refusing cleanup",
+            paths.data_dir.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    }
+    let entries = match std::fs::read_dir(&paths.data_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut manifests = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        anyhow::ensure!(
+            !file_type.is_symlink(),
+            "symlinked instance state at {}; refusing cleanup",
+            entry.path().display()
+        );
+        if !file_type.is_dir() {
+            anyhow::ensure!(
+                file_type.is_file()
+                    && matches!(
+                        entry.file_name().to_str(),
+                        Some(
+                            "instances.json"
+                                | "instances.json.lock"
+                                | "caffeinate.pid"
+                                | "caffeinate.lock"
+                        )
+                    ),
+                "unrecognized instance data at {}; refusing cleanup",
+                entry.path().display()
+            );
+            if entry.file_name() == "instances.json" {
+                InstanceIndex::read(&paths.data_dir)?;
+            }
+            continue;
+        }
+        let file_name = entry.file_name();
+        let name = file_name.to_str().ok_or_else(|| {
+            anyhow::anyhow!("instance ownership directory has an invalid name; refusing cleanup")
+        })?;
+        let manifest = read_cleanup_manifest(paths, name)?;
+        anyhow::ensure!(
+            entry.file_name() == std::ffi::OsStr::new(&manifest.container_base),
+            "instance ownership directory mismatch at {}; refusing cleanup",
+            entry.path().display()
+        );
+        RoleSelector::parse(&manifest.role_key).map_err(|error| {
+            anyhow::Error::new(error).context(format!(
+                "invalid persisted role identity at {}; refusing cleanup",
+                entry.path().display()
+            ))
+        })?;
+        manifests.push(manifest);
+    }
+    manifests.sort_by(|left, right| left.container_base.cmp(&right.container_base));
+    Ok(manifests)
 }
 
 pub(crate) async fn ensure_role_resources_absent_for_purge(

@@ -10,9 +10,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use jackin_protocol::usage_broker::{
-    UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageIssueV1,
-    UsageLifecycleV1, UsageMetricGroupKindV1, UsageMetricPeriodV1, UsageMetricScopeV1,
-    UsageMetricValueV1, UsagePercent, UsageQuotaStateV1, UsageWindowCategoryV1,
+    UsageCalendarPeriodV2, UsageFreshnessPhaseV2, UsageIdentityKindV2, UsageIssueV2,
+    UsageLifecycleV2, UsageMetricGroupKindV2, UsageMetricPeriodV2, UsageMetricScopeV2,
+    UsageMetricValueV2, UsagePercent, UsageQuotaStateV2, UsageWindowCategoryV2,
 };
 use ratatui::{
     Frame,
@@ -121,7 +121,7 @@ impl UsageFilter {
                 account.is_stale
                     || matches!(
                         account.freshness_phase,
-                        UsageFreshnessPhaseV1::Stale | UsageFreshnessPhaseV1::Failed
+                        UsageFreshnessPhaseV2::Stale | UsageFreshnessPhaseV2::Failed
                     )
             }
         }
@@ -132,7 +132,7 @@ impl UsageFilter {
 pub struct UsageWindow {
     pub window_id: String,
     pub rank: u32,
-    pub category: UsageWindowCategoryV1,
+    pub category: UsageWindowCategoryV2,
     pub label: String,
     pub value: String,
     pub reset: String,
@@ -141,8 +141,9 @@ pub struct UsageWindow {
     pub used_percent: Option<u8>,
     pub used_raw_percent: Option<i32>,
     pub reset_at_epoch: Option<i64>,
-    pub quota_state: UsageQuotaStateV1,
+    pub quota_state: UsageQuotaStateV2,
     pub pace_label: Option<String>,
+    pub count_quota: Option<jackin_protocol::control::CountQuota>,
 }
 
 impl UsageWindow {
@@ -151,6 +152,9 @@ impl UsageWindow {
     /// `None` means unknown — callers must render no bar at all.
     #[must_use]
     pub fn meter_percent(&self) -> Option<u8> {
+        if let Some(count) = &self.count_quota {
+            return count.remaining_percent();
+        }
         self.remaining_percent.or_else(|| {
             self.used_percent
                 .map(|used| 100_u8.saturating_sub(used.min(100)))
@@ -159,26 +163,26 @@ impl UsageWindow {
 }
 
 /// One independently fetched typed metric group, mirroring the canonical
-/// [`jackin_protocol::usage_broker::UsageMetricGroupV1`] field for field.
+/// [`jackin_protocol::usage_broker::UsageMetricGroupV2`] field for field.
 /// Reset (`reset_at_epoch`), renewal (`renews_at_epoch`), and balance-expiry
 /// timestamps stay separate facts and are never merged at render time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageMetricGroup {
     pub group_id: String,
     pub rank: u32,
-    pub kind: UsageMetricGroupKindV1,
+    pub kind: UsageMetricGroupKindV2,
     pub label: String,
-    pub scope: UsageMetricScopeV1,
+    pub scope: UsageMetricScopeV2,
     pub observed_at_epoch: Option<i64>,
     pub fetched_at_epoch: i64,
     pub last_success_at_epoch: Option<i64>,
-    pub phase: UsageFreshnessPhaseV1,
+    pub phase: UsageFreshnessPhaseV2,
     pub is_stale: bool,
-    pub quota_state: UsageQuotaStateV1,
-    pub value: UsageMetricValueV1,
+    pub quota_state: UsageQuotaStateV2,
+    pub value: UsageMetricValueV2,
     pub reset_at_epoch: Option<i64>,
     pub renews_at_epoch: Option<i64>,
-    pub issues: Vec<UsageIssueV1>,
+    pub issues: Vec<UsageIssueV2>,
 }
 
 impl UsageMetricGroup {
@@ -186,12 +190,16 @@ impl UsageMetricGroup {
     /// no percentage and must render no bar at all — never a fabricated one.
     #[must_use]
     pub fn meter_percent(&self) -> Option<u8> {
-        if let UsageMetricValueV1::Window {
+        if let UsageMetricValueV2::Window {
             remaining_percent,
             used_percent,
+            count_quota,
             ..
         } = &self.value
         {
+            if let Some(count) = count_quota {
+                return count.remaining_percent();
+            }
             remaining_percent
                 .map(UsagePercent::get)
                 .or_else(|| used_percent.map(|used| 100_u8.saturating_sub(used.get().min(100))))
@@ -210,22 +218,22 @@ pub struct UsageAccount {
     pub provider: String,
     pub account: String,
     pub status: String,
-    pub lifecycle: UsageLifecycleV1,
-    pub freshness_phase: UsageFreshnessPhaseV1,
+    pub lifecycle: UsageLifecycleV2,
+    pub freshness_phase: UsageFreshnessPhaseV2,
     pub last_good_at_epoch: Option<i64>,
     pub retry_at_epoch: Option<i64>,
     pub is_stale: bool,
     /// Non-secret evidence kind backing the canonical id. `None` while
     /// `unresolved`: no identity evidence exists yet.
-    pub identity_kind: Option<UsageIdentityKindV1>,
+    pub identity_kind: Option<UsageIdentityKindV2>,
     pub plan_label: Option<String>,
     /// Credential/auth-session expiry. Never a quota reset and never a
     /// subscription renewal — those live on windows and plan groups.
     pub credential_expires_at_epoch: Option<i64>,
     /// Sanitized account/window-scoped issues.
-    pub issues: Vec<UsageIssueV1>,
+    pub issues: Vec<UsageIssueV2>,
     /// Sanitized provider-scoped issues for this account's provider group.
-    pub provider_issues: Vec<UsageIssueV1>,
+    pub provider_issues: Vec<UsageIssueV2>,
     pub windows: Vec<UsageWindow>,
     pub metric_groups: Vec<UsageMetricGroup>,
 }
@@ -269,17 +277,17 @@ impl UsageAccount {
     }
 
     /// First available Rust-ranked limit (D30: long-range, model-specific,
-    /// session, then other; ties break to provider order). Metered and explicitly
-    /// unlimited windows qualify. The list summary and its meter bar both read this one
-    /// window, matching the capsule tab status selection. Explicit unlimited
-    /// windows remain meaningful without a percentage.
+    /// session, then other; ties break to provider order). Metered windows,
+    /// typed count facts, and windows without quota semantics qualify.
+    /// Summary text preserves the canonical label; bars require geometry.
     #[must_use]
     pub fn summary_window(&self) -> Option<&UsageWindow> {
         self.windows
             .iter()
             .filter(|window| {
                 window.meter_percent().is_some()
-                    || window.quota_state == UsageQuotaStateV1::NotApplicable
+                    || window.quota_state == UsageQuotaStateV2::NotApplicable
+                    || window.count_quota.is_some()
             })
             .min_by_key(|window| (summary_category_rank(window.category), window.rank))
     }
@@ -309,7 +317,7 @@ impl UsageAccount {
 pub struct UsageScreenState {
     pub accounts: Vec<UsageAccount>,
     /// Complete broker publication retained through startup, refresh, and navigation.
-    pub canonical_projection: Option<jackin_protocol::usage_broker::UsageProjectionV1>,
+    pub canonical_projection: Option<jackin_protocol::usage_broker::UsageProjectionV2>,
     pub selected: usize,
     pub selected_id: Option<String>,
     pub detail: bool,
@@ -319,7 +327,7 @@ pub struct UsageScreenState {
     pub notice: Option<String>,
     pub generated_at_epoch: Option<i64>,
     /// Sanitized projection-scoped issues from the latest publication.
-    pub projection_issues: Vec<UsageIssueV1>,
+    pub projection_issues: Vec<UsageIssueV2>,
     pub refresh_due: bool,
     pub force_refresh_pending: bool,
     pub refresh_generation: u64,
@@ -390,7 +398,7 @@ impl UsageScreenState {
     ///
     /// The Console owns only layout. Provider/account identity, lifecycle,
     /// ordering, and quota labels remain in the protocol projection.
-    pub fn from_projection(projection: &jackin_protocol::usage_broker::UsageProjectionV1) -> Self {
+    pub fn from_projection(projection: &jackin_protocol::usage_broker::UsageProjectionV2) -> Self {
         let mut accounts = Vec::new();
         for provider in &projection.providers {
             for account in &provider.accounts {
@@ -398,7 +406,7 @@ impl UsageScreenState {
                     .status_label
                     .clone()
                     .unwrap_or_else(|| lifecycle_label(account.lifecycle).to_owned());
-                if account.freshness.is_stale && account.lifecycle == UsageLifecycleV1::Available {
+                if account.freshness.is_stale && account.lifecycle == UsageLifecycleV2::Available {
                     status = "stale".to_owned();
                 }
                 let windows = account
@@ -418,6 +426,7 @@ impl UsageScreenState {
                         reset_at_epoch: window.reset_at_epoch,
                         quota_state: window.quota_state,
                         pace_label: window.pace_label.clone(),
+                        count_quota: window.count_quota.clone(),
                     })
                     .collect();
                 let metric_groups = account
@@ -491,7 +500,7 @@ impl UsageScreenState {
                 account: account_label,
                 status,
                 lifecycle: unresolved.state,
-                freshness_phase: UsageFreshnessPhaseV1::Failed,
+                freshness_phase: UsageFreshnessPhaseV2::Failed,
                 last_good_at_epoch: None,
                 retry_at_epoch: None,
                 is_stale: false,
@@ -617,7 +626,7 @@ impl UsageScreenState {
                 .as_ref()
                 .is_some_and(|projection| {
                     projection.refresh_state
-                        == jackin_protocol::usage_broker::UsageProjectionRefreshStateV1::Refreshing
+                        == jackin_protocol::usage_broker::UsageProjectionRefreshStateV2::Refreshing
                 })
     }
 
@@ -816,15 +825,15 @@ impl UsageScreenState {
 /// `usage_tab_status_label`; `available`/`not started` have no Capsule
 /// snapshot-status counterpart (Capsule says `fresh` for the freshness axis,
 /// a different concept) and stay console-owned. See the alignment table test.
-fn lifecycle_label(lifecycle: UsageLifecycleV1) -> &'static str {
+fn lifecycle_label(lifecycle: UsageLifecycleV2) -> &'static str {
     match lifecycle {
-        UsageLifecycleV1::Available => "available",
-        UsageLifecycleV1::AgentUninitialized => "not started",
-        UsageLifecycleV1::NeedsLogin => "needs login",
-        UsageLifecycleV1::NeedsSecret => "needs secret",
-        UsageLifecycleV1::Unsupported => "unsupported",
-        UsageLifecycleV1::Unavailable => "unavailable",
-        UsageLifecycleV1::Error => "error",
+        UsageLifecycleV2::Available => "available",
+        UsageLifecycleV2::AgentUninitialized => "not started",
+        UsageLifecycleV2::NeedsLogin => "needs login",
+        UsageLifecycleV2::NeedsSecret => "needs secret",
+        UsageLifecycleV2::Unsupported => "unsupported",
+        UsageLifecycleV2::Unavailable => "unavailable",
+        UsageLifecycleV2::Error => "error",
     }
 }
 
@@ -832,47 +841,48 @@ fn lifecycle_label(lifecycle: UsageLifecycleV1) -> &'static str {
 /// quota axis (`usage_tab_status_label` reports snapshot status plus the
 /// `{n}% left` headline, which the console mirrors in its list summary), so
 /// these words stay console-owned and are pinned by the alignment table test.
-fn quota_state_label(state: UsageQuotaStateV1) -> &'static str {
+fn quota_state_label(state: UsageQuotaStateV2) -> &'static str {
     match state {
-        UsageQuotaStateV1::Available => "available",
-        UsageQuotaStateV1::NotStarted => "not started",
-        UsageQuotaStateV1::Warning => "warning",
-        UsageQuotaStateV1::Exhausted => "exhausted",
-        UsageQuotaStateV1::Unsupported => "unsupported",
-        UsageQuotaStateV1::Unavailable => "unavailable",
-        UsageQuotaStateV1::NoPermission => "no permission",
-        UsageQuotaStateV1::Unknown => "unknown",
-        UsageQuotaStateV1::NotApplicable => "n/a",
-        UsageQuotaStateV1::Error => "error",
+        UsageQuotaStateV2::Available => "available",
+        UsageQuotaStateV2::NotStarted => "not started",
+        UsageQuotaStateV2::Warning => "warning",
+        UsageQuotaStateV2::Exhausted => "exhausted",
+        UsageQuotaStateV2::Unsupported => "unsupported",
+        UsageQuotaStateV2::Unavailable => "unavailable",
+        UsageQuotaStateV2::NoPermission => "no permission",
+        UsageQuotaStateV2::Unknown => "unknown",
+        UsageQuotaStateV2::NotApplicable => "n/a",
+        UsageQuotaStateV2::Error => "error",
     }
 }
 
 /// Rank of one window category in the settled Overview-summary order (D30:
 /// long-range weekly/daily/monthly, model-specific, session, then other).
-const fn summary_category_rank(category: UsageWindowCategoryV1) -> u8 {
+const fn summary_category_rank(category: UsageWindowCategoryV2) -> u8 {
     match category {
-        UsageWindowCategoryV1::LongRange => 0,
-        UsageWindowCategoryV1::Model => 1,
-        UsageWindowCategoryV1::Session => 2,
-        UsageWindowCategoryV1::Other => 3,
+        UsageWindowCategoryV2::LongRange => 0,
+        UsageWindowCategoryV2::Model => 1,
+        UsageWindowCategoryV2::Session => 2,
+        UsageWindowCategoryV2::Other => 3,
     }
 }
 
-fn metric_group_kind_label(kind: UsageMetricGroupKindV1) -> &'static str {
+fn metric_group_kind_label(kind: UsageMetricGroupKindV2) -> &'static str {
     match kind {
-        UsageMetricGroupKindV1::Window => "window",
-        UsageMetricGroupKindV1::Balance => "balance",
-        UsageMetricGroupKindV1::SpendCap => "spend cap",
-        UsageMetricGroupKindV1::TokenTotals => "token totals",
-        UsageMetricGroupKindV1::RateLimit => "rate limit",
-        UsageMetricGroupKindV1::Plan => "plan",
+        UsageMetricGroupKindV2::Window => "window",
+        UsageMetricGroupKindV2::Balance => "balance",
+        UsageMetricGroupKindV2::SpendCap => "spend cap",
+        UsageMetricGroupKindV2::TokenTotals => "token totals",
+        UsageMetricGroupKindV2::RateLimit => "rate limit",
+        UsageMetricGroupKindV2::Plan => "plan",
     }
 }
 
-fn identity_kind_label(kind: UsageIdentityKindV1) -> &'static str {
+fn identity_kind_label(kind: UsageIdentityKindV2) -> &'static str {
     match kind {
-        UsageIdentityKindV1::ProviderAccountId => "provider account id",
-        UsageIdentityKindV1::ProviderStableHandle => "provider handle",
+        UsageIdentityKindV2::ProviderAccountId => "provider account id",
+        UsageIdentityKindV2::ProviderStableHandle => "provider handle",
+        UsageIdentityKindV2::SourceCapability => "source capability",
     }
 }
 
@@ -941,7 +951,7 @@ fn credential_expiry_label(now_epoch: i64, expires_at_epoch: i64) -> String {
 /// group: a fresh sibling never makes retained old data fresh.
 #[must_use]
 pub fn group_freshness_label(now_epoch: i64, group: &UsageMetricGroup) -> String {
-    if group.phase == UsageFreshnessPhaseV1::Refreshing {
+    if group.phase == UsageFreshnessPhaseV2::Refreshing {
         return "refreshing…".to_owned();
     }
     let Some(last_success) = group.last_success_at_epoch else {
@@ -951,7 +961,7 @@ pub fn group_freshness_label(now_epoch: i64, group: &UsageMetricGroup) -> String
     if group.is_stale
         || matches!(
             group.phase,
-            UsageFreshnessPhaseV1::Stale | UsageFreshnessPhaseV1::Failed
+            UsageFreshnessPhaseV2::Stale | UsageFreshnessPhaseV2::Failed
         )
     {
         format!("stale · {updated}")
@@ -972,21 +982,21 @@ fn duration_label(secs: u64) -> String {
     }
 }
 
-fn metric_period_label(period: &UsageMetricPeriodV1) -> Option<String> {
+fn metric_period_label(period: &UsageMetricPeriodV2) -> Option<String> {
     match period {
-        UsageMetricPeriodV1::Rolling { window_secs } => {
+        UsageMetricPeriodV2::Rolling { window_secs } => {
             Some(format!("rolling {}", duration_label(*window_secs)))
         }
-        UsageMetricPeriodV1::Calendar { granularity } => Some(
+        UsageMetricPeriodV2::Calendar { granularity } => Some(
             match granularity {
-                UsageCalendarPeriodV1::Daily => "daily",
-                UsageCalendarPeriodV1::Weekly => "weekly",
-                UsageCalendarPeriodV1::Monthly => "monthly",
+                UsageCalendarPeriodV2::Daily => "daily",
+                UsageCalendarPeriodV2::Weekly => "weekly",
+                UsageCalendarPeriodV2::Monthly => "monthly",
             }
             .to_owned(),
         ),
-        UsageMetricPeriodV1::ProviderDefined => Some("provider-defined period".to_owned()),
-        UsageMetricPeriodV1::Unknown => None,
+        UsageMetricPeriodV2::ProviderDefined => Some("provider-defined period".to_owned()),
+        UsageMetricPeriodV2::Unknown => None,
     }
 }
 
@@ -1042,16 +1052,19 @@ fn raw_percent_note(window: &UsageWindow) -> Option<String> {
 /// than a fabricated zero.
 fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
     match &group.value {
-        UsageMetricValueV1::Window {
+        UsageMetricValueV2::Window {
             remaining_percent,
             remaining_raw_percent,
             used_percent,
             used_raw_percent,
             period,
             unit,
+            count_quota,
         } => {
             let mut parts = Vec::new();
-            if let Some(percent) = window_percent_summary(
+            if let Some(count) = count_quota {
+                parts.push(jackin_usage::usage::usage_count_quota_summary(count));
+            } else if let Some(percent) = window_percent_summary(
                 remaining_percent.map(UsagePercent::get),
                 *remaining_raw_percent,
                 used_percent.map(UsagePercent::get),
@@ -1059,7 +1072,10 @@ fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
             ) {
                 parts.push(percent);
             }
-            if let Some(unit) = unit.as_deref().filter(|unit| !unit.trim().is_empty()) {
+            if let Some(unit) = unit
+                .as_deref()
+                .filter(|unit| count_quota.is_none() && !unit.trim().is_empty())
+            {
                 parts.push((*unit).to_owned());
             }
             if let Some(period) = metric_period_label(period) {
@@ -1067,8 +1083,8 @@ fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
             }
             (!parts.is_empty()).then(|| parts.join(" · "))
         }
-        UsageMetricValueV1::Balance { amount, .. } => Some(amount.to_string()),
-        UsageMetricValueV1::SpendCap {
+        UsageMetricValueV2::Balance { amount, .. } => Some(amount.to_string()),
+        UsageMetricValueV2::SpendCap {
             cap,
             spent,
             remaining,
@@ -1076,7 +1092,7 @@ fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
             let mut parts = Vec::new();
             match cap {
                 Some(cap) => parts.push(format!("cap {cap}")),
-                None => parts.push("uncapped".to_owned()),
+                None => parts.push("cap unknown".to_owned()),
             }
             if let Some(spent) = spent {
                 parts.push(format!("spent {spent}"));
@@ -1086,7 +1102,7 @@ fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
             }
             Some(parts.join(" · "))
         }
-        UsageMetricValueV1::TokenTotals {
+        UsageMetricValueV2::TokenTotals {
             input,
             output,
             cached,
@@ -1112,7 +1128,7 @@ fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
             }
             (!parts.is_empty()).then(|| parts.join(" · "))
         }
-        UsageMetricValueV1::RateLimit {
+        UsageMetricValueV2::RateLimit {
             limit,
             remaining,
             window_label,
@@ -1132,7 +1148,7 @@ fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
             }
             (!parts.is_empty()).then(|| parts.join(" · "))
         }
-        UsageMetricValueV1::Plan { plan_label, tier } => {
+        UsageMetricValueV2::Plan { plan_label, tier } => {
             let mut parts = Vec::new();
             if let Some(label) = plan_label
                 .as_deref()
@@ -1150,7 +1166,7 @@ fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
 
 /// Non-secret scope labels locating a group inside its account. `None` means
 /// the provider did not scope the group on any axis.
-fn metric_scope_summary(scope: &UsageMetricScopeV1) -> Option<String> {
+fn metric_scope_summary(scope: &UsageMetricScopeV2) -> Option<String> {
     let mut parts = Vec::new();
     for (label, word) in [
         (&scope.service, "service"),
@@ -1167,7 +1183,7 @@ fn metric_scope_summary(scope: &UsageMetricScopeV1) -> Option<String> {
 
 /// One sanitized issue as display text: the Rust-owned operator message with
 /// its stable code, plus a broker-owned retry time when one is present.
-fn issue_text(issue: &UsageIssueV1, now_epoch: i64) -> String {
+fn issue_text(issue: &UsageIssueV2, now_epoch: i64) -> String {
     let mut text = match (
         issue.message.trim().is_empty(),
         issue.code.trim().is_empty(),
@@ -1196,7 +1212,7 @@ fn non_empty_label(label: Option<&String>) -> Option<&str> {
 /// `now` so tests stay deterministic; render passes wall-clock time.
 #[must_use]
 pub fn freshness_age_label(now_epoch: i64, account: &UsageAccount) -> String {
-    if account.freshness_phase == UsageFreshnessPhaseV1::Refreshing {
+    if account.freshness_phase == UsageFreshnessPhaseV2::Refreshing {
         return "refreshing…".to_owned();
     }
     let Some(last_good) = account.last_good_at_epoch else {
@@ -1207,7 +1223,7 @@ pub fn freshness_age_label(now_epoch: i64, account: &UsageAccount) -> String {
     if account.is_stale
         || matches!(
             account.freshness_phase,
-            UsageFreshnessPhaseV1::Stale | UsageFreshnessPhaseV1::Failed
+            UsageFreshnessPhaseV2::Stale | UsageFreshnessPhaseV2::Failed
         )
     {
         format!("stale · {updated}")
@@ -1636,7 +1652,7 @@ fn refreshing_line() -> Line<'static> {
 /// the overview panel. The `Available` state is silent: it is the default and
 /// the meter already shows it.
 fn append_window_extra(lines: &mut Vec<Line<'static>>, window: &UsageWindow) {
-    if window.quota_state != UsageQuotaStateV1::Available {
+    if window.quota_state != UsageQuotaStateV2::Available {
         lines.push(Line::from(format!(
             "  quota: {}",
             quota_state_label(window.quota_state)
@@ -1757,7 +1773,7 @@ fn append_group_schedule_lines(
             relative_time_label(now_epoch, renews_at)
         )));
     }
-    if let UsageMetricValueV1::Balance {
+    if let UsageMetricValueV2::Balance {
         expires_at_epoch: Some(expires_at),
         ..
     } = &group.value
@@ -1902,10 +1918,10 @@ fn meter_line(width: usize, percent: Option<u8>) -> Option<String> {
 /// color the same bucket differently on the two surfaces (S4/S5 parity).
 /// Unknown and permission states keep the neutral default: without usable
 /// quota the bar usually does not render at all.
-fn meter_style(quota_state: UsageQuotaStateV1) -> Style {
+fn meter_style(quota_state: UsageQuotaStateV2) -> Style {
     match quota_state {
-        UsageQuotaStateV1::Exhausted | UsageQuotaStateV1::Error => Style::default().fg(Color::Red),
-        UsageQuotaStateV1::Warning => Style::default().fg(Color::Yellow),
+        UsageQuotaStateV2::Exhausted | UsageQuotaStateV2::Error => Style::default().fg(Color::Red),
+        UsageQuotaStateV2::Warning => Style::default().fg(Color::Yellow),
         _ => Style::default().fg(Color::Green),
     }
 }

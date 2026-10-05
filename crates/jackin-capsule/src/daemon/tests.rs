@@ -1065,9 +1065,34 @@ fn begin_exec_picker_supersedes_pending_reply_and_dialog() {
     // Exactly one ExecPicker remains, and it is for the newer command — so a
     // later confirm can't resolve credentials for the stale one.
     match mux.dialog_top() {
-        Some(Dialog::ExecPicker(state)) => assert_eq!(state.command, "cmd2"),
+        Some(Dialog::ExecPicker(state)) => assert_eq!(state.invocation.command(), "cmd2"),
         other => panic!("expected a single ExecPicker(cmd2) on top, got {other:?}"),
     }
+}
+
+#[test]
+fn exec_closed_requester_never_opens_picker() {
+    let mut mux = test_mux(40, 20);
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    drop(rx);
+    mux.begin_exec_picker("command".to_owned(), vec![], tx, None);
+    assert!(mux.control.pending_exec_reply.is_none());
+    assert!(mux.dialog_top().is_none());
+}
+
+#[test]
+fn exec_abandoned_picker_reaped_under_another_dialog() {
+    let mut mux = test_mux(40, 20);
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    mux.begin_exec_picker("command".to_owned(), vec![], tx, None);
+    mux.dialog_push(Dialog::new_confirm_action(
+        crate::tui::components::dialog::ConfirmKind::Exit,
+    ));
+    drop(rx);
+    mux.cancel_abandoned_exec_picker();
+    assert!(mux.control.pending_exec_reply.is_none());
+    assert_eq!(mux.control.dialog_stack.len(), 1);
+    assert!(!matches!(mux.dialog_top(), Some(Dialog::ExecPicker(_))));
 }
 
 /// Compose the frame an invalidation with `reason` produces — the
@@ -1092,6 +1117,84 @@ fn apply_action_frame(mux: &mut Multiplexer, action: Action) -> Option<Vec<u8>> 
     (!frame.is_empty()).then_some(frame)
 }
 
+fn usage_projection_fixture(
+    provider_id: &str,
+    provider_label: &str,
+    accounts: &[(&str, &str)],
+    fetched_at: i64,
+) -> jackin_protocol::usage_broker::UsageProjectionV2 {
+    use jackin_protocol::usage_broker::*;
+    let freshness = UsageFreshnessV2 {
+        generation: 1,
+        phase: UsageFreshnessPhaseV2::Current,
+        last_good_at_epoch: Some(fetched_at),
+        retry_at_epoch: None,
+        is_stale: false,
+    };
+    let projection = UsageProjectionV2 {
+        schema_version: UsageProjectionSchemaV2,
+        projection_id: "daemon-fixture-publication-1".to_owned(),
+        generated_at_epoch: fetched_at,
+        discovery_revision: "daemon-fixture-discovery-1".to_owned(),
+        broker_instance_id: "daemon-fixture-broker".to_owned(),
+        broker_generation: 1,
+        refresh_state: UsageProjectionRefreshStateV2::Idle,
+        providers: vec![UsageProviderV2 {
+            provider_id: provider_id.to_owned(),
+            display_name: provider_label.to_owned(),
+            rank: 0,
+            membership_state: UsageMembershipStateV2::Current,
+            freshness: freshness.clone(),
+            accounts: accounts
+                .iter()
+                .enumerate()
+                .map(|(rank, (id, label))| UsageAccountV2 {
+                    canonical_account_id: (*id).to_owned(),
+                    refresh_capabilities: Vec::new(),
+                    username: None,
+                    auth_origin: None,
+                    identity_kind: UsageIdentityKindV2::ProviderAccountId,
+                    rank: u32::try_from(rank).unwrap(),
+                    display_label: (*label).to_owned(),
+                    plan_label: Some("Pro".to_owned()),
+                    status_label: None,
+                    lifecycle: UsageLifecycleV2::Available,
+                    freshness: freshness.clone(),
+                    provenance_count: 1,
+                    windows: vec![UsageLimitWindowV2 {
+                        window_id: format!("{id}-session"),
+                        rank: 0,
+                        category: UsageWindowCategoryV2::Session,
+                        label: "Session".to_owned(),
+                        value_label: "63% used · 37% left".to_owned(),
+                        reset_label: "Resets in 2h".to_owned(),
+                        remaining_percent: Some(UsagePercent::new(37).unwrap()),
+                        remaining_raw_percent: Some(37),
+                        used_percent: None,
+                        used_raw_percent: None,
+                        reset_at_epoch: Some(fetched_at + 7200),
+                        quota_state: UsageQuotaStateV2::Available,
+                        count_quota: None,
+                        pace_label: None,
+                        runs_out_label: None,
+                    }],
+                    metric_groups: Vec::new(),
+                    credential_expires_at_epoch: None,
+                    issues: Vec::new(),
+                })
+                .collect(),
+            issues: Vec::new(),
+        }],
+        unresolved: Vec::new(),
+        unresolved_grants: Vec::new(),
+        issues: Vec::new(),
+    };
+    projection
+        .validate()
+        .expect("valid direct canonical fixture");
+    projection
+}
+
 fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
     let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
     session.provider = Some(crate::session::SessionProvider {
@@ -1100,10 +1203,21 @@ fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
     });
     mux.session_supervisor.sessions.insert(1, session);
     mux.session_supervisor.tabs[0] = Tab::new_single("Codex", 1, "test");
-    let mut stale = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
-    stale.updated_label = "seed".to_owned();
-    stale.status_bar_label = "seed".to_owned();
-    mux.dialog_push(Dialog::new_usage(stale));
+    let mut projection =
+        usage_projection_fixture("openai", "OpenAI", &[("canonical-codex", "seed")], 1);
+    projection.providers[0].accounts[0].refresh_capabilities =
+        vec![jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "test-codex".to_owned(),
+            surface_id: "codex".to_owned(),
+        }];
+    mux.adopt_usage_projection(projection.clone());
+    mux.dialog_push(Dialog::new_usage_with_destination(
+        Some(projection),
+        Some(crate::tui::components::dialog::UsageDialogDestination {
+            provider_id: "openai".to_owned(),
+            canonical_account_id: "canonical-codex".to_owned(),
+        }),
+    ));
 }
 
 #[test]
@@ -1144,7 +1258,7 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
             };
             assert_eq!(request.protocol_version, USAGE_BROKER_PROTOCOL_VERSION);
             let (request_capability, generation, phase, snapshot, stage) = match request.operation {
-                UsageBrokerOperation::CurrentForCapability { capability } => {
+                UsageBrokerOperation::CurrentForCapability { capability, .. } => {
                     (capability, 0, UsageRefreshPhase::Idle, None, 0)
                 }
                 UsageBrokerOperation::RefreshForCapability {
@@ -1169,6 +1283,7 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
                     view.account.account_label =
                         format!("{}@capsule.example.test", capability.account_id);
                     view.buckets = vec![QuotaBucketView {
+                        count_quota: None,
                         label: "Weekly".to_owned(),
                         used_label: None,
                         limit_label: None,
@@ -1180,6 +1295,7 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
                         status: UsageSnapshotStatus::Fresh,
                         used_money: None,
                         limit_money: None,
+                        remaining_money: None,
                         severity: UsageSeverity::Normal,
                     }];
                     (capability, 1, UsageRefreshPhase::Completed, Some(view), 2)
@@ -1210,6 +1326,7 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
     let client =
         jackin_usage::host::UsageBrokerClient::at(socket, env!("CARGO_PKG_VERSION").to_owned());
     let target = crate::usage::UsageRefreshTarget {
+        instance_id: "codex".to_owned(),
         agent: "codex".to_owned(),
         provider: Some("OpenAI".to_owned()),
         capability: capability.clone(),
@@ -1674,7 +1791,7 @@ fn control_reply_runtime_event_and_capture_for_unknown_session_still_ack() {
 }
 
 #[test]
-fn control_usage_account_list_uses_in_memory_cache() {
+fn control_usage_account_list_does_not_admit_membership_from_quota_cache() {
     let mut mux = single_pane_tab_mux();
     let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 123);
     view.focused_agent = Some("codex".to_owned());
@@ -1690,8 +1807,10 @@ fn control_usage_account_list_uses_in_memory_cache() {
     view.source = jackin_protocol::control::UsageSource::ProviderApi;
     view.confidence = jackin_protocol::control::UsageConfidence::Authoritative;
     view.buckets = vec![jackin_protocol::control::QuotaBucketView {
+        count_quota: None,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: jackin_protocol::control::UsageSeverity::default(),
         label: "Session".to_owned(),
         used_label: Some("63% used".to_owned()),
@@ -1709,13 +1828,9 @@ fn control_usage_account_list_uses_in_memory_cache() {
 
     let accounts = control_reply_for_request(&mut mux, ClientMsg::UsageAccountList);
 
-    let ServerMsg::UsageAccounts { accounts } = accounts else {
-        panic!("usage accounts response expected");
-    };
-    assert_eq!(accounts.len(), 1);
-    assert_eq!(accounts[0].provider, "OpenAI / Codex");
-    assert_eq!(accounts[0].account_label, "codex@example.com");
-    assert_eq!(accounts[0].used_amount, Some(63));
+    assert!(matches!(accounts, ServerMsg::UsageAccounts {
+        membership: jackin_protocol::control::UsageAccountMembershipV1::Unavailable,
+    }));
 }
 
 #[test]
@@ -1725,22 +1840,22 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
 
     mux.apply_dialog_action(DialogAction::RefreshUsage);
 
-    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+    let Dialog::Usage { projection, .. } = mux.dialog_top().expect("usage dialog still open")
+    else {
         panic!("refresh usage action must keep usage dialog open");
     };
-    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
-    // below); the "refreshing" marker is applied by the dialog tick only when a
-    // refresh task is genuinely in flight. No task is spawned here, so the marker
-    // must NOT appear — it is no longer driven by the scheduling flag.
-    assert!(
-        !view.updated_label.contains("refreshing"),
-        "{:?}",
-        view.updated_label
+    let projection = projection
+        .as_deref()
+        .expect("canonical publication retained");
+    assert_eq!(
+        projection.refresh_state,
+        jackin_protocol::usage_broker::UsageProjectionRefreshStateV2::Idle
     );
-    assert_eq!(view.status_bar_label, "seed");
+    assert_eq!(projection.providers[0].accounts[0].display_label, "seed");
     assert_eq!(
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
+            instance_id: "codex".to_owned(),
             agent: "codex".to_owned(),
             provider: Some("OpenAI".to_owned()),
             capability: jackin_protocol::usage_broker::UsageAccountCapability {
@@ -1748,6 +1863,301 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
                 surface_id: "codex".to_owned(),
             },
         })
+    );
+}
+
+#[test]
+fn selected_usage_refresh_requires_exact_published_route_and_admitted_session() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
+    for unavailable_route in [
+        "missing",
+        "other-account",
+        "other-surface",
+        "canonical-id",
+        "no-agent",
+        "wrong-agent-surface",
+        "no-session",
+    ] {
+        let mut mux = single_pane_tab_mux();
+        seed_usage_dialog_for_refresh_test(&mut mux);
+        let mut publication = mux.usage_projection_snapshot().unwrap().clone();
+        let routes = &mut publication.providers[0].accounts[0].refresh_capabilities;
+        match unavailable_route {
+            "missing" => routes.clear(),
+            "other-account" => routes[0].account_id = "sibling-codex".to_owned(),
+            "other-surface" => routes[0].surface_id = "claude".to_owned(),
+            "canonical-id" => routes[0].account_id = "canonical-codex".to_owned(),
+            "no-agent" => mux.session_supervisor.sessions.get_mut(1).unwrap().agent = None,
+            "wrong-agent-surface" => {
+                mux.session_supervisor.sessions.get_mut(1).unwrap().agent =
+                    Some("claude".to_owned())
+            }
+            "no-session" => {
+                mux.session_supervisor.sessions.remove(1);
+            }
+            _ => unreachable!(),
+        }
+        mux.adopt_usage_projection(publication.clone());
+        mux.refresh_open_usage_dialog_from_projection();
+        let sentinel = crate::usage::UsageRefreshTarget {
+            instance_id: "claude".to_owned(),
+            agent: "claude".to_owned(),
+            provider: Some("Anthropic".to_owned()),
+            capability: UsageAccountCapability {
+                account_id: "already-queued".to_owned(),
+                surface_id: "claude".to_owned(),
+            },
+        };
+        mux.usage.pending_usage_refresh = Some(sentinel.clone());
+
+        mux.apply_dialog_action(DialogAction::RefreshUsage);
+
+        assert_eq!(
+            mux.usage.pending_usage_refresh,
+            Some(sentinel),
+            "{unavailable_route}: view-only refresh cannot replace existing queued work"
+        );
+        assert!(mux.usage.usage_refresh_task.is_none());
+        let Dialog::Usage {
+            projection,
+            destination,
+            notice,
+            refresh_unavailable,
+            ..
+        } = mux.dialog_top().expect("usage dialog retained")
+        else {
+            panic!("usage dialog expected")
+        };
+        assert_eq!(projection.as_deref(), Some(&publication));
+        assert_eq!(
+            destination
+                .as_ref()
+                .unwrap()
+                .canonical_destination()
+                .unwrap()
+                .canonical_account_id,
+            "canonical-codex"
+        );
+        assert!(*refresh_unavailable);
+        assert!(
+            notice.is_none(),
+            "route feedback stays separate from selection notice"
+        );
+    }
+}
+
+#[test]
+fn selected_usage_refresh_binding_recovery_clears_route_feedback_only() {
+    let mut mux = single_pane_tab_mux();
+    seed_usage_dialog_for_refresh_test(&mut mux);
+    mux.session_supervisor.sessions.get_mut(1).unwrap().agent = None;
+    let dialog = mux.dialog_top_mut().expect("usage dialog retained");
+    dialog.apply_usage_notice("Selection detail retained".to_owned());
+    dialog.apply_usage_error("Read failure retained".to_owned());
+
+    mux.apply_dialog_action(DialogAction::RefreshUsage);
+
+    let Dialog::Usage {
+        refresh_unavailable,
+        notice,
+        transport_error,
+        ..
+    } = mux.dialog_top().unwrap()
+    else {
+        panic!("usage dialog expected")
+    };
+    assert!(*refresh_unavailable);
+    assert_eq!(notice.as_deref(), Some("Selection detail retained"));
+    assert_eq!(transport_error.as_deref(), Some("Read failure retained"));
+    assert!(mux.usage.pending_usage_refresh.is_none());
+
+    mux.session_supervisor.sessions.get_mut(1).unwrap().agent = Some("codex".to_owned());
+    mux.apply_dialog_action(DialogAction::RefreshUsage);
+
+    let Dialog::Usage {
+        refresh_unavailable,
+        notice,
+        transport_error,
+        destination,
+        ..
+    } = mux.dialog_top().unwrap()
+    else {
+        panic!("usage dialog expected")
+    };
+    assert!(!*refresh_unavailable);
+    assert_eq!(notice.as_deref(), Some("Selection detail retained"));
+    assert_eq!(transport_error.as_deref(), Some("Read failure retained"));
+    assert_eq!(
+        destination
+            .as_ref()
+            .unwrap()
+            .canonical_destination()
+            .unwrap()
+            .canonical_account_id,
+        "canonical-codex"
+    );
+    assert_eq!(
+        mux.usage
+            .pending_usage_refresh
+            .as_ref()
+            .unwrap()
+            .capability
+            .account_id,
+        "test-codex"
+    );
+    assert!(mux.usage.usage_refresh_task.is_none());
+}
+
+#[test]
+fn periodic_usage_refresh_recomputes_binding_availability_without_manual_retry() {
+    use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
+    let mut mux = single_pane_tab_mux();
+    seed_usage_dialog_for_refresh_test(&mut mux);
+    let publication = mux.usage_projection_snapshot().unwrap().clone();
+    mux.session_supervisor.sessions.get_mut(1).unwrap().agent = None;
+    mux.dialog_top_mut()
+        .unwrap()
+        .apply_usage_notice("Selection detail retained".to_owned());
+    mux.adopt_usage_projection_error(UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::Unavailable,
+        message: "Read failure retained".to_owned(),
+    });
+    mux.apply_dialog_action(DialogAction::RefreshUsage);
+    assert!(mux.refresh_open_usage_dialog_from_projection());
+    assert!(!mux.refresh_open_usage_dialog_from_projection());
+
+    mux.session_supervisor.sessions.get_mut(1).unwrap().agent = Some("codex".to_owned());
+    assert!(
+        mux.refresh_open_usage_dialog_from_projection(),
+        "identical publication must still recompute admitted live binding"
+    );
+    assert!(!mux.refresh_open_usage_dialog_from_projection());
+    let Dialog::Usage {
+        projection,
+        destination,
+        refresh_unavailable,
+        notice,
+        transport_error,
+        ..
+    } = mux.dialog_top().unwrap()
+    else {
+        panic!("usage dialog expected")
+    };
+    assert!(!*refresh_unavailable);
+    assert_eq!(projection.as_deref(), Some(&publication));
+    assert_eq!(
+        destination
+            .as_ref()
+            .unwrap()
+            .canonical_destination()
+            .unwrap()
+            .canonical_account_id,
+        "canonical-codex"
+    );
+    assert_eq!(notice.as_deref(), Some("Selection detail retained"));
+    assert_eq!(transport_error.as_deref(), Some("Read failure retained"));
+    assert!(
+        mux.usage.pending_usage_refresh.is_none(),
+        "periodic binding recovery must not queue provider work"
+    );
+
+    mux.session_supervisor.sessions.remove(1);
+    assert!(
+        mux.refresh_open_usage_dialog_from_projection(),
+        "removed binding immediately restores read-only state"
+    );
+    assert!(!mux.refresh_open_usage_dialog_from_projection());
+    let Dialog::Usage {
+        projection,
+        destination,
+        refresh_unavailable,
+        notice,
+        transport_error,
+        ..
+    } = mux.dialog_top().unwrap()
+    else {
+        panic!("usage dialog expected")
+    };
+    assert!(*refresh_unavailable);
+    assert_eq!(projection.as_deref(), Some(&publication));
+    assert_eq!(
+        destination
+            .as_ref()
+            .unwrap()
+            .canonical_destination()
+            .unwrap()
+            .canonical_account_id,
+        "canonical-codex"
+    );
+    assert_eq!(notice.as_deref(), Some("Selection detail retained"));
+    assert_eq!(transport_error.as_deref(), Some("Read failure retained"));
+    assert!(mux.usage.pending_usage_refresh.is_none());
+}
+
+#[test]
+fn selected_usage_refresh_skips_ineligible_same_capability_before_bound_session() {
+    let mut mux = single_pane_tab_mux();
+    seed_usage_dialog_for_refresh_test(&mut mux);
+    mux.session_supervisor.sessions.get_mut(1).unwrap().agent = None;
+    let (mut bound, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    bound.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.session_supervisor.sessions.insert(2, bound);
+
+    mux.apply_dialog_action(DialogAction::RefreshUsage);
+
+    let target = mux
+        .usage
+        .pending_usage_refresh
+        .as_ref()
+        .expect("later eligible binding must remain selectable");
+    assert_eq!(target.agent, "codex");
+    assert_eq!(target.capability.account_id, "test-codex");
+    assert_eq!(target.capability.surface_id, "codex");
+    assert!(mux.usage.usage_refresh_task.is_none());
+}
+
+#[test]
+fn selected_usage_refresh_uses_published_route_instead_of_focused_sibling() {
+    let mut mux = single_pane_tab_mux();
+    seed_usage_dialog_for_refresh_test(&mut mux);
+    let (mut sibling, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    sibling.usage_capability = Some(jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "sibling-codex".to_owned(),
+        surface_id: "codex".to_owned(),
+    });
+    sibling.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.session_supervisor.sessions.insert(2, sibling);
+    mux.session_supervisor.tabs[0] = Tab::new_single("Focused sibling", 2, "test");
+
+    mux.apply_dialog_action(DialogAction::RefreshUsage);
+
+    assert_eq!(
+        mux.usage
+            .pending_usage_refresh
+            .as_ref()
+            .unwrap()
+            .capability
+            .account_id,
+        "test-codex"
+    );
+    assert_ne!(
+        mux.usage
+            .pending_usage_refresh
+            .as_ref()
+            .unwrap()
+            .capability
+            .account_id,
+        "canonical-codex"
+    );
+    assert!(
+        mux.usage.usage_refresh_task.is_none(),
+        "selected refresh only queues admitted capability work"
     );
 }
 
@@ -1758,22 +2168,22 @@ fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
 
     mux.apply_action(Action::RefreshUsage);
 
-    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+    let Dialog::Usage { projection, .. } = mux.dialog_top().expect("usage dialog still open")
+    else {
         panic!("refresh usage action must keep usage dialog open");
     };
-    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
-    // below); the "refreshing" marker is applied by the dialog tick only when a
-    // refresh task is genuinely in flight. No task is spawned here, so the marker
-    // must NOT appear — it is no longer driven by the scheduling flag.
-    assert!(
-        !view.updated_label.contains("refreshing"),
-        "{:?}",
-        view.updated_label
+    let projection = projection
+        .as_deref()
+        .expect("canonical publication retained");
+    assert_eq!(
+        projection.refresh_state,
+        jackin_protocol::usage_broker::UsageProjectionRefreshStateV2::Idle
     );
-    assert_eq!(view.status_bar_label, "seed");
+    assert_eq!(projection.providers[0].accounts[0].display_label, "seed");
     assert_eq!(
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
+            instance_id: "codex".to_owned(),
             agent: "codex".to_owned(),
             provider: Some("OpenAI".to_owned()),
             capability: jackin_protocol::usage_broker::UsageAccountCapability {
@@ -1785,153 +2195,90 @@ fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
 }
 
 #[test]
-fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
+fn apply_dialog_action_empty_account_id_rejects_provider_fallback() {
     let mut mux = single_pane_tab_mux();
-    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
-    mux.session_supervisor.sessions.insert(1, session);
-    mux.session_supervisor.tabs[0] = Tab::new_single("Codex", 1, "test");
-    mux.dialog_push(Dialog::new_usage(
-        jackin_protocol::control::FocusedUsageView {
-            focused_provider: Some("MiniMax".to_owned()),
-            account: jackin_protocol::control::FocusedAccountHeader {
-                provider_label: "Usage".to_owned(),
-                account_label: "seed".to_owned(),
-                username: None,
-                plan_label: None,
-                credential_origin: None,
-            },
-            ..jackin_protocol::control::FocusedUsageView::unavailable("seed", 1)
-        },
-    ));
+    let publication =
+        usage_projection_fixture("minimax", "MiniMax", &[("canonical-minimax", "seed")], 1);
+    mux.adopt_usage_projection(publication.clone());
+    mux.dialog_push(Dialog::new_usage(Some(publication.clone())));
 
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "Claude".to_owned(),
-        // Empty id: old payloads keep label resolution.
-        account_id: String::new(),
+        provider_id: "anthropic".to_owned(),
+        canonical_account_id: String::new(),
     });
 
-    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+    let Dialog::Usage {
+        projection,
+        destination,
+        ..
+    } = mux.dialog_top().expect("usage dialog still open")
+    else {
         panic!("switch usage provider action must keep usage dialog open");
     };
-    assert_eq!(view.focused_provider.as_deref(), Some("Claude"));
-    assert_eq!(view.account.provider_label, "Anthropic");
-    assert_eq!(
-        mux.usage.pending_usage_refresh,
-        Some(crate::usage::UsageRefreshTarget {
-            agent: "codex".to_owned(),
-            provider: Some("Claude".to_owned()),
-            capability: jackin_protocol::usage_broker::UsageAccountCapability {
-                account_id: "test-codex".to_owned(),
-                surface_id: "codex".to_owned(),
-            },
-        })
-    );
+    assert_eq!(projection.as_deref(), Some(&publication));
+    assert!(destination.is_none());
+    assert!(mux.usage.pending_usage_refresh.is_none());
 }
 
 #[test]
-fn apply_dialog_action_switch_usage_provider_resolves_exact_account_id() {
-    use jackin_protocol::control::{
-        FocusedAccountHeader, FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
-    };
-    use jackin_protocol::usage_broker::UsageAccountCapability;
-
-    fn account_view(account: &str, fetched_at: i64) -> FocusedUsageView {
-        let mut view = FocusedUsageView::unavailable("none", fetched_at);
-        view.account = FocusedAccountHeader {
-            provider_label: "Anthropic".to_owned(),
-            account_label: account.to_owned(),
-            username: None,
-            plan_label: None,
-            credential_origin: None,
-        };
-        view.status = UsageSnapshotStatus::Fresh;
-        view.source = UsageSource::ProviderApi;
-        view.confidence = UsageConfidence::Authoritative;
-        view
-    }
-
+fn apply_dialog_action_same_label_accounts_select_exact_canonical_identity() {
     let mut mux = single_pane_tab_mux();
-    for (id, broker_id, account) in [
-        (1_u64, "test-claude-a", "a@example.com"),
-        (2, "test-claude-b", "b@example.com"),
-    ] {
-        let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
-        session.provider = Some(crate::session::SessionProvider {
-            label: "Anthropic".to_owned(),
-            env_overrides: Vec::new(),
-        });
-        session.usage_capability = Some(UsageAccountCapability {
-            account_id: broker_id.to_owned(),
-            surface_id: "claude".to_owned(),
-        });
-        mux.session_supervisor.sessions.insert(id, session);
-        mux.usage
-            .usage_cache
-            .insert_snapshot_for_capability_for_test(
-                "claude",
-                Some("Anthropic"),
-                &UsageAccountCapability {
-                    account_id: broker_id.to_owned(),
-                    surface_id: "claude".to_owned(),
-                },
-                account_view(account, 100 + id.cast_signed()),
-            );
-    }
-    mux.session_supervisor.tabs[0] = Tab::new_single("Claude", 1, "test");
-    mux.dialog_push(Dialog::new_usage(FocusedUsageView::unavailable("seed", 1)));
+    let publication = usage_projection_fixture(
+        "anthropic",
+        "Anthropic",
+        &[
+            ("canonical-claude-a", "shared@example.com"),
+            ("canonical-claude-b", "shared@example.com"),
+        ],
+        101,
+    );
+    mux.adopt_usage_projection(publication.clone());
+    mux.dialog_push(Dialog::new_usage(Some(publication.clone())));
 
-    // Switch to the second same-provider account by exact id: the dialog
-    // focuses that account and the queued refresh targets its capability,
-    // even though both tabs share the provider head.
-    let id_b = jackin_core::account_key_hash("Anthropic", "b@example.com");
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "Anthropic · b@example.com".to_owned(),
-        account_id: id_b.clone(),
+        provider_id: "anthropic".to_owned(),
+        canonical_account_id: "canonical-claude-b".to_owned(),
     });
-    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+    let Dialog::Usage {
+        projection,
+        destination,
+        ..
+    } = mux.dialog_top().expect("usage dialog still open")
+    else {
         panic!("switch usage provider action must keep usage dialog open");
     };
-    assert_eq!(view.account.account_label, "b@example.com");
-    assert_eq!(view.tabs.len(), 2);
-    assert_ne!(view.tabs[0].label, view.tabs[1].label);
-    let active: Vec<_> = view.tabs.iter().filter(|tab| tab.active).collect();
-    assert_eq!(active.len(), 1);
-    assert_eq!(active[0].id, id_b);
-    assert_eq!(
-        mux.usage.pending_usage_refresh,
-        Some(crate::usage::UsageRefreshTarget {
-            agent: "claude".to_owned(),
-            provider: Some("Anthropic".to_owned()),
-            capability: UsageAccountCapability {
-                account_id: "test-claude-b".to_owned(),
-                surface_id: "claude".to_owned(),
-            },
-        })
+    assert_eq!(projection.as_deref(), Some(&publication));
+    let destination = destination
+        .as_ref()
+        .expect("exact canonical destination selected");
+    assert_eq!(destination.provider_id, "anthropic");
+    assert_eq!(destination.canonical_account_id, "canonical-claude-b");
+    let accounts = &projection.as_deref().unwrap().providers[0].accounts;
+    assert_eq!(accounts[0].display_label, accounts[1].display_label);
+    assert_ne!(
+        accounts[0].canonical_account_id,
+        accounts[1].canonical_account_id
     );
+    assert!(mux.session_supervisor.sessions.is_empty());
 
-    // Unknown id: honest unavailable, and the queued refresh is untouched
-    // rather than overwritten with a label-guessed sibling target.
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "Anthropic · b@example.com".to_owned(),
-        account_id: "sha256:unknown".to_owned(),
+        provider_id: "anthropic".to_owned(),
+        canonical_account_id: "canonical-unknown".to_owned(),
     });
-    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+    let Dialog::Usage {
+        projection,
+        destination,
+        ..
+    } = mux.dialog_top().expect("usage dialog still open")
+    else {
         panic!("switch usage provider action must keep usage dialog open");
     };
-    assert_eq!(view.status, UsageSnapshotStatus::Unavailable);
-    assert_eq!(
-        view.account.account_label,
-        "usage unavailable: account not cached"
+    assert_eq!(projection.as_deref(), Some(&publication));
+    assert!(
+        destination.is_none(),
+        "unknown canonical identity must not select its same-label sibling"
     );
-    assert_eq!(
-        mux.usage
-            .pending_usage_refresh
-            .as_ref()
-            .expect("queued refresh untouched")
-            .capability
-            .account_id,
-        "test-claude-b"
-    );
+    assert!(mux.usage.pending_usage_refresh.is_none());
 }
 
 #[test]
@@ -1948,21 +2295,17 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
     mux.apply_action(Action::OpenUsage);
 
     assert!(matches!(mux.dialog_top(), Some(Dialog::Usage { .. })));
-    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
+    let Dialog::Usage { projection, .. } = mux.dialog_top().expect("usage dialog open") else {
         panic!("usage dialog expected");
     };
-    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
-    // below); the "refreshing" marker is applied by the dialog tick only when a
-    // refresh task is genuinely in flight. No task is spawned here, so the marker
-    // must NOT appear — it is no longer driven by the scheduling flag.
     assert!(
-        !view.updated_label.contains("refreshing"),
-        "{:?}",
-        view.updated_label
+        projection.is_none(),
+        "no canonical publication received yet"
     );
     assert_eq!(
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
+            instance_id: "codex".to_owned(),
             agent: "codex".to_owned(),
             provider: Some("OpenAI".to_owned()),
             capability: jackin_protocol::usage_broker::UsageAccountCapability {
@@ -1974,73 +2317,243 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
 }
 
 #[test]
-fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
+fn open_usage_dialog_refreshes_from_canonical_projection_without_live_session() {
     let mut mux = single_pane_tab_mux();
-    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
-    session.provider = Some(crate::session::SessionProvider {
-        label: "OpenAI".to_owned(),
-        env_overrides: Vec::new(),
-    });
-    let capability = jackin_protocol::usage_broker::UsageAccountCapability {
-        account_id: "test-codex".to_owned(),
-        surface_id: "codex".to_owned(),
-    };
-    session.usage_capability = Some(capability.clone());
-    mux.session_supervisor.sessions.insert(1, session);
-    mux.session_supervisor.tabs[0] = Tab::new_single("Codex", 1, "test");
-    let now_epoch = i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system time after epoch")
-            .as_secs(),
-    )
-    .unwrap_or(i64::MAX);
-    let cached = jackin_protocol::control::FocusedUsageView {
-        focused_agent: Some("codex".to_owned()),
-        focused_provider: Some("OpenAI".to_owned()),
-        account: jackin_protocol::control::FocusedAccountHeader {
-            provider_label: "Codex".to_owned(),
-            account_label: "alexey@example.com".to_owned(),
-            username: None,
-            plan_label: Some("Pro 20x".to_owned()),
-            credential_origin: None,
-        },
-        buckets: vec![jackin_protocol::control::QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: "Session".to_owned(),
-            used_label: Some("63% used".to_owned()),
-            limit_label: Some("100%".to_owned()),
-            remaining_percent: Some(37),
-            reset_label: Some("Resets at 15:00 UTC".to_owned()),
-            resets_at: None,
-            status_slot: None,
-            pace_label: None,
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        }],
-        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-        source: jackin_protocol::control::UsageSource::Cli,
-        confidence: jackin_protocol::control::UsageConfidence::Authoritative,
-        fetched_at_epoch: now_epoch - 120,
-        updated_label: "Updated just now".to_owned(),
-        status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
-        tabs: Vec::new(),
-        last_error: None,
-    };
-    mux.usage
-        .usage_cache
-        .insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &capability, cached);
-    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
-    view.updated_label = "Updated just now".to_owned();
-    mux.dialog_push(Dialog::new_usage(view));
+    let publication = usage_projection_fixture(
+        "openai",
+        "OpenAI",
+        &[("canonical-codex", "alexey@example.com")],
+        123,
+    );
+    mux.adopt_usage_projection(publication.clone());
+    mux.dialog_push(Dialog::new_usage(None));
 
-    assert!(mux.refresh_open_usage_dialog_from_cache());
+    assert!(mux.refresh_open_usage_dialog_from_projection());
 
-    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
+    let Dialog::Usage { projection, .. } = mux.dialog_top().expect("usage dialog open") else {
         panic!("usage dialog expected");
     };
-    assert_eq!(view.updated_label, "Updated 2m ago");
+    assert_eq!(projection.as_deref(), Some(&publication));
+    assert_eq!(
+        projection.as_deref().unwrap().providers[0].accounts[0]
+            .freshness
+            .last_good_at_epoch,
+        Some(123)
+    );
+    assert!(mux.session_supervisor.sessions.is_empty());
+}
+
+#[test]
+fn canonical_usage_rejects_older_generation_and_accepts_new_broker_incarnation() {
+    let mut mux = single_pane_tab_mux();
+    let mut publication =
+        usage_projection_fixture("openai", "OpenAI", &[("canonical-openai", "account")], 123);
+    publication.broker_generation = 2;
+    assert!(mux.adopt_usage_projection(publication.clone()));
+    let mut older = publication.clone();
+    older.broker_generation = 1;
+    older.projection_id = "daemon-fixture-publication-older".to_owned();
+    assert!(mux.adopt_usage_projection(older.clone()));
+    assert_eq!(mux.usage_projection_snapshot(), Some(&publication));
+    assert!(mux.usage_projection_error().is_some());
+
+    older.broker_instance_id = "daemon-fixture-restarted-broker".to_owned();
+    assert!(mux.adopt_usage_projection(older.clone()));
+    assert_eq!(mux.usage_projection_snapshot(), Some(&older));
+    assert!(mux.usage_projection_error().is_none());
+}
+
+#[tokio::test]
+async fn canonical_usage_publication_finishes_independently_of_session_refresh() {
+    let mut mux = single_pane_tab_mux();
+    let publication =
+        usage_projection_fixture("openai", "OpenAI", &[("canonical-openai", "account")], 123);
+    let published = publication.clone();
+    let projection_task = tokio::spawn(async move { Ok(published) });
+    while !projection_task.is_finished() {
+        tokio::task::yield_now().await;
+    }
+    mux.usage.projection_refresh_task = Some(projection_task);
+    mux.usage.usage_refresh_task = Some(tokio::spawn(std::future::pending()));
+
+    assert!(mux.finish_usage_account_refresh_if_ready().await);
+    assert_eq!(mux.usage_projection_snapshot(), Some(&publication));
+    assert!(mux.usage.projection_refresh_task.is_none());
+    assert!(mux.session_supervisor.sessions.is_empty());
+    mux.usage
+        .usage_refresh_task
+        .take()
+        .expect("unfinished session refresh retained")
+        .abort();
+}
+
+#[test]
+fn canonical_usage_revocation_clears_dialog_inventory_and_destination() {
+    use crate::tui::components::dialog::UsageDialogDestination;
+    use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
+    for kind in [
+        UsageCoordinationErrorKind::Unauthorized,
+        UsageCoordinationErrorKind::CatalogRevoked,
+    ] {
+        let mut mux = single_pane_tab_mux();
+        let publication =
+            usage_projection_fixture("openai", "OpenAI", &[("canonical-openai", "account")], 123);
+        mux.adopt_usage_projection(publication.clone());
+        mux.dialog_push(Dialog::new_usage_with_destination(
+            Some(publication),
+            Some(UsageDialogDestination {
+                provider_id: "openai".to_owned(),
+                canonical_account_id: "canonical-openai".to_owned(),
+            }),
+        ));
+
+        assert!(mux.adopt_usage_projection_error(UsageCoordinationError {
+            kind,
+            message: "Usage access revoked".to_owned()
+        }));
+        assert!(mux.refresh_open_usage_dialog_from_projection());
+        assert!(mux.usage_projection_snapshot().is_none());
+        let Dialog::Usage {
+            projection,
+            destination,
+            transport_error,
+            notice,
+            ..
+        } = mux.dialog_top().expect("usage dialog retained")
+        else {
+            panic!("usage dialog expected")
+        };
+        assert!(projection.is_none());
+        assert!(destination.is_none());
+        assert_eq!(transport_error.as_deref(), Some("Usage access revoked"));
+        assert!(notice.is_none());
+        assert!(!mux.refresh_open_usage_dialog_from_projection());
+
+        mux.adopt_usage_projection_error(UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unavailable,
+            message: "Broker unavailable".to_owned(),
+        });
+        assert!(mux.refresh_open_usage_dialog_from_projection());
+        assert!(!mux.refresh_open_usage_dialog_from_projection());
+        let Dialog::Usage {
+            projection,
+            destination,
+            transport_error,
+            ..
+        } = mux.dialog_top().expect("usage dialog retained")
+        else {
+            panic!("usage dialog expected")
+        };
+        assert!(
+            projection.is_none(),
+            "later transport failure cannot restore revoked inventory"
+        );
+        assert!(destination.is_none());
+        assert_eq!(transport_error.as_deref(), Some("Broker unavailable"));
+    }
+}
+
+#[test]
+fn canonical_usage_transient_failure_preserves_entire_publication_and_destination() {
+    use crate::tui::components::dialog::UsageDialogDestination;
+    use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
+    let mut mux = single_pane_tab_mux();
+    let publication =
+        usage_projection_fixture("openai", "OpenAI", &[("canonical-openai", "account")], 123);
+    let destination = UsageDialogDestination {
+        provider_id: "openai".to_owned(),
+        canonical_account_id: "canonical-openai".to_owned(),
+    };
+    mux.adopt_usage_projection(publication.clone());
+    mux.dialog_push(Dialog::new_usage_with_destination(
+        Some(publication.clone()),
+        Some(destination.clone()),
+    ));
+
+    assert!(mux.adopt_usage_projection_error(UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::Unavailable,
+        message: "Broker unavailable".to_owned()
+    }));
+    assert!(mux.refresh_open_usage_dialog_from_projection());
+    assert_eq!(mux.usage_projection_snapshot(), Some(&publication));
+    let Dialog::Usage {
+        projection,
+        destination: selected,
+        notice,
+        transport_error,
+        ..
+    } = mux.dialog_top().expect("usage dialog retained")
+    else {
+        panic!("usage dialog expected")
+    };
+    assert_eq!(projection.as_deref(), Some(&publication));
+    assert_eq!(selected.as_ref(), Some(&destination));
+    assert!(notice.is_none());
+    assert_eq!(transport_error.as_deref(), Some("Broker unavailable"));
+    assert!(!mux.refresh_open_usage_dialog_from_projection());
+
+    assert!(mux.adopt_usage_projection(publication.clone()));
+    assert!(mux.refresh_open_usage_dialog_from_projection());
+    let Dialog::Usage {
+        projection,
+        destination: selected,
+        transport_error,
+        notice,
+        ..
+    } = mux.dialog_top().expect("usage dialog retained")
+    else {
+        panic!("usage dialog expected")
+    };
+    assert_eq!(projection.as_deref(), Some(&publication));
+    assert_eq!(selected.as_ref(), Some(&destination));
+    assert!(
+        transport_error.is_none(),
+        "identical authorized publication clears read error"
+    );
+    assert!(notice.is_none());
+    assert!(!mux.refresh_open_usage_dialog_from_projection());
+}
+
+#[test]
+fn canonical_usage_transport_recovery_preserves_selection_notice() {
+    use crate::tui::components::dialog::UsageDialogDestination;
+    use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
+    let mut mux = single_pane_tab_mux();
+    let publication =
+        usage_projection_fixture("openai", "OpenAI", &[("canonical-openai", "account")], 123);
+    mux.adopt_usage_projection(publication.clone());
+    let mut dialog = Dialog::new_usage(Some(publication.clone()));
+    assert!(!dialog.select_usage_destination(UsageDialogDestination {
+        provider_id: "openai".to_owned(),
+        canonical_account_id: "missing-account".to_owned()
+    }));
+    mux.dialog_push(dialog);
+    mux.adopt_usage_projection_error(UsageCoordinationError {
+        kind: UsageCoordinationErrorKind::Unavailable,
+        message: "Broker unavailable".to_owned(),
+    });
+    assert!(mux.refresh_open_usage_dialog_from_projection());
+    assert!(!mux.refresh_open_usage_dialog_from_projection());
+    assert!(mux.adopt_usage_projection(publication.clone()));
+    assert!(mux.refresh_open_usage_dialog_from_projection());
+    let Dialog::Usage {
+        projection,
+        destination,
+        notice,
+        transport_error,
+        ..
+    } = mux.dialog_top().expect("usage dialog retained")
+    else {
+        panic!("usage dialog expected")
+    };
+    assert_eq!(projection.as_deref(), Some(&publication));
+    assert!(destination.is_none());
+    assert_eq!(
+        notice.as_deref(),
+        Some("Selected account unavailable; showing Overview")
+    );
+    assert!(transport_error.is_none());
+    assert!(!mux.refresh_open_usage_dialog_from_projection());
 }
 
 fn pull_request_fixture(number: u64) -> PullRequestInfo {
@@ -4962,15 +5475,9 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
     mux.open_container_info_dialog();
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(tx);
-    let dialog = mux.dialog_top().expect("container info dialog should open");
-    let (row, col, _, _) = dialog.box_rect(mux.render.term_rows, mux.render.term_cols);
+    let (row, col) = modal_coordinates::painted_value_position(&mut mux, "jk-test-container");
 
-    mux.update_pointer_shape_for_mouse(
-        row.saturating_add(1),
-        // Hover the value column (the cyan link), past the widest label.
-        col.saturating_add(22),
-        SGR_NO_BUTTON_MOTION,
-    );
+    mux.update_pointer_shape_for_mouse(row, col, SGR_NO_BUTTON_MOTION);
     mux.client_registry.client.flush_out_of_band();
     let shape = rx.try_recv().expect("dialog pointer-shape update");
     assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
@@ -4998,18 +5505,9 @@ fn pointer_shape_updates_for_modified_link_hover() {
 fn pointer_shape_updates_for_usage_dialog_tabs() {
     let mut mux = single_pane_tab_mux();
     mux.client_registry.pointer_shapes_supported = true;
-    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
-    view.focused_provider = Some("OpenAI".to_owned());
-    view.tabs = vec![jackin_protocol::control::UsageProviderTab {
-        id: "test-tab-openai".to_owned(),
-        label: "OpenAI".to_owned(),
-        status_label: "usage unavailable".to_owned(),
-        account_label: "seed".to_owned(),
-        plan_label: None,
-        source_label: None,
-        active: true,
-    }];
-    mux.dialog_push(Dialog::new_usage(view.clone()));
+    let projection =
+        usage_projection_fixture("openai", "OpenAI", &[("canonical-openai", "seed")], 1);
+    mux.dialog_push(Dialog::new_usage(Some(projection.clone())));
     let dialog = mux.dialog_top().expect("usage dialog should open");
     let (row, col, rows, cols) = dialog.box_rect(mux.render.term_rows, mux.render.term_cols);
     let area = ratatui::layout::Rect {
@@ -5020,7 +5518,8 @@ fn pointer_shape_updates_for_usage_dialog_tabs() {
     };
     let inner = crate::tui::components::dialog_widgets::usage_dialog_inner_area(area);
     let tabs = crate::tui::components::dialog_widgets::usage_tab_strip_labels(
-        &view,
+        Some(&projection),
+        None,
         crate::tui::components::dialog::UsageDialogTab::Provider,
     );
     let tab_area = crate::tui::components::dialog_widgets::usage_tab_strip_area(inner, &tabs);
@@ -5052,8 +5551,8 @@ fn dialog_copy_hover_uses_overlay_frame_without_screen_erase() {
             .flat_map(|row| (0..mux.render.term_cols).map(move |col| (row, col)))
             .find(|(row, col)| {
                 dialog.clickable_at(
-                    row.saturating_add(1),
-                    col.saturating_add(1),
+                    *row,
+                    *col,
                     mux.render.term_rows,
                     mux.render.term_cols,
                     Some(&github),
@@ -5348,14 +5847,9 @@ fn command_stdout_trimmed_returns_trimmed_stdout() {
 
 #[test]
 fn command_stdout_trimmed_rejects_known_failure_status() {
-    // `sleep 0.05` keeps the child alive long enough for the
-    // try_wait poll loop to observe `Ok(None)` first and then the
-    // failing `Ok(Some(1))` exit on the next tick. Without the
-    // sleep the child can vanish between spawn and the first
-    // try_wait, which collapses the Err(ECHILD) "status lost"
-    // arm and the Ok(Some(false)) "failed" arm into one path.
+    // Immediate failure must retain its status even with the PID 1 reaper active.
     let mut command = Command::new("sh");
-    command.args(["-c", "printf branch-name; sleep 0.05; exit 1"]);
+    command.args(["-c", "printf branch-name; exit 1"]);
 
     assert_eq!(command_stdout_trimmed(&mut command), None);
 }
@@ -10139,4 +10633,62 @@ fn spawn_session_shell_leaves_identity_empty() {
     assert_eq!(record.session_id, id);
     assert_eq!(record.agent, None);
     assert_eq!(record.account_id, None);
+}
+
+#[path = "tests/pty_links.rs"]
+mod pty_links;
+
+#[path = "tests/sgr_metadata.rs"]
+mod sgr_metadata;
+
+#[path = "tests/modal_coordinates.rs"]
+mod modal_coordinates;
+
+#[path = "tests/usage_refresh_concurrency.rs"]
+mod usage_refresh_concurrency;
+
+#[test]
+fn saturated_dialog_wheel_consumes_without_invalidating_visible_state() {
+    let mut mux = single_pane_tab_mux_with_size(24, 80);
+    mux.status.status_bar.identity_label = "x".repeat(160);
+    mux.open_container_info_dialog();
+    drop(mux.compose_pending_frame());
+    let scroll = mux.dialog_top_mut().unwrap().body_scroll_mut().unwrap();
+    scroll.scroll_x = u16::MAX;
+    mux.clamp_dialog_top_scroll();
+    let before = mux
+        .dialog_top_mut()
+        .unwrap()
+        .body_scroll_mut()
+        .unwrap()
+        .scroll_x;
+    let generation = mux.render.frame_generation;
+    mux.apply_action(Action::Wheel {
+        row: 10,
+        col: 10,
+        button: 67,
+    });
+    assert_eq!(
+        mux.dialog_top_mut()
+            .unwrap()
+            .body_scroll_mut()
+            .unwrap()
+            .scroll_x,
+        before
+    );
+    assert_eq!(mux.render.frame_generation, generation);
+    mux.apply_action(Action::Wheel {
+        row: 10,
+        col: 10,
+        button: 66,
+    });
+    assert!(
+        mux.dialog_top_mut()
+            .unwrap()
+            .body_scroll_mut()
+            .unwrap()
+            .scroll_x
+            < before
+    );
+    assert!(mux.render.frame_generation > generation);
 }

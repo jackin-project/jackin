@@ -331,6 +331,29 @@ fn fake_docker_with_running_agents(names: &[&str]) -> jackin_test_support::FakeD
     }
 }
 
+fn write_context_manifest(paths: &JackinPaths, container: &str, workspace: &str, role: &str) {
+    let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+        container_base: container,
+        workspace_name: Some(workspace),
+        workspace_label: workspace,
+        workdir: "/workspace",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: role,
+        role_display_name: role,
+        agent_runtime: jackin_core::Agent::Claude,
+        role_source_git: "https://example.invalid/role.git",
+        role_source_ref: None,
+        image_tag: "jk_role",
+        docker: instance::DockerResources::from_container_name(container),
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: Vec::new(),
+    });
+    manifest.write(&paths.data_dir.join(container)).unwrap();
+    instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+}
+
 #[tokio::test]
 async fn resolve_running_container_from_context_picks_lone_running_agent() {
     let temp = tempfile::tempdir().unwrap();
@@ -341,8 +364,13 @@ async fn resolve_running_container_from_context_picks_lone_running_agent() {
     let config = config_with_workspace(&project_dir, vec!["agent-smith".to_owned()], None);
     let running = "jk-k7p9m2xq-agentsmith";
     let docker = fake_docker_with_running_agents(&[running]);
+    docker
+        .inspect_queue
+        .borrow_mut()
+        .push_back(runtime::ContainerState::Running);
 
     let paths = JackinPaths::for_tests(temp.path());
+    write_context_manifest(&paths, running, "my-app", "agent-smith");
     let container = resolve_running_container_from_context(&paths, &config, &nested_dir, &docker)
         .await
         .unwrap();
@@ -364,13 +392,41 @@ async fn resolve_running_container_from_context_prefers_last_agent() {
     let smith = "jk-k7p9m2xq-agentsmith";
     let architect = "jk-a1b2c3d4-thearchitect";
     let docker = fake_docker_with_running_agents(&[smith, architect]);
+    docker.inspect_queue.borrow_mut().extend([
+        runtime::ContainerState::Running,
+        runtime::ContainerState::Running,
+    ]);
 
     let paths = JackinPaths::for_tests(temp.path());
+    write_context_manifest(&paths, smith, "my-app", "agent-smith");
+    write_context_manifest(&paths, architect, "my-app", "the-architect");
     let container = resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
         .await
         .unwrap();
 
     assert_eq!(container, architect);
+}
+
+#[tokio::test]
+async fn context_rejects_same_basename_from_other_workspace_or_namespace() {
+    for (workspace, role) in [("other-app", "agent-smith"), ("my-app", "other/agent-smith")] {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let config = config_with_workspace(
+            &project_dir,
+            vec!["agent-smith".to_owned()],
+            Some("agent-smith".to_owned()),
+        );
+        let container = "jk-k7p9m2xq-agentsmith";
+        write_context_manifest(&paths, container, workspace, role);
+        let docker = fake_docker_with_running_agents(&[container]);
+        let error = resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("no running roles"), "{error}");
+    }
 }
 
 #[tokio::test]

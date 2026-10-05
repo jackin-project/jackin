@@ -3,6 +3,32 @@
 
 use super::*;
 
+fn write_kimi_auth_route(directory: &Path, route: Option<(&str, &str)>) -> PathBuf {
+    let base_url = route.map(|(base_url, _)| base_url);
+    let oauth_host = route.map(|(_, oauth_host)| oauth_host);
+    let effective_base_url = base_url.unwrap_or(DEFAULT_KIMI_CODE_BASE_URL);
+    let effective_oauth_host = oauth_host.unwrap_or(DEFAULT_KIMI_CODE_OAUTH_HOST);
+    let (oauth_key, _) =
+        kimi_oauth_slot_identity(effective_oauth_host, effective_base_url).unwrap();
+    let base_url = base_url.map_or_else(String::new, |base_url| {
+        format!("base_url = \"{base_url}\"\n")
+    });
+    let oauth_host = oauth_host.map_or_else(String::new, |oauth_host| {
+        format!("oauth_host = \"{oauth_host}\"\n")
+    });
+    let config = format!(
+        "[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\n{base_url}\n[providers.\"managed:kimi-code\".oauth]\nkey = \"{oauth_key}\"\nstorage = \"file\"\n{oauth_host}\n[models.\"kimi-k2\"]\nmodel = \"kimi-k2\"\nmax_context_size = 131072\n"
+    );
+    std::fs::write(directory.join("config.toml"), &config).unwrap();
+    let relative = kimi_runtime_credential_relative_path(
+        config.as_bytes(),
+        KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION,
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    directory.join(relative)
+}
+
 #[test]
 fn environment_discovery_returns_names_without_secret_values() {
     let environment = [
@@ -22,7 +48,7 @@ fn environment_discovery_returns_names_without_secret_values() {
 
 #[test]
 fn environment_candidates_keep_the_matching_endpoint_without_secret_values() {
-    let environment = std::collections::BTreeMap::from([
+    let environment = BTreeMap::from([
         ("OPENAI_API_KEY".to_owned(), "sensitive-fixture".to_owned()),
         (
             "OPENAI_BASE_URL".to_owned(),
@@ -108,6 +134,9 @@ fn recognizes_each_agents_credentials_and_rejects_metadata() {
             .join(agent.runtime().state_paths().credential_dir);
         let path = directory.join(filename);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        if agent == Agent::Kimi {
+            assert_eq!(write_kimi_auth_route(&directory, None), path);
+        }
         let inspect = || inspect_directory(agent, &directory, home.path(), |_| false);
         assert_eq!(inspect().unwrap(), None, "empty directory for {agent}");
         std::fs::write(&path, "{}").unwrap();
@@ -274,7 +303,7 @@ fn coding_api_aliases_are_discovered() {
         (AiProvider::Zai, "Z_AI_API_KEY"),
         (AiProvider::Minimax, "MINIMAX_CODING_API_KEY"),
     ] {
-        let env = std::collections::BTreeMap::from([(name.into(), "fixture-key".into())]);
+        let env = BTreeMap::from([(name.into(), "fixture-key".into())]);
         assert_eq!(
             discover_environment_accounts(&env),
             [(provider, name.into())]
@@ -292,7 +321,7 @@ fn new_provider_keys_are_discovered() {
         (AiProvider::Meta, "META_API_KEY"),
         (AiProvider::OpenRouter, "OPENROUTER_API_KEY"),
     ] {
-        let env = std::collections::BTreeMap::from([(name.into(), "fixture-key".into())]);
+        let env = BTreeMap::from([(name.into(), "fixture-key".into())]);
         assert_eq!(
             discover_environment_accounts(&env),
             [(provider, name.into())]
@@ -300,7 +329,7 @@ fn new_provider_keys_are_discovered() {
         assert!(jackin_core::is_account_env(name));
     }
     // Canonical name wins over the alias.
-    let env = std::collections::BTreeMap::from([
+    let env = BTreeMap::from([
         ("GEMINI_API_KEY".to_owned(), "primary-fixture".to_owned()),
         ("GOOGLE_API_KEY".to_owned(), "alias-fixture".to_owned()),
     ]);
@@ -454,11 +483,8 @@ fn kimi_default_discovery_accepts_cli_home_without_duplicate_accounts() {
     for root in [".kimi", ".kimi-code"] {
         let directory = home.path().join(root);
         std::fs::create_dir_all(directory.join("credentials")).unwrap();
-        std::fs::write(
-            directory.join("credentials/kimi-code.json"),
-            r#"{"access_token":"fixture-kimi-token"}"#,
-        )
-        .unwrap();
+        let selected_file = write_kimi_auth_route(&directory, None);
+        std::fs::write(selected_file, r#"{"access_token":"fixture-kimi-token"}"#).unwrap();
         let report = discover_default_accounts(home.path());
         let accounts = report
             .accounts
@@ -471,68 +497,99 @@ fn kimi_default_discovery_accepts_cli_home_without_duplicate_accounts() {
 }
 
 #[test]
-fn kimi_discovery_prefers_live_env_grant_over_drained_base_file() {
+fn kimi_discovery_uses_configured_route_over_drained_base_file() {
     let home = tempfile::tempdir().unwrap();
     let directory = home.path().join(".kimi-code");
     std::fs::create_dir_all(directory.join("credentials")).unwrap();
+    let selected_file = write_kimi_auth_route(
+        &directory,
+        Some((
+            "https://api.kimi.example/coding/v1",
+            "https://auth.kimi.example",
+        )),
+    );
     std::fs::write(
         directory.join("credentials/kimi-code.json"),
         r#"{"access_token":"","refresh_token":"","expires_at":0,"scope":"kimi-code"}"#,
     )
     .unwrap();
-    std::fs::write(
-        directory.join("credentials/kimi-code-env-fixture.json"),
-        r#"{"access_token":"fixture-live","refresh_token":"fixture-refresh","expires_at":9999999999,"scope":"kimi-code"}"#,
-    )
-    .unwrap();
+    std::fs::create_dir_all(selected_file.parent().unwrap()).unwrap();
+    std::fs::write(&selected_file, r#"{"access_token":"fixture-live","refresh_token":"fixture-refresh","expires_at":9999999999,"scope":"kimi-code"}"#).unwrap();
     let found = inspect_directory(Agent::Kimi, &directory, home.path(), |_| false)
         .unwrap()
         .unwrap();
-    assert_eq!(
-        found.evidence,
-        CredentialEvidence::File(directory.join("credentials/kimi-code-env-fixture.json"))
-    );
+    assert_eq!(found.evidence, CredentialEvidence::File(selected_file));
     assert!(!format!("{found:?}").contains("fixture-live"));
 }
 
 #[test]
-fn kimi_discovery_ignores_newer_env_grant_directories() {
+fn kimi_discovery_ignores_newer_sibling_credentials() {
     let home = tempfile::tempdir().unwrap();
     let directory = home.path().join(".kimi-code");
     let credentials = directory.join("credentials");
     std::fs::create_dir_all(&credentials).unwrap();
+    let selected_file = write_kimi_auth_route(
+        &directory,
+        Some((
+            "https://api.kimi.example/coding/v2",
+            "https://auth.kimi.example",
+        )),
+    );
     std::fs::write(
         credentials.join("kimi-code.json"),
         r#"{"access_token":"","refresh_token":"","expires_at":0,"scope":"kimi-code"}"#,
     )
     .unwrap();
-    let valid = credentials.join("kimi-code-env-valid.json");
+    std::fs::create_dir_all(selected_file.parent().unwrap()).unwrap();
     std::fs::write(
-        &valid,
+        &selected_file,
         r#"{"access_token":"fixture-live","refresh_token":"fixture-refresh","expires_at":9999999999,"scope":"kimi-code"}"#,
     )
     .unwrap();
     let newer_directory = credentials.join("kimi-code-env-newer.json");
     std::fs::create_dir(&newer_directory).unwrap();
-    filetime::set_file_mtime(&valid, filetime::FileTime::from_unix_time(1, 0)).unwrap();
+    filetime::set_file_mtime(&selected_file, filetime::FileTime::from_unix_time(1, 0)).unwrap();
     filetime::set_file_mtime(&newer_directory, filetime::FileTime::from_unix_time(2, 0)).unwrap();
 
     let found = inspect_directory(Agent::Kimi, &directory, home.path(), |_| false)
         .unwrap()
         .unwrap();
-    assert_eq!(found.evidence, CredentialEvidence::File(valid));
+    assert_eq!(found.evidence, CredentialEvidence::File(selected_file));
 }
 
 #[test]
 fn oauth_discovery_keeps_only_nonempty_subscription_reference() {
     let name = jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME;
     for (value, expected) in [("", false), (" ", false), ("fixture-token", true)] {
-        let env = std::collections::BTreeMap::from([(name.into(), value.into())]);
+        let env = BTreeMap::from([(name.into(), value.into())]);
         let found = discover_environment_oauth_accounts(&env);
         assert_eq!(!found.is_empty(), expected);
         if expected {
             assert_eq!(found, [(Agent::Claude, name.into())]);
             assert!(!format!("{found:?}").contains(value));
         }
+    }
+}
+
+#[test]
+fn amp_metadata_requires_one_canonical_provider_credential() {
+    for value in [
+        serde_json::json!({"apiKey@https://foreign.example/": "foreign-fixture"}),
+        serde_json::json!({"mcp-oauth@https://ampcode.com/": "mcp-fixture"}),
+        serde_json::json!({"other": "unrelated-fixture"}),
+        serde_json::json!({
+            "apiKey@https://ampcode.com/": "first-fixture",
+            "apiKey@https://ampcode.com": "second-fixture"
+        }),
+    ] {
+        assert!(!has_credentials(Agent::Amp, &value));
+    }
+    for canonical in ["apiKey@https://ampcode.com/", "apiKey@https://ampcode.com"] {
+        let mut value = serde_json::json!({
+            "apiKey@https://foreign.example/": "foreign-fixture",
+            "mcp-oauth@https://ampcode.com/": "mcp-fixture"
+        });
+        value[canonical] = serde_json::json!(" exact-selected-fixture ");
+        assert!(has_credentials(Agent::Amp, &value));
     }
 }

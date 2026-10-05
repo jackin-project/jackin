@@ -94,3 +94,39 @@ async fn child_operations_complete_on_exit_timeout_spawn_and_abandonment() {
     assert!(!export.contains_span_text("operator-secret-missing-child"));
     assert!(!export.contains_span_text("operator-secret-child-argument"));
 }
+
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn cancelled_credential_process_exports_cancellation_without_fault() {
+    let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
+    let guard = tracing::subscriber::set_default(subscriber);
+    let temporary = tempfile::tempdir().unwrap();
+    let ready_path = temporary.path().join("ready");
+    let request = ExecRequest::new(
+        "sh",
+        [
+            "-c",
+            "printf ready > \"$1\"; exec sleep 30",
+            "fixture",
+            ready_path.to_str().unwrap(),
+        ],
+    )
+    .no_timeout();
+    let mut future = Box::pin(exec_async(&request));
+    tokio::select! {
+        result = &mut future => panic!("fixture exited before cancellation: {result:?}"),
+        ready = tokio::time::timeout(Duration::from_secs(2), async {
+            while !ready_path.exists() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }) => ready.expect("real credential/configured process spawned"),
+    }
+    drop(future);
+    drop(guard);
+    export.force_flush();
+    assert_eq!(export.finished_spans().len(), 1);
+    assert_eq!(export.error_span_count(), 0);
+    assert!(export.contains_span_text("cancellation"));
+    assert!(!export.contains_span_text("telemetry_instrumentation_fault"));
+    assert!(!export.contains_span_text("ready"));
+}

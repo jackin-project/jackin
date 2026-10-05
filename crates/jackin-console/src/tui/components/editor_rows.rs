@@ -222,7 +222,7 @@ pub fn render_tab_strip(
         .map(|(id, (label, active))| termrock::widgets::Tab::new(id, label).active(*active))
         .collect::<Vec<_>>();
     let mut tabs_state = termrock::widgets::TabsState::new();
-    tabs_state.selected = tabs.iter().find(|tab| tab.active).map(|tab| tab.id);
+    tabs_state.set_selected(tabs.iter().find(|tab| tab.active).map(|tab| tab.id));
     tabs_state.hovered = hovered;
     tabs_state.focused = tab_bar_focused;
     frame.render_stateful_widget(

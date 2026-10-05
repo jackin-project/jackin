@@ -640,6 +640,11 @@ where
         save_focus: AuthFormFocus,
         value: OpRef,
     ) -> bool {
+        // Validate ownership before consuming the suspended return path.
+        if !matches!(modal_parents.last(), Some(Self::AuthForm { .. })) {
+            return false;
+        }
+
         let Some(Self::AuthForm {
             target,
             mut state,
@@ -806,6 +811,11 @@ where
         save_focus: AuthFormFocus,
         value: &str,
     ) -> bool {
+        // Validate ownership before consuming the suspended return path.
+        if !matches!(modal_parents.last(), Some(Self::AuthForm { .. })) {
+            return false;
+        }
+
         let Some(Self::AuthForm {
             target, mut state, ..
         }) = modal_parents.pop()
@@ -828,6 +838,11 @@ where
         save_focus: AuthFormFocus,
         value: PathBuf,
     ) -> bool {
+        // Validate ownership before consuming the suspended return path.
+        if !matches!(modal_parents.last(), Some(Self::AuthForm { .. })) {
+            return false;
+        }
+
         let Some(Self::AuthForm {
             target,
             mut state,
@@ -848,6 +863,11 @@ where
     }
 
     fn restore_auth_form_modal(modal: &mut Option<Self>, modal_parents: &mut Vec<Self>) -> bool {
+        // Validate ownership before consuming the suspended return path.
+        if !matches!(modal_parents.last(), Some(Self::AuthForm { .. })) {
+            return false;
+        }
+
         let Some(Self::AuthForm {
             target,
             state,
@@ -923,6 +943,11 @@ impl<
         text_input_target: TextInputTarget,
         make_text_input: impl FnOnce(String) -> TextInputState,
     ) -> bool {
+        // Validate ownership before consuming the suspended return path.
+        if !matches!(modal_parents.last(), Some(Self::AuthForm { .. })) {
+            return false;
+        }
+
         let Some(Self::AuthForm {
             target,
             state,

@@ -450,7 +450,7 @@ const ANTHROPIC_DEFAULT_OPUS_MODEL_ENV_NAME: &str = "ANTHROPIC_DEFAULT_OPUS_MODE
 const ANTHROPIC_DEFAULT_SONNET_MODEL_ENV_NAME: &str = "ANTHROPIC_DEFAULT_SONNET_MODEL";
 const ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV_NAME: &str = "ANTHROPIC_DEFAULT_HAIKU_MODEL";
 const OPENAI_BASE_URL_ENV_NAME: &str = "OPENAI_BASE_URL";
-const KIMI_BASE_URL_ENV_NAME: &str = "KIMI_BASE_URL";
+const KIMI_BASE_URL_ENV_NAME: &str = "KIMI_CODE_BASE_URL";
 
 /// Return the exact account-owned environment names that one admitted agent
 /// may receive. `provider_surface` is the selected account's credential

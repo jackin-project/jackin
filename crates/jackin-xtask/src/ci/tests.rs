@@ -34,6 +34,28 @@ fn tests_partition_runs_the_pre_commit_snapshot_fixture() {
 }
 
 #[test]
+fn docs_partition_enforces_brand_and_document_structure() {
+    let args = CiArgs {
+        fast: true,
+        e2e: false,
+        e2e_capsule: None,
+        e2e_filter: None,
+        base: "origin/main".to_owned(),
+        only: vec!["docs".to_owned()],
+    };
+
+    assert_eq!(
+        step_names(&args).unwrap(),
+        [
+            "cargo roadmap audit",
+            "cargo docs repo-links",
+            "cargo docs brand",
+            "cargo research check",
+        ]
+    );
+}
+
+#[test]
 fn parse_capsule_export_accepts_single_quoted_path() {
     let temp = tempfile::tempdir().expect("tempdir");
     let capsule = temp.path().join("jackin-capsule");

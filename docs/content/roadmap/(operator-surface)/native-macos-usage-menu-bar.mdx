@@ -4,7 +4,7 @@ title: "jackin❯ desktop — native macOS limits app"
 
 **Status**: Partially implemented
 
-**Current state**: The in-repository native redesign is implemented for the macOS 26 production baseline. It uses provider-focused native popovers with centered product identity and a two-column Usage window whose native full-height sidebar is independent from the detail-owned `jackin❯ desktop` header and trailing Refresh. One stationary standard sidebar control, the generated `jackin❯ by tailrocks` sidebar signature, visible native recovery, retained window context, and system-owned Liquid Glass complete the shell. Rust remains authoritative for providers, accounts, quota semantics, refresh policy, and domain strings. Host Desktop discovery now reads global and every effective workspace/role account scope without writing config, deduplicates configured sources/accounts, and exports only sanitized diagnostics. Current discovery—not historical snapshots—owns active membership; OpenCode and GitHub remain outside the Desktop quota catalog. One host-only Rust broker now owns refresh generations, atomic last-good state, and shared provider backoff; Desktop and capability-scoped Capsule relays join the same generation and never fall back to local/filesystem probes.
+**Current state**: The in-repository native redesign is implemented with a macOS 26.0 deployment floor. It uses provider-focused native popovers with centered product identity and a two-column Usage window whose native full-height sidebar is independent from the detail-owned `jackin❯ desktop` header and trailing Refresh. One stationary standard sidebar control, the generated `jackin❯ by tailrocks` sidebar signature, visible native recovery, retained window context, and system-owned Liquid Glass complete the shell. Rust remains authoritative for providers, accounts, quota semantics, refresh policy, and domain strings. Host Desktop discovery now reads global and every effective workspace/role account scope without writing config, deduplicates configured sources/accounts, and exports only sanitized diagnostics. Current discovery—not historical snapshots—owns active membership; OpenCode and GitHub remain outside the Desktop quota catalog. One host-only Rust broker now owns refresh generations, atomic last-good state, and shared provider backoff; Desktop and capability-scoped Capsule relays join the same generation and never fall back to local/filesystem probes.
 
 The roadmap remains partially implemented because the first Developer ID publication/Homebrew proof and capture-gated Amp paid-plan work require external operator evidence. Those external gates are not substituted by a green PR.
 
@@ -25,12 +25,12 @@ Capsule remain out of scope pending a secure-enrollment design.
 
 ## Implemented baseline
 
-- macOS 26.0 deployment target; Xcode 26.6 release toolchain; arm64 static XCFramework app assembly.
+- macOS 26.0 deployment target; stable Xcode 27.0 (`27A266a`), SDK 27.0 (`26A425`), Swift 6.4 (`swiftlang-6.4.0.34.1`, `clang-2100.3.34.1`) shipping compiler contract; arm64 static XCFramework app assembly.
 - Native `NSStatusItem` provider items and a real transient `NSPopover` focused on the clicked provider.
 - Centered, non-interactive generated monogram plus `jackin❯ desktop` popover identity; provider and selected account, one Rust-owned activity phrase, Limits before useful Details without repetition, and no cross-provider navigation. The fixed native footer has separate adjacent leading icon-only Refresh/Open Usage controls and a trailing account menu when multiple accounts exist.
 - Retained native Usage `NSWindow` with `NSSplitViewController`, full-height sidebar, grouped hierarchical Overview table with selectable account children, account-first provider detail, detail-centered product identity, native toolbar/menu commands, no `Usage` title, and stable sidebar-button coordinates.
 - One atomic Rust Desktop projection per broker generation; transient decode/bridge failures retain exact last-good rows and destination, and stale resumes cannot overwrite newer generations.
-- Valid destination/account/sidebar/frame continuity across close/reopen; provider removal or disablement normalizes at `PresentationStore`.
+- Valid destination/account/sidebar/frame continuity across close/reopen; provider removal normalizes at `PresentationStore`, while compact-display disablement preserves the provider in the canonical Usage inventory.
 - Generated responsive brand assets; adaptive phosphor for identity/healthy emphasis; textual state plus system semantic warning/danger color.
 - Zero custom UI regions, explicit glass effects, glass containers, or app-owned materials in production sources.
 - Deterministic F00–F14 visual-QA states isolated from bridge/network/real credentials.
@@ -38,6 +38,8 @@ Capsule remain out of scope pending a secure-enrollment design.
 - Secret-free release validation and fail-closed release-state reconciliation.
 
 Operator behavior lives in [jackin❯ desktop for macOS](/guides/macos-usage-menu-bar/). Architecture and release boundaries live in [ADR-011](/reference/adrs/adr-011-native-macos-usage-menu-bar/) and <RepoFile path="native/README.md" />.
+
+**2026-10-03 compiler promotion:** stable Xcode 27 replaces the obsolete 26.6 shipping compiler and beta forward-lane exception; [ADR-011](/reference/adrs/adr-011-native-macos-usage-menu-bar/) records the official release evidence. Historical 26 proof stays unchanged; the original 26 gate is blocked and unpassed. Exact 27 shipping acceptance still needs full Rust/FFI, bindings, Swift/unit/UI and bundle gates against a final revision. Owned generator/native runner integration, actual 26.0 runtime coverage, and native Intel CLI coverage remain unproven. A future nonblocking compiler lane is unimplemented.
 
 ## Remaining work
 

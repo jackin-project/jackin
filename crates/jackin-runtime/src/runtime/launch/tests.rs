@@ -2501,6 +2501,7 @@ fn codex_trust_slot(
     container_home_rel: &str,
 ) -> crate::instance::ProvisionedInstanceAuth {
     crate::instance::ProvisionedInstanceAuth {
+        profile_material: None,
         agent: jackin_core::Agent::Codex,
         account_id: account_id.to_owned(),
         mode: jackin_config::AuthForwardMode::ApiKey,
@@ -5714,14 +5715,25 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
 
     // Seed a kept, running prewarmed DinD so the launch adopts it.
     let prewarm_dind = "jk-prewarm-b4-dind";
-    let prewarm_net = "jk-prewarm-b4-net";
-    let prewarm_certs = "jk-prewarm-b4-certs";
+    let lifetime_owner = "jk-prewarm-dind";
+    let mut lifetime = crate::instance::SharedDockerLifetime::fresh(&jackin_core::DaemonServerId::parse("jackin-test-daemon").unwrap(), lifetime_owner, true, true)
+        .unwrap();
+    lifetime.save_pending(&paths).unwrap();
+    lifetime
+        .capture_network(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap())
+        .unwrap();
+    lifetime.capture_certs_volume().unwrap();
+    lifetime.save(&paths).unwrap();
+    let prewarm_net = lifetime.network_name().unwrap().to_owned();
+    let prewarm_certs = lifetime.certs_volume_name().unwrap().to_owned();
     write_prewarmed_dind_state(
         &paths,
         &DindSidecarPrewarm {
             dind: prewarm_dind.to_owned(),
             dind_id: "prewarm-b4-dind-id".to_owned(),
             network: prewarm_net.to_owned(),
+            network_id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
+            lifetime_owner: lifetime_owner.to_owned(),
             certs_volume: prewarm_certs.to_owned(),
             ready_ms: 12,
             kept: true,
@@ -5750,11 +5762,25 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
         .inspect_state_by_name
         .borrow_mut()
         .insert(prewarm_dind.to_owned(), ContainerState::Running);
-    let mut network_labels = HashMap::new();
+    let shared_labels = HashMap::from([
+        ("jackin.shared-generation".to_owned(), lifetime.generation().to_owned()),
+        ("jackin.shared-owner".to_owned(), lifetime.namespace_owner().to_owned()),
+        ("jackin.managed".to_owned(), "true".to_owned()),
+    ]);
+    docker.volumes_by_name.borrow_mut().insert(
+        prewarm_certs.clone(),
+        jackin_core::VolumeRow {
+            name: prewarm_certs.clone(),
+            labels: shared_labels.clone(),
+            driver: "local".to_owned(),
+        },
+    );
+    let mut network_labels = shared_labels;
     network_labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
     network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
     docker.inspect_network_queue.borrow_mut().push_back(Some(
         jackin_docker::docker_client::NetworkRow {
+            id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
             name: prewarm_net.to_owned(),
             labels: network_labels,
         },
@@ -5847,14 +5873,25 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
 
     // Seed a kept, running prewarmed DinD so the launch adopts it.
     let prewarm_dind = "jk-prewarm-b4-dind";
-    let prewarm_net = "jk-prewarm-b4-net";
-    let prewarm_certs = "jk-prewarm-b4-certs";
+    let lifetime_owner = "jk-prewarm-dind";
+    let mut lifetime = crate::instance::SharedDockerLifetime::fresh(&jackin_core::DaemonServerId::parse("jackin-test-daemon").unwrap(), lifetime_owner, true, true)
+        .unwrap();
+    lifetime.save_pending(&paths).unwrap();
+    lifetime
+        .capture_network(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap())
+        .unwrap();
+    lifetime.capture_certs_volume().unwrap();
+    lifetime.save(&paths).unwrap();
+    let prewarm_net = lifetime.network_name().unwrap().to_owned();
+    let prewarm_certs = lifetime.certs_volume_name().unwrap().to_owned();
     write_prewarmed_dind_state(
         &paths,
         &DindSidecarPrewarm {
             dind: prewarm_dind.to_owned(),
             dind_id: "prewarm-b4-dind-id".to_owned(),
             network: prewarm_net.to_owned(),
+            network_id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
+            lifetime_owner: lifetime_owner.to_owned(),
             certs_volume: prewarm_certs.to_owned(),
             ready_ms: 12,
             kept: true,
@@ -5883,11 +5920,25 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
         .inspect_state_by_name
         .borrow_mut()
         .insert(prewarm_dind.to_owned(), ContainerState::Running);
-    let mut network_labels = HashMap::new();
+    let shared_labels = HashMap::from([
+        ("jackin.shared-generation".to_owned(), lifetime.generation().to_owned()),
+        ("jackin.shared-owner".to_owned(), lifetime.namespace_owner().to_owned()),
+        ("jackin.managed".to_owned(), "true".to_owned()),
+    ]);
+    docker.volumes_by_name.borrow_mut().insert(
+        prewarm_certs.clone(),
+        jackin_core::VolumeRow {
+            name: prewarm_certs.clone(),
+            labels: shared_labels.clone(),
+            driver: "local".to_owned(),
+        },
+    );
+    let mut network_labels = shared_labels;
     network_labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
     network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
     docker.inspect_network_queue.borrow_mut().push_back(Some(
         jackin_docker::docker_client::NetworkRow {
+            id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
             name: prewarm_net.to_owned(),
             labels: network_labels,
         },
@@ -5964,14 +6015,25 @@ async fn load_agent_grant_validation_failure_preserves_unadopted_dind() {
     );
 
     let prewarm_dind = "jk-prewarm-grants-dind";
-    let prewarm_net = "jk-prewarm-grants-net";
-    let prewarm_certs = "jk-prewarm-grants-certs";
+    let lifetime_owner = "jk-prewarm-dind";
+    let mut lifetime = crate::instance::SharedDockerLifetime::fresh(&jackin_core::DaemonServerId::parse("jackin-test-daemon").unwrap(), lifetime_owner, true, true)
+        .unwrap();
+    lifetime.save_pending(&paths).unwrap();
+    lifetime
+        .capture_network(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap())
+        .unwrap();
+    lifetime.capture_certs_volume().unwrap();
+    lifetime.save(&paths).unwrap();
+    let prewarm_net = lifetime.network_name().unwrap().to_owned();
+    let prewarm_certs = lifetime.certs_volume_name().unwrap().to_owned();
     write_prewarmed_dind_state(
         &paths,
         &DindSidecarPrewarm {
             dind: prewarm_dind.to_owned(),
             dind_id: "prewarm-grants-dind-id".to_owned(),
             network: prewarm_net.to_owned(),
+            network_id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
+            lifetime_owner: lifetime_owner.to_owned(),
             certs_volume: prewarm_certs.to_owned(),
             ready_ms: 12,
             kept: true,
@@ -5996,11 +6058,25 @@ async fn load_agent_grant_validation_failure_preserves_unadopted_dind() {
         .inspect_state_by_name
         .borrow_mut()
         .insert(prewarm_dind.to_owned(), ContainerState::Running);
-    let mut network_labels = HashMap::new();
+    let shared_labels = HashMap::from([
+        ("jackin.shared-generation".to_owned(), lifetime.generation().to_owned()),
+        ("jackin.shared-owner".to_owned(), lifetime.namespace_owner().to_owned()),
+        ("jackin.managed".to_owned(), "true".to_owned()),
+    ]);
+    docker.volumes_by_name.borrow_mut().insert(
+        prewarm_certs.clone(),
+        jackin_core::VolumeRow {
+            name: prewarm_certs.clone(),
+            labels: shared_labels.clone(),
+            driver: "local".to_owned(),
+        },
+    );
+    let mut network_labels = shared_labels;
     network_labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
     network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
     docker.inspect_network_queue.borrow_mut().push_back(Some(
         jackin_docker::docker_client::NetworkRow {
+            id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
             name: prewarm_net.to_owned(),
             labels: network_labels,
         },
@@ -6179,6 +6255,7 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
     manifest.docker_identity = Some(crate::instance::DockerIdentity {
         role_container_id: container_name.to_owned(),
         dind_container_id: manifest.docker.dind_container.clone(),
+        network_id: Some(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap()),
     });
     write_indexed_manifest(&paths, &manifest);
     provision_restore_account_policy(&paths, &config, &manifest);
@@ -6267,6 +6344,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
     manifest.docker_identity = Some(crate::instance::DockerIdentity {
         role_container_id: container_name.to_owned(),
         dind_container_id: manifest.docker.dind_container.clone(),
+        network_id: Some(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap()),
     });
     write_indexed_manifest(&paths, &manifest);
     provision_restore_account_policy(&paths, &config, &manifest);
@@ -6293,6 +6371,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
         ])),
         inspect_network_queue: std::cell::RefCell::new(VecDeque::from([Some(
             jackin_docker::docker_client::NetworkRow {
+                id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
                 name: manifest.docker.network.clone(),
                 labels: std::collections::HashMap::default(),
             },
@@ -9047,6 +9126,7 @@ async fn stopped_matching_instance_starts_current_role() {
         }])),
         inspect_network_queue: std::cell::RefCell::new(VecDeque::from([Some(
             jackin_docker::docker_client::NetworkRow {
+                id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
                 name: manifest.docker.network.clone(),
                 labels: std::collections::HashMap::default(),
             },
@@ -9163,10 +9243,28 @@ async fn recreate_checks_recorded_sidecar_identity_before_mutation() {
         manifest.docker_identity = Some(crate::instance::DockerIdentity {
             role_container_id: "original-role-id".to_owned(),
             dind_container_id: Some("original-dind-id".to_owned()),
+            network_id: Some(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap()),
         });
+        let lifetime = recreate_shared_lifetime(&paths, &mut manifest, false, false);
+        let shared_labels = recreate_shared_labels(&lifetime);
         write_indexed_manifest(&paths, &manifest);
         let dind_name = manifest.docker.dind_container.clone().unwrap();
         let docker = jackin_test_support::FakeDockerClient {
+            inspect_network_queue: std::cell::RefCell::new(VecDeque::from([Some(
+                jackin_docker::docker_client::NetworkRow {
+                    id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
+                    name: manifest.docker.network.clone(),
+                    labels: shared_labels.clone(),
+                },
+            )])),
+            volumes_by_name: std::cell::RefCell::new(std::collections::HashMap::from([(
+                manifest.docker.certs_volume.clone().unwrap(),
+                jackin_core::VolumeRow {
+                    name: manifest.docker.certs_volume.clone().unwrap(),
+                    labels: shared_labels,
+                    driver: "local".to_owned(),
+                },
+            )])),
             inspect_state_by_name: std::cell::RefCell::new(std::collections::HashMap::from([
                 (container_name.to_owned(), ContainerState::NotFound),
                 (dind_name.clone(), ContainerState::Running),
@@ -9188,15 +9286,34 @@ async fn recreate_checks_recorded_sidecar_identity_before_mutation() {
             result.unwrap();
             assert_eq!(
                 docker.bound_operations.borrow().as_slice(),
-                ["remove:original-dind-id"]
+                [
+                    format!("inspect_network:{}", "a".repeat(64)),
+                    "remove:original-dind-id".to_owned(),
+                    format!("remove_network:{}", "a".repeat(64)),
+                ]
             );
             assert!(
                 docker
                     .recorded
                     .borrow()
                     .iter()
-                    .any(|op| op == &format!("docker network rm {}", manifest.docker.network))
+                    .any(|op| op == &format!("docker network rm {}", "a".repeat(64)))
             );
+            let operations = docker.recorded.borrow();
+            let volume_remove = operations
+                .iter()
+                .position(|op| {
+                    op == &format!(
+                        "docker volume rm {}",
+                        manifest.docker.certs_volume.as_deref().unwrap()
+                    )
+                })
+                .unwrap();
+            let network_remove = operations
+                .iter()
+                .position(|op| op == &format!("docker network rm {}", "a".repeat(64)))
+                .unwrap();
+            assert!(volume_remove < network_remove);
         } else {
             let error = result.unwrap_err();
             assert!(
@@ -9211,6 +9328,187 @@ async fn recreate_checks_recorded_sidecar_identity_before_mutation() {
                     .iter()
                     .any(|op| op.starts_with("docker network rm"))
             );
+        }
+    }
+}
+
+fn recreate_shared_lifetime(
+    paths: &JackinPaths,
+    manifest: &mut InstanceManifest,
+    pending_network: bool,
+    pending_volume: bool,
+) -> crate::instance::SharedDockerLifetime {
+    let mut lifetime = crate::instance::SharedDockerLifetime::fresh(
+        &jackin_core::DaemonServerId::parse("jackin-test-daemon").unwrap(),
+        &manifest.container_base,
+        true,
+        true,
+    )
+    .unwrap();
+    lifetime.save_pending(paths).unwrap();
+    if !pending_network {
+        lifetime
+            .capture_network(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap())
+            .unwrap();
+    }
+    if !pending_volume {
+        lifetime.capture_certs_volume().unwrap();
+    }
+    lifetime.save(paths).unwrap();
+    manifest.docker.network = lifetime.network_name().unwrap().to_owned();
+    manifest.docker.certs_volume = Some(lifetime.certs_volume_name().unwrap().to_owned());
+    lifetime
+}
+
+fn recreate_shared_labels(
+    lifetime: &crate::instance::SharedDockerLifetime,
+) -> std::collections::HashMap<String, String> {
+    std::collections::HashMap::from([
+        (
+            "jackin.shared-generation".to_owned(),
+            lifetime.generation().to_owned(),
+        ),
+        (
+            "jackin.shared-owner".to_owned(),
+            lifetime.namespace_owner().to_owned(),
+        ),
+        ("jackin.managed".to_owned(), "true".to_owned()),
+    ])
+}
+
+#[tokio::test]
+async fn recreate_refuses_unknown_or_mismatched_network_before_container_removal() {
+    for failure in [
+        "unknown",
+        "mismatch",
+        "unavailable",
+        "corrupt-isolation",
+        "foreign-volume",
+        "pending-network",
+        "pending-volume",
+    ] {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+        let mut manifest = workspace_manifest(
+            container_name,
+            "agent-smith",
+            "Agent Smith",
+            jackin_core::Agent::Claude,
+        );
+        let network_id = jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap();
+        manifest.docker_identity = Some(crate::instance::DockerIdentity {
+            role_container_id: "original-role-id".to_owned(),
+            dind_container_id: Some("original-dind-id".to_owned()),
+            network_id: (failure != "unknown").then(|| network_id.clone()),
+        });
+        let lifetime = recreate_shared_lifetime(
+            &paths,
+            &mut manifest,
+            failure == "pending-network",
+            failure == "pending-volume",
+        );
+        let shared_labels = recreate_shared_labels(&lifetime);
+        let mut volume_labels = shared_labels.clone();
+        if failure == "foreign-volume" {
+            volume_labels.insert("jackin.shared-owner".to_owned(), "foreign-owner".to_owned());
+        }
+        write_indexed_manifest(&paths, &manifest);
+        let state_dir = paths.data_dir.join(container_name);
+        if failure == "corrupt-isolation" {
+            std::fs::write(
+                crate::isolation::state::isolation_file_path(&state_dir),
+                "invalid isolation state",
+            )
+            .unwrap();
+        }
+        let dind_name = manifest.docker.dind_container.clone().unwrap();
+        let docker = jackin_test_support::FakeDockerClient {
+            inspect_state_by_name: std::cell::RefCell::new(std::collections::HashMap::from([
+                (container_name.to_owned(), ContainerState::Running),
+                (dind_name.clone(), ContainerState::Running),
+            ])),
+            container_id_by_name: std::cell::RefCell::new(std::collections::HashMap::from([
+                (container_name.to_owned(), "original-role-id".to_owned()),
+                (dind_name, "original-dind-id".to_owned()),
+            ])),
+            inspect_network_queue: std::cell::RefCell::new(VecDeque::from([Some(
+                jackin_docker::docker_client::NetworkRow {
+                    id: network_id.clone(),
+                    name: if failure == "mismatch" {
+                        "unowned-network".to_owned()
+                    } else {
+                        manifest.docker.network.clone()
+                    },
+                    labels: shared_labels,
+                },
+            )])),
+            volumes_by_name: std::cell::RefCell::new(std::collections::HashMap::from([(
+                manifest.docker.certs_volume.clone().unwrap(),
+                jackin_core::VolumeRow {
+                    name: manifest.docker.certs_volume.clone().unwrap(),
+                    labels: volume_labels,
+                    driver: "local".to_owned(),
+                },
+            )])),
+            fail_with: if failure == "unavailable" {
+                vec![(
+                    format!("docker network inspect {}", network_id.as_str()),
+                    "network inspection unavailable".to_owned(),
+                )]
+            } else {
+                vec![]
+            },
+            ..Default::default()
+        };
+
+        let error = super::launch_pipeline::teardown_recreate_container(
+            &paths,
+            container_name,
+            None,
+            &docker,
+        )
+        .await
+        .unwrap_err();
+        let expected = match failure {
+            "unknown" => "network manifest differs from durable lifetime",
+            "mismatch" => "network ownership differs from durable lifetime",
+            "unavailable" => "network inspection unavailable",
+            "foreign-volume" => "certificate volume ownership differs",
+            "pending-network" => "network creation outcome is unresolved",
+            "pending-volume" => "certificate volume creation outcome is unresolved",
+            _ => "parse isolation file",
+        };
+        assert!(error.to_string().contains(expected), "{failure}: {error:#}");
+        assert!(
+            docker
+                .bound_operations
+                .borrow()
+                .iter()
+                .all(|operation| !operation.starts_with("remove")),
+            "{failure}: mutation before ownership proof"
+        );
+        assert!(
+            !docker.recorded.borrow().iter().any(|operation| {
+                operation.starts_with("docker rm")
+                    || operation.starts_with("docker network rm")
+                    || operation.starts_with("docker volume rm")
+            }),
+            "{failure}: name-bound mutation before ownership proof"
+        );
+        assert!(state_dir.exists(), "{failure}: recoverable state removed");
+        assert_eq!(
+            crate::instance::SharedDockerLifetime::load(
+                &paths,
+                &jackin_core::DaemonServerId::parse("jackin-test-daemon").unwrap(),
+                container_name,
+            )
+            .unwrap(),
+            Some(lifetime),
+            "{failure}: custody ledger changed"
+        );
+        if failure == "corrupt-isolation" {
+            assert!(docker.recorded.borrow().is_empty());
         }
     }
 }
@@ -9391,6 +9689,67 @@ async fn related_restore_load_options_use_manifest_source_ref_and_agent() {
     assert_eq!(
         opts.restore_role_source_git.as_deref(),
         Some("https://example.invalid/the-architect.git")
+    );
+}
+
+#[tokio::test]
+async fn related_restore_load_options_share_the_entry_lease_until_activation() {
+    use jackin_test_support::FakeDockerClient;
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let docker = FakeDockerClient::default();
+    let manifest = workspace_manifest(
+        "jk-related-entry-lease",
+        "the-architect",
+        "The Architect",
+        jackin_core::Agent::Codex,
+    );
+    let mut current = LoadOptions::for_load(false, false);
+    current.entry_claim = Some(std::sync::Arc::new(
+        crate::runtime::universe::claim_entry(&paths, &docker).await,
+    ));
+    let opts = related_restore_load_options(&current, &manifest).unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        current.entry_claim.as_ref().unwrap(),
+        opts.entry_claim.as_ref().unwrap(),
+    ));
+    let pending_dir = crate::runtime::coordination::universe_dir(&paths)
+        .unwrap()
+        .join("universe-pending");
+    assert_eq!(std::fs::read_dir(&pending_dir).unwrap().count(), 1);
+
+    drop(current);
+    assert_eq!(
+        std::fs::read_dir(&pending_dir).unwrap().count(),
+        1,
+        "nested restore owns the same pending lease after outer options drop"
+    );
+    opts.entry_claim
+        .as_deref()
+        .unwrap()
+        .activate()
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read_dir(&pending_dir).unwrap().count(), 0);
+    assert!(
+        crate::runtime::coordination::universe_dir(&paths)
+            .unwrap()
+            .join("universe-since")
+            .exists()
+    );
+    assert!(
+        matches!(
+            crate::runtime::universe::take_exit_claim(&paths),
+            crate::runtime::universe::ExitClaim::Claimed { .. }
+        ),
+        "activated nested restore must permit outro while options remain alive"
+    );
+    drop(opts);
+    assert!(
+        !crate::runtime::coordination::universe_dir(&paths)
+            .unwrap()
+            .join("universe-since")
+            .exists()
     );
 }
 
@@ -10471,65 +10830,4 @@ fn metadata_file_mount_instances_require_recreation_after_layout_change() {
     let current = super::account_configuration_fingerprint(&config, None, "role", &[]).unwrap();
     std::fs::write(temp.path().join("account-config.sha256"), current).unwrap();
     assert!(super::account_configuration_matches(temp.path(), &config, None, "role").unwrap());
-}
-
-#[tokio::test]
-async fn related_restore_load_options_share_the_entry_lease_until_activation() {
-    use jackin_test_support::FakeDockerClient;
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    let docker = FakeDockerClient::default();
-    let manifest = workspace_manifest(
-        "jk-related-entry-lease",
-        "the-architect",
-        "The Architect",
-        jackin_core::Agent::Codex,
-    );
-    let mut current = LoadOptions::for_load(false, false);
-    current.entry_claim = Some(std::sync::Arc::new(
-        crate::runtime::universe::claim_entry(&paths, &docker).await,
-    ));
-    let opts = related_restore_load_options(&current, &manifest).unwrap();
-    assert!(std::sync::Arc::ptr_eq(
-        current.entry_claim.as_ref().unwrap(),
-        opts.entry_claim.as_ref().unwrap(),
-    ));
-    let pending_dir = crate::runtime::coordination::universe_dir(&paths)
-        .unwrap()
-        .join("universe-pending");
-    assert_eq!(std::fs::read_dir(&pending_dir).unwrap().count(), 1);
-
-    drop(current);
-    assert_eq!(
-        std::fs::read_dir(&pending_dir).unwrap().count(),
-        1,
-        "nested restore owns the same pending lease after outer options drop"
-    );
-    opts.entry_claim
-        .as_deref()
-        .unwrap()
-        .activate()
-        .await
-        .unwrap();
-    assert_eq!(std::fs::read_dir(&pending_dir).unwrap().count(), 0);
-    assert!(
-        crate::runtime::coordination::universe_dir(&paths)
-            .unwrap()
-            .join("universe-since")
-            .exists()
-    );
-    assert!(
-        matches!(
-            crate::runtime::universe::take_exit_claim(&paths),
-            crate::runtime::universe::ExitClaim::Claimed { .. }
-        ),
-        "activated nested restore must permit outro while options remain alive"
-    );
-    drop(opts);
-    assert!(
-        !crate::runtime::coordination::universe_dir(&paths)
-            .unwrap()
-            .join("universe-since")
-            .exists()
-    );
 }

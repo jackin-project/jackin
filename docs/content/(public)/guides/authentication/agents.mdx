@@ -5,7 +5,7 @@ description: Register agent profiles and provider API keys, then authorize accou
 
 jackin❯ stores reusable accounts globally. Each account identifies a provider and a credential source. Workspaces explicitly assign the accounts their agents may use.
 
-Providers and agents are separate. Anthropic, OpenAI, Amp, xAI, OpenCode, Moonshot, Z.ai, and MiniMax identify credential issuers. Claude Code, Codex, Amp, Kimi, OpenCode, and Grok identify coding agents. A provider API key can support more than one compatible agent.
+Providers and agents are separate. Anthropic, OpenAI, Amp, xAI, OpenCode Zen, Moonshot, Z.ai, MiniMax, Google, Cursor, Meta, and OpenRouter identify credential issuers. Claude Code, Codex, Amp, Kimi, OpenCode, Grok, Antigravity, Gemini, Cursor, Muse, Omp, and Hermes identify coding agents. A provider API key can support more than one compatible agent.
 
 ## Discover existing logins
 
@@ -22,6 +22,60 @@ A discovered account is available for assignment. Discovery alone does not grant
 - **OAuth token:** an explicitly registered Claude subscription token.
 
 Account names and IDs are safe to display. Credential values remain masked in account displays and debug output. Keep literal keys out of command arguments and shell history; use the account command's standard-input or secret-reference option.
+
+## Choose a login or provider key
+
+Complete a login in the selected agent on the host before registering a profile. jackin❯ discovers credential evidence; it does not purchase a subscription, create a provider key, or perform the upstream login. A subscription login and an API key are separate sources. A provider name or key prefix does not establish the product, billing entitlement, endpoint, or permitted model.
+
+| Provider ID | Native key route | Profile or setup distinction |
+|---|---|---|
+| `anthropic` | Claude Code | Claude host profile login or explicit Claude OAuth token is separate from an Anthropic API key. See [Claude Code](/guides/authentication/agents/claude-code/). |
+| `openai` | Codex | Codex host profile login is separate from an OpenAI API key. See [Codex](/guides/authentication/agents/codex/). |
+| `amp` | Amp | Register the Amp login directory or Amp API key; Amp keys authenticate Amp only. See [Amp](/guides/authentication/agents/amp/). |
+| `xai` | Grok | Register the Grok login directory or xAI key. See [Grok](/guides/authentication/agents/grok/). |
+| `opencode` | OpenCode | An OpenCode Zen key is distinct from a provider entry in OpenCode's multi-provider login store. A discovered entry keeps its issuer identity. See [OpenCode](/guides/authentication/agents/opencode/). |
+| `moonshot` | Kimi | Kimi host login and a Moonshot/Kimi provider key are separate choices. Claude Code and Codex key routes default to Kimi Coding endpoints; use the key, model, and endpoint matching your purchased product. See [Kimi agent](/guides/authentication/agents/kimi/) and [Kimi provider](/guides/authentication/kimi/). |
+| `zai` | No native agent | Register a Z.ai key and choose its compatible endpoint/model. Claude Code and Codex routes are supported. See [Z.ai](/guides/authentication/zai/). |
+| `minimax` | No native agent | Register a MiniMax key and choose its compatible endpoint/model. Claude Code and Codex routes are supported. See [MiniMax](/guides/authentication/minimax/). |
+| `google` | Antigravity, Gemini | Register each agent's own profile or a Google API key; profiles remain bound to their owning agent. |
+| `cursor` | Cursor | Register a Cursor profile or Cursor API key. |
+| `meta` | Muse | Register a Muse profile or Meta API key. |
+| `openrouter` | No native agent | Use a provider configuration for OpenCode, Omp, or Hermes and select an explicit model. |
+
+OpenCode, Omp, and Hermes can route API keys for every listed provider except Amp. Profiles remain bound to their owning agent; they are not interchangeable with another client's profile. Claude Code and Codex accept Moonshot, Z.ai, and MiniMax keys in addition to their native provider. A key routed through Claude Code, Codex, OpenCode, Omp, or Hermes needs an explicit model when the provider is not that agent's native provider. Account compatibility does not prove upstream key validity or model access.
+
+For a provider key, register privately, then authorize the workspace and select the agent:
+
+```bash
+jackin account add work-key --provider anthropic --api-key
+jackin workspace account assign my-app work-key
+jackin workspace account select my-app work-key --agent claude
+```
+
+Use `--secret-ref '$ANTHROPIC_API_KEY'` or `--secret-ref 'op://Work/Anthropic/api-key'` instead of storing a literal key. Provider-specific examples show `--model` and `--base-url`. A custom endpoint receives the selected credential: verify its owner and API protocol before choosing it. Custom endpoint support depends on the agent; Omp and Hermes configuration endpoint overrides are rejected.
+
+## Obtain the credential from its issuer
+
+Provider setup checked against primary documentation on **2026-10-03**. Confirm the product and current allowance in its console before registration; jackin❯ account compatibility does not validate billing entitlements.
+
+| Service | Acquisition and billing distinction |
+|---|---|
+| Amp | Create/sign in to your [Amp account](https://ampcode.com/docs). Run [`amp login`](https://ampcode.com/docs/cli) on the host before registering its profile. For a key account, obtain the access token from [Security Settings](https://ampcode.com/docs/sdk). Use that access token for `AMP_API_KEY`; the short-lived token saved by login is [not a substitute](https://ampcode.com/docs/cli/execute-mode). Amp's included agent allowance and purchased credits are distinct; check the balance in [user settings or `amp usage`](https://ampcode.com/docs/pricing). Current Amp also offers upstream model-routing connections; jackin❯'s `amp` provider account is the Amp credential, not an arbitrary upstream key. |
+| OpenCode | [Sign in to Zen](https://opencode.ai/docs/zen/), add billing details, and obtain the key; `/connect` in the host client registers the provider login. Zen charges for usage from credits and supports auto-reload and spending controls. [Go](https://opencode.ai/docs/go/) is a separate subscription product with usage limits. Choose the purchased product and model; registering an OpenCode profile does not purchase either service. |
+| MiniMax | [Token Plan](https://platform.minimax.io/docs/token-plan/intro) replaces the former Coding Plan. Obtain its Subscription Key under Account / Token Plan after securing a seat or Credits access. That key is separate from the standard pay-as-you-go API key. Included usage has rolling five-hour and weekly windows; purchased Credits can cover eligible overflow. The console usage bar identifies remaining resources. Use the chosen product's key and endpoint. |
+| Kimi | Kimi Code requires eligible [membership benefits](https://www.kimi.com/code/docs/en/kimi-code/membership.html); CLI, devices, and keys share quota. New plans have no weekly cap; existing subscribers keep their weekly quota. Both have a rolling five-hour window and membership monthly allowance. Host CLI `/login` needs no manually created key. For third-party tools, create a key in the [Code Console](https://www.kimi.com/code/docs/en/#obtaining-an-api-key): at most five keys, each displayed only at creation. Save it privately before closing the dialog. This membership key is distinct from a general Open Platform API key. |
+| Z.ai | Subscribe to the desired [GLM Coding Plan](https://docs.z.ai/devpack/quick-start). Individual users create a key in Plan Overview; team users obtain the Team Plan key in My Plan, which is not interchangeable with other keys. Coding uses protocol-specific endpoints; [general API access](https://docs.z.ai/api-reference/introduction) uses a separate endpoint. Check current credits and usage windows in the plan console; plans changed on [2026-07-30](https://docs.z.ai/devpack/notice/usage-revision). |
+
+For Kimi Code through Claude Code, the [current provider guide](https://www.kimi.com/code/docs/en/third-party-tools/claude-code) recommends an explicit endpoint and model:
+
+```bash
+jackin account add kimi-code-work --provider moonshot --api-key \
+  --base-url https://api.kimi.ai/coding/ --model k3-256k
+jackin workspace account assign my-app kimi-code-work
+jackin workspace account select my-app kimi-code-work --agent claude
+```
+
+jackin❯'s implicit Moonshot defaults use the China endpoints: `https://api.kimi.com/coding` for Claude Code and `https://api.kimi.com/coding/v1` for Codex. The [provider overview](https://www.kimi.com/code/docs/en/) lists both China (`api.kimi.com`) and overseas (`api.kimi.ai`) endpoints. The example selects the overseas Claude Code endpoint; these documents do not prove runtime acceptance of either regional route or Codex protocol support. See [Kimi provider setup](/guides/authentication/kimi/).
 
 ## Workspace assignments
 

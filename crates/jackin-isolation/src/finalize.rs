@@ -528,7 +528,8 @@ enum CleanupAssessment {
 /// | tip moved, no upstream                                        | Unsafe   |
 /// | tip moved, upstream set, upstream tracking ref not `[gone]`, `rev-list` empty   | Safe  |
 /// | tip moved, upstream set, upstream tracking ref not `[gone]`, `rev-list` non-empty | Unsafe |
-/// | tip moved, upstream `[gone]` (squash-merged + pruned)         | Safe     |
+/// | tip moved, upstream `[gone]`, all tip commits reachable from remote refs | Safe |
+/// | tip moved, upstream `[gone]`, any tip commit unreachable or verification fails | Unsafe |
 /// | any `git` capture error                                       | Unsafe   |
 ///
 /// After all named branches pass, a detached-HEAD guard runs:
@@ -540,14 +541,9 @@ enum CleanupAssessment {
 /// | `symbolic-ref HEAD` fails, `rev-parse HEAD` != `base_commit`  | Unsafe   |
 /// | `symbolic-ref HEAD` fails, `rev-parse HEAD` also fails        | Unsafe   |
 ///
-/// `[gone]` upstream is treated as Safe because squash-merge with
-/// remote-branch-deletion is the dominant GitHub workflow: there is
-/// no purely-local git operation that proves "my local branch was
-/// squash-merged into main" (squash-merge breaks `git branch -r
-/// --contains HEAD` reachability by design), and without this rule
-/// every squash-merged worktree would be permanently preserved.
-/// Operator-error mitigation: the host repo's reflog still holds the
-/// commits if an operator deletes a remote branch by accident.
+/// A gone upstream is not merge evidence. Squash merges lose commit
+/// reachability, so they require operator disposition when no remote ref
+/// retains the original commits. Reflogs are not cleanup authorization.
 ///
 /// Each `runner.capture` failure is matched explicitly and routed to
 /// `PreservedUnpushed` (the "I don't know, keep it" outcome).

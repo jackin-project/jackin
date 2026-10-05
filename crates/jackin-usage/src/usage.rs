@@ -16,9 +16,8 @@ use jackin_core::{account_key_hash, container_paths};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::future::Future;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -26,7 +25,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use jackin_protocol::control::{
     AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView,
-    StatusSlot, UsageConfidence, UsageProviderTab, UsageSeverity, UsageSnapshotStatus, UsageSource,
+    StatusSlot, UsageAccountIdentity, UsageConfidence, UsageProviderTab, UsageSeverity,
+    UsageSnapshotStatus, UsageSource,
 };
 use jackin_telemetry::ResultTelemetryExt as _;
 use serde::Serialize;
@@ -89,12 +89,13 @@ pub(crate) use self::claude::{
     ClaudeQuotaWindow, ClaudeResolved, ClaudeSpend, ClaudeWavePolicy, ClaudeWaveResolution,
     claude_account_identity, claude_api_key_snapshot, claude_code_user_agent,
     claude_code_user_agent_with, claude_code_version_from_text, claude_email_from_value,
-    claude_error_is_scope_restriction, claude_oauth_candidates, claude_oauth_from_value,
-    claude_organization_type_from_value, claude_provider_error_label, claude_snapshot,
-    claude_spend_bucket, claude_view_from_wave_with_rate_limit, claude_wave_policy,
-    fetch_claude_cli_usage, fetch_claude_oauth_usage, load_claude_account_email,
-    normalize_claude_spend, push_claude_dollar_windows, read_claude_keychain_item,
-    resolve_claude_wave,
+    claude_error_is_scope_restriction, claude_keychain_state, claude_oauth_candidates,
+    claude_oauth_from_value, claude_organization_type_from_value, claude_provider_error_label,
+    claude_profile_view_with_rate_limit, claude_snapshot, claude_spend_bucket,
+    claude_view_from_wave_with_rate_limit,
+    claude_wave_policy, fetch_claude_cli_usage, fetch_claude_oauth_usage,
+    load_claude_account_email, normalize_claude_spend, push_claude_dollar_windows,
+    read_claude_keychain_item, resolve_claude_wave,
 };
 #[cfg(test)]
 pub(crate) use self::claude::{
@@ -162,7 +163,7 @@ pub(crate) use self::grok::{
     GrokBillingConfig, GrokBillingResponse, GrokBillingSnapshot, GrokCent, GrokCurrentPeriod,
     GrokWebBillingSnapshot, fetch_grok_billing, fetch_grok_rest_billing, fetch_grok_rpc_billing,
     grok_account_label, grok_account_label_or_presence, grok_bearer_token,
-    grok_bearer_token_from_entry, grok_binary_path, grok_cycle_label_from_minutes,
+    grok_bearer_token_from_entry, grok_bearer_token_from_value, grok_profile_snapshot, grok_binary_path, grok_cycle_label_from_minutes,
     grok_cycle_label_from_reset, grok_rpc_request, grok_rpc_request_payload, grok_snapshot,
     grok_snapshot_from_rpc_result, grok_snapshot_from_rpc_result_with_rate_limit,
     grpc_web_data_frames, parse_grok_rest_billing_response, parse_grok_web_billing_response,
@@ -174,8 +175,8 @@ pub(crate) use self::grok::{
 )]
 pub(crate) use self::kimi::{
     KimiRateLimit, KimiUsageDetail, KimiUsageItem, KimiUsageResponse, KimiWindow, fetch_kimi_usage,
-    kimi_bucket, kimi_local_token_from_value, kimi_snapshot, kimi_window_seconds,
-    load_kimi_local_token, load_kimi_local_token_from_home,
+    kimi_bucket, kimi_local_token_from_value, kimi_profile_snapshot, kimi_snapshot,
+    kimi_window_seconds, load_kimi_local_token, load_kimi_local_token_from_home,
 };
 #[expect(
     unused_imports,
@@ -188,19 +189,19 @@ pub(crate) use self::minimax::{
     minimax_reset_epoch, minimax_snapshot, minimax_usage_count_line, resolve_minimax_remains_urls,
     resolve_minimax_remains_urls_from,
 };
-pub(crate) use self::opencode::opencode_profile_snapshot;
+pub(crate) use self::opencode::{opencode_api_key_from_value, opencode_profile_snapshot};
 #[cfg(test)]
-pub(crate) use self::opencode::{load_opencode_api_key, parse_opencode_usage};
+pub(crate) use self::opencode::parse_opencode_usage;
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub(crate) use self::openrouter::{
-    OPENROUTER_DEFAULT_BASE_URL, OpenRouterCreditsOutcome, OpenRouterKeyQuota,
-    OpenRouterModelCheck, check_openrouter_model_in_catalog, fetch_openrouter_credits,
+    OPENROUTER_DEFAULT_BASE_URL, OpenRouterKeyQuota,
+    OpenRouterModelCheck, check_openrouter_model_in_catalog,
     fetch_openrouter_key_usage, fetch_openrouter_model_check, openrouter_base_url,
-    openrouter_base_url_from, openrouter_credits_bucket, openrouter_snapshot,
-    openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit, parse_openrouter_credits,
+    openrouter_base_url_from, openrouter_snapshot,
+    openrouter_snapshot_with_base, openrouter_snapshot_with_rate_limit,
     parse_openrouter_key_usage,
 };
 #[cfg(test)]
@@ -222,7 +223,7 @@ pub(crate) use self::refresh::{
 pub(crate) use self::view::{
     UsageViewInput, account_snapshot_views_from_cache, account_tab_label_for_parts,
     amp_status_bar_headline, bucket, cached_refreshing_view, cached_unavailable_view,
-    compact_account_identity, decorate_surface_view, enrich_provider_tabs, mark_active_tab,
+    compact_account_identity, decorate_surface_view, enrich_provider_tabs, host_account_summary_bucket, mark_active_tab,
     preserve_cached_quota_on_failed_refresh, provider_tabs, quota_amounts_for_account_snapshot,
     spend_headline_label, status_bar_fresh_or_stale, status_bar_headline_for_surface,
     status_bar_label, status_bar_quota_labels, summary_bucket, timed_bucket, usage_account_tab_id,
@@ -284,6 +285,8 @@ pub(crate) struct CachedUsage {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageRefreshTarget {
+    /// Admitted launch instance used to authenticate this broker selector.
+    pub instance_id: String,
     pub agent: String,
     pub provider: Option<String>,
     /// Exact broker authority for the selected account. Surface labels are
@@ -382,10 +385,7 @@ impl UsageCache {
         if view.focused_provider.is_none() {
             view.focused_provider = focused_provider.map(str::to_owned);
         }
-        let cache_key = stable_cache_account_label(&view.account.account_label)
-            .map(|_| usage_cache_key_for_view(agent, focused_provider, &view))
-            .or_else(|| cached_usage_key_for_target(&self.snapshots, agent, focused_provider))
-            .unwrap_or_else(|| canonical_usage_cache_key(agent, focused_provider));
+        let cache_key = usage_cache_key_for_view(agent, focused_provider, &view);
         self.snapshots.insert(cache_key, CachedUsage { view });
     }
 
@@ -405,6 +405,7 @@ impl UsageCache {
         if view.focused_provider.is_none() {
             view.focused_provider = focused_provider.map(str::to_owned);
         }
+        view.account_identity = Some(capability.into());
         let cache_key = usage_cache_key_for_broker_account(agent, focused_provider, capability);
         self.snapshots.insert(cache_key, CachedUsage { view });
     }
@@ -518,7 +519,9 @@ impl UsageCache {
         {
             return view;
         }
-        cached_refreshing_view(agent, focused_provider, now)
+        let mut view = cached_refreshing_view(agent, focused_provider, now);
+        view.account_identity = Some(capability.into());
+        view
     }
 
     pub(crate) fn cached_focused_usage_view(
@@ -595,19 +598,13 @@ fn usage_cache_key_for_view(
     view: &FocusedUsageView,
 ) -> String {
     let base = canonical_usage_cache_key(agent, focused_provider);
-    let Some(label) = stable_cache_account_label(&view.account.account_label) else {
+    let Some(identity) = &view.account_identity else {
         return base;
     };
-    let surface = resolve_surface(agent, focused_provider);
-    let surface_id = surface.id().unwrap_or(agent);
-    let evidence = format!(
-        "usage-cache-account-v1:{}:{}",
-        length_prefixed(surface_id),
-        length_prefixed(&label),
-    );
-    let hash = account_key_hash("usage-cache-account-v1", &evidence);
-    let hash = hash.strip_prefix("sha256:").unwrap_or(&hash);
-    format!("{base}:account-{hash}")
+    format!(
+        "{base}:account-id-v1:{}:{}",
+        identity.surface_id, identity.account_id
+    )
 }
 
 fn usage_cache_key_for_broker_account(
@@ -621,24 +618,6 @@ fn usage_cache_key_for_broker_account(
         capability.surface_id,
         capability.account_id,
     )
-}
-
-fn stable_cache_account_label(label: &str) -> Option<String> {
-    let label = label.trim();
-    if label.is_empty()
-        || label.eq_ignore_ascii_case("account unavailable")
-        || label.eq_ignore_ascii_case("unknown")
-        || label.eq_ignore_ascii_case("current host login")
-        || label.eq_ignore_ascii_case("refreshing")
-    {
-        None
-    } else {
-        Some(label.to_lowercase())
-    }
-}
-
-fn length_prefixed(value: &str) -> String {
-    format!("{}:{value}", value.len())
 }
 
 fn cache_view_matches_target(
@@ -751,8 +730,8 @@ pub fn estimate_caption(view: &FocusedUsageView) -> Option<String> {
 }
 
 pub use self::format::{
-    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, usage_bucket_presentation,
-    usage_detail_presentation, usage_display_status_label, usage_identity_presentation,
+    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, usage_bucket_presentation, usage_count_quota_summary,
+    usage_detail_presentation, usage_display_status_label, usage_identity_presentation, usage_money_quota_summary, usage_money_amounts_summary,
 };
 
 pub fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {

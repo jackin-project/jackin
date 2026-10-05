@@ -86,17 +86,6 @@ pub(crate) fn grok_snapshot_from_rpc_result_with_rate_limit<E>(
 where
     E: Into<ProviderError>,
 {
-    let has_credentials = has_auth || has_xai_api_key || has_deployment_key;
-    let (billing_usage, billing_error, rate_limit) = match billing_result {
-        Ok(usage) => (Some(usage), None, None),
-        Err(error) => {
-            let error = error.into();
-            let rate_limit = error.rate_limit();
-            (None, Some(error.to_string()), rate_limit)
-        }
-    };
-    // credential_origin reflects the resolver arm that actually won
-    // (`auth` is the resolved path — home `~/.grok/auth.json` or the handoff).
     let credential_origin = if has_auth {
         Some(if auth == Path::new(GROK_HANDOFF_AUTH_PATH) {
             format!("OAuth · {GROK_HANDOFF_AUTH_PATH}")
@@ -110,8 +99,56 @@ where
     } else {
         None
     };
-    let account =
-        grok_account_label_or_presence(auth, has_auth, has_xai_api_key, has_deployment_key);
+    grok_snapshot_from_captured_result(
+        agent,
+        now,
+        has_auth || has_xai_api_key || has_deployment_key,
+        credential_origin,
+        grok_account_label_or_presence(auth, has_auth, has_xai_api_key, has_deployment_key),
+        billing_result,
+    )
+}
+
+/// Broker refresh receives both auth and identity from the validated capture.
+pub(crate) fn grok_profile_snapshot(
+    agent: &str,
+    auth: &serde_json::Value,
+    identity: Option<&str>,
+    now: i64,
+) -> (FocusedUsageView, Option<ProviderRateLimit>) {
+    let result = grok_bearer_token_from_value(auth, now)
+        .map_err(ProviderError::from)
+        .and_then(|token| fetch_grok_rest_billing_with_token(&token))
+        .map(|response| GrokBillingSnapshot::Rest(Box::new(response)));
+    grok_snapshot_from_captured_result(
+        agent,
+        now,
+        true,
+        Some("OAuth · configured profile".to_owned()),
+        identity.unwrap_or("local Grok auth").to_owned(),
+        result,
+    )
+}
+
+fn grok_snapshot_from_captured_result<E>(
+    agent: &str,
+    now: i64,
+    has_credentials: bool,
+    credential_origin: Option<String>,
+    account: String,
+    billing_result: Result<GrokBillingSnapshot, E>,
+) -> (FocusedUsageView, Option<ProviderRateLimit>)
+where
+    E: Into<ProviderError>,
+{
+    let (billing_usage, billing_error, rate_limit) = match billing_result {
+        Ok(usage) => (Some(usage), None, None),
+        Err(error) => {
+            let error = error.into();
+            let rate_limit = error.rate_limit();
+            (None, Some(error.to_string()), rate_limit)
+        }
+    };
     let status = if billing_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_credentials {
@@ -557,6 +594,13 @@ pub(crate) fn fetch_grok_rest_billing(
     now: i64,
 ) -> Result<GrokBillingResponse, ProviderError> {
     let token = grok_bearer_token(auth_path, now).map_err(ProviderError::from)?;
+    fetch_grok_rest_billing_with_token(&token)
+}
+
+/// Provider request uses the captured token, never a credential path.
+pub(crate) fn fetch_grok_rest_billing_with_token(
+    token: &str,
+) -> Result<GrokBillingResponse, ProviderError> {
     let extra_headers = [
         (reqwest::header::USER_AGENT, "jackin-capsule"),
         (
@@ -569,13 +613,13 @@ pub(crate) fn fetch_grok_rest_billing(
         "/v1/billing",
         "Grok billing",
         "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
-        &token,
+        token,
         &extra_headers,
     )
     .map_err(ProviderError::from)?;
     let mut response =
         parse_grok_rest_billing_response(&billing_value).map_err(ProviderError::from)?;
-    if let Ok(settings) = fetch_grok_rest_settings(&token)
+    if let Ok(settings) = fetch_grok_rest_settings(token)
         && let Some(tier) = grok_tier_from_settings(&settings)
     {
         response.subscription_tier = Some(tier);
@@ -639,13 +683,10 @@ pub(crate) fn fetch_grok_rpc_billing(
     gate.can_launch("Grok ACP billing", Instant::now())?;
     let executable = grok_binary_path();
     let process = process_telemetry::ChildOperation::begin(executable.to_string_lossy().as_ref());
-    let mut child = match Command::new(&executable)
-        .args(["agent", "stdio"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
+    let request = jackin_process::ExecRequest::new(&executable, ["agent", "stdio"])
+        .stdin_mode(jackin_process::StdioMode::Capture)
+        .stderr_mode(jackin_process::StdioMode::Null);
+    let mut child = match jackin_process::spawn_group_sync(&request) {
         Ok(child) => child,
         Err(err) => {
             process.spawn_failed();
@@ -666,13 +707,9 @@ pub(crate) fn fetch_grok_rpc_billing(
         process.fail_managed_io(&mut child);
         return Err("grok agent stdio stdout unavailable".to_owned());
     };
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::sync_channel(0);
     let reader = jackin_telemetry::spawn::thread_stream("grok.stdout", move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if tx.send(line).is_err() {
-                break;
-            }
-        }
+        format::read_rpc_frames(stdout, tx);
     });
 
     let result: Result<GrokBillingResponse, String> = (|| {
@@ -706,9 +743,22 @@ pub(crate) fn fetch_grok_rpc_billing(
     })();
 
     drop(stdin);
+    // Cancel rendezvous delivery before cleanup joins the reader.
+    drop(rx);
     let reaped = process_telemetry::ChildOperation::reap_managed(&mut child);
-    let reader_joined = reader.join().is_ok();
+    let reader_joined = if reaped {
+        reader.join().is_ok()
+    } else {
+        // A failed group termination cannot guarantee pipe EOF.
+        drop(reader);
+        false
+    };
     process.finish_managed(reaped && reader_joined);
+    let result = if reaped && reader_joined {
+        result
+    } else {
+        Err("grok agent stdio cleanup failed".to_owned())
+    };
     if result.is_ok() {
         gate.record_success();
     } else if let Err(message) = &result {
@@ -733,6 +783,14 @@ pub(crate) fn grok_bearer_token(auth_path: &Path, now: i64) -> Result<String, St
     let text = fs::read_to_string(auth_path).map_err(|err| format!("auth read failed: {err}"))?;
     let value: serde_json::Value =
         serde_json::from_str(&text).map_err(|err| format!("auth decode failed: {err}"))?;
+    grok_bearer_token_from_value(&value, now)
+}
+
+/// Resolve scope precedence and expiry from the validated, captured auth value.
+pub(crate) fn grok_bearer_token_from_value(
+    value: &serde_json::Value,
+    now: i64,
+) -> Result<String, String> {
     let Some(entries) = value.as_object() else {
         return Err("auth.json root is not an object".to_owned());
     };
@@ -939,7 +997,7 @@ pub(crate) fn scan_protobuf(
 
 pub(crate) fn grok_rpc_request(
     stdin: &mut impl Write,
-    rx: &mpsc::Receiver<String>,
+    rx: &mpsc::Receiver<Result<String, String>>,
     id: i64,
     method: &str,
     params: serde_json::Value,
@@ -967,7 +1025,7 @@ pub(crate) fn grok_rpc_request(
             }
             let line = rx
                 .recv_timeout(remaining)
-                .map_err(|_| format!("Grok RPC timed out waiting for {method}"))?;
+                .map_err(|_| format!("Grok RPC timed out waiting for {method}"))??;
             let value: serde_json::Value = serde_json::from_str(&line)
                 .map_err(|err| format!("Grok RPC decode failed: {err}"))?;
             if value.get("id").and_then(serde_json::Value::as_i64) != Some(id) {

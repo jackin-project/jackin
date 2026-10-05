@@ -173,7 +173,7 @@ fn events_exec_script(session: Option<u64>) -> String {
 pub struct SessionEvents {
     records: mpsc::Receiver<Result<SessionEventRecord>>,
     transport: ControlTransport,
-    child: Option<std::process::Child>,
+    child: Option<jackin_process::SyncChild>,
     /// Span over the `docker exec` child's whole life. Held until the
     /// subscription drops, because the subscription *is* the child's lifetime.
     operation: Option<crate::process_telemetry::ChildOperation>,

@@ -29,9 +29,8 @@ mod services;
 pub mod terminal {
     //! Host adapter for console terminal ownership.
     //!
-    //! Terminal lifecycle lives in `jackin-console`'s TUI boundary. This root
-    //! module only binds that generic terminal code to the root crate's host
-    //! debug-buffering globals.
+    //! Shared terminal modes live in `jackin-diagnostics`. This root module
+    //! binds console sessions to that ownership lease and debug buffering.
 
     pub use jackin_console::tui::terminal::TerminalSession;
     pub(crate) use jackin_console::tui::terminal::{
@@ -41,20 +40,10 @@ pub mod terminal {
     struct HostConsoleTerminal;
 
     impl jackin_console::ConsoleHostTerminal for HostConsoleTerminal {
-        fn begin_debug_buffering(&self) {
-            jackin_diagnostics::begin_debug_buffering();
-        }
-
-        fn end_debug_buffering(&self) {
-            jackin_diagnostics::end_debug_buffering();
-        }
-
-        fn set_host_screen_owned(&self, owned: bool) {
-            crate::terminal_ownership::set_host_screen_owned(owned);
-        }
-
-        fn host_screen_owned(&self) -> bool {
-            crate::terminal_ownership::host_screen_owned()
+        fn acquire_host_screen(&self) -> std::io::Result<jackin_core::TerminalOwnershipGuard> {
+            jackin_diagnostics::enter_host_screen(
+                jackin_console::tui::terminal::drain_console_terminal_input,
+            )
         }
     }
 

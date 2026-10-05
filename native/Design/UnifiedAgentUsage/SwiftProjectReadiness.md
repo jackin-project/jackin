@@ -1,5 +1,30 @@
 # Swift Project Readiness — Unified Agent Usage
 
+## Current verification correction — 2026-10-03
+
+The audit and remediation receipts below are dated historical evidence. Their
+Xcode 26.6 tuple, old workflow paths, `velnor-workflow` ownership, and recorded
+pass rows do not certify the current source or generated CI.
+
+Current generator ownership is `velnor-actions` from `tailrocks/velnor-new`,
+with consumer inputs in `.velnor/config.toml`; `.github/AGENTS.md` requires
+regeneration. The actual generated entrypoint is `.github/workflows/ci.yml`:
+Ubuntu Rust jobs, no native/macOS, merge/scheduled Desktop, or product-release
+jobs. Local `desktop-ci`, `desktop-merge`, `desktop-scheduled`, and official
+BoltFFI generation/check commands remain required contracts; their definitions
+and static wiring tests do not prove hosted execution or released artifacts.
+
+The [current shipping baseline](../../README.md#shipping-baseline) records the
+qualified stable Xcode 27.0/macOS 27.0 SDK/Swift 6.4 tuple and preserves the
+unpassed historical macOS 26 gate. Full native Rust/FFI, bindings, counted Swift
+unit, real-host UI, bundle, deployment-floor runtime, and applicable release
+proof remain outstanding until executed against one final source revision.
+Do not interpret either this correction or the historical `REMEDIATED` status
+as a current PASS. Current source hashes and historical package revision are
+recorded in the private `remaining-historical-intent/docs-source2` receipt;
+no current commit or execution is asserted by this document-only correction.
+
+
 Status: REMEDIATED — 2026-08-20 (two standing exceptions below)
 
 Audit date: 2026-08-20

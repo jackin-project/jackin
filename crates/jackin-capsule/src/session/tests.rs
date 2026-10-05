@@ -900,36 +900,60 @@ fn build_shell_command_advertises_truecolor() {
 
 #[test]
 fn agent_model_args_match_cli_contracts() {
+    let forwarded = tempfile::tempdir().unwrap();
+    let source_config = br#"[providers."managed:kimi-code"]
+type = "kimi"
+[providers."managed:kimi-code".oauth]
+storage = "file"
+key = "oauth/kimi-code"
+[models."kimi-k2"]
+model = "kimi-k2"
+max_context_size = 131072
+"#;
+    let (_, canonical_config) = jackin_config::kimi_runtime_auth_config(
+        source_config,
+        jackin_config::KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
+    std::fs::write(forwarded.path().join("config.toml"), canonical_config).unwrap();
+    let unused_forwarded = Path::new("/unused-forwarded");
+
     assert_eq!(
-        agent_model_args("claude", Some("sonnet")),
+        agent_model_args("claude", Some("sonnet"), unused_forwarded, None),
         vec!["--model", "sonnet"]
     );
     assert_eq!(
-        agent_model_args("codex", Some("gpt-5")),
+        agent_model_args("codex", Some("gpt-5"), unused_forwarded, None),
         vec!["-m", "gpt-5"]
     );
     assert_eq!(
-        agent_model_args("kimi", Some("kimi-k2")),
+        agent_model_args(
+            "kimi",
+            Some("kimi-k2"),
+            forwarded.path(),
+            Some(jackin_config::KIMI_CODE_AUTH_SLOT_CONTRACT_VERSION),
+        ),
         vec!["--model", "kimi-k2"]
     );
     assert_eq!(
-        agent_model_args("omp", Some("openrouter/sonnet")),
+        agent_model_args("omp", Some("openrouter/sonnet"), unused_forwarded, None),
         vec!["--model", "openrouter/sonnet"]
     );
     assert_eq!(
-        agent_model_args("hermes", Some("openrouter/sonnet")),
+        agent_model_args("hermes", Some("openrouter/sonnet"), unused_forwarded, None),
         vec!["--model", "openrouter/sonnet"]
     );
     assert_eq!(
-        agent_model_args("opencode", Some("zai/glm")),
+        agent_model_args("opencode", Some("zai/glm"), unused_forwarded, None),
         vec!["-m", "zai/glm"]
     );
     assert_eq!(
-        agent_model_args("grok", Some("grok-build-0.1")),
+        agent_model_args("grok", Some("grok-build-0.1"), unused_forwarded, None),
         vec!["-m", "grok-build-0.1"]
     );
-    assert!(agent_model_args("amp", None).is_empty());
-    assert!(agent_model_args("amp", Some("ignored")).is_empty());
+    assert!(agent_model_args("amp", None, unused_forwarded, None).is_empty());
+    assert!(agent_model_args("amp", Some("ignored"), unused_forwarded, None).is_empty());
 }
 
 #[test]
@@ -1274,6 +1298,25 @@ fn process_evidence_unavailable_without_child_pid() {
     assert!(!ev.physics_sampled);
     assert!(!ev.process_exited);
     assert!(!ev.foreground_is_agent);
+}
+
+#[test]
+fn process_evidence_stops_after_native_reaper_marks_child_reaped() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    session
+        .child_lifecycle
+        .state
+        .lock()
+        .expect("test lifecycle lock")
+        .reaped = true;
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+
+    let evidence = session.sample_process_evidence_with(&mut sampler, std::time::Instant::now());
+
+    assert!(!evidence.physics_sampled);
+    assert!(!evidence.process_exited);
+    assert!(!evidence.child_alive);
 }
 
 #[test]
@@ -1684,6 +1727,35 @@ fn terminate_marks_the_live_exit_as_cancelled() {
     session.terminate();
     assert!(
         session
+            .termination_requested
+            .load(std::sync::atomic::Ordering::Acquire)
+    );
+}
+
+#[test]
+fn terminate_does_not_signal_after_native_reap() {
+    let (input_tx, _input_rx) = mpsc::unbounded_channel();
+    let session = Session::new_for_test(
+        "test".to_owned(),
+        None,
+        None,
+        (24, 80),
+        0,
+        input_tx,
+        Arc::new(Mutex::new(Box::new(NullMasterPty))),
+        Arc::new(Mutex::new(Box::new(NullChildKiller))),
+    );
+    session
+        .child_lifecycle
+        .state
+        .lock()
+        .expect("test lifecycle lock")
+        .reaped = true;
+
+    session.terminate();
+
+    assert!(
+        !session
             .termination_requested
             .load(std::sync::atomic::Ordering::Acquire)
     );

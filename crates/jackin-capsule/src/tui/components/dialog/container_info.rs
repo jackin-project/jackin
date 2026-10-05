@@ -86,7 +86,7 @@ impl Dialog {
     }
 
     /// Update the hovered copyable row of the `ContainerInfo` dialog from a
-    /// pointer hit at `(row, col)` (1-based). Returns true when the hovered
+    /// pointer hit at `(row, col)` (zero-based). Returns true when the hovered
     /// row changed (the caller redraws so the link hover colour updates).
     /// No-op for other dialog variants.
     pub fn set_container_info_hover(

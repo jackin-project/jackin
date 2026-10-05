@@ -189,6 +189,7 @@ fn write_admission_fixture(
     manifest.docker_identity = Some(crate::instance::DockerIdentity {
         role_container_id: container_name.to_owned(),
         dind_container_id: Some(format!("{container_name}-dind")),
+        network_id: Some(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap()),
     });
     manifest.set_admitted_instances(admitted.iter().cloned());
     manifest.write(&root).unwrap();
@@ -741,6 +742,141 @@ async fn live_historical_role_without_recorded_identity_denies_exec_and_backfill
             .docker_identity
             .is_none()
     );
+}
+
+fn pending_entry_count(paths: &JackinPaths) -> usize {
+    std::fs::read_dir(
+        crate::runtime::coordination::universe_dir(&paths)
+            .unwrap()
+            .join("universe-pending"),
+    )
+    .map_or(0, Iterator::count)
+}
+
+#[tokio::test]
+async fn restored_start_activates_only_its_entry_before_foreground() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-restore-entry";
+    provision_account_admission(&paths, container_name);
+    let claim_docker = FakeDockerClient::default();
+    let claim = super::super::universe::claim_entry(&paths, &claim_docker).await;
+    let other_claim = super::super::universe::claim_entry(&paths, &claim_docker).await;
+    assert_eq!(pending_entry_count(&paths), 2);
+    let container = ContainerHandle::new(container_name, container_name).unwrap();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            container_name.into(),
+            ContainerState::Created,
+        )])),
+        ..Default::default()
+    };
+    let pending_dir = crate::runtime::coordination::universe_dir(&paths)
+        .unwrap()
+        .join("universe-pending");
+    let mut runner = FakeRunner {
+        side_effects: vec![(
+            "jackin-capsule".into(),
+            Box::new(move || {
+                assert_eq!(
+                    std::fs::read_dir(pending_dir).unwrap().count(),
+                    1,
+                    "entry must activate before foreground starts; another lease stays pending"
+                );
+            }),
+        )],
+        ..Default::default()
+    };
+    let admission = super::super::launch::AccountConfigRevision::acquire(&paths).unwrap();
+
+    start_or_reconnect_capsule_client_with_handle_with_lease(
+        &paths,
+        container_name,
+        &admission,
+        &docker,
+        &mut runner,
+        Some(&container),
+        Some(&claim),
+    )
+    .await
+    .expect("restore should activate the entry and foreground attach");
+    assert!(
+        runner.side_effects.is_empty(),
+        "foreground observation must run"
+    );
+    assert!(
+        docker
+            .bound_operations
+            .borrow()
+            .iter()
+            .any(|op| op.starts_with("start:"))
+    );
+    assert_eq!(
+        pending_entry_count(&paths),
+        1,
+        "other launch remains pending"
+    );
+    assert!(
+        crate::runtime::coordination::universe_dir(&paths)
+            .unwrap()
+            .join("universe-since")
+            .exists()
+    );
+    drop(claim);
+    assert_eq!(pending_entry_count(&paths), 1);
+    drop(other_claim);
+    assert_eq!(pending_entry_count(&paths), 0);
+}
+
+#[tokio::test]
+async fn restored_start_failure_keeps_entry_pending_until_owner_drops() {
+    let (_tmp, paths) = test_paths();
+    let container_name = "jk-restore-entry-start-failure";
+    provision_account_admission(&paths, container_name);
+    let claim = super::super::universe::claim_entry(&paths, &FakeDockerClient::default()).await;
+    let container = ContainerHandle::new(container_name, container_name).unwrap();
+    let docker = FakeDockerClient {
+        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
+            container_name.into(),
+            ContainerState::Created,
+        )])),
+        inspect_network_queue: std::cell::RefCell::new(VecDeque::from([Some(
+            jackin_docker::docker_client::NetworkRow {
+                id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
+                name: format!("{container_name}-net"),
+                labels: HashMap::default(),
+            },
+        )])),
+        fail_with: vec![("start_container".into(), "role start failed".into())],
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::default();
+    let admission = super::super::launch::AccountConfigRevision::acquire(&paths).unwrap();
+
+    let error = start_or_reconnect_capsule_client_with_handle_with_lease(
+        &paths,
+        container_name,
+        &admission,
+        &docker,
+        &mut runner,
+        Some(&container),
+        Some(&claim),
+    )
+    .await
+    .expect_err("failed role start must preserve pending lease");
+
+    assert!(
+        format!("{error:#}").contains("role start failed"),
+        "{error:#}"
+    );
+    assert_eq!(pending_entry_count(&paths), 1);
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("jackin-capsule"))
+    );
+    drop(claim);
+    assert_eq!(pending_entry_count(&paths), 0);
 }
 
 #[tokio::test]
@@ -1406,6 +1542,7 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
     manifest.docker_identity = Some(crate::instance::DockerIdentity {
         role_container_id: "role-container-id".into(),
         dind_container_id: Some("dind-container-id".into()),
+        network_id: Some(jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap()),
     });
     manifest.mark_status(InstanceStatus::PreservedDirty);
     manifest.last_attach_outcome = Some("exit:137".to_owned());
@@ -1438,6 +1575,7 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
             ])),
             inspect_network_queue: std::cell::RefCell::new(VecDeque::from([
                 Some(jackin_docker::docker_client::NetworkRow {
+                    id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
                     name: format!("{container_name}-net"),
                     labels: HashMap::default(),
                 }),
@@ -2082,138 +2220,4 @@ async fn start_stopped_container_errors_clearly_when_network_missing() {
         err.to_string()
             .contains("run `jackin load` to recreate the instance")
     );
-}
-
-fn pending_entry_count(paths: &JackinPaths) -> usize {
-    std::fs::read_dir(
-        crate::runtime::coordination::universe_dir(paths)
-            .unwrap()
-            .join("universe-pending"),
-    )
-    .map_or(0, Iterator::count)
-}
-
-#[tokio::test]
-async fn restored_start_activates_only_its_entry_before_foreground() {
-    let (_tmp, paths) = test_paths();
-    let container_name = "jk-restore-entry";
-    provision_account_admission(&paths, container_name);
-    let claim_docker = FakeDockerClient::default();
-    let claim = super::super::universe::claim_entry(&paths, &claim_docker).await;
-    let other_claim = super::super::universe::claim_entry(&paths, &claim_docker).await;
-    assert_eq!(pending_entry_count(&paths), 2);
-    let container = ContainerHandle::new(container_name, container_name).unwrap();
-    let docker = FakeDockerClient {
-        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
-            container_name.into(),
-            ContainerState::Created,
-        )])),
-        ..Default::default()
-    };
-    let pending_dir = crate::runtime::coordination::universe_dir(&paths)
-        .unwrap()
-        .join("universe-pending");
-    let mut runner = FakeRunner {
-        side_effects: vec![(
-            "jackin-capsule".into(),
-            Box::new(move || {
-                assert_eq!(
-                    std::fs::read_dir(pending_dir).unwrap().count(),
-                    1,
-                    "entry must activate before foreground starts; another lease stays pending"
-                );
-            }),
-        )],
-        ..Default::default()
-    };
-    let admission = super::super::launch::AccountConfigRevision::acquire(&paths).unwrap();
-
-    start_or_reconnect_capsule_client_with_handle_with_lease(
-        &paths,
-        container_name,
-        &admission,
-        &docker,
-        &mut runner,
-        Some(&container),
-        Some(&claim),
-    )
-    .await
-    .expect("restore should activate the entry and foreground attach");
-    assert!(
-        runner.side_effects.is_empty(),
-        "foreground observation must run"
-    );
-    assert!(
-        docker
-            .bound_operations
-            .borrow()
-            .iter()
-            .any(|op| op.starts_with("start:"))
-    );
-    assert_eq!(
-        pending_entry_count(&paths),
-        1,
-        "other launch remains pending"
-    );
-    assert!(
-        crate::runtime::coordination::universe_dir(&paths)
-            .unwrap()
-            .join("universe-since")
-            .exists()
-    );
-    drop(claim);
-    assert_eq!(pending_entry_count(&paths), 1);
-    drop(other_claim);
-    assert_eq!(pending_entry_count(&paths), 0);
-}
-
-#[tokio::test]
-async fn restored_start_failure_keeps_entry_pending_until_owner_drops() {
-    let (_tmp, paths) = test_paths();
-    let container_name = "jk-restore-entry-start-failure";
-    provision_account_admission(&paths, container_name);
-    let claim = super::super::universe::claim_entry(&paths, &FakeDockerClient::default()).await;
-    let container = ContainerHandle::new(container_name, container_name).unwrap();
-    let docker = FakeDockerClient {
-        inspect_state_by_name: std::cell::RefCell::new(HashMap::from([(
-            container_name.into(),
-            ContainerState::Created,
-        )])),
-        inspect_network_queue: std::cell::RefCell::new(VecDeque::from([Some(
-            jackin_docker::docker_client::NetworkRow {
-                name: format!("{container_name}-net"),
-                labels: HashMap::default(),
-            },
-        )])),
-        fail_with: vec![("start_container".into(), "role start failed".into())],
-        ..Default::default()
-    };
-    let mut runner = FakeRunner::default();
-    let admission = super::super::launch::AccountConfigRevision::acquire(&paths).unwrap();
-
-    let error = start_or_reconnect_capsule_client_with_handle_with_lease(
-        &paths,
-        container_name,
-        &admission,
-        &docker,
-        &mut runner,
-        Some(&container),
-        Some(&claim),
-    )
-    .await
-    .expect_err("failed role start must preserve pending lease");
-
-    assert!(
-        format!("{error:#}").contains("role start failed"),
-        "{error:#}"
-    );
-    assert_eq!(pending_entry_count(&paths), 1);
-    assert!(
-        !runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("jackin-capsule"))
-    );
-    drop(claim);
-    assert_eq!(pending_entry_count(&paths), 0);
 }

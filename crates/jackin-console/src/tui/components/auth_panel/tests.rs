@@ -404,3 +404,22 @@ fn credential_input_redacts_debug_and_paint() {
     assert!(text.contains('*'));
     assert_eq!(input.value(), "never-render-this-token");
 }
+
+#[test]
+fn multi_provider_api_modes_follow_account_compatibility() {
+    for kind in [AuthKind::Omp, AuthKind::Hermes] {
+        for provider in jackin_config::AiProvider::ALL {
+            let mut form = AuthForm::<jackin_core::EnvValue>::new(kind).with_provider(*provider);
+            if *provider == jackin_config::AiProvider::Amp {
+                assert_eq!(form.available_modes(), &[AuthMode::Sync]);
+                continue;
+            }
+            form.set_mode(AuthMode::ApiKey);
+            assert!(form.shows_credential_block());
+            assert!(!form.can_save());
+            form.set_literal("synthetic-key".into());
+            assert!(form.can_save());
+            assert!(form.commit().unwrap().env_var_name.is_some());
+        }
+    }
+}

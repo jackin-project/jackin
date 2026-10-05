@@ -13,15 +13,14 @@
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
 use termrock::style::DesignSystem;
 use termrock::widgets::{
     Action, ChoiceDialog, ChoiceDialogState, DetailTableState, Dialog as MessageShell, List,
-    ListRow, ListState, MessageDialog, Panel, PanelChrome, Tab, Tabs, TabsState, TextInput,
-    TextInputState, Validation,
+    ListRow, ListState, MessageDialog, Panel, PanelChrome, TextInput, TextInputState, Validation,
 };
 
 use crate::tui::components::dialog::{Dialog, GithubContextView};
@@ -30,15 +29,15 @@ use crate::tui::components::dialog::{Dialog, GithubContextView};
 // the original call sites (parent + tests.rs `use super::*` glob, plus
 // `dialog::usage_info_required_height` + `dialog/usage.rs` callers).
 pub(crate) mod usage;
+pub(crate) mod exec_picker;
 #[expect(
     unused_imports,
     reason = "re-exports consumed by tests + sibling modules"
 )]
 pub(crate) use usage::{
     usage_body_rect, usage_content_width, usage_dialog_inner_area, usage_info_lines_for_width,
-    usage_info_required_height, usage_line_width, usage_panel_title, usage_provider_display_label,
-    usage_scroll_inputs, usage_tab_strip_area, usage_tab_strip_index_at, usage_tab_strip_labels,
-    usage_tab_strip_width,
+    usage_info_required_height, usage_line_width, usage_panel_title, usage_scroll_inputs,
+    usage_tab_strip_area, usage_tab_strip_index_at, usage_tab_strip_labels, usage_tab_strip_width,
 };
 
 // ---------------------------------------------------------------------------
@@ -57,6 +56,8 @@ pub(crate) enum PickerItem {
 /// Owned snapshot of a dialog's visible state for the Ratatui draw closure.
 #[derive(Debug, Clone)]
 pub(crate) enum DialogRatatuiSnapshot {
+    /// Exact approved argv plus the independently navigable credential list.
+    ExecPicker(crate::exec::ExecPickerState),
     /// Yes/No confirmation (maps to `render_confirm_dialog`).
     ConfirmAction {
         title: String,
@@ -89,11 +90,9 @@ pub(crate) enum DialogRatatuiSnapshot {
     /// through `TermRock` detail-table, focus, scroll, copy, and link primitives.
     /// GitHub context uses the same variant with GitHub-specific rows.
     DebugInfo(crate::tui::components::container_info_surface::ContainerInfoState),
-    /// Usage overlay, rendered from the same scrollable row model as `DebugInfo`
-    /// but laid out as CodexBar-style sections instead of generic key/value
-    /// diagnostics.
+    /// Usage overlay rendered directly from the canonical publication.
     UsageInfo {
-        state: crate::tui::components::container_info_surface::ContainerInfoState,
+        state: crate::tui::components::dialog::UsageDialogState,
         tabs: Vec<(String, bool)>,
         tab_bar_focused: bool,
         hovered_tab: Option<usize>,
@@ -217,25 +216,7 @@ impl Dialog {
             }
 
             Dialog::ExecPicker(state) => {
-                // Multi-select credential list. The checkbox state is encoded in
-                // each row label (`[x]` / `[ ]`) so the shared single-select
-                // FilterPicker widget renders it without a bespoke widget; the
-                // cursor is the highlighted row, Space toggles via handle_key.
-                let items: Vec<PickerItem> = state
-                    .items
-                    .iter()
-                    .map(|item| {
-                        let mark = if item.selected { "[x]" } else { "[ ]" };
-                        PickerItem::Item(format!("{mark} {}  {}", item.binding.name, item.display))
-                    })
-                    .collect();
-                DialogRatatuiSnapshot::FilterPicker {
-                    title: format!("Attach credentials · {}", state.command),
-                    filter: String::new(),
-                    items,
-                    selected: state.cursor,
-                    show_filter: false,
-                }
+                DialogRatatuiSnapshot::ExecPicker(state.clone())
             }
 
             Dialog::SplitDirectionPicker { selected, filter } => {
@@ -352,14 +333,19 @@ impl Dialog {
                 }
             }
             Dialog::Usage {
-                view,
+                projection,
+                destination,
                 selected,
                 tab_bar_focused,
                 hovered_tab,
                 ..
             } => DialogRatatuiSnapshot::UsageInfo {
                 state: self.usage_state().expect("usage_state is Some for Usage"),
-                tabs: usage_tab_strip_labels(view, *selected),
+                tabs: usage_tab_strip_labels(
+                    projection.as_deref(),
+                    destination.as_ref(),
+                    *selected,
+                ),
                 tab_bar_focused: *tab_bar_focused,
                 hovered_tab: *hovered_tab,
             },
@@ -380,15 +366,13 @@ impl DialogRatatuiSnapshot {
                 state.content_height(),
                 block_area,
             ),
-            Self::UsageInfo { state, tabs, .. } => {
+            Self::UsageInfo { state, .. } => {
                 // Same body+lines source the renderer uses (Bug 2): wrapped line
                 // count + a `scroll_rect` whose viewport is the true body (box
-                // minus border minus tab strip). The tab strip width still floors
-                // the horizontal content so the strip itself can't overflow.
+                // minus border minus tab strip). Tabs have their own bounded viewport.
                 let (content_width, content_height, scroll_rect) =
                     usage_scroll_inputs(block_area, state);
-                let width = content_width.max(usage_tab_strip_width(tabs));
-                termrock::scroll::dialog_scroll_axes(width, content_height, scroll_rect)
+                termrock::scroll::dialog_scroll_axes(content_width, content_height, scroll_rect)
             }
             _ => termrock::scroll::ScrollAxes::none(),
         }
@@ -421,6 +405,9 @@ pub(crate) fn render_dialog_ratatui(
         return;
     }
     match snapshot {
+        DialogRatatuiSnapshot::ExecPicker(state) => {
+            exec_picker::render(frame, area, state);
+        }
         DialogRatatuiSnapshot::ConfirmAction {
             title,
             body,
@@ -524,7 +511,7 @@ fn render_confirm_action(
 fn render_usage_info(
     frame: &mut Frame<'_>,
     area: Rect,
-    state: &crate::tui::components::container_info_surface::ContainerInfoState,
+    state: &crate::tui::components::dialog::UsageDialogState,
     tabs: &[(String, bool)],
     tab_bar_focused: bool,
     hovered_tab: Option<usize>,
@@ -542,36 +529,7 @@ fn render_usage_info(
         return;
     }
     let tab_area = usage_tab_strip_area(inner, tabs);
-    let canonical_tabs = tabs
-        .iter()
-        .enumerate()
-        .map(|(id, (label, active))| Tab::new(id, label).active(*active))
-        .collect::<Vec<_>>();
-    let mut tabs_state = TabsState::new();
-    tabs_state.selected = canonical_tabs
-        .iter()
-        .find(|tab| tab.active)
-        .map(|tab| tab.id);
-    tabs_state.hovered = hovered_tab;
-    tabs_state.focused = tab_bar_focused;
-    // The usage dialog keeps the old pin's hover vocabulary: an underlined
-    // tab label. Head dropped the underline in favor of a pure tint wash, so
-    // the hovered roles get the modifier back via theme override.
-    let base = DesignSystem::default();
-    let active_hovered = base
-        .style(termrock::style::Role::TabActiveHovered)
-        .add_modifier(Modifier::UNDERLINED);
-    let inactive_hovered = base
-        .style(termrock::style::Role::TabInactiveHovered)
-        .add_modifier(Modifier::UNDERLINED);
-    let tabs_theme = base
-        .with_role(termrock::style::Role::TabActiveHovered, active_hovered)
-        .with_role(termrock::style::Role::TabInactiveHovered, inactive_hovered);
-    frame.render_stateful_widget(
-        &Tabs::new(&canonical_tabs, &tabs_theme).gap(termrock::widgets::TAB_GAP),
-        tab_area,
-        &mut tabs_state,
-    );
+    usage::render_usage_tabs(frame, tab_area, tabs, tab_bar_focused, hovered_tab);
     // Body geometry comes from the shared `usage_body_rect`, the same source the
     // scroll-bound path uses, so the rendered viewport and the scroll clamp can
     // never disagree (Bug 2). (`usage_tab_strip_area` above gives the strip its
@@ -613,6 +571,7 @@ fn render_filter_picker(
     let list_area = if show_filter {
         let filter_area = Rect { height: 1, ..inner };
         let mut filter_state = TextInputState::new(filter).with_allow_empty(true);
+        filter_state.set_focused(true);
         frame.render_stateful_widget(
             &TextInput::new("Filter", &theme)
                 .placeholder("Filter")
@@ -689,6 +648,7 @@ fn render_text_input_dialog(
     }
     frame.render_widget(ratatui::widgets::Paragraph::new(format!("{label}:")), inner);
     let mut state = TextInputState::new(value).with_allow_empty(true);
+    state.set_focused(true);
     assert!(
         state.set_cursor_byte(cursor),
         "text-input snapshot cursor must remain on a grapheme boundary"

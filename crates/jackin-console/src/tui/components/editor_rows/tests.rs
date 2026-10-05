@@ -74,3 +74,24 @@ fn auth_source_display_returns_not_required_without_env() {
         AuthSourceDisplay::NotRequired,
     );
 }
+
+#[test]
+fn focused_tab_strip_keeps_general_unfocused_when_mounts_selected() {
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 2)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_tab_strip(
+                frame,
+                frame.area(),
+                &[("General", false), ("Mounts", true)],
+                true,
+                None,
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let general = (0..60).find(|x| buffer[(*x, 0)].symbol() == "G").unwrap();
+    assert!(!buffer[(general, 0)].modifier.contains(Modifier::BOLD));
+    let mounts = (0..60).find(|x| buffer[(*x, 0)].symbol() == "M").unwrap();
+    assert!(buffer[(mounts, 0)].modifier.contains(Modifier::BOLD));
+}

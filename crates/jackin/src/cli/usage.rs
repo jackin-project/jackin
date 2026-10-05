@@ -3,8 +3,8 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use jackin_protocol::control::AccountUsageSnapshotView;
-use jackin_protocol::usage_broker::{UsageLimitWindowV1, UsageProjectionV1};
+use jackin_protocol::control::UsageAccountMembershipV1;
+use jackin_protocol::usage_broker::{UsageLimitWindowV2, UsageProjectionV2};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -110,7 +110,7 @@ pub struct UsageArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageScope {
-    /// Show cached provider account/quota buckets
+    /// Show canonical scoped account membership and quota
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Accounts(UsageAccountsArgs),
     /// Verify all provider quota rows are present and trusted
@@ -135,10 +135,10 @@ pub struct UsageHostSnapshotArgs {
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct UsageAccountsArgs {
-    /// Also upsert returned rows into ~/.jackin/data/daemon/accounts.db.
+    /// Persist current scoped membership in ~/.jackin/data/daemon/accounts.db.
     ///
-    /// This is an explicit host-side write for seeding the host-global usage
-    /// cache before a long-running host daemon owns account refresh.
+    /// Store the accepted publication or explicit unavailable/revoked state
+    /// for this immutable container identity.
     #[arg(long)]
     pub sync_host_cache: bool,
 }
@@ -146,9 +146,15 @@ pub struct UsageAccountsArgs {
 #[derive(Debug, Serialize)]
 struct UsageAccountsOutput {
     container: String,
-    accounts: Vec<AccountUsageSnapshotView>,
+    membership: Vec<UsageScopedOutput>,
     synced_host_cache_path: Option<String>,
     host_cache_path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct UsageScopedOutput {
+    scope_id: String,
+    membership: UsageAccountMembershipV1,
 }
 
 impl UsageArgs {
@@ -190,7 +196,7 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
         UsageScope::Accounts(scope_args) => {
             run_accounts(args, paths, &target, &container, scope_args).await
         }
-        UsageScope::Verify => run_verify(paths, &target, &container),
+        UsageScope::Verify => run_verify(args, paths, &target, &container),
         UsageScope::Snapshot(_) => {
             anyhow::bail!("`jackin usage <instance> snapshot` is only valid with instance `host`")
         }
@@ -203,7 +209,7 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
 fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     use jackin_usage::host::{
         HostRuntimeConfig, HostUsageRuntime, UsageBrokerConfig, UsageDiscoveryScope,
-        ensure_usage_broker_process, usage_broker_capabilities,
+        discover_and_ensure_usage_broker,
     };
 
     let resolver = Arc::new(CliUsageCredentialResolver::default());
@@ -218,20 +224,19 @@ fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
         probe_policy: jackin_usage::host::HostProbePolicy::Live,
         discovery_scope: discovery_scope.clone(),
     };
-    let mut runtime = HostUsageRuntime::new();
-    runtime
-        .open_with_discovery(host_config, resolver.as_ref())
-        .map_err(|error| anyhow::anyhow!(error))?;
-    let discovery = runtime
-        .validated_discovery()
-        .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-    let client = ensure_usage_broker_process(
+    let broker = discover_and_ensure_usage_broker(
         UsageBrokerConfig::for_data_dir(paths.data_dir.clone()),
-        &discovery_scope,
+        discovery_scope,
+        resolver,
     )
     .map_err(|error| anyhow::anyhow!(error.message))?;
+    let mut runtime = HostUsageRuntime::new();
+    runtime
+        .open_with_validated_discovery(host_config, broker.discovery)
+        .map_err(|error| anyhow::anyhow!(error))?;
+    let client = broker.client;
 
-    for capability in usage_broker_capabilities(&discovery) {
+    for capability in broker.capabilities {
         let current = client
             .current(capability.clone())
             .map_err(|error| anyhow::anyhow!(error.message))?;
@@ -261,7 +266,7 @@ fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     Ok(())
 }
 
-fn print_bare_host_projection(projection: &UsageProjectionV1) {
+fn print_bare_host_projection(projection: &UsageProjectionV2) {
     print!("{BANNER}");
     println!("usage\n");
     if projection.providers.is_empty() {
@@ -282,7 +287,7 @@ fn print_bare_host_projection(projection: &UsageProjectionV1) {
     }
 }
 
-fn print_bare_limit(window: &UsageLimitWindowV1) {
+fn print_bare_limit(window: &UsageLimitWindowV2) {
     let value = if window.value_label.is_empty() {
         "—"
     } else {
@@ -317,7 +322,7 @@ fn run_host_snapshot(
 ) -> Result<()> {
     use jackin_usage::host::{
         HostProbePolicy, HostRuntimeConfig, HostSurfaceId, HostUsageRuntime, UsageBrokerConfig,
-        UsageDiscoveryScope, ensure_usage_broker_process, usage_broker_capabilities,
+        UsageDiscoveryScope, discover_and_ensure_usage_broker,
     };
 
     let surface = HostSurfaceId::from_id(&scope.agent).ok_or_else(|| {
@@ -346,17 +351,19 @@ fn run_host_snapshot(
     };
     let broker_config = UsageBrokerConfig::for_data_dir(paths.data_dir.clone());
     let mut runtime = HostUsageRuntime::new();
-    runtime
-        .open_with_discovery(host_config, resolver.as_ref())
-        .map_err(|err| anyhow::anyhow!(err))?;
-
-    if !scope.no_refresh {
-        let discovery = runtime
-            .validated_discovery()
-            .ok_or_else(|| anyhow::anyhow!("host usage discovery unavailable"))?;
-        let client = ensure_usage_broker_process(broker_config, &discovery_scope)
+    if scope.no_refresh {
+        runtime
+            .open_with_discovery(host_config, resolver.as_ref())
+            .map_err(|err| anyhow::anyhow!(err))?;
+    } else {
+        let broker = discover_and_ensure_usage_broker(broker_config, discovery_scope, resolver)
             .map_err(|error| anyhow::anyhow!(error.message))?;
-        for capability in usage_broker_capabilities(&discovery)
+        runtime
+            .open_with_validated_discovery(host_config, broker.discovery)
+            .map_err(|err| anyhow::anyhow!(err))?;
+        let client = broker.client;
+        for capability in broker
+            .capabilities
             .into_iter()
             .filter(|capability| capability.surface_id == surface.id())
         {
@@ -427,11 +434,18 @@ async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
                     "`jackin usage cache accounts --sync-host-cache` is invalid; cache reads never write host state"
                 );
             }
-            let (path, accounts) = store::read_accounts(paths).await?;
+            let (path, memberships) = store::read_memberships(paths).await?;
+            let memberships = validate_cached_memberships(paths, memberships).await?;
             if args.output_format() == OutputFormat::Json {
                 let envelope = OutputEnvelope::v1(UsageAccountsOutput {
                     container: "host-cache".to_owned(),
-                    accounts,
+                    membership: memberships
+                        .into_iter()
+                        .map(|entry| UsageScopedOutput {
+                            scope_id: entry.scope.container_id,
+                            membership: entry.membership,
+                        })
+                        .collect(),
                     synced_host_cache_path: None,
                     host_cache_path: Some(path.display().to_string()),
                 });
@@ -441,7 +455,10 @@ async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
             print!("{BANNER}");
             println!("usage accounts for host cache\n");
             println!("  cache {}", path.display());
-            render_accounts_table(&accounts);
+            for entry in &memberships {
+                println!("  scope {}", entry.scope.container_id);
+                render_membership(&entry.membership);
+            }
             Ok(())
         }
         UsageScope::Verify => {
@@ -464,9 +481,9 @@ async fn run_accounts(
     container: &jackin_core::ContainerHandle,
     scope_args: &UsageAccountsArgs,
 ) -> Result<()> {
-    let accounts = snapshot::fetch_usage_accounts(paths, container)?.unwrap_or_default();
+    let (scope, membership) = fetch_validated_membership(paths, container)?;
     let synced_host_cache_path = if scope_args.sync_host_cache {
-        let path = store::upsert_accounts(paths, &accounts).await?;
+        let path = store::store_membership(paths, &scope, &membership).await?;
         Some(path)
     } else {
         None
@@ -475,7 +492,10 @@ async fn run_accounts(
     if args.output_format() == OutputFormat::Json {
         let envelope = OutputEnvelope::v1(UsageAccountsOutput {
             container: target.container.clone(),
-            accounts,
+            membership: vec![UsageScopedOutput {
+                scope_id: container.id().to_owned(),
+                membership: membership.clone(),
+            }],
             synced_host_cache_path: synced_host_cache_path
                 .as_ref()
                 .map(|path| path.display().to_string()),
@@ -487,179 +507,417 @@ async fn run_accounts(
 
     print!("{BANNER}");
     println!("usage accounts for {}\n", target.display_label());
-    if accounts.is_empty() {
-        println!("  no cached usage accounts");
-        if let Some(path) = synced_host_cache_path {
-            println!("  synced host cache {}", path.display());
-        }
-        return Ok(());
-    }
-
-    render_accounts_table(&accounts);
+    render_membership(&membership);
     if let Some(path) = synced_host_cache_path {
         println!("\n  synced host cache {}", path.display());
     }
     Ok(())
 }
 
+#[derive(Debug, Serialize)]
+struct UsageVerificationOutput<'a> {
+    container: &'a str,
+    scope_id: &'a str,
+    membership: &'a UsageAccountMembershipV1,
+    checks: Vec<UsageVerifyCheck>,
+}
+
 fn run_verify(
+    args: &UsageArgs,
     paths: &JackinPaths,
     target: &UsageTarget,
     container: &jackin_core::ContainerHandle,
 ) -> Result<()> {
-    let accounts = snapshot::fetch_usage_accounts(paths, container)?.unwrap_or_default();
-    let checks = verify_usage_accounts(&accounts);
-    print!("{BANNER}");
-    println!("usage verification for {}\n", target.display_label());
-    for check in &checks {
-        println!(
-            "  {:<9} {}",
-            check.label,
-            check.detail.as_deref().unwrap_or(check.status)
-        );
-    }
+    let (_, membership) = fetch_validated_membership(paths, container)?;
+    write_usage_verification(
+        &mut std::io::stdout().lock(),
+        args.output_format(),
+        target,
+        container.id(),
+        &membership,
+    )
+}
+
+fn write_usage_verification(
+    writer: &mut impl std::io::Write,
+    format: OutputFormat,
+    target: &UsageTarget,
+    scope_id: &str,
+    membership: &UsageAccountMembershipV1,
+) -> Result<()> {
+    let checks = verify_usage_membership(membership);
     let failures = checks
         .iter()
         .filter(|check| check.status != "ok")
         .map(|check| format!("{}: {}", check.label, check.status))
         .collect::<Vec<_>>();
+    if format == OutputFormat::Json {
+        let envelope = OutputEnvelope::v1(UsageVerificationOutput {
+            container: &target.container,
+            scope_id,
+            membership,
+            checks,
+        });
+        serde_json::to_writer_pretty(&mut *writer, &envelope)?;
+        writeln!(writer)?;
+    } else {
+        write!(writer, "{BANNER}")?;
+        writeln!(
+            writer,
+            "usage verification for {}\n",
+            target.display_label()
+        )?;
+        for check in &checks {
+            writeln!(
+                writer,
+                "  {:<9} {}",
+                check.label,
+                check.detail.as_deref().unwrap_or(check.status)
+            )?;
+        }
+        if failures.is_empty() {
+            writeln!(writer, "\n  usage verification passed")?;
+        }
+    }
     if !failures.is_empty() {
         anyhow::bail!("usage verification failed: {}", failures.join(", "));
     }
-    println!("\n  usage verification passed");
     Ok(())
 }
 
-fn render_accounts_table(accounts: &[AccountUsageSnapshotView]) {
-    if accounts.is_empty() {
-        println!("  no cached usage accounts");
+fn fetch_validated_membership(
+    paths: &JackinPaths,
+    container: &jackin_core::ContainerHandle,
+) -> Result<(
+    jackin_usage::usage_snapshot_store::UsageMembershipScope,
+    UsageAccountMembershipV1,
+)> {
+    use jackin_runtime::usage_relay::validated_usage_inventory_config_generation;
+    let proof = validated_usage_inventory_config_generation(paths, container)?;
+    let mut membership = snapshot::fetch_usage_accounts(container)?;
+    if let UsageAccountMembershipV1::Current { projection } = &membership {
+        match jackin_runtime::usage_relay::validate_usage_inventory_projection(
+            paths, container, projection,
+        ) {
+            Ok(accepted_proof) => anyhow::ensure!(
+                accepted_proof == proof,
+                "usage membership changed during inspection; retry"
+            ),
+            Err(_) => membership = UsageAccountMembershipV1::Unavailable,
+        }
+    }
+    let current_proof = validated_usage_inventory_config_generation(paths, container)?;
+    anyhow::ensure!(
+        proof == current_proof,
+        "usage membership changed during inspection; retry"
+    );
+    Ok((
+        jackin_usage::usage_snapshot_store::UsageMembershipScope {
+            container_id: container.id().to_owned(),
+            workspace_config_proof: proof,
+        },
+        membership,
+    ))
+}
+
+enum CachedMembershipAuthority {
+    Validated { container_id: String, proof: String },
+    Absent,
+    Unavailable,
+}
+
+fn apply_cached_membership_authority(
+    entry: &mut jackin_usage::usage_snapshot_store::StoredUsageMembership,
+    authority: CachedMembershipAuthority,
+) {
+    if !matches!(entry.membership, UsageAccountMembershipV1::Current { .. }) {
         return;
     }
-    println!(
-        "  {:<12}  {:<22}  {:<12}  {:<12}  {:<18}  source",
-        "provider", "account", "window", "status", "usage"
-    );
-    println!("  {}", "─".repeat(94));
-    for account in accounts {
-        println!(
-            "  {:<12}  {:<22}  {:<12}  {:<12}  {:<18}  {}",
-            truncate(&account.provider, 12),
-            truncate(&account.account_label, 22),
-            truncate(&account.window_kind, 12),
-            truncate(&account.status, 12),
-            usage_amount_label(account),
-            truncate(&account.source, 24),
-        );
+    match authority {
+        CachedMembershipAuthority::Validated {
+            container_id,
+            proof,
+        } if container_id == entry.scope.container_id
+            && proof == entry.scope.workspace_config_proof => {}
+        CachedMembershipAuthority::Validated { .. } | CachedMembershipAuthority::Absent => {
+            entry.membership = UsageAccountMembershipV1::Revoked
+        }
+        CachedMembershipAuthority::Unavailable => {
+            entry.membership = UsageAccountMembershipV1::Unavailable
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+async fn validate_cached_memberships(
+    paths: &JackinPaths,
+    mut memberships: Vec<jackin_usage::usage_snapshot_store::StoredUsageMembership>,
+) -> Result<Vec<jackin_usage::usage_snapshot_store::StoredUsageMembership>> {
+    if !memberships
+        .iter()
+        .any(|entry| matches!(entry.membership, UsageAccountMembershipV1::Current { .. }))
+    {
+        return Ok(memberships);
+    }
+    let docker = match BollardDockerClient::connect() {
+        Ok(docker) => docker,
+        Err(_) => {
+            for entry in &mut memberships {
+                if matches!(entry.membership, UsageAccountMembershipV1::Current { .. }) {
+                    apply_cached_membership_authority(
+                        entry,
+                        CachedMembershipAuthority::Unavailable,
+                    );
+                }
+            }
+            return Ok(memberships);
+        }
+    };
+    validate_cached_memberships_with_docker(paths, &docker, memberships).await
+}
+
+async fn validate_cached_memberships_with_docker(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    mut memberships: Vec<jackin_usage::usage_snapshot_store::StoredUsageMembership>,
+) -> Result<Vec<jackin_usage::usage_snapshot_store::StoredUsageMembership>> {
+    let containers = match docker.list_containers(&[], true).await {
+        Ok(containers) => containers,
+        Err(_) => {
+            for entry in &mut memberships {
+                if matches!(entry.membership, UsageAccountMembershipV1::Current { .. }) {
+                    apply_cached_membership_authority(
+                        entry,
+                        CachedMembershipAuthority::Unavailable,
+                    );
+                }
+            }
+            return Ok(memberships);
+        }
+    };
+    for entry in &mut memberships {
+        let UsageAccountMembershipV1::Current { projection } = &entry.membership else {
+            continue;
+        };
+        // List supplies the Docker display name; membership identity remains exact immutable ID.
+        let Some(row) = containers
+            .iter()
+            .find(|row| row.id == entry.scope.container_id)
+        else {
+            apply_cached_membership_authority(entry, CachedMembershipAuthority::Absent);
+            continue;
+        };
+        let container = jackin_core::ContainerHandle::new(&row.name, &row.id)?;
+        let authority = match jackin_runtime::usage_relay::validate_usage_inventory_projection(
+            paths, &container, projection,
+        ) {
+            Ok(proof) => CachedMembershipAuthority::Validated {
+                container_id: container.id().to_owned(),
+                proof,
+            },
+            Err(_) => CachedMembershipAuthority::Unavailable,
+        };
+        apply_cached_membership_authority(entry, authority);
+    }
+    Ok(memberships)
+}
+
+fn render_membership(membership: &UsageAccountMembershipV1) {
+    match membership {
+        UsageAccountMembershipV1::Unavailable => println!("  membership unavailable"),
+        UsageAccountMembershipV1::Revoked => println!("  membership revoked"),
+        UsageAccountMembershipV1::Current { projection } => {
+            if projection.providers.is_empty()
+                && projection.unresolved.is_empty()
+                && projection.unresolved_grants.is_empty()
+            {
+                println!("  no configured accounts");
+            }
+            for provider in &projection.providers {
+                println!("  {}", provider.display_name);
+                for account in &provider.accounts {
+                    println!("    {} · {:?}", account.display_label, account.lifecycle);
+                    for window in &account.windows {
+                        print_bare_limit(window);
+                    }
+                    for group in &account.metric_groups {
+                        println!(
+                            "    {}  {} · {:?}",
+                            group.label,
+                            metric_value_label(&group.value),
+                            group.quota_state
+                        );
+                    }
+                }
+            }
+            for unresolved in &projection.unresolved {
+                println!("  {} · {:?}", unresolved.provider_id, unresolved.state);
+            }
+            for grant in &projection.unresolved_grants {
+                println!(
+                    "  {} / {} · unresolved",
+                    grant.surface_id, grant.configured_account_id
+                );
+            }
+        }
+    }
+}
+
+fn metric_value_label(value: &jackin_protocol::usage_broker::UsageMetricValueV2) -> String {
+    use jackin_protocol::usage_broker::UsageMetricValueV2;
+    let count =
+        |value: Option<u64>| value.map_or_else(|| "unknown".to_owned(), |value| value.to_string());
+    match value {
+        UsageMetricValueV2::Window {
+            count_quota: Some(quota),
+            ..
+        } => jackin_usage::usage::usage_count_quota_summary(quota),
+        UsageMetricValueV2::Window {
+            remaining_raw_percent,
+            used_raw_percent,
+            ..
+        } => match (remaining_raw_percent, used_raw_percent) {
+            (Some(remaining), _) => format!("{remaining}% remaining"),
+            (_, Some(used)) => format!("{used}% used"),
+            _ => "unknown".to_owned(),
+        },
+        UsageMetricValueV2::Balance { amount, .. } => {
+            jackin_usage::usage::usage_money_amounts_summary(None, None, Some(amount))
+        }
+        UsageMetricValueV2::SpendCap {
+            cap,
+            spent,
+            remaining,
+        } => jackin_usage::usage::usage_money_amounts_summary(
+            spent.as_ref(),
+            cap.as_ref(),
+            remaining.as_ref(),
+        ),
+        UsageMetricValueV2::TokenTotals {
+            input,
+            output,
+            cached,
+            reasoning,
+            ..
+        } => format!(
+            "input={} output={} cached={} reasoning={}",
+            count(*input),
+            count(*output),
+            count(*cached),
+            count(*reasoning)
+        ),
+        UsageMetricValueV2::RateLimit {
+            limit,
+            remaining,
+            window_label,
+        } => format!(
+            "limit={} remaining={} {}",
+            count(*limit),
+            count(*remaining),
+            window_label.as_deref().unwrap_or("")
+        ),
+        UsageMetricValueV2::Plan { plan_label, tier } => format!(
+            "{} {}",
+            plan_label.as_deref().unwrap_or("unknown plan"),
+            tier.as_deref().unwrap_or("")
+        ),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct UsageVerifyCheck {
-    label: &'static str,
+    label: String,
     status: &'static str,
     detail: Option<String>,
 }
 
-fn verify_usage_accounts(accounts: &[AccountUsageSnapshotView]) -> Vec<UsageVerifyCheck> {
-    usage_verify_provider_aliases()
-        .iter()
-        .map(|(label, aliases)| verify_usage_provider(label, aliases, accounts))
-        .collect()
-}
-
-fn usage_verify_provider_aliases() -> &'static [(&'static str, &'static [&'static str])] {
-    &[
-        ("OpenAI", &["Codex", "OpenAI / Codex"]),
-        ("Anthropic", &["Claude", "Anthropic / Claude"]),
-        ("Amp", &["Amp"]),
-        ("xAI", &["Grok Build", "xAI / Grok"]),
-        ("Z.AI", &["GLM / Z.AI"]),
-        ("Kimi", &["Kimi"]),
-        ("MiniMax", &["MiniMax"]),
-    ]
-}
-
-fn verify_usage_provider(
-    label: &'static str,
-    aliases: &[&str],
-    accounts: &[AccountUsageSnapshotView],
-) -> UsageVerifyCheck {
-    let rows = accounts
-        .iter()
-        .filter(|account| {
-            aliases
-                .iter()
-                .any(|alias| usage_provider_matches(alias, &account.provider))
-        })
-        .collect::<Vec<_>>();
-    // `max_by_key` is `None` exactly when there are no matching rows, so it
-    // doubles as the "missing" guard.
-    let Some(latest) = rows.iter().max_by_key(|row| row.fetched_at) else {
-        return UsageVerifyCheck {
-            label,
-            status: "missing",
-            detail: None,
-        };
+fn verify_usage_membership(membership: &UsageAccountMembershipV1) -> Vec<UsageVerifyCheck> {
+    use jackin_protocol::usage_broker::{
+        UsageFreshnessPhaseV2, UsageLifecycleV2, UsageQuotaStateV2,
     };
-    if rows.iter().any(|row| usage_row_proves_live_quota(row)) {
-        return UsageVerifyCheck {
-            label,
-            status: "ok",
-            detail: Some(format!(
-                "ok: {} {} {} {} row(s)",
-                latest.status,
-                latest.source,
-                latest.confidence,
-                rows.len()
-            )),
-        };
+    let projection = match membership {
+        UsageAccountMembershipV1::Current { projection } => projection,
+        UsageAccountMembershipV1::Unavailable | UsageAccountMembershipV1::Revoked => {
+            return vec![UsageVerifyCheck {
+                label: "membership".to_owned(),
+                status: match membership {
+                    UsageAccountMembershipV1::Revoked => "revoked",
+                    _ => "unavailable",
+                },
+                detail: None,
+            }];
+        }
+    };
+    if let Err(error) = UsageAccountMembershipV1::validate_current_projection(projection) {
+        return vec![UsageVerifyCheck {
+            label: "membership".to_owned(),
+            status: "invalid",
+            detail: Some(error),
+        }];
     }
-    UsageVerifyCheck {
-        label,
-        status: "untrusted",
-        detail: Some(format!(
-            "untrusted: latest status={} source={} confidence={} error={}",
-            latest.status,
-            latest.source,
-            latest.confidence,
-            latest.last_error.as_deref().unwrap_or("none")
-        )),
+    let trusted_quota = |state| {
+        matches!(
+            state,
+            UsageQuotaStateV2::Available
+                | UsageQuotaStateV2::Warning
+                | UsageQuotaStateV2::Exhausted
+                | UsageQuotaStateV2::NotStarted
+                | UsageQuotaStateV2::NotApplicable
+        )
+    };
+    let mut checks = Vec::new();
+    for provider in &projection.providers {
+        if provider.accounts.is_empty() {
+            checks.push(UsageVerifyCheck {
+                label: provider.provider_id.clone(),
+                status: "untrusted",
+                detail: None,
+            });
+        }
+        for account in &provider.accounts {
+            let trusted = provider.freshness.phase == UsageFreshnessPhaseV2::Current
+                && !provider.freshness.is_stale
+                && account.lifecycle == UsageLifecycleV2::Available
+                && account.freshness.phase == UsageFreshnessPhaseV2::Current
+                && !account.freshness.is_stale
+                && (!account.windows.is_empty()
+                    || account
+                        .metric_groups
+                        .iter()
+                        .any(|group| group.quota_state != UsageQuotaStateV2::NotApplicable))
+                && account
+                    .windows
+                    .iter()
+                    .all(|window| trusted_quota(window.quota_state))
+                && account.metric_groups.iter().all(|group| {
+                    trusted_quota(group.quota_state)
+                        && group.phase == UsageFreshnessPhaseV2::Current
+                        && !group.is_stale
+                });
+            checks.push(UsageVerifyCheck {
+                label: format!(
+                    "{} / {}",
+                    provider.provider_id, account.canonical_account_id
+                ),
+                status: if trusted { "ok" } else { "untrusted" },
+                detail: None,
+            });
+        }
     }
-}
-
-fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
-    row.status == "fresh"
-        && row.confidence == "authoritative"
-        && matches!(row.source.as_str(), "provider_api" | "cli")
-        && !row.window_kind.trim().is_empty()
-        && !row.account_label.trim().is_empty()
-        && !row.account_label.to_ascii_lowercase().contains("needs")
-}
-
-fn usage_provider_matches(needle: &str, provider: &str) -> bool {
-    // Interchangeable provider/agent labels: a match needs one member of a group
-    // on each side. Bidirectional and extensible — add a group, not two arms.
-    const SYNONYMS: &[&[&str]] = &[
-        &["openai", "codex"],
-        &["anthropic", "claude"],
-        &["xai", "grok"],
-        &["zai", "glm"],
-    ];
-    let needle = normalize_usage_provider_label(needle);
-    let provider = normalize_usage_provider_label(provider);
-    provider.contains(&needle)
-        || needle.contains(&provider)
-        || SYNONYMS.iter().any(|group| {
-            group.iter().any(|m| needle.contains(m)) && group.iter().any(|m| provider.contains(m))
-        })
-}
-
-fn normalize_usage_provider_label(value: &str) -> String {
-    value
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .collect::<String>()
-        .to_ascii_lowercase()
+    for unresolved in &projection.unresolved {
+        checks.push(UsageVerifyCheck {
+            label: unresolved.provider_id.clone(),
+            status: "unresolved",
+            detail: Some(format!("{:?}", unresolved.state)),
+        });
+    }
+    for grant in &projection.unresolved_grants {
+        checks.push(UsageVerifyCheck {
+            label: format!("{} / {}", grant.surface_id, grant.configured_account_id),
+            status: "unresolved",
+            detail: None,
+        });
+    }
+    checks
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -704,31 +962,6 @@ fn resolve_usage_target(paths: &JackinPaths, input: &str) -> Result<UsageTarget>
             "instance reference {input:?} is ambiguous; pass the full container name instead"
         ),
     }
-}
-
-fn usage_amount_label(account: &AccountUsageSnapshotView) -> String {
-    match (
-        account.used_amount,
-        account.used_unit.as_deref(),
-        account.limit_amount,
-        account.limit_unit.as_deref(),
-    ) {
-        (Some(used), Some(used_unit), Some(limit), Some(limit_unit)) if used_unit == limit_unit => {
-            format!("{used}/{limit} {used_unit}")
-        }
-        (Some(used), Some(unit), _, _) => format!("{used} {unit}"),
-        (_, _, Some(limit), Some(unit)) => format!("limit {limit} {unit}"),
-        _ => "unknown".to_owned(),
-    }
-}
-
-fn truncate(value: &str, max: usize) -> String {
-    if value.chars().count() <= max {
-        return value.to_owned();
-    }
-    let mut out: String = value.chars().take(max.saturating_sub(3)).collect();
-    out.push_str("...");
-    out
 }
 
 #[cfg(test)]

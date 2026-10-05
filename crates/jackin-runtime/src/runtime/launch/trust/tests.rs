@@ -45,6 +45,7 @@ fn codex_state(root: &std::path::Path) -> RoleState {
             slots: BTreeMap::from([(
                 "acct@codex".to_owned(),
                 ProvisionedInstanceAuth {
+                    profile_material: None,
                     agent: Agent::Codex,
                     account_id: "fixture".to_owned(),
                     mode: AuthForwardMode::Sync,

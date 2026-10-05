@@ -19,7 +19,20 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-const ENTRYPOINT_SH: &str = include_str!("../../../docker/runtime/entrypoint.sh");
+const ENTRYPOINT_TEMPLATE: &str = include_str!("../../../docker/runtime/entrypoint.sh");
+static ENTRYPOINT_SH: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    assert_eq!(
+        ENTRYPOINT_TEMPLATE
+            .matches("# JACKIN_GENERATED_AGENT_DISPATCH")
+            .count(),
+        1,
+        "entrypoint template must contain exactly one registry dispatch marker"
+    );
+    ENTRYPOINT_TEMPLATE.replace(
+        "# JACKIN_GENERATED_AGENT_DISPATCH",
+        &Agent::launch_dispatch_shell(),
+    )
+});
 
 /// Agent-status reporter assets (hook/plugin scripts + rule packs), embedded so
 /// the derived-image build copies them to `/jackin/runtime/agent-status/`. The
@@ -593,7 +606,7 @@ pub fn create_derived_build_context_for_agents(
 
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;
-    std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
+    std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH.as_bytes())?;
     std::fs::write(runtime_dir.join("zsh-title-shim"), ZSH_TITLE_SHIM)?;
 
     // Stage the agent-status reporter assets (hooks + rule packs) so the
@@ -956,3 +969,6 @@ fn copy_dir_all_under_root(from: &Path, to: &Path, canonical_root: &Path) -> any
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod launch_tests;

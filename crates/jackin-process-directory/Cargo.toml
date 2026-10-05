@@ -14,7 +14,8 @@ publish = false
 readme = "README.md"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1", features = ["fs", "process"] }
+nix = { workspace = true, features = ["signal", "process"] }
+rustix = { version = "1", features = ["fs", "process", "termios", "pipe"] }
 
 [dev-dependencies]
 nix = { workspace = true }

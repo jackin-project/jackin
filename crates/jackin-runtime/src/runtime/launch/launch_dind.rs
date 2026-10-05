@@ -17,6 +17,95 @@ use jackin_core::{ContainerHandle, ContainerSpec};
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use serde::{Deserialize, Serialize};
 
+/// A durable lifetime reservation established before polling any Docker create.
+/// Namespace writer admission must remain held through every call using it.
+#[derive(Debug)]
+pub(crate) struct SharedDockerCreationCustody {
+    paths: JackinPaths,
+    lifetime: std::sync::Mutex<crate::instance::SharedDockerLifetime>,
+}
+
+impl SharedDockerCreationCustody {
+    pub(crate) fn reserve(paths: &JackinPaths, lifetime: crate::instance::SharedDockerLifetime) -> anyhow::Result<std::sync::Arc<Self>> {
+        lifetime.save_pending(paths)?;
+        Ok(std::sync::Arc::new(Self { paths: paths.clone(), lifetime: std::sync::Mutex::new(lifetime) }))
+    }
+
+    pub(crate) fn adopt(paths: &JackinPaths, lifetime: crate::instance::SharedDockerLifetime) -> anyhow::Result<std::sync::Arc<Self>> {
+        lifetime.save(paths)?;
+        Ok(std::sync::Arc::new(Self { paths: paths.clone(), lifetime: std::sync::Mutex::new(lifetime) }))
+    }
+
+    pub(crate) fn snapshot(&self) -> crate::instance::SharedDockerLifetime {
+        self.lifetime.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+    }
+
+    pub(crate) fn admitted_snapshot(&self) -> anyhow::Result<crate::instance::SharedDockerLifetime> {
+        let captured = self.snapshot();
+        let durable = crate::instance::SharedDockerLifetime::load(&self.paths, captured.daemon_server_id(), captured.owner())?
+            .context("shared Docker lifetime custody is missing")?;
+        anyhow::ensure!(durable == captured, "shared Docker lifetime capture is not durably committed");
+        Ok(captured)
+    }
+
+    async fn verify_daemon(&self, docker: &impl DockerApi) -> anyhow::Result<()> {
+        let actual = docker.daemon_server_id().await?;
+        anyhow::ensure!(&actual == self.snapshot().daemon_server_id(), "Docker daemon server identity changed during shared resource lifetime");
+        Ok(())
+    }
+
+    pub(crate) fn labels(&self) -> std::collections::HashMap<String, String> {
+        let lifetime = self.snapshot();
+        std::collections::HashMap::from([
+            ("jackin.shared-generation".to_owned(), lifetime.generation().to_owned()),
+            ("jackin.shared-owner".to_owned(), lifetime.namespace_owner().to_owned()),
+            ("jackin.managed".to_owned(), "true".to_owned()),
+        ])
+    }
+
+    fn capture_network(&self, id: jackin_core::NetworkId) -> anyhow::Result<()> {
+        let mut lifetime = self.lifetime.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        lifetime.capture_network(id)?;
+        lifetime.save(&self.paths)
+    }
+
+    fn capture_certs_volume(&self) -> anyhow::Result<()> {
+        let mut lifetime = self.lifetime.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        lifetime.capture_certs_volume()?;
+        lifetime.save(&self.paths)
+    }
+
+    pub(crate) fn capture_container(&self, dind: bool, id: &str) -> anyhow::Result<()> {
+        let mut lifetime = self.lifetime.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        lifetime.capture_container(dind, id)?;
+        lifetime.save(&self.paths)
+    }
+
+    pub(crate) fn replace_snapshot(&self, replacement: crate::instance::SharedDockerLifetime) -> anyhow::Result<()> {
+        let mut lifetime = self.lifetime.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        anyhow::ensure!(replacement.daemon_server_id() == lifetime.daemon_server_id()
+            && replacement.generation() == lifetime.generation()
+            && replacement.owner() == lifetime.owner(),
+            "shared Docker lifetime snapshot identity changed");
+        anyhow::ensure!(crate::instance::SharedDockerLifetime::load_for_cleanup(
+            &self.paths, replacement.daemon_server_id(), replacement.owner()
+        )?.as_ref() == Some(&replacement), "replacement custody snapshot is not durable");
+        *lifetime = replacement;
+        Ok(())
+    }
+
+    fn begin_retirement(&self) -> anyhow::Result<crate::instance::SharedDockerLifetime> {
+        let mut lifetime = self.lifetime.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        *lifetime = lifetime.begin_retirement(&self.paths)?;
+        Ok(lifetime.clone())
+    }
+
+    fn retire(&self) -> anyhow::Result<()> {
+        let lifetime = self.lifetime.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        lifetime.retire(&self.paths)
+    }
+}
+
 pub const DIND_IMAGE: &str = crate::runtime::docker_profile::DIND_PRIVILEGED_IMAGE;
 const PREWARM_CONTAINER_BASE: &str = "jk-prewarm-dind";
 const PREWARM_STATE_FILE: &str = "prewarm-dind.json";
@@ -27,6 +116,8 @@ pub struct DindSidecarPrewarm {
     /// Immutable daemon ID captured when the retained sidecar was created.
     pub dind_id: String,
     pub network: String,
+    pub network_id: jackin_core::NetworkId,
+    pub lifetime_owner: String,
     pub certs_volume: String,
     pub ready_ms: u128,
     pub kept: bool,
@@ -39,6 +130,10 @@ pub(super) struct DindSidecarPrewarmState {
     #[serde(default)]
     pub dind_id: Option<String>,
     pub network: String,
+    #[serde(default)]
+    pub network_id: Option<jackin_core::NetworkId>,
+    #[serde(default)]
+    pub lifetime_owner: Option<String>,
     pub certs_volume: String,
     pub ready_ms: u128,
     pub kept: bool,
@@ -102,6 +197,8 @@ pub(super) async fn run_dind_sidecar_headless(
     certs_volume: &str,
     grant: crate::runtime::docker_profile::DindGrant,
     dind_handle_slot: std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>>,
+    network_id_slot: std::sync::Arc<std::sync::Mutex<Option<jackin_core::NetworkId>>>,
+    shared_custody: std::sync::Arc<SharedDockerCreationCustody>,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     run_dind_sidecar_headless_with_owner(
@@ -111,20 +208,21 @@ pub(super) async fn run_dind_sidecar_headless(
         certs_volume,
         grant,
         Some(dind_handle_slot),
+        network_id_slot,
+        shared_custody,
         docker,
     )
     .await
 }
 
 /// `docker.create_network` wrapped in the shared `sidecar`/`create_network`
-/// timing span. `create_network` is idempotent, hence the `created_or_exists`
-/// success label.
+/// timing span. Ownership is captured only from successful creation.
 async fn create_network_timed(
     network: &str,
     labels: std::collections::HashMap<String, String>,
     internal: bool,
     docker: &impl DockerApi,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<jackin_core::NetworkId> {
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Sidecar,
         "create_network",
@@ -135,7 +233,7 @@ async fn create_network_timed(
         jackin_diagnostics::DiagnosticStage::Sidecar,
         "create_network",
         if result.is_ok() {
-            Some("created_or_exists")
+            Some("created")
         } else {
             Some("error")
         },
@@ -147,10 +245,19 @@ pub(crate) async fn create_role_network(
     container_name: &str,
     network: &str,
     internal: bool,
+    network_id_slot: std::sync::Arc<std::sync::Mutex<Option<jackin_core::NetworkId>>>,
+    shared_custody: std::sync::Arc<SharedDockerCreationCustody>,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    let labels = DindSidecarOwner::Role(container_name).labels(None);
-    create_network_timed(network, labels, internal, docker).await
+    shared_custody.verify_daemon(docker).await?;
+    let mut labels = DindSidecarOwner::Role(container_name).labels(None);
+    labels.extend(shared_custody.labels());
+    anyhow::ensure!(shared_custody.snapshot().network_name() == Some(network), "network creation differs from durable lifetime reservation");
+    let id = create_network_timed(network, labels, internal, docker).await?;
+    *network_id_slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(id.clone());
+    shared_custody.verify_daemon(docker).await?;
+    shared_custody.capture_network(id)?;
+    Ok(())
 }
 
 async fn run_dind_sidecar_headless_with_owner(
@@ -160,6 +267,8 @@ async fn run_dind_sidecar_headless_with_owner(
     certs_volume: &str,
     grant: crate::runtime::docker_profile::DindGrant,
     dind_handle_slot: Option<std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>>>,
+    network_id_slot: std::sync::Arc<std::sync::Mutex<Option<jackin_core::NetworkId>>>,
+    shared_custody: std::sync::Arc<SharedDockerCreationCustody>,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     // WP4 Part B: image + privileged flag are tier-aware. `rootless` uses the
@@ -167,8 +276,19 @@ async fn run_dind_sidecar_headless_with_owner(
     // standard DinD image + `--privileged` path.
     let (dind_image, dind_privileged) =
         crate::runtime::docker_profile::dind_image_and_privileged(grant);
+    shared_custody.verify_daemon(docker).await?;
     // Create Docker network (sidecar networks are never internal).
-    create_network_timed(network, owner.labels(None), false, docker).await?;
+    anyhow::ensure!(shared_custody.snapshot().network_name() == Some(network), "sidecar network differs from durable lifetime reservation");
+    anyhow::ensure!(shared_custody.snapshot().certs_volume_name() == Some(certs_volume), "sidecar certificate volume differs from durable lifetime reservation");
+    let mut network_labels = owner.labels(None);
+    network_labels.extend(shared_custody.labels());
+    let network_id = create_network_timed(network, network_labels, false, docker).await?;
+    *network_id_slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(network_id.clone());
+    shared_custody.verify_daemon(docker).await?;
+    shared_custody.capture_network(network_id)?;
+    docker.create_volume(certs_volume, shared_custody.labels()).await?;
+    shared_custody.verify_daemon(docker).await?;
+    shared_custody.capture_certs_volume()?;
 
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Sidecar,
@@ -220,7 +340,8 @@ async fn run_dind_sidecar_headless_with_owner(
     // value` and `DinD` never comes up.
     let certs_dind_mount = format!("{certs_volume}:/certs/client");
     let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
-    let labels = owner.labels(Some(LABEL_KIND_DIND));
+    let mut labels = owner.labels(Some(LABEL_KIND_DIND));
+    labels.extend(shared_custody.labels());
     let spec = ContainerSpec {
         image: dind_image.to_owned(),
         hostname: None,
@@ -238,6 +359,7 @@ async fn run_dind_sidecar_headless_with_owner(
         "docker_create_dind",
         Some(dind),
     );
+    shared_custody.verify_daemon(docker).await?;
     let create_dind = docker.create_container(dind, spec);
     let create_dind_result = create_dind.await;
     jackin_diagnostics::active_timing_done(
@@ -250,6 +372,8 @@ async fn run_dind_sidecar_headless_with_owner(
         },
     );
     let dind_handle = create_dind_result?;
+    shared_custody.verify_daemon(docker).await?;
+    shared_custody.capture_container(true, dind_handle.id())?;
     if let Some(slot) = &dind_handle_slot {
         *slot
             .lock()
@@ -261,6 +385,7 @@ async fn run_dind_sidecar_headless_with_owner(
         "docker_start_dind",
         Some(dind),
     );
+    shared_custody.verify_daemon(docker).await?;
     let start_dind = docker.start_container_by_id(&dind_handle);
     let start_dind_result = start_dind.await;
     jackin_diagnostics::active_timing_done(
@@ -273,6 +398,7 @@ async fn run_dind_sidecar_headless_with_owner(
         },
     );
     start_dind_result?;
+    shared_custody.verify_daemon(docker).await?;
 
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Sidecar,
@@ -291,6 +417,7 @@ async fn run_dind_sidecar_headless_with_owner(
         },
     );
     dind_ready_result?;
+    shared_custody.verify_daemon(docker).await?;
     Ok(())
 }
 
@@ -302,30 +429,103 @@ pub async fn prewarm_dind_sidecar_container_with_paths(
     docker: &impl DockerApi,
     keep: bool,
 ) -> anyhow::Result<DindSidecarPrewarm> {
-    let stale_dind_handle = if keep {
-        ensure_prewarm_state_identity(paths, docker).await?
-    } else {
-        let base = format!("{PREWARM_CONTAINER_BASE}-{}", std::process::id());
-        let dind = crate::instance::naming::dind_container_name(&base);
-        crate::runtime::cleanup::resolve_optional_container_handle(docker, &dind).await?
+    let _lock = try_lock_prewarmed_dind(paths)
+        .await
+        .context("another prewarm or adoption operation owns the prewarm writer")?;
+    prewarm_dind_sidecar_container_under_lock(paths, docker, keep).await
+}
+
+pub(crate) async fn prewarm_dind_sidecar_container_under_lock(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    keep: bool,
+) -> anyhow::Result<DindSidecarPrewarm> {
+    crate::runtime::launch::ensure_controller_transport_supported(docker.controller_endpoint())?;
+    let daemon_server_id = docker.daemon_server_id().await?;
+    let state = read_prewarmed_dind_state(paths).map_err(anyhow::Error::msg)?;
+    let owner = state.as_ref().and_then(|state| state.lifetime_owner.as_deref())
+        .unwrap_or(PREWARM_CONTAINER_BASE);
+    if let Some(lifetime) = crate::instance::SharedDockerLifetime::load_for_cleanup(paths, &daemon_server_id, owner)? {
+        retire_prewarm_lifetime(paths, docker, lifetime, state.as_ref()).await?;
+    } else if state.is_some() {
+        anyhow::bail!("prewarm state has no shared lifetime journal; retaining all resources");
+    }
+    let owner = if keep { PREWARM_CONTAINER_BASE.to_owned() } else {
+        let allocation = crate::instance::SharedDockerLifetime::fresh_prewarm(&daemon_server_id, PREWARM_CONTAINER_BASE)?;
+        format!("{PREWARM_CONTAINER_BASE}-{}", allocation.generation())
     };
-    prewarm_dind_sidecar_container_inner(docker, keep, stale_dind_handle).await
+    let lifetime = crate::instance::SharedDockerLifetime::fresh_prewarm(&daemon_server_id, &owner)?;
+    let shared_custody = SharedDockerCreationCustody::reserve(paths, lifetime)?;
+    let warmed = prewarm_dind_sidecar_container_inner(paths, docker, keep, shared_custody).await?;
+    if warmed.kept {
+        write_prewarmed_dind_state(paths, &warmed)?;
+    }
+    Ok(warmed)
+}
+
+async fn retire_prewarm_lifetime(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    lifetime: crate::instance::SharedDockerLifetime,
+    state: Option<&DindSidecarPrewarmState>,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(lifetime.owner_kind() == crate::instance::SharedDockerOwnerKind::Prewarm
+        && lifetime.namespace_owner_kind() == crate::instance::SharedDockerOwnerKind::Prewarm,
+        "prewarm journal has transferred to a role owner; refusing prewarm teardown");
+    if let Some(state) = state {
+        anyhow::ensure!(state.schema_version == 2 && state.kept,
+            "prewarm projection is not a current retained state");
+        anyhow::ensure!(state.lifetime_owner.as_deref() == Some(lifetime.owner())
+            && state.dind == crate::instance::naming::dind_container_name(lifetime.namespace_owner())
+            && lifetime.network_name() == Some(state.network.as_str())
+            && lifetime.certs_volume_name() == Some(state.certs_volume.as_str()),
+            "prewarm projection differs from durable lifetime");
+        anyhow::ensure!(state.network_id.as_ref() == lifetime.network_id(),
+            "prewarm network ID differs from durable lifetime");
+        anyhow::ensure!(matches!(lifetime.dind_container(),
+            crate::instance::SharedContainerCustody::Owned { name, id }
+                if name == &state.dind && state.dind_id.as_deref() == Some(id.as_str())),
+            "prewarm container ID differs from durable lifetime");
+    }
+
+    let plan = crate::runtime::cleanup::reconcile_shared_lifetime(paths, lifetime, docker).await?;
+    crate::runtime::cleanup::ensure_shared_plan_current(paths, &plan, docker).await?;
+    let retiring = plan.lifetime.begin_retirement(paths)?;
+    let mut failures = Vec::new();
+    if let Some(container) = plan.dind.as_ref() {
+        if let Err(error) = docker.remove_container_by_id(container).await {
+            failures.push(format!("DinD container: {error:#}"));
+        }
+    }
+    if let Some(volume) = plan.volume.as_deref() {
+        if let Err(error) = docker.remove_volume(volume).await {
+            failures.push(format!("certificate volume: {error:#}"));
+        } else if docker.inspect_volume_by_name(volume).await?.is_some() {
+            failures.push(format!("certificate volume {volume} remains after removal"));
+        }
+    }
+    if let Some(network) = plan.network.as_ref()
+        && let Err(error) = docker.remove_network_by_id(network).await
+    {
+        failures.push(format!("network {}: {error:#}", network.as_str()));
+    }
+    if !failures.is_empty() {
+        anyhow::bail!("prewarm cleanup failed; retiring custody retained: {}", failures.join("; "));
+    }
+    remove_prewarmed_dind_state_checked(paths)?;
+    retiring.retire(paths)
 }
 
 async fn prewarm_dind_sidecar_container_inner(
+    paths: &JackinPaths,
     docker: &impl DockerApi,
     keep: bool,
-    stale_dind_handle: Option<ContainerHandle>,
+    shared_custody: std::sync::Arc<SharedDockerCreationCustody>,
 ) -> anyhow::Result<DindSidecarPrewarm> {
-    let base = if keep {
-        PREWARM_CONTAINER_BASE.to_owned()
-    } else {
-        let suffix = std::process::id();
-        format!("{PREWARM_CONTAINER_BASE}-{suffix}")
-    };
-    let dind = crate::instance::naming::dind_container_name(&base);
-    let network = crate::instance::naming::role_network_name(&base);
-    let certs_volume = format!("{base}-certs");
+    let lifetime = shared_custody.snapshot();
+    let dind = crate::instance::naming::dind_container_name(lifetime.owner());
+    let network = lifetime.network_name().context("prewarm network was disabled")?.to_owned();
+    let certs_volume = lifetime.certs_volume_name().context("prewarm certificate volume was disabled")?.to_owned();
 
     super::emit_prewarm_launch_plan(if keep {
         "sidecar_container_prewarm:keep"
@@ -333,24 +533,11 @@ async fn prewarm_dind_sidecar_container_inner(
         "sidecar_container_prewarm"
     });
 
-    let stale_cleanup_degraded = [
-        match stale_dind_handle.as_ref() {
-            Some(handle) => docker.remove_container_by_id(handle).await,
-            None => Ok(()),
-        },
-        docker.remove_volume(&certs_volume).await,
-        docker.remove_network(&network).await,
-    ]
-    .into_iter()
-    .any(|result| result.is_err());
-    if stale_cleanup_degraded {
-        let _warning = jackin_telemetry::record_recovered_degradation();
-    }
-
     let started = std::time::Instant::now();
     // Prewarm warms the privileged DinD path (the only one a prewarmed sidecar
     // can be adopted into today); a rootless launch starts its own sidecar.
     let dind_handle_slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let network_id_slot = std::sync::Arc::new(std::sync::Mutex::new(None));
     let result = run_dind_sidecar_headless_with_owner(
         DindSidecarOwner::Prewarm,
         &network,
@@ -358,50 +545,74 @@ async fn prewarm_dind_sidecar_container_inner(
         &certs_volume,
         crate::runtime::docker_profile::DindGrant::Privileged,
         Some(std::sync::Arc::clone(&dind_handle_slot)),
+        std::sync::Arc::clone(&network_id_slot),
+        std::sync::Arc::clone(&shared_custody),
         docker,
     )
     .await;
     let ready_ms = started.elapsed().as_millis();
 
     if result.is_err() || !keep {
-        let dind_handle = dind_handle_slot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        let remove_container = match dind_handle.as_ref() {
-            Some(container) => docker.remove_container_by_id(container).await,
-            None => Err(anyhow::anyhow!(
-                "DinD identity unavailable; aborting prewarm cleanup before container teardown for {dind}"
-            )),
-        };
-        let remove_volume = docker.remove_volume(&certs_volume).await;
-        let remove_network = docker.remove_network(&network).await;
-
+        let plan = crate::runtime::cleanup::reconcile_shared_lifetime(
+            paths,
+            shared_custody.snapshot(),
+            docker,
+        )
+        .await?;
+        shared_custody.replace_snapshot(plan.lifetime.clone())?;
+        crate::runtime::cleanup::ensure_shared_plan_current(paths, &plan, docker).await?;
+        shared_custody.verify_daemon(docker).await?;
+        shared_custody.begin_retirement()?;
+        let mut cleanup_errors = Vec::new();
+        if let Some(container) = plan.dind.as_ref()
+            && let Err(error) = docker.remove_container_by_id(container).await
+        {
+            cleanup_errors.push(format!("DinD container: {error:#}"));
+        }
+        if let Some(volume) = plan.volume.as_deref() {
+            if let Err(error) = docker.remove_volume(volume).await {
+                cleanup_errors.push(format!("certificate volume: {error:#}"));
+            } else if docker.inspect_volume_by_name(volume).await?.is_some() {
+                cleanup_errors.push(format!("certificate volume {volume} remains after removal"));
+            }
+        }
+        if let Some(network) = plan.network.as_ref()
+            && let Err(error) = docker.remove_network_by_id(network).await
+        {
+            cleanup_errors.push(format!("network {}: {error:#}", network.as_str()));
+        }
+        if !cleanup_errors.is_empty() {
+            if let Err(error) = result {
+                anyhow::bail!("{error:#}; prewarm rollback also failed: {}", cleanup_errors.join("; "));
+            }
+            anyhow::bail!("prewarm rollback failed: {}", cleanup_errors.join("; "));
+        }
+        shared_custody.retire()?;
         result?;
-        remove_container?;
-        remove_volume?;
-        remove_network?;
     } else {
         result?;
     }
 
-    let dind_id = dind_handle_slot
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .as_ref()
-        .map(|handle| handle.id().to_owned())
-        .ok_or_else(|| anyhow::anyhow!("DinD create returned no immutable identity"))?;
-
+    let final_lifetime = shared_custody.snapshot();
+    let dind_id = match final_lifetime.dind_container() {
+        crate::instance::SharedContainerCustody::Owned { id, .. } => id.clone(),
+        _ => anyhow::bail!("DinD create returned no immutable identity"),
+    };
+    let network_id = final_lifetime.network_id().cloned()
+        .ok_or_else(|| anyhow::anyhow!("network creation returned no immutable identity"))?;
     Ok(DindSidecarPrewarm {
         dind,
         dind_id,
         network,
+        network_id,
+        lifetime_owner: final_lifetime.owner().to_owned(),
         certs_volume,
         ready_ms,
         kept: keep,
     })
 }
 
+#[cfg(test)]
 pub(super) async fn ensure_prewarm_state_identity(
     paths: &JackinPaths,
     docker: &impl DockerApi,
@@ -506,6 +717,8 @@ pub fn write_prewarmed_dind_state(
         dind: warmed.dind.clone(),
         dind_id: Some(warmed.dind_id.clone()),
         network: warmed.network.clone(),
+        network_id: Some(warmed.network_id.clone()),
+        lifetime_owner: Some(warmed.lifetime_owner.clone()),
         certs_volume: warmed.certs_volume.clone(),
         ready_ms: warmed.ready_ms,
         kept: warmed.kept,
@@ -546,13 +759,17 @@ fn read_prewarmed_dind_state(
     })
 }
 
-fn remove_prewarmed_dind_state(paths: &JackinPaths) {
+fn remove_prewarmed_dind_state_checked(paths: &JackinPaths) -> anyhow::Result<()> {
     let path = prewarmed_dind_state_path(paths);
-    if let Err(error) = std::fs::remove_file(&path)
-        && error.kind() != std::io::ErrorKind::NotFound
-    {
-        record_recovered_degradation();
+    match std::fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error).with_context(|| format!("removing prewarm state at {}", path.display()));
+        }
     }
+    anyhow::ensure!(!path.exists(), "prewarm state retirement failed");
+    Ok(())
 }
 
 fn prewarmed_dind_state_path(paths: &JackinPaths) -> std::path::PathBuf {
@@ -609,7 +826,8 @@ pub(crate) async fn prewarmed_dind_state_is_live(
     ) {
         return false;
     }
-    let Ok(Some(network_row)) = docker.inspect_network(&state.network).await else {
+    let Some(network_id) = state.network_id.as_ref() else { return false; };
+    let Ok(Some(network_row)) = docker.inspect_network_by_id(network_id).await else {
         return false;
     };
     if network_row.labels.get("jackin.kind").map(String::as_str) != Some("prewarm-dind") {
@@ -652,6 +870,10 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         "adopt_prewarmed_dind",
         Some(PREWARM_STATE_FILE),
     );
+    let Ok(daemon_server_id) = docker.daemon_server_id().await else {
+        record_prewarm_adoption_skip("daemon:identity-unavailable");
+        return None;
+    };
     let Some(lock) = try_lock_prewarmed_dind(paths).await else {
         record_prewarm_adoption_skip("locked");
         return None;
@@ -726,7 +948,11 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         return None;
     }
 
-    let network_row = match docker.inspect_network(&network).await {
+    let Some(network_id) = state.network_id.as_ref() else {
+        record_prewarm_adoption_skip("network:identity-unavailable");
+        return None;
+    };
+    let network_row = match docker.inspect_network_by_id(network_id).await {
         Ok(Some(row)) => row,
         Ok(None) => {
             jackin_diagnostics::active_timing_done(
@@ -738,7 +964,6 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 "skipped",
                 &prewarmed_dind_state_detail("network-missing", &state),
             );
-            remove_prewarmed_dind_state(paths);
             return None;
         }
         Err(_error) => {
@@ -752,7 +977,6 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 "skipped",
                 &prewarmed_dind_state_detail("network-inspect-error", &state),
             );
-            remove_prewarmed_dind_state(paths);
             return None;
         }
     };
@@ -766,10 +990,39 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             "skipped",
             &prewarmed_dind_state_detail("network-label-mismatch", &state),
         );
-        remove_prewarmed_dind_state(paths);
         return None;
     }
 
+    let Some(lifetime_owner) = state.lifetime_owner.as_deref() else {
+        record_prewarm_adoption_skip("lifetime:owner-unavailable");
+        return None;
+    };
+    let Ok(Some(lifetime)) = crate::instance::SharedDockerLifetime::load(paths, &daemon_server_id, lifetime_owner) else {
+        record_prewarm_adoption_skip("lifetime:unavailable");
+        return None;
+    };
+    let shared_labels = std::collections::HashMap::from([
+        ("jackin.shared-generation".to_owned(), lifetime.generation().to_owned()),
+        ("jackin.shared-owner".to_owned(), lifetime.namespace_owner().to_owned()),
+        ("jackin.managed".to_owned(), "true".to_owned()),
+    ]);
+    if lifetime.network_id() != Some(network_id)
+        || lifetime.network_name() != Some(network.as_str())
+        || network_row.name != network
+        || !shared_labels.iter().all(|(key, value)| network_row.labels.get(key) == Some(value))
+        || !matches!(lifetime.certs_volume(), crate::instance::SharedCertsVolumeCustody::Owned { .. })
+        || lifetime.certs_volume_name() != Some(certs_volume.as_str()) {
+        record_prewarm_adoption_skip("lifetime:identity-mismatch");
+        return None;
+    }
+    let Ok(Some(volume)) = docker.inspect_volume_by_name(&certs_volume).await else {
+        record_prewarm_adoption_skip("volume:identity-unavailable");
+        return None;
+    };
+    if volume.name != certs_volume || volume.labels != shared_labels || volume.driver != "local" {
+        record_prewarm_adoption_skip("volume:identity-mismatch");
+        return None;
+    }
     let started = std::time::Instant::now();
     if let Err(_error) = wait_for_dind(&dind_handle, &certs_volume, docker).await {
         record_recovered_degradation();
@@ -779,7 +1032,10 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             Some("skip:not-ready"),
         );
         emit_prewarmed_dind_adoption("skipped", &prewarmed_dind_state_detail("not-ready", &state));
-        remove_prewarmed_dind_state(paths);
+        return None;
+    }
+    if docker.daemon_server_id().await.ok().as_ref() != Some(&daemon_server_id) {
+        record_prewarm_adoption_skip("daemon:identity-changed");
         return None;
     }
     let ready_ms = started.elapsed().as_millis();
@@ -796,12 +1052,13 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             state.ready_ms
         ),
     );
-    remove_prewarmed_dind_state(paths);
     Some(AdoptedDindSidecar {
         sidecar: DindSidecarPrewarm {
             dind,
             dind_id: dind_handle.id().to_owned(),
             network,
+            network_id: state.network_id.clone()?,
+            lifetime_owner: state.lifetime_owner.clone()?,
             certs_volume,
             ready_ms,
             kept: true,
@@ -809,6 +1066,32 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         dind_handle,
         _lock: lock,
     })
+}
+
+/// Remove the prewarm projection only after the single canonical lifetime owner changed durably.
+pub(crate) fn commit_prewarm_state_transfer(paths: &JackinPaths) -> anyhow::Result<()> {
+    remove_prewarmed_dind_state_checked(paths)
+}
+
+pub(crate) fn retire_prewarm_projection(
+    paths: &JackinPaths,
+    lifetime: &crate::instance::SharedDockerLifetime,
+) -> anyhow::Result<()> {
+    let Some(state) = read_prewarmed_dind_state(paths).map_err(anyhow::Error::msg)? else {
+        return Ok(());
+    };
+    anyhow::ensure!(lifetime.owner_kind() == crate::instance::SharedDockerOwnerKind::Prewarm
+        && state.schema_version == 2 && state.kept
+        && state.lifetime_owner.as_deref() == Some(lifetime.owner())
+        && state.network == lifetime.network_name().unwrap_or_default()
+        && state.network_id.as_ref() == lifetime.network_id()
+        && state.certs_volume == lifetime.certs_volume_name().unwrap_or_default(),
+        "prewarm state projection differs from retiring lifetime");
+    anyhow::ensure!(matches!(lifetime.dind_container(),
+        crate::instance::SharedContainerCustody::Owned { name, id }
+            if state.dind == *name && state.dind_id.as_deref() == Some(id.as_str())),
+        "prewarm state container identity differs from retiring lifetime");
+    remove_prewarmed_dind_state_checked(paths)
 }
 
 pub(crate) async fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
@@ -819,11 +1102,12 @@ pub(crate) async fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::
         Ok::<_, std::io::Error>(lock)
     })
     .await;
-    if let Ok(Ok(lock)) = result {
-        Some(lock)
-    } else {
-        record_recovered_degradation();
-        None
+    match result {
+        Ok(Ok(lock)) => Some(lock),
+        Ok(Err(_)) | Err(_) => {
+            record_recovered_degradation();
+            None
+        }
     }
 }
 
@@ -859,6 +1143,8 @@ mod tests {
                 dind: "jk-prewarm-dind-dind".to_owned(),
                 dind_id: "original-dind-id".to_owned(),
                 network: "jk-prewarm-dind-net".to_owned(),
+                network_id: jackin_core::NetworkId::parse(&"a".repeat(64)).unwrap(),
+                lifetime_owner: "jk-prewarm-dind".to_owned(),
                 certs_volume: "jk-prewarm-dind-certs".to_owned(),
                 ready_ms: 1,
                 kept: true,
@@ -907,4 +1193,94 @@ mod tests {
             "replacement guard must issue no destructive Docker operation"
         );
     }
+
+    #[tokio::test]
+    async fn role_network_creation_uses_durable_fresh_lifetime() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let paths = JackinPaths::for_tests(temp.path());
+        let lifetime = crate::instance::SharedDockerLifetime::fresh(&jackin_core::DaemonServerId::parse("jackin-test-daemon")?, "jk-owned-role", true, false)?;
+        let network = lifetime.network_name().unwrap().to_owned();
+        let custody = SharedDockerCreationCustody::reserve(&paths, lifetime)?;
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let docker = FakeDockerClient::default();
+        create_role_network("jk-owned-role", &network, false, std::sync::Arc::clone(&slot), std::sync::Arc::clone(&custody), &docker).await?;
+        let admitted = custody.admitted_snapshot()?;
+        assert_eq!(admitted.network_id(), slot.lock().unwrap().as_ref());
+        assert_eq!(docker.created_networks.borrow()[0].0, network);
+        assert_eq!(docker.created_networks.borrow()[0].1.get("jackin.shared-generation").map(String::as_str), Some(admitted.generation()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn mismatched_role_network_reservation_has_no_docker_effects() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let paths = JackinPaths::for_tests(temp.path());
+        let lifetime = crate::instance::SharedDockerLifetime::fresh(&jackin_core::DaemonServerId::parse("jackin-test-daemon")?, "jk-owned-role", true, false)?;
+        let custody = SharedDockerCreationCustody::reserve(&paths, lifetime)?;
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let docker = FakeDockerClient::default();
+        assert!(create_role_network("jk-owned-role", "jk-other-net", false, slot, custody, &docker).await.is_err());
+        assert!(docker.recorded.borrow().iter().all(|operation| operation == "docker info"));
+        Ok(())
+    }
+
+
+    #[tokio::test]
+    async fn failed_network_capture_save_cannot_authorize_rollback() -> anyhow::Result<()> {
+        fn find_record(directory: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
+            for entry in std::fs::read_dir(directory)? {
+                let entry = entry?;
+                if entry.file_type()?.is_dir() {
+                    if let Ok(path) = find_record(&entry.path()) { return Ok(path); }
+                } else if entry.path().extension().is_some_and(|extension| extension == "json") {
+                    return Ok(entry.path());
+                }
+            }
+            anyhow::bail!("test lifetime record is missing")
+        }
+        let temp = tempdir()?;
+        let paths = JackinPaths::for_tests(temp.path());
+        let lifetime = crate::instance::SharedDockerLifetime::fresh(&jackin_core::DaemonServerId::parse("jackin-test-daemon")?, "jk-failed-capture", true, false)?;
+        let custody = SharedDockerCreationCustody::reserve(&paths, lifetime)?;
+        let record = find_record(&paths.jackin_home.join("shared-docker-lifetimes"))?;
+        let retained = record.with_extension("retained");
+        std::fs::rename(&record, &retained)?;
+        std::fs::create_dir(&record)?;
+        let network_id = jackin_core::NetworkId::parse(&"b".repeat(64))?;
+        assert!(custody.capture_network(network_id.clone()).is_err());
+        assert!(custody.admitted_snapshot().is_err());
+        let socket_dir = paths.jackin_home.join("sockets/jk-failed-capture");
+        std::fs::create_dir_all(&socket_dir)?;
+        std::fs::write(socket_dir.join("retained"), b"evidence")?;
+        let cleanup = super::super::LoadCleanup::new(&paths, "jk-failed-capture".into(), "jk-failed-capture-dind".into(), "disabled-certs".into())?;
+        cleanup.set_role_handle(jackin_core::ContainerHandle::new("jk-failed-capture", "captured-role-id")?);
+        cleanup.set_network_id(network_id);
+        cleanup.bind_shared_custody(custody);
+        let docker = FakeDockerClient::default();
+        cleanup.run(&docker).await;
+        assert!(!docker.recorded.borrow().iter().any(|operation| operation.starts_with("docker rm") || operation.starts_with("docker volume rm") || operation.starts_with("docker network rm")));
+        assert!(retained.is_file());
+        assert!(record.is_dir());
+        assert!(socket_dir.join("retained").is_file());
+        Ok(())
+    }
+
+
+    #[tokio::test]
+    async fn another_daemon_cannot_consume_reserved_network_lifetime() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let paths = JackinPaths::for_tests(temp.path());
+        let owner_daemon = jackin_core::DaemonServerId::parse("daemon-A")?;
+        let lifetime = crate::instance::SharedDockerLifetime::fresh(&owner_daemon, "jk-daemon-bound", true, false)?;
+        let network = lifetime.network_name().unwrap().to_owned();
+        let custody = SharedDockerCreationCustody::reserve(&paths, lifetime)?;
+        let docker = FakeDockerClient::default();
+        docker.set_daemon_server_id(jackin_core::DaemonServerId::parse("daemon-B")?);
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        assert!(create_role_network("jk-daemon-bound", &network, false, slot, std::sync::Arc::clone(&custody), &docker).await.is_err());
+        assert!(docker.created_networks.borrow().is_empty());
+        assert!(matches!(custody.admitted_snapshot()?.network(), crate::instance::SharedNetworkCustody::Pending { .. }));
+        Ok(())
+    }
+
 }

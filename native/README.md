@@ -19,21 +19,20 @@ destination; an older generation can never overwrite a newer one.
 
 Product scope is limits only: remaining/used percentages, resets, plan/status, multi-account selection, and provider-supplied quota caps. Never add token unit prices, session-cost estimates, historical spend/usage, trends, sparklines, or aggregate charts.
 
+Count quotas retain optional `UInt64` quantities and Rust unit, period, and provenance values. Unknown quantities and reset epochs remain absent; reported zero stays zero. Swift displays Rust-owned request segments verbatim and uses only percentage geometry for meters. It never parses labels or converts raw counts through money, signed integers, or floating point.
+
+
 ## Shipping baseline
 
 - Deployment target and release floor: **macOS 26.0**.
-- Shipping lane: **Xcode 26.6, macOS 26.5 SDK, Swift 6.3** on GitHub's `macos-26` image, Swift 6 language mode with complete strict concurrency and warnings as errors.
-- Forward-validation lane: **Xcode 27 beta / macOS 27 SDK**, nonblocking and scheduled; never the shipping lane.
+- Shipping lane: **Xcode 27.0 (`27A266a`), macOS 27.0 SDK (`26A425`), Swift 6.4** (`swiftlang-6.4.0.34.1`, `clang-2100.3.34.1`, driver `1.168.6`), on qualified **macOS 27.0 arm64** hosts. Swift 6 language mode, complete strict concurrency, and warnings as errors remain required.
+- Forward-validation lane: **unimplemented**; a future compiler lane must be separately qualified and nonblocking.
 - Architecture: Apple Silicon (`arm64`) static XCFramework assembly.
 - No compatibility branch, custom material, explicit `glassEffect`, or `GlassEffectContainer` exists in production UI.
 
-**Forward-lane exception (dated):** the scheduled nonblocking Xcode 27/macOS 27
-build lane does not exist yet. Owner: Release Engineering. Recorded 2026-08-20.
-Shipping remains Xcode 26.6 and forward failures do not gate release. The
-exception exits when an Xcode 27 runner image is available and the lane is added
-at the owning `velnor-workflow` Swift-unit source (`ci-unit-swift.yml`,
-dispatched via `group-swift` in generated `ci-pr.yml` — never hand-edited),
-then regenerated here.
+**2026-10-03 compiler promotion:** [Apple's stable release record](https://developer.apple.com/news/releases/) identifies Xcode 27 (`27A266a`), released 2026-09-14. [Apple's support table](https://developer.apple.com/support/xcode/) binds Xcode 27 to Swift 6.4, SDK 27, and host macOS 26.6 or later. Signed Xcode resources bind the qualified SDK/compiler build identities above. Supported compiler hosts and qualified shipping hosts are separate: this gate requires actual macOS 27.0 execution. It verifies the selected signed Xcode, SDK and compiler identities before and after execution, rejects selector conflicts, and records raw toolchain facts with the exact test inventory.
+
+The original macOS 26/Xcode 26.6 gate remains **blocked and unpassed**; historical design captures and measurements retain their original tuple. The stable 27 promotion replaces the old beta forward-lane exception. Generated CI currently needs an owned native runner/task contract; local tuple qualification does not prove that integration. The new shipping lane remains unpassed until full Rust/FFI, official bindings, Swift unit, real-host UI, and bundle gates run against one final revision. macOS 26.0 deployment-floor runtime and native Intel CLI execution remain separate evidence obligations; compilation and Rosetta do not satisfy them.
 
 **Post-26.0 API discipline:** every post-26.0 symbol is guarded with
 `if #available(macOS 27, *)`, ships a decided native fallback, and names the
@@ -71,7 +70,9 @@ There is no cross-provider navigation inside the popover. A secondary click open
 - titlebar: the standard split-view sidebar button in its fixed leading slot;
 - detail top accessory: centered `jackin❯ desktop` identity and trailing Refresh.
 
-The standard `.toggleSidebar` item and `NSSplitViewController.toggleSidebar(_:)` responder action are the only visibility authority. Its native width is retained while its accessibility label changes between Show Sidebar and Hide Sidebar, so the control stays stationary through collapse and retained-window reopen. The sidebar owns the full leading structural height. The detail-only native split-item accessory centers the noninteractive product identity over the detail pane and keeps Refresh trailing; no root header or `Usage` heading spans both panes. Reopening preserves valid destination, account, sidebar state, and frame. A removed/disabled provider normalizes to Overview at `PresentationStore`, not in a view-only fallback.
+The standard `.toggleSidebar` item and `NSSplitViewController.toggleSidebar(_:)` responder action are the only visibility authority. Its native width is retained while its accessibility label changes between Show Sidebar and Hide Sidebar, so the control stays stationary through collapse and retained-window reopen. The sidebar owns the full leading structural height. The detail-only native split-item accessory centers the noninteractive product identity over the detail pane and keeps Refresh trailing; no root header or `Usage` heading spans both panes. Reopening preserves valid destination, account, sidebar state, and frame. A removed provider normalizes to Overview at `PresentationStore`, not in a view-only fallback.
+
+A removed selected account keeps its persisted Rust binding unavailable until an explicit account choice. Only the affected Usage destination returns to Overview with the Rust notice; unrelated provider selections stay intact. Removing the last account leaves a provider recovery row and Retry. Passive projections preserve the notice, and selecting another account or destination clears it. Account menus and identity copy never choose the first sibling as a replacement.
 
 Standard commands: Command-R Refresh, Command-comma Settings, Command-W Close, Control-Command-S Toggle Sidebar.
 
@@ -126,8 +127,10 @@ cargo xtask desktop test-swift
 check, Xcode project generation, formatting, SwiftLint, Rust/FFI plus parity
 harnesses, app build, counted SwiftPM tests, then fail-closed app verify.
 `desktop-merge` adds the UI suite on top; `desktop-scheduled` adds the
-dead-code scan. CI and release invoke these exact `mise run desktop-*` task
-names — one definition per command.
+dead-code scan. Hosted CI and release must invoke these exact
+`mise run desktop-*` task names. Current generated CI has only Ubuntu Rust
+jobs and does not invoke these native cadences; local task definitions do not
+prove hosted execution.
 `desktop-test` covers 291 Rust/FFI tests plus native architecture/parity harnesses. SwiftPM tests protect ownership, navigation normalization, native component confinement, brand tokens, and visual-QA fixture isolation. The UI suite runs the real app host and audits popover, Overview, provider detail, sidebar coordinates, commands, scrolling, recovery, and retained context.
 
 Explicit visual-QA launch flags (`--fixture`, `--open-popover`, `--open-usage`, `--selection`, `--window-size`, `--appearance`) never activate unless `--fixture` is present in argv and never call the bridge or real credentials. Fixture runs carry a persistent visible Fixture badge, and their frozen account/refresh projections exercise immediate selection plus `Updating…` → terminal activity. Environment variables cannot enable fabricated data. Moving fixture code into a debug-only target remains a maintenance follow-up.
@@ -156,11 +159,11 @@ After an XCFramework rename or FFI module change, delete `native/DerivedData` be
 
 | Surface | Contract |
 |---|---|
-| PR/local validation | macOS 26.0, Xcode 26.6, arm64 static app, tests and bundle verification |
+| PR/local validation | qualified macOS 27.0 host, deployment floor 26.0, exact Xcode 27.0/SDK 27.0/Swift 6.4 tuple above, arm64 static app, tests and bundle verification |
 | Secret-free release validation | fixture version, ad-hoc rejection by release verifier, read-only reconciliation |
 | Publication | `main`/tag only, environment `release-macos`, GitHub-hosted macOS only |
 | Artifact | `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus SHA-256, Sigstore bundle, SBOM, attestation |
-| Symbols | `desktop-release` Cargo profile (thin LTO, one codegen unit, line-table debug, no strip); build UUID-checks and archives `native/dist/JackinDesktop.app.dSYM` beside the app, release CI uploads it with the compressed unstripped Rust static library (90-day retention) |
+| Symbols | `desktop-release` Cargo profile (thin LTO, one codegen unit, line-table debug, no strip); build UUID-checks and archives `native/dist/JackinDesktop.app.dSYM` beside the app, publication must retain it with the compressed unstripped Rust static library for 90 days; current generated CI has no release uploader |
 | Homebrew | formula and `Casks/jackin-desktop.rb` in one independently reviewed tap PR |
 
 Required `release-macos` secret names:
@@ -176,7 +179,7 @@ Required repository variables:
 - `JACKIN_DEVELOPER_ID_TEAM_ID`
 - `JACKIN_DEVELOPER_ID_CERT_SHA256`
 
-Credential material is never committed. CI removes temporary signing/notary material before supply-chain tooling runs. Until an operator provisions these values and performs the first notarized publication/cask proof, validation is complete but public distribution remains externally gated.
+Credential material is never committed. Publication must remove temporary signing/notary material before supply-chain tooling runs. Current generated CI has no product-release job; implementing that owned consumer, executing the full native validation contract, provisioning signing values, and proving the first notarized publication/cask remain outstanding. Local task availability does not establish completed validation or public distribution.
 
 ## Local notarization rehearsal
 
@@ -194,7 +197,7 @@ See the [public macOS guide](<../docs/content/(public)/guides/macos-usage-menu-b
 
 Manual host-only integration; never part of CI. Setup on the shipping Xcode:
 
-1. In Xcode 26.6, open Settings → Intelligence and enable external agent access.
+1. In Xcode 27.0, open Settings → Intelligence and enable external agent access.
 2. Run `mise run desktop-generate`, then open `native/JackinDesktop.xcodeproj`
    in the running Xcode instance.
 3. From the external agent, enumerate the bridge's actually exposed tools
@@ -212,7 +215,7 @@ changes):
 
 - expected project: `native/JackinDesktop.xcodeproj` (generated, never committed)
 - expected scheme: `JackinDesktop`
-- expected Xcode build: 26.6 (`17F113`)
+- expected Xcode build: 27.0 (`27A266a`); bridge availability/tool inventory requires a fresh probe
 - observed tool list: enumerate and record in the session log before use
 
 ## Agent responsibility ownership
@@ -232,15 +235,17 @@ overlapping aesthetic skills.
 ### Apple agent skills export — recorded blocker
 
 `native/Vendor/AppleAgentSkills` is intentionally absent. Probed Xcode 26.6
-(build `17F113`, the shipping lane) on 2026-08-20: the bundle ships agent
+(build `17F113`, the then-shipping lane) on 2026-08-20: the bundle ships agent
 intelligence only as compiled frameworks
 (`Contents/PlugIns/IDEIntelligence*.framework`,
 `Contents/SharedFrameworks/*Intelligence*.framework`) — there are no
 exportable skill documents (`SKILL.md` or equivalent) anywhere in
-`Xcode.app`, so there is nothing reviewable to vendor, hash, or pin. The
-unsupported-export caveat is therefore the standing state: project-local
+`Xcode.app`, so there is nothing reviewable to vendor, hash, or pin. This historical probe does not qualify the Xcode 27 bundle. A fresh export/bridge probe remains required. The
+unsupported-export caveat is the last recorded state: project-local
 agent knowledge comes exclusively from the pinned `tailrocks-*` skills above
 and this repository's own docs. Refresh rule: re-probe on every shipping
 Xcode change; if a future Xcode exposes a documented skills export, vendor it
 read-only with build, export date, and file hashes before use, and never
 execute unreviewed bundled scripts or network steps.
+
+The full Usage inventory and sidebar follow every canonical Rust provider group, including unresolved sources and providers excluded from compact display preferences. Compact status items retain their separate bounded summary. A disabled preference stays visible in Rust status copy and does not hide stored account limits or authorize a probe.

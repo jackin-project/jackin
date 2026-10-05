@@ -332,9 +332,7 @@ fn clipboard_image_transfer_client_frames_roundtrip() {
 
 #[test]
 fn clipboard_image_error_client_frame_roundtrips() {
-    let frame = ClientFrame::ClipboardImageError(ClipboardImageError::from_message(
-        "host path is not an image".to_owned(),
-    ));
+    let frame = ClientFrame::ClipboardImageError(ClipboardImageError::UnsupportedFormat);
     let bytes = encode_client(frame.clone()).unwrap();
     assert_eq!(bytes[0], TAG_CLIPBOARD_IMAGE_ERROR);
 
@@ -1051,49 +1049,77 @@ fn clipboard_image_error_variants_roundtrip() {
         ClipboardImageError::DuplicateTransfer,
         ClipboardImageError::BackendUnavailable,
         ClipboardImageError::Io,
-        ClipboardImageError::Other("host clipboard image probe failed: boom".to_owned()),
+        ClipboardImageError::NoReadableImage,
+        ClipboardImageError::NoReadableImagePath,
+        // Display words never control the typed kind.
+        ClipboardImageError::Other(
+            "reading empty metadata: digest offset display magic exceeds cap".to_owned(),
+        ),
+        ClipboardImageError::Other("host clipboard does not contain a readable image".to_owned()),
     ];
     for original in variants {
-        let bytes = encode_client(ClientFrame::ClipboardImageError(original.clone())).unwrap();
-        let tag = bytes[0];
-        let payload = bytes[5..].to_vec();
-        let decoded = decode_client(tag, payload).unwrap();
-        match decoded {
-            ClientFrame::ClipboardImageError(got) => {
-                assert_eq!(got.reason_code(), original.reason_code());
-                // Other preserves the free-form message; static kinds use canonical text.
-                if matches!(original, ClipboardImageError::Other(_)) {
-                    assert_eq!(got, original);
-                } else {
-                    assert_eq!(got.reason_code(), original.reason_code());
-                    assert!(!got.message().is_empty());
-                }
-            }
-            other => panic!("unexpected frame: {other:?}"),
-        }
+        let frame = ClientFrame::ClipboardImageError(original.clone());
+        let encoded = encode_client(frame.clone()).unwrap();
+        assert_eq!(
+            decode_client(encoded[0], encoded[5..].to_vec()).unwrap(),
+            frame
+        );
+        let request = ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 42,
+            context: TelemetryContext::v1(),
+            operation: AttachControlOperation::ClipboardImageError(original),
+        });
+        let encoded = encode_client(request.clone()).unwrap();
+        assert_eq!(
+            decode_client(encoded[0], encoded[5..].to_vec()).unwrap(),
+            request
+        );
     }
 }
 
 #[test]
-fn clipboard_image_error_from_message_classifies_known_shapes() {
-    assert_eq!(
-        ClipboardImageError::from_message("clipboard image transfer is empty".into()).reason_code(),
-        "empty"
+fn clipboard_image_error_rejects_invalid_typed_payloads() {
+    for payload in [
+        vec![],
+        vec![0],
+        vec![13],
+        vec![1, b'x'],
+        vec![12],
+        vec![12, 0xff],
+        b"host clipboard does not contain a readable image".to_vec(),
+    ] {
+        assert!(ClipboardImageError::decode_payload(&payload).is_err());
+        assert!(decode_client(TAG_CLIPBOARD_IMAGE_ERROR, payload.clone()).is_err());
+        let encoded = encode_client(ClientFrame::AttachControl(AttachControlRequest {
+            request_id: 1,
+            context: TelemetryContext::v1(),
+            operation: AttachControlOperation::ClipboardImageError(ClipboardImageError::Empty),
+        }))
+        .unwrap();
+        let mut contextual = encoded[5..].to_vec();
+        contextual.pop(); // Replace the valid typed error payload.
+        contextual.extend_from_slice(&payload);
+        assert!(decode_client(TAG_ATTACH_CONTROL, contextual).is_err());
+    }
+    let mut overlong = vec![12];
+    overlong.extend(std::iter::repeat_n(
+        b'x',
+        MAX_CLIPBOARD_IMAGE_ERROR_BYTES + 1,
+    ));
+    assert!(ClipboardImageError::decode_payload(&overlong).is_err());
+    assert!(
+        ClipboardImageError::Other(String::new())
+            .encode_payload()
+            .is_err()
     );
-    assert_eq!(
-        ClipboardImageError::from_message("transfer 9 exceeds cap 8".into()).reason_code(),
-        "oversize"
+    assert!(
+        ClipboardImageError::Other("x".repeat(MAX_CLIPBOARD_IMAGE_ERROR_BYTES + 1))
+            .encode_payload()
+            .is_err()
     );
+    let largest = ClipboardImageError::Other("x".repeat(MAX_CLIPBOARD_IMAGE_ERROR_BYTES));
     assert_eq!(
-        ClipboardImageError::from_message("host path is not an image".into()).reason_code(),
-        "signature-mismatch"
-    );
-    assert_eq!(
-        ClipboardImageError::from_message("SHA-256 mismatch".into()).reason_code(),
-        "digest-mismatch"
-    );
-    assert_eq!(
-        ClipboardImageError::from_message("offset 4 did not match expected 8".into()).reason_code(),
-        "offset-mismatch"
+        ClipboardImageError::decode_payload(&largest.encode_payload().unwrap()).unwrap(),
+        largest
     );
 }

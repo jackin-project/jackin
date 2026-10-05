@@ -33,6 +33,7 @@ fn fixture() -> (
         synthesized: false,
     };
     let slot = crate::instance::ProvisionedInstanceAuth {
+        profile_material: None,
         agent: Agent::Codex,
         account_id: "selected".into(),
         mode: jackin_config::AuthForwardMode::ApiKey,
@@ -139,8 +140,8 @@ fn generated_authority_does_not_import_writable_home_configuration() {
     let mounts = configure_accounts(
         temp.path(),
         &config,
-        std::slice::from_ref(&instance),
-        &BTreeMap::from([(instance.config_id.clone(), slot)]),
+        &[instance.clone()],
+        &BTreeMap::from([(instance.config_id, slot)]),
         &BTreeMap::new(),
         &BTreeMap::new(),
     )

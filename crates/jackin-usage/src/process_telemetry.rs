@@ -58,10 +58,8 @@ impl ChildOperation {
         self.complete((OutcomeValue::Timeout, Some(ErrorType::Timeout)));
     }
 
-    pub(crate) fn reap_managed(child: &mut std::process::Child) -> bool {
-        let killed = child.kill().is_ok();
-        let reaped = child.wait().is_ok();
-        killed && reaped
+    pub(crate) fn reap_managed(child: &mut jackin_process::GroupSyncChild) -> bool {
+        child.kill_and_reap().is_ok()
     }
 
     pub(crate) fn finish_managed(mut self, succeeded: bool) {
@@ -72,9 +70,8 @@ impl ChildOperation {
         });
     }
 
-    pub(crate) fn fail_managed_io(mut self, child: &mut std::process::Child) {
-        drop(child.kill());
-        drop(child.wait());
+    pub(crate) fn fail_managed_io(mut self, child: &mut jackin_process::GroupSyncChild) {
+        drop(child.kill_and_reap());
         self.complete((OutcomeValue::Failure, Some(ErrorType::IoError)));
     }
 

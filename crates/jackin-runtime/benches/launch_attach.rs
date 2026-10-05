@@ -20,9 +20,7 @@ use std::path::Path;
 use criterion::{Criterion, criterion_group, criterion_main};
 use jackin_core::{Agent, RoleSelector};
 use jackin_instance::manifest::{DockerResources, InstanceManifest, NewInstanceManifest};
-use jackin_instance::naming::{
-    class_family_matches_with_slug, compact_component, container_name_with_id,
-};
+use jackin_instance::naming::container_name_with_id;
 use jackin_isolation::materialize::{clone_path_for, worktree_path_for};
 
 // Representative fixtures.
@@ -84,28 +82,32 @@ fn bench_container_name(c: &mut Criterion) {
     });
 }
 
-// ── Naming: class_family_scan (attach container scan, E2 hot path) ───────────
+// ── Persisted role identity scan ────────────────────────────────────────────
 
-/// Simulates the inner loop of `jackin attach`: scan 20 running container
-/// names and collect those whose role slug matches the selector.
-fn bench_class_family_scan(c: &mut Criterion) {
-    // 20 containers: 2 match (at indices 7 and 17), 18 do not.
-    let containers: Vec<String> = (0u32..20)
+/// Scan complete roles from 20 parsed manifest fixtures without filesystem I/O.
+fn bench_role_identity_scan(c: &mut Criterion) {
+    let manifests: Vec<InstanceManifest> = (0u32..20)
         .map(|i| {
-            if i % 10 == 7 {
-                format!("jk-{i:08x}-myworkspace-myrole")
+            let mut manifest = InstanceManifest::new(new_manifest_input());
+            manifest.container_base = format!("jk-{i:08x}-myworkspace-myrole");
+            manifest.docker = DockerResources::from_container_name(&manifest.container_base);
+            manifest.role_key = if i % 10 == 7 {
+                "myns/myrole".to_owned()
             } else {
-                format!("jk-{i:08x}-myworkspace-otherrole{i}")
-            }
+                format!("otherns{i}/myrole")
+            };
+            manifest
         })
         .collect();
-    let slug = compact_component(ROLE, "role");
+    let selector = make_selector();
 
-    c.bench_function("naming/class_family_scan_20", |b| {
+    c.bench_function("identity/persisted_role_scan_20", |b| {
         b.iter(|| {
-            containers
+            manifests
                 .iter()
-                .filter(|name| class_family_matches_with_slug(&slug, name))
+                .filter(|manifest| {
+                    RoleSelector::parse(&manifest.role_key).is_ok_and(|role| role == selector)
+                })
                 .count()
         });
     });
@@ -151,7 +153,7 @@ fn bench_manifest_serialize(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_container_name,
-    bench_class_family_scan,
+    bench_role_identity_scan,
     bench_mount_paths,
     bench_manifest_new,
     bench_manifest_serialize,

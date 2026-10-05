@@ -133,6 +133,42 @@ fn apply_scrollbar_drag_updates_offset_when_pointer_hits_track() {
 }
 
 #[test]
+fn scrollbar_drag_preserves_opposite_axis_bounds_and_position() {
+    let area = Rect::new(0, 0, 20, 5);
+    let mut state = crate::tui::scroll_block::console_scroll_area_state();
+    state.set_content_size(100, 60);
+    state.set_viewport(18, 3);
+    state.scroll_by(7, 9);
+    assert!(apply_scrollbar_drag(
+        ScrollbarAxis::Horizontal,
+        &mut state,
+        area,
+        100,
+        10,
+        4
+    ));
+    assert_eq!(
+        (state.content_h(), state.viewport_h(), state.offset_y()),
+        (60, 3, 7)
+    );
+    let x = state.offset_x();
+    assert!(apply_scrollbar_drag(
+        ScrollbarAxis::Vertical,
+        &mut state,
+        area,
+        60,
+        19,
+        2
+    ));
+    assert_eq!(
+        (state.content_w(), state.viewport_w(), state.offset_x()),
+        (100, 18, x)
+    );
+    state.scroll_by(isize::MAX, isize::MAX);
+    assert_eq!((state.offset_x(), state.offset_y()), (82, 57));
+}
+
+#[test]
 fn scroll_selection_at_position_runs_only_inside_area() {
     let area = Rect {
         x: 2,

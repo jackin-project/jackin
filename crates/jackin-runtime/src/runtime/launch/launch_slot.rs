@@ -347,26 +347,7 @@ mod lock_tests {
         inode: (u64, u64),
     }
 
-    fn read_child_reports(
-        stdout: std::process::ChildStdout,
-        sender: std::sync::mpsc::Sender<String>,
-    ) {
-        for line in std::io::BufReader::new(stdout).lines() {
-            let Ok(line) = line else { break };
-            // libtest may prepend the helper test's name to its first line.
-            if let Some((_, report)) = line.split_once(REPORT)
-                && sender.send(report.to_owned()).is_err()
-            {
-                break;
-            }
-        }
-    }
-
     impl Contender {
-        #[expect(
-            clippy::unwrap_used,
-            reason = "child fixture setup must fail the parent test on process or pipe errors"
-        )]
         fn spawn(root: &std::path::Path) -> Self {
             let mut child = Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", CHILD_TEST, "--ignored", "--nocapture"])
@@ -378,16 +359,20 @@ mod lock_tests {
                 .unwrap();
             let stdout = child.stdout.take().unwrap();
             let (sender, reports) = channel();
-            std::thread::spawn(move || read_child_reports(stdout, sender));
+            std::thread::spawn(move || {
+                for line in std::io::BufReader::new(stdout).lines() {
+                    let Ok(line) = line else { break };
+                    // libtest may prepend the helper test's name to its first line.
+                    if let Some((_, report)) = line.split_once(REPORT)
+                        && sender.send(report.to_owned()).is_err()
+                    {
+                        break;
+                    }
+                }
+            });
             Self { child, reports }
         }
 
-        #[expect(
-            clippy::unwrap_used,
-            clippy::expect_used,
-            clippy::panic,
-            reason = "child protocol errors and missed deadlines must fail the parent test"
-        )]
         fn attempt(&mut self) -> Observation {
             let stdin = self.child.stdin.as_mut().unwrap();
             writeln!(stdin, "attempt").unwrap();
@@ -415,10 +400,6 @@ mod lock_tests {
             observation
         }
 
-        #[expect(
-            clippy::unwrap_used,
-            reason = "child wait errors must fail the parent test"
-        )]
         fn exit(&mut self) {
             drop(self.child.stdin.take());
             let deadline = Instant::now() + Duration::from_secs(10);
@@ -554,12 +535,12 @@ mod lock_tests {
                 "instances" => {
                     crate::runtime::cleanup::prune_instances(&paths, &docker, &mut runner)
                         .await
-                        .unwrap();
+                        .unwrap()
                 }
                 "all-instances" => {
                     crate::runtime::cleanup::prune_all_instances(&paths, &docker, &mut runner)
                         .await
-                        .unwrap();
+                        .unwrap()
                 }
                 "home" => crate::runtime::cleanup::prune_jackin_home(&paths).unwrap(),
                 _ => unreachable!(),

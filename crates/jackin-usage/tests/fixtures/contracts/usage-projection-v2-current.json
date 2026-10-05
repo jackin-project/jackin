@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "projection_id": "projection-42",
   "generated_at_epoch": 1787259600,
   "discovery_revision": "catalog-7",
@@ -16,6 +16,9 @@
       "accounts": [
         {
           "canonical_account_id": "openai-account-01",
+          "refresh_capabilities": [
+            { "account_id": "codex-account-route-01", "surface_id": "codex" }
+          ],
           "identity_kind": "provider_account_id",
           "rank": 0,
           "display_label": "personal@example.test",
@@ -44,5 +47,6 @@
     }
   ],
   "unresolved": [],
+  "unresolved_grants": [],
   "issues": []
 }

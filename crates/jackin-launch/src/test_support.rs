@@ -3,7 +3,9 @@ use jackin_core::LaunchHostTerminal;
 struct TestHostTerminal;
 
 impl LaunchHostTerminal for TestHostTerminal {
-    fn set_rich_surface_active(&self, _active: bool) {}
+    fn acquire_rich_surface(&self) -> std::io::Result<jackin_core::TerminalOwnershipGuard> {
+        Ok(jackin_core::TerminalOwnershipGuard::new(|| {}))
+    }
 
     fn host_screen_owned(&self) -> bool {
         false

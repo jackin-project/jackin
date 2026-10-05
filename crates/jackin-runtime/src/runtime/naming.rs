@@ -9,14 +9,15 @@
 //! Re-exported at the `runtime::image` module's edge so existing
 //! `crate::runtime::image::X` call sites compile unchanged.
 
-use jackin_core::RoleSelector;
+use anyhow::{Context, Result};
+use jackin_core::{ContainerId, JackinPaths, RoleSelector};
 
 pub use jackin_image::naming::{
     HOST_IDENTITY_STRATEGY, IMAGE_PREFIX, LABEL_IMAGE_AGENT_VERSION_PREFIX,
     LABEL_IMAGE_CAPSULE_VERSION, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION,
-    LABEL_IMAGE_MANIFEST_VERSION, LABEL_IMAGE_RECIPE_HASH, LABEL_IMAGE_RECIPE_VERSION,
-    LABEL_IMAGE_ROLE_GIT_SHA, image_name, image_name_for_branch, role_base_image_name,
-    short_git_sha,
+    LABEL_IMAGE_KIMI_AUTH_SLOT_CONTRACT, LABEL_IMAGE_MANIFEST_VERSION, LABEL_IMAGE_RECIPE_HASH,
+    LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name, image_name_for_branch,
+    role_base_image_name, short_git_sha,
 };
 
 // ── Docker label keys (not image-specific — stay in runtime/naming) ────
@@ -63,13 +64,36 @@ pub(super) fn format_role_display(container_name: &str, display_name: &str) -> S
     )
 }
 
-pub fn matching_family(selector: &RoleSelector, names: &[String]) -> Vec<String> {
-    let role_slug = crate::instance::naming::compact_component(&selector.name, "role");
-    names
-        .iter()
-        .filter(|name| crate::instance::naming::class_family_matches_with_slug(&role_slug, name))
-        .cloned()
-        .collect()
+/// Match complete persisted role identity; compact Docker names are descriptive only.
+pub fn matching_family(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    names: &[String],
+) -> Result<Vec<String>> {
+    let mut matched = Vec::new();
+    for name in names {
+        let container = ContainerId::parse(name).context("validating role candidate name")?;
+        anyhow::ensure!(
+            name != "." && name != "..",
+            "invalid role candidate name {name:?}"
+        );
+        let Some(manifest) = crate::instance::InstanceManifest::read_optional(
+            &paths.data_dir.join(container.as_str()),
+        )?
+        else {
+            continue;
+        };
+        anyhow::ensure!(
+            manifest.container_base == *name && manifest.docker.role_container == *name,
+            "instance manifest identity does not match role candidate {name:?}"
+        );
+        let role = RoleSelector::parse(&manifest.role_key)
+            .with_context(|| format!("invalid persisted role identity for {name:?}"))?;
+        if role == *selector && manifest.status != crate::instance::InstanceStatus::Purged {
+            matched.push(name.clone());
+        }
+    }
+    Ok(matched)
 }
 
 #[cfg(test)]

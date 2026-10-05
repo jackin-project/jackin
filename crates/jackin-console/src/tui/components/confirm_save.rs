@@ -106,6 +106,7 @@ const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
     KeyBinding::borrowed(
         &[
             KeyChord::plain(KeyCode::BackTab),
+            KeyChord::shift(KeyCode::BackTab),
             KeyChord::plain(KeyCode::Left),
             KeyChord::plain(KeyCode::Char('h')),
             KeyChord::plain(KeyCode::Char('H')),

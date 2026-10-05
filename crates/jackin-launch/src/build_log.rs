@@ -18,6 +18,7 @@ pub struct DiagnosticsBuildLogSink;
 
 impl BuildLogSink for DiagnosticsBuildLogSink {
     fn push_line(&self, line: &str) {
-        jackin_diagnostics::build_log::push_line(line);
+        let line = jackin_diagnostics::redact::redact_text(line);
+        jackin_diagnostics::build_log::push_line(&line);
     }
 }

@@ -1,6 +1,6 @@
 ---
 title: "03 — RTK: current design"
-description: "RTK 0.49.0: command filtering, content-addressed recall, parser corrections, and selective Jackin integration."
+description: "RTK 0.49.0: command filtering, content-addressed recall, parser corrections, and selective jackin❯ integration."
 ---
 
 ## Summary
@@ -9,7 +9,7 @@ Cutoff: **2026-09-23 UTC**. Reviewed release: [RTK v0.49.0](https://github.com/r
 
 ## Question and scope
 
-Where can command-specific filtering help Jackin without changing shell semantics, approval behavior, or the meaning of diagnostic evidence?
+Where can command-specific filtering help jackin❯ without changing shell semantics, approval behavior, or the meaning of diagnostic evidence?
 
 ## Method
 
@@ -44,7 +44,7 @@ The [manifest](https://github.com/rtk-ai/rtk/blob/v0.49.0/Cargo.toml) identifies
 
 **Best part:** its command-specific catalog and now-explicit recall design. Start with measured noisy command families, not all shell traffic.
 
-**Integration choice:** package a pinned executable for a controlled arm, or seek an upstream pure-filter API. Extract a small reviewed Apache-2.0 kernel only if the executable boundary cannot preserve Jackin's contract. Keep attribution and regression fixtures. A permanent full fork is not the default choice.
+**Integration choice:** package a pinned executable for a controlled arm, or seek an upstream pure-filter API. Extract a small reviewed Apache-2.0 kernel only if the executable boundary cannot preserve the contract defined by jackin❯. Keep attribution and regression fixtures. A permanent full fork is not the default choice.
 
 **Default decision:** avoid blanket command rewriting. Prefer a host-supported post-execution seam when available; otherwise qualify exact commands, arguments, consumers, exits, and signals. Keep mutation output, security findings, and review diffs raw until their individual fidelity gates pass. Do not disable all current RTK features solely because a superseded parser was wrong.
 
@@ -60,4 +60,4 @@ The tagged manifest and changelog support current capabilities and release corre
 
 - [Six-tool comparison](/research/context/tools/05-head-to-head/)
 - [Composition](/research/context/tools/06-combining/)
-- [Jackin integration](/research/context/tools/11-jackin-integration/)
+- [jackin❯ integration](/research/context/tools/11-jackin-integration/)

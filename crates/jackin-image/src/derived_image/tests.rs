@@ -931,7 +931,7 @@ fn entrypoint_run_hook_helper_captures_rc_before_failure() {
     // `$?` after `if ! cmd; then` is 0 — capture before the test.
     // Pin the pattern so a regression to `if ! "$path"` (which
     // silently makes failure exit 0) is caught.
-    let helper = extract_block(ENTRYPOINT_SH, "run_hook() {", "\n}\n");
+    let helper = extract_block(&ENTRYPOINT_SH, "run_hook() {", "\n}\n");
     assert!(helper.contains("local rc=0"));
     assert!(helper.contains("( cd \"$hook_cwd\" && \"$path\" ) || rc=$?"));
     assert!(helper.contains("\"$path\" || rc=$?"));
@@ -942,7 +942,7 @@ fn entrypoint_run_hook_helper_captures_rc_before_failure() {
 #[test]
 fn entrypoint_runs_preflight_from_agent_home() {
     let preflight = extract_block(
-        ENTRYPOINT_SH,
+        &ENTRYPOINT_SH,
         "if [ -x /jackin/runtime/hooks/preflight.sh ]; then",
         "\nfi\n",
     );
@@ -962,7 +962,7 @@ fn entrypoint_source_hook_block_clears_trap_and_restores_pwd_and_xtrace() {
     //   - clear the ERR trap before the cd so a vanished pwd
     //     doesn't fire a hook-installed trap
     let block = extract_block(
-        ENTRYPOINT_SH,
+        &ENTRYPOINT_SH,
         "if [ -x /jackin/runtime/hooks/source.sh ]; then",
         "\nfi\n",
     );

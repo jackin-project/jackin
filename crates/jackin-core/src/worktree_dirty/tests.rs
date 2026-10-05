@@ -62,7 +62,7 @@ impl CommandRunner for MockGit {
         }
         match sub {
             "status" => Ok(self.porcelain.clone()),
-            "for-each-ref" => Ok(self.for_each_ref.clone()),
+            "for-each-ref" => Ok(self.for_each_ref.trim().to_owned()),
             "rev-list" => Ok(self.rev_list.clone()),
             // symbolic-ref --quiet HEAD: Ok on attached branch, Err on detached.
             "symbolic-ref" => {
@@ -97,7 +97,7 @@ fn clean_worktree_at_base_is_clean() {
     let mut mock = MockGit {
         porcelain: String::new(),
         // One branch parked at base, attached HEAD.
-        for_each_ref: format!("scratch\t{BASE}\t\t"),
+        for_each_ref: format!("scratch\t{BASE}\t\t\tEND"),
         symbolic_ref_ok: true,
         ..MockGit::default()
     };
@@ -127,7 +127,7 @@ fn branch_ahead_with_no_upstream_is_unpushed() {
     let mut mock = MockGit {
         porcelain: String::new(),
         // tip moved past base, no upstream column.
-        for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\t\t".to_owned(),
+        for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\t\t\tEND".to_owned(),
         symbolic_ref_ok: true,
         ..MockGit::default()
     };
@@ -139,7 +139,7 @@ fn branch_ahead_of_upstream_is_unpushed() {
     let mut mock = MockGit {
         porcelain: String::new(),
         for_each_ref:
-            "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t[ahead 1]"
+            "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t[ahead 1]\tEND"
                 .to_owned(),
         rev_list: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n".to_owned(),
         symbolic_ref_ok: true,
@@ -152,7 +152,7 @@ fn branch_ahead_of_upstream_is_unpushed() {
 fn branch_fully_pushed_is_clean() {
     let mut mock = MockGit {
         porcelain: String::new(),
-        for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t"
+        for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t\tEND"
             .to_owned(),
         rev_list: String::new(), // nothing ahead of upstream
         symbolic_ref_ok: true,
@@ -162,22 +162,51 @@ fn branch_fully_pushed_is_clean() {
 }
 
 #[test]
-fn upstream_gone_is_treated_as_merged_clean() {
+fn upstream_gone_with_unreachable_commits_is_unpushed() {
     let mut mock = MockGit {
         porcelain: String::new(),
-        for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t[gone]"
-            .to_owned(),
+        for_each_ref:
+            "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t[gone]\tEND"
+                .to_owned(),
+        rev_list: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n".to_owned(),
         symbolic_ref_ok: true,
         ..MockGit::default()
     };
-    assert_eq!(assess(&mut mock), WorktreeState::Clean);
+    assert_eq!(assess(&mut mock), WorktreeState::Unpushed);
+}
+
+#[test]
+fn upstream_gone_with_remote_reachability_is_clean() {
+    for track in ["[gone]", "gone"] {
+        let mut mock = MockGit {
+            for_each_ref: format!(
+                "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t{track}\tEND"
+            ),
+            symbolic_ref_ok: true,
+            ..MockGit::default()
+        };
+        assert_eq!(assess(&mut mock), WorktreeState::Clean);
+    }
+}
+
+#[test]
+fn upstream_gone_reachability_failure_is_unpushed() {
+    let mut mock = MockGit {
+        for_each_ref:
+            "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t[gone]\tEND"
+                .to_owned(),
+        fail_subcommand: Some("rev-list"),
+        symbolic_ref_ok: true,
+        ..MockGit::default()
+    };
+    assert_eq!(assess(&mut mock), WorktreeState::Unpushed);
 }
 
 #[test]
 fn detached_head_off_base_is_unpushed() {
     let mut mock = MockGit {
         porcelain: String::new(),
-        for_each_ref: format!("scratch\t{BASE}\t\t"),
+        for_each_ref: format!("scratch\t{BASE}\t\t\tEND"),
         symbolic_ref_ok: false, // detached
         rev_parse_head: "cccccccccccccccccccccccccccccccccccccccc".to_owned(),
         ..MockGit::default()
@@ -189,7 +218,7 @@ fn detached_head_off_base_is_unpushed() {
 fn detached_head_at_base_is_clean() {
     let mut mock = MockGit {
         porcelain: String::new(),
-        for_each_ref: format!("scratch\t{BASE}\t\t"),
+        for_each_ref: format!("scratch\t{BASE}\t\t\tEND"),
         symbolic_ref_ok: false,
         rev_parse_head: BASE.to_owned(),
         ..MockGit::default()
@@ -226,7 +255,7 @@ fn multiple_repos_assessed_independently() {
     };
     let mut clean = MockGit {
         porcelain: String::new(),
-        for_each_ref: format!("scratch\t{BASE}\t\t"),
+        for_each_ref: format!("scratch\t{BASE}\t\t\tEND"),
         symbolic_ref_ok: true,
         ..MockGit::default()
     };
@@ -289,4 +318,33 @@ fn parse_porcelain_skips_blank_lines() {
     assert_eq!(files.len(), 2);
     assert_eq!(files[0].status, 'M');
     assert_eq!(files[1].status, 'A');
+}
+
+#[test]
+fn malformed_branch_inventory_fails_closed_even_at_base() {
+    for row in [
+        format!("scratch\t{BASE}\t\t"),
+        format!("scratch\t{BASE}\t\t\tEND\textra"),
+        format!("scratch\t{BASE}\t\t\twrong"),
+    ] {
+        let mut mock = MockGit {
+            for_each_ref: row,
+            symbolic_ref_ok: true,
+            ..MockGit::default()
+        };
+        assert_eq!(assess(&mut mock), WorktreeState::Unpushed);
+    }
+}
+
+#[test]
+fn gone_upstream_at_base_needs_no_remote_assumption() {
+    for track in ["[gone]", "gone"] {
+        let mut mock = MockGit {
+            for_each_ref: format!("scratch\t{BASE}\torigin/deleted\t{track}\tEND"),
+            symbolic_ref_ok: true,
+            fail_subcommand: Some("rev-list"),
+            ..MockGit::default()
+        };
+        assert_eq!(assess(&mut mock), WorktreeState::Clean);
+    }
 }

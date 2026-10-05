@@ -17,54 +17,58 @@ use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
 use crate::env_model;
 
-/// The set of AI agents jackin❯ can provision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Agent {
+// One declaration supplies both the enum and exhaustive iteration authority.
+macro_rules! declare_agents {
+    ($($(#[$meta:meta])* $variant:ident => $adapter:ident),* $(,)?) => {
+        /// The set of AI agents jackin❯ can provision.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[serde(rename_all = "lowercase")]
+        pub enum Agent { $($(#[$meta])* $variant),* }
+        impl Agent {
+            /// Every variant in declaration order.
+            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+
+            pub(crate) const RUNTIME_REGISTRY: &'static [&'static dyn runtime::AgentRuntime] =
+                &[$(&runtime::adapters::$adapter),*];
+
+            /// Adapter that encapsulates this agent's behavioral logic.
+            pub const fn runtime(self) -> &'static dyn runtime::AgentRuntime {
+                match self {
+                    $(Self::$variant => &runtime::adapters::$adapter),*
+                }
+            }
+        }
+    };
+}
+
+declare_agents! {
     /// Anthropic Claude Code CLI.
-    Claude,
+    Claude => ClaudeRuntime,
     /// `OpenAI` Codex CLI.
-    Codex,
+    Codex => CodexRuntime,
     /// Sourcegraph Amp CLI.
-    Amp,
+    Amp => AmpRuntime,
     /// Moonshot Kimi Code CLI.
-    Kimi,
+    Kimi => KimiRuntime,
     /// `OpenCode` CLI.
-    Opencode,
+    Opencode => OpencodeRuntime,
     /// xAI Grok Build CLI.
-    Grok,
+    Grok => GrokRuntime,
     /// Google Antigravity CLI (`agy`).
-    Antigravity,
+    Antigravity => AntigravityRuntime,
     /// Google Gemini CLI (`gemini`).
-    Gemini,
+    Gemini => GeminiRuntime,
     /// Cursor agent CLI (`cursor-agent`, alias `agent`).
-    Cursor,
+    Cursor => CursorRuntime,
     /// Meta Muse CLI (`muse`).
-    Muse,
+    Muse => MuseRuntime,
     /// oh-my-pi multi-provider client (`omp`).
-    Omp,
+    Omp => OmpRuntime,
     /// Nous Hermes multi-provider client (`hermes`).
-    Hermes,
+    Hermes => HermesRuntime,
 }
 
 impl Agent {
-    /// Every variant in declaration order. Iteration sites consult this
-    /// instead of hand-rolling their own array.
-    pub const ALL: &'static [Self] = &[
-        Self::Claude,
-        Self::Codex,
-        Self::Amp,
-        Self::Kimi,
-        Self::Opencode,
-        Self::Grok,
-        Self::Antigravity,
-        Self::Gemini,
-        Self::Cursor,
-        Self::Muse,
-        Self::Omp,
-        Self::Hermes,
-    ];
-
     /// Canonical lowercase CLI slug (`"claude"`, `"codex"`, …).
     pub const fn slug(self) -> &'static str {
         match self {
@@ -185,29 +189,6 @@ impl Agent {
             | Self::Hermes => &[M::Sync, M::ApiKey, M::Ignore],
         }
     }
-
-    /// Per-agent behavioral dispatch via the [`runtime::AgentRuntime`] trait.
-    ///
-    /// Returns the adapter that encapsulates all behavioral logic for this
-    /// agent. Phase 2 will migrate all match-arm dispatch sites to call
-    /// `agent.runtime().<method>()` instead of matching on `agent` directly.
-    pub fn runtime(self) -> &'static dyn AgentRuntime {
-        use runtime::adapters;
-        match self {
-            Self::Claude => &adapters::ClaudeRuntime,
-            Self::Codex => &adapters::CodexRuntime,
-            Self::Amp => &adapters::AmpRuntime,
-            Self::Kimi => &adapters::KimiRuntime,
-            Self::Opencode => &adapters::OpencodeRuntime,
-            Self::Grok => &adapters::GrokRuntime,
-            Self::Antigravity => &adapters::AntigravityRuntime,
-            Self::Gemini => &adapters::GeminiRuntime,
-            Self::Cursor => &adapters::CursorRuntime,
-            Self::Muse => &adapters::MuseRuntime,
-            Self::Omp => &adapters::OmpRuntime,
-            Self::Hermes => &adapters::HermesRuntime,
-        }
-    }
 }
 
 impl fmt::Display for Agent {
@@ -270,6 +251,7 @@ impl FromStr for Agent {
 
 // Nested modules are crate-private; public surface is re-exported below.
 pub(crate) mod adapters;
+mod launch;
 pub(crate) mod runtime;
 
 pub use runtime::{AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind};

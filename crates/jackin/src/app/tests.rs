@@ -626,12 +626,126 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
 
 use std::collections::HashMap;
 
+fn write_role_resolution_manifest(paths: &JackinPaths, container: &str, role: &str) {
+    let mut manifest = ad_hoc_manifest_for_workdir(&paths.data_dir);
+    manifest.container_base = container.to_owned();
+    manifest.docker = instance::DockerResources::from_container_name(container);
+    manifest.role_key = role.to_owned();
+    manifest.write(&paths.data_dir.join(container)).unwrap();
+}
+
+#[test]
+fn role_family_uses_complete_persisted_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let roles = [
+        "alpha/agent-smith",
+        "beta/agent-smith",
+        "agent-smith",
+        "alpha/agentsmith",
+        "alpha/role-name-with-a-very-long-human-friendly-label-first",
+        "alpha/role-name-with-a-very-long-human-friendly-label-second",
+    ];
+    let names: Vec<String> = roles
+        .iter()
+        .enumerate()
+        .map(|(i, role)| {
+            let selector = RoleSelector::parse(role).unwrap();
+            let slug = instance::naming::compact_component(&selector.name, "role");
+            let name = format!("jk-a1b2c3d{i}-{slug}");
+            write_role_resolution_manifest(&paths, &name, role);
+            name
+        })
+        .collect();
+    for (i, role) in roles.iter().enumerate() {
+        assert_eq!(
+            runtime::matching_family(&paths, &RoleSelector::parse(role).unwrap(), &names).unwrap(),
+            vec![names[i].clone()],
+            "role identity {role} must survive namespaces and name compaction"
+        );
+    }
+}
+
+#[test]
+fn same_docker_name_follows_persisted_role_identity() {
+    for (first, second) in [
+        ("alpha/agent-smith", "beta/agent-smith"),
+        ("alpha/agent-smith", "alpha/agentsmith"),
+        (
+            "alpha/role-name-with-a-very-long-human-friendly-label",
+            "beta/role-name-with-a-very-long-human-friendly-label",
+        ),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let first_selector = RoleSelector::parse(first).unwrap();
+        let second_selector = RoleSelector::parse(second).unwrap();
+        let name = instance::naming::container_name_with_id(None, &first_selector, "k7p9m2xq");
+        assert_eq!(
+            name,
+            instance::naming::container_name_with_id(None, &second_selector, "k7p9m2xq")
+        );
+        let names = vec![name.clone()];
+        for (persisted, selected, rejected) in [
+            (first, &first_selector, &second_selector),
+            (second, &second_selector, &first_selector),
+        ] {
+            write_role_resolution_manifest(&paths, &name, persisted);
+            assert_eq!(
+                runtime::matching_family(&paths, selected, &names).unwrap(),
+                names
+            );
+            assert!(
+                runtime::matching_family(&paths, rejected, &names)
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        // Unicode compaction cannot turn an invalid persisted identity into a role match.
+        write_role_resolution_manifest(&paths, &name, "álpha/agent-smith");
+        assert!(runtime::matching_family(&paths, &first_selector, &names).is_err());
+    }
+}
+
+#[test]
+fn role_family_never_guesses_missing_or_unreadable_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let names = vec!["jk-k7p9m2xq-agentsmith".to_owned()];
+    assert!(
+        runtime::matching_family(&paths, &selector, &names)
+            .unwrap()
+            .is_empty()
+    );
+    let manifest_dir = paths.data_dir.join(&names[0]).join(".jackin");
+    std::fs::create_dir_all(&manifest_dir).unwrap();
+    std::fs::write(manifest_dir.join("instance.json"), b"invalid manifest").unwrap();
+    assert!(runtime::matching_family(&paths, &selector, &names).is_err());
+    write_role_resolution_manifest(&paths, &names[0], "agent-smith");
+    let state_dir = paths.data_dir.join(&names[0]);
+    let mut manifest = instance::InstanceManifest::read(&state_dir).unwrap();
+    manifest.container_base = "jk-a1b2c3d4-agentsmith".to_owned();
+    manifest.write(&state_dir).unwrap();
+    assert!(runtime::matching_family(&paths, &selector, &names).is_err());
+    manifest.container_base.clone_from(&names[0]);
+    manifest.status = instance::InstanceStatus::Purged;
+    manifest.write(&state_dir).unwrap();
+    assert!(
+        runtime::matching_family(&paths, &selector, &names)
+            .unwrap()
+            .is_empty()
+    );
+}
+
 #[tokio::test]
 async fn resolve_role_no_match_errors() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     // list_containers returns empty → no match
     let docker = jackin_test_support::FakeDockerClient::default();
-    let err = resolve_role_to_container(&selector, &docker)
+    let err = resolve_role_to_container(&paths, &selector, &docker)
         .await
         .unwrap_err();
     assert!(
@@ -642,6 +756,11 @@ async fn resolve_role_no_match_errors() {
 
 #[tokio::test]
 async fn resolve_role_multiple_matches_errors_with_names() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    for container in ["jk-k7p9m2xq-agentsmith", "jk-a1b2c3d4-agentsmith"] {
+        write_role_resolution_manifest(&paths, container, "agent-smith");
+    }
     let selector = RoleSelector::new(None, "agent-smith");
     // list_containers returns two containers → multiple match error
     let docker = jackin_test_support::FakeDockerClient {
@@ -659,7 +778,7 @@ async fn resolve_role_multiple_matches_errors_with_names() {
         ]])),
         ..Default::default()
     };
-    let err = resolve_role_to_container(&selector, &docker)
+    let err = resolve_role_to_container(&paths, &selector, &docker)
         .await
         .unwrap_err();
     let msg = err.to_string();
@@ -670,6 +789,9 @@ async fn resolve_role_multiple_matches_errors_with_names() {
 
 #[tokio::test]
 async fn resolve_role_single_match_returns_name() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    write_role_resolution_manifest(&paths, "jk-k7p9m2xq-agentsmith", "agent-smith");
     let selector = RoleSelector::new(None, "agent-smith");
     // list_containers returns one container → single match
     let docker = jackin_test_support::FakeDockerClient {
@@ -682,6 +804,8 @@ async fn resolve_role_single_match_returns_name() {
         ]])),
         ..Default::default()
     };
-    let name = resolve_role_to_container(&selector, &docker).await.unwrap();
+    let name = resolve_role_to_container(&paths, &selector, &docker)
+        .await
+        .unwrap();
     assert_eq!(name, "jk-k7p9m2xq-agentsmith");
 }

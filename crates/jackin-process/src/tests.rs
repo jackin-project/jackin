@@ -354,3 +354,168 @@ async fn timeout_owns_descendants_after_direct_child_exits() {
         "owned descendant {descendant} must be killed"
     );
 }
+
+#[cfg(unix)]
+#[tokio::test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "fixture opens the real directory before a hostile pathname replacement"
+)]
+async fn descriptor_cwd_applies_to_every_execution_entry() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    let original = root.join("original");
+    let moved = root.join("moved");
+    let attacker = root.join("attacker");
+    std::fs::create_dir(&original).unwrap();
+    std::fs::create_dir(&attacker).unwrap();
+    std::fs::write(original.join("identity"), b"original").unwrap();
+    std::fs::write(attacker.join("identity"), b"attacker").unwrap();
+    let directory = std::sync::Arc::new(std::fs::File::open(&original).unwrap());
+    let request = ExecRequest::new("cat", ["identity"]).pinned_cwd(directory);
+    std::fs::rename(&original, &moved).unwrap();
+    std::os::unix::fs::symlink(&attacker, &original).unwrap();
+    let parent_cwd = std::env::current_dir().unwrap();
+    assert_eq!(exec_async(&request).await.unwrap().stdout, b"original");
+    assert_eq!(exec_sync(&request).unwrap().stdout, b"original");
+    assert_eq!(
+        spawn_async(&request)
+            .unwrap()
+            .wait_with_output()
+            .await
+            .unwrap()
+            .stdout,
+        b"original"
+    );
+    assert_eq!(
+        spawn_sync(&request)
+            .unwrap()
+            .wait_with_output()
+            .unwrap()
+            .stdout,
+        b"original"
+    );
+    assert_eq!(std::env::current_dir().unwrap(), parent_cwd);
+    let conflict = request.clone().cwd(original);
+    for error in [
+        exec_async(&conflict).await.unwrap_err(),
+        exec_sync(&conflict).unwrap_err(),
+        spawn_async(&conflict).unwrap_err(),
+        spawn_sync(&conflict).unwrap_err(),
+    ] {
+        assert_eq!(error.downcast_ref::<ExecStage>(), Some(&ExecStage::Setup));
+        assert!(
+            error
+                .root_cause()
+                .to_string()
+                .contains("mutually exclusive")
+        );
+    }
+    let invalid = ExecRequest::new("true", None::<&str>).pinned_cwd(std::sync::Arc::new(
+        std::fs::File::open(moved.join("identity")).unwrap(),
+    ));
+    for error in [
+        exec_async(&invalid).await.unwrap_err(),
+        exec_sync(&invalid).unwrap_err(),
+        spawn_async(&invalid).unwrap_err(),
+        spawn_sync(&invalid).unwrap_err(),
+    ] {
+        assert_eq!(error.downcast_ref::<ExecStage>(), Some(&ExecStage::Setup));
+        assert!(error.root_cause().to_string().contains("not a directory"));
+    }
+}
+
+#[test]
+fn sync_output_wait_retains_status_after_try_wait_reaped_child() {
+    let request = ExecRequest::new("printf", ["retained-output"]);
+    let mut child = spawn_sync(&request).unwrap();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        std::thread::yield_now();
+    };
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status, status);
+    assert_eq!(output.stdout, b"retained-output");
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+#[test]
+fn sync_group_cleanup_reserves_exited_leader_until_descendant_termination() {
+    use nix::sys::wait::{Id, WaitPidFlag, waitid};
+    let fixture = tempfile::tempdir().unwrap();
+    let descendant_path = fixture.path().join("descendant");
+    let request = ExecRequest::new(
+        "sh",
+        [
+            "-c",
+            "sleep 30 & printf '%s' $! > \"$1\"; exit 0",
+            "fixture",
+            descendant_path.to_str().unwrap(),
+        ],
+    );
+    let mut child = spawn_group_sync(&request).unwrap();
+    let leader = child.id();
+    waitid(
+        Id::Pid(nix::unistd::Pid::from_raw(i32::try_from(leader).unwrap())),
+        WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
+    )
+    .unwrap();
+    let descendant: u32 = std::fs::read_to_string(descendant_path)
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(child_ownership::coordinate(
+        |registry| registry.contains(leader)
+    ));
+    let status = child.kill_and_reap().unwrap();
+    assert!(status.success(), "leader exited before cleanup");
+    assert!(!child_ownership::coordinate(
+        |registry| registry.contains(leader)
+    ));
+    let started = Instant::now();
+    loop {
+        let terminated =
+            std::fs::read_to_string(format!("/proc/{descendant}/stat")).map_or(true, |stat| {
+                stat.rsplit_once(')')
+                    .is_some_and(|(_, state)| state.trim_start().starts_with('Z'))
+            });
+        if terminated {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "descendant not terminated"
+        );
+        std::thread::yield_now();
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn foreground_setup_and_spawn_failure_release_scope_outside_tty_gate() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    let mut invalid_setup = ExecRequest::new("true", None::<&str>);
+    invalid_setup.stdin = Some(b"unhandled input".to_vec());
+    let mut invalid_spawn =
+        ExecRequest::new("/jackin-fixture-missing-foreground-program", None::<&str>);
+    invalid_spawn.stdin_mode = StdioMode::Null;
+    for request in [invalid_setup, invalid_spawn] {
+        let gate = Arc::new(Mutex::new(()));
+        let released = Arc::new(AtomicBool::new(false));
+        let release_gate = Arc::clone(&gate);
+        let release_flag = Arc::clone(&released);
+        let result = spawn_foreground_async(&request, gate, move || {
+            assert!(
+                release_gate.try_lock().is_ok(),
+                "scope released while its TTY gate is held"
+            );
+            release_flag.store(true, Ordering::Release);
+        });
+        assert!(result.is_err());
+        assert!(released.load(Ordering::Acquire));
+    }
+}

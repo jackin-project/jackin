@@ -295,7 +295,8 @@ end try"#
 
     let request = jackin_process::ExecRequest::new("/usr/bin/osascript", ["-e", &script])
         .envs([("JACKIN_CLIPBOARD_IMAGE_OUT", path.as_os_str())]);
-    let output = crate::process_telemetry::exec_sync(&request)?;
+    let output = crate::process_telemetry::exec_sync(&request)
+        .map_err(|err| err.context(jackin_protocol::attach::ClipboardImageError::Io))?;
     if !output.success {
         drop(fs::remove_file(&path));
         return Ok(None);
@@ -327,7 +328,8 @@ on error errMsg number errNum
 end try"
     );
     let request = jackin_process::ExecRequest::new("/usr/bin/osascript", ["-e", &script]);
-    let output = crate::process_telemetry::exec_sync(&request)?;
+    let output = crate::process_telemetry::exec_sync(&request)
+        .map_err(|err| err.context(jackin_protocol::attach::ClipboardImageError::Io))?;
     if !output.success {
         return Ok(None);
     }
@@ -348,7 +350,8 @@ on error errMsg number errNum
   error errMsg number errNum
 end try";
     let request = jackin_process::ExecRequest::new("/usr/bin/osascript", ["-e", script]);
-    let output = crate::process_telemetry::exec_sync(&request)?;
+    let output = crate::process_telemetry::exec_sync(&request)
+        .map_err(|err| err.context(jackin_protocol::attach::ClipboardImageError::Io))?;
     if !output.success || output.stdout.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES {
         return Ok(None);
     }
@@ -495,33 +498,40 @@ where
     let request = jackin_process::ExecRequest::new(program, args)
         .stdout_mode(jackin_process::StdioMode::Capture)
         .stderr_mode(jackin_process::StdioMode::Null);
-    let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)?;
+    let (operation, mut child) = crate::process_telemetry::spawn_sync(&request)
+        .map_err(|err| err.context(jackin_protocol::attach::ClipboardImageError::Io))?;
     let Some(mut stdout) = child.stdout.take() else {
         operation.complete_io_failure();
-        anyhow::bail!("clipboard command did not expose stdout");
+        return Err(anyhow::anyhow!(
+            jackin_protocol::attach::ClipboardImageError::Io
+        ))
+        .context("clipboard command did not expose stdout");
     };
     let mut bytes = Vec::new();
     {
         let mut limited = stdout.by_ref().take((max_bytes + 1) as u64);
-        if limited.read_to_end(&mut bytes).is_err() {
+        if let Err(err) = limited.read_to_end(&mut bytes) {
             operation.complete_io_failure();
-            anyhow::bail!("reading clipboard command stdout failed");
+            return Err(err).context("reading clipboard command stdout failed");
         }
     }
     drop(stdout);
     if bytes.len() > max_bytes {
         drop(child.kill());
-        if child.wait().is_err() {
+        if let Err(err) = child.wait() {
             operation.complete_io_failure();
-            anyhow::bail!("reaping clipboard command failed");
+            return Err(err).context("reaping clipboard command failed");
         }
         operation.complete_cancelled();
         return Ok(None);
     }
 
-    let Ok(status) = child.wait() else {
-        operation.complete_io_failure();
-        anyhow::bail!("waiting for clipboard command failed");
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(err) => {
+            operation.complete_io_failure();
+            return Err(err).context("waiting for clipboard command failed");
+        }
     };
     let success = status.success();
     operation.complete_status(status);
@@ -600,21 +610,20 @@ fn validate_linux_clipboard_backend(
     xclip: bool,
     label: &str,
 ) -> Result<()> {
-    if !wayland && !display {
-        anyhow::bail!("{label} needs WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip");
-    }
     if (wayland && wl_paste) || (display && xclip) {
         return Ok(());
     }
-    // Reached only with a display server set but its tool absent. The final bail
-    // is exhaustive: `!wayland` here implies `display`, since no-display bailed above.
-    if wayland && display {
-        anyhow::bail!("{label} needs wl-paste or xclip in host PATH");
-    }
-    if wayland {
-        anyhow::bail!("{label} needs wl-paste in host PATH because WAYLAND_DISPLAY is set");
-    }
-    anyhow::bail!("{label} needs xclip in host PATH because DISPLAY is set")
+    let detail = if !wayland && !display {
+        format!("{label} needs WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip")
+    } else if wayland && display {
+        format!("{label} needs wl-paste or xclip in host PATH")
+    } else if wayland {
+        format!("{label} needs wl-paste in host PATH because WAYLAND_DISPLAY is set")
+    } else {
+        format!("{label} needs xclip in host PATH because DISPLAY is set")
+    };
+    Err(anyhow::anyhow!(detail)
+        .context(jackin_protocol::attach::ClipboardImageError::BackendUnavailable))
 }
 
 #[cfg(any(target_os = "linux", test))]

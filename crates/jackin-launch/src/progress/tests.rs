@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::{LaunchProgress, failure_acknowledged};
+use super::{LaunchProgress, failure_acknowledged, wait_for_failure_acknowledgement};
 use crate::LaunchDiagnostics;
 use crate::tui::components::progress_rail::{
     LABEL_SLIDE_FRAMES, animated_label_center, display_stage_statuses, label_strip, labels_line,
@@ -437,4 +437,70 @@ fn stage_label_transition_slides_between_centers() {
         center < centers[1],
         "label viewport should not snap to the target"
     );
+}
+
+
+#[tokio::test]
+async fn poisoned_failure_producer_and_real_input_complete_pending_ack_wait() {
+    use std::future::Future as _;
+    use std::task::{Context, Poll, Waker};
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    use crate::tui::input::LaunchInput;
+    use crate::tui::subscriptions::{CockpitOutcome, handle_cockpit_input, lock_view};
+
+    let mut progress = test_progress();
+    let view = Arc::clone(progress.view_for_test());
+    // A prior acknowledgement must not dismiss the newly published failure.
+    lock_view(&view).failure_ack = true;
+    let poison_view = Arc::clone(&view);
+    assert!(std::thread::spawn(move || {
+        let _guard = poison_view.lock().unwrap();
+        panic!("poison launch view before failure publication");
+    }).join().is_err());
+    assert!(view.is_poisoned());
+
+    progress.stage_failed(dummy_failure()).await;
+    {
+        let state = lock_view(&view);
+        assert_eq!(state.failure.as_ref().unwrap().summary, "it failed");
+        assert!(!state.failure_ack);
+    }
+    let cancel = progress.cancel_token();
+    let mut waiting = std::pin::pin!(wait_for_failure_acknowledgement(&view, &cancel));
+    assert!(matches!(waiting.as_mut().poll(&mut Context::from_waker(Waker::noop())), Poll::Pending));
+
+    let (input, _sender) = LaunchInput::queued_for_test([Event::Key(KeyEvent::new(
+        KeyCode::Enter, KeyModifiers::NONE,
+    ))]);
+    assert_eq!(handle_cockpit_input(
+        &view, "test-run", progress.host, "test", &cancel, &input,
+    ), CockpitOutcome::Continue);
+    assert!(lock_view(&view).failure_ack);
+    assert!(lock_view(&view).failure.is_some());
+    assert!(!cancel.is_cancelled(), "ack must come from real Enter input");
+    tokio::time::timeout(Duration::from_millis(500), waiting).await.unwrap();
+}
+
+#[tokio::test]
+async fn input_owner_disconnect_cancels_pending_failure_wait_without_ack() {
+    use std::future::Future as _;
+    use std::task::{Context, Poll, Waker};
+    use crate::tui::input::LaunchInput;
+    use crate::tui::subscriptions::{CockpitOutcome, handle_cockpit_input, lock_view};
+
+    let mut progress = test_progress();
+    progress.stage_failed(dummy_failure()).await;
+    let view = Arc::clone(progress.view_for_test());
+    let cancel = progress.cancel_token();
+    let mut waiting = std::pin::pin!(wait_for_failure_acknowledgement(&view, &cancel));
+    assert!(matches!(waiting.as_mut().poll(&mut Context::from_waker(Waker::noop())), Poll::Pending));
+    let (input, sender) = LaunchInput::queued_for_test([]);
+    drop(sender);
+    assert_eq!(handle_cockpit_input(
+        &view, "test-run", progress.host, "test", &cancel, &input,
+    ), CockpitOutcome::Continue);
+    assert!(cancel.is_cancelled());
+    assert!(!lock_view(&view).failure_ack);
+    assert!(lock_view(&view).failure.is_some());
+    tokio::time::timeout(Duration::from_millis(500), waiting).await.unwrap();
 }

@@ -104,7 +104,7 @@ impl Drop for SpawnOperation {
 
 pub(crate) fn spawn_async(
     request: &ExecRequest,
-) -> anyhow::Result<(SpawnOperation, tokio::process::Child)> {
+) -> anyhow::Result<(SpawnOperation, jackin_process::AsyncChild)> {
     let operation = SpawnOperation {
         operation: Some(operation(request)),
     };

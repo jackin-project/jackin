@@ -22,7 +22,7 @@ use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 use tokio::sync::mpsc;
 
 use crate::session::{BranchName, GitContext, Oid, SessionEvent};
-use crate::util::{WaitOutcome, command_stdout_trimmed_with_timeout, wait_child_with_timeout};
+use crate::util::command_stdout_trimmed_with_timeout;
 
 pub(crate) const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 pub(crate) const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
@@ -95,40 +95,15 @@ impl WorkdirContext {
 
 /// Probe `name --version` once at construction. Stdin/stdout/stderr
 /// are nulled so a misbehaving subprocess cannot leak output into the
-/// daemon's logs and cannot block on stdin. As PID 1, Capsule has a
-/// SIGCHLD zombie reaper that can win the race against Rust's
-/// `Child::try_wait`; `ECHILD` after a successful spawn still proves
-/// the executable exists, so treat it as available instead of freezing
-/// the feature off for the daemon lifetime.
+/// daemon's logs and cannot block on stdin. The owned child keeps its
+/// exit status reserved while the PID 1 reaper drains unrelated zombies.
 pub(crate) fn command_in_path(name: &str) -> bool {
     let request = jackin_process::ExecRequest::new(name, ["--version"])
         .stdout_mode(jackin_process::StdioMode::Null)
-        .stderr_mode(jackin_process::StdioMode::Null);
-    let Ok((operation, mut child)) = crate::process_telemetry::spawn_sync(&request) else {
-        return false;
-    };
-    match wait_child_with_timeout(&mut child, GIT_CONTEXT_COMMAND_TIMEOUT) {
-        WaitOutcome::Exited(status) if status.success() => {
-            operation.complete_status(status, &[0]);
-            true
-        }
-        WaitOutcome::Exited(status) => {
-            operation.complete_status(status, &[0]);
-            false
-        }
-        WaitOutcome::Reaped => {
-            operation.complete_reaped();
-            true
-        }
-        WaitOutcome::Failed => {
-            operation.complete_io_failure();
-            false
-        }
-        WaitOutcome::TimedOut => {
-            operation.complete_timeout();
-            false
-        }
-    }
+        .stderr_mode(jackin_process::StdioMode::Null)
+        .timeout(GIT_CONTEXT_COMMAND_TIMEOUT);
+    crate::process_telemetry::exec_sync(&request)
+        .is_ok_and(|output| output.success && !output.timed_out)
 }
 
 /// Bounded by `GIT_CONTEXT_COMMAND_TIMEOUT` so a stalled `git`

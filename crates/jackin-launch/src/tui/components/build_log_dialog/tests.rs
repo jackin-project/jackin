@@ -20,12 +20,13 @@ fn scrollbar_hit_maps_track_to_top_offset() {
         height: 12,
     };
     let raw: Vec<String> = (0..20).map(|idx| format!("line {idx}")).collect();
-    let scrollbar = vertical_scrollbar_area(build_log_box_area(area));
+    let scrollbar = vertical_scrollbar_area(build_log_box_area(area, true));
 
-    let top = build_log_scrollbar_top_offset_at(area, &raw, scrollbar.x, scrollbar.y)
+    let top = build_log_scrollbar_top_offset_at(area, true, &raw, scrollbar.x, scrollbar.y)
         .expect("top of scrollable track should hit");
     let bottom = build_log_scrollbar_top_offset_at(
         area,
+        true,
         &raw,
         scrollbar.x,
         scrollbar.y + scrollbar.height.saturating_sub(1),
@@ -45,10 +46,16 @@ fn scrollbar_hit_ignores_non_track_columns() {
         height: 12,
     };
     let raw: Vec<String> = (0..20).map(|idx| format!("line {idx}")).collect();
-    let scrollbar = vertical_scrollbar_area(build_log_box_area(area));
+    let scrollbar = vertical_scrollbar_area(build_log_box_area(area, true));
 
     assert_eq!(
-        build_log_scrollbar_top_offset_at(area, &raw, scrollbar.x.saturating_sub(1), scrollbar.y),
+        build_log_scrollbar_top_offset_at(
+            area,
+            true,
+            &raw,
+            scrollbar.x.saturating_sub(1),
+            scrollbar.y
+        ),
         None
     );
 }
@@ -71,7 +78,7 @@ fn build_log_overlay_keeps_status_footer_in_debug_mode() {
         container: Some("jk-2y0t4aw6-the-architect".to_owned()),
     });
     view.build_log_lines = (0..30).map(|idx| format!("line {idx}")).collect();
-    refresh_build_log_layout(&mut view, area, true);
+    refresh_build_log_layout(&mut view, area, true, true);
 
     let backend = TestBackend::new(area.width, area.height);
     let mut terminal = Terminal::new(backend).expect("test backend should initialize");
@@ -120,7 +127,7 @@ fn build_log_overlay_hides_status_footer_when_debug_disabled() {
         container: Some("jk-2y0t4aw6-the-architect".to_owned()),
     });
     view.build_log_lines = (0..30).map(|idx| format!("line {idx}")).collect();
-    refresh_build_log_layout(&mut view, area, true);
+    refresh_build_log_layout(&mut view, area, false, true);
 
     let backend = TestBackend::new(area.width, area.height);
     let mut terminal = Terminal::new(backend).expect("test backend should initialize");

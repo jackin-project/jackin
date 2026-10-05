@@ -37,6 +37,22 @@ impl Dialog {
             width,
             height,
         };
+        if matches!(self, Self::Usage { .. }) {
+            let Some(state) = self.usage_state() else {
+                return;
+            };
+            let (content_width, content_height, clamp_rect) =
+                crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state);
+            if let Self::Usage { scroll, .. } = self {
+                crate::tui::components::container_info_surface::clamp_container_info_scroll(
+                    scroll,
+                    content_width,
+                    content_height,
+                    clamp_rect,
+                );
+            }
+            return;
+        }
         if matches!(self, Self::ContainerInfo { .. }) {
             let Some(state) = self.container_info_state() else {
                 return;
@@ -49,33 +65,16 @@ impl Dialog {
                     rect,
                 );
             }
-        } else if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
-            let is_usage = matches!(self, Self::Usage { .. });
-            let state = if matches!(self, Self::GitHubContext { .. }) {
-                let Some(state) = self.github_context_state(github) else {
-                    return;
-                };
-                state
-            } else {
-                let Some(state) = self.usage_state() else {
-                    return;
-                };
-                state
+        } else if let Self::GitHubContext { .. } = self {
+            let Some(state) = self.github_context_state(github) else {
+                return;
             };
-            if let Self::GitHubContext { scroll, .. } | Self::Usage { scroll, .. } = self {
-                // Usage clamps against the same body+lines the renderer uses, with
-                // a rect whose viewport excludes the tab strip (Bug 2); other
-                // dialogs clamp against the box rect directly.
-                let (content_width, content_height, clamp_rect) = if is_usage {
-                    crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state)
-                } else {
-                    (state.content_width(), state.content_height(), rect)
-                };
+            if let Self::GitHubContext { scroll, .. } = self {
                 crate::tui::components::container_info_surface::clamp_container_info_scroll(
                     scroll,
-                    content_width,
-                    content_height,
-                    clamp_rect,
+                    state.content_width(),
+                    state.content_height(),
+                    rect,
                 );
             }
         }
@@ -94,6 +93,18 @@ impl Dialog {
             width,
             height,
         };
+        if matches!(self, Self::Usage { .. }) {
+            let Some(state) = self.usage_state() else {
+                return termrock::scroll::ScrollAxes::none();
+            };
+            let (content_width, content_height, scroll_rect) =
+                crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state);
+            return termrock::scroll::dialog_scroll_axes(
+                content_width,
+                content_height,
+                scroll_rect,
+            );
+        }
         if matches!(self, Self::ContainerInfo { .. }) {
             let Some(state) = self.container_info_state() else {
                 return termrock::scroll::ScrollAxes::none();
@@ -103,27 +114,15 @@ impl Dialog {
                 state.content_height(),
                 rect,
             );
-        } else if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
-            // Mirror clamp_scroll's Usage/GitHubContext geometry: Usage uses the
-            // same body+lines viewport (excludes the tab strip) the renderer uses.
-            let is_usage = matches!(self, Self::Usage { .. });
-            let state = if matches!(self, Self::GitHubContext { .. }) {
-                let Some(state) = self.github_context_state(github) else {
-                    return termrock::scroll::ScrollAxes::none();
-                };
-                state
-            } else {
-                let Some(state) = self.usage_state() else {
-                    return termrock::scroll::ScrollAxes::none();
-                };
-                state
+        } else if matches!(self, Self::GitHubContext { .. }) {
+            let Some(state) = self.github_context_state(github) else {
+                return termrock::scroll::ScrollAxes::none();
             };
-            let (content_width, content_height, clamp_rect) = if is_usage {
-                crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state)
-            } else {
-                (state.content_width(), state.content_height(), rect)
-            };
-            return termrock::scroll::dialog_scroll_axes(content_width, content_height, clamp_rect);
+            return termrock::scroll::dialog_scroll_axes(
+                state.content_width(),
+                state.content_height(),
+                rect,
+            );
         }
         termrock::scroll::ScrollAxes::none()
     }
@@ -145,8 +144,19 @@ impl Dialog {
             Self::CommandPalette { .. } => palette_hint(),
             Self::SplitDirectionPicker { .. }
             | Self::AgentPicker { .. }
-            | Self::CloseTargetPicker { .. }
-            | Self::ExecPicker(_) => picker_hint(),
+            | Self::CloseTargetPicker { .. } => picker_hint(),
+            Self::ExecPicker(_) => vec![
+                HintSpan::Key("↑/↓"),
+                HintSpan::Text("credential"),
+                HintSpan::Key("Space"),
+                HintSpan::Text("toggle"),
+                HintSpan::Key("PgUp/PgDn"),
+                HintSpan::Text("argv"),
+                HintSpan::Key("↵"),
+                HintSpan::Text("approve"),
+                HintSpan::Key("Esc"),
+                HintSpan::Text("deny"),
+            ],
             Self::RenameTab { .. } => rename_hint(),
             Self::ExportFile { .. } => export_file_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
@@ -174,7 +184,16 @@ impl Dialog {
                     read_only_hint()
                 }
             }
-            Self::Usage { view, .. } if view.tabs.is_empty() => usage_empty_hint(axes),
+            Self::Usage { projection, .. }
+                if projection.as_deref().is_none_or(|projection| {
+                    projection
+                        .providers
+                        .iter()
+                        .all(|provider| provider.accounts.is_empty())
+                }) =>
+            {
+                usage_empty_hint(axes)
+            }
             Self::Usage { .. } => usage_hint(axes),
             Self::ConfirmAction { .. } => confirm_hint(),
             // No filter input on either: the modal is a fixed choice list and

@@ -11,6 +11,22 @@ pub const ACCOUNT_ROUTING_ENV_NAMES: &[&str] = &[
     "Z_AI_API_KEY",
     "KIMI_AUTH_TOKEN",
     "kimi_auth_token",
+    // Kimi CLI 2.1.1 request overrides can synthesize a new model/provider
+    // route or attach independent service/registry credentials.
+    "KIMI_CODE_CUSTOM_HEADERS",
+    "KIMI_WEB_SEARCH_API_KEY",
+    "KIMI_WEB_SEARCH_BASE_URL",
+    "KIMI_WEB_FETCH_API_KEY",
+    "KIMI_WEB_FETCH_BASE_URL",
+    "KIMI_REGISTRY_API_KEY",
+    "KIMI_DISABLE_OAUTH_LOCK",
+    // Secondary model selection and plugin marketplace controls can make the
+    // CLI consult unproved model or executable sources.
+    "KIMI_SECONDARY_MODEL",
+    "KIMI_CODE_PLUGIN_MARKETPLACE_URL",
+    "KIMI_CODE_PLUGIN_MARKETPLACE_FROM_DEV_SERVER",
+    "KIMI_CODE_PASSWORD",
+    "KIMI_CODE_REMOTE_CONTROL_RELAY_URL",
     // Endpoint aliases recognized by provider account import.
     "OPENAI_API_URL",
     "AMP_BASE_URL",
@@ -21,6 +37,8 @@ pub const ACCOUNT_ROUTING_ENV_NAMES: &[&str] = &[
     "OPENCODE_API_BASE",
     "OPENCODE_API_URL",
     "KIMI_CODE_BASE_URL",
+    "KIMI_CODE_OAUTH_HOST",
+    "KIMI_OAUTH_HOST",
     "MOONSHOT_BASE_URL",
     "MOONSHOT_API_BASE",
     "MOONSHOT_API_URL",
@@ -48,7 +66,7 @@ pub const ACCOUNT_ROUTING_ENV_NAMES: &[&str] = &[
     "HOME",
     "CLAUDE_CONFIG_DIR",
     "CODEX_HOME",
-    "KIMI_HOME",
+    "KIMI_CODE_HOME",
     "AMP_HOME",
     "GEMINI_CLI_HOME",
     "CURSOR_CONFIG_DIR",
@@ -84,7 +102,7 @@ pub fn account_env_names() -> impl Iterator<Item = &'static str> {
 }
 /// Whether a variable is exclusively controlled by selected accounts.
 pub fn is_account_env(name: &str) -> bool {
-    account_env_names().any(|owned| owned == name)
+    name.starts_with("KIMI_MODEL_") || account_env_names().any(|owned| owned == name)
 }
 
 #[cfg(test)]

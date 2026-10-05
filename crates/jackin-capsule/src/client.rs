@@ -8,13 +8,17 @@
 //! in-container rendering.
 
 use anyhow::{Context, Result, bail};
+use jackin_protocol::usage_broker::{
+    UsageAccountV2, UsageFreshnessPhaseV2, UsageLifecycleV2, UsageMetricValueV2,
+    UsageProjectionV2, UsageQuotaStateV2,
+};
 use jackin_telemetry::ResultTelemetryExt as _;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 use crate::protocol::attach::SpawnRequest;
 use crate::protocol::control::{
-    AccountUsageSnapshotView, ClientMsg, ControlRequest, ServerMsg, frame as control_frame,
+    ClientMsg, ControlRequest, ServerMsg, UsageAccountMembershipV1, frame as control_frame,
 };
 use crate::socket::SOCKET_PATH;
 
@@ -472,8 +476,8 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
 ///
 /// Returns an error when the usage broker request or JSON serialization fails.
 pub async fn run_usage_accounts() -> Result<()> {
-    let accounts = usage_accounts().await?;
-    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&accounts)?));
+    let membership = usage_accounts().await?;
+    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&membership)?));
     Ok(())
 }
 
@@ -482,8 +486,8 @@ pub async fn run_usage_accounts() -> Result<()> {
 /// Returns an error when the usage broker request fails or any account check
 /// reports a failure.
 pub async fn run_usage_verify() -> Result<()> {
-    let accounts = usage_accounts().await?;
-    let checks = verify_usage_accounts(&accounts);
+    let membership = usage_accounts().await?;
+    let checks = verify_usage_accounts(&membership);
     for check in &checks {
         crate::output::stdout_line(format_args!(
             "{:<9} {}",
@@ -503,10 +507,15 @@ pub async fn run_usage_verify() -> Result<()> {
     Ok(())
 }
 
-async fn usage_accounts() -> Result<Vec<AccountUsageSnapshotView>> {
+async fn usage_accounts() -> Result<UsageAccountMembershipV1> {
     let msg = request_control(&ClientMsg::UsageAccountList).await?;
     match msg {
-        ServerMsg::UsageAccounts { accounts } => Ok(accounts),
+        ServerMsg::UsageAccounts { membership } => {
+            if let UsageAccountMembershipV1::Current { projection } = &membership {
+                UsageAccountMembershipV1::validate_current_projection(projection).map_err(anyhow::Error::msg)?;
+            }
+            Ok(membership)
+        }
         other => anyhow::bail!(
             "daemon replied with {} for UsageAccountList request",
             other.kind()
@@ -521,119 +530,136 @@ struct UsageVerifyCheck {
     detail: Option<String>,
 }
 
-fn verify_usage_accounts(accounts: &[AccountUsageSnapshotView]) -> Vec<UsageVerifyCheck> {
-    usage_verify_provider_aliases()
+fn verify_usage_accounts(membership: &UsageAccountMembershipV1) -> Vec<UsageVerifyCheck> {
+    const PROVIDERS: &[(&str, &str)] = &[
+        ("OpenAI", "openai"),
+        ("Anthropic", "anthropic"),
+        ("Amp", "amp"),
+        ("xAI", "xai"),
+        ("Z.AI", "zai"),
+        ("Kimi", "kimi"),
+        ("MiniMax", "minimax"),
+    ];
+    PROVIDERS
         .iter()
-        .map(|(label, aliases)| verify_usage_provider(label, aliases, accounts))
+        .map(|&(label, provider_id)| match membership {
+            UsageAccountMembershipV1::Current { projection } => {
+                verify_usage_provider(label, provider_id, projection)
+            }
+            UsageAccountMembershipV1::Unavailable => UsageVerifyCheck {
+                label,
+                status: "unavailable",
+                detail: None,
+            },
+            UsageAccountMembershipV1::Revoked => UsageVerifyCheck {
+                label,
+                status: "revoked",
+                detail: None,
+            },
+        })
         .collect()
-}
-
-fn usage_verify_provider_aliases() -> &'static [(&'static str, &'static [&'static str])] {
-    &[
-        ("OpenAI", &["Codex", "OpenAI / Codex"]),
-        ("Anthropic", &["Claude", "Anthropic / Claude"]),
-        ("Amp", &["Amp"]),
-        ("xAI", &["Grok Build", "xAI / Grok"]),
-        ("Z.AI", &["GLM / Z.AI"]),
-        ("Kimi", &["Kimi"]),
-        ("MiniMax", &["MiniMax"]),
-    ]
 }
 
 fn verify_usage_provider(
     label: &'static str,
-    aliases: &[&str],
-    accounts: &[AccountUsageSnapshotView],
+    provider_id: &str,
+    projection: &UsageProjectionV2,
 ) -> UsageVerifyCheck {
-    let rows = accounts
+    let Some(provider) = projection
+        .providers
         .iter()
-        .filter(|account| {
-            aliases
-                .iter()
-                .any(|alias| usage_provider_matches(alias, &account.provider))
-        })
-        .collect::<Vec<_>>();
-    if rows.is_empty() {
-        return UsageVerifyCheck {
-            label,
-            status: "missing",
-            detail: None,
-        };
-    }
-    let ok = rows.iter().any(|row| usage_row_proves_live_quota(row));
-    if ok {
-        let Some(latest) = rows.iter().max_by_key(|row| row.fetched_at) else {
-            return UsageVerifyCheck {
-                label,
-                status: "missing",
-                detail: None,
-            };
-        };
-        return UsageVerifyCheck {
-            label,
-            status: "ok",
-            detail: Some(format!(
-                "ok: {} {} {} {} row(s)",
-                latest.status,
-                latest.source,
-                latest.confidence,
-                rows.len()
-            )),
-        };
-    }
-    let Some(latest) = rows.iter().max_by_key(|row| row.fetched_at) else {
+        .find(|provider| provider.provider_id == provider_id)
+    else {
         return UsageVerifyCheck {
             label,
             status: "missing",
             detail: None,
         };
     };
+    if let Some(account) = provider
+        .accounts
+        .iter()
+        .find(|account| usage_account_proves_live_quota(account))
+    {
+        return UsageVerifyCheck {
+            label,
+            status: "ok",
+            detail: Some(format!(
+                "ok: {} {} account(s)",
+                account.display_label,
+                provider.accounts.len()
+            )),
+        };
+    }
+    let latest = provider
+        .accounts
+        .iter()
+        .max_by_key(|account| account.freshness.last_good_at_epoch);
     UsageVerifyCheck {
         label,
         status: "untrusted",
-        detail: Some(format!(
-            "untrusted: latest status={} source={} confidence={} error={}",
-            latest.status,
-            latest.source,
-            latest.confidence,
-            latest.last_error.as_deref().unwrap_or("none")
-        )),
+        detail: Some(match latest {
+            Some(account) => format!(
+                "untrusted: lifecycle={} freshness={} error={}",
+                serde_json::to_value(account.lifecycle).expect("lifecycle serializes"),
+                serde_json::to_value(account.freshness.phase).expect("freshness serializes"),
+                account
+                    .issues
+                    .first()
+                    .map_or("none", |issue| issue.message.as_str())
+            ),
+            None => "untrusted: no canonical account".to_owned(),
+        }),
     }
 }
 
-fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
-    row.status == "fresh"
-        && row.confidence == "authoritative"
-        && matches!(row.source.as_str(), "provider_api" | "cli")
-        && !row.window_kind.trim().is_empty()
-        && !row.account_label.trim().is_empty()
-        && !row.account_label.to_ascii_lowercase().contains("needs")
+fn usage_account_proves_live_quota(account: &UsageAccountV2) -> bool {
+    if account.lifecycle != UsageLifecycleV2::Available {
+        return false;
+    }
+    // Groups carry independent freshness: a current plan or token total cannot
+    // certify a stale or missing quota. Principal windows use account freshness.
+    account.metric_groups.iter().any(|group| {
+        group.phase == UsageFreshnessPhaseV2::Current
+            && !group.is_stale
+            && usage_quota_is_observed(group.quota_state)
+            && match &group.value {
+                UsageMetricValueV2::Window {
+                    count_quota,
+                    remaining_percent,
+                    used_percent,
+                    ..
+                } => {
+                    count_quota.is_some() || remaining_percent.is_some() || used_percent.is_some()
+                }
+                UsageMetricValueV2::Balance { .. } => true,
+                UsageMetricValueV2::SpendCap {
+                    cap,
+                    spent,
+                    remaining,
+                } => {
+                    cap.is_some() && (spent.is_some() || remaining.is_some())
+                }
+                UsageMetricValueV2::RateLimit { limit, remaining, .. } => {
+                    limit.is_some() || remaining.is_some()
+                }
+                UsageMetricValueV2::TokenTotals { .. } | UsageMetricValueV2::Plan { .. } => false,
+            }
+    }) || (account.freshness.phase == UsageFreshnessPhaseV2::Current
+        && !account.freshness.is_stale
+        && account.windows.iter().any(|window| {
+            usage_quota_is_observed(window.quota_state)
+                && (window.count_quota.is_some()
+                    || window.remaining_percent.is_some()
+                    || window.used_percent.is_some())
+        }))
 }
 
-fn usage_provider_matches(needle: &str, provider: &str) -> bool {
-    // Interchangeable provider/agent labels: a match needs one member of a group
-    // on each side. Bidirectional and extensible — add a group, not two arms.
-    const SYNONYMS: &[&[&str]] = &[
-        &["openai", "codex"],
-        &["anthropic", "claude"],
-        &["xai", "grok"],
-        &["zai", "glm"],
-    ];
-    let needle = normalize_usage_provider_label(needle);
-    let provider = normalize_usage_provider_label(provider);
-    provider.contains(&needle)
-        || needle.contains(&provider)
-        || SYNONYMS.iter().any(|group| {
-            group.iter().any(|m| needle.contains(m)) && group.iter().any(|m| provider.contains(m))
-        })
-}
-
-fn normalize_usage_provider_label(value: &str) -> String {
-    value
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .collect::<String>()
-        .to_ascii_lowercase()
+fn usage_quota_is_observed(state: UsageQuotaStateV2) -> bool {
+    matches!(
+        state,
+        UsageQuotaStateV2::Available | UsageQuotaStateV2::Warning | UsageQuotaStateV2::Exhausted
+    )
 }
 
 /// Connect to the daemon control socket and send one length-prefixed request,

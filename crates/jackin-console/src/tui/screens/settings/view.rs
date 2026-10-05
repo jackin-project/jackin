@@ -442,6 +442,29 @@ pub fn render_settings_env_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_
 pub fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_>) {
     let area = modal.rect(frame.area());
     match modal {
+        SettingsModal::AuthProviderPicker { kind, selected } => {
+            let title = format!("Provider for {}", kind.label());
+            let theme = termrock::style::DesignSystem::default();
+            let inner = termrock::layout::render_dialog_shell(
+                frame,
+                area,
+                Some(&title),
+                termrock::widgets::PanelChrome::Focused,
+                &theme,
+            );
+            let items = jackin_config::AiProvider::ALL
+                .iter()
+                .enumerate()
+                .map(|(index, provider)| {
+                    termrock::widgets::ListRow::item(index, Line::from(provider.slug()))
+                })
+                .collect::<Vec<_>>();
+            frame.render_stateful_widget(
+                &termrock::widgets::List::new(&items, &theme),
+                inner,
+                &mut termrock::widgets::ListState::new(Some(*selected)),
+            );
+        }
         SettingsModal::AuthForm { state, focus, .. } => {
             crate::tui::components::auth_panel::render_form(frame, area, state, *focus);
         }

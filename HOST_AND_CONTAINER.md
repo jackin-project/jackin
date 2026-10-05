@@ -50,11 +50,15 @@ backoff is shared across processes.
 
 The global broker socket, account catalog, credential sources, and state tree are
 never mounted into a container. Each Capsule receives a local relay at
-`/jackin/run/usage.sock`; the relay's immutable allowlist is derived from credential
-capabilities actually forwarded at launch. Credentials created only inside a Capsule
-are not monitored until a separate secure-enrollment design exists. The former
-writable `/jackin/usage-shared` snapshot/cooldown/lock tree is removed and is not a
-fallback.
+`/jackin/run/usage.sock`. Its refresh allowlist contains only exact credential
+capabilities and source/material proofs admitted at launch. A separate supervisor
+read operation returns the canonical account publication filtered to explicit
+workspace account grants; ad-hoc launches use their admitted account IDs. Inventory
+membership does not depend on live sessions, focus, or quota-window count and grants
+no additional credential, mount, or provider-refresh authority. Every read checks
+the admitted host configuration generation before and after publication access.
+Credentials created only inside a Capsule are not monitored until a separate
+secure-enrollment design exists.
 
 Docker bind-mounts the per-container host socket directory at `/jackin/run` and
 starts the usage relay through a guest-local stdio proxy. The proxy treats the
@@ -67,9 +71,23 @@ supervisor as `(pid=2, uid=0, gid=0)` under `vminitd` PID 1 (entrypoint-after-in
 contract, not a runtime probe). Other root peers are rejected before the allowlist
 is consulted.
 
-The Docker relay proxy does not treat container root as the supervisor: launch-wide
-capabilities require the kernel peer tuple `(pid=1, uid=0, gid=0)`, which is the
-Capsule daemon. Session peers remain bound to their exact configured `(uid, gid)`.
+The relay proxy pins the supervisor's PID, process start time, UID, and GID.
+Canonical inventory reads require this exact supervisor; session peers retain their
+single configured account capability through their kernel `(uid, gid)` identity.
+
+Docker launch atomically publishes a host-only `0600` relay proof under the
+protected per-instance `provider-config/relay-proof` directory after recording the
+created container's exact ownership and before starting it. The proof contains
+opaque capabilities, source declarations/fingerprints, configuration generation,
+workspace/role, and exact Docker ID. It contains no credential values. Reconnect
+checks that immutable binding before discovery and restores its original refresh
+proofs; it never rebuilds launch proof from current environment values. A missing
+proof permits read-only inventory with an explicit rebuild notice; a changed or
+mismatched binding fails closed. Foreground detach awaits proxy shutdown before a
+new attachment acquires the relay socket.
+
+Apple Container still requires a verified lifetime identity and corresponding
+proof lifecycle before it can claim the same restore authority guarantee.
 
 ## Container path convention: everything jackin❯ owns lives under `/jackin/` (hard rule)
 

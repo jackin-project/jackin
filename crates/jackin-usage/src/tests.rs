@@ -37,14 +37,14 @@ struct AllowedCall {
 }
 
 #[test]
-fn contract_baseline_projection_fixture_is_well_formed() {
-    let fixture = read_json("usage-projection-v1-current.json");
-    validate_projection_v1(&fixture).expect("canonical V1 fixture must satisfy contract");
+fn contract_baseline_projection_v2_fixture_is_well_formed() {
+    let fixture = read_json("usage-projection-v2-current.json");
+    validate_projection_v2(&fixture).expect("canonical V2 fixture must satisfy contract");
 }
 
 #[test]
-fn contract_baseline_projection_rejects_invalid_fixtures() {
-    let fixture = read_json("usage-projection-v1-invalid.json");
+fn contract_baseline_projection_v2_rejects_invalid_fixtures() {
+    let fixture = read_json("usage-projection-v2-invalid.json");
     let cases = fixture
         .as_array()
         .expect("invalid fixture must be a JSON array");
@@ -58,10 +58,18 @@ fn contract_baseline_projection_rejects_invalid_fixtures() {
             .get("projection")
             .expect("invalid case needs a projection");
         assert!(
-            validate_projection_v1(projection).is_err(),
+            validate_projection_v2(projection).is_err(),
             "invalid case {id} unexpectedly passed"
         );
     }
+}
+
+#[test]
+fn contract_baseline_projection_v2_accepts_source_capability_identity() {
+    let mut fixture = read_json("usage-projection-v2-current.json");
+    fixture["providers"][0]["accounts"][0]["identity_kind"] =
+        Value::String("source_capability".to_owned());
+    validate_projection_v2(&fixture).expect("source-capability identity is a valid V2 kind");
 }
 
 #[test]
@@ -153,12 +161,12 @@ fn contract_baseline_provider_calls_detect_injected_route() {
     );
 }
 
-fn validate_projection_v1(value: &Value) -> Result<(), String> {
+fn validate_projection_v2(value: &Value) -> Result<(), String> {
     let object = value
         .as_object()
         .ok_or_else(|| "projection must be an object".to_owned())?;
-    if object.get("schema_version").and_then(Value::as_u64) != Some(1) {
-        return Err("schema_version must be 1".to_owned());
+    if object.get("schema_version").and_then(Value::as_u64) != Some(2) {
+        return Err("schema_version must be 2".to_owned());
     }
     for key in ["projection_id", "discovery_revision", "broker_instance_id"] {
         required_string(value, key)?;
@@ -166,7 +174,7 @@ fn validate_projection_v1(value: &Value) -> Result<(), String> {
     required_i64(value, "generated_at_epoch")?;
     required_u64(value, "broker_generation")?;
     required_enum(value, "refresh_state", &["idle", "refreshing"])?;
-    for key in ["providers", "unresolved", "issues"] {
+    for key in ["providers", "unresolved", "unresolved_grants", "issues"] {
         if !object.get(key).is_some_and(Value::is_array) {
             return Err(format!("{key} must be an array"));
         }
@@ -203,8 +211,20 @@ fn validate_account(account: &Value) -> Result<(), String> {
     required_enum(
         account,
         "identity_kind",
-        &["provider_account_id", "provider_stable_handle"],
+        &[
+            "provider_account_id",
+            "provider_stable_handle",
+            "source_capability",
+        ],
     )?;
+    let refresh_capabilities = account
+        .get("refresh_capabilities")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "account refresh_capabilities must be an array".to_owned())?;
+    for capability in refresh_capabilities {
+        required_string(capability, "account_id")?;
+        required_string(capability, "surface_id")?;
+    }
     required_enum(
         account,
         "lifecycle",
@@ -237,6 +257,11 @@ fn validate_window(window: &Value) -> Result<(), String> {
     required_string(window, "reset_label")?;
     required_enum(
         window,
+        "category",
+        &["long_range", "model", "session", "other"],
+    )?;
+    required_enum(
+        window,
         "quota_state",
         &[
             "available",
@@ -245,6 +270,9 @@ fn validate_window(window: &Value) -> Result<(), String> {
             "exhausted",
             "unsupported",
             "unavailable",
+            "no_permission",
+            "unknown",
+            "not_applicable",
             "error",
         ],
     )?;

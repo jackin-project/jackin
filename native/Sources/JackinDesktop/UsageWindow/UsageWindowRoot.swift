@@ -20,10 +20,9 @@ public struct UsageWindowSidebar: View {
 
     private var model: UsageWindowModel {
         UsageWindowModel(
-            glanceRows: store.providerGlanceRows,
+            providerGroups: store.providerGroups,
             surfaces: store.surfaces,
             accounts: store.accounts,
-            providerGroups: store.providerGroups,
             selection: store.usageSelection,
             accountSelection: store.usageAccountSelection
         )
@@ -81,7 +80,7 @@ public struct UsageWindowSidebar: View {
     }
 
     @ViewBuilder
-    private func providerMark(_ provider: PresentationStore.GlanceProviderRow) -> some View {
+    private func providerMark(_ provider: PresentationStore.ProviderGroupRow) -> some View {
         if let mark = ProviderMarks.swiftUIImage(forIconKey: provider.iconKey) {
             mark
                 .resizable()
@@ -104,32 +103,46 @@ public struct UsageWindowDetail: View {
 
     private var model: UsageWindowModel {
         UsageWindowModel(
-            glanceRows: store.providerGlanceRows,
+            providerGroups: store.providerGroups,
             surfaces: store.surfaces,
             accounts: store.accounts,
-            providerGroups: store.providerGroups,
             selection: store.usageSelection,
             accountSelection: store.usageAccountSelection
         )
     }
 
     public var body: some View {
-        detail
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onAppear {
-                if !store.isOpen {
-                    store.openDefault()
+        VStack(alignment: .leading, spacing: 8) {
+            if let error = store.lastError, !store.providerGroups.isEmpty {
+                HStack {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(error)
+                        .accessibilityIdentifier("usage.refresh-error")
+                    Spacer()
+                    Button("Retry") { store.retryLastOperation() }
+                        .disabled(store.isOpening || store.refreshInProgress)
+                        .accessibilityIdentifier("usage.refresh-retry")
                 }
+                .padding(.horizontal)
             }
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onAppear {
+            if !store.isOpen {
+                store.openDefault()
+            }
+        }
     }
 
     @ViewBuilder
     private var detail: some View {
-        if store.isOpening, store.providerGlanceRows.isEmpty {
+        if store.isOpening, store.providerGroups.isEmpty {
             ProgressView("Loading usage")
                 .controlSize(.large)
                 .accessibilityIdentifier("usage.loading")
-        } else if let error = store.lastError, store.providerGlanceRows.isEmpty {
+        } else if let error = store.lastError, store.providerGroups.isEmpty {
             ContentUnavailableView {
                 Label("Usage unavailable", systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier("usage.global-error")
@@ -150,13 +163,18 @@ public struct UsageWindowDetail: View {
         } else {
             OverviewListView(
                 groups: store.providerGroups,
+                notice: store.usageNotice,
+                reselectionNoticeForSurface: {
+                    store.accountSelectionReselectionNotice(surfaceId: $0)
+                },
                 selectedRowID: $store.overviewSelectionID,
                 expandedProviderIDs: $store.overviewExpandedProviderIDs,
                 onSelect: { surfaceId, accountKey in
                     if let accountKey {
-                        store.setSelectedAccount(surfaceId: surfaceId, accountKey: accountKey)
+                        store.selectUsageAccount(surfaceId: surfaceId, accountKey: accountKey)
+                    } else {
+                        store.selectUsageSurface(surfaceId)
                     }
-                    store.selectUsageContext(surfaceId: surfaceId, accountKey: accountKey)
                 },
                 onRetry: { surfaceId in
                     store.refresh(surfaceId: surfaceId)

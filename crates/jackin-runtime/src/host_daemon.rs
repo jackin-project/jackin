@@ -601,8 +601,20 @@ fn handle_stream(
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
 ) -> Result<DaemonResponse> {
+    let reader = stream.try_clone().context("cloning daemon stream")?;
+    handle_request_io(reader, stream, layout, build_id, coredump_policy, attention)
+}
+
+fn handle_request_io(
+    reader: impl Read,
+    writer: &mut impl Write,
+    layout: &DaemonLayout,
+    build_id: &str,
+    coredump_policy: &CoredumpPolicy,
+    attention: &mut impl AttentionNotifierAdapter,
+) -> Result<DaemonResponse> {
     let mut line = String::new();
-    let read = BufReader::new(stream.try_clone().context("cloning daemon stream")?)
+    let read = BufReader::new(reader)
         .take(MAX_REQUEST_BYTES + 1)
         .read_line(&mut line)
         .context("reading daemon request")?;
@@ -622,8 +634,8 @@ fn handle_stream(
     };
     let response = handled.response;
     let write_result = (|| {
-        serde_json::to_writer(&mut *stream, &response).context("writing daemon response")?;
-        stream
+        serde_json::to_writer(&mut *writer, &response).context("writing daemon response")?;
+        writer
             .write_all(b"\n")
             .context("terminating daemon response")
     })();

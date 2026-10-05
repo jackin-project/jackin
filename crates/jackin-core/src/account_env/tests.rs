@@ -79,7 +79,7 @@ fn account_env_registry_covers_provider_aliases_and_client_state_roots() {
         "HOME",
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
-        "KIMI_HOME",
+        "KIMI_CODE_HOME",
         "AMP_HOME",
         "GEMINI_CLI_HOME",
         "CURSOR_CONFIG_DIR",

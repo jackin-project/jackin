@@ -260,6 +260,18 @@ fn credential_snapshot_openrouter_arm_reads_key_quota() {
     assert!(view.last_error.is_some());
 }
 
+fn fixture_identity(surface: &str, account: &str) -> UsageAccountIdentity {
+    UsageAccountIdentity {
+        source_revision: None,
+        surface_id: surface.to_owned(),
+        account_id: if account.is_empty() {
+            "anonymous-fixture-account".to_owned()
+        } else {
+            account.to_owned()
+        },
+    }
+}
+
 fn account_snapshot_view(
     provider_label: &str,
     account_label: &str,
@@ -267,6 +279,7 @@ fn account_snapshot_view(
     fetched_at_epoch: i64,
 ) -> FocusedUsageView {
     let mut view = FocusedUsageView::unavailable("none", fetched_at_epoch);
+    view.account_identity = Some(fixture_identity(provider_label, account_label));
     view.account.provider_label = provider_label.to_owned();
     view.account.account_label = account_label.to_owned();
     view.account.plan_label = plan_label.map(str::to_owned);
@@ -296,11 +309,11 @@ fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
     assert_eq!(claude.plan_label.as_deref(), Some("Max 20x"));
     assert_eq!(
         claude.id,
-        usage_account_tab_id("Anthropic", "a@example.com")
+        usage_account_tab_id(&fixture_identity("Anthropic", "a@example.com"))
     );
     assert_eq!(
         tabs[1].id,
-        usage_account_tab_id("OpenAI", "codex@example.com")
+        usage_account_tab_id(&fixture_identity("OpenAI", "codex@example.com"))
     );
     assert_ne!(tabs[0].id, tabs[1].id);
     assert!(tabs.iter().all(|tab| !tab.active));
@@ -402,9 +415,9 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
     ids.dedup();
     assert_eq!(ids.len(), 3);
     let mut expected = vec![
-        usage_account_tab_id("Anthropic", "a@example.com"),
-        usage_account_tab_id("Anthropic", "b@example.com"),
-        usage_account_tab_id("OpenAI", "codex@example.com"),
+        usage_account_tab_id(&fixture_identity("Anthropic", "a@example.com")),
+        usage_account_tab_id(&fixture_identity("Anthropic", "b@example.com")),
+        usage_account_tab_id(&fixture_identity("OpenAI", "codex@example.com")),
     ];
     expected.sort();
     assert_eq!(ids, expected);
@@ -413,13 +426,13 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
     assert_eq!(active.len(), 1);
     assert_eq!(
         active[0].id,
-        usage_account_tab_id("Anthropic", "b@example.com")
+        usage_account_tab_id(&fixture_identity("Anthropic", "b@example.com"))
     );
 
     // Selection by id focuses the correct account: a view focused on the
     // other Claude account marks exactly its tab, matched by id rather than
     // the shared "Anthropic" display label.
-    let id_a = usage_account_tab_id("Anthropic", "a@example.com");
+    let id_a = usage_account_tab_id(&fixture_identity("Anthropic", "a@example.com"));
     let mut selected = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
     enrich_provider_tabs(&mut selected, &cache.snapshots);
     mark_active_tab(&mut selected);
@@ -447,7 +460,7 @@ fn focused_snapshot_for_account_id_selects_exact_account() {
         Some("Anthropic"),
         account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
     );
-    let id_b = usage_account_tab_id("Anthropic", "b@example.com");
+    let id_b = usage_account_tab_id(&fixture_identity("Anthropic", "b@example.com"));
 
     let snapshot = cache
         .focused_snapshot_for_account_id(&id_b)
@@ -467,7 +480,7 @@ fn focused_snapshot_for_account_id_selects_exact_account() {
 }
 
 #[test]
-fn broker_account_id_for_tab_id_recovers_broker_key() {
+fn account_identity_for_tab_id_preserves_canonical_pair() {
     use jackin_protocol::usage_broker::UsageAccountCapability;
 
     let mut cache = UsageCache::default();
@@ -488,15 +501,20 @@ fn broker_account_id_for_tab_id_recovers_broker_key() {
     );
 
     assert_eq!(
-        cache.broker_account_id_for_tab_id(&usage_account_tab_id("Anthropic", "a@example.com")),
-        Some("broker-claude-a".to_owned())
+        cache.account_identity_for_tab_id(&usage_account_tab_id(&fixture_identity(
+            "claude",
+            "broker-claude-a"
+        ))),
+        Some(fixture_identity("claude", "broker-claude-a"))
     );
-    // Legacy keys carry no capability; unknown ids match nothing.
     assert_eq!(
-        cache.broker_account_id_for_tab_id(&usage_account_tab_id("OpenAI", "codex@example.com")),
-        None
+        cache.account_identity_for_tab_id(&usage_account_tab_id(&fixture_identity(
+            "OpenAI",
+            "codex@example.com"
+        ))),
+        Some(fixture_identity("OpenAI", "codex@example.com"))
     );
-    assert_eq!(cache.broker_account_id_for_tab_id("sha256:unknown"), None);
+    assert_eq!(cache.account_identity_for_tab_id("sha256:unknown"), None);
 }
 
 #[test]
@@ -775,6 +793,7 @@ fn usage_account_snapshots_use_in_memory_cache() {
 fn account_snapshot_rows_preserve_money_units_for_spend_buckets() {
     let mut view = codex_cached_usage_view();
     view.buckets = vec![QuotaBucketView {
+        count_quota: None,
         label: "Extra usage".to_owned(),
         used_label: Some("SGD 78.00 of SGD 260.00".to_owned()),
         limit_label: Some("SGD 260.00".to_owned()),
@@ -786,6 +805,7 @@ fn account_snapshot_rows_preserve_money_units_for_spend_buckets() {
         status: UsageSnapshotStatus::Fresh,
         used_money: Some(Money::new(7_800, "SGD", 2)),
         limit_money: Some(Money::new(26_000, "SGD", 2)),
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }];
     let mut snapshots = HashMap::new();
@@ -812,7 +832,7 @@ fn account_snapshot_rows_propagate_view_failure_to_retained_buckets() {
 }
 
 fn codex_cached_usage_view() -> FocusedUsageView {
-    usage_view(UsageViewInput {
+    let mut view = usage_view(UsageViewInput {
         agent: "codex",
         provider: Some("OpenAI"),
         surface: UsageSurface::Codex,
@@ -821,8 +841,10 @@ fn codex_cached_usage_view() -> FocusedUsageView {
         plan_label: Some("Pro 20x".to_owned()),
         credential_origin: None,
         buckets: vec![QuotaBucketView {
+            count_quota: None,
             used_money: None,
             limit_money: None,
+            remaining_money: None,
             severity: UsageSeverity::default(),
             label: "Session".to_owned(),
             used_label: Some("63% used".to_owned()),
@@ -839,7 +861,9 @@ fn codex_cached_usage_view() -> FocusedUsageView {
         confidence: UsageConfidence::Authoritative,
         now: 123,
         last_error: None,
-    })
+    });
+    view.account_identity = Some(fixture_identity("codex", "fixture-codex-account"));
+    view
 }
 
 #[test]
@@ -873,8 +897,10 @@ fn materialized_usage_accounts_write_normalized_snapshots() {
 fn status_bar_label_uses_session_and_weekly_remaining() {
     let buckets = vec![
         QuotaBucketView {
+            count_quota: None,
             used_money: None,
             limit_money: None,
+            remaining_money: None,
             severity: UsageSeverity::default(),
             label: "Session".to_owned(),
             used_label: Some("63% used".to_owned()),
@@ -887,8 +913,10 @@ fn status_bar_label_uses_session_and_weekly_remaining() {
             status: UsageSnapshotStatus::Fresh,
         },
         QuotaBucketView {
+            count_quota: None,
             used_money: None,
             limit_money: None,
+            remaining_money: None,
             severity: UsageSeverity::default(),
             label: "Weekly".to_owned(),
             used_label: Some("90% used".to_owned()),
@@ -921,8 +949,10 @@ fn status_bar_reads_session_weekly_slots_from_tags() {
     // cycle Weekly with no session. An untagged window (MCP) never reaches
     // the headline.
     let pct = |label: &str, remaining: u8, slot: Option<StatusSlot>| QuotaBucketView {
+        count_quota: None,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::default(),
         label: label.to_owned(),
         used_label: None,
@@ -1008,8 +1038,10 @@ fn codex_plan_display_name_matches_codexbar() {
 #[test]
 fn status_bar_label_uses_stale_cached_percentages() {
     let buckets = vec![QuotaBucketView {
+        count_quota: None,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::default(),
         label: "Session".to_owned(),
         used_label: Some("99% used".to_owned()),
@@ -1039,8 +1071,10 @@ fn status_bar_label_drops_tagged_bucket_that_failed() {
     // window errored) must not surface its percentage as if it were live;
     // the headline falls through to the snapshot-level status label.
     let buckets = vec![QuotaBucketView {
+        count_quota: None,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::default(),
         label: "Session".to_owned(),
         used_label: Some("50% used".to_owned()),
@@ -1068,8 +1102,10 @@ fn status_bar_label_drops_tagged_bucket_that_failed() {
 fn status_bar_label_uses_amp_daily_only() {
     let buckets = vec![
         QuotaBucketView {
+            count_quota: None,
             used_money: None,
             limit_money: None,
+            remaining_money: None,
             severity: UsageSeverity::default(),
             label: "Amp Free".to_owned(),
             used_label: None,
@@ -1082,8 +1118,10 @@ fn status_bar_label_uses_amp_daily_only() {
             status: UsageSnapshotStatus::Fresh,
         },
         QuotaBucketView {
+            count_quota: None,
             used_money: None,
             limit_money: None,
+            remaining_money: None,
             severity: UsageSeverity::default(),
             label: "Individual credits".to_owned(),
             used_label: None,
@@ -1112,8 +1150,10 @@ fn status_bar_label_uses_amp_daily_only() {
 #[test]
 fn status_bar_label_uses_stale_amp_cache() {
     let buckets = vec![QuotaBucketView {
+        count_quota: None,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::default(),
         label: "Amp Free".to_owned(),
         used_label: None,
@@ -1194,6 +1234,7 @@ fn usage_cache_keeps_account_snapshots_isolated_across_one_provider_target() {
 
     cache.adopt_broker_error(
         &UsageRefreshTarget {
+            instance_id: "codex".to_owned(),
             agent: "codex".to_owned(),
             provider: Some("OpenAI".to_owned()),
             capability: personal.clone(),
@@ -1229,6 +1270,7 @@ fn usage_cache_rejects_provider_surface_capability_mismatch() {
         surface_id: "codex".to_owned(),
     };
     let target = UsageRefreshTarget {
+        instance_id: "codex".to_owned(),
         agent: "codex".to_owned(),
         provider: Some("Claude".to_owned()),
         capability: capability.clone(),
@@ -1270,6 +1312,7 @@ fn openrouter_cache_preserves_exact_capability_and_last_good_rows_on_error() {
     ));
 
     let target = UsageRefreshTarget {
+        instance_id: "opencode".to_owned(),
         agent: "opencode".to_owned(),
         provider: Some("OpenRouter".to_owned()),
         capability: capability.clone(),
@@ -1331,6 +1374,7 @@ fn openrouter_cache_preserves_exact_capability_and_last_good_rows_on_error() {
 #[test]
 fn empty_broker_error_snapshot_is_error_not_fresh() {
     let target = UsageRefreshTarget {
+        instance_id: "codex".to_owned(),
         agent: "codex".to_owned(),
         provider: Some("OpenAI".to_owned()),
         capability: jackin_protocol::usage_broker::UsageAccountCapability {
@@ -1454,6 +1498,7 @@ fn usage_cache_isolates_provider_targets_that_share_one_agent_slug() {
 #[test]
 fn usage_cache_adopts_broker_generations_by_account_capability() {
     let target = UsageRefreshTarget {
+        instance_id: "codex".to_owned(),
         agent: "codex".to_owned(),
         provider: Some("OpenAI".to_owned()),
         capability: jackin_protocol::usage_broker::UsageAccountCapability {
@@ -1528,8 +1573,10 @@ fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
         credential_origin: None,
     };
     cached.buckets = vec![QuotaBucketView {
+        count_quota: None,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::default(),
         label: "Weekly".to_owned(),
         used_label: Some("90% used".to_owned()),
@@ -1580,6 +1627,7 @@ fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
 #[test]
 fn broker_client_failure_preserves_last_good_quota() {
     let target = UsageRefreshTarget {
+        instance_id: "claude".to_owned(),
         agent: "claude".to_owned(),
         provider: Some("Claude".to_owned()),
         capability: jackin_protocol::usage_broker::UsageAccountCapability {
@@ -1590,8 +1638,10 @@ fn broker_client_failure_preserves_last_good_quota() {
     let mut cached = FocusedUsageView::unavailable("seed", 123);
     cached.status = UsageSnapshotStatus::Fresh;
     cached.buckets = vec![QuotaBucketView {
+        count_quota: None,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
         label: "Weekly".to_owned(),
         used_label: Some("36% used".to_owned()),
@@ -2078,6 +2128,23 @@ fn codex_oauth_credentials_carry_refresh_token() {
 }
 
 #[test]
+fn codex_oauth_account_identity_preserves_exact_provider_id() {
+    for spelling in ["account_id", "accountId"] {
+        let mut tokens = serde_json::json!({"access_token": "fixture-token"});
+        tokens[spelling] = serde_json::json!(" exact-id ");
+        let credentials = codex_oauth_from_value(&serde_json::json!({"tokens": tokens}))
+            .expect("fixture credentials");
+        assert_eq!(credentials.account_id.as_deref(), Some(" exact-id "));
+
+        let mut tokens = serde_json::json!({"access_token": "fixture-token"});
+        tokens[spelling] = serde_json::json!("  ");
+        let credentials = codex_oauth_from_value(&serde_json::json!({"tokens": tokens}))
+            .expect("fixture credentials");
+        assert!(credentials.account_id.is_none());
+    }
+}
+
+#[test]
 fn unauthorized_errors_are_distinguished_from_transient() {
     for status in [401, 403] {
         assert!(usage_error_is_unauthorized(&ProviderError::from(
@@ -2381,6 +2448,103 @@ fn usage_tab_status_label_selects_ranked_limit_and_names_unslotted_winner() {
     assert!(
         label.starts_with("Fable 10% left"),
         "unslotted winner must be named: got {label:?}"
+    );
+}
+
+#[test]
+fn overview_count_status_preserves_exact_observations_over_percent_and_labels() {
+    use jackin_protocol::control::{
+        CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    };
+
+    let mut row = bucket(
+        "untrusted count label",
+        None,
+        None,
+        Some(99),
+        Some("resets at 00:00 UTC".to_owned()),
+        None,
+        UsageSnapshotStatus::Fresh,
+    );
+    row.count_quota = Some(CountQuota {
+        used: Some(12),
+        limit: Some(50),
+        remaining: Some(38),
+        unit: CountQuotaUnit::Requests,
+        period: CountQuotaPeriod::UtcDaily,
+        provenance: CountQuotaProvenance::ProviderReported,
+    });
+    let mut view = FocusedUsageView::unavailable("test", 0);
+    view.status = UsageSnapshotStatus::Fresh;
+    view.buckets = vec![row];
+    assert_eq!(
+        usage_tab_status_label(&view),
+        "12 / 50 requests used · 38 requests left · resets at 00:00 UTC"
+    );
+
+    let row = &mut view.buckets[0];
+    row.remaining_percent = None;
+    row.reset_label = None;
+    let count = row.count_quota.as_mut().expect("typed count");
+    count.used = Some(0);
+    count.limit = Some(0);
+    count.remaining = Some(0);
+    assert_eq!(
+        usage_tab_status_label(&view),
+        "0 / 0 requests used · 0 requests left"
+    );
+
+    let count = view.buckets[0].count_quota.as_mut().expect("typed count");
+    count.used = None;
+    count.limit = None;
+    count.remaining = None;
+    assert_eq!(
+        usage_tab_status_label(&view),
+        "Request usage and limit unknown · Remaining requests unknown"
+    );
+
+    view.status = UsageSnapshotStatus::Stale;
+    assert_eq!(usage_tab_status_label(&view), "stale");
+}
+
+#[test]
+fn overview_money_status_preserves_tiny_and_independent_observations() {
+    let mut row = bucket(
+        "untrusted money label",
+        Some("$0".to_owned()),
+        None,
+        Some(99),
+        None,
+        None,
+        UsageSnapshotStatus::Fresh,
+    );
+    row.used_money = Some(Money::new(1, "USD", 4));
+    row.limit_money = Some(Money::new(1, "USD", 3));
+    row.remaining_money = Some(Money::new(9, "USD", 4));
+    let mut view = FocusedUsageView::unavailable("test", 0);
+    view.status = UsageSnapshotStatus::Fresh;
+    view.buckets = vec![row];
+    assert_eq!(
+        usage_tab_status_label(&view),
+        "$0.0001 / $0.001 spent · $0.0009 remaining"
+    );
+    let presentation = usage_bucket_presentation(&view.buckets[0]);
+    assert_eq!(presentation.meter_percent, Some(90));
+    assert_eq!(
+        presentation.remaining_label.as_deref(),
+        Some("$0.0009 remaining")
+    );
+    view.buckets[0].remaining_percent = None;
+    view.buckets[0].used_money = None;
+    view.buckets[0].limit_money = None;
+    view.buckets[0].remaining_money = Some(Money::new(-1, "USD", 3));
+    assert_eq!(
+        usage_tab_status_label(&view),
+        "Spending and cap unknown · $-0.001 remaining"
+    );
+    assert_eq!(
+        usage_bucket_presentation(&view.buckets[0]).meter_percent,
+        None
     );
 }
 
@@ -3527,19 +3691,34 @@ fn amp_legacy_hourly_display_text_is_rejected() {
     );
 }
 
+#[cfg(unix)]
 #[test]
-fn cli_output_collector_treats_reaped_child_as_success() {
-    let output = format::collect_cli_output(
-        "amp",
-        None,
-        thread::spawn(|| Ok("usage rows".to_owned())),
-        thread::spawn(|| Ok(String::new())),
+fn cli_output_preserves_exit_status_and_streams() {
+    let output = run_cli_with_timeout_full(
+        "/bin/sh",
+        &["-c", "printf usage-rows; printf usage-error >&2; exit 17"],
+        Duration::from_secs(10),
     )
     .expect("cli output");
 
-    assert!(output.success);
-    assert_eq!(output.exit_code, None);
-    assert_eq!(output.stdout, "usage rows");
+    assert!(!output.success);
+    assert_eq!(output.exit_code, Some(17));
+    assert_eq!(output.stdout, "usage-rows");
+    assert_eq!(output.stderr, "usage-error");
+}
+
+#[cfg(unix)]
+#[test]
+fn usage_cli_output_requires_utf8() {
+    assert_eq!(
+        run_cli_with_timeout_full(
+            "/bin/sh",
+            &["-c", "printf '\\377'"],
+            Duration::from_secs(10),
+        )
+        .unwrap_err(),
+        "process output was not UTF-8"
+    );
 }
 
 #[cfg(unix)]
@@ -3553,7 +3732,7 @@ fn usage_cli_owner_exports_outcomes_without_process_material() {
     let _subscriber = tracing::subscriber::set_default(subscriber);
 
     // Success/error paths must outlive heavy parallel nextest load; 1s races
-    // under full `ci --fast` when the host is saturated (poll loop is 50ms).
+    // under full `ci --fast` when the host is saturated.
     let settle = Duration::from_secs(10);
     run_cli_with_timeout_full(command, &["-c", "printf usage-secret-output"], settle).unwrap();
     run_cli_with_timeout_full(
@@ -3593,13 +3772,35 @@ fn usage_cli_owner_exports_outcomes_without_process_material() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn usage_cli_output_capture_is_bounded() {
-    let oversized = vec![b'x'; format::PROCESS_OUTPUT_MAX + 1];
+    let script = format!("head -c {} /dev/zero", format::PROCESS_OUTPUT_MAX + 1);
     assert_eq!(
-        format::read_process_pipe(std::io::Cursor::new(oversized)).unwrap_err(),
-        "process output exceeded limit"
+        run_cli_with_timeout_full(
+            "/bin/sh",
+            &["-c", &script],
+            Duration::from_secs(10),
+        )
+        .unwrap_err(),
+        "usage command output failed"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn usage_cli_timeout_covers_descendant_output_pipes() {
+    let started = Instant::now();
+    assert_eq!(
+        run_cli_with_timeout_full(
+            "/bin/sh",
+            &["-c", "sleep 30 & exit 0"],
+            Duration::from_millis(100),
+        )
+        .unwrap_err(),
+        "usage command timed out"
+    );
+    assert!(started.elapsed() < Duration::from_secs(5));
 }
 
 #[test]
@@ -3616,7 +3817,35 @@ fn amp_secrets_json_provides_api_key() {
     )
     .expect("write Amp secrets");
 
-    assert_eq!(load_amp_api_key(&path).as_deref(), Some("amp-token"));
+    assert_eq!(load_amp_api_key(&path).as_deref(), Some(" amp-token "));
+}
+
+#[test]
+fn amp_file_loader_rejects_unrelated_and_ambiguous_credentials() {
+    let dir = tempfile::tempdir().expect("owned fixture root");
+    let path = dir.path().join("secrets.json");
+    for value in [
+        serde_json::json!({"apiKey@https://foreign.example/": "foreign-fixture"}),
+        serde_json::json!({"mcp-oauth@https://ampcode.com/": "mcp-fixture"}),
+        serde_json::json!({"other": "unrelated-fixture"}),
+        serde_json::json!({
+            "apiKey@https://ampcode.com/": "first-fixture",
+            "apiKey@https://ampcode.com": "second-fixture"
+        }),
+    ] {
+        fs::write(&path, value.to_string()).expect("owned rejected fixture");
+        assert!(load_amp_api_key(&path).is_none());
+    }
+    let selected = serde_json::json!({
+        "apiKey@https://foreign.example/": "foreign-fixture",
+        "mcp-oauth@https://ampcode.com/": "mcp-fixture",
+        "apiKey@https://ampcode.com": " exact-selected-fixture "
+    });
+    fs::write(&path, selected.to_string()).expect("owned selected fixture");
+    assert_eq!(
+        load_amp_api_key(&path).as_deref(),
+        Some(" exact-selected-fixture ")
+    );
 }
 
 #[test]
@@ -3775,19 +4004,11 @@ fn codex_duration_classifier_and_individual_limit_are_provider_evidenced() {
 
 #[test]
 fn opencode_auth_and_usage_contract_is_typed_without_secret_identity() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("auth.json");
-    fs::write(
-        &path,
-        serde_json::json!({
-            "opencode-go": {"type": "api", "key": "secret-not-output"}
-        })
-        .to_string(),
-    )
-    .expect("auth fixture");
-    fs::write(dir.path().join("opencode.db"), "database fixture").expect("database fixture");
+    let auth = serde_json::json!({
+        "opencode-go": {"type": "api", "key": "  secret-not-output  "}
+    });
     assert_eq!(
-        load_opencode_api_key(&path).as_deref(),
+        opencode_api_key_from_value(&auth).as_deref(),
         Ok("secret-not-output")
     );
     let quota = parse_opencode_usage(
@@ -3805,31 +4026,21 @@ fn opencode_auth_and_usage_contract_is_typed_without_secret_identity() {
     assert_eq!(quota.buckets[0].label, "Rolling");
     assert_eq!(quota.buckets[1].status, UsageSnapshotStatus::Unavailable);
     assert!(quota.rate_limited);
-    fs::write(
-        &path,
-        serde_json::json!({
-            "anthropic": {"type": "api", "key": "unrelated-sentinel"},
-            "opencode-go": {"type": "api", "key": "secret-not-output"}
-        })
-        .to_string(),
-    )
-    .expect("ambiguous auth fixture");
-    let error = load_opencode_api_key(&path).unwrap_err();
+    let ambiguous = serde_json::json!({
+        "anthropic": {"type": "api", "key": "unrelated-sentinel"},
+        "opencode-go": {"type": "api", "key": "secret-not-output"}
+    });
+    let error = opencode_api_key_from_value(&ambiguous).unwrap_err();
     assert!(error.contains("multiple credentials"), "{error}");
     assert!(!error.contains("unrelated-sentinel"));
-    fs::write(
-        &path,
-        serde_json::json!({"opencode-go": {"type": "oauth", "key": "secret-not-output"}})
-            .to_string(),
-    )
-    .expect("malformed auth fixture");
-    load_opencode_api_key(&path).unwrap_err();
-    fs::write(
-        &path,
-        serde_json::json!({"anthropic": {"type": "api", "key": "unrelated-sentinel"}}).to_string(),
-    )
-    .expect("foreign-only auth fixture");
-    let error = load_opencode_api_key(&path).unwrap_err();
+    let malformed = serde_json::json!({
+        "opencode-go": {"type": "oauth", "key": "secret-not-output"}
+    });
+    opencode_api_key_from_value(&malformed).unwrap_err();
+    let foreign_only = serde_json::json!({
+        "anthropic": {"type": "api", "key": "unrelated-sentinel"}
+    });
+    let error = opencode_api_key_from_value(&foreign_only).unwrap_err();
     assert!(error.contains("opencode-go credential is missing"));
     assert!(!error.contains("unrelated-sentinel"));
 }
@@ -4227,7 +4438,7 @@ fn provider_boundary_exports_only_bounded_request_fields() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn conformance_wire_provider_boundary_exports_bounded_private_shapes() {
     if std::env::var_os("JACKIN_USAGE_WIRE_USAGE_CHILD").is_none() {
-        let status = Command::new(
+        let status = std::process::Command::new(
             std::env::current_exe().expect("usage test executable must resolve"),
         )
         .arg("--exact")
@@ -4328,13 +4539,13 @@ fn managed_probe_boundaries_export_fixed_private_shapes() {
 
         let (codex_tx, codex_rx) = mpsc::channel();
         codex_tx
-            .send(
+            .send(Ok(
                 serde_json::json!({
                     "id": 1,
                     "result": {"private_response": "codex-secret"}
                 })
                 .to_string(),
-            )
+            ))
             .unwrap();
         let mut codex_wire = Vec::new();
         codex_rpc_request(
@@ -4350,13 +4561,13 @@ fn managed_probe_boundaries_export_fixed_private_shapes() {
 
         let (grok_tx, grok_rx) = mpsc::channel();
         grok_tx
-            .send(
+            .send(Ok(
                 serde_json::json!({
                     "id": 2,
                     "error": {"message": "grok-private-error"}
                 })
                 .to_string(),
-            )
+            ))
             .unwrap();
         let mut grok_wire = Vec::new();
         grok_rpc_request(
@@ -4697,6 +4908,229 @@ fn claude_denied_view_has_no_quota_and_exact_error() {
     );
 }
 
+// Wait for a follower to retain the active flight before completing its leader.
+fn wait_for_claude_keychain_join(state: &ClaudeKeychainState, target: u64) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while state.join_count() < target {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Keychain follower did not join"
+        );
+        std::thread::yield_now();
+    }
+}
+
+#[test]
+fn claude_keychain_flight_shares_payload_and_negative_results_then_rereads() {
+    for payload in [true, false] {
+        let state = ClaudeKeychainState::default();
+        std::thread::scope(|threads| {
+            let (started_tx, started_rx) = std::sync::mpsc::channel();
+            let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+            let state_ref = &state;
+            let leader = threads.spawn(move || {
+                state_ref.read_with("service", |_| {
+                    started_tx.send(()).unwrap();
+                    finish_rx
+                        .recv_timeout(std::time::Duration::from_secs(10))
+                        .unwrap();
+                    if payload {
+                        ClaudeKeychainRead::Payload {
+                            json: "first-payload".to_owned(),
+                        }
+                    } else {
+                        ClaudeKeychainRead::Missing
+                    }
+                })
+            });
+            started_rx
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap();
+            let follower = threads.spawn(|| {
+                state.read_with("service", |_| {
+                    panic!("follower must share the original flight")
+                })
+            });
+            wait_for_claude_keychain_join(&state, 1);
+            finish_tx.send(()).unwrap();
+            let first = leader.join().unwrap();
+            // Begin another generation before consuming the follower's result.
+            let next = state.read_with("service", |_| ClaudeKeychainRead::Payload {
+                json: "next-payload".to_owned(),
+            });
+            assert!(matches!(next, ClaudeKeychainRead::Payload { json } if json == "next-payload"));
+            for outcome in [first, follower.join().unwrap()] {
+                match outcome {
+                    ClaudeKeychainRead::Payload { json } if payload => {
+                        assert_eq!(json, "first-payload")
+                    }
+                    ClaudeKeychainRead::Missing if !payload => {}
+                    _ => panic!("follower observed the wrong flight outcome"),
+                }
+            }
+            assert_eq!(state.read_count(), 2);
+        });
+    }
+}
+
+// Kill and reap the entire fixture process if a coordination regression deadlocks.
+fn claude_keychain_run_isolated(test_name: &str) -> bool {
+    const CHILD_MARKER: &str = "JACKIN_USAGE_KEYCHAIN_CHILD";
+    if std::env::var_os(CHILD_MARKER).is_some() {
+        return false;
+    }
+    let request = jackin_process::ExecRequest::new(
+        std::env::current_exe().expect("usage test executable"),
+        ["--exact", test_name, "--nocapture"],
+    )
+    .env_clear()
+    .envs([(CHILD_MARKER, "1")])
+    .timeout(std::time::Duration::from_secs(10));
+    let outcome = jackin_process::exec_sync(&request).expect("isolated Keychain fixture");
+    assert!(
+        outcome.success
+            && !outcome.timed_out
+            && String::from_utf8_lossy(&outcome.stdout).contains("1 passed; 0 failed"),
+        "isolated Keychain fixture failed: {}",
+        String::from_utf8_lossy(&outcome.stderr),
+    );
+    true
+}
+
+#[test]
+fn claude_keychain_reader_can_reenter_other_service_and_inspect_state() {
+    if claude_keychain_run_isolated(
+        "usage::tests::claude_keychain_reader_can_reenter_other_service_and_inspect_state",
+    ) {
+        return;
+    }
+    let state = ClaudeKeychainState::default();
+    let result = state.read_with("outer", |_| {
+        assert_eq!(state.read_count(), 1);
+        assert!(matches!(
+            state.read_with("outer", |_| panic!("recursive reader")),
+            ClaudeKeychainRead::Unavailable
+        ));
+        assert!(matches!(
+            state.read_with("other", |_| panic!("recursive other reader")),
+            ClaudeKeychainRead::Unavailable
+        ));
+        ClaudeKeychainRead::Missing
+    });
+    assert!(matches!(result, ClaudeKeychainRead::Missing));
+    assert!(matches!(
+        state.read_with("other", |_| ClaudeKeychainRead::Missing),
+        ClaudeKeychainRead::Missing
+    ));
+    assert_eq!(state.read_count(), 2);
+}
+
+#[test]
+fn claude_keychain_different_services_serialize_and_discard_unrelated_denial() {
+    let state = ClaudeKeychainState::default();
+    let active = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|threads| {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+        let state_ref = &state;
+        let active_ref = &active;
+        let leader = threads.spawn(move || {
+            state_ref.read_with("first", |_| {
+                assert_eq!(
+                    active_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                    0
+                );
+                started_tx.send(()).unwrap();
+                finish_rx
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .unwrap();
+                active_ref.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                ClaudeKeychainRead::Denied
+            })
+        });
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        let follower = threads.spawn(|| {
+            state.read_with("second", |_| {
+                assert_eq!(active.fetch_add(1, std::sync::atomic::Ordering::SeqCst), 0);
+                active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                ClaudeKeychainRead::Payload {
+                    json: "second-service".to_owned(),
+                }
+            })
+        });
+        wait_for_claude_keychain_join(&state, 1);
+        assert_eq!(state.read_count(), 1);
+        finish_tx.send(()).unwrap();
+        assert!(matches!(leader.join().unwrap(), ClaudeKeychainRead::Denied));
+        assert!(
+            matches!(follower.join().unwrap(), ClaudeKeychainRead::Payload { json } if json == "second-service")
+        );
+        assert_eq!(state.read_count(), 2);
+    });
+}
+
+#[test]
+fn claude_keychain_denial_is_terminal_only_for_its_service() {
+    let state = ClaudeKeychainState::default();
+    assert!(matches!(
+        state.read_with("denied", |_| ClaudeKeychainRead::Denied),
+        ClaudeKeychainRead::Denied
+    ));
+    assert!(matches!(
+        state.read_with("denied", |_| panic!("denied service retried")),
+        ClaudeKeychainRead::Denied
+    ));
+    assert!(matches!(
+        state.read_with("other", |_| ClaudeKeychainRead::Missing),
+        ClaudeKeychainRead::Missing
+    ));
+    assert_eq!(state.read_count(), 2);
+}
+
+#[test]
+fn claude_keychain_panicking_leader_releases_followers_and_next_flight() {
+    let state = ClaudeKeychainState::default();
+    std::thread::scope(|threads| {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+        let state_ref = &state;
+        let leader = threads.spawn(move || {
+            state_ref.read_with("service", |_| {
+                started_tx.send(()).unwrap();
+                finish_rx
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .unwrap();
+                panic!("injected reader panic")
+            })
+        });
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        let follower = threads.spawn(|| state.read_with("service", |_| panic!("follower reader")));
+        wait_for_claude_keychain_join(&state, 1);
+        finish_tx.send(()).unwrap();
+        assert!(leader.join().is_err());
+        assert!(matches!(
+            follower.join().unwrap(),
+            ClaudeKeychainRead::Unavailable
+        ));
+        assert!(matches!(
+            state.read_with("service", |_| ClaudeKeychainRead::Missing),
+            ClaudeKeychainRead::Missing
+        ));
+        assert_eq!(state.read_count(), 2);
+    });
+}
+
+#[test]
+fn claude_oauth_env_token_debug_redacts_secret() {
+    let token = ClaudeOAuthEnvToken::new("synthetic-oauth-secret".to_owned());
+    assert_eq!(format!("{token:?}"), "ClaudeOAuthEnvToken([REDACTED])");
+    assert!(!format!("{token:?}").contains("synthetic-oauth-secret"));
+}
+
 // ===== Plan 005 Step 1: shared bucket-presentation formatter =====
 
 fn presentation_bucket(
@@ -4706,6 +5140,7 @@ fn presentation_bucket(
     status: UsageSnapshotStatus,
 ) -> QuotaBucketView {
     QuotaBucketView {
+        count_quota: None,
         label: label.to_owned(),
         used_label: None,
         limit_label: None,
@@ -4717,6 +5152,7 @@ fn presentation_bucket(
         status,
         used_money: None,
         limit_money: None,
+        remaining_money: None,
         severity: UsageSeverity::Normal,
     }
 }
@@ -4778,7 +5214,7 @@ fn usage_bucket_presentation_orders_spend_cap() {
     let presentation = usage_bucket_presentation(&bucket);
     assert_eq!(
         presentation.display_segments,
-        vec!["30% used", "Monthly cap: SGD 78.49 / SGD 260.00"]
+        vec!["30% used", "Cap: SGD 78.49 / SGD 260.00"]
     );
     // Spend text reads used, but meter geometry fills by remaining — the same
     // rule as every other slot and the console windows.
@@ -4787,9 +5223,7 @@ fn usage_bucket_presentation_orders_spend_cap() {
 
 #[test]
 fn usage_bucket_presentation_recovers_spend_overage_from_money() {
-    // $150 against a $100 cap with a saturated 0% remaining: the money ratio
-    // recovers the raw "150% used" text (matching the console window value)
-    // and the meter reads empty (nothing left), matching the console meter.
+    // Exact monetary overage survives without trusting saturated geometry.
     let mut bucket = presentation_bucket(
         "Extra usage",
         Some(0),
@@ -4801,11 +5235,17 @@ fn usage_bucket_presentation_recovers_spend_overage_from_money() {
     bucket.used_money = Some(Money::new(15_000, "USD", 2));
     bucket.limit_money = Some(Money::new(10_000, "USD", 2));
     let presentation = usage_bucket_presentation(&bucket);
-    assert_eq!(presentation.remaining_label.as_deref(), Some("150% used"));
+    assert_eq!(
+        presentation.remaining_label.as_deref(),
+        Some("$-50 remaining")
+    );
+    assert_eq!(
+        presentation.display_segments,
+        vec!["$150.00 / $100.00 spent · $-50 remaining"]
+    );
     assert_eq!(presentation.meter_percent, Some(0));
 
-    // A non-overage money ratio agrees with the remaining percent; the text
-    // still reads used and the meter still fills by remaining.
+    // Exact remaining determines geometry; the rounded legacy value is ignored.
     let mut bucket = presentation_bucket(
         "Extra usage",
         Some(55),
@@ -4817,8 +5257,11 @@ fn usage_bucket_presentation_recovers_spend_overage_from_money() {
     bucket.used_money = Some(Money::new(4_520, "USD", 2));
     bucket.limit_money = Some(Money::new(10_000, "USD", 2));
     let presentation = usage_bucket_presentation(&bucket);
-    assert_eq!(presentation.remaining_label.as_deref(), Some("45% used"));
-    assert_eq!(presentation.meter_percent, Some(55));
+    assert_eq!(
+        presentation.remaining_label.as_deref(),
+        Some("$54.8 remaining")
+    );
+    assert_eq!(presentation.meter_percent, Some(54));
 }
 
 #[test]
@@ -4837,7 +5280,7 @@ fn usage_bucket_presentation_orders_non_spend_budget() {
     assert!(
         presentation
             .display_segments
-            .contains(&"Budget: $0.00 spent / $25,000.00".to_owned())
+            .contains(&"$0.00 / $25000.00 spent · $25000 remaining".to_owned())
     );
 }
 
@@ -4884,6 +5327,8 @@ fn detail_view(
     status: UsageSnapshotStatus,
 ) -> FocusedUsageView {
     FocusedUsageView {
+        account_identity: None,
+        canonical_identity: None,
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
         account: FocusedAccountHeader {
@@ -5561,4 +6006,118 @@ fn amp_tier_wins_over_legacy_and_bold_markers_strip() {
         ),
         "tier kind kept"
     );
+}
+
+#[test]
+fn same_label_canonical_accounts_preserve_tabs_and_exact_quota_selection() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
+    let mut cache = UsageCache::default();
+    let first = UsageAccountCapability {
+        account_id: "same-label-a".into(),
+        surface_id: "claude".into(),
+    };
+    let second = UsageAccountCapability {
+        account_id: "same-label-b".into(),
+        surface_id: "claude".into(),
+    };
+    for (capability, epoch, quota) in [(&first, 100, "Session 11%"), (&second, 200, "Session 82%")]
+    {
+        let mut view = account_snapshot_view("Anthropic", "shared@example.test", None, epoch);
+        view.status_bar_label = quota.into();
+        view.buckets = vec![presentation_bucket(
+            "Session",
+            Some(if capability == &first { 11 } else { 82 }),
+            Some(StatusSlot::Session),
+            UsageSnapshotStatus::Fresh,
+        )];
+        cache.insert_snapshot_for_capability_for_test(
+            "claude",
+            Some("Anthropic"),
+            capability,
+            view,
+        );
+    }
+    let focused =
+        cache.focused_snapshot_for_capability(Some("claude"), Some("Anthropic"), Some(&first));
+    assert_eq!(
+        focused.tabs.len(),
+        2,
+        "distinct canonical accounts sharing labels must remain distinct"
+    );
+    assert_eq!(focused.status_bar_label, "Session 11%");
+    assert_ne!(focused.tabs[0].id, focused.tabs[1].id);
+    let active = focused
+        .tabs
+        .iter()
+        .find(|tab| tab.active)
+        .expect("focused canonical account");
+    let selected = cache
+        .focused_snapshot_for_account_id(&active.id)
+        .expect("selected account");
+    assert_eq!(selected.status_bar_label, "Session 11%");
+    assert_eq!(selected.buckets[0].remaining_percent, Some(11));
+    assert_eq!(
+        cache.account_identity_for_tab_id(&active.id),
+        Some(fixture_identity("claude", "same-label-a"))
+    );
+}
+
+#[test]
+fn canonical_navigation_identity_survives_renames_and_empty_labels() {
+    let mut first = account_snapshot_view("Anthropic", "", None, 100);
+    first.account_identity = Some(fixture_identity("claude", "account-a"));
+    let mut renamed = first.clone();
+    renamed.account.provider_label = "New provider title".into();
+    renamed.account.account_label = "renamed@example.test".into();
+    renamed.fetched_at_epoch = 200;
+    let mut second = first.clone();
+    second.account_identity = Some(fixture_identity("claude", "account-b"));
+    let mut other_surface = first.clone();
+    other_surface.account_identity = Some(fixture_identity("codex", "account-a"));
+    let tabs = provider_tabs(&[&first, &renamed, &second, &other_surface]);
+    assert_eq!(tabs.len(), 3);
+    let first_id = usage_account_tab_id(first.account_identity.as_ref().expect("identity"));
+    let renamed_tab = tabs
+        .iter()
+        .find(|tab| tab.id == first_id)
+        .expect("same canonical account");
+    assert_eq!(renamed_tab.account_label, "renamed@example.test");
+    assert_eq!(
+        renamed_tab.id,
+        usage_account_tab_id(renamed.account_identity.as_ref().expect("identity"))
+    );
+    assert!(provider_tabs(&[&FocusedUsageView::unavailable("unbound", 1)]).is_empty());
+}
+
+#[test]
+fn bound_cold_and_error_views_keep_canonical_identity() {
+    use jackin_protocol::usage_broker::{
+        UsageAccountCapability, UsageCoordinationError, UsageCoordinationErrorKind,
+    };
+    let capability = UsageAccountCapability {
+        account_id: "cold-account".into(),
+        surface_id: "claude".into(),
+    };
+    let mut cache = UsageCache::default();
+    let cold =
+        cache.focused_snapshot_for_capability(Some("claude"), Some("Anthropic"), Some(&capability));
+    assert_eq!(cold.account_identity, Some((&capability).into()));
+    assert!(cold.is_refreshing_placeholder());
+    let target = UsageRefreshTarget {
+        instance_id: "claude".into(),
+        agent: "claude".into(),
+        provider: Some("Anthropic".into()),
+        capability: capability.clone(),
+    };
+    cache.adopt_broker_error(
+        &target,
+        &UsageCoordinationError {
+            kind: UsageCoordinationErrorKind::Unavailable,
+            message: "relay unavailable".into(),
+        },
+    );
+    let error =
+        cache.focused_snapshot_for_capability(Some("claude"), Some("Anthropic"), Some(&capability));
+    assert_eq!(error.account_identity, Some((&capability).into()));
+    assert_eq!(error.tabs.len(), 1);
 }

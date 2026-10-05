@@ -36,6 +36,7 @@ jackin-brand = { workspace = true }
 anyhow = { workspace = true }
 jackin-agent-status = { workspace = true }
 jackin-core = { workspace = true }
+jackin-config = { workspace = true }
 jackin-tui = { workspace = true }
 # OTLP export for the in-container session, runtime-gated on the endpoint the
 # host injects. Pulls the opentelemetry stack into the capsule image.
@@ -50,7 +51,7 @@ toml = { workspace = true }
 tokio = { workspace = true, features = ["rt", "io-util", "io-std", "sync", "macros", "time", "net", "signal", "process"] }
 crossterm = { workspace = true }
 portable-pty = { workspace = true }
-nix = { workspace = true, features = ["term", "signal", "process", "inotify"] }
+nix = { workspace = true, features = ["term", "signal", "process", "inotify", "poll"] }
 libc = "0.2"
 # termpane: the owned terminal model (extracted from crates/jackin-term).
 # `DamageGrid` is the sole VT parser / screen / scrollback / passthrough model.
@@ -191,3 +192,6 @@ format_push_string = "allow"
 no_effect_underscore_binding = "allow"
 items_after_statements = "allow"
 unnecessary_wraps = "allow"
+
+[target.'cfg(unix)'.dependencies]
+jackin-process-directory = { workspace = true }

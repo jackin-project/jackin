@@ -33,8 +33,12 @@ final class OverviewInventoryTests: XCTestCase {
             updatedLabel: "Updated now",
             lastError: nil,
             dimmed: false,
-            accessibilityLabel: "\(provider), \(account), Fixture plan, 57%"
-        )
+            accessibilityLabel: "\(provider), \(account), Fixture plan, 57%",
+            countQuota: nil,
+            resetsAt: nil,
+            usedMoney: nil,
+            limitMoney: nil,
+            remainingMoney: nil)
     }
 
     private func group(

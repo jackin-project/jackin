@@ -100,10 +100,13 @@ fn kimi_install_block_installs_cached_cli() {
         Agent::Kimi.install_block(".jackin-runtime/agent-binaries/kimi"),
         "\
 USER agent
+ARG JACKIN_EXPECTED_KIMI_VERSION
 COPY --link --chown=agent:0 --chmod=0755 .jackin-runtime/agent-binaries/kimi /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
-    kimi --version
+    test -n \"$JACKIN_EXPECTED_KIMI_VERSION\" && \\
+    test \"$(kimi --version)\" = \"kimi $JACKIN_EXPECTED_KIMI_VERSION\"
+ENV JACKIN_KIMI_CLI_VERSION=$JACKIN_EXPECTED_KIMI_VERSION
 "
     );
 }

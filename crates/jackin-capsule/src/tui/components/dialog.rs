@@ -37,7 +37,8 @@ pub(crate) use crate::pull_request::PullRequestInfo;
 
 pub use github_context::{GithubContextView, PullRequestStatus, github_context_view_from_state};
 
-pub use usage::UsageDialogTab;
+pub(crate) use usage::UsageDialogState;
+pub use usage::{UsageDialogDestination, UsageDialogTab, UsageDialogTarget};
 
 pub use super::container_info_dialog::ContainerInfoDiagnostics;
 pub(super) use super::palette::{PALETTE_ITEMS, palette_filtered_indices};
@@ -53,9 +54,6 @@ const CONTAINER_INFO_WIDTH: u16 = 86;
 const GITHUB_URL_ROW: usize = 3;
 const GITHUB_OPEN_PR_ROW: usize = 5;
 const GITHUB_OPEN_CI_ROW: usize = 6;
-pub(crate) const USAGE_IDENTITY_PROVIDER_ROW: &str = "Identity provider";
-pub(crate) const USAGE_IDENTITY_ACCOUNT_ROW: &str = "Identity account";
-pub(crate) const USAGE_IDENTITY_ACTIVITY_ROW: &str = "Identity activity";
 
 fn file_url_path(href: &str) -> Option<&str> {
     href.strip_prefix("file://").filter(|path| !path.is_empty())
@@ -204,9 +202,13 @@ pub enum Dialog {
         /// Persisted scroll offsets (rebuilt each frame like `ContainerInfo`).
         scroll: termrock::scroll::DialogScroll,
     },
-    /// Read-only usage/quota modal for the focused pane.
+    /// Read-only canonical usage modal for every authorized account.
     Usage {
-        view: Box<jackin_protocol::control::FocusedUsageView>,
+        projection: Option<Box<jackin_protocol::usage_broker::UsageProjectionV2>>,
+        destination: Option<UsageDialogTarget>,
+        notice: Option<String>,
+        transport_error: Option<String>,
+        refresh_unavailable: bool,
         selected: UsageDialogTab,
         tab_bar_focused: bool,
         hovered_tab: Option<usize>,
@@ -381,13 +383,10 @@ pub enum DialogAction {
     Dismiss,
     /// Request a daemon-side focused usage refresh.
     RefreshUsage,
-    /// Request a daemon-side usage snapshot for a specific provider tab.
-    /// `account_id` is the stable canonical account id and the resolution
-    /// key; `provider_label` stays for display and old-payload back-compat
-    /// (empty id falls back to label resolution).
+    /// Select an exact canonical account; this carries no refresh authority.
     SwitchUsageProvider {
-        provider_label: String,
-        account_id: String,
+        provider_id: String,
+        canonical_account_id: String,
     },
     /// Dialog is still open; redraw.
     Redraw,
@@ -395,8 +394,7 @@ pub enum DialogAction {
     /// the command + the selected credentials; the daemon resolves them via the
     /// host socket, runs the command, and replies `ExecResult`.
     ExecConfirm {
-        command: String,
-        args: Vec<String>,
+        invocation: crate::exec::ExecInvocation,
         selected: Vec<jackin_protocol::ExecBinding>,
     },
     /// Operator cancelled the `jackin-exec` picker (Esc) — daemon replies
@@ -507,8 +505,8 @@ impl Dialog {
                     _ => None,
                 } {
                     return DialogAction::SwitchUsageProvider {
-                        provider_label: tab.label,
-                        account_id: tab.id,
+                        provider_id: tab.provider_id,
+                        canonical_account_id: tab.canonical_account_id,
                     };
                 }
                 return DialogAction::Redraw;
@@ -895,7 +893,7 @@ impl Dialog {
         }
     }
 
-    /// Dispatch a left-click at `(row, col)` against the dialog's
+    /// Dispatch a left-click at zero-based `(row, col)` against the dialog's
     /// hit regions. Shared modal lifecycle classification handles
     /// outside-dismiss; inside clicks on a row select that row and
     /// immediately confirm; clicks on the border or padding rows are
@@ -990,20 +988,39 @@ impl Dialog {
                 Some(_) | None => DialogAction::Consume,
             };
         }
-        if let Self::Usage { view, selected, .. } = self {
-            let tab = Self::usage_tab_index_at(view, *selected, area, row, col);
+        if let Self::Usage {
+            projection,
+            destination,
+            selected,
+            scroll,
+            refresh_unavailable,
+            ..
+        } = self
+        {
+            let tab = Self::usage_tab_index_at(
+                projection.as_deref(),
+                destination.as_ref(),
+                *selected,
+                area,
+                row,
+                col,
+            );
             return match tab {
                 Some(0) => {
                     *selected = UsageDialogTab::Overview;
+                    *destination = None;
+                    *refresh_unavailable = false;
+                    *scroll = termrock::scroll::DialogScroll::new();
                     DialogAction::Redraw
                 }
-                Some(idx) => view.tabs.get(idx.saturating_sub(1)).map_or_else(
-                    || DialogAction::Consume,
-                    |tab| DialogAction::SwitchUsageProvider {
-                        provider_label: tab.label.clone(),
-                        account_id: tab.id.clone(),
-                    },
-                ),
+                Some(idx) => projection
+                    .as_deref()
+                    .and_then(|projection| {
+                        usage::usage_destinations(projection)
+                            .get(idx.saturating_sub(1))
+                            .cloned()
+                    })
+                    .map_or(DialogAction::Consume, |target| self.select_usage_tab_target(target)),
                 None => DialogAction::Consume,
             };
         }
@@ -1236,9 +1253,20 @@ impl Dialog {
                         })
                 })
             }
-            Self::Usage { view, selected, .. } => {
-                Self::usage_tab_index_at(view, *selected, area, row, col).is_some()
-            }
+            Self::Usage {
+                projection,
+                destination,
+                selected,
+                ..
+            } => Self::usage_tab_index_at(
+                projection.as_deref(),
+                destination.as_ref(),
+                *selected,
+                area,
+                row,
+                col,
+            )
+            .is_some(),
             Self::ConfirmAction { .. } => true,
             Self::CommandPalette {
                 filter,
@@ -1278,7 +1306,7 @@ impl Dialog {
     }
 
     /// Box geometry the dialog will render with for `term_rows` /
-    /// `term_cols`. Returned as `(row, col, height, width)`. Kept
+    /// `term_cols`. Returned as zero-based `(row, col, height, width)`. Kept
     /// next to the render functions so any layout change updates
     /// both surfaces at once.
     ///
@@ -1353,9 +1381,12 @@ impl Dialog {
             // No filter row: top border + items + bottom border.
             // Top border + command line + separator + one row per credential +
             // hint + bottom border.
-            Self::ExecPicker(state) => u16::try_from(state.items.len())
-                .unwrap_or(u16::MAX)
-                .saturating_add(5),
+            Self::ExecPicker(state) => {
+                crate::tui::components::dialog_widgets::exec_picker::required_height(
+                    state,
+                    term_cols.min(PALETTE_WIDTH),
+                )
+            }
             Self::ExitDirty { summary, .. } => u16::try_from(summary.len() + EXIT_DIRTY_ROWS.len())
                 .unwrap_or(u16::MAX)
                 .saturating_add(4),
@@ -1438,9 +1469,19 @@ impl Dialog {
             height,
         };
         let hit = match self {
-            Self::Usage { view, selected, .. } => {
-                Self::usage_tab_index_at(view, *selected, area, row, col)
-            }
+            Self::Usage {
+                projection,
+                destination,
+                selected,
+                ..
+            } => Self::usage_tab_index_at(
+                projection.as_deref(),
+                destination.as_ref(),
+                *selected,
+                area,
+                row,
+                col,
+            ),
             _ => None,
         };
         if let Self::Usage { hovered_tab, .. } = self

@@ -36,11 +36,11 @@ use pty_exit::{error_type as pty_exit_error_type, reason as pty_exit_reason};
 use jackin_core::container_paths;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use anyhow::{Context, Result};
 use jackin_telemetry::ResultTelemetryExt as _;
-use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc;
 
 use crate::agent_status::SessionStatus;
@@ -140,6 +140,45 @@ pub struct StatusTick {
     pub flap: bool,
 }
 
+/// Shared state for the one native owner of a PTY child.
+///
+/// `portable_pty::Child::clone_killer` is a signal handle, not an ownership
+/// handle: on Unix the clone retains only the numeric PID. Keep termination,
+/// native kill/reap, registry reservation, and process sampling in this state
+/// machine. The native owner polls without a blocking wait and is the only
+/// code that can signal or reap the child. PTY worker failures also record
+/// their reason here; the native waiter remains the sole producer of
+/// `SessionEvent::Exited`.
+struct ChildLifecycle {
+    state: Mutex<ChildLifecycleState>,
+    wake: Condvar,
+}
+
+struct ChildLifecycleState {
+    reaped: bool,
+    termination_requested: bool,
+    kill_error_recorded: bool,
+    wait_error_recorded: bool,
+    registration: Option<jackin_process::child_ownership::ChildRegistration>,
+    failure_reason: Option<String>,
+}
+
+impl ChildLifecycle {
+    fn new(registration: Option<jackin_process::child_ownership::ChildRegistration>) -> Self {
+        Self {
+            state: Mutex::new(ChildLifecycleState {
+                reaped: false,
+                termination_requested: false,
+                kill_error_recorded: false,
+                wait_error_recorded: false,
+                registration,
+                failure_reason: None,
+            }),
+            wake: Condvar::new(),
+        }
+    }
+}
+
 const STATUS_FLAP_WINDOW: std::time::Duration = std::time::Duration::from_secs(30);
 const STATUS_FLAP_THRESHOLD: usize = 3;
 
@@ -208,7 +247,7 @@ pub struct Session {
     osc_status_decoder: crate::agent_status::OscStatusDecoder,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
-    child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
+    child_lifecycle: Arc<ChildLifecycle>,
     termination_requested: Arc<AtomicBool>,
     pub last_output_at: std::time::Instant,
     /// Last time the operator sent explicit keyboard input to this pane.
@@ -503,14 +542,18 @@ impl Session {
             &control_capability,
         );
 
-        let mut child = slave
-            .spawn_command(cmd)
-            .context("failed to spawn session process")?;
+        let (mut child, child_registration) = {
+            let _native_spawn = jackin_process_directory::native_spawn_guard();
+            jackin_process::child_ownership::coordinate(|registry| {
+                let child = slave
+                    .spawn_command(cmd)
+                    .context("failed to spawn session process")?;
+                let registration = child.process_id().map(|pid| registry.register(pid));
+                Ok::<_, anyhow::Error>((child, registration))
+            })?
+        };
         let child_pid = child.process_id();
-        if let Some(pid) = child_pid {
-            crate::pid1::register_managed_child(pid);
-        }
-        let child_killer = Arc::new(Mutex::new(child.clone_killer()));
+        let child_lifecycle = Arc::new(ChildLifecycle::new(child_registration));
         let termination_requested = Arc::new(AtomicBool::new(false));
         drop(slave);
 
@@ -522,15 +565,16 @@ impl Session {
 
         let event_tx_output = event_tx.clone();
         let event_tx_exit = event_tx.clone();
-        let event_tx_writer_err = event_tx.clone();
         emit_pty_spawn(agent.as_deref(), conversation_id.as_deref());
 
-        // PTY writer task. take_writer / lock failures emit Exited so the
-        // daemon reaps the half-initialised session instead of leaving a
-        // tab whose input keystrokes silently vanish. blocking_recv is
-        // used instead of Handle::current().block_on(rx.recv()) because
-        // the latter panics inside spawn_blocking on a current-thread
-        // runtime ("Cannot block the current thread from within a runtime").
+        // PTY writer task. A setup/write failure requests termination under
+        // the child lifecycle lock; the native waiter then owns the sole
+        // Exited event and registry-token release. blocking_recv is used
+        // instead of Handle::current().block_on(rx.recv()) because the latter
+        // panics inside spawn_blocking on a current-thread runtime ("Cannot
+        // block the current thread from within a runtime").
+        let writer_lifecycle = Arc::clone(&child_lifecycle);
+        let writer_termination_requested = Arc::clone(&termination_requested);
         jackin_telemetry::spawn::stream_blocking("pty.reader", move || {
             let writer = match lock_or_record_poison(&master_for_write) {
                 None => None,
@@ -540,10 +584,11 @@ impl Session {
                     .ok(),
             };
             let Some(mut writer) = writer else {
-                drop(event_tx_writer_err.send(SessionEvent::Exited {
-                    session_id: sid,
-                    reason: Some("session PTY writer failed to initialize".to_owned()),
-                }));
+                request_child_termination(
+                    &writer_lifecycle,
+                    &writer_termination_requested,
+                    Some("session PTY writer failed to initialize".to_owned()),
+                );
                 return;
             };
             while let Some(data) = input_rx.blocking_recv() {
@@ -551,10 +596,11 @@ impl Session {
                     .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
                     .is_err()
                 {
-                    drop(event_tx_writer_err.send(SessionEvent::Exited {
-                        session_id: sid,
-                        reason: Some("session PTY write failed".to_owned()),
-                    }));
+                    request_child_termination(
+                        &writer_lifecycle,
+                        &writer_termination_requested,
+                        Some("session PTY write failed".to_owned()),
+                    );
                     return;
                 }
                 record_terminal_bytes(
@@ -564,7 +610,8 @@ impl Session {
             }
         });
 
-        let event_tx_reader_err = event_tx.clone();
+        let reader_lifecycle = Arc::clone(&child_lifecycle);
+        let reader_termination_requested = Arc::clone(&termination_requested);
         jackin_telemetry::spawn::stream_blocking("pty.writer", move || {
             let reader = match lock_or_record_poison(&master_for_read) {
                 None => None,
@@ -574,10 +621,11 @@ impl Session {
                     .ok(),
             };
             let Some(mut reader) = reader else {
-                drop(event_tx_reader_err.send(SessionEvent::Exited {
-                    session_id: sid,
-                    reason: Some("session PTY reader failed to initialize".to_owned()),
-                }));
+                request_child_termination(
+                    &reader_lifecycle,
+                    &reader_termination_requested,
+                    Some("session PTY reader failed to initialize".to_owned()),
+                );
                 return;
             };
             let mut buf = [0u8; 4096];
@@ -585,9 +633,15 @@ impl Session {
                 match std::io::Read::read(&mut reader, &mut buf) {
                     Ok(0) => break,
                     Err(error) => {
+                        let reason = format!("session PTY read failed: {error}");
                         drop(Err::<(), _>(error).record_telemetry_error(
                             jackin_telemetry::schema::enums::ErrorType::IoError,
                         ));
+                        request_child_termination(
+                            &reader_lifecycle,
+                            &reader_termination_requested,
+                            Some(reason),
+                        );
                         break;
                     }
                     Ok(n) => {
@@ -604,6 +658,11 @@ impl Session {
                             })
                             .is_err()
                         {
+                            request_child_termination(
+                                &reader_lifecycle,
+                                &reader_termination_requested,
+                                Some("session PTY output channel closed".to_owned()),
+                            );
                             break;
                         }
                     }
@@ -611,9 +670,10 @@ impl Session {
             }
         });
 
-        // Child-reaper task: blocks on `child.wait()` and emits the
-        // Exited event the moment the child process is reaped, even
-        // if the PTY master never returns EOF.
+        // Child-reaper task: polls the native child owner and emits the
+        // Exited event the moment the child process is reaped, even if the
+        // PTY master never returns EOF. Termination requests wake this loop;
+        // the native owner performs both kill and reap.
         //
         // Why this is separate from the reader task: when the
         // foreground process exec'd into another binary and that
@@ -625,30 +685,27 @@ impl Session {
         // keeps the fd alive. The reader-EOF-only design left the
         // pane stuck in this case.
         //
-        // `child.wait()` blocks until the foreground process is
-        // reaped — the exact moment the operator's perspective says
-        // "the agent exited." Sending Exited here lets the daemon
+        // Reaping the foreground process is the exact moment the
+        // operator's perspective says "the agent exited." Sending Exited here lets the daemon
         // remove the pane immediately; the reader task (still
         // blocked on master) becomes a leak that ends when the
         // multiplexer process itself exits.
         let exit_agent = agent.clone();
         let exit_conversation_id = conversation_id.clone();
         let exit_termination_requested = Arc::clone(&termination_requested);
+        let exit_lifecycle = Arc::clone(&child_lifecycle);
         jackin_telemetry::spawn::stream_blocking("pty.wait", move || {
-            let status = child.wait();
+            let (status, failure_reason) = reap_child_with_lifecycle(&mut child, &exit_lifecycle);
             emit_pty_exit(
                 exit_agent.as_deref(),
                 exit_conversation_id.as_deref(),
                 status.as_ref(),
                 exit_termination_requested.load(Ordering::Acquire),
             );
-            if let Some(pid) = child_pid {
-                crate::pid1::unregister_managed_child(pid);
-                crate::pid1::reap_zombies();
-            }
+            crate::pid1::reap_zombies();
             drop(event_tx_exit.send(SessionEvent::Exited {
                 session_id: sid,
-                reason: child_exit_reason(status.as_ref()),
+                reason: child_exit_reason_with_failure(status.as_ref(), failure_reason),
             }));
         });
 
@@ -677,7 +734,7 @@ impl Session {
                 osc_status_decoder: crate::agent_status::OscStatusDecoder::default(),
                 input_tx,
                 pty_master: master,
-                child_killer,
+                child_lifecycle,
                 termination_requested,
                 last_output_at: std::time::Instant::now(),
                 last_input_at: std::time::Instant::now(),
@@ -812,16 +869,19 @@ impl Session {
     }
 
     #[must_use]
-    pub fn hyperlink_target_at_content_row(&self, row: usize, col: u16) -> Option<&str> {
-        self.shadow_grid.hyperlink_target_at_content_row(row, col)
+    /// Resolve a displayed viewport cell, including the current scrollback view.
+    /// TermPane's `content_row` argument is viewport-relative despite its name.
+    pub fn hyperlink_target_at_viewport_cell(&self, row: u16, col: u16) -> Option<&str> {
+        self.shadow_grid
+            .hyperlink_target_at_content_row(usize::from(row), col)
     }
 
     #[must_use]
     pub fn send_input(&self, data: &[u8]) -> bool {
         // SendError fires when the writer task has exited (it owns the
-        // receiver). The writer task emits SessionEvent::Exited before
-        // dropping, so the daemon will reap this Session on the next
-        // event tick. The writer boundary owns the originating failure.
+        // receiver). A writer failure requests child termination under the
+        // lifecycle lock; the native waiter emits SessionEvent::Exited after
+        // reaping, so the daemon removes this Session on that event.
         self.input_tx.send(data.to_vec()).is_ok()
     }
 
@@ -959,6 +1019,14 @@ impl Session {
         let Some(pid) = self.child_pid else {
             return ProcessEvidence::default();
         };
+        // Hold the lifecycle lock through the complete sample. The native
+        // waiter cannot mark the child reaped or release its registry token
+        // until this read finishes, so a reused PID cannot be sampled as the
+        // old session's process.
+        let lifecycle = lock_child_lifecycle(&self.child_lifecycle);
+        if lifecycle.reaped {
+            return ProcessEvidence::default();
+        }
         if !sampler.physics_available() {
             return ProcessEvidence::default();
         }
@@ -1398,14 +1466,7 @@ impl Session {
     }
 
     pub fn terminate(&self) {
-        self.termination_requested.store(true, Ordering::Release);
-        if let Some(mut killer) = lock_or_record_poison(&self.child_killer) {
-            drop(
-                killer
-                    .kill()
-                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError),
-            );
-        }
+        request_child_termination(&self.child_lifecycle, &self.termination_requested, None);
     }
 
     #[must_use]
@@ -1452,6 +1513,99 @@ fn lock_or_record_poison<T>(mutex: &Mutex<T>) -> Option<MutexGuard<'_, T>> {
         let _event =
             jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::Panic);
         None
+    }
+}
+
+fn lock_child_lifecycle(lifecycle: &ChildLifecycle) -> MutexGuard<'_, ChildLifecycleState> {
+    lifecycle
+        .state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Request child termination through the native waiter. No cloned PID killer
+/// escapes the owner: the waiter performs the native kill while holding the
+/// lifecycle state lock, then reaps before releasing the registry token.
+fn request_child_termination(
+    lifecycle: &Arc<ChildLifecycle>,
+    termination_requested: &Arc<AtomicBool>,
+    failure_reason: Option<String>,
+) {
+    let child_lifecycle = lifecycle;
+    let mut state = lock_child_lifecycle(child_lifecycle);
+    if state.reaped {
+        return;
+    }
+    if let Some(reason) = failure_reason
+        && state.failure_reason.is_none()
+    {
+        state.failure_reason = Some(reason);
+    }
+    state.termination_requested = true;
+    termination_requested.store(true, Ordering::Release);
+    child_lifecycle.wake.notify_one();
+}
+
+/// Poll and, when requested, terminate the native child owner until it has a
+/// definitive disposition.
+///
+/// `try_wait` is called while holding the lifecycle lock. That closes the
+/// post-reap window: sampling and termination cannot observe the old PID until
+/// the waiter has marked the state reaped and dropped its registry token. A
+/// blocking `wait` cannot provide that boundary because it would prevent
+/// termination from waking the waiter.
+fn reap_child_with_lifecycle(
+    child: &mut Box<dyn Child + Send + Sync>,
+    lifecycle: &ChildLifecycle,
+) -> (std::io::Result<portable_pty::ExitStatus>, Option<String>) {
+    loop {
+        let mut state = lock_child_lifecycle(lifecycle);
+        if state.termination_requested {
+            if let Err(error) = child.kill() {
+                if !state.kill_error_recorded {
+                    state.kill_error_recorded = true;
+                    drop(Err::<(), _>(error).record_telemetry_error(
+                        jackin_telemetry::schema::enums::ErrorType::IoError,
+                    ));
+                }
+            }
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                // Only native try_wait returning Some proves that this owner
+                // has the child's exit status. Never release the registry
+                // reservation or emit Exited on an I/O error.
+                state.reaped = true;
+                let failure_reason = state.failure_reason.take();
+                drop(state.registration.take());
+                return (Ok(status), failure_reason);
+            }
+            Ok(None) => {
+                if state.termination_requested {
+                    drop(state);
+                    std::thread::park_timeout(std::time::Duration::from_millis(10));
+                } else {
+                    let _guard = lifecycle
+                        .wake
+                        .wait_timeout(state, std::time::Duration::from_millis(100))
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                }
+            }
+            Err(error) => {
+                // An I/O error is not evidence that the child died. Retain
+                // the owner and registry token, record the fault once, and
+                // retry until native wait gives a definitive status.
+                if !state.wait_error_recorded {
+                    state.wait_error_recorded = true;
+                    drop(Err::<(), _>(error).record_telemetry_error(
+                        jackin_telemetry::schema::enums::ErrorType::IoError,
+                    ));
+                }
+                drop(state);
+                std::thread::park_timeout(std::time::Duration::from_millis(10));
+            }
+        }
     }
 }
 
@@ -1566,6 +1720,17 @@ fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>)
     }
 }
 
+fn child_exit_reason_with_failure(
+    status: Result<&portable_pty::ExitStatus, &std::io::Error>,
+    failure_reason: Option<String>,
+) -> Option<String> {
+    match (failure_reason, child_exit_reason(status)) {
+        (Some(failure), Some(process)) => Some(format!("{failure}; {process}")),
+        (Some(failure), None) => Some(failure),
+        (None, process) => process,
+    }
+}
+
 #[cfg(test)]
 impl Session {
     #[expect(
@@ -1580,7 +1745,7 @@ impl Session {
         scrollback_len: usize,
         input_tx: mpsc::UnboundedSender<Vec<u8>>,
         pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
-        child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
+        _child_killer: Arc<Mutex<Box<dyn portable_pty::ChildKiller + Send + Sync>>>,
     ) -> Self {
         Self {
             label,
@@ -1609,7 +1774,7 @@ impl Session {
             osc_status_decoder: crate::agent_status::OscStatusDecoder::default(),
             input_tx,
             pty_master,
-            child_killer,
+            child_lifecycle: Arc::new(ChildLifecycle::new(None)),
             termination_requested: Arc::new(AtomicBool::new(false)),
             last_output_at: std::time::Instant::now(),
             last_input_at: std::time::Instant::now(),
@@ -1796,11 +1961,24 @@ pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
         container_paths::ENTRYPOINT,
     );
     remove_ambient_capability_env(&mut cmd);
-    for arg in agent_model_args(spec.agent, spec.model) {
+    let kimi_cli_version = std::env::var(jackin_core::JACKIN_KIMI_CLI_VERSION_ENV_NAME).ok();
+    let model = if spec.agent == "kimi" && spec.auth_mode != Some("sync") {
+        None
+    } else {
+        spec.model
+    };
+    for arg in agent_model_args(
+        spec.agent,
+        model,
+        Path::new(spec.forwarded_dir),
+        kimi_cli_version.as_deref(),
+    ) {
         cmd.arg(arg);
     }
-    for name in jackin_core::account_env_names() {
-        cmd.env_remove(name);
+    for (name, _) in std::env::vars_os() {
+        if name.to_str().is_some_and(jackin_core::is_account_env) {
+            cmd.env_remove(name);
+        }
     }
     for agent in jackin_core::Agent::ALL {
         if let Some(var) = agent.runtime().state_paths().folder_env_var {
@@ -1845,15 +2023,78 @@ pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
     cmd
 }
 
-fn agent_model_args<'a>(agent: &str, model: Option<&'a str>) -> Vec<&'a str> {
+fn agent_model_args<'a>(
+    agent: &str,
+    model: Option<&'a str>,
+    forwarded_dir: &Path,
+    kimi_cli_version: Option<&str>,
+) -> Vec<&'a str> {
     let Some(model) = model else {
         return Vec::new();
     };
     match agent {
-        "claude" | "kimi" | "omp" | "hermes" => vec!["--model", model],
+        "kimi"
+            if kimi_cli_version.is_some_and(|version| {
+                kimi_model_alias_is_admitted(forwarded_dir, model, version)
+            }) =>
+        {
+            vec!["--model", model]
+        }
+        "claude" | "omp" | "hermes" => vec!["--model", model],
         "codex" | "opencode" | "grok" => vec!["-m", model],
         _ => Vec::new(),
     }
+}
+
+/// Kimi's CLI override is an alias lookup into the active config. Only pass a
+/// manifest override when the exact canonical runtime config admits it;
+/// otherwise its forced `default_model` remains in force.
+fn kimi_model_alias_is_admitted(forwarded_dir: &Path, alias: &str, cli_version: &str) -> bool {
+    const MAX_KIMI_CONFIG_BYTES: u64 = 1024 * 1024;
+    use std::io::Read as _;
+
+    let config_path = forwarded_dir.join("config.toml");
+    let Ok(metadata) = std::fs::symlink_metadata(&config_path) else {
+        return false;
+    };
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() > MAX_KIMI_CONFIG_BYTES
+    {
+        return false;
+    }
+    let Ok(file) = std::fs::File::open(&config_path) else {
+        return false;
+    };
+    let mut config_bytes = Vec::new();
+    if file
+        .take(MAX_KIMI_CONFIG_BYTES + 1)
+        .read_to_end(&mut config_bytes)
+        .is_err()
+        || config_bytes.len() as u64 > MAX_KIMI_CONFIG_BYTES
+    {
+        return false;
+    }
+    let Ok((_, canonical_config)) = jackin_config::kimi_runtime_auth_config(
+        &config_bytes,
+        cli_version,
+        &std::collections::BTreeMap::new(),
+    ) else {
+        return false;
+    };
+    if config_bytes != canonical_config {
+        return false;
+    }
+    let Ok(config_text) = std::str::from_utf8(&canonical_config) else {
+        return false;
+    };
+    let Ok(config) = toml::from_str::<toml::Value>(config_text) else {
+        return false;
+    };
+    config
+        .get("models")
+        .and_then(toml::Value::as_table)
+        .is_some_and(|models| models.contains_key(alias))
 }
 
 /// Inject model and reasoning settings for this instance only. The host launch

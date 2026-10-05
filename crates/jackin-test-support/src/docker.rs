@@ -6,14 +6,22 @@
 )]
 
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use jackin_core::{
-    ContainerHandle, ContainerInspection, ContainerRow, ContainerSpec, ContainerState, DockerApi,
-    NetworkRow, RemoveImageOutcome,
+    ContainerHandle, ContainerInspection, ContainerRow, ContainerSpec, ContainerState, DaemonServerId, DockerApi,
+    NetworkId, NetworkRow, RemoveImageOutcome, VolumeRow,
 };
 
 #[derive(Debug)]
 pub struct FakeDockerClient {
+    /// Explicit test daemon identity; replace to model daemon continuity breaks.
+    pub daemon_server_id: std::cell::RefCell<DaemonServerId>,
+    /// Script exact `/info` responses, including failures, for continuity tests.
+    pub daemon_server_id_queue:
+        std::cell::RefCell<std::collections::VecDeque<Result<DaemonServerId, String>>>,
+    /// Explicit controller transport for endpoint admission fixtures.
+    pub controller_endpoint: jackin_core::ControllerEndpoint,
     pub recorded: std::cell::RefCell<Vec<String>>,
     pub inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
     /// Optional state sequence for ID-bound inspections. This is separate
@@ -27,6 +35,10 @@ pub struct FakeDockerClient {
     /// Current daemon IDs returned when a name is resolved or a container is
     /// created. Tests can change this map to model same-name replacement.
     pub container_id_by_name: std::cell::RefCell<HashMap<String, String>>,
+    /// Current network name mappings; mutations still target captured IDs.
+    pub network_id_by_name: std::cell::RefCell<HashMap<String, NetworkId>>,
+    /// Named volume metadata; captures Docker's name-based volume semantics.
+    pub volumes_by_name: std::cell::RefCell<HashMap<String, VolumeRow>>,
     /// ID-bound lifecycle operations, retained separately from the historical
     /// human-readable operation log.
     pub bound_operations: std::cell::RefCell<Vec<String>>,
@@ -53,11 +65,18 @@ pub struct FakeDockerClient {
 impl Default for FakeDockerClient {
     fn default() -> Self {
         Self {
+            daemon_server_id: std::cell::RefCell::new(DaemonServerId::parse("jackin-test-daemon").expect("valid test daemon ID")),
+            daemon_server_id_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            controller_endpoint: jackin_core::ControllerEndpoint::Unix {
+                socket: "/var/run/docker.sock".into(),
+            },
             recorded: std::cell::RefCell::new(Vec::new()),
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             inspect_by_id_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             inspect_state_by_name: std::cell::RefCell::new(HashMap::new()),
             container_id_by_name: std::cell::RefCell::new(HashMap::new()),
+            network_id_by_name: std::cell::RefCell::new(HashMap::new()),
+            volumes_by_name: std::cell::RefCell::new(HashMap::new()),
             bound_operations: std::cell::RefCell::new(Vec::new()),
             list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             list_networks_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
@@ -75,6 +94,11 @@ impl Default for FakeDockerClient {
 }
 
 impl FakeDockerClient {
+    /// Replace the actual server ID reported by this fake.
+    pub fn set_daemon_server_id(&self, id: DaemonServerId) {
+        *self.daemon_server_id.borrow_mut() = id;
+    }
+
     fn check_fail(&self, op: &str) -> anyhow::Result<()> {
         if let Some((_, msg)) = self
             .fail_with
@@ -184,6 +208,20 @@ impl FakeDockerClient {
 }
 
 impl DockerApi for FakeDockerClient {
+    fn controller_endpoint(&self) -> &jackin_core::ControllerEndpoint {
+        &self.controller_endpoint
+    }
+    async fn daemon_server_id(&self) -> anyhow::Result<DaemonServerId> {
+        std::future::ready(()).await;
+        let op = "docker info";
+        self.record(op);
+        self.check_fail(op)?;
+        if let Some(response) = self.daemon_server_id_queue.borrow_mut().pop_front() {
+            return response.map_err(|reason| anyhow::anyhow!("reading fake Docker daemon server identity: {reason}"));
+        }
+        Ok(self.daemon_server_id.borrow().clone())
+    }
+
     async fn ping(&self) -> anyhow::Result<()> {
         std::future::ready(()).await;
         self.record("docker ping");
@@ -220,6 +258,12 @@ impl DockerApi for FakeDockerClient {
         ))
         .then(|| self.handle_for(name));
         ContainerInspection { handle, state }
+    }
+
+    async fn container_init_pid_by_id(&self, container: &ContainerHandle) -> anyhow::Result<u32> {
+        std::future::ready(()).await;
+        self.record(&format!("docker inspect init-pid {}", container.id()));
+        anyhow::bail!("fake runtime has no host process identity proof")
     }
 
     async fn inspect_container_by_id(&self, container: &ContainerHandle) -> ContainerState {
@@ -307,11 +351,38 @@ impl DockerApi for FakeDockerClient {
         Ok(())
     }
 
+    async fn create_volume(
+        &self,
+        name: &str,
+        labels: HashMap<String, String>,
+    ) -> anyhow::Result<VolumeRow> {
+        std::future::ready(()).await;
+        let op = format!("docker volume create {name}");
+        self.record(&op);
+        self.check_fail(&op)?;
+        let mut volumes = self.volumes_by_name.borrow_mut();
+        let row = volumes.entry(name.to_owned()).or_insert_with(|| VolumeRow {
+            name: name.to_owned(), labels: labels.clone(), driver: "local".to_owned(),
+        });
+        anyhow::ensure!(row.name == name && row.labels == labels && row.driver == "local", "volume {name} returned different ownership metadata or storage driver");
+        Ok(row.clone())
+    }
+
+    async fn inspect_volume_by_name(&self, name: &str) -> anyhow::Result<Option<VolumeRow>> {
+        std::future::ready(()).await;
+        let op = format!("docker volume inspect {name}");
+        self.record(&op);
+        self.check_fail(&op)?;
+        Ok(self.volumes_by_name.borrow().get(name).cloned())
+    }
+
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
         std::future::ready(()).await;
         let op = format!("docker volume rm {name}");
         self.record(&op);
-        Self::ignore_if_missing(self.check_fail(&op))
+        Self::ignore_if_missing(self.check_fail(&op))?;
+        self.volumes_by_name.borrow_mut().remove(name);
+        Ok(())
     }
 
     async fn create_network(
@@ -319,21 +390,34 @@ impl DockerApi for FakeDockerClient {
         name: &str,
         labels: HashMap<String, String>,
         internal: bool,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<NetworkId> {
         std::future::ready(()).await;
         let op = format!("docker network create {name}");
         self.record(&op);
         self.created_networks
             .borrow_mut()
             .push((name.to_owned(), labels, internal));
-        self.check_fail(&op)
+        self.check_fail(&op)?;
+        anyhow::ensure!(!self.network_id_by_name.borrow().contains_key(name), "network {name} already exists");
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        name.hash(&mut hasher);
+        self.created_networks.borrow().len().hash(&mut hasher);
+        let id = NetworkId::parse(&format!("{:016x}", hasher.finish()).repeat(4))?;
+        self.network_id_by_name.borrow_mut().insert(name.to_owned(), id.clone());
+        Ok(id)
     }
 
-    async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
+    async fn remove_network_by_id(&self, id: &NetworkId) -> anyhow::Result<()> {
         std::future::ready(()).await;
+        self.bound_operations.borrow_mut().push(format!("remove_network:{}", id.as_str()));
+        let name = self.network_id_by_name.borrow().iter()
+            .find_map(|(name, current)| (current == id).then(|| name.clone()))
+            .unwrap_or_else(|| id.as_str().to_owned());
         let op = format!("docker network rm {name}");
         self.record(&op);
-        Self::ignore_if_missing(self.check_fail(&op))
+        Self::ignore_if_missing(self.check_fail(&op))?;
+        self.network_id_by_name.borrow_mut().retain(|_, current| current != id);
+        Ok(())
     }
 
     async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
@@ -345,12 +429,32 @@ impl DockerApi for FakeDockerClient {
         Ok(self.pop_list_networks())
     }
 
-    async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
+    async fn inspect_network_by_name(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
         std::future::ready(()).await;
         let op = format!("docker network inspect {name}");
         self.record(&op);
         self.check_fail(&op)?;
-        Ok(self.pop_inspect_network())
+        let row = self.pop_inspect_network();
+        if let Some(row) = &row {
+            self.network_id_by_name.borrow_mut().insert(row.name.clone(), row.id.clone());
+        }
+        Ok(row)
+    }
+
+    async fn inspect_network_by_id(&self, id: &NetworkId) -> anyhow::Result<Option<NetworkRow>> {
+        std::future::ready(()).await;
+        self.bound_operations.borrow_mut().push(format!("inspect_network:{}", id.as_str()));
+        let name = self.network_id_by_name.borrow().iter()
+            .find_map(|(name, current)| (current == id).then(|| name.clone()))
+            .unwrap_or_else(|| id.as_str().to_owned());
+        let op = format!("docker network inspect {name}");
+        self.record(&op);
+        self.check_fail(&op)?;
+        let row = self.pop_inspect_network();
+        if let Some(row) = &row {
+            anyhow::ensure!(&row.id == id, "mock returned a different network ID for {id}");
+        }
+        Ok(row)
     }
 
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>> {

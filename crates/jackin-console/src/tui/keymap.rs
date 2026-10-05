@@ -100,6 +100,7 @@ pub(crate) static EDITOR_TAB_BAR_KEYMAP_BINDINGS: &[KeyBinding<EditorTabBarActio
         &[
             KeyChord::plain(KeyCode::Left),
             KeyChord::plain(KeyCode::BackTab),
+            KeyChord::shift(KeyCode::BackTab),
         ],
         EditorTabBarAction::PrevTab,
         Some("prev tab"),
@@ -234,7 +235,10 @@ pub(crate) static EDITOR_CONTENT_KEYMAP_BINDINGS: &[KeyBinding<EditorContentActi
         Some("⇥"),
     ),
     KeyBinding::borrowed(
-        &[KeyChord::plain(KeyCode::BackTab)],
+        &[
+            KeyChord::plain(KeyCode::BackTab),
+            KeyChord::shift(KeyCode::BackTab),
+        ],
         EditorContentAction::FocusTabBar,
         Some("tab bar"),
         Visibility::Shown,
@@ -265,6 +269,7 @@ pub(crate) static SETTINGS_TAB_BAR_KEYMAP_BINDINGS: &[KeyBinding<SettingsTabBarA
         &[
             KeyChord::plain(KeyCode::Left),
             KeyChord::plain(KeyCode::BackTab),
+            KeyChord::shift(KeyCode::BackTab),
         ],
         SettingsTabBarAction::PrevTab,
         Some("prev tab"),
@@ -327,7 +332,10 @@ pub(crate) static SETTINGS_CONTENT_SHELL_KEYMAP_BINDINGS: &[KeyBinding<
         Some("⇥"),
     ),
     KeyBinding::borrowed(
-        &[KeyChord::plain(KeyCode::BackTab)],
+        &[
+            KeyChord::plain(KeyCode::BackTab),
+            KeyChord::shift(KeyCode::BackTab),
+        ],
         SettingsContentShellAction::FocusTabBar,
         Some("tab bar"),
         Visibility::Shown,
@@ -1324,7 +1332,10 @@ pub(crate) static PREVIEW_PANE_KEYMAP_BINDINGS: &[KeyBinding<PreviewPaneAction>]
         Some("Esc/←"),
     ),
     KeyBinding::borrowed(
-        &[KeyChord::plain(KeyCode::BackTab)],
+        &[
+            KeyChord::plain(KeyCode::BackTab),
+            KeyChord::shift(KeyCode::BackTab),
+        ],
         PreviewPaneAction::Back,
         None,
         Visibility::HiddenAlias,

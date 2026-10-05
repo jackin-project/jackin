@@ -132,3 +132,53 @@ fn error_popup_dismiss_keys() {
     let outcome = state.handle_key(key(CrosstermKeyCode::Char('x')));
     assert_eq!(outcome, ModalOutcome::Continue);
 }
+
+#[test]
+fn confirm_height_contains_every_body_row_and_action() {
+    let state = ConfirmState::details(
+        "Trust role", "Confirm?",
+        vec![("Role".into(), "alpha".into()), ("Repository".into(), "repo".into())],
+        vec!["First safety note".into(), "Final safety note".into()],
+    );
+    assert_eq!(state.required_height(), 13);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20))
+        .expect("test terminal");
+    terminal.draw(|frame| {
+        render_confirm_dialog(frame, Rect::new(0, 0, 70, state.required_height()), &state);
+    }).expect("draw confirm");
+    let buffer = terminal.backend().buffer();
+    let visible = (0..buffer.area.height).map(|y| {
+        (0..buffer.area.width).map(|x| buffer[(x, y)].symbol()).collect::<String>()
+    }).collect::<Vec<_>>().join("\n");
+    assert!(visible.contains("First safety note"), "{visible}");
+    assert!(visible.contains("Final safety note"), "{visible}");
+    assert!(visible.contains("Yes") && visible.contains("No"), "{visible}");
+}
+
+#[test]
+fn confirm_height_measures_the_painted_multiline_details() {
+    let state = ConfirmState::details(
+        "Trust role", "Confirm?\nReview first",
+        vec![("Role".into(), "alpha\nbeta".into())],
+        vec!["First note\nFinal note".into()],
+    );
+    assert_eq!(confirm_text(&state).lines.len(), 8);
+    assert_eq!(state.required_height(), 14);
+}
+
+#[test]
+fn error_height_keeps_both_final_message_rows_visible() {
+    let state = ErrorPopupState::new("Failure", "First line\nMiddle line\nFinal line");
+    assert_eq!(state.required_height(60, 20), 9);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20))
+        .expect("test terminal");
+    terminal.draw(|frame| {
+        render_error_dialog(frame, Rect::new(0, 0, 70, state.required_height(60, 20)), &state);
+    }).expect("draw error");
+    let buffer = terminal.backend().buffer();
+    let visible = (0..buffer.area.height).map(|y| {
+        (0..buffer.area.width).map(|x| buffer[(x, y)].symbol()).collect::<String>()
+    }).collect::<Vec<_>>().join("\n");
+    assert!(visible.contains("Middle line"), "{visible}");
+    assert!(visible.contains("Final line"), "{visible}");
+}

@@ -180,6 +180,8 @@ pub(crate) fn hermes_view(
         labels.join(" · ")
     };
     FocusedUsageView {
+        account_identity: None,
+        canonical_identity: None,
         focused_agent: Some(agent.to_owned()),
         focused_provider: Some(provider.to_owned()),
         account: FocusedAccountHeader {

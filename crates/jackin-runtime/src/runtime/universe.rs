@@ -462,8 +462,7 @@ fn write_pending_claim(authority: &Path, token: &str) -> bool {
         };
         let mut file = std::fs::File::from(fd);
         if file.write_all(now_millis().to_string().as_bytes()).is_err() {
-            let _ignored_unlink_result =
-                nix::unistd::unlinkat(&parent, token, nix::unistd::UnlinkatFlags::NoRemoveDir);
+            let _ = nix::unistd::unlinkat(&parent, token, nix::unistd::UnlinkatFlags::NoRemoveDir);
             return false;
         }
         true
@@ -505,7 +504,7 @@ fn remove_empty_pending_dir(authority: &Path) {
     if !has_pending_claims(authority) {
         #[cfg(unix)]
         if let Ok(parent) = super::coordination::open_directory_in_namespace(authority, false) {
-            let _ignored_unlink_result = nix::unistd::unlinkat(
+            let _ = nix::unistd::unlinkat(
                 &parent,
                 "universe-pending",
                 nix::unistd::UnlinkatFlags::RemoveDir,

@@ -45,7 +45,7 @@ pub(super) async fn handle_purge(
                 runtime::purge_class_data(paths, &class, &docker, runner).await?;
                 println!("Purged all state for {}.", class.key());
             } else {
-                let container = resolve_role_to_container(&class, &docker).await?;
+                let container = resolve_role_to_container(paths, &class, &docker).await?;
                 runtime::purge_container_state(paths, &container, &docker, runner).await?;
                 println!("Purged state for {container}.");
             }

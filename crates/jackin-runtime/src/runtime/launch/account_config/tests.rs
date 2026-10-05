@@ -42,6 +42,7 @@ fn slots_for(
             (
                 instance.config_id.clone(),
                 crate::instance::ProvisionedInstanceAuth {
+                    profile_material: None,
                     agent: instance.agent,
                     account_id: instance.account_id.clone(),
                     mode: jackin_config::AuthForwardMode::ApiKey,

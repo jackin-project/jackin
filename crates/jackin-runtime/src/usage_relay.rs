@@ -15,7 +15,9 @@ use jackin_protocol::usage_broker::{
     USAGE_BROKER_MAX_FRAME_BYTES, USAGE_BROKER_PROTOCOL_VERSION, UsageAccountCapability,
     UsageBrokerOperation, UsageBrokerResponse, UsageCoordinationError, UsageCoordinationErrorKind,
     UsageCredentialScope, UsageCredentialSourceIdentity, UsageCredentialSourceProof,
-    UsageRelayTunnelRequest, UsageRelayTunnelResponse, usage_credential_material_fingerprint,
+    UsageProfileSourceProof,
+    UsageRelayTunnelMessage, UsageRelayTunnelResponse,
+    usage_credential_material_fingerprint,
 };
 use jackin_usage::coordinator::UsageCapabilitySet;
 use jackin_usage::host::{
@@ -29,9 +31,17 @@ use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
     AsyncWriteExt as _, BufReader,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
+use tokio::task::JoinSet;
+
+mod inventory;
+mod instance_scope;
+mod persistence;
+use inventory::RelayUsageInventory;
 
 const TUNNEL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+const TUNNEL_REQUEST_CAPACITY: usize = 128;
+const TUNNEL_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(35);
 
 pub(crate) fn docker_runtime_mount(socket_dir: &Path) -> Result<String> {
     let source = socket_dir.to_str().ok_or_else(|| {
@@ -135,27 +145,6 @@ pub struct UsageRelayLaunch<'a> {
     pub forwarded_sources: ForwardedUsageSources,
 }
 
-/// Resolved Capsule launch membership used by usage presentation.
-///
-/// This is derived only from the host-validated Capsule configuration. It is
-/// intentionally a closed, deduplicated agent list: usage discovery may enrich
-/// an agent with a forwarded canonical account, but global host discovery or a
-/// capability alone cannot create a Capsule row.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedLaunchUsageInventory {
-    /// Instance config IDs in deterministic launch-config order.
-    pub instances: Vec<String>,
-}
-
-/// Project the resolved launch configuration into the Capsule usage boundary.
-#[must_use]
-pub fn resolved_launch_usage_inventory(config: &CapsuleConfig) -> ResolvedLaunchUsageInventory {
-    let mut instances = config.instances.clone();
-    instances.sort();
-    instances.dedup();
-    ResolvedLaunchUsageInventory { instances }
-}
-
 /// Session-lifetime relay ownership. Drop revokes the socket task.
 pub struct UsageRelayGuard {
     task: Option<tokio::task::JoinHandle<()>>,
@@ -163,12 +152,6 @@ pub struct UsageRelayGuard {
 }
 
 struct AbortTaskOnDrop<T>(tokio::task::JoinHandle<T>);
-
-impl<T> AbortTaskOnDrop<T> {
-    fn is_finished(&self) -> bool {
-        self.0.is_finished()
-    }
-}
 
 impl<T> Drop for AbortTaskOnDrop<T> {
     fn drop(&mut self) {
@@ -181,6 +164,18 @@ impl std::fmt::Debug for UsageRelayGuard {
         formatter
             .debug_struct("UsageRelayGuard")
             .finish_non_exhaustive()
+    }
+}
+
+impl UsageRelayGuard {
+    /// Revoke and await the transport before another attachment acquires its socket.
+    pub(crate) async fn shutdown(mut self) {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _sent = shutdown.send(());
+        }
+        if let Some(task) = self.task.take() {
+            let _result = task.await;
+        }
     }
 }
 
@@ -199,8 +194,18 @@ impl Drop for UsageRelayGuard {
 pub struct PreparedUsageRelay {
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
-    canonical_launch_usage_capabilities: CanonicalLaunchUsageCapabilities,
+    instance_capabilities: BTreeMap<String, UsageAccountCapability>,
     credential_scope: UsageCredentialScope,
+    inventory: Option<RelayUsageInventory>,
+    persistence_context: Option<RelayPersistenceContext>,
+}
+
+#[derive(Debug, Clone)]
+struct RelayPersistenceContext {
+    paths: JackinPaths,
+    workspace: Option<String>,
+    role_key: String,
+    config_generation: String,
 }
 
 /// Canonical host capabilities resolved for the configured account selections
@@ -213,6 +218,28 @@ pub(crate) struct CanonicalLaunchUsageCapabilities {
 }
 
 impl CanonicalLaunchUsageCapabilities {
+    fn for_instances(
+        &self,
+        launch_config: &CapsuleConfig,
+        allowed: &BTreeSet<UsageAccountCapability>,
+    ) -> BTreeMap<String, UsageAccountCapability> {
+        launch_config
+            .instances
+            .iter()
+            .filter_map(|instance_id| {
+                let account_id = launch_config.accounts.get(instance_id)?;
+                let alias = launch_config.usage_capabilities.get(instance_id)?;
+                let capability = self
+                    .by_account_surface
+                    .get(&(account_id.clone(), alias.surface_id.clone()))?;
+                allowed
+                    .contains(capability)
+                    .then_some((instance_id.clone(), capability.clone()))
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
     pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) -> Result<()> {
         let replacements = launch_config
             .instances
@@ -267,15 +294,9 @@ fn ensure_distinct_usage_unix_identities(launch_config: &CapsuleConfig) -> Resul
 /// Derive source proof from credentials actually provisioned for this launch.
 #[must_use]
 pub fn forwarded_sources_from_launch(
-    state: &crate::instance::RoleState,
+    _state: &crate::instance::RoleState,
     resolved_env: &jackin_env::ResolvedEnv,
 ) -> ForwardedUsageSources {
-    let profile_surface_ids = state
-        .auth_outcomes
-        .iter()
-        .filter(|(_, outcome)| **outcome == crate::instance::AuthProvisionOutcome::Synced)
-        .map(|(agent, _)| HostSurfaceId::from_agent(*agent).id().to_owned())
-        .collect();
     let env_names = resolved_env
         .vars
         .iter()
@@ -289,7 +310,6 @@ pub fn forwarded_sources_from_launch(
     ForwardedUsageSources {
         selected_account_ids: BTreeSet::new(),
         selected_account_surfaces: BTreeMap::new(),
-        profile_surface_ids,
         env_keys,
         credential_scope: UsageCredentialScope::default(),
     }
@@ -337,6 +357,7 @@ pub fn usage_credential_scope_for_staged_launch(
                 )
             })?;
             sources.insert(UsageCredentialSourceProof {
+                instance_id: instance.config_id.clone(),
                 account_id: instance.account_id.clone(),
                 surface_id: surface.id().to_owned(),
                 key: entry.name.to_owned(),
@@ -345,7 +366,95 @@ pub fn usage_credential_scope_for_staged_launch(
             });
         }
     }
-    Ok(UsageCredentialScope { sources })
+    Ok(UsageCredentialScope { sources, profiles: BTreeSet::new() })
+}
+
+/// Merge only profile material captured for the exact admitted auth slots.
+/// No host discovery or credential source reads participate in this fence.
+pub(crate) fn merge_usage_profile_scope_for_prepared_launch(
+    config: &AppConfig,
+    instances: &[jackin_config::ResolvedInstance],
+    state: &crate::instance::RoleState,
+    credential_scope: &mut UsageCredentialScope,
+) -> Result<()> {
+    let profiles = usage_profile_scope_for_slots(config, instances, &state.auth.slots)?;
+    credential_scope.profiles.extend(profiles);
+    Ok(())
+}
+
+fn usage_profile_scope_for_slots(
+    config: &AppConfig,
+    instances: &[jackin_config::ResolvedInstance],
+    slots: &BTreeMap<String, crate::instance::ProvisionedInstanceAuth>,
+) -> Result<BTreeSet<UsageProfileSourceProof>> {
+    let mut profiles = BTreeSet::new();
+    for instance in instances {
+        let account = config
+            .accounts
+            .get(&instance.account_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
+        let jackin_config::AccountCredential::Profile { agent, .. } = &account.credential else {
+            continue;
+        };
+        anyhow::ensure!(
+            *agent == instance.agent && account.supports_agent(instance.agent),
+            "profile account does not match launch instance {:?}",
+            instance.config_id,
+        );
+        let slot = slots.get(&instance.config_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "prepared profile slot missing for launch instance {:?}",
+                instance.config_id
+            )
+        })?;
+        anyhow::ensure!(
+            slot.agent == instance.agent && slot.account_id == instance.account_id,
+            "prepared profile slot does not match launch instance {:?}",
+            instance.config_id,
+        );
+        if slot.mode != jackin_config::AuthForwardMode::Sync || !slot.forward_auth {
+            continue;
+        }
+        // The host CLI grant has no transferable profile credential payload.
+        // Its presence must never authorize a surface-only profile capability.
+        if instance.agent == jackin_core::Agent::Antigravity {
+            continue;
+        }
+        let material = slot.profile_material.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "prepared profile proof missing for launch instance {:?}",
+                instance.config_id
+            )
+        })?;
+        anyhow::ensure!(
+            material.source.agent == slot.agent
+                && is_profile_fingerprint(&material.source.descriptor_fingerprint)
+                && is_profile_fingerprint(&material.material_revision),
+            "prepared profile proof does not match launch instance {:?}",
+            instance.config_id,
+        );
+        let Some(surface) = HostSurfaceId::from_provider_alias(account.provider.slug()) else {
+            continue;
+        };
+        // Descriptor/provider/selector identity is established by the selected
+        // immutable snapshot binding. This opaque digest is never reconstructed
+        // from the worker destination or an ambient host path.
+        profiles.insert(UsageProfileSourceProof {
+            instance_id: instance.config_id.clone(),
+            account_id: instance.account_id.clone(),
+            surface_id: surface.id().to_owned(),
+            source: material.source.clone(),
+            material_revision: material.material_revision.clone(),
+        });
+    }
+    Ok(profiles)
+}
+
+fn is_profile_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// Source proof for the serialized launch config. The account ids are the
@@ -415,7 +524,10 @@ pub async fn prepare_for_stdio_tunnel(launch: UsageRelayLaunch<'_>) -> Result<Pr
     let role_key = launch.role_key.to_owned();
     let forwarded_sources = launch.forwarded_sources;
     let credential_scope = forwarded_sources.credential_scope.clone();
-    let (broker, capabilities, canonical_launch_usage_capabilities) =
+    let context_paths = paths.clone();
+    let context_workspace = workspace_name.clone();
+    let context_role = role_key.clone();
+    let (broker, capabilities, canonical_launch_usage_capabilities, inventory) =
         jackin_telemetry::spawn::joined_blocking(move || {
             prepare_broker_client(
                 &paths,
@@ -426,18 +538,191 @@ pub async fn prepare_for_stdio_tunnel(launch: UsageRelayLaunch<'_>) -> Result<Pr
         })
         .await
         .context("usage broker preparation task panicked")??;
+    let allowed = capabilities.iter().cloned().collect::<BTreeSet<_>>();
+    let instance_capabilities =
+        canonical_launch_usage_capabilities.for_instances(launch.launch_config, &allowed);
+    let persistence_context = inventory.as_ref().map(|inventory| RelayPersistenceContext {
+        paths: context_paths,
+        workspace: context_workspace,
+        role_key: context_role,
+        config_generation: inventory.config_generation().to_owned(),
+    });
     Ok(PreparedUsageRelay {
         broker,
         capabilities,
-        canonical_launch_usage_capabilities,
+        instance_capabilities,
         credential_scope,
+        inventory,
+        persistence_context,
     })
 }
 
+/// Validate the host-only current inventory scope for an immutable container.
+/// Callers compare this proof before and after reading its admitted transport.
+/// Missing or obsolete launch proof cannot authorize cache membership.
+pub fn validated_usage_inventory_config_generation(
+    paths: &JackinPaths,
+    container: &ContainerHandle,
+) -> Result<String> {
+    restored_usage_inventory_scope(paths, container).map(|(_, generation)| generation)
+}
+
+/// Admit canonical membership only when every row, route and report section
+/// equals the immutable host inventory's projection of that publication.
+pub fn validate_usage_inventory_projection(
+    paths: &JackinPaths,
+    container: &ContainerHandle,
+    projection: &jackin_protocol::usage_broker::UsageProjectionV2,
+) -> Result<String> {
+    jackin_protocol::control::UsageAccountMembershipV1::validate_current_projection(projection)
+        .map_err(|_| anyhow::anyhow!("usage membership publication invalid"))?;
+    let (inventory, generation) = restored_usage_inventory_scope(paths, container)?;
+    anyhow::ensure!(
+        inventory.projection_is_complete_and_scoped(projection),
+        "usage membership publication is incomplete or exceeds admitted inventory scope"
+    );
+    // Read the existing issuer only. Catalog replacement and this read share
+    // its lifecycle boundary; even same-config material replacement advances
+    // publication identity. Never activate discovery or request provider work.
+    let issuer = UsageBrokerConfig::for_data_dir(paths.data_dir.clone())
+        .client().current_projection()
+        .map_err(|_| anyhow::anyhow!("current usage membership issuer unavailable"))?;
+    anyhow::ensure!(
+        inventory.projection_matches_current_issuer(projection, &issuer),
+        "usage membership publication is no longer current"
+    );
+    let (after, after_generation) = restored_usage_inventory_scope(paths, container)?;
+    anyhow::ensure!(
+        generation == after_generation
+            && inventory.authority() == after.authority()
+            && inventory.unresolved_grants() == after.unresolved_grants(),
+        "usage membership scope changed during issuer admission"
+    );
+    Ok(generation)
+}
+
+fn restored_usage_inventory_scope(
+    paths: &JackinPaths,
+    container: &ContainerHandle,
+) -> Result<(RelayUsageInventory, String)> {
+    let name = container.name();
+    let manifest = jackin_instance::manifest::InstanceManifest::read(&paths.data_dir.join(name))?;
+    anyhow::ensure!(manifest.container_base == name, "usage inventory manifest identity mismatch");
+    let saved = persistence::load(paths, name)?
+        .ok_or_else(|| anyhow::anyhow!("usage inventory launch proof unavailable; rebuild this Capsule"))?;
+    anyhow::ensure!(
+        saved.container_id == container.id() && saved.container_name == name,
+        "usage inventory immutable container authority mismatch"
+    );
+    anyhow::ensure!(
+        saved.workspace == manifest.workspace_name && saved.role_key == manifest.role_key,
+        "usage inventory workspace authority mismatch"
+    );
+    let selected_account_ids = manifest.admitted_instances.iter()
+        .map(|instance| instance.account_id.clone()).collect::<BTreeSet<_>>();
+    let inventory = RelayUsageInventory::restore(
+        paths, manifest.workspace_name.as_deref(), &selected_account_ids,
+        &saved.config_generation, &saved.inventory_accounts, &saved.unresolved_grants,
+    )?;
+    Ok((inventory, saved.config_generation))
+}
+
+/// Rebuild read authority and restore only the immutable proof bound to this container.
+pub(crate) async fn prepare_for_reconnect(
+    paths: &JackinPaths,
+    container_name: &str,
+    container: &ContainerHandle,
+) -> Result<PreparedUsageRelay> {
+    if paths.test_layout {
+        return Ok(PreparedUsageRelay {
+            broker: UsageBrokerConfig::for_data_dir(paths.data_dir.clone()).client(),
+            capabilities: Vec::new(),
+            instance_capabilities: BTreeMap::new(),
+            credential_scope: UsageCredentialScope::default(),
+            inventory: None,
+            persistence_context: None,
+        });
+    }
+    let paths = paths.clone();
+    let container_name = container_name.to_owned();
+    let container_id = container.id().to_owned();
+    jackin_telemetry::spawn::joined_blocking(move || {
+        let manifest = jackin_instance::manifest::InstanceManifest::read(&paths.data_dir.join(&container_name))?;
+        anyhow::ensure!(manifest.container_base == container_name, "usage relay manifest container identity mismatch");
+        let selected_account_ids = manifest.admitted_instances.iter().map(|instance| instance.account_id.clone()).collect::<BTreeSet<_>>();
+        let saved = persistence::load(&paths, &container_name)?;
+        let broker_config = UsageBrokerConfig::for_data_dir(paths.data_dir.clone());
+        let broker = broker_config.client();
+        if let Some(saved) = saved {
+            anyhow::ensure!(saved.container_id == container_id && saved.container_name == container_name, "usage relay container authority mismatch");
+            anyhow::ensure!(saved.workspace == manifest.workspace_name && saved.role_key == manifest.role_key, "usage relay workspace authority mismatch");
+            let inventory = RelayUsageInventory::restore(&paths, manifest.workspace_name.as_deref(), &selected_account_ids, &saved.config_generation, &saved.inventory_accounts, &saved.unresolved_grants)?;
+            let broker = match broker.current_projection() {
+                Ok(_) => broker,
+                Err(error) if error.kind == UsageCoordinationErrorKind::Unavailable => {
+                    // Only broker activation may discover current host sources. It
+                    // cannot replace the saved launch proof or grant map.
+                    let resolver = Arc::new(CachedProviderCredentialResolver::new(RuntimeSecretSource));
+                    let scope = jackin_usage::host::UsageDiscoveryScope::HostDesktop { config_root: paths.config_dir.clone(), operator_home: paths.home_dir.clone() };
+                    let catalog = discover_usage_sources(&scope, resolver.as_ref()).map_err(|_| anyhow::anyhow!("usage broker discovery unavailable"))?;
+                    let discovery = validate_usage_sources(catalog, resolver.as_ref());
+                    anyhow::ensure!(discovery.config_generation.as_deref() == Some(saved.config_generation.as_str()), "usage relay launch authority changed; rebuild this Capsule");
+                    jackin_usage::host::ensure_usage_broker(broker_config, scope, discovery, resolver).map_err(|_| anyhow::anyhow!("usage broker activation unavailable"))?.client
+                }
+                Err(_) => anyhow::bail!("usage broker publication unavailable"),
+            };
+            return Ok(PreparedUsageRelay { broker, capabilities: saved.capabilities, instance_capabilities: saved.instance_capabilities, credential_scope: saved.credential_scope, inventory: Some(inventory), persistence_context: None });
+        }
+        jackin_diagnostics::emit_operator_notice("Capsule usage refresh proof is missing; inventory is read-only. Rebuild this Capsule to restore account refresh.");
+        let resolver = Arc::new(CachedProviderCredentialResolver::new(RuntimeSecretSource));
+        let scope = jackin_usage::host::UsageDiscoveryScope::HostDesktop { config_root: paths.config_dir.clone(), operator_home: paths.home_dir.clone() };
+        let catalog = discover_usage_sources(&scope, resolver.as_ref()).map_err(|_| anyhow::anyhow!("usage inventory discovery unavailable"))?;
+        let discovery = validate_usage_sources(catalog, resolver.as_ref());
+        let inventory = RelayUsageInventory::prepare(&paths, manifest.workspace_name.as_deref(), &selected_account_ids, &discovery)?;
+        let broker = jackin_usage::host::ensure_usage_broker(broker_config, scope, discovery, resolver).map_err(|_| anyhow::anyhow!("usage broker activation unavailable"))?.client;
+        Ok(PreparedUsageRelay { broker, capabilities: Vec::new(), instance_capabilities: BTreeMap::new(), credential_scope: UsageCredentialScope::default(), inventory: Some(inventory), persistence_context: None })
+    }).await.context("reconnect usage preparation task panicked")?
+}
+
 impl PreparedUsageRelay {
+    pub(crate) fn persist_for_container(&self, container: &ContainerHandle) -> Result<()> {
+        let Some(context) = &self.persistence_context else {
+            return Ok(());
+        };
+        let inventory_accounts = self
+            .inventory
+            .as_ref()
+            .map(RelayUsageInventory::authority)
+            .unwrap_or_default();
+        persistence::save(
+            &context.paths,
+            container.name(),
+            container.id(),
+            context.workspace.as_deref(),
+            &context.role_key,
+            &context.config_generation,
+            &self.capabilities,
+            &self.credential_scope,
+            &self.instance_capabilities,
+            &inventory_accounts,
+            self.inventory
+                .as_ref()
+                .map(RelayUsageInventory::unresolved_grants)
+                .unwrap_or_default(),
+        )
+    }
+
     pub(crate) fn apply_to_launch_config(&self, launch_config: &mut CapsuleConfig) -> Result<()> {
-        self.canonical_launch_usage_capabilities
-            .apply_to_launch_config(launch_config)
+        for instance_id in &launch_config.instances {
+            if let Some(capability) = self.instance_capabilities.get(instance_id) {
+                launch_config
+                    .usage_capabilities
+                    .insert(instance_id.clone(), capability.clone());
+            } else {
+                launch_config.usage_capabilities.remove(instance_id);
+            }
+        }
+        ensure_distinct_usage_unix_identities(launch_config)
     }
 }
 
@@ -446,15 +731,17 @@ pub fn start_docker_tunnel(
     container: &ContainerHandle,
     prepared: PreparedUsageRelay,
 ) -> Result<UsageRelayGuard> {
-    start_docker_tunnel_with_command(
+    start_docker_tunnel_with_inventory(
         container,
         prepared.broker,
         prepared.capabilities,
         prepared.credential_scope,
+        prepared.inventory,
         &[
             jackin_core::container_paths::CAPSULE_BIN.to_owned(),
             "usage-relay-proxy".to_owned(),
         ],
+        prepared.instance_capabilities,
     )
 }
 
@@ -469,8 +756,10 @@ pub fn start_apple_tunnel(
         prepared.broker,
         prepared.capabilities,
         prepared.credential_scope,
+        prepared.inventory,
         "container",
         apple_tunnel_args(container_name),
+        prepared.instance_capabilities,
     )
 }
 
@@ -494,9 +783,38 @@ pub fn start_docker_tunnel_with_command(
     capabilities: Vec<UsageAccountCapability>,
     credential_scope: UsageCredentialScope,
     proxy_command: &[String],
+    instance_capabilities: BTreeMap<String, UsageAccountCapability>,
+) -> Result<UsageRelayGuard> {
+    start_docker_tunnel_with_inventory(
+        container,
+        broker,
+        capabilities,
+        credential_scope,
+        None,
+        proxy_command,
+        instance_capabilities,
+    )
+}
+
+fn start_docker_tunnel_with_inventory(
+    container: &ContainerHandle,
+    broker: UsageBrokerClient,
+    capabilities: Vec<UsageAccountCapability>,
+    credential_scope: UsageCredentialScope,
+    inventory: Option<RelayUsageInventory>,
+    proxy_command: &[String],
+    instance_capabilities: BTreeMap<String, UsageAccountCapability>,
 ) -> Result<UsageRelayGuard> {
     let args = docker_tunnel_args(container, proxy_command);
-    start_tunnel_with_command(broker, capabilities, credential_scope, "docker", args)
+    start_tunnel_with_command(
+        broker,
+        capabilities,
+        credential_scope,
+        inventory,
+        "docker",
+        args,
+        instance_capabilities,
+    )
 }
 
 fn docker_tunnel_args(container: &ContainerHandle, proxy_command: &[String]) -> Vec<String> {
@@ -510,10 +828,12 @@ fn start_tunnel_with_command(
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
     credential_scope: UsageCredentialScope,
+    inventory: Option<RelayUsageInventory>,
     program: &str,
     args: Vec<String>,
+    instance_capabilities: BTreeMap<String, UsageAccountCapability>,
 ) -> Result<UsageRelayGuard> {
-    if capabilities.is_empty() {
+    if capabilities.is_empty() && inventory.is_none() {
         return Ok(UsageRelayGuard {
             task: None,
             shutdown: None,
@@ -523,7 +843,7 @@ fn start_tunnel_with_command(
         .stdin_mode(jackin_process::StdioMode::Capture)
         .stdout_mode(jackin_process::StdioMode::Capture)
         .stderr_mode(jackin_process::StdioMode::Inherit);
-    start_tunnel_process(request, broker, capabilities, credential_scope)
+    start_tunnel_process(request, broker, capabilities, credential_scope, inventory, instance_capabilities)
 }
 
 fn start_tunnel_process(
@@ -531,6 +851,8 @@ fn start_tunnel_process(
     broker: UsageBrokerClient,
     capabilities: Vec<UsageAccountCapability>,
     credential_scope: UsageCredentialScope,
+    inventory: Option<RelayUsageInventory>,
+    instance_capabilities: BTreeMap<String, UsageAccountCapability>,
 ) -> Result<UsageRelayGuard> {
     let (operation, mut child) = crate::process_telemetry::spawn_async(&request)
         .context("starting scoped usage stdio tunnel")?;
@@ -546,7 +868,7 @@ fn start_tunnel_process(
     let (shutdown, mut shutdown_rx) = oneshot::channel();
     let task = jackin_telemetry::spawn::spawn_stream("usage_relay.tunnel", async move {
         let relay_result = tokio::select! {
-            result = serve_stdio_tunnel(reader, writer, broker, allowlist, credential_scope) => result,
+            result = serve_stdio_tunnel(reader, writer, broker, allowlist, credential_scope, inventory, instance_capabilities) => result,
             _ = &mut shutdown_rx => Ok(()),
         };
         let status =
@@ -583,6 +905,7 @@ fn prepare_broker_client(
     UsageBrokerClient,
     Vec<UsageAccountCapability>,
     CanonicalLaunchUsageCapabilities,
+    Option<RelayUsageInventory>,
 )> {
     let broker_config = UsageBrokerConfig::for_data_dir(paths.data_dir.clone());
     let fallback = broker_config.client();
@@ -591,6 +914,7 @@ fn prepare_broker_client(
             fallback,
             Vec::new(),
             CanonicalLaunchUsageCapabilities::default(),
+            None,
         ));
     }
     let resolver = Arc::new(CachedProviderCredentialResolver::new(RuntimeSecretSource));
@@ -601,6 +925,12 @@ fn prepare_broker_client(
     let catalog = discover_usage_sources(&scope, resolver.as_ref())
         .map_err(|error| anyhow::anyhow!("usage account discovery failed: {error}"))?;
     let discovery = validate_usage_sources(catalog, resolver.as_ref());
+    let inventory = RelayUsageInventory::prepare(
+        paths,
+        workspace_name,
+        &forwarded_sources.selected_account_ids,
+        &discovery,
+    )?;
     let scope_label = workspace_name.map_or_else(
         || format!("role {role_key}"),
         |workspace| format!("workspace {workspace} role {role_key}"),
@@ -617,9 +947,15 @@ fn prepare_broker_client(
             client,
             capabilities,
             CanonicalLaunchUsageCapabilities::default(),
+            Some(inventory),
         ));
     }
-    Ok((client, capabilities, canonical_launch_usage_capabilities))
+    Ok((
+        client,
+        capabilities,
+        canonical_launch_usage_capabilities,
+        Some(inventory),
+    ))
 }
 
 fn canonical_capabilities_for_launch(
@@ -646,67 +982,127 @@ fn canonical_capabilities_for_launch(
     }
 }
 
+#[cfg(test)]
 async fn dispatch(
     operation: UsageBrokerOperation,
     broker: UsageBrokerClient,
     allowlist: UsageCapabilitySet,
     credential_scope: UsageCredentialScope,
+    inventory: Option<RelayUsageInventory>,
+    instance_capabilities: BTreeMap<String, UsageAccountCapability>,
+    instance_id: Option<String>,
 ) -> UsageBrokerResponse {
-    let authorized = match operation {
-        UsageBrokerOperation::CurrentForCapability { capability } => allowlist
-            .authorize(&capability)
-            .map(|()| UsageBrokerOperation::Current { capability }),
-        UsageBrokerOperation::RefreshForCapability {
-            capability,
-            observed_generation,
-            force,
-        } => allowlist
-            .authorize(&capability)
-            .map(|()| UsageBrokerOperation::Refresh {
-                capability,
-                observed_generation,
-                force,
-            }),
-        UsageBrokerOperation::JoinForCapability {
-            capability,
-            generation,
-            timeout_ms,
-        } => allowlist
-            .authorize(&capability)
-            .map(|()| UsageBrokerOperation::Join {
-                capability,
-                generation,
-                timeout_ms,
-            }),
-        UsageBrokerOperation::CurrentProjection
-        | UsageBrokerOperation::RequestRefresh { .. }
-        | UsageBrokerOperation::JoinPublication { .. }
-        | UsageBrokerOperation::ReconcileCatalog { .. }
-        | UsageBrokerOperation::CurrentProjectionForSurface
-        | UsageBrokerOperation::RequestRefreshForSurface { .. }
-        | UsageBrokerOperation::JoinPublicationForSurface { .. } => Err(UsageCoordinationError {
-            kind: UsageCoordinationErrorKind::Unauthorized,
-            message: "canonical projection requires a scoped relay operation".to_owned(),
-        }),
-        operation @ (UsageBrokerOperation::Current { .. }
-        | UsageBrokerOperation::Refresh { .. }
-        | UsageBrokerOperation::Join { .. }) => {
-            let (UsageBrokerOperation::Current { capability }
-            | UsageBrokerOperation::Refresh { capability, .. }
-            | UsageBrokerOperation::Join { capability, .. }) = &operation
-            else {
-                unreachable!()
-            };
-            allowlist.authorize(capability).map(|()| operation)
+    dispatch_with_admission(
+        operation,
+        broker,
+        allowlist,
+        credential_scope,
+        inventory,
+        None,
+        Some(tokio::time::Instant::now() + TUNNEL_REQUEST_TIMEOUT),
+        instance_capabilities,
+        instance_id,
+    )
+    .await
+}
+
+/// Dispatch one admitted request. Inventory validation moves the permit into
+/// each blocking filesystem job, while account IPC remains cancellation-safe
+/// async socket work.
+#[expect(clippy::too_many_arguments, reason = "relay dispatch binds transport admission and independent immutable instance authority")]
+async fn dispatch_with_admission(
+    operation: UsageBrokerOperation,
+    broker: UsageBrokerClient,
+    allowlist: UsageCapabilitySet,
+    credential_scope: UsageCredentialScope,
+    inventory: Option<RelayUsageInventory>,
+    permit: Option<OwnedSemaphorePermit>,
+    deadline: Option<tokio::time::Instant>,
+    instance_capabilities: BTreeMap<String, UsageAccountCapability>,
+    instance_id: Option<String>,
+) -> UsageBrokerResponse {
+    if deadline.is_none_or(|deadline| tokio::time::Instant::now() >= deadline) {
+        return error_response(UsageCoordinationErrorKind::Unavailable);
+    }
+    if matches!(operation, UsageBrokerOperation::CurrentProjectionForSurface) {
+        if instance_id.is_some() {
+            return error_response(UsageCoordinationErrorKind::Unauthorized);
         }
+        let Some(inventory) = inventory else {
+            return error_response(UsageCoordinationErrorKind::Unauthorized);
+        };
+        let result = match deadline {
+            Some(deadline) => match tokio::time::timeout_at(
+                deadline,
+                inventory.read_async(&broker, permit, Some(deadline)),
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(_) => Err(UsageCoordinationError {
+                    kind: UsageCoordinationErrorKind::Unavailable,
+                    message: "usage inventory request expired or was cancelled".to_owned(),
+                }),
+            },
+            None => inventory.read_async(&broker, permit, None).await,
+        };
+        return match result {
+            Ok(projection) => UsageBrokerResponse::Projection {
+                projection: Box::new(projection),
+            },
+            Err(error) => UsageBrokerResponse::Error { error },
+        };
+    }
+    let (capability, operation_instance) = match &operation {
+        UsageBrokerOperation::CurrentForCapability { capability, instance_id }
+        | UsageBrokerOperation::RefreshForCapability { capability, instance_id, .. }
+        | UsageBrokerOperation::JoinForCapability { capability, instance_id, .. } =>
+            (capability, Some(instance_id.as_str())),
+        UsageBrokerOperation::Current { capability }
+        | UsageBrokerOperation::Refresh { capability, .. }
+        | UsageBrokerOperation::Join { capability, .. } => (capability, None),
+        _ => return error_response(UsageCoordinationErrorKind::Unauthorized),
     };
-    let operation = match authorized {
-        Ok(operation) => operation,
+    let Some(instance_id) = instance_id.as_deref() else {
+        return error_response(UsageCoordinationErrorKind::Unauthorized);
+    };
+    if operation_instance.is_some_and(|requested| requested != instance_id)
+        || allowlist.authorize(capability).is_err()
+    {
+        return error_response(UsageCoordinationErrorKind::Unauthorized);
+    }
+    let credential_scope = match instance_scope::for_instance(
+        instance_id, capability, &instance_capabilities, &credential_scope,
+    ) {
+        Ok(scope) => scope,
         Err(error) => return UsageBrokerResponse::Error { error },
     };
-    match jackin_telemetry::spawn::joined_blocking(move || {
-        broker.execute_scoped(operation, credential_scope)
-    })
+    let operation = match operation {
+        UsageBrokerOperation::CurrentForCapability { capability, .. } =>
+            UsageBrokerOperation::Current { capability },
+        UsageBrokerOperation::RefreshForCapability { capability, observed_generation, force, .. } =>
+            UsageBrokerOperation::Refresh { capability, observed_generation, force },
+        UsageBrokerOperation::JoinForCapability { capability, generation, timeout_ms, .. } =>
+            UsageBrokerOperation::Join { capability, generation, timeout_ms },
+        operation => operation,
+    };
+    let Some(deadline) = deadline else {
+        drop(permit);
+        return error_response(UsageCoordinationErrorKind::Unavailable);
+    };
+    // The broker's account exchange is async and cancellation-safe. The
+    // request owner can therefore close its Unix socket when the tunnel
+    // expires or loses its writer. Keep the admission permit owned by this
+    // request until that cancellable exchange completes; aborting the task
+    // then releases capacity at the same point its socket is closed.
+    let _permit = permit;
+    if tokio::time::Instant::now() >= deadline {
+        return error_response(UsageCoordinationErrorKind::Unavailable);
+    }
+    match tokio::time::timeout_at(
+        deadline,
+        broker.execute_scoped_async(operation, credential_scope, deadline),
+    )
     .await
     {
         Ok(Ok(state)) => UsageBrokerResponse::State {
@@ -717,66 +1113,226 @@ async fn dispatch(
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "relay dispatch binds transport admission and independent immutable instance authority")]
 async fn serve_stdio_tunnel<R, W>(
     reader: R,
     writer: W,
     broker: UsageBrokerClient,
     allowlist: UsageCapabilitySet,
     credential_scope: UsageCredentialScope,
+    inventory: Option<RelayUsageInventory>,
+    instance_capabilities: BTreeMap<String, UsageAccountCapability>,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    let (responses, mut response_rx) = mpsc::channel::<UsageRelayTunnelResponse>(128);
-    let writer = AbortTaskOnDrop(jackin_telemetry::spawn::spawn_stream(
+    let (responses, mut response_rx) =
+        mpsc::channel::<(tokio::time::Instant, UsageRelayTunnelResponse)>(TUNNEL_REQUEST_CAPACITY);
+    let mut writer = AbortTaskOnDrop(jackin_telemetry::spawn::spawn_stream(
         "usage_relay.tunnel_writer",
         async move {
             let mut writer = writer;
-            while let Some(response) = response_rx.recv().await {
-                if write_async_frame(&mut writer, &response).await.is_err() {
-                    return;
+            while let Some((deadline, response)) = response_rx.recv().await {
+                if tokio::time::Instant::now() >= deadline {
+                    continue;
                 }
+                tokio::time::timeout_at(deadline, write_async_frame(&mut writer, &response))
+                    .await
+                    .context("usage relay tunnel response deadline expired")??;
             }
+            Ok::<(), anyhow::Error>(())
         },
     ));
+    let admission = Arc::new(Semaphore::new(TUNNEL_REQUEST_CAPACITY));
+    let mut requests = JoinSet::<u64>::new();
+    let mut active_requests = BTreeMap::<u64, tokio::task::AbortHandle>::new();
     let mut reader = BufReader::new(reader);
+    // Keep one frame future pinned across request-task completions. A
+    // newline frame read consumes partial bytes before it yields; recreating
+    // that future when another select branch wins would discard the prefix.
+    let mut next_frame =
+        Box::pin(read_async_frame_with_deadline::<_, UsageRelayTunnelMessage>(&mut reader));
     loop {
-        let tunneled = read_async_frame::<_, UsageRelayTunnelRequest>(&mut reader).await?;
-        let broker = broker.clone();
-        let allowlist = allowlist.clone();
-        let credential_scope = credential_scope.clone();
-        let responses = responses.clone();
-        drop(jackin_telemetry::spawn::spawn_stream(
-            "usage_relay.tunnel_request",
-            async move {
-                let response = if tunneled.request.protocol_version != USAGE_BROKER_PROTOCOL_VERSION
-                    || tunneled.request.build_id != env!("CARGO_PKG_VERSION")
-                {
-                    error_response(UsageCoordinationErrorKind::ProtocolMismatch)
-                } else {
-                    dispatch(
-                        tunneled.request.operation,
-                        broker,
-                        allowlist,
-                        credential_scope,
-                    )
-                    .await
+        while let Some(joined) = requests.try_join_next() {
+            match joined {
+                Ok(request_id) => {
+                    active_requests.remove(&request_id);
+                }
+                Err(error) if error.is_cancelled() => {}
+                Err(error) => {
+                    requests.shutdown().await;
+                    return Err(anyhow::anyhow!("usage relay request task failed: {error}"));
+                }
+            }
+        }
+        tokio::select! {
+            joined = requests.join_next(), if !requests.is_empty() => {
+                if let Some(joined) = joined {
+                    match joined {
+                        Ok(request_id) => {
+                            active_requests.remove(&request_id);
+                        }
+                        Err(error) if error.is_cancelled() => {}
+                        Err(error) => {
+                            requests.shutdown().await;
+                            return Err(anyhow::anyhow!("usage relay request task failed: {error}"));
+                        }
+                    }
+                }
+            }
+            writer_result = &mut writer.0 => {
+                requests.shutdown().await;
+                active_requests.clear();
+                return match writer_result {
+                    Ok(result) => result.context("usage relay tunnel writer exited"),
+                    Err(error) => Err(anyhow::anyhow!("usage relay tunnel writer task failed: {error}")),
                 };
-                drop(
-                    responses
-                        .send(UsageRelayTunnelResponse {
+            }
+            frame = &mut next_frame => {
+                let (message, frame_deadline) = match frame {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        requests.shutdown().await;
+                        return Err(error);
+                    }
+                };
+                drop(next_frame);
+                next_frame =
+                    Box::pin(read_async_frame_with_deadline::<_, UsageRelayTunnelMessage>(&mut reader));
+                let tunneled = match message {
+                    UsageRelayTunnelMessage::Request { request } => *request,
+                    UsageRelayTunnelMessage::Cancel { request_id } => {
+                        if let Some(task) = active_requests.remove(&request_id) {
+                            task.abort();
+                        }
+                        continue;
+                    }
+                };
+                let Some(wire_deadline) = tunnel_request_deadline(tunneled.expires_at_unix_ms) else {
+                    // The guest already timed out this request. It must not
+                    // reach authorization, broker IPC, or provider work.
+                    continue;
+                };
+                let deadline = wire_deadline.min(frame_deadline);
+                if active_requests.contains_key(&tunneled.request_id) {
+                    // A duplicate live identifier cannot be routed safely:
+                    // emitting a second response would race the original
+                    // guest waiter. Preserve the original owner and discard
+                    // the duplicate before admission or registry mutation.
+                    continue;
+                }
+                if requests.len() >= TUNNEL_REQUEST_CAPACITY {
+                    let response = UsageRelayTunnelResponse {
+                        request_id: tunneled.request_id,
+                        response: error_response(UsageCoordinationErrorKind::Unavailable),
+                    };
+                    if responses.try_send((deadline, response)).is_err() && responses.is_closed() {
+                        requests.shutdown().await;
+                        return Err(anyhow::anyhow!("usage relay response writer closed"));
+                    }
+                    continue;
+                }
+                let permit = match Arc::clone(&admission).try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        let response = UsageRelayTunnelResponse {
                             request_id: tunneled.request_id,
-                            response,
-                        })
+                            response: error_response(UsageCoordinationErrorKind::Unavailable),
+                        };
+                        if responses.try_send((deadline, response)).is_err() && responses.is_closed() {
+                            requests.shutdown().await;
+                            return Err(anyhow::anyhow!("usage relay response writer closed"));
+                        }
+                        continue;
+                    }
+                };
+                if tokio::time::Instant::now() >= deadline {
+                    drop(permit);
+                    continue;
+                }
+                let broker = broker.clone();
+                let allowlist = allowlist.clone();
+                let credential_scope = credential_scope.clone();
+                let inventory = inventory.clone();
+                let instance_capabilities = instance_capabilities.clone();
+                let responses = responses.clone();
+                let request_id = tunneled.request_id;
+                let task = requests.spawn(async move {
+                    let response = if tunneled.request.protocol_version != USAGE_BROKER_PROTOCOL_VERSION
+                        || tunneled.request.build_id != env!("CARGO_PKG_VERSION")
+                    {
+                        drop(permit);
+                        error_response(UsageCoordinationErrorKind::ProtocolMismatch)
+                    } else {
+                        match tokio::time::timeout_at(
+                            deadline,
+                            dispatch_with_admission(
+                                tunneled.request.operation,
+                                broker,
+                                allowlist,
+                                credential_scope,
+                                inventory,
+                                Some(permit),
+                                Some(deadline),
+                                instance_capabilities,
+                                tunneled.instance_id,
+                            ),
+                        )
+                        .await
+                        {
+                            Ok(response) => response,
+                            Err(_) => error_response(UsageCoordinationErrorKind::Unavailable),
+                        }
+                    };
+                    drop(
+                        tokio::time::timeout_at(
+                            deadline,
+                            responses.send((
+                                deadline,
+                                UsageRelayTunnelResponse {
+                                    request_id: tunneled.request_id,
+                                    response,
+                                },
+                            )),
+                        )
                         .await,
-                );
-            },
-        ));
-        if writer.is_finished() {
-            return Err(anyhow::anyhow!("usage relay tunnel writer exited"));
+                    );
+                    request_id
+                });
+                active_requests.insert(request_id, task);
+            }
         }
     }
+}
+
+/// Wait for the first byte so an idle, healthy tunnel can remain open. Once a
+/// frame starts, bound the rest of its newline-delimited body. The absolute
+/// request expiry inside the decoded envelope is applied separately to broker
+/// admission and response delivery.
+async fn read_async_frame_with_deadline<R, T>(reader: &mut R) -> Result<(T, tokio::time::Instant)>
+where
+    R: AsyncBufRead + Unpin,
+    T: serde::de::DeserializeOwned,
+{
+    anyhow::ensure!(
+        !reader.fill_buf().await?.is_empty(),
+        "usage relay tunnel reached EOF"
+    );
+    let deadline = tokio::time::Instant::now() + TUNNEL_REQUEST_TIMEOUT;
+    let value = tokio::time::timeout_at(deadline, read_async_frame(reader))
+        .await
+        .context("usage relay tunnel frame read deadline expired")??;
+    Ok((value, deadline))
+}
+
+fn tunnel_request_deadline(expires_at_unix_ms: u64) -> Option<tokio::time::Instant> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    let expires = std::time::Duration::from_millis(expires_at_unix_ms);
+    let remaining = expires.checked_sub(now)?;
+    Some(tokio::time::Instant::now() + remaining.min(TUNNEL_REQUEST_TIMEOUT))
 }
 
 async fn read_async_frame<R, T>(reader: &mut R) -> Result<T>

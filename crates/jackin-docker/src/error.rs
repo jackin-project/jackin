@@ -5,24 +5,16 @@
 pub enum DockerError {
     #[error("command timed out after {secs}s: {program}")]
     CommandTimeout { secs: f64, program: String },
-    #[error("command failed: {program} {args}")]
-    CommandFailed { program: String, args: String },
-    #[error("command failed: {program} {args}: {stderr}")]
-    CommandFailedWithStderr {
-        program: String,
-        args: String,
-        stderr: String,
-    },
-    #[error("command failed: {program} {args} (stderr: {stderr}; captured output suppressed)")]
-    CommandFailedStderrSummary {
-        program: String,
-        args: String,
-        stderr: String,
-    },
-    #[error("command failed: {program} {args} (captured output suppressed)")]
-    CommandFailedCapturedSuppressed { program: String, args: String },
-    #[error("command failed: {program} {args} (see stderr above)")]
-    CommandFailedSeeStderr { program: String, args: String },
+    #[error("command failed: {program}")]
+    CommandFailed { program: String },
+    #[error("command failed: {program}: {stderr}")]
+    CommandFailedWithStderr { program: String, stderr: String },
+    #[error("command failed: {program} (stderr: {stderr}; captured output suppressed)")]
+    CommandFailedStderrSummary { program: String, stderr: String },
+    #[error("command failed: {program} (captured output suppressed)")]
+    CommandFailedCapturedSuppressed { program: String },
+    #[error("command failed: {program} (see stderr above)")]
+    CommandFailedSeeStderr { program: String },
     #[error("Docker build command failed: {stderr}")]
     DockerBuildFailed {
         /// Redacted tail of the build stderr (last lines carry the cause;
