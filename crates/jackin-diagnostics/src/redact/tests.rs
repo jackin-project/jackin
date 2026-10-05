@@ -1,4 +1,6 @@
-use super::{MAX_STREAM_LINE_BYTES, StreamRedactor, redact_and_cap, redact_text};
+use super::{
+    MAX_ACTIVE_ENVELOPES, MAX_STREAM_LINE_BYTES, StreamRedactor, redact_and_cap, redact_text,
+};
 
 #[test]
 fn redacts_named_secret_values() {
@@ -21,7 +23,23 @@ fn redacts_private_key_blocks() {
     let input = "before -----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY----- after";
     let redacted = redact_text(input);
 
-    assert_eq!(redacted, "before <redacted> after");
+    assert_eq!(redacted, "before <redacted>\n after");
+}
+
+#[test]
+fn whole_text_redaction_consumes_authorization_schemes_and_yaml_blocks() {
+    assert_eq!(redact_text("Authorization=Basic canary"), "<redacted>");
+
+    let redacted =
+        redact_text("api_key: |2\n    first-canary\n  second-canary\nvisible: retained\n");
+    assert!(!redacted.contains("first-canary"));
+    assert!(!redacted.contains("second-canary"));
+    assert!(redacted.contains("<redacted>"));
+    assert!(redacted.contains("visible: retained"));
+
+    let under_indented =
+        redact_text("api_key: |2\n first-under-indented-canary\nvisible: retained\n");
+    assert!(!under_indented.contains("first-under-indented-canary"));
 }
 
 #[test]
@@ -61,10 +79,15 @@ fn stream_redacts_block_scalars_and_crlf_across_chunks() {
     assert!(redactor.push_bytes(b"api_key: |").is_empty());
     assert!(redactor.push_bytes(b"\r").is_empty());
     assert_eq!(redactor.push_bytes(b"\n"), vec!["<redacted>"]);
-    assert!(redactor
-        .push_bytes(b"  multiline-canary-part-one\r\n  multiline-canary-part-two\r\n")
-        .is_empty());
-    assert_eq!(redactor.push_bytes(b"visible: retained\r\n"), vec!["visible: retained"]);
+    assert!(
+        redactor
+            .push_bytes(b"  multiline-canary-part-one\r\n  multiline-canary-part-two\r\n")
+            .is_empty()
+    );
+    assert_eq!(
+        redactor.push_bytes(b"visible: retained\r\n"),
+        vec!["visible: retained"]
+    );
     assert!(!redactor.finish().iter().any(|line| line.contains("canary")));
 }
 
@@ -112,29 +135,55 @@ fn stream_redacts_authorization_bearer_as_one_value() {
         redactor.push_bytes(b"Authorization=Bearer canary\n"),
         vec!["<redacted>"]
     );
-    assert_eq!(redactor.push_bytes(b"Authorization=Bearer\n"), vec!["<redacted>"]);
-    assert!(redactor
-        .push_bytes(b"split-bearer-canary\nvisible-but-suppressed\n")
-        .is_empty());
     assert_eq!(
-        redact_text("Authorization=Bearer canary"),
-        "<redacted>"
+        redactor.push_bytes(b"Authorization=Bearer\n"),
+        vec!["<redacted>"]
     );
+    assert!(
+        redactor
+            .push_bytes(b"split-bearer-canary\nvisible-but-suppressed\n")
+            .is_empty()
+    );
+    assert_eq!(redact_text("Authorization=Bearer canary"), "<redacted>");
 }
 
 #[test]
 fn stream_holds_triple_quoted_values_until_the_full_delimiter() {
     let mut redactor = StreamRedactor::default();
-    assert_eq!(
-        redactor.push_bytes(b"token = \"\"\"\n"),
-        vec!["<redacted>"]
-    );
+    assert_eq!(redactor.push_bytes(b"token = \"\"\"\n"), vec!["<redacted>"]);
     assert!(redactor.push_bytes(b"canary\n").is_empty());
     assert_eq!(
         redactor.push_bytes(b"\"\"\"\nvisible: retained\n"),
         vec!["visible: retained"]
     );
     assert_eq!(redact_text("token = \"\"\"\ncanary\n\"\"\""), "<redacted>");
+}
+
+#[test]
+fn pem_footer_cannot_close_an_outer_triple_quoted_secret() {
+    let input = concat!(
+        "token = \"\"\"\n",
+        "-----END PRIVATE KEY-----\n",
+        "remaining-token-canary\n",
+        "\"\"\"\n",
+        "visible: retained\n",
+    );
+    let redacted = redact_text(input);
+    assert!(!redacted.contains("remaining-token-canary"));
+    assert!(redacted.contains("visible: retained"));
+}
+
+#[test]
+fn ambiguous_suffixes_and_pem_values_remain_suppressed() {
+    assert!(!redact_text("token=\"quoted-secret\"canary").contains("canary"));
+
+    let redacted = redact_text(concat!(
+        "token=prefix -----BEGIN PRIVATE KEY-----\n",
+        "embedded-pem-canary\n",
+        "-----END PRIVATE KEY----- suffix",
+    ));
+    assert!(!redacted.contains("prefix"));
+    assert!(!redacted.contains("embedded-pem-canary"));
 }
 
 #[test]
@@ -145,6 +194,8 @@ fn buildkit_block_secret_stays_bound_to_its_step() {
         b"#7 0.1 api_key: |\r".as_slice(),
         b"\n#7 0.2   canary\r\n".as_slice(),
         b"#8 0.1 harmless-other-step\r\n".as_slice(),
+        b"unframed-ambiguous-canary\r\n".as_slice(),
+        b"#7 malformed-envelope-canary\r\n".as_slice(),
         b"#7 0.3   canary-continuation\r\n".as_slice(),
         b"#7 0.4 next-safe-record\r\n".as_slice(),
     ] {
@@ -153,8 +204,81 @@ fn buildkit_block_secret_stays_bound_to_its_step() {
     }
     assert_eq!(
         output,
-        vec!["#7 0.1 <redacted>", "#7 0.4 next-safe-record"]
+        vec![
+            "#7 0.1 <redacted>",
+            "#8 0.1 harmless-other-step",
+            "#7 0.4 next-safe-record"
+        ]
     );
+}
+
+#[test]
+fn interleaved_buildkit_secret_envelopes_keep_independent_state() {
+    let mut redactor = StreamRedactor::default();
+    let mut output = Vec::new();
+    for line in [
+        b"#7 0.1 token = \"\"\"\n".as_slice(),
+        b"#8 0.1 token = \"\"\"\n".as_slice(),
+        b"#7 0.2 \"\"\"\n".as_slice(),
+        b"#8 0.2 interleaved-canary\n".as_slice(),
+        b"#8 0.3 \"\"\"\n".as_slice(),
+        b"#8 0.4 visible-record\n".as_slice(),
+    ] {
+        output.extend(redactor.push_bytes(line));
+        assert!(!output.join("\n").contains("interleaved-canary"));
+    }
+    assert_eq!(
+        output,
+        vec![
+            "#7 0.1 <redacted>",
+            "#8 0.1 <redacted>",
+            "#8 0.4 visible-record"
+        ]
+    );
+
+    let whole_text = redact_text(concat!(
+        "#7 0.1 token = \"\"\"\n",
+        "#8 0.1 token = \"\"\"\n",
+        "#7 0.2 \"\"\"\n",
+        "#8 0.2 whole-text-interleaved-canary\n",
+        "#8 0.3 \"\"\"\n",
+        "#8 0.4 visible-record\n",
+    ));
+    assert!(!whole_text.contains("whole-text-interleaved-canary"));
+    assert!(whole_text.contains("#8 0.4 visible-record"));
+}
+
+#[test]
+fn repeated_step_secret_opener_cannot_close_an_existing_quote() {
+    let mut redactor = StreamRedactor::default();
+    let mut output = Vec::new();
+    for line in [
+        b"#7 0.1 token = \"\"\"\n".as_slice(),
+        b"#7 0.1 token = \"\"\"\n".as_slice(),
+        b"#7 0.2 \"\"\"\n".as_slice(),
+        b"#7 0.3 reused-step-canary\n".as_slice(),
+    ] {
+        output.extend(redactor.push_bytes(line));
+        assert!(!output.join("\n").contains("reused-step-canary"));
+    }
+    assert_eq!(output, vec!["#7 0.1 <redacted>"]);
+}
+
+#[test]
+fn too_many_open_buildkit_secret_contexts_fail_closed() {
+    let mut redactor = StreamRedactor::default();
+    let mut output = Vec::new();
+    for step in 1..=MAX_ACTIVE_ENVELOPES + 1 {
+        let header = format!("#{step} 0.1 token = \"\"\"\n");
+        output.extend(redactor.push_bytes(header.as_bytes()));
+    }
+    assert!(!output.join("\n").contains("canary"));
+    assert!(
+        redactor
+            .push_bytes(b"#1 0.2 overflow-state-canary\n#1 0.3 \"\"\"\n")
+            .is_empty()
+    );
+    assert!(redactor.finish().is_empty());
 }
 
 #[test]
@@ -171,11 +295,21 @@ fn stream_fails_closed_on_eof_and_unbounded_lines() {
     too_long[..7].copy_from_slice(b"token: ");
     let output = overflow.push_bytes(&too_long);
     assert_eq!(output, vec!["<redacted>"]);
-    assert!(overflow
-        .push_bytes(b"following-token=must-also-stay-hidden\n")
-        .is_empty());
+    assert!(
+        overflow
+            .push_bytes(b"following-token=must-also-stay-hidden\n")
+            .is_empty()
+    );
     assert!(overflow.finish().is_empty());
     assert!(!output.join("\n").contains("must-also-stay-hidden"));
+
+    let mut invalid_utf8 = StreamRedactor::default();
+    assert_eq!(
+        invalid_utf8.push_bytes(b"safe-prefix-\xff-canary\n"),
+        vec!["<redacted>"]
+    );
+    assert!(invalid_utf8.push_bytes(b"later-canary\n").is_empty());
+    assert!(invalid_utf8.finish().is_empty());
 }
 
 #[test]
@@ -194,5 +328,8 @@ fn stream_preserves_benign_text_and_redacts_open_pem_at_eof() {
         redact_text("before -----BEGIN PRIVATE KEY-----\nprivate-body"),
         "before <redacted>"
     );
-    assert_eq!(redactor.push_bytes(b"next build output\n"), vec!["next build output"]);
+    assert_eq!(
+        redactor.push_bytes(b"next build output\n"),
+        vec!["next build output"]
+    );
 }
