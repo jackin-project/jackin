@@ -711,6 +711,7 @@ public final class PresentationStore: ObservableObject {
         accountProjections: [String: QIFixtureProjection] = [:],
         popoverSelection: String?,
         usageSelection: String?,
+        usageAccountSelection: String? = nil,
         nextRefreshLabel: String = "next update 4m",
         isLoading: Bool = false,
         isRefreshing: Bool = false,
@@ -734,8 +735,8 @@ public final class PresentationStore: ObservableObject {
         overviewExpandedProviderIDs = providerIDs
         self.popoverSelection = popoverSelection
         self.usageSelection = usageSelection
-        usageAccountSelection =
-            accounts.first(where: {
+        self.usageAccountSelection = usageAccountSelection
+            ?? accounts.first(where: {
                 $0.surfaceId == usageSelection && $0.selected
             })?.accountKey
         self.nextRefreshLabel = nextRefreshLabel
@@ -1126,10 +1127,8 @@ public final class PresentationStore: ObservableObject {
                 $0.surfaceId == usageSelection && $0.accountKey == usageAccountSelection
             })
         {
-            self.usageAccountSelection =
-                accounts.first(where: {
-                    $0.surfaceId == usageSelection && $0.selected
-                })?.accountKey
+            self.usageSelection = nil
+            self.usageAccountSelection = nil
         }
         if let popoverSelection,
             !providerGlanceRows.contains(where: { $0.surfaceId == popoverSelection })

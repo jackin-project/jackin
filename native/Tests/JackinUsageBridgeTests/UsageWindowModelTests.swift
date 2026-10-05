@@ -273,6 +273,23 @@ final class UsageWindowModelTests: XCTestCase {
         XCTAssertEqual(selected.content?.headAccount?.accountKey, "b")
     }
 
+    func testMissingExplicitAccountSelectionReturnsToOverview() {
+        let accounts = [
+            account("codex", key: "selected-sibling", selected: true),
+            account("codex", key: "other-sibling", selected: false),
+        ]
+        let model = UsageWindowModel(
+            glanceRows: [glance("codex")],
+            surfaces: [surface("codex", detail: .empty)],
+            accounts: accounts,
+            selection: "codex",
+            accountSelection: "removed-account"
+        )
+
+        XCTAssertEqual(model.selection, .overview)
+        XCTAssertNil(model.content)
+    }
+
     func testSentinelRowsTransmittedUnchanged() {
         // Opaque sentinels standing in for Amp/Grok Rust strings: the model must
         // pass them through byte-for-byte with no reformatting.

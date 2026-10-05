@@ -156,11 +156,12 @@ public struct UsageWindowModel: Equatable, Sendable {
             self.selectedAccountKey = selectedAccountKey
         }
 
-        /// Selected account for detail-head subtitle (multi-account); else first.
+        /// Exact account for the detail-head subtitle; else the provider-selected account.
         public var headAccount: PresentationStore.AccountRow? {
-            selectedAccountKey.flatMap { key in
-                accounts.first(where: { $0.accountKey == key })
-            } ?? accounts.first(where: \.selected) ?? accounts.first
+            if let selectedAccountKey {
+                return accounts.first(where: { $0.accountKey == selectedAccountKey })
+            }
+            return accounts.first(where: \.selected) ?? accounts.first
         }
     }
 
@@ -184,11 +185,19 @@ public struct UsageWindowModel: Equatable, Sendable {
     ) {
         sidebar = glanceRows
         isEmpty = glanceRows.isEmpty
-        // An invalid/disabled incoming selection falls back to Overview; a valid
-        // one resolves to that surface's Rust detail presentation + account rows.
+        // An invalid/disabled provider or unavailable exact account falls back
+        // to Overview; a valid route resolves to Rust detail and account rows.
         if let surfaceId,
             let surface = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
         {
+            let surfaceAccounts = accounts.filter { $0.surfaceId == surfaceId }
+            if let accountSelection,
+                !surfaceAccounts.contains(where: { $0.accountKey == accountSelection })
+            {
+                selection = .overview
+                content = nil
+                return
+            }
             selection = .provider(surfaceId)
             let glance = glanceRows.first(where: { $0.surfaceId == surfaceId })
             let group = providerGroups.first(where: { $0.surfaceId == surfaceId })
@@ -201,7 +210,7 @@ public struct UsageWindowModel: Equatable, Sendable {
                     usageURL: group?.usageURL ?? glance?.usageURL,
                     identity: identity,
                     detail: surface.detailPresentation,
-                    accounts: accounts.filter { $0.surfaceId == surfaceId },
+                    accounts: surfaceAccounts,
                     selectedAccountKey: accountSelection
                 )
             } else {
