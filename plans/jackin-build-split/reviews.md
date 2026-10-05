@@ -31,7 +31,7 @@ This audit does not establish models for unrun Jackin role sessions, provider or
 
 Sol rejected `codex mcp list --json --disable plugins` as a general profile preflight. Auth-status discovery can contact configured MCP endpoints. The earlier synthetic empty-home run returned zero configured servers, but it does not approve use against a real profile. No real profile or model request ran.
 
-The route owner is replacing this probe with schema-verified app-server `config/read`. Its synthetic response exposed `system`, `user`, and `sessionFlags` layers. `ConfigReadResponse.layers[].config` is generic JSON. The wrapper must inspect raw `mcp_servers` values and fail closed when configuration is enabled or incomplete. Implementation and independent review remain pending.
+The route owner replaced this probe with a candidate wrapper using schema-verified app-server `config/read`. Candidate v3, `/tmp/jackin_codex_probe_review_0_160_v3.py`, SHA-256 `8e7b4ad7ea827394ce78c913e41d4c27c9e1269c72a64fbfffc1c6091d352d1b`, received an exact Sol/medium review FAIL from `model_policy_audit`. It set `experimentalApi:false` while sending experimental `environments:[]`, which the installed v0.160.0 server rejects. It also failed to inspect managed `sqlite_home` requirements, accepted configuration warnings indiscriminately, and did not verify effective sandbox, approval policy, or cwd from the thread response. Managed configuration can override `CODEX_SQLITE_HOME`, so the task-owned database path was not enforced. The owner is preparing v4 with these checks. No real-profile command or model request ran; v4 is not yet reviewed.
 
 ## Preliminary security requirements
 
@@ -137,18 +137,24 @@ At the time of this source review, general and issue-comment dispositions, P13, 
 
 ## Account consolidation review
 
-The account-consolidation branch at `18bc09e9536d9b662876d2fb4205357a829caa9a` contains commit `455526b92a2a4350476bb192455e5e3414f7ab9a`, titled `feat(op): persist canonical section identifiers`. Four later commits retain the fixture defect.
+The account-consolidation branch at `18bc09e9536d9b662876d2fb4205357a829caa9a` contains commit `455526b92a2a4350476bb192455e5e3414f7ab9a`, titled `feat(op): persist canonical section identifiers`; its tree is `759bd5ed12499604cf43d52a01fa252f430d2318`, parent `78e38612824c4e6d69ffb9d01a834a75537e7c5a` has tree `787ab923816b655aa69ce7573329b5cbfab07091`. Four later commits retain the fixture defect.
 
-This commit raises the current config version from v1alpha12 to v1alpha13 and the workspace version from v1alpha10 to v1alpha11. It adds migration logic without corresponding new migration fixtures in `crates/jackin-config/src/migrations/tests.rs`.
+This commit raises the config version from v1alpha12 to v1alpha13 and the workspace version from v1alpha10 to v1alpha11. Its 37-file feature delta adds migration and OpRef consumers without updating the migration fixtures under `crates/jackin/tests/fixtures/migrations/{config,workspace}`.
 
-An exact-head Sol source review at `18bc09e9536d9b662876d2fb4205357a829caa9a` confirms these fixture findings. Tests were not run.
+An exact-head Sol/medium source review by `baseline_method_review` compared commit `455526b92a2a4350476bb192455e5e3414f7ab9a` against its parent and current Jackin source head `3b1a7789fe41e679eb9554e04862b6033cd82c94`; current task head `114effca63bb5c4ce83f8bd56d80187e800cd5d8` has tree `bbaba873ad1f960737038c254a455027053ffb28` and adds documentation only. The review blocks merging the whole commit. Its behavior is SELECT, but the patch must be REPLACED as a complete current-source port with fixtures and consumer tests. No code was edited and no tests/build ran.
 
-- Config `from-v1alpha11` still targets and expects v1alpha12. Workspace `from-v1alpha9` still targets and expects v1alpha10.
-- Config `from-v1alpha12` and workspace `from-v1alpha10` predecessor directories are absent. `crates/jackin-xtask/src/schema.rs:124-134` requires three fixture files in each directory.
-- Migration code at `crates/jackin-config/src/migrations.rs:602,617,770` stamps the new versions. `crates/jackin/tests/migration_fixtures.rs:219-239` checks versions and exact golden contents.
+The Luna source audit confirmed this is not currently integrated: the current task branch has no `OpSectionTarget`, breadcrumb codec, or v1alpha13/v1alpha11 schema bump. Its config and workspace versions remain v1alpha12 and v1alpha10. Therefore the reported migration-fixture break is a defect in the candidate branch, not a failure on the current task branch.
+
+- In commit `455526b92a2a4350476bb192455e5e3414f7ab9a`, config `from-v1alpha11` still targets and expects v1alpha12. Workspace `from-v1alpha9` still targets and expects v1alpha10.
+- In that commit, config `from-v1alpha12` and workspace `from-v1alpha10` predecessor directories are absent. `crates/jackin-xtask/src/schema.rs:124-134` requires three fixture files in each directory.
+- Migration code at `crates/jackin-config/src/migrations.rs:602,617,770` stamps the new versions. In commit `455526b…`, config `from-v1alpha11/meta.toml` and `after.toml` still target v1alpha12; workspace `from-v1alpha9` counterparts still target v1alpha10. `crates/jackin/tests/migration_fixtures.rs:216-224` checks resulting versions and `:236-240` checks exact golden contents.
 - The migration changes legacy `path` data into versioned `breadcrumb` data. Fixtures must cover breadcrumb behavior and malformed-input preservation.
+- The exact source audit found `crates/jackin-config/src/editor.rs` manually writes `{breadcrumb={version=1,value=r.path}}` in `ConfigEditor::set_env_var` instead of using the new typed codec. The reviewer initially raised a validation concern, then corrected it: `ConfigEditor::save_with_stager` at `editor.rs:793-805` runs `validate_candidate`, reparsing the versioned TOML through `OpRef`'s deserializer before staging or writing. This is duplicated encoding/maintainability work, not a demonstrated invalid-persistence defect; do not report it as a blocker.
+- `crates/jackin-env/src/picker.rs:357-360,376-380` selects the first `FieldTarget::New` by section ID and label, then overwrites it. Independent Sol review found this first-match behavior already existed at the parent, so do not attribute it to `455526b`; fix it as part of the operation-ID consumer port by rejecting ambiguous metadata before mutation.
 
-The reviewer labels the concrete missing-fixture failures P2. Task tracking records the consolidation finding as P1. Do not accept or merge this change until both predecessor directories and their meta and golden fixtures exist. Run migration fixtures and `schema-check` under reviewed MBX. Re-review the exact fixing commit.
+The reviewer labels the concrete missing-fixture failures P2. Task tracking records the consolidation finding as P1. Do not accept or merge this change until both predecessor directories and their meta and golden fixtures exist. The migration test target is `jackin --test migration_fixtures`; run it through approved `mise exec -- mbx test --locked`. Also run the project `xtask schema-check --base <base>` gate through MBX. No fixture rebake generator was identified; the exact rebake invocation remains undocumented and must be established under the approved MBX path rather than guessed. Re-review the exact fixing commit.
+
+The useful source hunks are coupled: schema-version bumps and recursive migration (`crates/jackin-config/src/versions.rs`, `migrations.rs`); canonical ID URI construction and escaped/versioned breadcrumb encoding (`op_reference.rs`, `env_value.rs`); item section metadata and cache types (`op_types.rs`, `op_cache.rs`); OpRef producer, selection, display, and resolution consumers in `jackin-env`, `jackin-oppicker`, console, runtime, and diagnostics. Port them together, preserve opaque section metadata and stable IDs, route public writes through the typed codec, and reject ambiguous legacy matches before mutation. Add immediate-predecessor and historical fixtures, breadcrumb conversion, ambiguity and malformed-input no-write regressions. The supported test target is `jackin --test migration_fixtures`, run using the approved `mise exec -- mbx test --locked` path; run `xtask schema-check --base <base>` through MBX as well. No fixture rebake generator was identified; the exact rebake invocation remains undocumented and must be established under the approved MBX path rather than guessed. `PRERELEASE.md` requires predecessor fixtures and re-baking historical `after.toml` files. Do not cherry-pick only the schema declaration or accept 455 as merge-ready.
 
 Add both predecessor fixture directories. Update successful fixture metadata and goldens. Cover breadcrumb transformations and malformed-input preservation.
 
@@ -190,6 +196,12 @@ Jackin consumer source review PASS at `07f5ce7efe38c6c608fb975013df43e770d92b2b`
 
 Architect image prefix `ad3b0069` predates the merged role content and has no source match. No live Codex profile probe, role request, or role launch ran. Codex environment evidence is synthetic-fixture-only.
 
+### Velnor PR #59 permissions follow-up
+
+Exact Sol/medium source review PASS at remote PR head `81e65fee08edc3b73839d9ff810cb7da6a170a65`, tree `4162acc9850461784105c6ce7d3d322df0c05c9d`, against then-current main `1856b5b9f47569515c8fa00657a2c8dde6aada9f`. It scoped `actions:read` to the Required artifact consumer and left the Plan baseline lookup tokenless as a separately documented gap. The PR's generated Plan run and then Required failed; Rust jobs and publish-baseline were skipped. This source PASS does not cover newer main or the current local merge state.
+
+Velnor main advanced to `c4fc31efd2fbb39b7cfc2cce423d99b7c4733c3d`. The remote PR ref remains `81e65fee08edc3b73839d9ff810cb7da6a170a65` with its old `1856b5b9f47569515c8fa00657a2c8dde6aada9f` base. A shared local worktree is at merge commit `c94b51280d3c877c575893591fb53d3b92fe0bd7`, but contains six uncommitted root-owned files (diff SHA-256 `4a3329b57aa38e68d1169042f801b10d4b1701ee83a36a15f8a3f656ae5e5bf1`). The changes add Plan baseline authentication/permission bindings and update related docs; no task worker or read-only research owner claims them, and Git metadata does not identify the actor. Preserve them; do not stage, reset, copy, or attribute them to the merge author. Re-evaluate only an immutable fresh snapshot from the remote PR and exact current main after the full delta and Plan permission changes receive review. No build or generation ran from this local merge/worktree.
+
 ### Measurement launcher reviews
 
 The v3 timing method passed review. The security review failed because an intermediate `work/out` path permits symlink traversal. Do not use it.
@@ -202,11 +214,23 @@ The v5 `prepare-linker` phase passed in 102.038 ms using the rootfs-only GCC lin
 
 The v6 launcher SHA-256 is `9040ccad259d81b4c8705c687b10fbe174a0c3ef34612cc1c055672df0d3c856`; timer SHA-256 is `d3789bf2bc38616eb0b6adb594ea8c8f4a724f9af40ce973350085cf278776e9`; diff SHA-256 is `f75ef4f90c0c842e8120465f75d420890df7ab37173759131532f2e2867f0547`. Security and method reviews passed. `verify-linker` passed. The cold-1 inner build exited 0 in 90.373 seconds, but collection failed before cold-2. A Cargo 1.97 HTML output had `st_nlink=2` because its canonical and timestamped names were hard links. The collector stopped before further measurements. The owner salvaged MBX statistics with a validated no-follow directory descriptor. The partial run is not a cache or performance result. A collector correction requires new review. See [build results](build-results.md#measurement-launcher-review-sequence).
 
+The v7 launcher, timer, and diff hashes are `f3e467ab103ef81879b072923725d6ae4153fe85bf6b6cbf07103eae2e068baa`, `14e82441448fe5ad53fddb0ed63170fccb6e3272f900cab0f80cbd02eba73087`, and `8062e8fa4b3c41e41b4e9b75e7b6f9093008c554c8fc935b734a00a8e88c0051`. Exact security review by `preflight_security_review` and method review by `baseline_method_review` both passed. The first recovery invocation stopped before entering the read-only recovery phase: the launcher was 70,659 bytes while its self-reexec guard rejects files above 65,536 bytes. The timer recorded child exit 1 after 11.081 ms with `unsafe launcher file`; no build or target/cache/mount mutation occurred.
+
+The size-guard correction is v8: launcher `45291b393424ab976f8181b8001e08ce3210014d0666ced45d179db7705a37ca`, timer `40c60d10c411d0c8fae2bdd7c3c1449ae7c9d29520f44cdafc71ae9239c0f554`, diff `d0271787510a02fb9dc44346d3e3494e2df8c3f206dbe0f4ee3f365ce27b77c2`. Exact security and method re-reviews passed. The single authorized read-only recovery then succeeded without Cargo; it recovered the original timing and statistics and did not create a new build repetition. The recovered timing HTML is 540,739 bytes, SHA-256 `ef933ce66183a18a84b824b9526681e5deef15961569fc4eea1c96ea88e1f240`. No additional matrix run occurred during recovery. The cold-1 sample remains contended and is not an uncontended median or cache-reuse result.
+
+The method review classifies the original cold-1 sample as contended because unrelated Rust compilers were active. Its successful inner build remains a single contended observation, not an uncontended median or comparable scenario. At least three comparable cold repetitions are still required; add a fresh target/store repetition if contention differs or variance obscures the target.
+
 ## Tokenless BuildKit source review
 
 Commit `a67ef88d5d9889a94696d306fffcfc5249e74ceb` failed exact review. The commit changed image building to stop forwarding ambient GitHub tokens to BuildKit.
 
-Follow-up commit `3b1a7789fe41e679eb9554e04862b6033cd82c94` removes the obsolete detector API, re-export, and stale test. It also gates Unix-only imports. The owner reports source-only checks passed. Exact independent review, Cargo tests, and image build remain NOT RUN. Keep final acceptance pending.
+Follow-up commit `3b1a7789fe41e679eb9554e04862b6033cd82c94` removes the obsolete detector API, re-export, and stale test. It also gates Unix-only imports. Exact Sol/medium source review by `execution_crosscheck` PASS: the four intended paths are limited to detector removal, Unix import gating, and updated launch assertion. Old names remain only in negative source-contract assertions. `git diff --check` and owner-reported source searches passed. Rust tests, Clippy, Windows compilation, and real image builds remain NOT RUN. Keep final acceptance pending.
+
+## Velnor release-manifest helper source review
+
+The pure helper commit `63a3a0783de72dac9f02d55e1c56346c83d9d2f5`, tree `5db4957559ada8b75d1f493dafa3e04fad009846`, is on the separate Velnor branch `fix/generator-release-provenance`, based on main `1856b5b9f47569515c8fa00657a2c8dde6aada9f`. Owner-reported Python fixtures passed the valid manifest case and rejection cases for missing/wrong URL, target set, digest, upload state, and unsafe path; Rust tests are NOT RUN.
+
+Exact Sol/medium review by `execution_crosscheck` found a P2: `urlsplit` normalizes leading spaces and uppercase `HTTPS`, allowing output that Jackin's `ReleaseManifest` validator rejects. The owner is changing the helper to reject whitespace and require literal lowercase `https://`, with negative fixtures for the normalized forms. Publisher orchestration and generated workflow/snapshot are not yet committed or reviewed. Re-review the exact correction commit before treating the helper as source-approved.
 
 ## MBX provenance
 
