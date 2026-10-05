@@ -94,6 +94,6 @@ The replacement uses schema-verified app-server `config/read` with synthetic emp
 
 ## Owner
 
-`debian_codex_route` completed static route inspection, source review, and local CLI path checks. Exact-source review PASS covers commits `688057f40173d32dda04a55bff1e3868c219710d` and `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`. Jackin runtime confirmation remains NOT RUN because the available MBX binary predates these changes and no default configuration exists. Live requests remain NOT RUN.
+`debian_codex_route` completed static route inspection, source review, and local CLI path checks. Exact-source review PASS covers commits `0556ce39b1abb9cd6b387583d932e1556ca9dfd4`, `688057f40173d32dda04a55bff1e3868c219710d`, and `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`. Jackin runtime confirmation remains NOT RUN because the available MBX binary predates these changes and no default configuration exists. Live requests remain NOT RUN.
 
 See [crate plan](crate-plan.md) and [reviews](reviews.md).

@@ -66,6 +66,14 @@ The generator coverage review is still active. Recheck after upstream fixes merg
 
 Do not claim generated workflow parity. Compare generator source, configuration, output, and current checks after refs are fetched.
 
+## Velnor PR #59
+
+Status: OPEN; generation and execution gates are IN PROGRESS.
+
+The [PR](https://github.com/tailrocks/velnor-new/pull/59) is `fix/required-actions-read-scope`. Its head is `81e65fee08edc3b73839d9ff810cb7da6a170a65`. The recorded base is `1856b5b9f47569515c8fa00657a2c8dde6aada9f`. A later direct ref check found main at `c4fc31efd2fbb39b7cfc2cce423d99b7c4733c3d`; checks at that newer main are not recorded here.
+
+`architect_manifest_fix` is the sole heavy owner for generator build and self-CI regeneration. An immutable source, archive, and isolation packet is pending, followed by applicable review. No MBX or Cargo execution is recorded for this PR. Do not claim generated-source or test acceptance.
+
 ## Current Jackin consumer check
 
 Consumer source review PASS at `07f5ce7efe38c6c608fb975013df43e770d92b2b`. It pins Architect PR head `7db69b62f598a0971809ee4a006ad3f5477d0996` and manifest SHA-256 `b38e506587c98137d0a1a88247fb68afc9f9f215c8104c838df251933a917ae5`. The source review covers the immutable manifest fixture and CI contract. Tests remain NOT RUN.
