@@ -6,7 +6,9 @@ Status: IN PROGRESS
 
 The root model prerequisite is PASS under the latest user `AGENTS.md`, which assigns the root session Sol/medium and requires it to delegate substantive work. The root rollout `turn_context` at `2026-10-05T02:02:06.083Z` confirms gpt-6.1-sol/medium.
 
-The coordinator work session's `turn_context` at `2026-10-05T03:04:08.357Z` confirms Luna/max. The reviewer session's `turn_context` at `2026-10-05T03:47:30.181Z` confirms Sol/medium. These records do not map every active agent and nested session. Runtime confirmation remains IN PROGRESS; no config edit or runtime model change is claimed.
+The coordinator work session's `turn_context` at `2026-10-05T03:04:08.357Z` confirms Luna/max. The reviewer session's `turn_context` at `2026-10-05T03:47:30.181Z` confirms Sol/medium. The completed audit PASS covers 41 local collaboration-tree sessions: the root and 40 successful spawns. It found no unmapped successful spawn. Eight failed thread-limit attempts created no sessions. Every session's own `turn_context` matches its assigned role; inherited contexts were matched by parent turn IDs.
+
+This audit does not establish models for unrun Jackin role sessions, provider or backend selection, or future sessions. No settings changed. Luna research sessions with names ending in `review` are not independent Sol approvals.
 
 ## Codex schema and catalog
 

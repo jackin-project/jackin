@@ -22,6 +22,7 @@ The first main-source MBX attempt failed because the private chroot lacked `/etc
 - One MBX source-build proof succeeded with 626 cache bypasses; cache causes remain under investigation. See [build results](build-results.md#reviewed-linker-v2-source-proof).
 - Crate names, consumers, dependency boundaries, and measured build targets remain IN PROGRESS. See [crate plan](crate-plan.md#usage-crate-naming-proposals).
 - Codex route, restore-identity, and prompt source reviews passed; their Cargo tests and runtime route remain NOT RUN. See [reviews](reviews.md#account-route-and-restore-source-reviews).
+- Rule-bundle source `c72e25d384ce2d8a80cf584457ec4b28e619980b` was cherry-picked with attribution as `c8d20fb3a9660e1ed7819d53b3fbef410be43610`, changing three `jackin-agent-status` files. Focused tests remain NOT RUN pending controlled MBX scheduling. See [branch matrix](branches.md#account-and-capsule-consolidation-matrix).
 - The task branch contains documentation progress commits. It has no task PR and no merge.
 
 ## Open records
