@@ -1,6 +1,6 @@
 # Debian Results
 
-Status: Route source review PASS; bounded host Codex probe PASS; Jackin runtime route NOT RUN.
+Status: Route source review PASS; host probe owner-reported PASS; independent runtime evidence review PENDING; Jackin route NOT RUN.
 
 ## Host
 
@@ -92,9 +92,9 @@ The owner reported exit 0 and a JSON configured-server count of 0. The output co
 
 The v11 replacement uses schema-verified app-server `config/read`. Its schema review accounts for `system`, `user`, and `sessionFlags` layers and treats `ConfigReadResponse.layers[].config` as generic JSON. It inspects raw `mcp_servers` values and fails closed on enabled or incomplete configuration. The bounded host result is recorded below; it reports zero configured MCP servers for this profile snapshot only.
 
-## Bounded host Codex route probe
+## Owner-reported bounded host Codex route probe
 
-The exact v11 wrapper `/tmp/jackin_codex_probe_review_0_160_v11.py` has SHA-256 `bfc1eedaf6e6105859262bbe7cd5d5996a0745385294c4cdb9f200e47ff24020`, mode `0400`. Its notification fixture `/tmp/jackin_codex_notif_parser_fixture_0_160_v11.py` has SHA-256 `30cee76f266bb2c37365c0cfc4166a6643476bdb6820fd957d5e9308358d1b23`, mode `0400`. The owner reports that exact-hash checks preceded the single root-authorized invocation. It exited 0 in 9.1 seconds.
+The exact v11 wrapper `/tmp/jackin_codex_probe_review_0_160_v11.py` has SHA-256 `bfc1eedaf6e6105859262bbe7cd5d5996a0745385294c4cdb9f200e47ff24020`, mode `0400`. Its notification fixture `/tmp/jackin_codex_notif_parser_fixture_0_160_v11.py` has SHA-256 `30cee76f266bb2c37365c0cfc4166a6643476bdb6820fd957d5e9308358d1b23`, mode `0400`. The owner reports that exact-hash checks preceded the single root-authorized invocation. The owner reports exit 0 in 9.1 seconds. Independent Sol review verified the artifact hashes, but runtime evidence corroboration remains pending.
 
 Sanitized output:
 
@@ -102,9 +102,9 @@ Sanitized output:
 PASS profile=existing_Codex_home auth_method=chatgpt model=gpt-6-luna effort=max provider=openai mcp_config_count=0 thread_token_usage_events=1 account_rate_limit_events=1 chatgpt_account_updates=1 account_reads=2 account_route_identity_stable=true config_warnings_discarded=1 thread_settings_updates_checked=0 deprecation_notices_discarded=2 thread_warnings_discarded=1 global_warnings_discarded=0 thread_active_status_events=1 thread_idle_status_events=1 ephemeral_path=null shell_tool=disabled no_tool_items_observed=true marker=JACKIN_ROUTE_PROBE_20261005_07
 ```
 
-The wrapper correlated the exact completion marker, required the selected profile and route snapshots to remain stable, and rejected unknown tool or reroute events. It reported no configured MCP servers and no tool item. The model and effort are the settings observed in thread metadata; this does not attest to provider-side model execution. The owner removed task-owned temporary captures and stopped the child process. No login or enrollment occurred, and no session history was deleted. Normal Codex startup, managed configuration, authentication refresh, and SQLite activity remain possible.
+The owner reports that the wrapper correlated the exact completion marker, required the selected profile and route snapshots to remain stable, and rejected unknown tool or reroute events. It reported no configured MCP servers and no tool item. The model and effort are settings observed in thread metadata; they do not attest to provider-side model execution. The owner reports removal of task-owned temporary captures and child process. No login or enrollment occurred, and no session history was deleted. Normal Codex startup, managed configuration, authentication refresh, and SQLite activity remain possible.
 
-This is a bounded host Codex route result. It does not test Jackin account discovery, workspace launch, or an Architect role request. Jackin discovery and role loading remain NOT RUN.
+This is an owner-reported bounded host Codex route result. It does not test Jackin account discovery, workspace launch, or an Architect role request. Jackin discovery and role loading remain NOT RUN.
 
 ## Owner
 
