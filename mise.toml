@@ -277,9 +277,10 @@ description = "Build the arm64 static JackinUsageFFI XCFramework"
 run = "cargo xtask desktop xcframework"
 
 [tasks.swift-package-native-ci]
-description = "CI gate for native SwiftPM package (xcframework then build/test)"
+description = "CI gate for native SwiftPM package (validate bindings before xcframework build/test)"
 run = '''
 set -euo pipefail
+mise run desktop-bindings-check
 mise run desktop-xcframework
 cd native && swift build && swift test --parallel
 '''
