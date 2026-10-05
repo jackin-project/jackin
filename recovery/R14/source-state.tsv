@@ -1,0 +1,7 @@
+path	kind	mode	dev	inode	size	mtime	content_sha256	link_target
+/private/tmp/jackin-ci-audit.wOxRJU/jackin/.git/config	admin-file	644	16777233	745530689	394	1790407289	6f54ac1361e08a6e0c360cebd1fa63fef66c49ebb23d1be5c4906c30ad32bb2e	-
+/private/tmp/jackin-ci-audit.wOxRJU/jackin/.git/index	admin-file	644	16777233	724193794	340796	1790110457	e68e2f898f43d038e0c6dd694ca4e45beb484587ec054b2c83cbb6cd2904a351	-
+/private/tmp/jackin-ci-audit.wOxRJU/jackin/.git/HEAD	ABSENT	-	-	-	-	-	-	-
+/private/tmp/jackin-ci-audit.wOxRJU/jackin/.git/packed-refs	ABSENT	-	-	-	-	-	-	-
+/private/tmp/jackin-ci-audit.wOxRJU/jackin/.github/CLAUDE.md	symlink	755	16777233	708922398	9	1790089999	a54ff182c7e8acf56acfd6e4b9c3ff41e2c41a31c9b211b2deb9df75d9a478f9	AGENTS.md
+/private/tmp/jackin-ci-audit.wOxRJU/jackin/CLAUDE.md	symlink	755	16777233	708922422	9	1790089999	a54ff182c7e8acf56acfd6e4b9c3ff41e2c41a31c9b211b2deb9df75d9a478f9	AGENTS.md

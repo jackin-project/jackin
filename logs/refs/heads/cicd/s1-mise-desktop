@@ -1,0 +1,6 @@
+0000000000000000000000000000000000000000 799deeef907a890771f868a348e30192ecc2560a Alexey Zhokhov <alexey@zhokhov.com> 1789948395 +0700	branch: Created from HEAD
+799deeef907a890771f868a348e30192ecc2560a 636276515c9768bf3ad55abc60dad20ccd96edd1 Alexey Zhokhov <alexey@zhokhov.com> 1789948395 +0700	commit: perf(ci): disable mise whole-toolset auto-install on desktop profiles
+636276515c9768bf3ad55abc60dad20ccd96edd1 b9d1d6e36b9d9d98db50b5019760f6e9b000abeb Alexey Zhokhov <alexey@zhokhov.com> 1789948982 +0700	commit: ci: regenerate ownership state after S1 slice (scan 3f777bdd->76f7f2ff)
+b9d1d6e36b9d9d98db50b5019760f6e9b000abeb 5d1ff90f645e657656b2e2c51cb649e98ec0ee7f Alexey Zhokhov <alexey@zhokhov.com> 1789951939 +0700	commit: docs(cicd): record C4 recurrence on #1017 Swift rerun + desktop baseline
+5d1ff90f645e657656b2e2c51cb649e98ec0ee7f 041a0a2c90bd9049331633010a690bcf3fea8b41 Alexey Zhokhov <alexey@zhokhov.com> 1789951939 +0700	merge origin/main: Merge made by the 'ort' strategy.
+041a0a2c90bd9049331633010a690bcf3fea8b41 17bf8abc24cf65a25c4691e4b94c0db9611d6db2 Alexey Zhokhov <alexey@zhokhov.com> 1789951994 +0700	commit: docs(cicd): record #1017 rerun-green + main-rebase regen semantics

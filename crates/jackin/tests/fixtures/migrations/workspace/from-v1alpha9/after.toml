@@ -1,5 +1,0 @@
-version = "v1alpha10"
-workdir = "/workspace/project"
-accounts = ["personal"]
-[account_bindings]
-claude = "personal"

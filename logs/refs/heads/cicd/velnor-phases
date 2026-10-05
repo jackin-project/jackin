@@ -1,0 +1,6 @@
+0000000000000000000000000000000000000000 f664f4d3efd52d74ad7abbd03207e748b3b789f1 Alexey Zhokhov <alexey@zhokhov.com> 1789968716 +0700	branch: Created from HEAD
+f664f4d3efd52d74ad7abbd03207e748b3b789f1 b07a6ecb384cb7876765c2a3c64975567e8efc3b Alexey Zhokhov <alexey@zhokhov.com> 1789968716 +0700	commit: docs(ci): record Velnor phase rollout evidence through PR-B merge
+b07a6ecb384cb7876765c2a3c64975567e8efc3b d1da55bf83f3a4ce0b9f2cbfb328aef79c895d6a Alexey Zhokhov <alexey@zhokhov.com> 1789969085 +0700	commit: feat(ci): adopt Velnor pin fff18da8 with phased rust validation
+d1da55bf83f3a4ce0b9f2cbfb328aef79c895d6a 27939e77fd1a95caa8e66a82350e09754960c8ce Alexey Zhokhov <alexey@zhokhov.com> 1789969545 +0700	commit: fix(ci): refresh generator state after template relocation
+27939e77fd1a95caa8e66a82350e09754960c8ce 484d6f129e82e747f5c08a7260b6322fabc09344 Alexey Zhokhov <alexey@zhokhov.com> 1789970719 +0700	commit: docs(ci): record PR-C rollout, state-digest lesson, deferred keep-list
+484d6f129e82e747f5c08a7260b6322fabc09344 d3c73e9babc89fb3bd1ae209ae2ca5a60427f19f Alexey Zhokhov <alexey@zhokhov.com> 1789978882 +0700	commit: docs(ci): post-merge verification evidence and goal matrix

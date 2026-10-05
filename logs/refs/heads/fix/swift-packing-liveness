@@ -1,0 +1,2 @@
+0000000000000000000000000000000000000000 ee1da0c64eff098a71d5badf181ae2560feb0f55 Alexey Zhokhov <alexey@zhokhov.com> 1789983256 +0700	branch: Created from origin/main
+ee1da0c64eff098a71d5badf181ae2560feb0f55 d618c15449d297a48f8be7f30327900482624b69 Alexey Zhokhov <alexey@zhokhov.com> 1789983572 +0700	commit: fix(ci): stream staticlib build ahead of boltffi pack

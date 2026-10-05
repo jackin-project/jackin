@@ -1,5 +1,0 @@
-{
-  "title": "Reactive daemon",
-  "defaultOpen": false,
-  "pages": ["jackin-daemon", "jackin-capsule", "(reactive-adapters)", "(host-integration)"]
-}

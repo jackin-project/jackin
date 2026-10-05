@@ -1,0 +1,6 @@
+fix(ci): retain workflow display labels
+
+Keep GitHub display titles separate from authoritative run names in diagnostics and fixtures.
+
+Co-authored-by: Codex <codex@openai.com>
+Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>

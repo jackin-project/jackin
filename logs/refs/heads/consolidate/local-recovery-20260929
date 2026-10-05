@@ -1,0 +1,7 @@
+0000000000000000000000000000000000000000 07e290f894eccfab785c698aafbaeeaa6e1c092d Alexey Zhokhov <alexey@zhokhov.com> 1790668961 +0700	branch: Created from refs/remotes/target/main
+07e290f894eccfab785c698aafbaeeaa6e1c092d 0d191fc56ca4810a1807c373613937dab5b6479c Alexey Zhokhov <alexey@zhokhov.com> 1790669749 +0700	commit: fix(capsule): grant Claude install symlink target
+0d191fc56ca4810a1807c373613937dab5b6479c 3fb6e16a9434fdd52c242645b055915f327231ff Alexey Zhokhov <alexey@zhokhov.com> 1790669879 +0700	commit: fix(ci): derive preview package scratch path
+3fb6e16a9434fdd52c242645b055915f327231ff 9c437fd2b0b9e88a265adab9fde26b5acb523745 Alexey Zhokhov <alexey@zhokhov.com> 1790672217 +0700	commit: fix(usage): parse HTTP-date Retry-After
+9c437fd2b0b9e88a265adab9fde26b5acb523745 77ab1c418f01d9a07a8ee5f9cd64394c339812c4 Alexey Zhokhov <alexey@zhokhov.com> 1790674173 +0700	commit: docs: repair current repository guidance
+77ab1c418f01d9a07a8ee5f9cd64394c339812c4 14f8d7e48ba5b3e28787a96176c8a2201d449454 Alexey Zhokhov <alexey@zhokhov.com> 1790674188 +0700	commit: fix(xtask): read canonical pull request template
+14f8d7e48ba5b3e28787a96176c8a2201d449454 0cc634433db81f4361ab7156e27d89adfb3957da Alexey Zhokhov <alexey@zhokhov.com> 1790674212 +0700	commit: fix(docs): bound static prerender concurrency
