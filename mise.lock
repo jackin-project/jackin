@@ -448,6 +448,11 @@ checksum = "sha256:90875cb1db7a1d797c311174d061728361e58fc70e3b62262a00635ac3b19
 url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-aarch64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317832112"
 
+[tools.hyperfine."platforms.linux-arm64-musl"]
+checksum = "sha256:90875cb1db7a1d797c311174d061728361e58fc70e3b62262a00635ac3b1997c"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317832112"
+
 [tools.hyperfine."platforms.linux-x64"]
 checksum = "sha256:63ad53934062118f5b0be11785e0bb1603d4b91667d1921f2fd8df9a8712040a"
 url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-unknown-linux-gnu.tar.gz"
@@ -874,6 +879,16 @@ checksum = "sha256:5302e480b01910fcda9071fcc5a64f0a7fce904965834a1e9ed065bc9638b
 url = "https://github.com/cpisciotta/xcbeautify/releases/download/3.2.1/xcbeautify-3.2.1-x86_64-unknown-linux-gnu.tar.xz"
 url_api = "https://api.github.com/repos/cpisciotta/xcbeautify/releases/assets/388373840"
 
+[tools.xcbeautify."platforms.linux-x64-musl"]
+checksum = "sha256:5302e480b01910fcda9071fcc5a64f0a7fce904965834a1e9ed065bc9638bfe9"
+url = "https://github.com/cpisciotta/xcbeautify/releases/download/3.2.1/xcbeautify-3.2.1-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/cpisciotta/xcbeautify/releases/assets/388373840"
+
+[tools.xcbeautify."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:5302e480b01910fcda9071fcc5a64f0a7fce904965834a1e9ed065bc9638bfe9"
+url = "https://github.com/cpisciotta/xcbeautify/releases/download/3.2.1/xcbeautify-3.2.1-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/cpisciotta/xcbeautify/releases/assets/388373840"
+
 [tools.xcbeautify."platforms.macos-arm64"]
 checksum = "sha256:ed32972e41bc3aa19588f8b0f4a0209ef70c663ad60bbf4ad84a2de73355d637"
 url = "https://github.com/cpisciotta/xcbeautify/releases/download/3.2.1/xcbeautify-3.2.1-arm64-apple-macosx.zip"
@@ -923,6 +938,7 @@ url = "https://ziglang.org/download/0.16.0/zig-aarch64-linux-0.16.0.tar.xz"
 [tools.zig."platforms.linux-x64"]
 checksum = "sha256:70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
 url = "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+provenance = "minisign"
 
 [tools.zig."platforms.linux-x64-baseline"]
 checksum = "sha256:70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
