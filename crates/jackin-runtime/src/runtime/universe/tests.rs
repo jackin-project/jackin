@@ -502,6 +502,159 @@ async fn exit_claim_does_not_consume_a_pending_launch_boundary() {
     assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
 }
 
+#[cfg(unix)]
+fn wait_for_fixture_path(path: &Path, message: &str) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while !path.exists() {
+        assert!(std::time::Instant::now() < deadline, "{message}");
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "bounded process-fixture polling runs on an ordinary synchronous test thread"
+        )]
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[cfg(unix)]
+struct PendingOwnerProcess(std::process::Child);
+
+#[cfg(unix)]
+impl Drop for PendingOwnerProcess {
+    fn drop(&mut self) {
+        let _kill_result = self.0.kill();
+        let _wait_result = self.0.wait();
+    }
+}
+
+#[cfg(unix)]
+fn spawn_pending_owner(root: &Path) -> PendingOwnerProcess {
+    let executable = std::env::current_exe().unwrap();
+    let child = std::process::Command::new(executable)
+        .args([
+            "--exact",
+            "runtime::universe::tests::pending_owner_process_worker",
+            "--nocapture",
+        ])
+        .env("JACKIN_TEST_PENDING_OWNER_ROOT", root)
+        .spawn()
+        .unwrap();
+    PendingOwnerProcess(child)
+}
+
+#[cfg(unix)]
+fn only_pending_claim(authority: &Path) -> PathBuf {
+    let mut entries = std::fs::read_dir(pending_dir(authority)).unwrap();
+    let path = entries.next().unwrap().unwrap().path();
+    assert!(entries.next().is_none(), "expected one pending claim");
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn pending_owner_process_worker() {
+    let Some(root) = std::env::var_os("JACKIN_TEST_PENDING_OWNER_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(root);
+    let paths = JackinPaths::for_tests(&root);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let claim = runtime.block_on(claim_entry(&paths, &FakeDockerClient::default()));
+    assert!(claim.pending_file.is_some());
+    std::fs::write(root.join("pending-owner-ready"), "").unwrap();
+    wait_for_fixture_path(
+        &root.join("pending-owner-release"),
+        "parent did not release the pending owner",
+    );
+    drop(claim);
+}
+
+#[cfg(unix)]
+#[test]
+fn live_pending_owner_is_not_pruned_or_claimed_for_exit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut owner = spawn_pending_owner(tmp.path());
+    wait_for_fixture_path(
+        &tmp.path().join("pending-owner-ready"),
+        "pending owner did not create its claim",
+    );
+
+    let directory = authority(&paths);
+    let pending = only_pending_claim(&directory);
+    let key = pending.file_name().unwrap().to_str().unwrap();
+    let probe = super::super::coordination::open_state_in_namespace(
+        &pending_dir(&directory),
+        key,
+        false,
+    )
+    .unwrap();
+    assert!(
+        matches!(probe.try_lock(), Err(std::fs::TryLockError::WouldBlock)),
+        "live owner must hold its pending lease"
+    );
+    drop(probe);
+
+    let observed_generation = generation(&directory).unwrap();
+    {
+        let _lock = boundary_lock(&directory).unwrap();
+        prune_stale_pending_claims(&directory).unwrap();
+    }
+    assert!(pending.exists(), "live pending token must be preserved");
+    assert_eq!(take_exit_claim(&paths), ExitClaim::Missing);
+    assert_eq!(generation(&directory).unwrap(), observed_generation);
+
+    std::fs::write(tmp.path().join("pending-owner-release"), "").unwrap();
+    assert!(owner.0.wait().unwrap().success());
+    assert!(!pending.exists(), "owner drop must remove its lease");
+    assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn killed_pending_owner_is_recovered_before_exit_claim() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut owner = spawn_pending_owner(tmp.path());
+    wait_for_fixture_path(
+        &tmp.path().join("pending-owner-ready"),
+        "pending owner did not create its claim",
+    );
+
+    let directory = authority(&paths);
+    let pending = only_pending_claim(&directory);
+    let key = pending.file_name().unwrap().to_str().unwrap();
+    let probe = super::super::coordination::open_state_in_namespace(
+        &pending_dir(&directory),
+        key,
+        false,
+    )
+    .unwrap();
+    assert!(
+        matches!(probe.try_lock(), Err(std::fs::TryLockError::WouldBlock)),
+        "claim should be owned before killing its process"
+    );
+    drop(probe);
+    let observed_generation = generation(&directory).unwrap();
+
+    owner.0.kill().unwrap();
+    assert!(!owner.0.wait().unwrap().success());
+    assert!(pending.exists(), "SIGKILL must leave the pending inode");
+    assert_eq!(generation(&directory).unwrap(), observed_generation);
+
+    assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
+    assert!(!pending.exists(), "next exit must reclaim the orphan token");
+    assert_eq!(count_pending_claims(&directory), Some(0));
+
+    let next_claim = claim_entry(&paths, &FakeDockerClient::default()).await;
+    assert_eq!(next_claim.start_kind(), StartKind::FreshConstruct);
+    drop(next_claim);
+    assert!(matches!(take_exit_claim(&paths), ExitClaim::Claimed { .. }));
+}
+
 #[test]
 fn entry_claim_process_worker() {
     let Some(root) = std::env::var_os("JACKIN_TEST_ENTRY_PROCESS_ROOT") else {

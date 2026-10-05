@@ -208,12 +208,23 @@ pub enum StartKind {
 /// Pending claims cover the short window before a role container exists. They
 /// prevent concurrent launches from both playing the two-screen intro, and let
 /// an early failed launch release only its own pending entry. The claim owns
-/// its pending file and removes it when the launch ends, including early errors.
-#[derive(Debug, PartialEq, Eq)]
+/// its pending file and holds an advisory lease on it until activation or early
+/// release. Process death drops the lease so the next boundary operation can
+/// reclaim the orphaned token.
+#[derive(Debug)]
 pub struct EntryClaim {
     kind: StartKind,
     pending_file: Option<PathBuf>,
+    _pending_lease: std::sync::Mutex<Option<std::fs::File>>,
 }
+
+impl PartialEq for EntryClaim {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.pending_file == other.pending_file
+    }
+}
+
+impl Eq for EntryClaim {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ExitClaim {
@@ -232,6 +243,13 @@ impl EntryClaim {
         Self {
             kind,
             pending_file: None,
+            _pending_lease: std::sync::Mutex::new(None),
+        }
+    }
+
+    fn release_pending_lease(&self) {
+        if let Ok(mut lease) = self._pending_lease.lock() {
+            drop(lease.take());
         }
     }
 
@@ -248,7 +266,7 @@ impl EntryClaim {
                 std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid entry claim path")
             })?;
         let pending_file = pending_file.clone();
-        boundary_work(authority, move |authority| {
+        let result = boundary_work(authority, move |authority| {
             let _lock = boundary_lock(authority)?;
             if !pending_exists(&pending_file)? {
                 return Ok(());
@@ -260,7 +278,11 @@ impl EntryClaim {
                 Err(error) => Err(error),
             }
         })
-        .await
+        .await;
+        if result.is_ok() {
+            self.release_pending_lease();
+        }
+        result
     }
 
     async fn release_if_idle(&self, docker: &impl DockerApi) {
@@ -271,7 +293,7 @@ impl EntryClaim {
             return;
         };
         let pending_file = pending_file.clone();
-        let Ok(Some(observed_generation)) = boundary_work(authority, move |authority| {
+        let observed_generation = boundary_work(authority, move |authority| {
             let _lock = boundary_lock(authority)?;
             if !pending_exists(&pending_file)? {
                 return Ok(None);
@@ -280,9 +302,17 @@ impl EntryClaim {
             drop(pending_remove(&pending_file));
             Ok(Some(generation))
         })
-        .await
-        else {
-            return;
+        .await;
+        let observed_generation = match observed_generation {
+            Ok(Some(generation)) => {
+                self.release_pending_lease();
+                generation
+            }
+            Ok(None) => {
+                self.release_pending_lease();
+                return;
+            }
+            Err(_) => return,
         };
 
         let Ok(running) = super::discovery::list_running_agent_names(docker).await else {
@@ -305,6 +335,7 @@ fn release_marker_if_unchanged(authority: &Path, observed_generation: &str) {
         return;
     };
     if generation(authority).ok().flatten().as_deref() == Some(observed_generation)
+        && prune_stale_pending_claims(authority).is_ok()
         && !has_pending_claims(authority)
         && advance_generation(authority).is_ok()
     {
@@ -385,23 +416,27 @@ fn register_pending_entry_locked(
     authority: &Path,
     allow_fresh: bool,
 ) -> std::io::Result<EntryClaim> {
+    prune_stale_pending_claims(authority)?;
     let token = claim_token();
-    let wrote_claim = write_pending_claim(authority, &token);
+    let pending_lease = write_pending_claim(authority, &token);
     let pending_count = count_pending_claims(authority).unwrap_or(usize::MAX);
-    let kind = if allow_fresh && wrote_claim && pending_count <= 1 {
+    let kind = if allow_fresh && pending_lease.is_some() && pending_count <= 1 {
         StartKind::FreshConstruct
     } else {
         StartKind::ResumeExisting
     };
     if let Err(error) = mark_start_locked(authority, kind) {
-        if wrote_claim {
+        if pending_lease.is_some() {
             drop(state_remove(&pending_dir(authority), &token));
         }
         return Err(error);
     }
     Ok(EntryClaim {
         kind,
-        pending_file: wrote_claim.then(|| pending_path(authority, &token)),
+        pending_file: pending_lease
+            .as_ref()
+            .map(|_| pending_path(authority, &token)),
+        _pending_lease: std::sync::Mutex::new(pending_lease),
     })
 }
 
@@ -438,10 +473,10 @@ pub async fn release_entry_if_idle(docker: &impl DockerApi, claim: &EntryClaim) 
     claim.release_if_idle(docker).await;
 }
 
-fn write_pending_claim(authority: &Path, token: &str) -> bool {
+fn write_pending_claim(authority: &Path, token: &str) -> Option<std::fs::File> {
     let dir = pending_dir(authority);
     let Ok(parent) = super::coordination::open_directory_in_namespace(&dir, true) else {
-        return false;
+        return None;
     };
     #[cfg(unix)]
     {
@@ -458,20 +493,73 @@ fn write_pending_claim(authority: &Path, token: &str) -> bool {
             flags,
             nix::sys::stat::Mode::from_bits_truncate(0o600),
         ) else {
-            return false;
+            return None;
         };
         let mut file = std::fs::File::from(fd);
+        if file.lock().is_err() {
+            let _ignored_unlink_result =
+                nix::unistd::unlinkat(&parent, token, nix::unistd::UnlinkatFlags::NoRemoveDir);
+            return None;
+        }
         if file.write_all(now_millis().to_string().as_bytes()).is_err() {
             let _ignored_unlink_result =
                 nix::unistd::unlinkat(&parent, token, nix::unistd::UnlinkatFlags::NoRemoveDir);
-            return false;
+            return None;
         }
-        true
+        Some(file)
     }
     #[cfg(not(unix))]
     {
         let _ = (parent, token);
-        false
+        None
+    }
+}
+
+/// Reclaim tokens whose owning process no longer holds its advisory lease.
+/// Call only while holding the permanent boundary lock.
+fn prune_stale_pending_claims(authority: &Path) -> std::io::Result<()> {
+    let directory = pending_dir(authority);
+    let parent = match super::coordination::open_directory_in_namespace(&directory, false) {
+        Ok(parent) => parent,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    #[cfg(unix)]
+    {
+        let mut entries = nix::dir::Dir::from_fd(parent.try_clone()?.into())?;
+        for entry in entries.iter() {
+            let entry = entry?;
+            let bytes = entry.file_name().to_bytes();
+            if matches!(bytes, b"." | b"..") {
+                continue;
+            }
+            let key = std::str::from_utf8(bytes).map_err(std::io::Error::other)?;
+            let file = match super::coordination::open_state_in_namespace(&directory, key, false) {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            match file.try_lock() {
+                Ok(()) => {
+                    nix::unistd::unlinkat(
+                        &parent,
+                        key,
+                        nix::unistd::UnlinkatFlags::NoRemoveDir,
+                    )?;
+                }
+                Err(std::fs::TryLockError::WouldBlock) => {}
+                Err(std::fs::TryLockError::Error(error)) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = parent;
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "pending claim recovery requires Unix file locks",
+        ))
     }
 }
 
@@ -592,6 +680,10 @@ fn take_exit_claim_if_unchanged(authority: &Path, observed: Option<&str>) -> Exi
 }
 
 fn take_exit_claim_locked(authority: &Path) -> ExitClaim {
+    if prune_stale_pending_claims(authority).is_err() {
+        record_exit_claim_recovery();
+        return ExitClaim::Missing;
+    }
     if has_pending_claims(authority) {
         return ExitClaim::Missing;
     }
