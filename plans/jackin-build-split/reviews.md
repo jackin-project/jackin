@@ -202,6 +202,8 @@ The bounded regression proposal mutates one current frame's salt and checksum to
 
 The architectural recommendation is to use SQLite's normal recovery and a consistent backup/read transaction, then publish only a complete bounded snapshot. Fail closed on snapshot errors or timeout. This is a design recommendation, not an accepted implementation. Primary references: [SQLite hot journals](https://www.sqlite.org/lockingv3.html#hot_journals), [SQLite atomic commit](https://www.sqlite.org/atomiccommit.html#hot_rollback_journals), [WAL format](https://www.sqlite.org/fileformat.html#walformat), and [SQLite backup API](https://www.sqlite.org/c3ref/backup_finish.html). Exact-head review and implementation tests remain pending.
 
+The owner has prepared a corrected design packet at `/tmp/jackin-pr1111-omp-capture-design-v2.tar`, SHA-256 `1695720b664d89e477a53a1b86b700ea24edc0f7ee49d12bf3c43c9be41ad7b0`, bound to PR head `a64af27dbefdf4d9239ad9e94209cb2416a4dbc4` / tree `5f0286807538305a57bd669c9a6a4a66acc8bbdd`. The producer says it maps current discovery/provisioning consumers, Turso policy and dependency needs, both findings, fixture hashes, ownership, and fail-closed tests. Independent design review is pending; no source change or fixture execution is claimed.
+
 ### PR #1111 §12.3 account coverage inventory
 
 The source-only inventory covers the twelve requested scenarios: missing credential source; invalid credential structure; unsupported provider content; duplicate source path; distinct accounts; permission failure; expired credentials; concurrent refresh; persisted account selection after reopen; slow endpoints; stale-cache replacement; and root plus explicit-home source precedence.
