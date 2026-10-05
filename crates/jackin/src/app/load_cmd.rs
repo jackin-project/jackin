@@ -145,14 +145,8 @@ pub(super) async fn handle_load(
             role_branch.as_deref(),
         )
         .await?;
-        let plan_identity = DryRunPlan {
-            agent: selected_agent,
-            identity: &identity,
-            overrides: DryRunLaunchOverrides {
-                model: model.as_deref(),
-                effort,
-            },
-        };
+        let plan_identity =
+            dry_run_plan_with_overrides(selected_agent, &identity, model.as_deref(), effort);
         return print_dry_run_plan(
             &class,
             &resolved_workspace,
@@ -813,10 +807,29 @@ struct DryRunPlan<'a> {
     overrides: DryRunLaunchOverrides<'a>,
 }
 
+fn dry_run_plan_with_overrides<'a>(
+    agent: jackin_core::Agent,
+    identity: &'a runtime::DryRunIdentity,
+    model: Option<&'a str>,
+    effort: Option<jackin_core::ReasoningEffort>,
+) -> DryRunPlan<'a> {
+    DryRunPlan {
+        agent,
+        identity,
+        overrides: DryRunLaunchOverrides::new(model, effort),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct DryRunLaunchOverrides<'a> {
     model: Option<&'a str>,
     effort: Option<jackin_core::ReasoningEffort>,
+}
+
+impl<'a> DryRunLaunchOverrides<'a> {
+    const fn new(model: Option<&'a str>, effort: Option<jackin_core::ReasoningEffort>) -> Self {
+        Self { model, effort }
+    }
 }
 
 /// Print the resolved load plan for `--dry-run` and exit without launching.
