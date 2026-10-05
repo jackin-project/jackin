@@ -559,7 +559,7 @@ fn release_workflow_invokes_canonical_mise_tasks() {
     let mise = repo_text("mise.toml");
     let release_tools = task_block(&mise, "desktop-release-tools");
     assert!(
-        release_tools.contains("mise install --locked rust cargo:boltffi_cli xcodegen"),
+        release_tools.contains("mise install --locked rust github:boltffi/boltffi xcodegen"),
         "release tool task must explicitly install its locked closure"
     );
     assert_subsequence(

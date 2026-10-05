@@ -984,7 +984,7 @@ fn generate_bindings_into(
     }
 
     let boltffi = which("boltffi").context(
-        "boltffi not on PATH; install via mise (`mise install`) — see mise.toml cargo:boltffi_cli",
+        "boltffi not on PATH; install via mise (`mise install`) — see mise.toml github:boltffi/boltffi",
     )?;
 
     progress(format!(
@@ -1095,7 +1095,7 @@ fn build_xcframework(root: &Path) -> Result<()> {
     // staging inputs. It also regenerates Swift, so normalize those outputs
     // after packing to keep the committed bindings deterministic.
     let boltffi = which("boltffi").context(
-        "boltffi not on PATH; install via mise (`mise install`) — see mise.toml cargo:boltffi_cli",
+        "boltffi not on PATH; install via mise (`mise install`) — see mise.toml github:boltffi/boltffi",
     )?;
     let mut pack = cmd::command(&boltffi);
     pack.current_dir(root.join(FFI_CRATE_DIR))
