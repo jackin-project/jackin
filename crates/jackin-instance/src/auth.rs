@@ -4620,7 +4620,6 @@ fn capture_omp_database_snapshot(
     )
 }
 
-#[cfg(unix)]
 #[derive(Debug, Eq, PartialEq)]
 struct OmpSourcePair {
     database: Vec<u8>,
