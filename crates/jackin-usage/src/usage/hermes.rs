@@ -188,6 +188,7 @@ pub(crate) fn hermes_view(
             username: None,
             plan_label: subscription.and_then(|subscription| subscription.tier_name.clone()),
             credential_origin: Some(format!("Hermes profile '{}'", runtime.profile)),
+            account_capability: None,
         },
         buckets,
         status,

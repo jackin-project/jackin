@@ -362,7 +362,10 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         DialogAction::RevealHostPath("/Users/operator/Documents/report.txt".into()),
         DialogAction::SwitchUsageProvider {
             provider_label: "Claude".into(),
-            account_id: "test-tab-claude".into(),
+            capability: jackin_protocol::usage_broker::UsageAccountCapability {
+                account_id: "test-tab-claude".into(),
+                surface_id: "claude".into(),
+            },
         },
         DialogAction::Dismiss,
         DialogAction::Redraw,

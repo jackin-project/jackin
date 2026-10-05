@@ -43,6 +43,10 @@ impl UsageCache {
                 )
             }
         });
+        // The generation capability is the authority. Provider adapters may
+        // only know presentation data, so stamp the broker identity here
+        // before the view enters the cache or durable coordinator state.
+        view.account.account_capability = Some(state.capability.clone());
         if let Some(error) = &state.error {
             view.last_error = Some(error.message.clone());
             view.status = if view.buckets.is_empty() {
@@ -88,8 +92,10 @@ impl UsageCache {
             let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
             view.focused_agent = Some(target.agent.clone());
             view.focused_provider = target.provider.clone();
+            view.account.account_capability = Some(target.capability.clone());
             CachedUsage { view }
         });
+        cached.view.account.account_capability = Some(target.capability.clone());
         cached.view.last_error = Some(error.message.clone());
         cached.view.status = if cached.view.buckets.is_empty() {
             UsageSnapshotStatus::Error
@@ -173,11 +179,10 @@ pub(crate) fn cached_refreshing_view(
 }
 
 pub(crate) fn mark_active_tab(view: &mut FocusedUsageView) {
-    // Navigation keys on the stable canonical account id, never on the
-    // display label: same-provider accounts share a label but never an id.
-    let focused = usage_account_tab_id(&view.account.provider_label, &view.account.account_label);
+    // Navigation keys on the exact broker capability, never on display text.
+    let focused = view.account.account_capability.as_ref();
     for tab in &mut view.tabs {
-        tab.active = tab.id == focused;
+        tab.active = focused.is_some() && tab.account_capability.as_ref() == focused;
     }
 }
 
@@ -302,6 +307,7 @@ pub(crate) fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
             username: input.username,
             plan_label: input.plan_label,
             credential_origin: input.credential_origin,
+            account_capability: None,
         },
         buckets: input.buckets,
         status: input.status,
@@ -524,32 +530,32 @@ pub(crate) fn preserve_cached_quota_on_failed_refresh(
     );
 }
 
-/// Stable canonical account id keying usage tabs: the same
-/// [`account_key_hash`] the durable snapshot store uses as its stable
-/// multi-account id, so tabs, overview rows, and stored snapshots correlate.
-/// Same-provider accounts share a display label but never an id.
-pub(crate) fn usage_account_tab_id(provider_label: &str, account_label: &str) -> String {
-    account_key_hash(provider_label, account_label)
+/// Stable tab key copied from the canonical capability. Presentation labels
+/// are deliberately absent from this function.
+pub(crate) fn usage_account_tab_id(
+    capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+) -> String {
+    capability.account_id.clone()
 }
 
-/// One tab per distinct admitted account, keyed by
-/// [`usage_account_tab_id`]. Duplicate snapshots for one account collapse to
-/// the newest fetch; the strip sorts by display label, then account, then id,
-/// so any provider (Cursor, `OpenRouter`, Copilot, Antigravity, Gemini,
-/// `OpenCode`, omp, Hermes, …) tabs without a hardcoded surface list. Empty
-/// input stays empty.
+/// One tab per distinct admitted capability. Duplicate snapshots for one
+/// capability collapse to the newest fetch; views without a capability are not
+/// routable accounts and therefore do not enter the tab strip.
 pub(crate) fn provider_tabs(views: &[&FocusedUsageView]) -> Vec<UsageProviderTab> {
-    let mut keyed: Vec<(String, &FocusedUsageView)> = views
+    let mut keyed: Vec<(
+        &jackin_protocol::usage_broker::UsageAccountCapability,
+        &FocusedUsageView,
+    )> = views
         .iter()
-        .map(|view| {
-            (
-                usage_account_tab_id(&view.account.provider_label, &view.account.account_label),
-                *view,
-            )
+        .filter_map(|view| {
+            view.account
+                .account_capability
+                .as_ref()
+                .map(|capability| (capability, *view))
         })
         .collect();
-    // Newest fetch first per account, so `dedup_by` (which keeps the first of
-    // each run) keeps the latest snapshot; full ties are interchangeable.
+    // Newest fetch first per capability, so `dedup_by` keeps the latest
+    // snapshot without ever comparing display labels.
     keyed.sort_by(|left, right| {
         left.0
             .cmp(&right.0)
@@ -558,7 +564,7 @@ pub(crate) fn provider_tabs(views: &[&FocusedUsageView]) -> Vec<UsageProviderTab
     keyed.dedup_by(|left, right| left.0 == right.0);
     let mut tabs: Vec<UsageProviderTab> = keyed
         .into_iter()
-        .map(|(id, view)| account_tab(id, view))
+        .map(|(_, view)| account_tab(view))
         .collect();
     tabs.sort_by(|left, right| {
         left.label
@@ -580,9 +586,15 @@ pub(crate) fn enrich_provider_tabs(
     view.tabs = provider_tabs(&views);
 }
 
-fn account_tab(id: String, view: &FocusedUsageView) -> UsageProviderTab {
+fn account_tab(view: &FocusedUsageView) -> UsageProviderTab {
+    let capability = view
+        .account
+        .account_capability
+        .clone()
+        .expect("provider tab requires canonical account capability");
     UsageProviderTab {
-        id,
+        id: usage_account_tab_id(&capability),
+        account_capability: Some(capability),
         label: account_tab_label(view),
         status_label: usage_tab_status_label(view),
         account_label: compact_account_identity(&view.account.account_label).to_owned(),
@@ -634,19 +646,16 @@ pub(crate) fn account_tab_label_for_parts(
 }
 
 impl UsageCache {
-    /// Focused snapshot for an exact canonical account id (tab selection).
-    /// `None` when no admitted snapshot carries the id; the caller falls back
-    /// to label resolution only for empty ids (old payloads).
-    pub fn focused_snapshot_for_account_id(&self, account_id: &str) -> Option<FocusedUsageView> {
+    /// Focused snapshot for an exact canonical capability (tab selection).
+    /// `None` when no admitted snapshot carries that authority.
+    pub fn focused_snapshot_for_account_capability(
+        &self,
+        capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+    ) -> Option<FocusedUsageView> {
         let mut view = self
             .snapshots
             .values()
-            .filter(|cached| {
-                usage_account_tab_id(
-                    &cached.view.account.provider_label,
-                    &cached.view.account.account_label,
-                ) == account_id
-            })
+            .filter(|cached| cached.view.account.account_capability.as_ref() == Some(capability))
             .max_by_key(|cached| cached.view.fetched_at_epoch)
             .map(|cached| cached.view.clone())?;
         refresh_cached_updated_label(&mut view, now_epoch());
@@ -654,35 +663,6 @@ impl UsageCache {
         mark_active_tab(&mut view);
         Some(view)
     }
-
-    /// Broker-namespace account id behind an exact tab id, recovered from the
-    /// owning cache entry's broker key. `None` for unknown ids and for
-    /// non-broker entries (legacy keys carry no capability).
-    pub fn broker_account_id_for_tab_id(&self, tab_id: &str) -> Option<String> {
-        self.snapshots
-            .iter()
-            .filter(|(_, cached)| {
-                usage_account_tab_id(
-                    &cached.view.account.provider_label,
-                    &cached.view.account.account_label,
-                ) == tab_id
-            })
-            .filter_map(|(key, cached)| {
-                broker_account_id_from_cache_key(key).map(|id| (cached.view.fetched_at_epoch, id))
-            })
-            .max_by_key(|(fetched_at_epoch, _)| *fetched_at_epoch)
-            .map(|(_, id)| id)
-    }
-}
-
-/// Parse the broker account id out of a broker cache key
-/// (`{base}:account-id-v1:{surface_id}:{account_id}`, built by
-/// `usage_cache_key_for_broker_account`). Surface ids are closed colon-free
-/// tokens, so the first colon after the marker splits the pair.
-fn broker_account_id_from_cache_key(key: &str) -> Option<String> {
-    let (_, rest) = key.split_once(":account-id-v1:")?;
-    let (surface_id, account_id) = rest.split_once(':')?;
-    (!surface_id.is_empty() && !account_id.is_empty()).then(|| account_id.to_owned())
 }
 
 /// Freshness + source tag for the Overview row, e.g. "fresh · provider" or

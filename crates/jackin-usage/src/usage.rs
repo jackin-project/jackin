@@ -12,7 +12,7 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
-use jackin_core::{account_key_hash, container_paths};
+use jackin_core::container_paths;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::future::Future;
@@ -381,9 +381,17 @@ impl UsageCache {
         if view.focused_provider.is_none() {
             view.focused_provider = focused_provider.map(str::to_owned);
         }
-        let cache_key = stable_cache_account_label(&view.account.account_label)
-            .map(|_| usage_cache_key_for_view(agent, focused_provider, &view))
-            .or_else(|| cached_usage_key_for_target(&self.snapshots, agent, focused_provider))
+        // Test/fixture injection may carry the same broker authority as a
+        // live generation. Preserve it exactly; a presentation-only fixture
+        // gets the surface scope and cannot invent an account identity from
+        // its display label.
+        let cache_key = view
+            .account
+            .account_capability
+            .as_ref()
+            .map(|capability| {
+                usage_cache_key_for_broker_account(agent, focused_provider, capability)
+            })
             .unwrap_or_else(|| canonical_usage_cache_key(agent, focused_provider));
         self.snapshots.insert(cache_key, CachedUsage { view });
     }
@@ -404,6 +412,7 @@ impl UsageCache {
         if view.focused_provider.is_none() {
             view.focused_provider = focused_provider.map(str::to_owned);
         }
+        view.account.account_capability = Some(capability.clone());
         let cache_key = usage_cache_key_for_broker_account(agent, focused_provider, capability);
         self.snapshots.insert(cache_key, CachedUsage { view });
     }
@@ -510,14 +519,18 @@ impl UsageCache {
             return cached_refreshing_view(agent, focused_provider, now);
         };
         if !capability_matches_surface(agent, focused_provider, capability) {
-            return cached_unavailable_view(agent, focused_provider, now);
+            let mut view = cached_unavailable_view(agent, focused_provider, now);
+            view.account.account_capability = Some(capability.clone());
+            return view;
         }
         if let Some(view) =
             self.cached_focused_usage_view_for_capability(agent, focused_provider, capability)
         {
             return view;
         }
-        cached_refreshing_view(agent, focused_provider, now)
+        let mut view = cached_refreshing_view(agent, focused_provider, now);
+        view.account.account_capability = Some(capability.clone());
+        view
     }
 
     pub(crate) fn cached_focused_usage_view(
@@ -588,27 +601,6 @@ pub(crate) fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&s
     surface.label().to_owned()
 }
 
-fn usage_cache_key_for_view(
-    agent: &str,
-    focused_provider: Option<&str>,
-    view: &FocusedUsageView,
-) -> String {
-    let base = canonical_usage_cache_key(agent, focused_provider);
-    let Some(label) = stable_cache_account_label(&view.account.account_label) else {
-        return base;
-    };
-    let surface = resolve_surface(agent, focused_provider);
-    let surface_id = surface.id().unwrap_or(agent);
-    let evidence = format!(
-        "usage-cache-account-v1:{}:{}",
-        length_prefixed(surface_id),
-        length_prefixed(&label),
-    );
-    let hash = account_key_hash("usage-cache-account-v1", &evidence);
-    let hash = hash.strip_prefix("sha256:").unwrap_or(&hash);
-    format!("{base}:account-{hash}")
-}
-
 fn usage_cache_key_for_broker_account(
     agent: &str,
     focused_provider: Option<&str>,
@@ -620,24 +612,6 @@ fn usage_cache_key_for_broker_account(
         capability.surface_id,
         capability.account_id,
     )
-}
-
-fn stable_cache_account_label(label: &str) -> Option<String> {
-    let label = label.trim();
-    if label.is_empty()
-        || label.eq_ignore_ascii_case("account unavailable")
-        || label.eq_ignore_ascii_case("unknown")
-        || label.eq_ignore_ascii_case("current host login")
-        || label.eq_ignore_ascii_case("refreshing")
-    {
-        None
-    } else {
-        Some(label.to_lowercase())
-    }
-}
-
-fn length_prefixed(value: &str) -> String {
-    format!("{}:{value}", value.len())
 }
 
 fn cache_view_matches_target(
@@ -662,7 +636,7 @@ fn cache_view_matches_target(
 
 fn cache_key_matches_target(key: &str, agent: &str, focused_provider: Option<&str>) -> bool {
     let base = canonical_usage_cache_key(agent, focused_provider);
-    key == base || key.starts_with(&format!("{base}:account-"))
+    key == base || key.starts_with(&format!("{base}:account-id-v1:"))
 }
 
 fn cached_usage_for_target<'a>(

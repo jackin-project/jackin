@@ -431,6 +431,7 @@ fn fixture_snapshot_round_trip_via_bridge() {
                 username: None,
                 plan_label: Some("Pro 20x".to_owned()),
                 credential_origin: None,
+                account_capability: None,
             },
             buckets: vec![
                 QuotaBucketView {
@@ -523,6 +524,7 @@ fn overview_rows_and_format_prefs_round_trip() {
                 username: None,
                 plan_label: None,
                 credential_origin: None,
+                account_capability: None,
             },
             buckets: vec![QuotaBucketView {
                 label: "Session".to_owned(),
@@ -560,6 +562,7 @@ fn overview_rows_and_format_prefs_round_trip() {
                 username: None,
                 plan_label: None,
                 credential_origin: None,
+                account_capability: None,
             },
             buckets: vec![QuotaBucketView {
                 label: "Session".to_owned(),

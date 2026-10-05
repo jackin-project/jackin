@@ -255,6 +255,7 @@ pub(crate) fn muse_view(
             username: None,
             plan_label: observation.and_then(|observation| observation.tier.clone()),
             credential_origin: Some("Muse login · auth.json identity".to_owned()),
+            account_capability: None,
         },
         buckets,
         status,

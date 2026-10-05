@@ -8,6 +8,7 @@ use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
     UsageSource,
 };
+use jackin_protocol::usage_broker::UsageAccountCapability;
 
 use super::*;
 
@@ -21,6 +22,7 @@ fn usage_view() -> FocusedUsageView {
             username: None,
             plan_label: Some("Pro 20x".to_owned()),
             credential_origin: None,
+            account_capability: None,
         },
         buckets: vec![
             QuotaBucketView {
@@ -80,6 +82,7 @@ fn provider_usage_view(
             username: None,
             plan_label: plan.map(str::to_owned),
             credential_origin: None,
+            account_capability: None,
         },
         buckets: vec![QuotaBucketView {
             used_money: None,
@@ -193,7 +196,7 @@ fn repeated_writes_reuse_cached_connection() {
     assert_eq!(session.remaining_percent, Some(21));
 }
 
-/// Opening a pre-v4 store (a table missing the 10 columns
+/// Opening a pre-v5 store (a table missing the 11 columns
 /// `ensure_account_snapshot_columns` adds) must ALTER them in and preserve
 /// existing rows with the declared defaults. Every other test starts from a
 /// fresh DB where the `CREATE TABLE` already has all columns, so the ALTER loop
@@ -261,7 +264,7 @@ fn schema_migration_adds_columns_to_pre_v4_table() {
     assert!(rows.iter().any(|r| r.account_key_hash != "sha256:legacy"));
     assert_eq!(
         schema_version(&db).expect("schema version"),
-        Some("4".to_owned())
+        Some("5".to_owned())
     );
 }
 
@@ -593,6 +596,87 @@ fn same_provider_accounts_keep_distinct_store_tabs() {
 }
 
 #[test]
+fn canonical_capabilities_survive_same_label_snapshot_round_trip() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("snapshots.db");
+    let now = 1_781_185_680;
+    let capability_a = UsageAccountCapability {
+        account_id: "broker-claude-a".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let capability_b = UsageAccountCapability {
+        account_id: "broker-claude-b".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let mut account_a = provider_usage_view(
+        "Claude",
+        "same@example.com",
+        Some("Max"),
+        "Session",
+        40,
+        now,
+    );
+    account_a.account.account_capability = Some(capability_a.clone());
+    let mut account_b = account_a.clone();
+    account_b.account.account_capability = Some(capability_b.clone());
+    account_b.buckets[0].remaining_percent = Some(60);
+
+    store_usage_snapshots(&db, &[account_a, account_b]).expect("store same-label snapshots");
+
+    let rows = stored_account_snapshots(&db).expect("read same-label snapshots");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows.iter()
+            .map(|row| (
+                row.account_key_hash.as_str(),
+                row.capability_surface_id.as_deref()
+            ))
+            .collect::<HashSet<_>>(),
+        HashSet::from([
+            ("broker-claude-a", Some("claude")),
+            ("broker-claude-b", Some("claude")),
+        ])
+    );
+
+    let views = load_all_account_usage_views(&db, now).expect("rebuild stored accounts");
+    assert_eq!(views.len(), 2);
+    let capabilities = views
+        .iter()
+        .map(|stored| stored.view.account.account_capability.clone())
+        .collect::<Vec<_>>();
+    assert!(capabilities.contains(&Some(capability_a.clone())));
+    assert!(capabilities.contains(&Some(capability_b.clone())));
+    assert!(
+        views
+            .iter()
+            .all(|stored| stored.view.account.account_label == "same@example.com")
+    );
+
+    let focused = focused_usage_view(&db, Some("codex"), Some("Anthropic"), now)
+        .expect("read focused same-label usage")
+        .expect("same-label usage exists");
+    assert_eq!(focused.tabs.len(), 2);
+    assert!(
+        focused
+            .tabs
+            .iter()
+            .all(|tab| tab.label == "Claude · same@example.com")
+    );
+    assert!(
+        focused
+            .tabs
+            .iter()
+            .any(|tab| tab.account_capability.as_ref() == Some(&capability_a))
+    );
+    assert!(
+        focused
+            .tabs
+            .iter()
+            .any(|tab| tab.account_capability.as_ref() == Some(&capability_b))
+    );
+}
+
+#[test]
 fn usage_snapshot_store_records_schema_version() {
     let dir = tempfile::tempdir().expect("tempdir");
     let db = dir.path().join("snapshots.db");
@@ -601,6 +685,6 @@ fn usage_snapshot_store_records_schema_version() {
 
     assert_eq!(
         schema_version(&db).expect("schema version").as_deref(),
-        Some("4")
+        Some("5")
     );
 }

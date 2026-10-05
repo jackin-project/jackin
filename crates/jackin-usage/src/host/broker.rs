@@ -155,6 +155,12 @@ impl HostUsageRuntime {
         view.last_error = Some(error.message.clone());
         if let Some(identity) = binding.identity.clone() {
             let account_key = identity.account_key();
+            view.account.account_capability = Some(capability_for_binding(
+                binding,
+                self.discovery
+                    .as_ref()
+                    .and_then(|discovery| discovery.config_generation.as_deref()),
+            ));
             view.account.account_label = self
                 .discovered_views
                 .get(&(binding.surface, account_key.clone()))

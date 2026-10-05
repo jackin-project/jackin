@@ -2256,6 +2256,15 @@ impl HostUsageRuntime {
             view.account.account_label = account.account_label.clone();
         }
         let account_key = identity.account_key();
+        // The broker capability, not the presentation label, is the identity
+        // carried through the host snapshot boundary. Its account id includes
+        // the same discovery generation fence used for refresh routing.
+        view.account.account_capability = Some(super::broker::capability_for_binding(
+            binding,
+            self.discovery
+                .as_ref()
+                .and_then(|discovery| discovery.config_generation.as_deref()),
+        ));
         self.discovered_views
             .insert((binding.surface, account_key.clone()), view);
         self.discovered_provider_views.remove(&binding.surface);

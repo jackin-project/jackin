@@ -1683,6 +1683,7 @@ fn control_usage_account_list_uses_in_memory_cache() {
         username: None,
         plan_label: Some("Pro 20x".to_owned()),
         credential_origin: None,
+        account_capability: None,
     };
     view.status = jackin_protocol::control::UsageSnapshotStatus::Fresh;
     view.source = jackin_protocol::control::UsageSource::ProviderApi;
@@ -1797,6 +1798,7 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
                 username: None,
                 plan_label: None,
                 credential_origin: None,
+                account_capability: None,
             },
             ..jackin_protocol::control::FocusedUsageView::unavailable("seed", 1)
         },
@@ -1804,8 +1806,12 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
 
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
         provider_label: "Claude".to_owned(),
-        // Empty id: old payloads keep label resolution.
-        account_id: String::new(),
+        // The provider label is display context; the exact capability routes
+        // the refresh even when the visible label is overridden.
+        capability: jackin_protocol::usage_broker::UsageAccountCapability {
+            account_id: "test-codex".to_owned(),
+            surface_id: "codex".to_owned(),
+        },
     });
 
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
@@ -1827,7 +1833,7 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
 }
 
 #[test]
-fn apply_dialog_action_switch_usage_provider_resolves_exact_account_id() {
+fn apply_dialog_action_switch_usage_provider_resolves_exact_capability() {
     use jackin_protocol::control::{
         FocusedAccountHeader, FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
     };
@@ -1841,6 +1847,7 @@ fn apply_dialog_action_switch_usage_provider_resolves_exact_account_id() {
             username: None,
             plan_label: None,
             credential_origin: None,
+            account_capability: None,
         };
         view.status = UsageSnapshotStatus::Fresh;
         view.source = UsageSource::ProviderApi;
@@ -1850,8 +1857,8 @@ fn apply_dialog_action_switch_usage_provider_resolves_exact_account_id() {
 
     let mut mux = single_pane_tab_mux();
     for (id, broker_id, account) in [
-        (1_u64, "test-claude-a", "a@example.com"),
-        (2, "test-claude-b", "b@example.com"),
+        (1_u64, "test-claude-a", "same@example.com"),
+        (2, "test-claude-b", "same@example.com"),
     ] {
         let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
         session.provider = Some(crate::session::SessionProvider {
@@ -1878,40 +1885,43 @@ fn apply_dialog_action_switch_usage_provider_resolves_exact_account_id() {
     mux.session_supervisor.tabs[0] = Tab::new_single("Claude", 1, "test");
     mux.dialog_push(Dialog::new_usage(FocusedUsageView::unavailable("seed", 1)));
 
-    // Switch to the second same-provider account by exact id: the dialog
+    // Switch to the second same-provider account by exact capability: the dialog
     // focuses that account and the queued refresh targets its capability,
     // even though both tabs share the provider head.
-    let id_b = jackin_core::account_key_hash("Anthropic", "b@example.com");
+    let capability_b = UsageAccountCapability {
+        account_id: "test-claude-b".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "Anthropic · b@example.com".to_owned(),
-        account_id: id_b.clone(),
+        provider_label: "Anthropic · same@example.com".to_owned(),
+        capability: capability_b.clone(),
     });
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("switch usage provider action must keep usage dialog open");
     };
-    assert_eq!(view.account.account_label, "b@example.com");
+    assert_eq!(view.account.account_label, "same@example.com");
     assert_eq!(view.tabs.len(), 2);
-    assert_ne!(view.tabs[0].label, view.tabs[1].label);
+    assert_eq!(view.tabs[0].label, view.tabs[1].label);
     let active: Vec<_> = view.tabs.iter().filter(|tab| tab.active).collect();
     assert_eq!(active.len(), 1);
-    assert_eq!(active[0].id, id_b);
+    assert_eq!(active[0].account_capability.as_ref(), Some(&capability_b));
     assert_eq!(
         mux.usage.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
             agent: "claude".to_owned(),
             provider: Some("Anthropic".to_owned()),
-            capability: UsageAccountCapability {
-                account_id: "test-claude-b".to_owned(),
-                surface_id: "claude".to_owned(),
-            },
+            capability: capability_b.clone(),
         })
     );
 
-    // Unknown id: honest unavailable, and the queued refresh is untouched
+    // Unknown capability: honest unavailable, and the queued refresh is untouched
     // rather than overwritten with a label-guessed sibling target.
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
-        provider_label: "Anthropic · b@example.com".to_owned(),
-        account_id: "sha256:unknown".to_owned(),
+        provider_label: "Anthropic · same@example.com".to_owned(),
+        capability: UsageAccountCapability {
+            account_id: "unknown".to_owned(),
+            surface_id: "claude".to_owned(),
+        },
     });
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("switch usage provider action must keep usage dialog open");
@@ -2002,6 +2012,7 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
             username: None,
             plan_label: Some("Pro 20x".to_owned()),
             credential_origin: None,
+            account_capability: None,
         },
         buckets: vec![jackin_protocol::control::QuotaBucketView {
             used_money: None,
@@ -5000,6 +5011,7 @@ fn pointer_shape_updates_for_usage_dialog_tabs() {
     view.focused_provider = Some("OpenAI".to_owned());
     view.tabs = vec![jackin_protocol::control::UsageProviderTab {
         id: "test-tab-openai".to_owned(),
+        account_capability: None,
         label: "OpenAI".to_owned(),
         status_label: "usage unavailable".to_owned(),
         account_label: "seed".to_owned(),

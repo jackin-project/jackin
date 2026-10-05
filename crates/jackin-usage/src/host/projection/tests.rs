@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 
 use jackin_protocol::control::{FocusedAccountHeader, FocusedUsageView, UsageSource};
+use jackin_protocol::usage_broker::UsageAccountCapability;
 
 use super::super::accounts::{
     AccountCatalogEntry, AccountLifecycle, AccountProvenance, CanonicalAccountIdentity,
@@ -51,6 +52,7 @@ fn view_with_buckets(
             username: None,
             plan_label: None,
             credential_origin: None,
+            account_capability: None,
         },
         buckets,
         status,
@@ -606,6 +608,10 @@ fn parity_view_at(account: &ParityAccount, now: i64) -> FocusedUsageView {
     if let Some(label) = account.capsule_provider_label {
         view.account.provider_label = label.to_owned();
     }
+    view.account.account_capability = Some(UsageAccountCapability {
+        account_id: account.account_key.to_owned(),
+        surface_id: account.provider_id.to_owned(),
+    });
     // Mirror the cache read path at the harness clock so `updated_label`
     // carries the deterministic fixture age instead of build time.
     refresh_cached_updated_label(&mut view, now);

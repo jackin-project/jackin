@@ -1257,7 +1257,11 @@ fn finish_success(
     {
         return;
     }
-    let view = sanitize_usage_view(view);
+    let mut view = sanitize_usage_view(view);
+    // Provider adapters return presentation data; the coordinator owns the
+    // canonical authority for this generation. Persist it with every view so
+    // refreshes and snapshots cannot lose account identity.
+    view.account.account_capability = Some(job.capability.clone());
     entry.envelope.phase = UsageRefreshPhase::Completed;
     entry.envelope.terminal_result = Some(view.clone());
     entry.envelope.last_good = Some(view);

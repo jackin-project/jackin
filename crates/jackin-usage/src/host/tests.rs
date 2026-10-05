@@ -32,6 +32,7 @@ fn codex_fixture_view() -> FocusedUsageView {
             username: None,
             plan_label: Some("Pro 20x".to_owned()),
             credential_origin: Some("OAuth · ~/.codex/auth.json".to_owned()),
+            account_capability: None,
         },
         buckets: vec![
             QuotaBucketView {
@@ -1166,6 +1167,7 @@ fn glance_view(
             username: None,
             plan_label: None,
             credential_origin: origin.map(str::to_owned),
+            account_capability: None,
         },
         buckets,
         status,

@@ -256,11 +256,55 @@ fn account_snapshot_view(
     view
 }
 
+fn account_snapshot_view_with_capability(
+    provider_label: &str,
+    account_label: &str,
+    plan_label: Option<&str>,
+    fetched_at_epoch: i64,
+    capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+) -> FocusedUsageView {
+    let mut view =
+        account_snapshot_view(provider_label, account_label, plan_label, fetched_at_epoch);
+    view.account.account_capability = Some(capability.clone());
+    view
+}
+
+fn usage_capability(
+    account_id: &str,
+    surface_id: &str,
+) -> jackin_protocol::usage_broker::UsageAccountCapability {
+    jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: account_id.to_owned(),
+        surface_id: surface_id.to_owned(),
+    }
+}
+
 #[test]
-fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
-    let claude_stale = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
-    let claude_latest = account_snapshot_view("Anthropic", "a@example.com", Some("Max 20x"), 200);
-    let codex = account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150);
+fn provider_tabs_emit_one_tab_per_canonical_capability() {
+    let claude_a = usage_capability("broker-claude-a", "claude");
+    let claude_b = usage_capability("broker-claude-b", "claude");
+    let codex_capability = usage_capability("broker-codex", "codex");
+    let claude_stale = account_snapshot_view_with_capability(
+        "Anthropic",
+        "a@example.com",
+        Some("Max"),
+        100,
+        &claude_a,
+    );
+    let claude_latest = account_snapshot_view_with_capability(
+        "Anthropic",
+        "a@example.com",
+        Some("Max 20x"),
+        200,
+        &claude_a,
+    );
+    let codex = account_snapshot_view_with_capability(
+        "OpenAI",
+        "codex@example.com",
+        Some("Pro 20x"),
+        150,
+        &codex_capability,
+    );
 
     let tabs = provider_tabs(&[&claude_stale, &claude_latest, &codex]);
 
@@ -276,36 +320,47 @@ fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
         .find(|tab| tab.account_label == "a@example.com")
         .expect("claude tab");
     assert_eq!(claude.plan_label.as_deref(), Some("Max 20x"));
-    assert_eq!(
-        claude.id,
-        usage_account_tab_id("Anthropic", "a@example.com")
-    );
-    assert_eq!(
-        tabs[1].id,
-        usage_account_tab_id("OpenAI", "codex@example.com")
-    );
+    assert_eq!(claude.id, claude_a.account_id);
+    assert_eq!(claude.account_capability.as_ref(), Some(&claude_a));
+    assert_eq!(tabs[1].id, codex_capability.account_id);
     assert_ne!(tabs[0].id, tabs[1].id);
     assert!(tabs.iter().all(|tab| !tab.active));
 
-    // An unlisted provider tabs without a hardcoded surface entry, and an
-    // empty scope stays empty.
-    let cursor = account_snapshot_view("Cursor", "cursor@example.com", None, 100);
+    // An unlisted provider still tabs without a hardcoded surface entry when
+    // the broker supplies canonical identity, and an empty scope stays empty.
+    let cursor_capability = usage_capability("broker-cursor", "cursor");
+    let cursor = account_snapshot_view_with_capability(
+        "Cursor",
+        "cursor@example.com",
+        None,
+        100,
+        &cursor_capability,
+    );
     let tabs = provider_tabs(&[&cursor]);
     assert_eq!(tabs.len(), 1);
     assert_eq!(tabs[0].label, "Cursor · cursor@example.com");
     assert!(provider_tabs(&[]).is_empty());
 
-    // Same-provider accounts render individually visible labels; an account
-    // without identity keeps the bare provider label.
-    let claude_b = account_snapshot_view("Anthropic", "b@example.com", None, 100);
-    let tabs = provider_tabs(&[&claude_stale, &claude_b]);
+    // P1 regression: same provider *and* same presentation account label stay
+    // distinct because the canonical capabilities differ.
+    let claude_b_same_label =
+        account_snapshot_view_with_capability("Anthropic", "a@example.com", None, 150, &claude_b);
+    let tabs = provider_tabs(&[&claude_latest, &claude_b_same_label]);
+    assert_eq!(tabs.len(), 2);
+    assert_eq!(
+        tabs.iter()
+            .map(|tab| tab.account_capability.as_ref().expect("capability"))
+            .collect::<Vec<_>>(),
+        vec![&claude_a, &claude_b]
+    );
     assert_eq!(
         tabs.iter().map(|tab| &tab.label).collect::<Vec<_>>(),
-        vec!["Anthropic · a@example.com", "Anthropic · b@example.com"]
+        vec!["Anthropic · a@example.com", "Anthropic · a@example.com"]
     );
+    // A presentation-only view has no routable identity and is excluded.
     let unknown = account_snapshot_view("Anthropic", "", None, 100);
     let tabs = provider_tabs(&[&unknown]);
-    assert_eq!(tabs[0].label, "Anthropic");
+    assert!(tabs.is_empty());
 }
 
 #[test]
@@ -313,6 +368,7 @@ fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
     let mut view = account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 123);
     view.tabs = vec![UsageProviderTab {
         id: "stale".to_owned(),
+        account_capability: None,
         label: "Stale".to_owned(),
         status_label: String::new(),
         account_label: String::new(),
@@ -320,7 +376,15 @@ fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
         source_label: None,
         active: true,
     }];
-    let claude = account_snapshot_view("Anthropic", "claude@example.com", Some("Max"), 120);
+    let claude_capability = usage_capability("broker-claude", "claude");
+    let claude = account_snapshot_view_with_capability(
+        "Anthropic",
+        "claude@example.com",
+        Some("Max"),
+        120,
+        &claude_capability,
+    );
+    view.account.account_capability = Some(usage_capability("broker-codex", "codex"));
 
     let mut snapshots = HashMap::new();
     snapshots.insert(
@@ -359,20 +423,44 @@ fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
 #[test]
 fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
     let mut cache = UsageCache::default();
-    cache.insert_snapshot_for_test(
+    let claude_a = usage_capability("broker-claude-a", "claude");
+    let claude_b = usage_capability("broker-claude-b", "claude");
+    let codex_capability = usage_capability("broker-codex", "codex");
+    cache.insert_snapshot_for_capability_for_test(
         "claude",
         Some("Anthropic"),
-        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+        &claude_a,
+        account_snapshot_view_with_capability(
+            "Anthropic",
+            "a@example.com",
+            Some("Max"),
+            100,
+            &claude_a,
+        ),
     );
-    cache.insert_snapshot_for_test(
+    cache.insert_snapshot_for_capability_for_test(
         "claude",
         Some("Anthropic"),
-        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
+        &claude_b,
+        account_snapshot_view_with_capability(
+            "Anthropic",
+            "b@example.com",
+            Some("Max 20x"),
+            200,
+            &claude_b,
+        ),
     );
-    cache.insert_snapshot_for_test(
+    cache.insert_snapshot_for_capability_for_test(
         "codex",
         Some("OpenAI"),
-        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+        &codex_capability,
+        account_snapshot_view_with_capability(
+            "OpenAI",
+            "codex@example.com",
+            Some("Pro 20x"),
+            150,
+            &codex_capability,
+        ),
     );
 
     let snapshot = cache.focused_snapshot(Some("claude"), Some("Anthropic"));
@@ -384,25 +472,28 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
     ids.dedup();
     assert_eq!(ids.len(), 3);
     let mut expected = vec![
-        usage_account_tab_id("Anthropic", "a@example.com"),
-        usage_account_tab_id("Anthropic", "b@example.com"),
-        usage_account_tab_id("OpenAI", "codex@example.com"),
+        claude_a.account_id.clone(),
+        claude_b.account_id.clone(),
+        codex_capability.account_id.clone(),
     ];
     expected.sort();
     assert_eq!(ids, expected);
     // The focused account (newest Claude fetch) is the active tab.
     let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
     assert_eq!(active.len(), 1);
-    assert_eq!(
-        active[0].id,
-        usage_account_tab_id("Anthropic", "b@example.com")
-    );
+    assert_eq!(active[0].id, claude_b.account_id);
 
-    // Selection by id focuses the correct account: a view focused on the
-    // other Claude account marks exactly its tab, matched by id rather than
-    // the shared "Anthropic" display label.
-    let id_a = usage_account_tab_id("Anthropic", "a@example.com");
-    let mut selected = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
+    // Selection by capability focuses the correct account: a view focused on
+    // the other Claude account marks exactly its tab, matched by authority
+    // rather than the shared "Anthropic" display label.
+    let id_a = claude_a.account_id.clone();
+    let mut selected = account_snapshot_view_with_capability(
+        "Anthropic",
+        "a@example.com",
+        Some("Max"),
+        100,
+        &claude_a,
+    );
     enrich_provider_tabs(&mut selected, &cache.snapshots);
     mark_active_tab(&mut selected);
     let active: Vec<&UsageProviderTab> = selected.tabs.iter().filter(|tab| tab.active).collect();
@@ -417,68 +508,53 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
 }
 
 #[test]
-fn focused_snapshot_for_account_id_selects_exact_account() {
+fn focused_snapshot_for_account_capability_selects_exact_account() {
     let mut cache = UsageCache::default();
-    cache.insert_snapshot_for_test(
-        "claude",
-        Some("Anthropic"),
-        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
-    );
-    cache.insert_snapshot_for_test(
-        "claude",
-        Some("Anthropic"),
-        account_snapshot_view("Anthropic", "b@example.com", Some("Max 20x"), 200),
-    );
-    let id_b = usage_account_tab_id("Anthropic", "b@example.com");
-
-    let snapshot = cache
-        .focused_snapshot_for_account_id(&id_b)
-        .expect("snapshot for claude-b");
-    assert_eq!(snapshot.account.account_label, "b@example.com");
-    assert_eq!(snapshot.tabs.len(), 2);
-    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
-    assert_eq!(active.len(), 1);
-    assert_eq!(active[0].id, id_b);
-
-    assert!(
-        cache
-            .focused_snapshot_for_account_id("sha256:unknown")
-            .is_none()
-    );
-    assert!(cache.focused_snapshot_for_account_id("").is_none());
-}
-
-#[test]
-fn broker_account_id_for_tab_id_recovers_broker_key() {
-    use jackin_protocol::usage_broker::UsageAccountCapability;
-
-    let mut cache = UsageCache::default();
-    let capability_a = UsageAccountCapability {
-        account_id: "broker-claude-a".to_owned(),
-        surface_id: "claude".to_owned(),
-    };
+    let capability_a = usage_capability("broker-claude-a", "claude");
+    let capability_b = usage_capability("broker-claude-b", "claude");
     cache.insert_snapshot_for_capability_for_test(
         "claude",
         Some("Anthropic"),
         &capability_a,
-        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+        account_snapshot_view_with_capability(
+            "Anthropic",
+            "same@example.com",
+            Some("Max"),
+            100,
+            &capability_a,
+        ),
     );
-    cache.insert_snapshot_for_test(
-        "codex",
-        Some("OpenAI"),
-        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+    cache.insert_snapshot_for_capability_for_test(
+        "claude",
+        Some("Anthropic"),
+        &capability_b,
+        account_snapshot_view_with_capability(
+            "Anthropic",
+            "same@example.com",
+            Some("Max 20x"),
+            200,
+            &capability_b,
+        ),
     );
 
+    let snapshot = cache
+        .focused_snapshot_for_account_capability(&capability_b)
+        .expect("snapshot for claude-b");
+    assert_eq!(snapshot.account.account_label, "same@example.com");
     assert_eq!(
-        cache.broker_account_id_for_tab_id(&usage_account_tab_id("Anthropic", "a@example.com")),
-        Some("broker-claude-a".to_owned())
+        snapshot.account.account_capability,
+        Some(capability_b.clone())
     );
-    // Legacy keys carry no capability; unknown ids match nothing.
-    assert_eq!(
-        cache.broker_account_id_for_tab_id(&usage_account_tab_id("OpenAI", "codex@example.com")),
-        None
+    assert_eq!(snapshot.tabs.len(), 2);
+    let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, capability_b.account_id);
+
+    assert!(
+        cache
+            .focused_snapshot_for_account_capability(&usage_capability("unknown", "claude"))
+            .is_none()
     );
-    assert_eq!(cache.broker_account_id_for_tab_id("sha256:unknown"), None);
 }
 
 #[test]
@@ -794,7 +870,7 @@ fn account_snapshot_rows_propagate_view_failure_to_retained_buckets() {
 }
 
 fn codex_cached_usage_view() -> FocusedUsageView {
-    usage_view(UsageViewInput {
+    let mut view = usage_view(UsageViewInput {
         agent: "codex",
         provider: Some("OpenAI"),
         surface: UsageSurface::Codex,
@@ -821,7 +897,9 @@ fn codex_cached_usage_view() -> FocusedUsageView {
         confidence: UsageConfidence::Authoritative,
         now: 123,
         last_error: None,
-    })
+    });
+    view.account.account_capability = Some(usage_capability("broker-codex", "codex"));
+    view
 }
 
 #[test]
@@ -1472,6 +1550,12 @@ fn usage_cache_adopts_broker_generations_by_account_capability() {
 
     assert_eq!(cache.snapshots.len(), 2);
     assert_eq!(cache.account_snapshot_views().len(), 2);
+    assert!(
+        cache
+            .snapshots
+            .values()
+            .all(|cached| { cached.view.account.account_capability.is_some() })
+    );
     cache.adopt_broker_error(
         &target,
         &jackin_protocol::usage_broker::UsageCoordinationError {
@@ -1495,6 +1579,14 @@ fn usage_cache_adopts_broker_generations_by_account_capability() {
             .map(|cached| cached.view.status),
         Some(UsageSnapshotStatus::Fresh)
     );
+    assert_eq!(
+        cache
+            .snapshots
+            .values()
+            .find(|cached| cached.view.account.account_label == "personal@example.test")
+            .and_then(|cached| cached.view.account.account_capability.clone()),
+        Some(target.capability)
+    );
 }
 
 #[test]
@@ -1508,6 +1600,7 @@ fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
         username: None,
         plan_label: Some("Pro 20x".to_owned()),
         credential_origin: None,
+        account_capability: None,
     };
     cached.buckets = vec![QuotaBucketView {
         used_money: None,
@@ -1539,6 +1632,7 @@ fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
             username: None,
             plan_label: None,
             credential_origin: None,
+            account_capability: None,
         };
         view.last_error = Some("Codex provider usage unavailable".to_owned());
 
@@ -4832,6 +4926,7 @@ fn detail_view(
             username: Some("operator".to_owned()),
             plan_label: Some("Pro 20x".to_owned()),
             credential_origin: Some("OAuth · ~/.codex/auth.json".to_owned()),
+            account_capability: None,
         },
         buckets,
         status,

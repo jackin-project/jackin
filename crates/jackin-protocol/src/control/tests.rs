@@ -3,6 +3,7 @@
 
 //! Tests for `control`.
 use super::*;
+use crate::usage_broker::UsageAccountCapability;
 
 #[test]
 fn client_msg_unknown_decodes_from_unrecognised_tag() {
@@ -76,7 +77,12 @@ fn status_capture_and_ack_roundtrip() {
 
 #[test]
 fn usage_focused_roundtrips() {
-    let usage = FocusedUsageView::unavailable("no focused agent session", 123);
+    let capability = UsageAccountCapability {
+        account_id: "account-a".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let mut usage = FocusedUsageView::unavailable("no focused agent session", 123);
+    usage.account.account_capability = Some(capability.clone());
     let json = serde_json::to_string(&ServerMsg::UsageFocused {
         usage: Box::new(usage.clone()),
     })
@@ -86,6 +92,7 @@ fn usage_focused_roundtrips() {
         ServerMsg::UsageFocused { usage: decoded } => {
             assert_eq!(decoded.status, UsageSnapshotStatus::Unavailable);
             assert_eq!(decoded.fetched_at_epoch, 123);
+            assert_eq!(decoded.account.account_capability, Some(capability));
         }
         other => panic!("unexpected variant {other:?}"),
     }
@@ -95,6 +102,10 @@ fn usage_focused_roundtrips() {
 fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
     let tab = UsageProviderTab {
         id: "sha256:abc".to_owned(),
+        account_capability: Some(UsageAccountCapability {
+            account_id: "account-a".to_owned(),
+            surface_id: "claude".to_owned(),
+        }),
         label: "Anthropic".to_owned(),
         status_label: "fresh".to_owned(),
         account_label: "a@example.com".to_owned(),
@@ -112,6 +123,7 @@ fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
     )
     .unwrap();
     assert_eq!(legacy.id, "");
+    assert_eq!(legacy.account_capability, None);
     assert_eq!(legacy.label, "Anthropic");
 }
 

@@ -382,12 +382,11 @@ pub enum DialogAction {
     /// Request a daemon-side focused usage refresh.
     RefreshUsage,
     /// Request a daemon-side usage snapshot for a specific provider tab.
-    /// `account_id` is the stable canonical account id and the resolution
-    /// key; `provider_label` stays for display and old-payload back-compat
-    /// (empty id falls back to label resolution).
+    /// `provider_label` is display-only; the typed capability is the sole
+    /// selection and refresh authority.
     SwitchUsageProvider {
         provider_label: String,
-        account_id: String,
+        capability: jackin_protocol::usage_broker::UsageAccountCapability,
     },
     /// Dialog is still open; redraw.
     Redraw,
@@ -506,9 +505,12 @@ impl Dialog {
                     b"\x1b[D" => self.usage_provider_tab_target(-1),
                     _ => None,
                 } {
+                    let Some(capability) = tab.account_capability else {
+                        return DialogAction::Redraw;
+                    };
                     return DialogAction::SwitchUsageProvider {
                         provider_label: tab.label,
-                        account_id: tab.id,
+                        capability,
                     };
                 }
                 return DialogAction::Redraw;
@@ -997,13 +999,18 @@ impl Dialog {
                     *selected = UsageDialogTab::Overview;
                     DialogAction::Redraw
                 }
-                Some(idx) => view.tabs.get(idx.saturating_sub(1)).map_or_else(
-                    || DialogAction::Consume,
-                    |tab| DialogAction::SwitchUsageProvider {
-                        provider_label: tab.label.clone(),
-                        account_id: tab.id.clone(),
-                    },
-                ),
+                Some(idx) => view
+                    .tabs
+                    .get(idx.saturating_sub(1))
+                    .and_then(|tab| {
+                        tab.account_capability.clone().map(|capability| {
+                            DialogAction::SwitchUsageProvider {
+                                provider_label: tab.label.clone(),
+                                capability,
+                            }
+                        })
+                    })
+                    .unwrap_or(DialogAction::Consume),
                 None => DialogAction::Consume,
             };
         }

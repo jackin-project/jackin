@@ -19,9 +19,10 @@ use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
     UsageSource,
 };
+use jackin_protocol::usage_broker::UsageAccountCapability;
 use jackin_telemetry::ResultTelemetryExt as _;
 
-const SCHEMA_VERSION: &str = "4";
+const SCHEMA_VERSION: &str = "5";
 
 #[cfg(test)]
 static CONNECTION_BUILDS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
@@ -46,7 +47,11 @@ pub struct AccountIdentitySummary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredAccountUsageSnapshot {
     pub provider: String,
+    /// Legacy account key for label-only rows; canonical broker rows use the
+    /// exact capability account id so same-label sources never collide.
     pub account_key_hash: String,
+    /// Present only when `account_key_hash` is a canonical broker capability.
+    pub capability_surface_id: Option<String>,
     pub account_label: String,
     pub source: String,
     pub confidence: String,
@@ -191,6 +196,7 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
             id INTEGER PRIMARY KEY,
             provider TEXT NOT NULL,
             account_key_hash TEXT NOT NULL,
+            capability_surface_id TEXT,
             account_label TEXT NOT NULL,
             source TEXT NOT NULL,
             confidence TEXT NOT NULL,
@@ -261,6 +267,10 @@ async fn ensure_account_snapshot_columns(conn: &Connection) -> Result<(), String
             "ALTER TABLE account_usage_snapshots ADD COLUMN plan_label TEXT",
         ),
         (
+            "capability_surface_id",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN capability_surface_id TEXT",
+        ),
+        (
             "remaining_percent",
             "ALTER TABLE account_usage_snapshots ADD COLUMN remaining_percent INTEGER",
         ),
@@ -319,6 +329,7 @@ async fn upsert_account_snapshot_rows(
             INSERT INTO account_usage_snapshots (
                 provider,
                 account_key_hash,
+                capability_surface_id,
                 account_label,
                 source,
                 confidence,
@@ -343,9 +354,10 @@ async fn upsert_account_snapshot_rows(
                 updated_label,
                 status_bar_label
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
             ON CONFLICT(provider, account_key_hash, source, window_kind) DO UPDATE SET
                 account_label = excluded.account_label,
+                capability_surface_id = excluded.capability_surface_id,
                 confidence = excluded.confidence,
                 used_amount = excluded.used_amount,
                 used_unit = excluded.used_unit,
@@ -370,6 +382,7 @@ async fn upsert_account_snapshot_rows(
             params![
                 row.provider,
                 row.account_key_hash,
+                row.capability_surface_id,
                 row.account_label,
                 row.source,
                 row.confidence,
@@ -416,7 +429,16 @@ async fn upsert_account_snapshot_rows(
 fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccountUsageSnapshot> {
     let provider = view.account.provider_label.clone();
     let account_label = view.account.account_label.clone();
-    let account_key_hash = account_key_hash(&provider, &account_label);
+    let (account_key_hash, capability_surface_id) =
+        view.account.account_capability.as_ref().map_or_else(
+            || (account_key_hash(&provider, &account_label), None),
+            |capability| {
+                (
+                    capability.account_id.clone(),
+                    Some(capability.surface_id.clone()),
+                )
+            },
+        );
     let source = crate::usage::usage_source_storage_label(view.source).to_owned();
     let confidence = crate::usage::usage_confidence_storage_label(view.confidence).to_owned();
     let fetched_at = view.fetched_at_epoch;
@@ -428,6 +450,7 @@ fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccountUsageSnaps
             StoredAccountUsageSnapshot {
                 provider: provider.clone(),
                 account_key_hash: account_key_hash.clone(),
+                capability_surface_id: capability_surface_id.clone(),
                 account_label: account_label.clone(),
                 source: source.clone(),
                 confidence: confidence.clone(),
@@ -542,6 +565,12 @@ pub fn focused_usage_view(
             username: None,
             plan_label: first.plan_label.clone(),
             credential_origin: None,
+            account_capability: first.capability_surface_id.as_ref().map(|surface_id| {
+                UsageAccountCapability {
+                    account_id: first.account_key_hash.clone(),
+                    surface_id: surface_id.clone(),
+                }
+            }),
         },
         buckets,
         status,
@@ -661,9 +690,9 @@ fn normalize_provider_label(value: &str) -> String {
 fn usage_provider_tabs_from_rows(
     rows: &[StoredAccountUsageSnapshot],
 ) -> Vec<jackin_protocol::control::UsageProviderTab> {
-    // One tab per distinct stored account, keyed by the stable
-    // `account_key_hash`; the newest fetch wins per account. Same-provider
-    // accounts never collapse, and an empty store stays empty.
+    // One tab per distinct stored account, keyed by the canonical capability
+    // when present (legacy rows retain `account_key_hash`); the newest fetch
+    // wins per account. Same-provider accounts never collapse.
     let mut latest: HashMap<&str, &StoredAccountUsageSnapshot> = HashMap::new();
     for row in rows {
         latest
@@ -677,18 +706,31 @@ fn usage_provider_tabs_from_rows(
     }
     let mut tabs: Vec<jackin_protocol::control::UsageProviderTab> = latest
         .values()
-        .map(|row| jackin_protocol::control::UsageProviderTab {
-            id: row.account_key_hash.clone(),
-            label: crate::usage::account_tab_label_for_parts(
-                &row.provider,
-                &row.account_label,
-                row.focused_provider.as_deref(),
-            ),
-            status_label: tab_status_label(row, rows),
-            account_label: row.account_label.clone(),
-            plan_label: row.plan_label.clone(),
-            source_label: Some(format!("{} · {}", row.view_status, row.source)),
-            active: false,
+        .map(|row| {
+            let account_capability =
+                row.capability_surface_id
+                    .as_ref()
+                    .map(|surface_id| UsageAccountCapability {
+                        account_id: row.account_key_hash.clone(),
+                        surface_id: surface_id.clone(),
+                    });
+            jackin_protocol::control::UsageProviderTab {
+                id: account_capability.as_ref().map_or_else(
+                    || row.account_key_hash.clone(),
+                    |capability| capability.account_id.clone(),
+                ),
+                account_capability,
+                label: crate::usage::account_tab_label_for_parts(
+                    &row.provider,
+                    &row.account_label,
+                    row.focused_provider.as_deref(),
+                ),
+                status_label: tab_status_label(row, rows),
+                account_label: row.account_label.clone(),
+                plan_label: row.plan_label.clone(),
+                source_label: Some(format!("{} · {}", row.view_status, row.source)),
+                active: false,
+            }
         })
         .collect();
     tabs.sort_by(|left, right| {
@@ -779,6 +821,7 @@ fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapsho
                 SELECT
                     provider,
                     account_key_hash,
+                    capability_surface_id,
                     account_label,
                     source,
                     confidence,
@@ -819,29 +862,30 @@ fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapsho
             snapshots.push(StoredAccountUsageSnapshot {
                 provider: row_string(&row, 0, "provider")?,
                 account_key_hash: row_string(&row, 1, "account_key_hash")?,
-                account_label: row_string(&row, 2, "account_label")?,
-                source: row_string(&row, 3, "source")?,
-                confidence: row_string(&row, 4, "confidence")?,
-                window_kind: row_string(&row, 5, "window_kind")?,
-                used_amount: row_opt_i64(&row, 6, "used_amount")?,
-                used_unit: row_opt_string(&row, 7, "used_unit")?,
-                limit_amount: row_opt_i64(&row, 8, "limit_amount")?,
-                limit_unit: row_opt_string(&row, 9, "limit_unit")?,
-                resets_at: row_opt_i64(&row, 10, "resets_at")?,
-                fetched_at: row_i64(&row, 11, "fetched_at")?,
-                expires_at: row_opt_i64(&row, 12, "expires_at")?,
-                status: row_string(&row, 13, "status")?,
-                last_error: row_opt_string(&row, 14, "last_error")?,
-                focused_provider: row_opt_string(&row, 15, "focused_provider")?,
-                plan_label: row_opt_string(&row, 16, "plan_label")?,
-                remaining_percent: row_opt_i64(&row, 17, "remaining_percent")?,
-                used_label: row_opt_string(&row, 18, "used_label")?,
-                limit_label: row_opt_string(&row, 19, "limit_label")?,
-                reset_label: row_opt_string(&row, 20, "reset_label")?,
-                pace_label: row_opt_string(&row, 21, "pace_label")?,
-                view_status: row_string(&row, 22, "view_status")?,
-                updated_label: row_string(&row, 23, "updated_label")?,
-                status_bar_label: row_string(&row, 24, "status_bar_label")?,
+                capability_surface_id: row_opt_string(&row, 2, "capability_surface_id")?,
+                account_label: row_string(&row, 3, "account_label")?,
+                source: row_string(&row, 4, "source")?,
+                confidence: row_string(&row, 5, "confidence")?,
+                window_kind: row_string(&row, 6, "window_kind")?,
+                used_amount: row_opt_i64(&row, 7, "used_amount")?,
+                used_unit: row_opt_string(&row, 8, "used_unit")?,
+                limit_amount: row_opt_i64(&row, 9, "limit_amount")?,
+                limit_unit: row_opt_string(&row, 10, "limit_unit")?,
+                resets_at: row_opt_i64(&row, 11, "resets_at")?,
+                fetched_at: row_i64(&row, 12, "fetched_at")?,
+                expires_at: row_opt_i64(&row, 13, "expires_at")?,
+                status: row_string(&row, 14, "status")?,
+                last_error: row_opt_string(&row, 15, "last_error")?,
+                focused_provider: row_opt_string(&row, 16, "focused_provider")?,
+                plan_label: row_opt_string(&row, 17, "plan_label")?,
+                remaining_percent: row_opt_i64(&row, 18, "remaining_percent")?,
+                used_label: row_opt_string(&row, 19, "used_label")?,
+                limit_label: row_opt_string(&row, 20, "limit_label")?,
+                reset_label: row_opt_string(&row, 21, "reset_label")?,
+                pace_label: row_opt_string(&row, 22, "pace_label")?,
+                view_status: row_string(&row, 23, "view_status")?,
+                updated_label: row_string(&row, 24, "updated_label")?,
+                status_bar_label: row_string(&row, 25, "status_bar_label")?,
             });
         }
         Ok(snapshots)
@@ -1040,6 +1084,12 @@ fn account_usage_view_from_rows(
             username: None,
             plan_label: first.plan_label.clone(),
             credential_origin: None,
+            account_capability: first.capability_surface_id.as_ref().map(|surface_id| {
+                UsageAccountCapability {
+                    account_id: first.account_key_hash.clone(),
+                    surface_id: surface_id.clone(),
+                }
+            }),
         },
         buckets,
         status,
@@ -1113,6 +1163,7 @@ fn load_all_account_snapshot_rows(path: &Path) -> Result<Vec<StoredAccountUsageS
                 SELECT
                     provider,
                     account_key_hash,
+                    capability_surface_id,
                     account_label,
                     source,
                     confidence,
@@ -1153,29 +1204,30 @@ fn load_all_account_snapshot_rows(path: &Path) -> Result<Vec<StoredAccountUsageS
             snapshots.push(StoredAccountUsageSnapshot {
                 provider: row_string(&row, 0, "provider")?,
                 account_key_hash: row_string(&row, 1, "account_key_hash")?,
-                account_label: row_string(&row, 2, "account_label")?,
-                source: row_string(&row, 3, "source")?,
-                confidence: row_string(&row, 4, "confidence")?,
-                window_kind: row_string(&row, 5, "window_kind")?,
-                used_amount: row_opt_i64(&row, 6, "used_amount")?,
-                used_unit: row_opt_string(&row, 7, "used_unit")?,
-                limit_amount: row_opt_i64(&row, 8, "limit_amount")?,
-                limit_unit: row_opt_string(&row, 9, "limit_unit")?,
-                resets_at: row_opt_i64(&row, 10, "resets_at")?,
-                fetched_at: row_i64(&row, 11, "fetched_at")?,
-                expires_at: row_opt_i64(&row, 12, "expires_at")?,
-                status: row_string(&row, 13, "status")?,
-                last_error: row_opt_string(&row, 14, "last_error")?,
-                focused_provider: row_opt_string(&row, 15, "focused_provider")?,
-                plan_label: row_opt_string(&row, 16, "plan_label")?,
-                remaining_percent: row_opt_i64(&row, 17, "remaining_percent")?,
-                used_label: row_opt_string(&row, 18, "used_label")?,
-                limit_label: row_opt_string(&row, 19, "limit_label")?,
-                reset_label: row_opt_string(&row, 20, "reset_label")?,
-                pace_label: row_opt_string(&row, 21, "pace_label")?,
-                view_status: row_string(&row, 22, "view_status")?,
-                updated_label: row_string(&row, 23, "updated_label")?,
-                status_bar_label: row_string(&row, 24, "status_bar_label")?,
+                capability_surface_id: row_opt_string(&row, 2, "capability_surface_id")?,
+                account_label: row_string(&row, 3, "account_label")?,
+                source: row_string(&row, 4, "source")?,
+                confidence: row_string(&row, 5, "confidence")?,
+                window_kind: row_string(&row, 6, "window_kind")?,
+                used_amount: row_opt_i64(&row, 7, "used_amount")?,
+                used_unit: row_opt_string(&row, 8, "used_unit")?,
+                limit_amount: row_opt_i64(&row, 9, "limit_amount")?,
+                limit_unit: row_opt_string(&row, 10, "limit_unit")?,
+                resets_at: row_opt_i64(&row, 11, "resets_at")?,
+                fetched_at: row_i64(&row, 12, "fetched_at")?,
+                expires_at: row_opt_i64(&row, 13, "expires_at")?,
+                status: row_string(&row, 14, "status")?,
+                last_error: row_opt_string(&row, 15, "last_error")?,
+                focused_provider: row_opt_string(&row, 16, "focused_provider")?,
+                plan_label: row_opt_string(&row, 17, "plan_label")?,
+                remaining_percent: row_opt_i64(&row, 18, "remaining_percent")?,
+                used_label: row_opt_string(&row, 19, "used_label")?,
+                limit_label: row_opt_string(&row, 20, "limit_label")?,
+                reset_label: row_opt_string(&row, 21, "reset_label")?,
+                pace_label: row_opt_string(&row, 22, "pace_label")?,
+                view_status: row_string(&row, 23, "view_status")?,
+                updated_label: row_string(&row, 24, "updated_label")?,
+                status_bar_label: row_string(&row, 25, "status_bar_label")?,
             });
         }
         Ok(snapshots)

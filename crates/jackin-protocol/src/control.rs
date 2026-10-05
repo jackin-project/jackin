@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::TelemetryContext;
 use crate::agent_status::AgentStatusReport;
+use crate::usage_broker::UsageAccountCapability;
 
 /// Versioned request envelope for every capsule control RPC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -632,6 +633,7 @@ impl FocusedUsageView {
                 username: None,
                 plan_label: None,
                 credential_origin: None,
+                account_capability: None,
             },
             buckets: Vec::new(),
             status: UsageSnapshotStatus::Unavailable,
@@ -707,6 +709,10 @@ pub struct FocusedAccountHeader {
     /// `API key · amp secrets.json`. `None` until populated.
     #[serde(default)]
     pub credential_origin: Option<String>,
+    /// Exact broker authority for this account. This survives refresh and
+    /// snapshot serialization; presentation labels are never identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_capability: Option<UsageAccountCapability>,
 }
 
 /// Which semantic glance slot a quota window fills for the status-bar headline
@@ -935,11 +941,15 @@ pub struct UsageDetailPresentation {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// `UsageProviderTab` protocol type.
 pub struct UsageProviderTab {
-    /// Stable canonical account id (`account_key_hash` over the provider and
-    /// account labels). Tab navigation and active-tab matching key on this;
-    /// `label` is display-only and repeats across same-provider accounts.
+    /// Stable account id copied from [`Self::account_capability`]. Kept as a
+    /// compact tab key for the control/UI action, never derived from labels.
     #[serde(default)]
     pub id: String,
+    /// Exact broker authority for this tab. Display labels are never an
+    /// identity substitute; `None` is allowed only for decoded pre-identity
+    /// payloads and must not be routed or deduplicated as an account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_capability: Option<UsageAccountCapability>,
     /// `label` field.
     pub label: String,
     /// `status_label` field.

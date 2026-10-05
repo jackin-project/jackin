@@ -83,6 +83,7 @@ pub(crate) fn omp_attributed_view(
             username: None,
             plan_label: None,
             credential_origin: Some("omp provider entry".to_owned()),
+            account_capability: None,
         },
         buckets: attribution.buckets.clone(),
         status,

@@ -1007,6 +1007,16 @@ fn github_context_uses_shared_focused_info_dialog() {
     );
 }
 
+fn usage_fixture_capability(
+    account_id: &str,
+    surface_id: &str,
+) -> Option<jackin_protocol::usage_broker::UsageAccountCapability> {
+    Some(jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: account_id.to_owned(),
+        surface_id: surface_id.to_owned(),
+    })
+}
+
 fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     jackin_protocol::control::FocusedUsageView {
         focused_agent: Some("codex".to_owned()),
@@ -1017,6 +1027,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             username: None,
             plan_label: Some("Pro 20x".to_owned()),
             credential_origin: None,
+            account_capability: None,
         },
         buckets: vec![
             jackin_protocol::control::QuotaBucketView {
@@ -1057,6 +1068,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         tabs: vec![
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-codex".to_owned(),
+                account_capability: usage_fixture_capability("test-tab-codex", "codex"),
                 label: "Codex".to_owned(),
                 status_label: "37% left · Resets in 1h 21m (Jun 17, 23:15)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1066,6 +1078,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-claude".to_owned(),
+                account_capability: usage_fixture_capability("test-tab-claude", "claude"),
                 label: "Claude".to_owned(),
                 status_label: "16% left · Resets in 46m (Jun 17, 22:40)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1075,6 +1088,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-amp".to_owned(),
+                account_capability: usage_fixture_capability("test-tab-amp", "amp"),
                 label: "Amp".to_owned(),
                 status_label: "unsupported".to_owned(),
                 account_label: "account unavailable".to_owned(),
@@ -1084,6 +1098,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-grok".to_owned(),
+                account_capability: usage_fixture_capability("test-tab-grok", "grok"),
                 label: "Grok Build".to_owned(),
                 status_label: "needs login".to_owned(),
                 account_label: "account unavailable".to_owned(),
@@ -1093,6 +1108,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-zai".to_owned(),
+                account_capability: usage_fixture_capability("test-tab-zai", "zai"),
                 label: "GLM / Z.AI".to_owned(),
                 status_label: "88% left · Resets in 4d (Jun 21, 00:00)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1102,6 +1118,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-kimi".to_owned(),
+                account_capability: usage_fixture_capability("test-tab-kimi", "kimi"),
                 label: "Kimi".to_owned(),
                 status_label: "72% left · Resets in 13h (Jun 18, 11:00)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1111,6 +1128,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-minimax".to_owned(),
+                account_capability: usage_fixture_capability("test-tab-minimax", "minimax"),
                 label: "MiniMax".to_owned(),
                 status_label: "100% left".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
@@ -1151,6 +1169,7 @@ fn usage_overview_renders_one_row_per_account_tab() {
     view.tabs = vec![
         jackin_protocol::control::UsageProviderTab {
             id: "test-tab-claude-a".to_owned(),
+            account_capability: usage_fixture_capability("test-tab-claude-a", "claude"),
             label: "Claude".to_owned(),
             status_label: "40% left".to_owned(),
             account_label: "a@example.com".to_owned(),
@@ -1160,6 +1179,7 @@ fn usage_overview_renders_one_row_per_account_tab() {
         },
         jackin_protocol::control::UsageProviderTab {
             id: "test-tab-claude-b".to_owned(),
+            account_capability: usage_fixture_capability("test-tab-claude-b", "claude"),
             label: "Claude".to_owned(),
             status_label: "60% left".to_owned(),
             account_label: "b@example.com".to_owned(),
@@ -1169,6 +1189,7 @@ fn usage_overview_renders_one_row_per_account_tab() {
         },
         jackin_protocol::control::UsageProviderTab {
             id: "test-tab-codex".to_owned(),
+            account_capability: usage_fixture_capability("test-tab-codex", "codex"),
             label: "Codex".to_owned(),
             status_label: "37% left".to_owned(),
             account_label: "codex@example.com".to_owned(),
@@ -1288,6 +1309,7 @@ fn provider_usage_view_fixture(
         username: None,
         plan_label: plan_label.map(str::to_owned),
         credential_origin: None,
+        account_capability: None,
     };
     view.updated_label = updated_label.to_owned();
     view.buckets = buckets;
@@ -1594,6 +1616,7 @@ fn usage_dialog_renders_auth_source_and_omits_blank_email() {
         username: Some("donbeave".to_owned()),
         plan_label: Some("GLM Coding".to_owned()),
         credential_origin: Some("API token \u{b7} env ZAI_API_KEY".to_owned()),
+        account_capability: None,
     };
     let snapshot = render_usage_dialog_snapshot_for_view(120, 40, UsageDialogTab::Provider, view);
     assert!(
@@ -1755,10 +1778,13 @@ fn usage_dialog_provider_tabs_are_clickable() {
     match d.handle_click(tab_row, tab_col, 32, 120, None) {
         DialogAction::SwitchUsageProvider {
             provider_label,
-            account_id,
+            capability,
         } => {
             assert_eq!(provider_label, "Claude");
-            assert_eq!(account_id, "test-tab-claude");
+            assert_eq!(
+                capability,
+                usage_fixture_capability("test-tab-claude", "claude").expect("capability")
+            );
         }
         other => panic!("expected provider switch, got {other:?}"),
     }
@@ -2143,7 +2169,7 @@ fn usage_dialog_right_arrow_switches_to_next_provider() {
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
             provider_label: "Claude".to_owned(),
-            account_id: "test-tab-claude".to_owned(),
+            capability: usage_fixture_capability("test-tab-claude", "claude").expect("capability"),
         }
     );
 }
@@ -2764,7 +2790,7 @@ fn s8_usage_content_arrows_scroll_two_axes() {
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
             provider_label: "Claude".to_owned(),
-            account_id: "test-tab-claude".to_owned(),
+            capability: usage_fixture_capability("test-tab-claude", "claude").expect("capability"),
         }
     );
     assert_eq!(s8_usage_scroll(&d), (0, 0));
@@ -2807,7 +2833,8 @@ fn s8_usage_left_from_overview_goes_to_last_tab() {
         d.handle_key(b"\x1b[D", None),
         DialogAction::SwitchUsageProvider {
             provider_label: "MiniMax".to_owned(),
-            account_id: "test-tab-minimax".to_owned(),
+            capability: usage_fixture_capability("test-tab-minimax", "minimax")
+                .expect("capability"),
         }
     );
 }
