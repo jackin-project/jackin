@@ -107,7 +107,7 @@ fn read_fixture_u32(bytes: &[u8], offset: usize) -> u32 {
 #[cfg(unix)]
 fn omp_test_checksum(bytes: &[u8], mut checksum: (u32, u32), little_endian: bool) -> (u32, u32) {
     assert!(bytes.len().is_multiple_of(8));
-    for words in bytes.chunks_exact(8) {
+    for words in bytes.as_chunks::<8>().0 {
         let first: [u8; 4] = words[..4].try_into().unwrap();
         let second: [u8; 4] = words[4..].try_into().unwrap();
         let (first, second) = if little_endian {
