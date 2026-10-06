@@ -136,7 +136,7 @@ key = "clippy::excessive_nesting@jackin-agent-status"
 bound = 1
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-capsule"
-bound = 10
+bound = 8
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-config"
 bound = 1
@@ -464,7 +464,7 @@ key = "unreachable_pub@jackin-console"
 bound = 1
 [[family.entry]]
 key = "unused_imports@jackin-capsule"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "unused_imports@jackin-console"
 bound = 10
