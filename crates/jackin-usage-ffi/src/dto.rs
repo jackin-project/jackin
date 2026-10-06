@@ -866,3 +866,24 @@ mod selected_account_route_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod money_dto_tests {
+    use super::*;
+
+    #[test]
+    fn money_dto_preserves_full_signed_domain_currency_and_exponent() {
+        for amount_minor in [i64::MIN, -250, 0, 9_007_199_254_740_993, i64::MAX] {
+            for exponent in [0, 2, 3, u8::MAX] {
+                let dto = money_dto(Money {
+                    amount_minor,
+                    currency: "SGD".to_owned(),
+                    exponent,
+                });
+                assert_eq!(dto.amount_minor, amount_minor);
+                assert_eq!(dto.currency, "SGD");
+                assert_eq!(dto.exponent, exponent);
+            }
+        }
+    }
+}
