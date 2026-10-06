@@ -21,6 +21,7 @@ path = "src/lib.rs"
 [dependencies]
 jackin-core        = { workspace = true }
 jackin-config      = { workspace = true }
+jackin-instance    = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-protocol    = { workspace = true }
 jackin-docker      = { workspace = true }
@@ -30,15 +31,19 @@ jackin-telemetry   = { workspace = true }
 anyhow    = { workspace = true }
 thiserror = { workspace = true }
 nix       = { workspace = true, features = ["dir", "fs", "user"] }
+rustix    = { workspace = true }
 serde     = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2      = { workspace = true }
+hex       = { workspace = true }
 tempfile  = { workspace = true }
 directories = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-test-support = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util", "process"] }
 tempfile = { workspace = true }
 tracing = { workspace = true }
 

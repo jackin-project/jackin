@@ -652,7 +652,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         "adopt_prewarmed_dind",
         Some(PREWARM_STATE_FILE),
     );
-    let Some(lock) = try_lock_prewarmed_dind(paths) else {
+    let Some(lock) = try_lock_prewarmed_dind(paths).await else {
         record_prewarm_adoption_skip("locked");
         return None;
     };
@@ -811,24 +811,20 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     })
 }
 
-pub(crate) fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
-    if let Err(_error) = std::fs::create_dir_all(&paths.data_dir) {
+pub(crate) async fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
+    let paths = paths.clone();
+    let result = jackin_telemetry::spawn::joined_blocking(move || {
+        let lock = crate::runtime::coordination::open_lock(&paths, "prewarm-dind-adoption")?;
+        FileExt::try_lock(&lock).map_err(std::io::Error::from)?;
+        Ok::<_, std::io::Error>(lock)
+    })
+    .await;
+    if let Ok(Ok(lock)) = result {
+        Some(lock)
+    } else {
         record_recovered_degradation();
-        return None;
+        None
     }
-    let lock_path = paths.data_dir.join("prewarm-dind-adoption.lock");
-    let lock = match std::fs::File::create(&lock_path) {
-        Ok(lock) => lock,
-        Err(_error) => {
-            record_recovered_degradation();
-            return None;
-        }
-    };
-    if let Err(_error) = FileExt::try_lock(&lock) {
-        record_recovered_degradation();
-        return None;
-    }
-    Some(lock)
 }
 
 fn record_recovered_degradation() {

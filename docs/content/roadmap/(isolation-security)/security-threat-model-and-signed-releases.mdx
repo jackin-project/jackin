@@ -4,7 +4,7 @@ title: "Security Threat Model & Signed Releases"
 
 **Status**: Partially implemented
 
-**Current state**: signing/release artifacts have shipped in dev releases, and operator artifact verification passed end to end against `jackin-dev-v0.1.13` on 2026-07-04; clean-cache capsule download verification and residual Fulcio-chain hardening remain
+**Current state**: historical dev releases shipped signing artifacts, and operator artifact verification passed against `jackin-dev-v0.1.13` on 2026-07-04; the current generated CI has no signed-release publisher. Restoring publication, clean-cache capsule download verification, and residual Fulcio-chain hardening remain
 
 ## Problem
 
@@ -15,17 +15,19 @@ jackin❯ closed two credibility gaps with this work:
 
 ## Shipped
 
-All implementation landed on this branch. Operator and contributor detail now live in canonical docs, not here:
+The verification implementation and historical signed-release evidence remain available. Current generated CI has no signed archive or capsule-manifest publication jobs; restoring publication through the generator remains required. Operator and contributor detail lives in canonical docs:
 
 - **Security implementation** — threat model, the six `auth.rs` security functions, `shellfirm`/`tirith` rationale, and the YOLO-flag contract for all five agents → [/reference/security-implementation/](/reference/security-implementation/).
 - **Release verification** — cosign keyless verification, SLSA provenance, SBOM inspection, and capsule-manifest auditing → [/getting-started/verifying-releases/](/getting-started/verifying-releases/).
-- **CI signing** — cosign `sign-blob` bundles, `actions/attest-build-provenance` SLSA attestations, and `syft` CycloneDX SBOMs for every archive in <RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile> and the planned `.github/workflows/preview.yml` rolling-preview workflow (the SAN pin in `capsule_binary.rs` already accepts it); the capsule build jobs additionally produce a signed `capsule-manifest.json` + `capsule-manifest.json.bundle`.
+- **Historical CI signing** — the former `release.yml` account in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a` described cosign `sign-blob` bundles, `actions/attest-build-provenance` SLSA attestations, `syft` CycloneDX SBOMs, and signed capsule manifests. The current <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> produces none of these release artifacts. The verifier's accepted workflow identities are not evidence that a current publisher exists.
 - **Operator artifact verification** — `cargo xtask release-verify <archive>.tar.gz` checks the published `.sha256`, cosign bundle identity/issuer, GitHub artifact attestation, and SBOM JSON. The gate passed against `jackin-dev-v0.1.13` (`jackin-dev-0.1.13-aarch64-unknown-linux-gnu.tar.gz`, published 2026-07-02) on 2026-07-04, and a tampered archive copy failed closed at the digest check.
 - **In-process verification** — `fetch_and_verify_manifest` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> verifies the cosign bundle (embedded Sigstore production Rekor key via `ManualTrustRoot`, no TUF network call), pins the certificate SAN to the `release.yml` / `preview.yml` signing workflows, and hard-aborts on any failure — no warn-and-continue. The `JACKIN_CAPSULE_BIN` override and Homebrew-packaged binaries bypass the download path unchanged.
 
 ## Remaining
 
-- **Clean-cache capsule download gate.** Dev releases now exist after the signing workflows landed (latest observed: `jackin-dev-v0.1.13`, 2026-07-02). Operator archive verification is proven by `cargo xtask release-verify`, but the remaining in-process gate is a clean-cache capsule download against one of those signed bundles; unit and integration tests still bypass it (`cfg!(test)` stub plus `JACKIN_CAPSULE_BIN`). Confirm before treating the download path as proven:
+- **Restore signed publication.** The current <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> selects Rust validation without a release publisher. Generated archive signing, attestations, SBOMs, and capsule manifests need an implemented generator contract and consumer selection; do not restore former workflow YAML by hand. Preserve and verify the existing signing identity contract when replacing the retired release workflow.
+
+- **Clean-cache capsule download gate.** The historical signed-release evidence used `jackin-dev-v0.1.13` (2026-07-02). Operator archive verification was proven by `cargo xtask release-verify`, but the remaining in-process gate is a clean-cache capsule download against one of those signed bundles; unit and integration tests still bypass it (`cfg!(test)` stub plus `JACKIN_CAPSULE_BIN`). Confirm before treating the download path as proven:
 
   ```bash
   rm -rf ~/.jackin/cache/jackin-capsule/
@@ -37,7 +39,7 @@ All implementation landed on this branch. Operator and contributor detail now li
 - **Rekor key rotation.** The embedded `SIGSTORE_REKOR_PUB_KEY_B64` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> must be updated when Sigstore rotates the production Rekor signing key (announced at blog.sigstore.dev).
 - **Fulcio certificate chain not validated (known residual).** `Client::verify_blob` in sigstore-rs 0.14 does not chain-verify the certificate to a Fulcio root or check the OIDC issuer. The Rekor body cross-check (`verify_rekor_body_binds_bundle`) now closes the field-swap attack (an attacker can no longer keep a legitimate Rekor SET and substitute a self-signed cert, because the body hash and cert fields are verified against each other). However, an attacker who can forge a Rekor log entry (extremely high bar — requires the Rekor private key) or who obtains a Fulcio-issued cert with a matching SAN through any other means would still pass all checks. Full closure requires adding Fulcio root cert pool validation using `x509-cert`'s chain-building API against embedded Fulcio intermediate and root certs, or upgrading to a higher-level sigstore-rs API that includes the full keyless verification contract.
 
-This item retires once the capsule download path has been clean-cache verified end to end and the remaining verification residuals are either fixed or explicitly accepted.
+This item retires once signed publication is restored and proven, the capsule download path has been clean-cache verified end to end, and the remaining verification residuals are either fixed or explicitly accepted.
 
 ## Non-goals
 
@@ -60,7 +62,7 @@ This item retires once the capsule download path has been clean-cache verified e
 ## Related files
 
 - <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> — `fetch_and_verify_manifest`, embedded Rekor key, SAN identity check
-- <RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile> — tagged-release signing + capsule manifest
-- `.github/workflows/preview.yml` (planned, not yet in the tree) — rolling-preview signing + capsule manifest
+- <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> and <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> — current generator selection and CI graph; signed-release publication is absent.
+- Rolling-preview signing + capsule manifest — planned workflow absent from current source; existing verifier identity contract is recorded above
 - [/reference/security-implementation/](/reference/security-implementation/) — contributor-facing security internals
 - [/getting-started/verifying-releases/](/getting-started/verifying-releases/) — operator-facing verification guide

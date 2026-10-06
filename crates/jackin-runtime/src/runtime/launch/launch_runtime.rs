@@ -83,6 +83,7 @@ pub(crate) struct LaunchContext<'a, 'manifest> {
     pub(crate) non_interactive: bool,
     /// Immutable account/config generation lease held through container start.
     pub(crate) account_revision: &'a super::account_identity::AccountConfigRevision,
+    pub(crate) entry_claim: Option<&'a crate::runtime::universe::EntryClaim>,
 }
 
 /// Persist the containers this launch actually created before starting them.
@@ -449,6 +450,7 @@ pub(crate) async fn launch_role_runtime(
         sibling_auth_prewarm,
         non_interactive,
         account_revision,
+        entry_claim,
     } = ctx;
 
     let certs_volume = ownership
@@ -1289,19 +1291,24 @@ pub(crate) async fn launch_role_runtime(
     );
     account_revision.ensure_current(paths)?;
     let run_role_result = {
-        let created = docker
-            .create_container(container_name, container_spec)
-            .await;
+        let created = with_admitted_final_docker_spec(paths, state, container_spec, |spec| {
+            docker.create_container(container_name, spec)
+        })?
+        .await;
         match created {
             Ok(container) => {
                 *role_handle_slot
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(container.clone());
                 ownership.persist(&container)?;
-                docker
-                    .start_container_by_id(&container)
-                    .await
-                    .map(|()| container)
+                async {
+                    docker.start_container_by_id(&container).await?;
+                    if let Some(claim) = entry_claim {
+                        claim.activate().await?;
+                    }
+                    Ok(container)
+                }
+                .await
             }
             Err(error) => Err(error),
         }
@@ -1523,6 +1530,7 @@ pub(crate) async fn launch_role_runtime(
             docker,
             runner,
             &role_container,
+            None,
         )
         .await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
@@ -1731,3 +1739,18 @@ pub(crate) const fn capsule_otlp_allowlist_host(
 
 #[cfg(test)]
 mod tests;
+
+/// Final complete-spec admission boundary, immediately before Docker creation.
+fn with_admitted_final_docker_spec<T>(
+    paths: &JackinPaths,
+    state: &RoleState,
+    spec: jackin_core::ContainerSpec,
+    submit: impl FnOnce(jackin_core::ContainerSpec) -> T,
+) -> anyhow::Result<T> {
+    super::mounts::ensure_provider_authority_not_writable(
+        state,
+        &spec.binds,
+        &[paths.home_dir.join(".jackin-coordination")],
+    )?;
+    Ok(submit(spec))
+}

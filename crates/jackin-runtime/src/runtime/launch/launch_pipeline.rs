@@ -315,6 +315,10 @@ fn git_pull_program(_opts: &super::LoadOptions) -> std::path::PathBuf {
     std::path::PathBuf::from("git")
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "restore threads exact Docker ownership, account revision, and pending entry leases"
+)]
 async fn restore_current_role_now_with_handle(
     paths: &JackinPaths,
     container: &ContainerHandle,
@@ -323,6 +327,7 @@ async fn restore_current_role_now_with_handle(
     runner: &mut impl CommandRunner,
     steps: &mut super::StepCounter,
     start_first: bool,
+    entry_claim: Option<&crate::runtime::universe::EntryClaim>,
 ) -> anyhow::Result<()> {
     steps.finish_progress();
     let container_name = container.name();
@@ -334,6 +339,7 @@ async fn restore_current_role_now_with_handle(
         runner,
         start_first,
         container,
+        entry_claim,
     )
     .await;
     super::render_exit(paths, docker).await;
@@ -517,6 +523,7 @@ async fn restore_explicit_container(
         runner,
         steps,
         start,
+        opts.entry_claim.as_deref(),
     )
     .await?;
     Ok(true)
@@ -837,35 +844,16 @@ pub(crate) async fn load_role_with(
         .contains_key(workspace.name.as_str())
         .then(|| WorkspaceName::parse(&workspace.name))
         .transpose()?;
-    anyhow::ensure!(
-        opts.account.is_none() || opts.configuration.is_none(),
-        "account and configuration launch selections cannot both be supplied"
-    );
     let admission_config = config.clone();
-    let mut account_config =
-        opts.configuration
-            .as_deref()
-            .map(|configuration| {
-                let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
-                    anyhow::anyhow!("select an agent when selecting a configuration")
-                })?;
-                super::programmatic::with_configuration_selection(
-                    config,
-                    agent,
-                    selected_workspace.as_ref(),
-                    &selector.key(),
-                    configuration,
-                )
-            })
-            .transpose()?;
-    if account_config.is_none() {
-        account_config =
-            opts.account
-                .as_deref()
-                .map(|id| {
-                    let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
-                        anyhow::anyhow!("select an agent when selecting an account")
-                    })?;
+    let mut account_config = opts
+        .selection
+        .as_ref()
+        .map(|selection| {
+            let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
+                anyhow::anyhow!("select an agent when selecting an account or configuration")
+            })?;
+            match selection {
+                jackin_core::LaunchSelection::Account(id) => {
                     super::programmatic::with_account_selection(
                         config,
                         agent,
@@ -873,9 +861,19 @@ pub(crate) async fn load_role_with(
                         &selector.key(),
                         id,
                     )
-                })
-                .transpose()?;
-    }
+                }
+                jackin_core::LaunchSelection::Configuration(id) => {
+                    super::programmatic::with_configuration_selection(
+                        config,
+                        agent,
+                        selected_workspace.as_ref(),
+                        &selector.key(),
+                        id,
+                    )
+                }
+            }
+        })
+        .transpose()?;
     let config = account_config.as_mut().unwrap_or(config);
 
     // Pre-launch garbage collection is independent from git identity probes.
@@ -891,7 +889,8 @@ pub(crate) async fn load_role_with(
     crate::runtime::universe::mark_start(
         paths,
         crate::runtime::universe::StartKind::ResumeExisting,
-    );
+    )
+    .await;
 
     // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
     // not a name. Recover the name by matching workdir, mirroring the
@@ -935,8 +934,7 @@ pub(crate) async fn load_role_with(
     let early_restore_container = if opts.restore_container_base.is_none()
         && opts.role_branch.is_none()
         && !opts.rebuild
-        && opts.account.is_none()
-        && opts.configuration.is_none()
+        && opts.selection.is_none()
     {
         if let Some(agent) = selected_agent_before_role {
             let candidate = super::resolve_current_restore_candidate_timed(
@@ -973,6 +971,7 @@ pub(crate) async fn load_role_with(
                         runner,
                         &mut steps,
                         true,
+                        opts.entry_claim.as_deref(),
                     )
                     .await;
                 }
@@ -1048,6 +1047,7 @@ pub(crate) async fn load_role_with(
                         runner,
                         &mut steps,
                         true,
+                        opts.entry_claim.as_deref(),
                     )
                     .await;
                 }
@@ -1252,8 +1252,8 @@ pub(crate) async fn load_role_with(
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
         Some(container.clone())
-    } else if opts.rebuild || opts.account.is_some() || opts.configuration.is_some() {
-        // `--rebuild` skips the early gate above (it is `&& !opts.rebuild && opts.account.is_none()`), so
+    } else if opts.rebuild || opts.selection.is_some() {
+        // `--rebuild` skips the early gate above (it is `&& !opts.rebuild && opts.selection.is_none()`), so
         // a forced rebuild actually falls through to *this* resolution. Without
         // the same guard here, `resolve_restore_candidate` would still return
         // a current-role start/recreate decision and `return` straight into the
@@ -1295,6 +1295,7 @@ pub(crate) async fn load_role_with(
                     runner,
                     &mut steps,
                     true,
+                    opts.entry_claim.as_deref(),
                 )
                 .await;
             }
@@ -1338,6 +1339,7 @@ pub(crate) async fn load_role_with(
                     docker,
                     runner,
                     false,
+                    opts.entry_claim.as_deref(),
                 )
                 .await
                 .map(|()| container);
@@ -1790,7 +1792,7 @@ pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
     }
 }
 
-/// D9: purge per-instance data, the name-claim lock, and the index row inline on
+/// D9: purge per-instance data and the index row inline on
 /// a clean terminal outcome so no manual prune is needed. If the purge itself
 /// fails, fall back to stamping `CleanExited` so the next prune removes the row.
 /// Shared by the clean-exit and `NotFound` arms.

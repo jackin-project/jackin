@@ -51,9 +51,10 @@ pub(super) fn emit_auth_breadcrumbs(
             let breadcrumb = github_env_decls.get(token_key).map_or_else(
                 || token_key.to_owned(),
                 |value| {
+                    let display_value = value.as_display_str();
                     crate::runtime::launch::auth_token_source_reference(
                         token_key,
-                        Some(value.as_display_str()),
+                        Some(&display_value),
                     )
                 },
             );

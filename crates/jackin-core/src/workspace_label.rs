@@ -7,8 +7,8 @@ use crate::workspace_name::WorkspaceName;
 
 /// Operator-facing / path-scoped workspace label.
 ///
-/// Used for isolation records, instance index matching, materialization, and
-/// display. Distinct from [`WorkspaceName`] (config-file stem / identity key):
+/// Used for instance display, materialization prompts, and path labels.
+/// Distinct from [`WorkspaceName`] (config-file stem / identity key):
 /// ad-hoc workspaces may use a workdir path as the label, which can contain
 /// path separators and would be rejected by [`WorkspaceName::parse`].
 ///

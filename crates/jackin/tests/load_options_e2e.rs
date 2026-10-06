@@ -105,7 +105,7 @@ async fn load_options_launch() {
     // Every decision pre-supplied; nothing here may open a dialog.
     let mut opts = LoadOptions::programmatic(Agent::Claude);
     opts.force = true;
-    opts.account = Some("e2e-claude".into());
+    opts.selection = Some(jackin_core::LaunchSelection::Account("e2e-claude".into()));
     opts.model = Some("claude-opus-5".to_owned());
     opts.effort = Some(ReasoningEffort::Medium);
     opts.env

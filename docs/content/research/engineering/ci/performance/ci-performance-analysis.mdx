@@ -9,36 +9,38 @@ description: Ranks CI speed opportunities from measured job and step timing, cac
 
 Measured job timing points first to dependency and cache work, with lane changes justified only by wall-clock evidence.
 
+The current generated <RepoFile path=".github/workflows/ci.yml" /> has Rust verification and actionlint jobs; it has no construct, docs, preview, release, or selectable self-hosted jobs. The old topology and cache assertions below describe the measured historical pipeline, and the suggested integrations require current generator support.
+
 The ranking uses June 2026 job and step evidence; compare the [CI/CD speed baseline](/research/engineering/ci/performance/ci-speed-roadmap/) and remeasure before prioritizing work.
 
 ## Research question
 
-The PR #641 check suite was slow for two separate reasons, and a deeper analysis of where time actually goes points at one dominant cost the existing speed work has not yet eliminated.
+The historical PR #641 check suite was slow for two separate reasons. Its measured timings identified repeated cold dependency compilation as a dominant cost in that pipeline; the current MBX workflow needs a new measurement before applying that diagnosis.
 
 1. **`jackin-dev` was the overall long pole** (~11m53s) because `build aarch64-apple-darwin (GitHub)` spent **10m40s inside `jdx/mise-action`** before the Rust build even started. The compile itself took 24s.
-2. **`CI` has a structural serialization** where, when `docker/construct/**` changes, all pure-Rust nextest package shards wait behind the E2E construct-image build even though only the Docker E2E shard uses that image — adding ~3 minutes of idle time to unit-test shards.
+2. **The measured `CI` had structural serialization** where, when `docker/construct/**` changed, all pure-Rust nextest package shards waited behind the E2E construct-image build even though only the Docker E2E shard used that image — adding ~3 minutes of idle time to unit-test shards.
 
-The single fact that should drive prioritization: **the dominant CI cost is not running tests — it is compiling the same ~741-crate dependency graph from cold, roughly ten times in parallel, on most runs.** Measured on run [28256244365](https://github.com/jackin-project/jackin/actions/runs/28256244365):
+The single fact that should drive prioritization: **the measured pipeline spent its dominant time compiling the same ~741-crate dependency graph from cold, roughly ten times in parallel.** Measured on run [28256244365](https://github.com/jackin-project/jackin/actions/runs/28256244365):
 
 - The `jackin` nextest shard spent **3m02 compiling and ~12s running** its 719 tests (each ≈0.01s). Compilation is ~94% of the job.
-- The same cold full compile recurs in `clippy` (2m29), `check-default` (2m16), `msrv` (2m19), `bench-build`, `fuzz`, each of the five nextest shards, `docker-e2e`, and inside the construct image — and **none of these jobs share compiled objects**, because every Rust job sets `SCCACHE_GHA_ENABLED: "off"`.
-- The cache goes cold because `Swatinem/rust-cache`'s key includes the <RepoFile path="Cargo.lock" /> hash, and <RepoFile path="Cargo.lock" /> changed in ~48% of recent commits (PR #641 included). `docker/construct/**` changed in ~43% of recent commits, so the E2E serialization hits nearly half of all PRs.
+- The same cold full compile recurred in `clippy` (2m29), `check-default` (2m16), `msrv` (2m19), `bench-build`, `fuzz`, each of the five nextest shards, `docker-e2e`, and inside the construct image — and **none of those measured jobs shared compiled objects**, because they set `SCCACHE_GHA_ENABLED: "off"`.
+- The measured cache went cold because `Swatinem/rust-cache`'s key included the <RepoFile path="Cargo.lock" /> hash, and <RepoFile path="Cargo.lock" /> changed in ~48% of recent commits (PR #641 included). `docker/construct/**` changed in ~43% of recent commits, so E2E serialization affected nearly half of the sampled PRs.
 
-So the biggest levers either **compile fewer times** or **make the compiler cache survive <RepoFile path="Cargo.lock" /> churn**. Everything else is secondary. Do not pursue any of this by removing PR/main parity: the workflow-authoring rules in <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile> require every push-to-main failure invariant to be evaluated at PR time against the same inputs.
+So the biggest levers either **compile fewer times** or **make the compiler cache survive <RepoFile path="Cargo.lock" /> churn**. Everything else is secondary. Preserve PR/main verification parity when implementing a speedup. Workflow policy is documented in <RepoFile path="PULL_REQUESTS.md" />; generator ownership is documented in <RepoFile path=".github/AGENTS.md" />; changes must be implemented through the generator and verified after regeneration.
 
 ## Relationship to the CI/CD speed roadmap
 
-The [CI/CD speed roadmap](/research/engineering/ci/performance/ci-speed-roadmap/) already shipped the baseline (per-lane `cargo-registry-warmup`, semantic per-shard `rust-cache` keys, the reusable nextest workflow with a path-routed Docker E2E lane, the dual-runner GitHub/Velnor parity proof, and timing/cache summaries). It also already recorded outcomes that constrain the recommendations below — this item does not re-propose them naively:
+The [CI/CD speed roadmap](/research/engineering/ci/performance/ci-speed-roadmap/) records a historically shipped baseline (per-lane `cargo-registry-warmup`, semantic per-shard `rust-cache` keys, the reusable nextest workflow with a path-routed Docker E2E lane, the dual-runner GitHub/Velnor parity proof, and timing/cache summaries). It also already recorded outcomes that constrain the recommendations below — this item does not re-propose them naively:
 
-- **Hosted GHA `sccache` was measured and rejected** (0% hits with cache write errors). The corrected baseline keeps `RUSTC_WRAPPER=sccache` for Cargo fingerprint/target-cache compatibility but disables the GHA backend with `SCCACHE_GHA_ENABLED=off`. So "turn sccache on" below means a real remote backend (S3/R2/WebDAV/Depot Cache), never the GHA backend again.
+- **Hosted GHA `sccache` was measured and rejected** (0% hits with cache write errors). The corrected historical baseline kept `RUSTC_WRAPPER=sccache` for Cargo fingerprint/target-cache compatibility but disabled the GHA backend with `SCCACHE_GHA_ENABLED=off`. So "turn sccache on" below means a real remote backend (S3/R2/WebDAV/Depot Cache), never the GHA backend again.
 - **A `cargo nextest archive` fan-out experiment built successfully but failed an existing checkout-dependent test** and was reverted. So the build-once/test-many lever below is gated on first making tests relocatable (rely on runtime `CARGO_MANIFEST_DIR` / nextest binary env vars, not baked absolute paths).
-- **`Swatinem/rust-cache` does not dependably cache workspace-crate outputs across jobs** — confirmed when the Docker E2E lane restored the shared exact key yet still recompiled `jackin-capsule` (~7s) and the `docker-e2e` test graph (~32s). This is why the archive handoff, not another target-cache family, is the remaining candidate for removing duplicate workspace compilation.
+- **The measured `Swatinem/rust-cache` handoff did not dependably reuse workspace-crate outputs across jobs** — confirmed when the Docker E2E lane restored the shared exact key yet still recompiled `jackin-capsule` (~7s) and the `docker-e2e` test graph (~32s). This is why the archive handoff, not another target-cache family, is the remaining candidate for removing duplicate workspace compilation.
 
-This item also intersects [Rust CI tooling and dependency hygiene](/research/engineering/ci/rust-tooling/) (which is adopting `cargo-llvm-cov`, the prerequisite for dynamic test selection) and lists `cargo-hakari` and `cargo-chef` as open.
+This item also intersects [Rust CI tooling and dependency hygiene](/research/engineering/ci/rust-tooling/) (which proposes `cargo-llvm-cov`, the prerequisite for dynamic test selection) and lists `cargo-hakari` and `cargo-chef` as open.
 
-## Master priority: highly likely to less likely
+## Historical proposal ranking: highly likely to less likely
 
-Ordered by **(impact × confidence × breadth ÷ risk)**. Apply top-down; stop once a warm run is under ~4 minutes and cold outliers are gone, because past that complexity outweighs the marginal second saved.
+The historical analysis ranked proposals by **(impact × confidence × breadth ÷ risk)** and used a roughly four-minute warm-run target. That is measurement provenance, not a stopping rule for required coverage. Current work must preserve every required correctness and verification contract; the historical timing target cannot justify leaving a known defect or coverage gap.
 
 ### Tier 1 — highly likely, biggest result, do first
 
@@ -62,8 +64,8 @@ Items 2 and 3 are complementary: 2 makes each compile cheaper; 3 makes there be 
 | # | Change | Why | Impact | Confidence | Effort |
 |---|---|---|---|---|---|
 | 6 | Drop blanket `--all-features`; use targeted per-shard features | The non-e2e `jackin` shard compiles `dind_e2e.rs` (1348 lines) and the whole `e2e` graph under `--all-features`, then `docker-e2e` compiles it again | **−20–40s/shard**, cleaner caches | Med | Low–Med |
-| 7 | Static test-impact analysis: skip untouched crate shards; skip the archive build on non-Rust PRs | Extends the existing `changes` / `paths-filter` job to per-shard granularity with safe fallbacks | **−1 full compile per skipped shard**; because #3 already covers most shard skipping, the distinct value is avoiding archive builds on non-Rust PRs | Med | Med |
-| 8 | Faster runners for compile-bound jobs (free `ubuntu-24.04-arm`, the existing `velnor` lane, or third-party) | Compilation is CPU-bound; Zed data shows test exec −50% on 16 cores | **−20–40%** on compile-bound jobs | Med | Low–Med (infra) |
+| 7 | Static test-impact analysis: skip untouched crate shards; skip the archive build on non-Rust PRs | Proposed extending the retired `changes` / `paths-filter` job to per-shard granularity with safe fallbacks | **−1 full compile per skipped shard**; because #3 already covers most shard skipping, the distinct value is avoiding archive builds on non-Rust PRs | Med | Med |
+| 8 | Faster runners for compile-bound jobs (free `ubuntu-24.04-arm`, the historical `velnor` lane, or third-party) | Compilation is CPU-bound; Zed data shows test exec −50% on 16 cores | **−20–40%** on compile-bound jobs | Med | Low–Med (infra) |
 
 ### Tier 4 — lower likelihood, diminishing, or measure-first
 
@@ -93,7 +95,7 @@ Do **1** first (largest single number, isolated to one job). Do **2 + 3** togeth
 
 ### `jackin-dev` aarch64 macOS setup stall
 
-The target matrix builds four release artifacts in parallel. Three finished tool setup in 14–16s; one took 10m40s.
+The historical target matrix built four release artifacts in parallel. Three finished tool setup in 14–16s; one took 10m40s.
 
 | Job | Wall time | Dominant step |
 |---|---|---|
@@ -102,7 +104,7 @@ The target matrix builds four release artifacts in parallel. Three finished tool
 | `build x86_64-unknown-linux-gnu (GitHub)` | 1m00s | `jdx/mise-action`: 16s, `Build`: 16s |
 | `build aarch64-unknown-linux-gnu (GitHub)` | 59s | `jdx/mise-action`: 14s, `Build`: 18s |
 
-This is not compile time — the compile was fast. The time disappeared in tool setup, which points at an intermittent setup/cache/network/cache-save contention problem, not inherent build complexity. All four matrix jobs install the same set (`cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache`) with `cache_key_prefix: "mise-v2"`.
+This is not compile time — the compile was fast. The time disappeared in tool setup, which points at an intermittent setup/cache/network/cache-save contention problem, not inherent build complexity. All four measured matrix jobs installed the same set (`cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache`) with `cache_key_prefix: "mise-v2"`.
 
 Levers: instrument `mise-action` (per-tool grouping or `log_level: debug`) so the next stall names the exact tool; set an explicit `cache_key` and `cache_save: false` on matrix jobs after a single tool-prewarm job so the four targets never race to save the same tool cache; reassess whether PR jobs need `cosign`/`syft` on every target (keep them only where artifact attestation is a required main invariant); optionally run release-artifact builds on the `velnor` lane. Expected win: `jackin-dev` drops from ~11m53s to roughly ~1.5–2 min on warm setup.
 
@@ -135,7 +137,7 @@ All package shards started ~18:08:07, right after `construct E2E image` finished
 
 ### Root cause of the unit/E2E coupling
 
-In the former single-workflow PR CI (now <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile>) the single `test` job depended on `construct-e2e-image` and called the reusable workflow `.github/workflows/rust-nextest.yml` (since deleted as an uncalled orphan; the per-crate fan-out moves into the generated ci-pr.yml under the fleet restructuring plan), which contained six jobs: five pure-Rust shards (`jackin`, `jackin-capsule`, `jackin-runtime`, `jackin-tui`, `small-crates`) and one `docker-e2e`. Only `docker-e2e` downloads the construct image, but GitHub Actions treats the reusable-workflow call as a single dependency-graph node, so all five package shards inherit the caller's `needs: construct-e2e-image` gate.
+In the measured June 2026 single-workflow PR CI, the single `test` job depended on `construct-e2e-image` and called the former `rust-nextest.yml` reusable workflow, which contained six jobs: five pure-Rust shards (`jackin`, `jackin-capsule`, `jackin-runtime`, `jackin-tui`, `small-crates`) and one `docker-e2e`. Only `docker-e2e` downloaded the construct image, but the reusable-workflow call was a single dependency-graph node, so all five package shards inherited the caller's `needs: construct-e2e-image` gate. The later `ci-pr.yml` account retained in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a` is historical; the current <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> has per-crate Rust jobs and no construct-image lane.
 
 ### Cold-cache variance (run [28254775151](https://github.com/jackin-project/jackin/actions/runs/28254775151), ~14m02s)
 
@@ -145,9 +147,11 @@ In the former single-workflow PR CI (now <RepoFile path=".github/workflows/ci-pr
 | `test / Docker E2E smoke` | 7m38s |
 | `test / cargo nextest jackin` | 4m21s |
 
-In that run `Docker E2E smoke` spent 1m59s building `jackin-capsule` and 4m09s running tests, because it uses its own target-cache namespace (`ci-docker-e2e-dev-workspace-v1`) separate from the package shards (`ci-all-features-dev-workspace-v2-package-<group>`). When that namespace is cold, Docker E2E becomes the long pole.
+In that run `Docker E2E smoke` spent 1m59s building `jackin-capsule` and 4m09s running tests, because it used its own target-cache namespace (`ci-docker-e2e-dev-workspace-v1`) separate from the package shards (`ci-all-features-dev-workspace-v2-package-<group>`). The cold namespace made Docker E2E the long pole in that measured run.
 
-## Detailed analysis per lever
+## Detailed analysis of historical proposals
+
+These levers target the measured retired topology. The current workflow uses MBX object restoration and has no reusable nextest or Docker E2E job; implement equivalent coverage through the generator before re-evaluating these proposals.
 
 ### Decouple package nextest from the Docker E2E image (Tier 2 #4)
 
@@ -155,23 +159,23 @@ Split the reusable workflow so the package shards depend only on `[changes, carg
 
 ### Collapse the construct→E2E handoff (Tier 2 #5)
 
-The image handoff costs ~45s in `docker save` → `upload-artifact` (23s) → `download` (11s) → `docker load` (11s). Either build the construct image inside the `docker-e2e` job (no inter-job gate, no artifact round-trip) or push to a registry / `type=gha` cache and pull. As a cheap interim step, set `compression-level: 0` on the tar upload (the tar is already poorly compressible). Unify or seed the `docker-e2e` Rust cache with the package namespace so a cold namespace stops causing the 7m+ outlier.
+The measured image handoff cost ~45s in `docker save` → `upload-artifact` (23s) → `download` (11s) → `docker load` (11s). Either build the construct image inside the `docker-e2e` job (no inter-job gate, no artifact round-trip) or push to a registry / `type=gha` cache and pull. As a cheap interim step, set `compression-level: 0` on the tar upload (the tar is already poorly compressible). Unify or seed the `docker-e2e` Rust cache with the package namespace so a cold namespace stops causing the 7m+ outlier.
 
 ### nextest archive: build once, test many (Tier 1 #3)
 
 Compile all workspace test binaries once with `cargo nextest archive --workspace --all-features --archive-file nextest-archive.tar.zst`, upload it, and have N partitioned run jobs do `cargo nextest run --archive-file ... --partition count:i/N` with no toolchain and no compilation. The archive bundles test binaries, dynamic libs, non-test binaries used by integration tests (so `jackin-capsule` is carried for the e2e lane), and one-level `OUT_DIR`s. This collapses 5–6 redundant compiles into one and structurally removes the cold per-shard build. Blocked first on making tests relocatable, because the earlier archive experiment failed a checkout-dependent capsule test.
 
-### sccache is half-configured (Tier 1 #2)
+### Historical sccache setup was half-configured (Tier 1 #2)
 
-Every Rust job sets `RUSTC_WRAPPER: sccache` and `SCCACHE_GHA_ENABLED: "off"`, so sccache only writes a local disk cache that `rust-cache` then archives — duplicating `rust-cache` and adding wrapper overhead, while the documented caveat that bin/proc-macro/cdylib crates cannot be cached still applies. Pick one coherent shape: enable a real remote backend (S3/R2/WebDAV/Depot Cache — not the rejected GHA backend) so the compiled-object cache survives <RepoFile path="Cargo.lock" /> churn across all jobs and branches; or drop sccache entirely and rely on `rust-cache`. With the archive approach this only matters in the single build job. Also: sccache can slow release builds by up to 50%, so never wrap the release/publish path.
+The measured historical Rust jobs set `RUSTC_WRAPPER: sccache` and `SCCACHE_GHA_ENABLED: "off"`. That setup used a local disk cache archived by `rust-cache`, duplicating cache storage and adding wrapper overhead. The current generated workflow instead restores MBX objects and does not establish that former wrapper setup. The historical analysis also noted sccache limitations for binary, proc-macro, and cdylib outputs. Pick one coherent shape: enable a real remote backend (S3/R2/WebDAV/Depot Cache — not the rejected GHA backend) so the compiled-object cache survives <RepoFile path="Cargo.lock" /> churn across all jobs and branches; or drop sccache entirely and rely on `rust-cache`. With the archive approach this only matters in the single build job. Also: sccache can slow release builds by up to 50%, so never wrap the release/publish path.
 
 ### Feature-unification waste (Tier 3 #6)
 
-Every Rust job runs `--all-features`. The `jackin` nextest shard therefore compiles `dind_e2e.rs` (1348 lines) and the whole `e2e` graph via `--all-features` even though the default nextest profile excludes those tests at runtime; `docker-e2e` then compiles them again. Use targeted feature sets per shard. Separately, per-crate `-p` shards get divergent transitive feature unification, so the shared cache cannot be reused cleanly across shards — the concrete need that would justify `cargo-hakari`.
+The measured historical Rust jobs used `--all-features`. The historical `jackin` nextest shard therefore compiled `dind_e2e.rs` (1348 lines) and the whole `e2e` graph via `--all-features` even though the default nextest profile excludes those tests at runtime; the historical `docker-e2e` job then compiled them again. Use targeted feature sets per shard. Separately, the measured per-crate `-p` shards had divergent transitive feature unification, so their shared cache could not be reused cleanly across shards — the concrete need that would justify `cargo-hakari`.
 
 ### Static test-impact analysis (Tier 3 #7)
 
-Cargo has no native test-impact analysis. The repo already runs `dorny/paths-filter` in the `changes` job; extend it to per-crate-shard granularity using the `cargo metadata` reverse-dependency closure: a PR touching only `crates/jackin-tui/` runs the `jackin-tui` shard plus its dependents and skips the rest. Fail safe — changes to <RepoFile path="Cargo.lock" />, root <RepoFile path="Cargo.toml" />, `.cargo/`, `.github/`, `rust-toolchain.toml`, <RepoFile path="mise.toml" />, or a shared root crate (`jackin-core`, `jackin-config`, `jackin-protocol`) force the full matrix. Reverse-dependency reality from `cargo metadata` today: a `jackin-core` change reaches almost the whole workspace (little to gain); narrow leaf libraries with one consumer are good candidates (the terminal model was the canonical example before its extraction to [termpane](https://github.com/tailrocks/termpane), where it now versions independently); leaf binaries (`jackin-dev`, `jackin-pr-trailers`, `jackin-xtask`, `jackin-tui-lookbook`) are strong candidates. Use it first as an early fast signal with full CI as the authoritative gate; once #3 lands, its compile-savings shrink and the residual value is skipping the archive build entirely on non-Rust PRs.
+Cargo has no native test-impact analysis. The measured historical pipeline ran `dorny/paths-filter` in a `changes` job. The current generated workflow uses a Velnor `plan` job instead, so extending that retired job is obsolete. The underlying proposal was reverse-dependency selection from `cargo metadata`: a PR touching only `crates/jackin-tui/` runs the `jackin-tui` shard plus its dependents and skips the rest. Fail safe — changes to <RepoFile path="Cargo.lock" />, root <RepoFile path="Cargo.toml" />, `.cargo/`, `.github/`, `rust-toolchain.toml`, <RepoFile path="mise.toml" />, or a shared root crate (`jackin-core`, `jackin-config`, `jackin-protocol`) force the full matrix. The recorded reverse-dependency observations were: a `jackin-core` change reaches almost the whole workspace (little to gain); narrow leaf libraries with one consumer are good candidates (the terminal model was the canonical example before its extraction to [termpane](https://github.com/tailrocks/termpane), where it now versions independently); leaf binaries (`jackin-dev`, `jackin-pr-trailers`, `jackin-xtask`, `jackin-tui-lookbook`) are strong candidates. Use it first as an early fast signal with full CI as the authoritative gate; once #3 lands, its compile-savings shrink and the residual value is skipping the archive build entirely on non-Rust PRs.
 
 ## Research appendix
 
@@ -184,7 +188,7 @@ Depot benchmarked optimizations on Zed (a very large Rust codebase). Ranked by m
 | `cargo-nextest` + warm sccache | −35% (biggest single win) | Make the cache actually warm and shared |
 | Nightly `-Z threads=8` + `-Z share-generics=y` | −7.3% total, −22.7% build | A CI-only nightly build toolchain is a real lever; ship stable |
 | More cores (8→16) | test exec −50%, build slower (cache variance) | Cores help the test phase; pair with archive split |
-| Warm Cargo registry cache | −8% | Already shipped (`cargo-registry-warmup`) |
+| Warm Cargo registry cache | −8% | Historical pipeline included `cargo-registry-warmup`; current CI uses Cargo-source restoration |
 | `mold` linker | −0.7% (negligible) | Not a guaranteed win; measure before investing |
 | Cranelift codegen backend | failed to compile (inline asm) | Avoid as a drop-in |
 
@@ -192,14 +196,14 @@ Two caveats from the same source: sccache can slow release builds up to 50% (wra
 
 ### Test-impact analysis tiers
 
-- **Tier 1 — static** (path filters + crate reverse-deps): cheapest, half-built via the `changes` job, deterministic. Recommended.
+- **Tier 1 — static** (path filters + crate reverse-deps): a deterministic historical proposal based on path filters and reverse dependencies. Current selection uses the generated Velnor plan; no `changes` job remains.
 - **Tier 2 — dynamic** ([cargo-difftests](https://github.com/dnbln/cargo-difftests), per-test LLVM-coverage diff selection): becomes cheap once `cargo-llvm-cov` lands (already on the Rust CI tooling roadmap); reserve for expensive suites such as a future `cargo-mutants` gate.
 - **Tier 3 — fine-grained build system** (Buck2/Bazel): gold standard but migration tax unjustified at 20 crates; note both disable rustc incremental compilation for hermetic remote builds.
 
 ### Other knobs
 
-`--locked` and `CARGO_INCREMENTAL=0` are already set everywhere (good). `[profile.dev] debug = 1` is already line-tables level; dropping test-binary debuginfo to `0` would shrink the nextest archive and speed linking at the cost of test backtraces. `cargo-chef` does not apply — <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> installs system/mise packages and the only Rust compile (`shellfirm`) is already prebuilt and cached. Keep `cargo-hack` feature powersets on scheduled hygiene, not the PR hot path. Use nextest run recording (JUnit, per-test duration, priority, `threads-required`, test groups) to schedule slow/failing tests first for faster red-path signal; do not use `--rerun` as the green correctness gate, since it is not test-impact analysis.
+The measured historical jobs set `--locked` and `CARGO_INCREMENTAL=0`; current MBX task commands retain `--locked`, but those observations do not establish their incremental-compilation environment. `[profile.dev] debug = 1` is already line-tables level; dropping test-binary debuginfo to `0` would shrink the nextest archive and speed linking at the cost of test backtraces. The historical `cargo-chef` assessment assumed a host-prebuilt `shellfirm` binary. Current <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> compiles `shellfirm` in a temporary Rust stage, so that earlier build-layout premise no longer applies; any cache proposal requires fresh evidence from the current build. Keep `cargo-hack` feature powersets on scheduled hygiene, not the PR hot path. Use nextest run recording (JUnit, per-test duration, priority, `threads-required`, test groups) to schedule slow/failing tests first for faster red-path signal; do not use `--rerun` as the green correctness gate, since it is not test-impact analysis.
 
 ## Host-side effects
 
-None on the operator's machine. All work is CI configuration plus root tool/config files such as <RepoFile path=".github/workflows/ci-pr.yml">.github/workflows/ci-pr.yml</RepoFile> and <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile>. Any remote `sccache` backend or third-party runner is an opt-in infrastructure decision with its own credentials.
+None on the operator's machine. Current CI configuration is generated into <RepoFile path=".github/workflows/ci.yml" /> from <RepoFile path=".velnor/config.toml" />; the performance proposals in this analysis are not proof of current generated coverage. Other root tool/config files include <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile>. Any remote `sccache` backend or third-party runner is an opt-in infrastructure decision with its own credentials.

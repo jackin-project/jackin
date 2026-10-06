@@ -64,3 +64,18 @@ fn borrow_str_map_lookup() {
     typed.insert(wn.clone(), 9);
     assert_eq!(typed.get("prod"), Some(&9));
 }
+
+#[test]
+fn serde_workspace_name_enforces_config_stem_boundary() {
+    let name = WorkspaceName::parse("saved-stem").unwrap();
+    assert_eq!(serde_json::to_string(&name).unwrap(), "\"saved-stem\"");
+    assert_eq!(
+        serde_json::from_str::<WorkspaceName>("\"saved-stem\"").unwrap(),
+        name
+    );
+    for value in ["", "/display/label", ".."] {
+        let _error =
+            serde_json::from_value::<WorkspaceName>(serde_json::Value::String(value.into()))
+                .unwrap_err();
+    }
+}

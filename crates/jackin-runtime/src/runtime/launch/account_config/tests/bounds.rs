@@ -84,7 +84,7 @@ fn oversized_catalog_preserves_last_good_config_and_referenced_catalog() {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
     configure_for_test(temp.path(), &config, &instances).unwrap();
-    let directory = temp.path().join("home/.codex");
+    let directory = temp.path().join("provider-config/home/.codex");
     let previous_config = std::fs::read(directory.join("config.toml")).unwrap();
     let previous: toml::Value =
         toml::from_str(std::str::from_utf8(&previous_config).unwrap()).unwrap();
@@ -127,7 +127,7 @@ fn oversized_config_preserves_input_and_last_good_catalog_without_quarantine() {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
     configure_for_test(temp.path(), &config, &instances).unwrap();
-    let directory = temp.path().join("home/.codex");
+    let directory = temp.path().join("provider-config/home/.codex");
     let config_path = directory.join("config.toml");
     let mut config_before = std::fs::read(&config_path).unwrap();
     let previous: toml::Value =
@@ -160,7 +160,7 @@ fn near_limit_config_expansion_is_rejected_before_publishing_new_catalog() {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
     configure_for_test(temp.path(), &config, &instances).unwrap();
-    let directory = temp.path().join("home/.codex");
+    let directory = temp.path().join("provider-config/home/.codex");
     let config_path = directory.join("config.toml");
     let previous: toml::Value =
         toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
@@ -209,7 +209,7 @@ fn oversized_atomic_output_preserves_existing_codex_and_opencode_files() {
         ("config.toml", private_config_fs::Artifact::CodexConfig),
         ("opencode.json", private_config_fs::Artifact::OpenCodeConfig),
     ] {
-        let path = temp.path().join("home/.codex").join(name);
+        let path = temp.path().join("provider-config/home/.codex").join(name);
         std::fs::write(&path, b"previous complete config").unwrap();
         let mut publication_started = false;
         let error =
@@ -288,7 +288,7 @@ fn held_private_config_lock_times_out_and_preserves_last_good_pair() {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
     configure_for_test(temp.path(), &config, &instances).unwrap();
-    let directory = temp.path().join("home/.codex");
+    let directory = temp.path().join("provider-config/home/.codex");
     let config_before = std::fs::read(directory.join("config.toml")).unwrap();
     let previous: toml::Value =
         toml::from_str(std::str::from_utf8(&config_before).unwrap()).unwrap();
@@ -324,7 +324,7 @@ fn private_config_lock_deadline_shortens_poll_and_recovers_after_owner_exit() {
         .write(true)
         .open(
             temp.path()
-                .join("home/.codex/.jackin-private-provider-config.lock"),
+                .join("provider-config/home/.codex/.jackin-private-provider-config.lock"),
         )
         .unwrap();
     let started = Instant::now();

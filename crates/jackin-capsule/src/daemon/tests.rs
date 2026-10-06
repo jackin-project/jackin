@@ -884,6 +884,8 @@ async fn daemon_pty_lifecycle_reaches_shutdown_after_last_session_exit() -> Resu
         })
         .await?;
 
+        jackin_protocol::capsule_transport::client_handshake_async(&mut client).await?;
+
         client
             .write_all(&crate::protocol::attach::encode_client(
                 ClientFrame::Hello {

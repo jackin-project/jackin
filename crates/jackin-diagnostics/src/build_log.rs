@@ -46,11 +46,12 @@ pub fn is_active() -> bool {
 
 /// Append one output line, dropping the oldest when the cap is reached.
 pub fn push_line(line: &str) {
+    let line = crate::redact::redact_text(line);
     if let Ok(mut lines) = LINES.lock() {
         if lines.len() >= MAX_LINES {
             lines.pop_front();
         }
-        lines.push_back(line.to_owned());
+        lines.push_back(line.into_owned());
     }
 }
 

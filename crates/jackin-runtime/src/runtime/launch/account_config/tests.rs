@@ -75,7 +75,7 @@ fn configure_for_test(
                 .map(|model| (instance.config_id.clone(), model.clone()))
         })
         .collect();
-    configure_accounts(root, config, instances, &slots, &models, &BTreeMap::new())
+    configure_accounts(root, config, instances, &slots, &models, &BTreeMap::new()).map(|_| ())
 }
 
 fn configure_with_models(
@@ -85,7 +85,7 @@ fn configure_with_models(
     models: &BTreeMap<String, String>,
 ) -> anyhow::Result<()> {
     let slots = slots_for(instances);
-    configure_accounts(root, config, instances, &slots, models, &BTreeMap::new())
+    configure_accounts(root, config, instances, &slots, models, &BTreeMap::new()).map(|_| ())
 }
 
 fn instance(
@@ -142,9 +142,11 @@ fn selected_opencode_account_pairs_endpoint_key_and_model() {
             Some("https://provider.example/v1"),
         )];
         configure_for_test(temp.path(), &config, &instances).unwrap();
-        let contents =
-            std::fs::read_to_string(temp.path().join("home/.config/opencode/opencode.json"))
-                .unwrap();
+        let contents = std::fs::read_to_string(
+            temp.path()
+                .join("provider-config/home/.config/opencode/opencode.json"),
+        )
+        .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
         let (id, _, _) = opencode_provider(provider).unwrap();
         assert_eq!(parsed["enabled_providers"], serde_json::json!([id]));
@@ -200,8 +202,11 @@ fn openrouter_pin_lands_byte_exact_in_opencode_json() {
         None,
     )];
     configure_for_test(temp.path(), &config, &instances).unwrap();
-    let contents =
-        std::fs::read_to_string(temp.path().join("home/.config/opencode/opencode.json")).unwrap();
+    let contents = std::fs::read_to_string(
+        temp.path()
+            .join("provider-config/home/.config/opencode/opencode.json"),
+    )
+    .unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
     assert_eq!(parsed["model"], PIN);
     assert!(
@@ -247,7 +252,8 @@ fn selected_coding_provider_has_model_protocol_and_no_stored_secret() {
         )];
         configure_for_test(temp.path(), &config, &instances).unwrap();
         let contents =
-            std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap();
+            std::fs::read_to_string(temp.path().join("provider-config/home/.codex/config.toml"))
+                .unwrap();
         let parsed: toml::Value = toml::from_str(&contents).unwrap();
         assert_eq!(parsed["model"].as_str(), Some(model));
         assert_eq!(
@@ -271,7 +277,12 @@ fn selected_coding_provider_has_model_protocol_and_no_stored_secret() {
             .expect("catalog target has a file name")
             .to_owned();
         let catalog: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(temp.path().join("home/.codex").join(catalog_name)).unwrap(),
+            &std::fs::read(
+                temp.path()
+                    .join("provider-config/home/.codex")
+                    .join(catalog_name),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -316,7 +327,9 @@ fn configuration_model_override_wins_over_account_default() {
         None,
     )];
     configure_for_test(temp.path(), &config, &instances).unwrap();
-    let contents = std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap();
+    let contents =
+        std::fs::read_to_string(temp.path().join("provider-config/home/.codex/config.toml"))
+            .unwrap();
     let parsed: toml::Value = toml::from_str(&contents).unwrap();
     assert_eq!(parsed["model"].as_str(), Some("k3-256k"));
 }
@@ -349,7 +362,9 @@ fn codex_configuration_model_override_routes_without_account_model() {
     // Empty here is intentional: the writer must preserve the effective
     // ResolvedInstance model instead of silently falling back to the account.
     configure_with_models(temp.path(), &config, &instances, &BTreeMap::new()).unwrap();
-    let contents = std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap();
+    let contents =
+        std::fs::read_to_string(temp.path().join("provider-config/home/.codex/config.toml"))
+            .unwrap();
     let parsed: toml::Value = toml::from_str(&contents).unwrap();
     assert_eq!(parsed["model"].as_str(), Some("k3-256k"));
     assert_eq!(
@@ -390,8 +405,11 @@ fn opencode_cli_model_routes_without_account_model() {
     let models = BTreeMap::from([("opencode-work".into(), "k3".into())]);
 
     configure_with_models(temp.path(), &config, &instances, &models).unwrap();
-    let contents =
-        std::fs::read_to_string(temp.path().join("home/.config/opencode/opencode.json")).unwrap();
+    let contents = std::fs::read_to_string(
+        temp.path()
+            .join("provider-config/home/.config/opencode/opencode.json"),
+    )
+    .unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
     assert_eq!(parsed["model"], "kimi-for-coding/k3");
     assert_eq!(
@@ -429,7 +447,8 @@ fn private_configs_use_each_agent_resolved_env_name() {
     configure_for_test(temp.path(), &config, &instances).unwrap();
 
     let codex: toml::Value = toml::from_str(
-        &std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap(),
+        &std::fs::read_to_string(temp.path().join("provider-config/home/.codex/config.toml"))
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -437,7 +456,11 @@ fn private_configs_use_each_agent_resolved_env_name() {
         Some("OPENAI_API_KEY")
     );
     let opencode: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(temp.path().join("home/.config/opencode/opencode.json")).unwrap(),
+        &std::fs::read_to_string(
+            temp.path()
+                .join("provider-config/home/.config/opencode/opencode.json"),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -465,11 +488,16 @@ fn unadmitted_agents_leave_no_staged_config() {
     );
     let instances = [instance("claude-work", Agent::Claude, "work", None, None)];
     configure_for_test(temp.path(), &config, &instances).unwrap();
-    assert!(!temp.path().join("home/.codex/config.toml").exists());
     assert!(
         !temp
             .path()
-            .join("home/.config/opencode/opencode.json")
+            .join("provider-config/home/.codex/config.toml")
+            .exists()
+    );
+    assert!(
+        !temp
+            .path()
+            .join("provider-config/home/.config/opencode/opencode.json")
             .exists()
     );
 }
@@ -552,7 +580,7 @@ fn codex_instances_keep_slot_config_and_credential_identity() {
             ".codex-codex-personal",
         ),
     ] {
-        let directory = temp.path().join("home").join(home_rel);
+        let directory = temp.path().join("provider-config/home").join(home_rel);
         let contents = std::fs::read_to_string(directory.join("config.toml")).unwrap();
         let parsed: toml::Value = toml::from_str(&contents).unwrap();
         assert_eq!(parsed["model"].as_str(), Some(model));
@@ -663,7 +691,7 @@ fn codex_slots_keep_routed_models_catalogs_and_requested_effort_separate() {
             "low",
         ),
     ] {
-        let directory = temp.path().join("home").join(home_rel);
+        let directory = temp.path().join("provider-config/home").join(home_rel);
         let contents = std::fs::read_to_string(directory.join("config.toml")).unwrap();
         let parsed: toml::Value = toml::from_str(&contents).unwrap();
         assert_eq!(parsed["model"].as_str(), Some(model));
@@ -777,7 +805,7 @@ fn quarantined_payload(directory: &Path, expected: &[u8]) -> anyhow::Result<()> 
 fn corrupt_codex_config_is_quarantined_and_regenerated() -> anyhow::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
-    let directory = temp.path().join("home/.codex");
+    let directory = temp.path().join("provider-config/home/.codex");
     std::fs::create_dir_all(&directory).unwrap();
     let garbage = b"!!! not toml [[[\n";
     std::fs::write(directory.join("config.toml"), garbage).unwrap();
@@ -799,7 +827,7 @@ fn corrupt_codex_config_is_quarantined_and_regenerated() -> anyhow::Result<()> {
 fn non_utf8_codex_config_is_quarantined_and_regenerated() -> anyhow::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
-    let directory = temp.path().join("home/.codex");
+    let directory = temp.path().join("provider-config/home/.codex");
     std::fs::create_dir_all(&directory).unwrap();
     let garbage = b"\xff\xfe\x00 not utf8 \x80";
     std::fs::write(directory.join("config.toml"), garbage).unwrap();
@@ -817,7 +845,7 @@ fn non_utf8_codex_config_is_quarantined_and_regenerated() -> anyhow::Result<()> 
 fn non_table_model_providers_is_quarantined_and_regenerated() -> anyhow::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
-    let directory = temp.path().join("home/.codex");
+    let directory = temp.path().join("provider-config/home/.codex");
     std::fs::create_dir_all(&directory).unwrap();
     let garbage = b"model_providers = \"nope\"\n";
     std::fs::write(directory.join("config.toml"), garbage).unwrap();
@@ -846,7 +874,7 @@ fn codex_config_fifo_is_rejected_without_blocking() {
 
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();
-    let directory = temp.path().join("home/.codex");
+    let directory = temp.path().join("provider-config/home/.codex");
     std::fs::create_dir_all(&directory).unwrap();
     let fifo = directory.join("config.toml");
     nix::unistd::mkfifo(&fifo, Mode::from_bits(0o644).unwrap()).unwrap();
@@ -872,7 +900,7 @@ fn private_config_fs_tightens_existing_modes_without_following_child_symlinks() 
 
     let temp = tempfile::tempdir().unwrap();
     std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-    let home = temp.path().join("home");
+    let home = temp.path().join("provider-config/home");
     let directory_path = home.join(".codex");
     std::fs::create_dir_all(&directory_path).unwrap();
     std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -913,7 +941,8 @@ fn private_config_fs_tightens_existing_modes_without_following_child_symlinks() 
     let outside = temp.path().join("outside");
     std::fs::create_dir(&outside).unwrap();
     let symlink_root = tempfile::tempdir().unwrap();
-    symlink(&outside, symlink_root.path().join("home")).unwrap();
+    std::fs::create_dir(symlink_root.path().join("provider-config")).unwrap();
+    symlink(&outside, symlink_root.path().join("provider-config/home")).unwrap();
     let error =
         private_config_fs::open_directory(symlink_root.path(), Path::new(".codex")).unwrap_err();
     assert!(!format!("{error:#}").is_empty());
@@ -928,7 +957,7 @@ fn private_config_fs_tightens_existing_modes_without_following_child_symlinks() 
 fn private_config_fs_rejects_empty_and_dot_roots_before_creating_home() {
     let current = std::env::current_dir().unwrap();
     let sentinel = format!(".jackin-rejected-root-{}", std::process::id());
-    let sentinel_path = current.join("home").join(&sentinel);
+    let sentinel_path = current.join("provider-config/home").join(&sentinel);
     assert!(!sentinel_path.exists());
 
     for root in [Path::new(""), Path::new(".")] {
@@ -948,7 +977,7 @@ fn private_config_fs_rejects_lock_symlink_without_following_target() {
 
     let temp = tempfile::tempdir().unwrap();
     let directory = private_config_fs::open_directory(temp.path(), Path::new(".codex")).unwrap();
-    let directory_path = temp.path().join("home/.codex");
+    let directory_path = temp.path().join("provider-config/home/.codex");
     let outside = temp.path().join("outside-lock");
     std::fs::write(&outside, b"outside").unwrap();
     let lock_path = directory_path.join(".jackin-private-provider-config.lock");
@@ -994,8 +1023,8 @@ fn private_config_fs_normalizes_macos_lexical_root_aliases() {
 fn private_config_fs_rejects_non_leaf_names_before_filesystem_access() {
     let temp = tempfile::tempdir().unwrap();
     let directory = private_config_fs::open_directory(temp.path(), Path::new(".codex")).unwrap();
-    let directory_path = temp.path().join("home/.codex");
-    let outside = temp.path().join("home/outside");
+    let directory_path = temp.path().join("provider-config/home/.codex");
+    let outside = temp.path().join("provider-config/home/outside");
     let catalog = br#"{"models":[{"slug":"fixture"}]}"#;
     std::fs::write(&outside, catalog).unwrap();
 
@@ -1035,7 +1064,7 @@ fn private_config_fs_rejects_non_leaf_names_before_filesystem_access() {
     assert_eq!(std::fs::read(&outside).unwrap(), catalog);
 
     let (temp_name, temp_file) = private_config_fs::create_temp_file(&directory).unwrap();
-    let outside_owned = temp.path().join("home/outside-owned");
+    let outside_owned = temp.path().join("provider-config/home/outside-owned");
     std::fs::hard_link(directory_path.join(&temp_name), &outside_owned).unwrap();
     let error =
         private_config_fs::cleanup_owned_temp(&directory, "../outside-owned", &temp_file, Ok(()))
@@ -1057,7 +1086,7 @@ fn private_config_fs_rejects_non_leaf_names_before_filesystem_access() {
 fn private_config_fs_does_not_remove_replaced_orphan_staging_files() {
     let temp = tempfile::tempdir().unwrap();
     let directory = private_config_fs::open_directory(temp.path(), Path::new(".codex")).unwrap();
-    let directory_path = temp.path().join("home/.codex");
+    let directory_path = temp.path().join("provider-config/home/.codex");
     let (name, file) = private_config_fs::create_temp_file(&directory).unwrap();
     std::fs::remove_file(directory_path.join(&name)).unwrap();
     std::fs::write(directory_path.join(&name), b"foreign orphan").unwrap();
@@ -1083,7 +1112,7 @@ fn codex_catalog_publication_is_immutable_and_idempotent() {
     private_config_fs::publish_catalog(&directory, &name, contents, |_| Ok(())).unwrap();
     private_config_fs::publish_catalog(&directory, &name, contents, |_| Ok(())).unwrap();
     assert_eq!(
-        std::fs::read(temp.path().join("home/.codex").join(&name)).unwrap(),
+        std::fs::read(temp.path().join("provider-config/home/.codex").join(&name)).unwrap(),
         contents
     );
 
@@ -1107,7 +1136,11 @@ fn codex_catalog_publication_rejects_symlink_target() {
     let name = codex_catalog_filename(contents);
     let outside = temp.path().join("outside.json");
     std::fs::write(&outside, b"outside").unwrap();
-    symlink(&outside, temp.path().join("home/.codex").join(&name)).unwrap();
+    symlink(
+        &outside,
+        temp.path().join("provider-config/home/.codex").join(&name),
+    )
+    .unwrap();
 
     let error =
         private_config_fs::publish_catalog(&directory, &name, contents, |_| Ok(())).unwrap_err();
@@ -1134,8 +1167,14 @@ fn codex_catalog_publication_failure_leaves_no_staged_file() {
         })
         .unwrap_err();
     assert!(format!("{error:#}").contains("injected publication failure"));
-    assert!(!temp.path().join("home/.codex").join(&name).exists());
-    let leftovers = std::fs::read_dir(temp.path().join("home/.codex"))
+    assert!(
+        !temp
+            .path()
+            .join("provider-config/home/.codex")
+            .join(&name)
+            .exists()
+    );
+    let leftovers = std::fs::read_dir(temp.path().join("provider-config/home/.codex"))
         .unwrap()
         .filter_map(Result::ok)
         .filter(|entry| {
@@ -1168,7 +1207,7 @@ fn codex_catalog_install_failures_leave_a_durable_retryable_catalog() {
         .unwrap_err();
         assert!(format!("{error:#}").contains("injected catalog publication failure"));
         assert_eq!(
-            std::fs::read(temp.path().join("home/.codex").join(&name)).unwrap(),
+            std::fs::read(temp.path().join("provider-config/home/.codex").join(&name)).unwrap(),
             contents
         );
         private_config_fs::publish_catalog(&directory, &name, contents, |_| Ok(())).unwrap();
@@ -1203,12 +1242,13 @@ fn config_rename_failures_preserve_the_new_catalog_pair_and_retry() {
         .unwrap_err();
         assert!(format!("{error:#}").contains("injected config publication failure"));
         assert_eq!(
-            std::fs::read_to_string(temp.path().join("home/.codex/config.toml")).unwrap(),
+            std::fs::read_to_string(temp.path().join("provider-config/home/.codex/config.toml"))
+                .unwrap(),
             config
         );
         assert!(
             temp.path()
-                .join("home/.codex")
+                .join("provider-config/home/.codex")
                 .join(&catalog_name)
                 .is_file()
         );
@@ -1228,7 +1268,7 @@ fn codex_catalog_rotation_preserves_stale_container_reference() {
     let temp = tempfile::tempdir().unwrap();
     let (config, first_instances) = codex_moonshot_fixture();
     configure_for_test(temp.path(), &config, &first_instances).unwrap();
-    let directory = temp.path().join("home/.codex");
+    let directory = temp.path().join("provider-config/home/.codex");
     let first_catalog = {
         let document: toml::Value =
             toml::from_str(&std::fs::read_to_string(directory.join("config.toml")).unwrap())

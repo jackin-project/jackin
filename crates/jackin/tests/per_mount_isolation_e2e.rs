@@ -115,7 +115,7 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
         &cdir,
         "the-architect",
         "jackin-the-architect",
-        &jackin_core::WorkspaceLabel::parse("jackin").unwrap(),
+        Some(&jackin_core::WorkspaceName::parse("jackin").unwrap()),
         &PreflightContext {
             workspace_label: jackin_core::WorkspaceLabel::parse("jackin").unwrap(),
             force: false,

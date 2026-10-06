@@ -11,8 +11,8 @@ use crate::{
     OpPickerError, OpPickerFatalState, OpPickerLoadRequest, OpPickerMode, OpPickerPendingLoad,
     OpPickerStage, VaultsLoadedPlan, accounts_loaded_plan, disconnected_worker_error_state,
     field_label_input_state, fields_loaded_plan, item_name_input_state, items_loaded_plan,
-    probe_load_error_from_anyhow, recoverable_load_error_state, section_name_input_state,
-    sort_fields_by_concealed_first, vaults_loaded_plan,
+    normalize_field_section_ids, probe_load_error_from_anyhow, recoverable_load_error_state,
+    section_name_input_state, sort_fields_by_concealed_first, vaults_loaded_plan,
 };
 
 use crate::state::{LoadResult, OpPickerState, collection_state_for_count};
@@ -67,6 +67,7 @@ impl OpPickerState {
             item_list_state: collection_state_for_count(0),
             selected_item: None,
             fields: Vec::new(),
+            sections: Vec::new(),
             field_list_state: collection_state_for_count(0),
             section_list_state: collection_state_for_count(0),
             selected_section: None,
@@ -169,11 +170,17 @@ impl OpPickerState {
         self.stage = OpPickerStage::Field;
         self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
-        let cached = self
-            .op_cache
-            .borrow()
-            .get_fields(account_id.as_deref(), &vault_id, &item_id)
-            .map(|fields| LoadResult::Fields(Ok(fields)));
+        let cached = {
+            let cache = self.op_cache.borrow();
+            cache
+                .get_fields(account_id.as_deref(), &vault_id, &item_id)
+                .map(|fields| {
+                    let sections = cache
+                        .get_sections(account_id.as_deref(), &vault_id, &item_id)
+                        .unwrap_or_default();
+                    LoadResult::Fields(Ok(jackin_core::OpItemDetail { fields, sections }))
+                })
+        };
         let request = OpPickerLoadRequest::Fields {
             account_id,
             vault_id,
@@ -278,18 +285,33 @@ impl OpPickerState {
                 self.load_state = recoverable_load_error_state(err.to_string());
                 true
             }
-            LoadPoll::Ready(LoadResult::Fields(Ok(mut fields))) => {
+            LoadPoll::Ready(LoadResult::Fields(Ok(mut detail))) => {
                 self.rx = None;
-                sort_fields_by_concealed_first(&mut fields, |field| field.concealed);
+                if let Err(error) =
+                    normalize_field_section_ids(&mut detail.fields, &detail.sections)
+                {
+                    self.fields.clear();
+                    self.sections.clear();
+                    self.load_state = recoverable_load_error_state(error);
+                    return true;
+                }
+                sort_fields_by_concealed_first(&mut detail.fields, |field| field.concealed);
                 let vault_id = self.selected_vault_id_or_default();
                 let item_id = self.selected_item_id_or_default();
                 self.op_cache.borrow_mut().put_fields(
                     self.selected_account_id_ref(),
                     &vault_id,
                     &item_id,
-                    fields.clone(),
+                    detail.fields.clone(),
                 );
-                self.fields = fields;
+                self.op_cache.borrow_mut().put_sections(
+                    self.selected_account_id_ref(),
+                    &vault_id,
+                    &item_id,
+                    detail.sections.clone(),
+                );
+                self.fields = detail.fields;
+                self.sections = detail.sections;
                 self.collapsed_sections.clear();
                 let section_choice_count = self.section_choices().len();
                 let field_display_count = self.build_field_display_rows().len();

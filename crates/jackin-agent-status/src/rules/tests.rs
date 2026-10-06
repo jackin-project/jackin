@@ -296,18 +296,22 @@ requires_all = ["{needle}"]
     )
 }
 
-fn trusted_signed_bundle(entries: Vec<(&str, String)>) -> SignedPackBundle {
-    SignedPackBundle {
-        signer_identity: TRUSTED_PACK_BUNDLE_IDENTITY.to_owned(),
-        signature: SignedPackBundle::local_test_signature_for(TRUSTED_PACK_BUNDLE_IDENTITY),
-        packs: entries
-            .into_iter()
-            .map(|(label, content)| SignedPackEntry {
-                label: label.to_owned(),
-                content,
-            })
-            .collect(),
-    }
+fn bundle_entries(entries: Vec<(&str, String)>) -> Vec<SignedPackEntry> {
+    entries
+        .into_iter()
+        .map(|(label, content)| SignedPackEntry {
+            label: label.to_owned(),
+            content,
+        })
+        .collect()
+}
+
+fn registry_with_entries_for_parser_test(entries: &[SignedPackEntry]) -> RulePackRegistry {
+    let mut registry = RulePackRegistry::from_sources([PackSource::Embedded]).unwrap();
+    registry
+        .notes
+        .extend(load_bundle_entries(&mut registry.packs, entries));
+    registry
 }
 
 #[test]
@@ -506,29 +510,25 @@ fn runtime_pack_directory_overrides_embedded_pack() {
 }
 
 #[test]
-fn pack_sources_apply_verified_bundle_over_embedded_floor() {
-    let bundle = trusted_signed_bundle(vec![(
+fn bundle_entry_parser_applies_entries_over_embedded_floor() {
+    let entries = bundle_entries(vec![(
         "claude-remote",
         test_pack_toml("claude", "remote-pack", "blocked", "remote marker"),
     )]);
 
-    let registry = RulePackRegistry::from_sources([
-        PackSource::Embedded,
-        PackSource::SignedRemoteBundle(bundle),
-    ])
-    .unwrap();
+    let registry = registry_with_entries_for_parser_test(&entries);
 
     assert!(
         registry
             .evaluate(Some("claude"), &["remote marker".to_owned()])
             .is_some_and(|matched| matched.rule_id == "remote-pack"),
-        "verified bundle pack should replace the embedded pack for the same agent"
+        "parsed entry should replace the embedded pack for the same agent"
     );
     assert!(
         registry
             .evaluate(Some("codex"), &["›".to_owned()])
             .is_some(),
-        "verified bundle must not remove unrelated embedded floor packs"
+        "entry parser must not remove unrelated embedded floor packs"
     );
     assert!(
         registry
@@ -542,12 +542,15 @@ fn pack_sources_apply_verified_bundle_over_embedded_floor() {
 
 #[test]
 fn pack_sources_reject_unverified_bundle_and_keep_floor() {
-    let mut bundle = trusted_signed_bundle(vec![(
-        "claude-remote",
-        test_pack_toml("claude", "remote-pack", "blocked", "remote marker"),
-    )]);
-    bundle.signature = "not trusted".to_owned();
-
+    let bundle = SignedPackBundle {
+        signer_identity: "jackin-project/agent-status-packs".to_owned(),
+        signature: "jackin-agent-status-pack-bundle:v1:jackin-project/agent-status-packs"
+            .to_owned(),
+        packs: bundle_entries(vec![(
+            "claude-remote",
+            test_pack_toml("claude", "remote-pack", "blocked", "remote marker"),
+        )]),
+    };
     let registry = RulePackRegistry::from_sources([
         PackSource::Embedded,
         PackSource::SignedRemoteBundle(bundle),
@@ -576,8 +579,8 @@ fn pack_sources_reject_unverified_bundle_and_keep_floor() {
 }
 
 #[test]
-fn pack_sources_skip_oversized_and_bad_remote_packs_without_dropping_floor() {
-    let bundle = trusted_signed_bundle(vec![
+fn bundle_entry_parser_skips_oversized_and_bad_packs_without_dropping_floor() {
+    let entries = bundle_entries(vec![
         (
             "too-large",
             test_pack_toml(
@@ -605,11 +608,7 @@ regex = ["(unclosed"]
         ),
     ]);
 
-    let registry = RulePackRegistry::from_sources([
-        PackSource::Embedded,
-        PackSource::SignedRemoteBundle(bundle),
-    ])
-    .unwrap();
+    let registry = registry_with_entries_for_parser_test(&entries);
 
     assert!(
         registry

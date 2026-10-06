@@ -787,7 +787,14 @@ fn hash_env_value(digest: &mut Sha256, value: &EnvValue) {
         EnvValue::OpRef(value) => {
             hash_component(digest, "op_ref");
             hash_component(digest, &value.op);
-            hash_component(digest, &value.path);
+            // Fingerprints track breadcrumb meaning, not its storage escape
+            // spelling. A schema migration must not change account-source
+            // identity solely because legacy literal percent signs were
+            // escaped into the versioned wire format.
+            hash_component(
+                digest,
+                &jackin_core::display_op_breadcrumb_path(&value.path),
+            );
             hash_optional_component(digest, value.account.as_deref());
             hash_component(digest, if value.on_demand { "true" } else { "false" });
         }

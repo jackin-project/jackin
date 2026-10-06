@@ -483,11 +483,11 @@ pub fn active_run_for_paths(paths: &JackinPaths) -> Option<Arc<RunDiagnostics>> 
 
 pub fn install_host_panic_hook() {
     let () = HOST_PANIC_HOOK_INSTALLED.get_or_init(|| {
-        let default_hook = std::panic::take_hook();
+        let _previous_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             emit_panic_crash(info, "host panic");
             crate::observability::shutdown_otlp();
-            default_hook(info);
+            write_redacted_panic_to_stderr(info);
         }));
     });
 }
@@ -496,13 +496,42 @@ pub fn install_host_panic_hook() {
 /// hooks. Panic payloads are untrusted free text, so redaction precedes the
 /// four-KiB export cap.
 pub fn emit_panic_crash(info: &std::panic::PanicHookInfo<'_>, context: &str) {
-    let payload = info
-        .payload()
+    emit_crash_message(context, panic_payload(info));
+}
+
+/// Print a default-hook-style panic summary after redacting the payload and
+/// location. Calling Rust's default hook with the original `PanicHookInfo`
+/// would write the untrusted payload directly to stderr.
+pub fn write_redacted_panic_to_stderr(info: &std::panic::PanicHookInfo<'_>) {
+    let thread_name = std::thread::current().name().map(str::to_owned);
+    let header = match (thread_name, info.location()) {
+        (Some(name), Some(location)) => format!(
+            "thread '{name}' panicked at {}:{}:{}:",
+            location.file(),
+            location.line(),
+            location.column()
+        ),
+        (Some(name), None) => format!("thread '{name}' panicked:"),
+        (None, Some(location)) => format!(
+            "panicked at {}:{}:{}:",
+            location.file(),
+            location.line(),
+            location.column()
+        ),
+        (None, None) => "panicked:".to_owned(),
+    };
+    let rendered = format!("{header}\n{}", panic_payload(info));
+    let rendered = crate::redact::redact_text(&rendered);
+    use std::io::Write as _;
+    let _write_result = writeln!(std::io::stderr().lock(), "{rendered}");
+}
+
+fn panic_payload<'a>(info: &'a std::panic::PanicHookInfo<'_>) -> &'a str {
+    info.payload()
         .downcast_ref::<&str>()
         .copied()
         .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str))
-        .unwrap_or("non-string panic payload");
-    emit_crash_message(context, payload);
+        .unwrap_or("non-string panic payload")
 }
 
 pub(crate) fn emit_crash_message(context: &str, payload: &str) {

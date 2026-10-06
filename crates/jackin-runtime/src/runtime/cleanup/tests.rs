@@ -1357,33 +1357,46 @@ async fn prune_instances_reconciles_stale_active_to_crashed() {
 }
 
 #[tokio::test]
-async fn prune_instances_reaps_only_unheld_name_locks() {
+async fn prune_instances_preserves_held_and_idle_coordination_inodes() {
     use fs4::FileExt;
-    // D9: an orphaned `<name>.lock` (no live holder) is removed; one still held
-    // by a live process is left untouched.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     std::fs::create_dir_all(&paths.data_dir).unwrap();
-    let held = paths.data_dir.join("jk-held.lock");
-    let orphan = paths.data_dir.join("jk-orphan.lock");
-    std::fs::write(&held, b"").unwrap();
-    std::fs::write(&orphan, b"").unwrap();
-    // Hold an exclusive flock on `held` for the duration of the prune; flock
-    // conflicts across separate open descriptions, so the reaper's try_lock fails.
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "test holds a real flock to verify the reaper skips a held lock"
-    )]
-    let held_file = std::fs::File::open(&held).unwrap();
-    FileExt::try_lock(&held_file).unwrap();
-
+    let held = super::super::coordination::open_lock(&paths, "name-jk-held").unwrap();
+    let idle = super::super::coordination::open_lock(&paths, "name-jk-idle").unwrap();
+    FileExt::try_lock(&held).unwrap();
+    FileExt::try_lock(&idle).unwrap();
+    FileExt::unlock(&idle).unwrap();
+    let idle_path = super::super::coordination::root(&paths)
+        .unwrap()
+        .join("name-jk-idle.lock");
+    let held_path = super::super::coordination::root(&paths)
+        .unwrap()
+        .join("name-jk-held.lock");
+    #[cfg(unix)]
+    let identity = {
+        use std::os::unix::fs::MetadataExt as _;
+        let held = held.metadata().unwrap();
+        let idle = idle.metadata().unwrap();
+        ((held.dev(), held.ino()), (idle.dev(), idle.ino()))
+    };
+    drop(idle);
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
     prune_instances(&paths, &docker, &mut runner).await.unwrap();
-
-    assert!(held.exists(), "a held name-lock must not be reaped");
-    assert!(!orphan.exists(), "an unheld name-lock must be reaped");
-    FileExt::unlock(&held_file).unwrap();
+    assert!(held_path.exists(), "held coordination inode must persist");
+    assert!(idle_path.exists(), "idle coordination inode must persist");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        let held = std::fs::metadata(held_path).unwrap();
+        let idle = std::fs::metadata(idle_path).unwrap();
+        assert_eq!(
+            ((held.dev(), held.ino()), (idle.dev(), idle.ino())),
+            identity
+        );
+    }
+    FileExt::unlock(&held).unwrap();
 }
 
 // ── prune_images ─────────────────────────────────────────────────────────
@@ -1718,7 +1731,7 @@ async fn prune_jackin_home_removes_home() {
     let paths = JackinPaths::for_tests(temp.path());
     std::fs::create_dir_all(paths.jackin_home.join("leftover")).unwrap();
 
-    prune_jackin_home(&paths);
+    prune_jackin_home(&paths).unwrap();
 
     assert!(!paths.jackin_home.exists(), "jackin_home should be removed");
 }
@@ -1728,7 +1741,7 @@ async fn prune_jackin_home_is_ok_when_absent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     // jackin_home never created — must not panic
-    prune_jackin_home(&paths);
+    prune_jackin_home(&paths).unwrap();
 }
 
 // ── owned-validated-path removal ─────────────────────────────────────────
@@ -1779,4 +1792,45 @@ async fn prune_dir_refuses_symlink() {
         std::fs::symlink_metadata(&link).is_ok_and(|meta| meta.file_type().is_symlink()),
         "refused symlink must be left for the operator"
     );
+}
+
+#[tokio::test]
+async fn prune_boundaries_reject_coordination_namespace_overlap_before_mutation() {
+    let temp = tempdir().unwrap();
+    let mut paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.home_dir).unwrap();
+    let sentinel = paths.home_dir.join("retain");
+    std::fs::write(&sentinel, b"retained").unwrap();
+    paths.data_dir = paths.home_dir.clone();
+    paths.jackin_home = paths.home_dir.clone();
+    paths.roles_dir = paths.home_dir.clone();
+    paths.cache_dir = paths.home_dir.clone();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+    assert!(
+        prune_all_instances(&paths, &docker, &mut runner)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("coordination")
+    );
+    assert!(
+        prune_jackin_home(&paths)
+            .unwrap_err()
+            .to_string()
+            .contains("coordination")
+    );
+    assert!(
+        prune_roles(&paths)
+            .unwrap_err()
+            .to_string()
+            .contains("coordination")
+    );
+    assert!(
+        prune_cache(&paths)
+            .unwrap_err()
+            .to_string()
+            .contains("coordination")
+    );
+    assert_eq!(std::fs::read(sentinel).unwrap(), b"retained");
 }

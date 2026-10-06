@@ -244,6 +244,15 @@ pub struct AccountChoice {
 }
 
 impl AccountChoice {
+    /// Consume this pre-container picker row as one exclusive launch identity.
+    #[must_use]
+    pub fn into_launch_selection(self) -> jackin_core::LaunchSelection {
+        match self.configuration_id {
+            Some(id) => jackin_core::LaunchSelection::Configuration(id),
+            None => jackin_core::LaunchSelection::Account(self.id),
+        }
+    }
+
     pub fn label(&self) -> String {
         if let Some(instance_id) = self.instance_id.as_deref() {
             return format!(
