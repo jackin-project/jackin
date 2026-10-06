@@ -22,7 +22,7 @@ Employer contributions: confirm authorization before submitting. Use personal em
 ## Git hooks
 
 Pre-commit checks run via [hk](https://hk.jdx.dev) (`hk.pkl` at the repo
-root; hk 2.0.1 pinned in `mise.toml`/`mise.lock`). Install per checkout —
+root; the version is pinned in `mise.toml`/`mise.lock`). Install per checkout —
 idempotent, safe to re-run:
 
 ```sh

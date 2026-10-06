@@ -1628,7 +1628,7 @@ fn validate_adoption_metadata(root: &Path) -> Result<()> {
         "1.43.0",
         "https://opentelemetry.io/schemas/1.43.0",
         "crates/jackin-telemetry/vendor/semconv-1.43.0",
-        "=0.32.1",
+        "=0.33.0",
         "https://opentelemetry.io/schemas/1.42.0",
     );
     let actual = (
@@ -1750,6 +1750,11 @@ fn validate_weaver_platform_matrix(root: &Path) -> Result<()> {
         .and_then(|entries| entries.first())
         .and_then(toml::Value::as_table)
         .ok_or_else(|| anyhow::anyhow!("mise.lock has no Weaver platform matrix"))?;
+    let version = weaver
+        .get("version")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("mise.lock has no Weaver version"))?;
+    let url_version_prefix = format!("/v{version}/weaver-");
     let expected = [
         "linux-arm64",
         "linux-arm64-musl",
@@ -1773,7 +1778,7 @@ fn validate_weaver_platform_matrix(root: &Path) -> Result<()> {
         let checksum = artifact.get("checksum").and_then(toml::Value::as_str);
         let url = artifact.get("url").and_then(toml::Value::as_str);
         if !checksum.is_some_and(|value| value.starts_with("sha256:") && value.len() == 71)
-            || !url.is_some_and(|value| value.contains("/v0.24.2/weaver-"))
+            || !url.is_some_and(|value| value.contains(&url_version_prefix))
         {
             bail!("mise.lock Weaver artifact {platform} is not checksum/version pinned");
         }

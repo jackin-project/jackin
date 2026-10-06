@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Canonical Rust channel and required components for rustup and editors.
-# Keep its channel aligned with the Rust option in mise.toml and `rust-version`
-# in Cargo.toml; mise needs the repeated version to enable native mbx wrapping.
+# mise discovers this version through idiomatic-file support while enabling mbx.
 
 [toolchain]
 channel = "1.99.0"

@@ -18,9 +18,8 @@ use std::time::Duration;
 use crate::DockerError;
 use anyhow::{Context, Result};
 use fast_down::{
-    Proxy,
+    MmapFilePusher, Proxy,
     fast_puller::{FastDownPuller, FastDownPullerOptions, build_client},
-    file::MmapFilePusher,
     http::Prefetch,
     multi::{self, download_multi},
 };
@@ -115,11 +114,13 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT_HEADER, HeaderValue::from_static(USER_AGENT));
     let client = build_client(
-        &headers,
+        headers.clone(),
         proxy,
         accept_invalid_certs,
         accept_invalid_hostnames,
+        false,
         None,
+        10,
     )
     .context("building HTTP client")?;
     let (info, _resp) = client.prefetch(parsed).await.map_err(|(err, _)| {
@@ -153,15 +154,17 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
         proxy,
         accept_invalid_certs,
         accept_invalid_hostnames,
+        cookie_store: false,
         file_id: info.file_id,
         // resp: None — every chunk (including the first) issues its own ranged
         // GET rather than reusing the prefetch body; prefetch is consumed only
         // for the size + Range-support probe above.
         resp: None,
         available_ips: Arc::from([]),
+        max_redirects: 10,
     })
     .context("building parallel downloader")?;
-    let pusher = MmapFilePusher::new(file, info.size, false)
+    let pusher = MmapFilePusher::new(&file, info.size, false)
         .await
         .context("creating memory-mapped file writer")?;
     let result = download_multi(
@@ -184,13 +187,22 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
     // are recoverable and high-frequency, so they are intentionally not emitted
     // as telemetry. The bounded download operation records only its final outcome.
     let drive = async {
-        while result.event_chain.recv().await.is_ok() {}
-        result.join().await.map_err(|e| {
-            anyhow::Error::from(DockerError::DownloadTaskPanicked {
+        let mut flush_error = None;
+        while let Ok(event) = result.event_chain().recv().await {
+            match event {
+                fast_down::Event::Flushing => flush_error = None,
+                fast_down::Event::FlushError(error) => flush_error = Some(error.to_string()),
+                _ => {}
+            }
+        }
+        if let Some(detail) = flush_error {
+            Err(anyhow::Error::from(DockerError::DownloadFlushFailed {
                 url: url.to_owned(),
-                detail: e.to_string(),
-            })
-        })
+                detail,
+            }))
+        } else {
+            Ok(())
+        }
     };
     let Ok(outcome) = tokio::time::timeout(DOWNLOAD_TIMEOUT, drive).await else {
         result.abort();

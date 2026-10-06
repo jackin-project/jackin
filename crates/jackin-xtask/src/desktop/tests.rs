@@ -517,12 +517,12 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
     let mise = repo_text("mise.toml");
     let rust_toolchain = repo_text("rust-toolchain.toml");
     assert!(
-        mise.contains("rust = { version = \"1.99.0\", mr_boxington = true }"),
+        mise.contains("rust = { version = \"latest\", mr_boxington = true }"),
         "Mise's Rust backend must route Cargo through MBX natively"
     );
     assert!(
         rust_toolchain.contains("channel = \"1.99.0\""),
-        "the Mise and rustup Rust pins must stay aligned"
+        "rust-toolchain.toml must pin the project's Rust toolchain"
     );
     assert!(
         mise.contains("mr-boxington = \"1.22.0\""),
@@ -530,7 +530,7 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
     );
     assert!(
         mise.contains("idiomatic_version_file_enable_tools = [\"rust\"]"),
-        "rust-toolchain.toml remains aligned with the Mise Rust pin"
+        "Mise must discover Rust from rust-toolchain.toml"
     );
 
     let native_mise = repo_text("native/mise.toml");

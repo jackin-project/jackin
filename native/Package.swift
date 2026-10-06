@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 import PackageDescription
 
 // Static XCFramework produced by `cargo xtask desktop xcframework` (boltffi pack apple).

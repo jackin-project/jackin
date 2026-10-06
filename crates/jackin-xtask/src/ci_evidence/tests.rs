@@ -2083,7 +2083,7 @@ fn generated_evidence_workflows_reject_skip_controls() {
     let error = validate_generated_workflow_shape(&skipped_job, &contract).unwrap_err();
     assert!(error.to_string().contains("unexpected fields"), "{error:#}");
 
-    let mut optional_command = workflow;
+    let mut optional_command = workflow.clone();
     optional_command["jobs"]["ci-evidence"]["steps"][2]
         .as_object_mut()
         .unwrap()
@@ -2091,7 +2091,7 @@ fn generated_evidence_workflows_reject_skip_controls() {
     let error = validate_generated_workflow_shape(&optional_command, &contract).unwrap_err();
     assert!(error.to_string().contains("unexpected fields"), "{error:#}");
 
-    let mut wrong_command = workflow;
+    let mut wrong_command = workflow.clone();
     wrong_command["jobs"]["ci-evidence"]["steps"][2]["run"] =
         serde_json::json!("cargo xtask ci-evidence record-push");
     let error = validate_generated_workflow_shape(&wrong_command, &contract).unwrap_err();
