@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::super::published::published_image_is_stale;
 use super::*;
+use crate::runtime::naming::{image_name, role_base_image_name};
+use jackin_core::RoleSelector;
+use jackin_image::image_recipe::expected_image_recipes;
+use jackin_manifest::repo::CachedRepo;
 
 #[test]
 fn parse_buildkit_duration_ms_handles_fraction_shapes() {

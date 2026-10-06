@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::path::PathBuf;
 
 #[test]
 fn build_output_streams_for_compact_non_debug_runs() {

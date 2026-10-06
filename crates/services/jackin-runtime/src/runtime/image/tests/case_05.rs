@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_core::RoleSelector;
 
 #[test]
 fn custom_construct_identity_changes_recipe_hash() {

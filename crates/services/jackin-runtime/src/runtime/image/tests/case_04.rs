@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::runtime::naming::{image_name, image_name_for_branch, role_base_image_name};
+use jackin_core::RoleSelector;
+use jackin_manifest::repo::CachedRepo;
 
 #[test]
 fn reuse_staleness_sentinel_gate_uses_published_image_or_stored_agent_version() {

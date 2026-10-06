@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_core::RoleSelector;
+use jackin_manifest::repo::CachedRepo;
 #[cfg(unix)]
 pub(super) const BUILD_TOKEN_TEST_CHILD: &str = "JACKIN_BUILD_TOKEN_TEST_CHILD";
 
