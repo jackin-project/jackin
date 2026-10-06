@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::instance::{InstanceIndex, InstanceStatus};
 
 #[tokio::test]
 async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {

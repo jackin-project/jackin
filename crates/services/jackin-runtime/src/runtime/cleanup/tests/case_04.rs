@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::instance::{InstanceIndex, InstanceStatus};
+use crate::runtime::naming::{LABEL_IMAGE_KEY, LABEL_KIND_ROLE, LABEL_ROLE_KEY};
+use jackin_docker::docker_client::RemoveImageOutcome;
 
 #[tokio::test]
 async fn gc_does_not_panic_when_list_role_names_fails_in_orphaned_networks() {

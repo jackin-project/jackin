@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::instance::{InstanceIndex, InstanceStatus};
 
 #[tokio::test]
 async fn persisted_cleanup_refuses_same_name_role_or_dind_replacements() {

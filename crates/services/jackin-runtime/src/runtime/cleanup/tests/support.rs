@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::instance::{InstanceIndex, InstanceStatus};
 pub(super) fn tempdir() -> std::io::Result<TempDir> {
     tempfile::tempdir_in(std::fs::canonicalize(std::env::temp_dir())?)
 }

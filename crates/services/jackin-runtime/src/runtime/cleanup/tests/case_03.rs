@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::runtime::naming::{LABEL_KIND_DIND, LABEL_ROLE_KEY};
 
 #[tokio::test]
 async fn gc_removes_only_the_listed_sidecar_when_role_name_is_replaced() {

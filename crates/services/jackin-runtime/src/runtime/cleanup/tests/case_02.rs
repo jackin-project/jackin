@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::runtime::naming::LABEL_ROLE_KEY;
 
 #[tokio::test]
 async fn purge_container_state_refuses_when_dind_sidecar_exists() {
