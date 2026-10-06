@@ -3,6 +3,124 @@
 
 use super::*;
 
+fn create_params<'a>(field_label: &'a str, section: Option<&'a str>) -> OpItemCreateParams<'a> {
+    OpItemCreateParams {
+        vault_id: "vault-id",
+        title: "Build token",
+        category: "API_CREDENTIAL",
+        field_label,
+        value: "secret fixture",
+        notes_plain: None,
+        tags: &[],
+        section,
+    }
+}
+
+fn created_item_with_fields(
+    fields: Vec<RawCreatedItemField>,
+    sections: Vec<RawCreatedItemSection>,
+) -> RawCreatedItem {
+    RawCreatedItem {
+        id: "item-id".to_owned(),
+        title: "Build token".to_owned(),
+        vault: RawCreatedItemVault {
+            id: "vault-id".to_owned(),
+            name: "Private".to_owned(),
+        },
+        fields,
+        sections,
+    }
+}
+
+fn created_field(id: &str, label: &str, section: Option<&str>) -> RawCreatedItemField {
+    RawCreatedItemField {
+        id: id.to_owned(),
+        label: label.to_owned(),
+        section: section.map(|id| RawCreatedItemFieldSection { id: id.to_owned() }),
+    }
+}
+
+fn created_section(id: &str, label: &str) -> RawCreatedItemSection {
+    RawCreatedItemSection {
+        id: id.to_owned(),
+        label: label.to_owned(),
+    }
+}
+
+#[test]
+fn created_item_reference_selects_unique_field_in_exact_requested_section() {
+    let raw = created_item_with_fields(
+        vec![
+            created_field("default-token", "Token", None),
+            created_field("other-token", "TOKEN", Some("metadata")),
+            created_field("credential-token", "token", Some("credentials")),
+        ],
+        vec![
+            created_section("metadata", "Metadata"),
+            created_section("credentials", "Credentials"),
+        ],
+    );
+
+    let reference = created_item_reference(
+        &raw,
+        &create_params("Token", Some("Credentials")),
+        "vault-id",
+        Some("credentials"),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        reference.op,
+        "op://vault-id/item-id/credentials/credential-token"
+    );
+    assert_eq!(reference.path, "Private/Build token/Credentials/token");
+}
+
+#[test]
+fn created_item_reference_rejects_duplicate_fields_in_requested_section() {
+    let raw = created_item_with_fields(
+        vec![
+            created_field("first-token", "Token", Some("credentials")),
+            created_field("second-token", "TOKEN", Some("credentials")),
+        ],
+        vec![created_section("credentials", "Credentials")],
+    );
+
+    let error = created_item_reference(
+        &raw,
+        &create_params("Token", Some("Credentials")),
+        "vault-id",
+        Some("credentials"),
+        None,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("returned 2 fields"), "{error:#}");
+}
+
+#[test]
+fn created_item_reference_rejects_duplicate_requested_section_records() {
+    let raw = created_item_with_fields(
+        vec![created_field("token", "Token", Some("credentials"))],
+        vec![
+            created_section("credentials", "Credentials"),
+            created_section("credentials", "Duplicate credentials"),
+        ],
+    );
+
+    let error = created_item_reference(
+        &raw,
+        &create_params("Token", Some("Credentials")),
+        "vault-id",
+        Some("credentials"),
+        None,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("2 section records"), "{error:#}");
+}
+
 #[test]
 fn launch_env_runner_uses_wider_bounded_timeout() {
     let runner = OpCli::new_launch_env();

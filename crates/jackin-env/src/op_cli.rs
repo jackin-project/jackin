@@ -708,6 +708,13 @@ struct RawCreatedItemField {
     id: String,
     #[serde(default)]
     label: String,
+    #[serde(default)]
+    section: Option<RawCreatedItemFieldSection>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawCreatedItemFieldSection {
+    id: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -732,44 +739,76 @@ fn created_item_reference(
         raw.id
     );
 
-    // Locate the field by case-insensitive label; `op` assigned its ID.
-    let field = raw
+    let (section_id, section_label) = match (params.section, template_section_id) {
+        (Some(requested_label), Some(template_id)) => {
+            let matching_sections: Vec<&RawCreatedItemSection> = raw
+                .sections
+                .iter()
+                .filter(|section| section.id == template_id)
+                .collect();
+            let [section] = matching_sections.as_slice() else {
+                anyhow::bail!(
+                    "`op item create` returned {} section records for requested section id {:?}; \
+                     the item was created (id {:?}) but jackin cannot identify its field — \
+                     delete by hand in 1Password and re-run setup.",
+                    matching_sections.len(),
+                    template_id,
+                    raw.id
+                );
+            };
+            let display_label = if section.label.is_empty() {
+                requested_label
+            } else {
+                section.label.as_str()
+            };
+            (Some(template_id), Some(display_label))
+        }
+        (None, None) => (None, None),
+        _ => anyhow::bail!("`op item create` section label and submitted section id do not agree"),
+    };
+
+    // Labels are presentation metadata and may repeat. Use the exact section
+    // identity submitted in the template, then require one matching field; a
+    // duplicate or missing response must never select an arbitrary ID.
+    let matching_fields: Vec<&RawCreatedItemField> = raw
         .fields
         .iter()
-        .find(|field| field.label.eq_ignore_ascii_case(params.field_label))
-        .ok_or_else(|| {
+        .filter(|field| {
+            field.label.eq_ignore_ascii_case(params.field_label)
+                && field.section.as_ref().map(|section| section.id.as_str()) == section_id
+        })
+        .collect();
+    let field = match matching_fields.as_slice() {
+        [field] => *field,
+        [] => {
             let labels: Vec<&str> = raw
                 .fields
                 .iter()
                 .map(|field| field.label.as_str())
                 .collect();
-            anyhow::anyhow!(
-                "`op item create` returned no field with label {:?}; \
-                 observed labels: {labels:?}. The item was created (id {:?}) \
-                 but jackin cannot reference its field — delete by hand in \
-                 1Password and re-run setup.",
+            anyhow::bail!(
+                "`op item create` returned no field with label {:?} in the requested section; \
+                 observed labels: {labels:?}. The item was created (id {:?}) but jackin cannot \
+                 reference its field — delete by hand in 1Password and re-run setup.",
                 params.field_label,
-                raw.id,
-            )
-        })?;
+                raw.id
+            );
+        }
+        _ => anyhow::bail!(
+            "`op item create` returned {} fields with label {:?} in the requested section; \
+             the item was created (id {:?}) but jackin cannot choose an unambiguous field — \
+             delete by hand in 1Password and re-run setup.",
+            matching_fields.len(),
+            params.field_label,
+            raw.id
+        ),
+    };
     anyhow::ensure!(
         !field.id.is_empty(),
         "`op item create` returned no field ID for label {:?}",
         params.field_label
     );
 
-    // Use the exact section ID submitted in the template, preferring the ID
-    // echoed by `op item create` when available. Keep its label in display path.
-    let section_id = match (params.section, template_section_id) {
-        (Some(label), Some(template_id)) => Some(
-            raw.sections
-                .iter()
-                .find(|section| section.id == template_id)
-                .or_else(|| raw.sections.iter().find(|section| section.label == label))
-                .map_or_else(|| template_id.to_owned(), |section| section.id.clone()),
-        ),
-        _ => None,
-    };
     let op_uri = jackin_core::build_op_reference(
         &raw.vault.id,
         &raw.id,
@@ -788,8 +827,7 @@ fn created_item_reference(
     } else {
         raw.vault.name.as_str()
     };
-    let section_path = params
-        .section
+    let section_path = section_label
         .map(|label| format!("{}/", jackin_core::encode_op_breadcrumb_segment(label)))
         .unwrap_or_default();
     let field_label = if field.label.is_empty() {

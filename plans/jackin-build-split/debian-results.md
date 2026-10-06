@@ -1,6 +1,6 @@
 # Debian Results
 
-Status: Route source review PASS; synthetic CLI checks complete; Jackin runtime route NOT RUN.
+Status: Route source review PASS; bounded host probe owner-reported PASS with independent record-consistency PASS; independent process capture and Jackin route NOT RUN.
 
 ## Host
 
@@ -90,10 +90,24 @@ mkdir -m 700 "$probe/home" "$probe/codex" "$probe/sqlite"
 
 The owner reported exit 0 and a JSON configured-server count of 0. The output contained no server names or details. The empty tree remained unchanged. The owner removed logs and temporary files. Sol rejected this command as a general profile preflight because auth-status discovery may contact configured MCP endpoints. The synthetic empty-home result does not validate a real profile. No real profile or model request ran.
 
-The replacement uses schema-verified app-server `config/read` with synthetic empty-home input. Its response returned `system`, `user`, and `sessionFlags` layers. `ConfigReadResponse.layers[].config` is generic JSON. The wrapper must inspect raw `mcp_servers` values and fail closed if configuration is enabled or incomplete. This replacement awaits implementation and independent review.
+The v11 replacement uses schema-verified app-server `config/read`. Its schema review accounts for `system`, `user`, and `sessionFlags` layers and treats `ConfigReadResponse.layers[].config` as generic JSON. It inspects raw `mcp_servers` values and fails closed on enabled or incomplete configuration. The bounded host result is recorded below; it reports zero configured MCP servers for this profile snapshot only.
+
+## Owner-reported bounded host Codex route probe
+
+The exact v11 wrapper `/tmp/jackin_codex_probe_review_0_160_v11.py` has SHA-256 `bfc1eedaf6e6105859262bbe7cd5d5996a0745385294c4cdb9f200e47ff24020`, mode `0400`. Its notification fixture `/tmp/jackin_codex_notif_parser_fixture_0_160_v11.py` has SHA-256 `30cee76f266bb2c37365c0cfc4166a6643476bdb6820fd957d5e9308358d1b23`, mode `0400`. The executor reports that exact-hash checks preceded the single root-authorized invocation. The executor's mode-0600 record `/tmp/jackin_codex_probe_v11_tool_record.json`, SHA-256 `6b9b3b1d03abc26454ce2c75381a71a6d4ace3306e5e25386dde3a4bd73ec4f3`, transcribes the original tool result: exit 0, 9.086 seconds, command, sanitized output, and both artifact hashes. It is not an independent exported transcript; no tool-result chunk ID or exact invocation wall-clock time was retained. Independent Sol review matched the record to the exact reviewed wrapper, fixture, command, output, and exit status. This is a record-consistency pass, not independent observation of the native process, exact UTC, or cleanup.
+
+Sanitized output:
+
+```text
+PASS profile=existing_Codex_home auth_method=chatgpt model=gpt-6-luna effort=max provider=openai mcp_config_count=0 thread_token_usage_events=1 account_rate_limit_events=1 chatgpt_account_updates=1 account_reads=2 account_route_identity_stable=true config_warnings_discarded=1 thread_settings_updates_checked=0 deprecation_notices_discarded=2 thread_warnings_discarded=1 global_warnings_discarded=0 thread_active_status_events=1 thread_idle_status_events=1 ephemeral_path=null shell_tool=disabled no_tool_items_observed=true marker=JACKIN_ROUTE_PROBE_20261005_07
+```
+
+The owner reports that the wrapper correlated the exact completion marker, required the selected profile and route snapshots to remain stable, and rejected unknown tool or reroute events. It reported no configured MCP servers and no tool item. The model and effort are settings observed in thread metadata; they do not attest to provider-side model execution. The wrapper source attempts to remove task-owned temporary captures and stop its child process. The retained record does not verify either cleanup result. No login or enrollment occurred, and no session history was deleted. Normal Codex startup, managed configuration, authentication refresh, and SQLite activity remain possible.
+
+This is an owner-reported bounded host Codex route result with independent record-consistency review. It does not test Jackin account discovery, workspace launch, or an Architect role request. Jackin discovery and role loading remain NOT RUN.
 
 ## Owner
 
-`debian_codex_route` completed static route inspection, source review, and local CLI path checks. Exact-source review PASS covers commits `0556ce39b1abb9cd6b387583d932e1556ca9dfd4`, `688057f40173d32dda04a55bff1e3868c219710d`, and `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`. Jackin runtime confirmation remains NOT RUN because the available MBX binary predates these changes and no default configuration exists. Live requests remain NOT RUN.
+`debian_codex_route` completed static route inspection, source review, local CLI path checks, and the bounded v11 host Codex probe above. Exact-source review PASS covers commits `0556ce39b1abb9cd6b387583d932e1556ca9dfd4`, `688057f40173d32dda04a55bff1e3868c219710d`, and `45fbb65c84e359ea3c577120a80ed7a2fa92cf2a`. The executor's report is recorded, with its transcript limitation above. The host probe does not establish Jackin discovery or role execution. Jackin runtime confirmation remains NOT RUN because the available MBX binary predates these changes and no default configuration exists.
 
 See [crate plan](crate-plan.md) and [reviews](reviews.md).

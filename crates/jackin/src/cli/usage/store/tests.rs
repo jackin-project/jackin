@@ -76,8 +76,8 @@ fn account_hash_is_stable_and_namespaced() {
     );
 }
 
-#[tokio::test]
-async fn host_account_cache_exports_owned_operations_without_payloads() {
+#[test]
+fn host_account_cache_exports_owned_operations_without_payloads() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("host-cache-secret-path");
     let paths = JackinPaths::for_tests(&root);
@@ -85,10 +85,16 @@ async fn host_account_cache_exports_owned_operations_without_payloads() {
     sensitive_account.account_label = "host-cache-secret@example.com".to_owned();
 
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
-    let _subscriber = tracing::subscriber::set_default(subscriber);
-
-    upsert_accounts(&paths, &[sensitive_account]).await.unwrap();
-    read_accounts(&paths).await.unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    tracing::subscriber::with_default(subscriber, || {
+        runtime.block_on(async {
+            upsert_accounts(&paths, &[sensitive_account]).await.unwrap();
+            read_accounts(&paths).await.unwrap();
+        });
+    });
 
     export.force_flush();
     assert_eq!(export.finished_spans().len(), 7);
