@@ -3,51 +3,6 @@
 - Status: IN PROGRESS
 - Snapshot date: 2026-10-05
 
-## Latest branch audit
-
-Read-only audit time: `2026-10-05 08:46:39 UTC`. The private audit packet is `/tmp/jackin-build-split-branch-audit-20261005-084639Z.md`, SHA-256 `2fa1ed744cc0289cc000fac350ec9da800b165b1a38c1648df0155d296072e7d`.
-
-The audited source head is `17b2b1be6a58a0e34af6d8308df915d110f4a785`. Main remains `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. The task branch has 57 commits ahead, no merge commits, and 117 changed paths (`+10,975/-1,099`).
-
-The documentation commits through `f4902db386e029a4a481b13767f7a29b5351af49` change six plan files. They do not change source. Later docs-only commits do not require source-review rebinding.
-
-PR [#1112](https://github.com/jackin-project/jackin/pull/1112) is open and draft at source head `17b2b1be6a58a0e34af6d8308df915d110f4a785`. Its base is main `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`.
-
-Run `37283551725` failed Plan. Velnor `0.1.0` rejected `.velnor/config.toml` field `tasks`. Required failed, and Rust jobs were skipped. Actionlint passed. The DCO check remains required. The refresh found zero reviews, comments, or threads. No Rust test or build result is available.
-
-The audit counted 131 branch heads, 1,104 pull heads, 1,104 all-state PR records, and 126 recovery refs. PR #1111 has dispositions for all 38 commits, including already-present no-ops.
-
-A later read-only capture matched all 126 remote recovery refs. It found 120 distinct tip trees; two refs are disconnected from main. The ref-head inventory is `/tmp/jackin-recovery-ref-heads-20261005.csv`, SHA-256 `38ff62c5f6be689658d6e0759cbb9195714b9260fa0dcf564add27698fdf5d31`. This verifies ref coverage only; patch and behavior dispositions remain incomplete.
-
-The complete 126-row ref inventory is now committed at [recovery-ref-heads-2026-10-05.csv](evidence/recovery-ref-heads-2026-10-05.csv), with the same SHA-256 `38ff62c5f6be689658d6e0759cbb9195714b9260fa0dcf564add27698fdf5d31`. CSV parsing verified 126 rows, 126 unique refs, and 17 columns. The inventory captures ref heads and tip metadata; it does not replace the outstanding per-change content dispositions.
-
-A Sol completeness check found 415 distinct non-merge commit OIDs across other recovery refs. They lack individual content dispositions or equivalent destination mappings. The count used this query:
-
-```sh
-git rev-list --no-merges $(git for-each-ref --format='%(refname)' refs/remotes/origin/recovery/) --not 0aa821a088e1bacf3d4d85a4c9faaa67faa85132 17b2b1be6a58a0e34af6d8308df915d110f4a785 3a28c199f17da335ecd9abd8dd67ebf1aecc0421 18bc09e9536d9b662876d2fb4205357a829caa9a 2990df17e25f30afca84804d9c402abc1ce00231 0437497d7f22fbdb7c8aad986be932704d707fe9 | sort -u | wc -l
-```
-
-This query excludes reachable commits only. It does not test patch equivalence. The 415 OIDs do not equal 415 missing changes. Examples include source3 commit `5a5d8eda8ade4caf7daa4f544fd92678e58820df` and qualification commit `14bd1471616056e07c81c59d59eafc0963b16865`.
-
-Retry-after behavior from `9c437fd2b0b9e88a265adab9fde26b5acb523745` already exists in main at `crates/jackin-usage/src/usage.rs:1490`. Recovery content accounting remains IN PROGRESS. Migration inputs are committed at `17b2b1be`; generated outputs and tests remain open in [the migration checkpoint](reviews.md#current-migration-source-and-fixture-checkpoint).
-
-The ten later source commits in the audited task branch are:
-
-| Commit | Change and gate |
-|---|---|
-| `5b1fdde2f59d4ad7b1ca56a6258c457d85db4e61` | Route capsule cross-build through Mise and MBX. The exact-source review found workspace-target selection needed follow-up. |
-| `c0892f669ad4f888246ea0a05bb8df2459973e8c` | Port operation-reference migration behavior. Exact review found malformed breadcrumb acceptance, ambiguous field selection, and legacy aliases. |
-| `9ef4dc010820f706520b372a5da03cec29074c63` | Fix those source findings; review found one legacy-value validation path still missing. |
-| `9f4c32ec4fcb34d228c9cb83a2f49f87db835c93` | Run rustup target selection in the workspace Mise context. Exact source review PASS; tests NOT RUN. |
-| `20cb8f7054ef6322c653b5c92bec7ad8f826d810` | Route normalized legacy and versioned OpRefs through canonical validation before writes. Exact source review PASS; tests and goldens NOT RUN. |
-| `17eb3b4e06a43b7eceb444eafd08c728162734f6` | Pin the supported MBX `1.22.0` release for capsule cross-builds. Exact source review PASS; builds and tests NOT RUN. |
-| `3d8b979e123ca76ef13a39170c4efa09b0712925` | Add a migration-fixture output writer. Exact review found auto-discovery and destination-publication issues. |
-| `8c464252b8846c08fb584b1dd3f292814addc1d4` | Isolate the writer helper and require a task-owned private output parent. Exact source review PASS; execution still waits for predecessor inputs. |
-| `d08952995734baf64405197d74ec4796ba915a25` | Require successful legacy-to-versioned fixture transformations. Exact source review PASS; it also requires both predecessor directories. |
-| `17b2b1be6a58a0e34af6d8308df915d110f4a785` | Add controlled OpRef predecessor inputs and fail closed if either input directory is absent. Exact source review PASS; rebake and tests NOT RUN. |
-
-These records distinguish source review from executable acceptance. No Rust compile, Cargo test, schema check, or generated-golden review was run for these commits in the branch audit.
-
 ## Task branch
 
 - Repository: `https://github.com/jackin-project/jackin.git`.
@@ -55,13 +10,13 @@ These records distinguish source review from executable acceptance. No Rust comp
 - Task worktree: `/root/Projects/tailrocks/jackin-project/jackin-refactor-build-split`.
 - Task branch: `refactor/build-split`.
 - Initial task worktree state: clean at the base SHA.
-- Audited source snapshot: `3b1a7789fe41e679eb9554e04862b6033cd82c94`; local and remote task refs matched.
-- `git rev-list` from the base to this snapshot contains 36 commits: 23 source/test/config commits and 13 documentation commits. It contains no merge commit.
+- Audited source snapshot: `a67ef88d5d9889a94696d306fffcfc5249e74ceb`; local and remote task refs matched.
+- `git rev-list` from the base to this snapshot contains 35 commits: 22 source/test/config commits and 13 documentation commits. It contains no merge commit.
 - No PR was open for this Jackin task at the snapshot.
 
-## Historical source inventory at `3b1a7789`
+## Current task-branch source inventory
 
-At source snapshot `3b1a7789fe41e679eb9554e04862b6033cd82c94`, both `git rev-list --count base..HEAD` and `git rev-list --count --no-merges base..HEAD` returned 36. The table accounts for all 23 source, test, and configuration commits. Each listed task commit is its own destination on `refactor/build-split`, except the attributed `c72e25d` source and `c8d20fb` destination. Source presence does not mean tests passed. Direct MBX tests remain pending unless stated otherwise.
+At source snapshot `a67ef88d5d9889a94696d306fffcfc5249e74ceb`, both `git rev-list --count base..HEAD` and `git rev-list --count --no-merges base..HEAD` returned 35. The table accounts for all 22 source, test, and configuration commits. Each listed task commit is its own destination on `refactor/build-split`, except the attributed `c72e25d` source and `c8d20fb` destination. Source presence does not mean tests passed. Direct MBX tests remain pending unless stated otherwise.
 
 | Commit | Unique change or hunk | Source and test status |
 |---|---|---|
@@ -87,7 +42,6 @@ At source snapshot `3b1a7789fe41e679eb9554e04862b6033cd82c94`, both `git rev-lis
 | `07f5ce7efe38c6c608fb975013df43e770d92b2b` | Updates the immutable Architect role fixture, digest provenance, and consumer contract. | Consumer source review PASS. Tests remain NOT RUN. |
 | `41265a7550dda498c2e32126a9e68d4733215da5` | Sorts configured Velnor tasks by ID and updates the CI contract. | Source on branch. Current Plan fails against pinned Velnor `0.1.0`; see [consumer CI result](ci-coverage.md#current-jackin-consumer-check). |
 | `a67ef88d5d9889a94696d306fffcfc5249e74ceb` | Attempts to stop forwarding ambient GitHub tokens to BuildKit; changes image build, version detection, and tests. | Exact review FAIL. Correction pending for obsolete detector API/re-export/tests and Unix-only imports. Tests NOT RUN. |
-| `3b1a7789fe41e679eb9554e04862b6033cd82c94` | Removes the obsolete GitHub secret detector API, re-export, stale test, and non-Unix import issue. | Owner reports source-only checks PASS. Exact independent review, Cargo tests, and image build remain NOT RUN. |
 
 The 13 documentation-only commits at this snapshot change files under `plans/jackin-build-split/` (including the parent snapshot `8d311ac656c68d83999f9ac2e1cb439056745199`): `34c32ca31e58b5e3dac71e88892778568f6f70d1`, `a65c1e705a002dfdec7a5f6b44a91b27a95a4e6d`, `504b7d484c3a7f00f6395dcb1a69dbc1fe32c51a`, `d194b71af4333f396b8e5e6b280823f363f3c4a7`, `9982fac76b6a3309adce28233d70007e8c102aac`, `8f21df367299af8cc22ac09954ddbfab982b6af4`, `b536e14324dfaea33201310f2727e4d2dee2dad1`, `c47114738fc1ee79715f7a53cab68daf5ed0839d`, `21fd2d73ed31f4118a1ee70b3844796a1abcd8f4`, `6fee4e9154cdec281d381edd9cd6848f5cd25660`, `2fbae01f477c61fc8bb6cf5c8f67de75eff566da`, `0bfac67e5b977a6a218a944f62f3bc92a1016d59`, and `8d311ac656c68d83999f9ac2e1cb439056745199`.
 
@@ -141,7 +95,7 @@ The exact `origin/main..origin/codex/credential-routing-recovery-20260930` graph
 | SELECT; pending integration | Durable config persistence and editor behavior: `1ea072f`, `60f7d661` | Review as a group with its affected schema consumers. |
 | SELECT; pending integration | TUI facade and documentation: `e51b2b9`, `e901fa1`, `8bf933c`, `38db68d` | Recheck links and claims against current source before integration. |
 | SELECT; pending prerequisites | Mixed account, identity, workspace, Console, and CLI commit `5375756fe301ba6a33d52040435b96bae6be9171` | Keep the commit attributed and intact. Require account and authority prerequisites. Do not duplicate its shared `account_config`, orchestration, or Console paths. |
-| SELECT; pending exact integration review | Codex subagent defaults: `0a252f3`, `5344167` | The final config defaults spawned agents to Luna/max. The [Codex reference](https://developers.openai.com/codex/config-reference/) says explicit spawn model and effort override the default. Reviewers must still request Sol/medium explicitly. This config does not enforce role separation. No task destination or runtime config test is recorded. |
+| SELECT; pending scope decision | Codex subagent settings: `0a252f3`, `5344167` | Include only if the build-split task requires those settings. |
 | REPLACE | Broad formatting and type changes: `3c33f29` | Do not port wholesale. Reapply only a separately justified fix against current source. |
 
 These rows account for 36 non-merge commits and two sync merges. The audit also found no-op changes inside otherwise selected commit paths. The source path and dependency matrix remains IN PROGRESS. Do not merge the full #1111 branch. Integrate selected groups only after their dependencies and final gates pass.
@@ -193,15 +147,15 @@ The consolidation ref adds eleven commits after #1111. Its review does not appro
 
 | Commit | Disposition | Gate or scope |
 |---|---|---|
-| `c2c7154c02de16ba6eac9f3682fc8d5275910451` | SELECT; pending visual and generated-asset check | It outlines the hero byline with canonical Inter, avoiding host-font substitution. It also corrects `BrandMark` comments. Keep it separate. Verify generated output and rendering before integration. |
+| `c2c7154c02de16ba6eac9f3682fc8d5275910451` | REJECT | Do not bring brand changes into this consolidation. |
 | `7102f0afd4546b6b47b87814df16782a1cbf998c` | REPLACE | Recheck documentation against current source and rewrite stale claims. |
 | `72aa9142b2d176db7dcf3f0a463dd95432e2c246`, `ae634df85896a15a724b5af9563a440f9f7a6055` | SELECT | Review profile and security documentation against current behavior. |
 | `7cbbbdf736c70a94961d3adb1176d1994a47d43e` | REPLACE | Use reviewed architecture-level correction `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578`. Exact-source review passed; Clippy and Cargo tests remain NOT RUN. Keep integration pending. |
-| `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | REPLACE; root fix pending | The source unlinks a candidate before parent fsync. Replace it with a shared ordered-cleanup helper. Add fault-injection and persisted-state recovery tests before integration. |
+| `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | SELECT after fix | Require ordered fsync and recovery correction before integration. |
 | `455526b92a2a4350476bb192455e5e3414f7ab9a` | SELECT after fixtures | Add predecessor directories and schema, metadata, and golden fixtures. Run migration tests and schema checks under reviewed MBX. |
-| `cd3ced4189fb19624359da8c0eec5684ef1bacd8` | REJECT current scaffolding; replacement design pending | The commit adds public profile-material hashing/getters, but no production consumer exists in that commit or current task head. Do not install the raw-getter API. Preserve only a concrete consumer need for a separately reviewed design. |
+| `cd3ced4189fb19624359da8c0eec5684ef1bacd8` | SELECT | Review profile material proofs with their consumers. |
 | `c72e25d384ce2d8a80cf584457ec4b28e619980b` | SELECT; integrated | Cherry-picked with `-x` as destination commit `c8d20fb3a9660e1ed7819d53b3fbef410be43610`. The trailer preserves source attribution. Three paths are listed below. Focused tests remain NOT RUN pending controlled MBX scheduling. |
-| `e4bcb842bd151c608691a72c7af8fc6e765a3105` | SELECT; dependency gate pending | Keep OSC and capsule session changes together. Run the rule-bundle test gate before integration. |
+| `e4bcb842bd151c608691a72c7af8fc6e765a3105` | HOLD pending `c72e25d` tests | Keep OSC and capsule session changes together. Run the rule-bundle test gate before integration. |
 | `18bc09e9536d9b662876d2fb4205357a829caa9a` | SELECT as one linked unit | Keep protocol, core, capsule, runtime, status, and isolation changes together across 20 paths. Do not select the transport type alone. |
 
 The other consolidation candidate dispositions remain pending integration. The `c72e25d` rule-bundle unit is integrated, but its focused tests remain pending. Migration, transaction, and redaction gates are documented in [review findings](reviews.md#account-consolidation-review).
@@ -212,7 +166,7 @@ The other consolidation candidate dispositions remain pending integration. The `
 |---|---|---|
 | `455526b92a2a4350476bb192455e5e3414f7ab9a` | Config: `crates/jackin-config/src/accounts.rs`, `accounts/zshrc.rs`, `editor.rs`, `editor/tests.rs`, `migrations.rs`, `versions.rs`. Console: `crates/jackin-console/src/tui/auth_config.rs`, `tui/components/op_picker/lines.rs`, `tui/components/op_picker/tests.rs`, `tui/input/global_mounts/auth/tests.rs`, `tui/op_breadcrumb.rs`, `tui/op_picker.rs`, `tui/op_picker/tests.rs`, `tui/update/tests.rs`. Core: `crates/jackin-core/src/env_value.rs`, `env_value/tests.rs`, `op_cache.rs`, `op_reference.rs`, `op_types.rs`. Environment: `crates/jackin-env/src/op_cli.rs`, `op_runner.rs`, `op_struct.rs`, `picker.rs`, `resolve.rs`, `resolve/tests.rs`. Picker: `crates/jackin-oppicker/src/input.rs`, `lib.rs`, `load.rs`, `state.rs`. Runtime: `crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core/orchestrate/helpers.rs`. CLI: `crates/jackin/src/app/config_cmd.rs`, `crates/jackin/tests/manager_flow/secrets.rs`. Docs: `docs/content/reference/developer-reference/specs/op-picker.mdx`, `docs/content/reference/runtime/configuration.mdx`, `docs/content/reference/runtime/schema-versions.mdx`, `docs/content/research/platform/security/credential-exposure/jackin-exec-design.mdx`, `docs/content/research/platform/security/isolation-architecture/agent-isolation-architecture/01-threat-and-platform-evidence.mdx`. | Focus migration compatibility and schema checks. Add config `from-v1alpha12` and workspace `from-v1alpha10` predecessor directories, metadata, schema, and golden files. Include `docs/content/reference/crates/meta.json` from separate commit `38db68d6b41fa57b090224b360a643a0b5436024` only if review proves the dependency. |
 | `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | `Cargo.toml`, `Cargo.lock`; `crates/jackin-core/src/isolation_record.rs`, `workspace_label.rs`, `workspace_name.rs`, `workspace_name/tests.rs`; `crates/jackin-isolation/Cargo.toml`, `README.md`, `src/cleanup.rs`, `cleanup/tests.rs`, `error.rs`, `finalize/tests.rs`, `lib.rs`, `materialize.rs`, `materialize/tests.rs`, `ref_transaction.rs`, `ref_transaction/tests.rs`, `safe_remove.rs`, `safe_remove/tests.rs`, `state.rs`, `state/tests.rs`, `state_io.rs`, `state_io/tests.rs`; `crates/jackin-runtime/src/runtime/drift/tests.rs`, `runtime/launch/launch_pipeline/launch_core/orchestrate.rs`, `runtime/launch/restore.rs`, `runtime/launch/restore/tests.rs`, `runtime/launch/tests.rs`; `crates/jackin/tests/per_mount_isolation_e2e.rs`. | Keep this full unit. First supply and independently review an ordered-fsync recovery fix. Search for `sync_all`, `sync_data`, `fsync`, and `ordered-sync` found only this commit; no later first-parent fix or linked PR was found. No fix owner is assigned in the audited refs. Then run cleanup, ref, recovery, restore, and per-mount failure tests. |
-| `cd3ced4189fb19624359da8c0eec5684ef1bacd8` | `crates/jackin-config/fuzz/Cargo.lock`, `crates/jackin-core/Cargo.toml`, `crates/jackin-core/src/{lib.rs,profile_material.rs}`, `crates/jackin-env/fuzz/Cargo.lock`, `crates/jackin-manifest/fuzz/Cargo.lock`, `crates/jackin-protocol/fuzz/Cargo.lock`. | Reject the unconsumed public getters and proof container. A replacement requires an identified caller, minimum evidence fields, invalidation event, and tests at that caller; no such unit is selected yet. |
+| `cd3ced4189fb19624359da8c0eec5684ef1bacd8` | `crates/jackin-config/fuzz/Cargo.lock`, `crates/jackin-core/Cargo.toml`, `crates/jackin-core/src/{lib.rs,profile_material.rs}`, `crates/jackin-env/fuzz/Cargo.lock`, `crates/jackin-manifest/fuzz/Cargo.lock`, `crates/jackin-protocol/fuzz/Cargo.lock`. | Add focused proof-creation and proof-invalidation tests. Review proof consumers and fuzz dependency changes before integration. |
 | Source `c72e25d384ce2d8a80cf584457ec4b28e619980b`; destination `c8d20fb3a9660e1ed7819d53b3fbef410be43610` | `crates/jackin-agent-status/src/rules.rs`, `crates/jackin-agent-status/src/rules/tests.rs`, and `crates/jackin-agent-status/tests/signed_bundle.rs`. Destination commit includes `(cherry picked from commit c72e25d384ce2d8a80cf584457ec4b28e619980b)`. | Run `mise exec -- mbx test --locked -p jackin-agent-status` through the approved Mise/MBX environment. Default, all-feature, and integration coverage remain NOT RUN as applicable, pending the controlled MBX schedule. |
 | `e4bcb842bd151c608691a72c7af8fc6e765a3105` | `crates/jackin-agent-status/src/{lib.rs,osc.rs,tests.rs}`, `crates/jackin-capsule/src/session.rs`, and `session/tests.rs`. | Integrate after `c72e25d`. Run decoder, session framing, and ingestion tests. |
 | `18bc09e9536d9b662876d2fb4205357a829caa9a` | Full 20-path unit: capsule `attach_protocol.rs`, `client.rs`, `client/tests.rs`, `daemon/tests.rs`, `exec.rs`, `main.rs`, `socket.rs`, `tui/run.rs`, `tests/persistence_and_reattach.rs`; core `status.rs`; isolation `finalize.rs`; protocol `capsule_transport.rs`, `lib.rs`; runtime `apple_container.rs`, `attach.rs`, `attach/tests.rs`, `host_attach.rs`, `session_control.rs`, `snapshot.rs`; CLI `crates/jackin/src/cli/status.rs`. | Keep every consumer linked. Integrate after OSC and preferably cleanup. Run protocol, capsule client/daemon, persistence/reattach, runtime attach, and isolation-finalization tests together. |
@@ -225,7 +179,7 @@ These test lists define review scope. They do not record test execution or accep
 |---|---|---|---|
 | 1 | Unassigned | Supply and review ordered-fsync recovery behavior before importing `78e38612824c4e6d69ffb9d01a834a75537e7c5a`. | IN PROGRESS; no fix ref found in the audited refs. |
 | 2 | Unassigned | Add predecessor, schema, metadata, golden, and ambiguity fixtures for `455526b92a2a4350476bb192455e5e3414f7ab9a`. | IN PROGRESS; migration tests NOT RUN. |
-| 3 | Unassigned | Define a consumer-backed replacement for `cd3ced4189fb19624359da8c0eec5684ef1bacd8`; reject its unused raw-getter API. | Design pending; no code or tests selected. |
+| 3 | Unassigned | Add profile proof creation and invalidation coverage for `cd3ced4189fb19624359da8c0eec5684ef1bacd8`. | IN PROGRESS; tests NOT RUN. |
 | 4 | `consolidation_review` | Verify the `c72e25d384ce2d8a80cf584457ec4b28e619980b` cherry-pick provenance and run its focused tests. Review `e4bcb842bd151c608691a72c7af8fc6e765a3105` after the test gate. | Integrated at `c8d20fb3a9660e1ed7819d53b3fbef410be43610`; tests NOT RUN pending controlled MBX scheduling. |
 | 5 | `execution_crosscheck` | Review the complete 20-path transport consumer unit after its predecessors. | IN PROGRESS; integration tests NOT RUN. |
 
@@ -236,7 +190,7 @@ The following items remain source candidates or incomplete root fixes. No listed
 | Source or scope | Required correction | Destination, owner, and gate |
 |---|---|---|
 | `455526b92a2a4350476bb192455e5e3414f7ab9a` | Add config/workspace version predecessors, schema and metadata, golden output, and ambiguity fixtures. | No task destination. Future owner unassigned. Run migration compatibility and schema tests under reviewed MBX. |
-| `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | `ref_transaction` unlinks a candidate before parent fsync. Replace it with a shared ordered-cleanup helper. Add fault-injection and persisted-state recovery tests. | No task destination. Future owner unassigned. REPLACE the source unit after exact-source review and tests pass. |
+| `78e38612824c4e6d69ffb9d01a834a75537e7c5a` | `ref_transaction` unlinks a candidate before parent fsync. Replace it with a shared ordered-cleanup helper. Add fault-injection and persisted-state recovery tests. | No task destination. Future owner unassigned. Hold the full unit until exact-source review and tests pass. |
 | Kimi full-tree snapshot | Replace overcapture with projection-only data. | Source ref and destination not supplied. Future owner unassigned. Review the exact path set before integration. |
 | Non-Unix source traversal | Fail closed on TOCTOU, or use handle-bound traversal. | Source ref and destination not supplied. Future owner unassigned. Add platform-specific race coverage. |
 | Permanent namespace session leases | Add liveness-aware crash recovery for pending leases. | Source ref and destination not supplied. Future owner unassigned. Add restart and stale-lease tests. |
@@ -244,7 +198,7 @@ The following items remain source candidates or incomplete root fixes. No listed
 
 The redaction source replacement is `69b82de1a48cc18add3933e1995028c8aa2722e8`, `c2a80a7dc0618007840533e956b06f4af3458a70`, and reviewed `f52557d8ce10c2646d49f12f5de6ff7cbf2a1578`. It replaces rejected source `7cbbbdf736c70a94961d3adb1176d1994a47d43e` for selection purposes. The task branch contains the replacement commits. Clippy and Cargo tests remain NOT RUN, so final acceptance is pending.
 
-The earlier candidate sequence is provisional. The `c72e25d` rule-bundle unit was selected and imported independently; its test gate remains open. The ordered-fsync fix must precede cleanup import. Migration fixtures must precede `455526…`. Reject the unused `cd3ced…` getters; any replacement needs a demonstrated consumer and a reviewed invalidation design. Keep the OSC and capsule-session pair `e4bcb…` after the `c72e25d` test gate, then review the linked transport group `18bc09…` as a whole. The mixed PR #1111 commit `5375756fe301ba6a33d52040435b96bae6be9171` remains a separate attributed unit and depends on account and authority prerequisites. The redaction replacement remains owned by `consolidation_review`.
+The earlier candidate sequence is provisional. The `c72e25d` rule-bundle unit was selected and imported independently; its test gate remains open. The ordered-fsync fix must precede cleanup import. Migration fixtures must precede `455526…`, and proof-creation/invalidation coverage must precede `cd3ced…`. Keep the OSC and capsule-session pair `e4bcb…` after the `c72e25d` test gate, then review the linked transport group `18bc09…` as a whole. The mixed PR #1111 commit `5375756fe301ba6a33d52040435b96bae6be9171` remains a separate attributed unit and depends on account and authority prerequisites. The redaction replacement remains owned by `consolidation_review`.
 
 ### Recovery ref disposition
 
@@ -364,59 +318,4 @@ Fetch status: PASS for ref synchronization only. The earlier branch auditor also
 
 `branches` recorded the inventory and source dispositions. Exhaustive path accounting and fixing dependencies remain IN PROGRESS. This record does not approve whole-branch integration or merging.
 
-## Latest PR #1111 checkpoint
-
-At 2026-10-05 15:48 UTC, PR #1111 was OPEN, draft, and mergeable at head `e45405bd4a799ea7b0b30dbc80f45e2e5103690d`, based on main. DCO passed. Run `37334128618` remained active; Plan and Actionlint passed, while `Rust / jackin-instance` had failed. Other Rust jobs were still running. This partial check set does not support a merge decision.
-
-The branch added OMP WAL and credential-snapshot changes in commits `33d97d1fe0ad5025af831133426ddfd625e0d5ac` and `8ca6152972bf157084e06d606a089980837d07c9`. The Clippy-only follow-up `e45405bd` changes `crates/jackin-instance/src/auth.rs`; its parent is the reviewed 8ca head. Exact 8ca review found two unresolved correctness gates: rollback-journal sidecars are ignored during database capture, and a paired WAL salt/checksum corruption can be accepted as a stale suffix. The 8ca review does not automatically cover the later auth.rs change. Keep PR #1111 blocked until both findings receive exact-head resolution and review, and all checks pass.
-
-The branch remains draft. Its current PR body describes account routing, runtime lifecycle, and usage refresh. The current API refresh found zero reviews, zero review threads, and one issue comment. The live credential-free Usage UI/broker smoke and `docs specs` gate remain NOT RUN. See [current CI records](ci-coverage.md#latest-task-pr-refresh) and [snapshot review](reviews.md#omp-snapshot-capture-findings-at-pr-1111).
-
 See the [checklist](checklist.md) and [reviews](reviews.md).
-
-## DCO replay destination
-
-The former task ref `refactor/build-split` is frozen at `73ea2117b8e584c64dec92242271a86149a53125`. Its DCO failure was addressed on the new ref `refactor/build-split-dco`, head `7b6ea934490b6ef0d867a43def527e29caa3b63f`, without force-pushing or changing the old branch. The replay contains 60 replacement commits in source order and has the same final tree `9eebc07e80d91f2d29cc9d975b78a53ca4198b3b`.
-
-Replacement PR [#1113](https://github.com/jackin-project/jackin/pull/1113) is open and draft against main `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. Run `37289881948` at that head has DCO-2 and Actionlint PASS; Plan and Required FAIL because the pinned Velnor `0.1.0` rejects `.velnor/config.toml` field `tasks`; 25 Rust jobs and Publish baseline were skipped. The failure is a generator-version/configuration gate, not a Rust test result. #1112 remains open pending verification of the replacement destination. At the refresh, both PRs had zero formal reviews and zero review threads; #1112 also had zero inline and issue comments. Re-fetch checks and feedback after any head change.
-
-
-## Current DCO task branch snapshot
-
-The active task branch is `refactor/build-split-dco`, based on `main` at `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`. The latest reviewed code snapshot is `0cd9890607d65b6d4e2264acac9303a8b67b561a`, tree `229e4b2d45e0805ee28bb5ff4e06bbefa3a188e1`; it adds formatting-only changes to two image source files after the `d132649` cleanup fix. The following task-record commit is docs-only.
-
-Since `aa0316901eaf3be24a2dc746c40b0a2c1b2168ff`, commits added the MBX wrapper harness and TOML lock edges, then changed Swift reporting/parallelism, cleanup postconditions, XML parsing, diagnostics redaction, and formatting in the image build files. The exact commit sequence is in the task branch history. Source review passed for the `toml_edit` lock edge, Mise version parser, Swift XML parser, diagnostics lifecycle fix, and cleanup parser correction. The first cleanup parser (`89af5ed`) failed review; `d132649` closes that finding with complete fail-closed inventory validation. Targeted rustfmt passes at `0cd9890`; Rust tests on current source remain NOT RUN.
-
-The task branch and PR #1113 now point to `010444548ed976f415289c53c22da8ab801d9e53`, tree `7cf828cb012f8dccf0d9b335fc8e59207a69d45d`, parent `25701ee67199857e3b33f49de9e9e2acdcd4b7a7`. This commit adds the typed selected-account route across Rust, FFI, and Swift. Sol source review passed; Rust and Swift tests were NOT RUN. Its commit message lacks a `Signed-off-by` trailer, and the current DCO check reports ACTION REQUIRED. Run `37336019365` had Actionlint PASS and Plan IN PROGRESS at the refresh. See [current PR gates](ci-coverage.md#latest-task-pr-refresh).
-
-## Recovery inventory v2 closure mechanics
-
-The read-only recovery appendix v2 is `/tmp/jackin-recovery-exhaustive-inventory-20261005-v2`; its `SHA256SUMS.txt` has SHA-256 `bec7930db03a6f10033c2bc678f3a796f2b7e67ba50f1b54edddd42e017059dc`. It accounts for 126 exact remote recovery refs, 477 recovery-only commits (417 non-merge, 60 merge), 598 commit/ref memberships, and 319 unique non-merge patch/content units. Its graph and table have zero omissions. Stable patch groups cover 356 commit OIDs; 40 unmatched or empty groups account for the remaining 61 OIDs. These are inventory counts, not 415 missing improvements.
-
-The appendix separates exact ancestry from patch/content evidence, assigns per-unit `SELECT`, `REPLACE`, `ALREADY PRESENT`, or `REJECT`, and treats whole merge wrappers as `REJECT` while classifying merge-resolution content separately. Its 244 MiB merge-patch payloads remain host-local paths with size and hash evidence; they are not copied into the appendix. The related fsck supplement v2 (`/tmp/jackin-recovery-fsck-supplement-20261005-v2/SHA256SUMS.txt`, SHA-256 `ef8e8403c456e8890319925bdbf9b513b9b29c798a8c195f229681ba224a409b`) received a narrow evidence PASS for 27 unreachable objects, 90 blob checks, and seven process test intents already present. Neither packet approves a whole branch.
-
-Semantic units remain unresolved, including the Rust persisted `HostUsageRuntime` selection and notice behavior from 4be, selected c7b content, and native macOS execution. The appendix's PR #1113 path-state at `8e356e2` is historical and does not include later task commits. Per-unit independent review and applicable execution gates remain required.
-
-## Current pull-request status refresh
-
-Read-only GitHub refresh at `2026-10-05 16:17 UTC`:
-
-| PR | Exact head and state | Checks | Merge blockers |
-|---|---|---|---|
-| Jackin #1111 | Open draft, `a64af27dbefdf4d9239ad9e94209cb2416a4dbc4`, base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, CLEAN | Run `37336793714`: Required, Actionlint, Plan, DCO, and all 27 Rust package jobs succeeded; Publish baseline skipped. | Two source-reviewed OMP capture findings remain unresolved: rollback-journal state is omitted, and joint WAL salt/checksum corruption can be accepted. The promised `docs specs` and credential-free Usage UI/broker smoke are NOT RUN. Keep draft. |
-| Jackin #1113 | Open draft, `010444548ed976f415289c53c22da8ab801d9e53`, base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, BLOCKED | Run `37336019365`: Actionlint passed; DCO is ACTION REQUIRED; Plan and Required failed; Rust jobs and Publish baseline skipped. | The final commit lacks a sign-off trailer. Its Plan log says Velnor `0.1.0` rejects `.velnor/config.toml: tasks`. This is the original PR and remains open. |
-| Jackin #1114 | Open draft, `c54778ec17f81c48ae2ec7c16c28810ce42e70c8`, base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, BLOCKED | Run `37339536390`: DCO and Actionlint passed; Plan and Required failed; all Rust jobs and Publish baseline skipped. | This DCO-signed replacement preserves the original `0104445` source tree and author attribution. Its Plan log reports pinned Velnor `0.1.0` `tasks: unknown_config_field`. Do not close #1113 before #1114 is a verified destination. |
-| Jackin #1112 | Open draft, `73ea2117b8e584c64dec92242271a86149a53125`, base `0aa821a088e1bacf3d4d85a4c9faaa67faa85132`, BLOCKED | Run `37288558605`: Actionlint passed; DCO ACTION REQUIRED; Plan and Required failed; Rust jobs and Publish baseline skipped. | Plan rejects `.velnor/config.toml: tasks`; this older destination remains open while the replacement PRs are verified. |
-| Jackin #1108 | Open draft, `2990df17e25f30afca84804d9c402abc1ce00231`, base `310e644832193232344ca99838ccf599f28faf53`, DIRTY | Latest recorded checks include failures in Control/Required, `ci-required`, Rust dependency policy, and `jackin-xtask`; most other package jobs passed. A separate Policy run failed generated-tree validation. | It is stale against main and its policy generator cannot collapse Swift jobs with differing Xcode pins. |
-| Architect #480 | Open draft, `818ea17a727ec1ace911be44d78b13995e3f6571`, base `7b72b38fe1d66e35c0931899c53bf3719592bbcc`, CLEAN | Run `37322851929`: Required, Actionlint, Plan, DCO, and Sonar passed; Publish baseline skipped. | R10 image build passed, but the runtime probe failed when executing the compiled MBX probe from `/tmp` (`Permission denied`). No passing MBX runtime or ARM64 image result. |
-| Velnor #65 | Open draft, `a54e34b01b8bd5b327dcdac0de4831370303b86e`, base `2217ad1b53209fc19895912ffc0dde7c4fcf7915`, DIRTY | Run `37337142461`: DCO, Actionlint, Alint, Cargo Deny, Cargo Machete, and Zizmor passed; Plan and Required failed; Rust jobs and Publish baseline skipped. | Plan reports ShellCheck parse errors in generated `generator-release.yml` at lines 57, 69, and 93. |
-
-These are separate PRs with different source trees and gates. #1111's green run does not close its OMP, live-smoke, or docs-spec blockers. #1114's DCO success does not close the generator Plan failure. Refresh feedback and checks at each candidate merge head; do not merge a PR while its listed blockers remain.
-
-The GraphQL feedback refresh returned no submitted reviews or review threads for #1111, #1113, #1114, #1112, #1108, #480, or #65. Issue-comment counts were respectively 2, 0, 0, 0, 0, 5, and 1; each comments connection was fully paginated with `hasNextPage: false`. The #1111 and #480 comments include our source/gate dispositions; #65's existing comment has been read. No feedback item was deleted or resolved in this refresh.
-
-### DCO-signed replacement for the final task commit
-
-The original task ref `refactor/build-split-dco` remains at `010444548ed976f415289c53c22da8ab801d9e53`. Its final commit has no `Signed-off-by` trailer, and the DCO check on #1113 reports ACTION REQUIRED. Repository history was left untouched. A one-commit replacement was created from the exact parent `25701ee67199857e3b33f49de9e9e2acdcd4b7a7` with `git cherry-pick -x -s 010444548ed976f415289c53c22da8ab801d9e53` on `refactor/build-split-dco-dco-signed`.
-
-Replacement `5914945f4d5613ee45837e0d61680c3e6be21258` has the same tree `7cf828cb012f8dccf0d9b335fc8e59207a69d45d` as `0104445`, preserves the original author and timestamp, and adds both the `-x` source reference and `Signed-off-by: Codex <codex@openai.com>`. Independent Sol review verified the exact parent/tree/author mapping and remote branch equality. PR [#1114](https://github.com/jackin-project/jackin/pull/1114) is the replacement destination. Its DCO check passed, but its Plan and Required checks failed; #1113 remains open until #1114 reaches a verified destination.
