@@ -538,60 +538,25 @@ fn partial_or_tampered_package_fails() {
 }
 
 #[test]
-fn desktop_release_steps_remain_defined() {
+fn desktop_sign_notarize_task_retains_credential_cleanup() {
     let root = repo_root();
-    let current_mise = fs::read_to_string(root.join("mise.toml")).unwrap();
-    let current_tasks = desktop_tasks(&current_mise);
-
-    if let Ok(release) = fs::read_to_string(root.join(".github/workflows/release.yml")) {
-        assert_ordered(
-            &release,
-            &[
-                "mise run desktop-release-tools",
-                "mise run desktop-release-env",
-                "mise run desktop-build",
-                "mise run desktop-verify",
-                "mise run desktop-release-state",
-                "mise run desktop-sign-notarize",
-            ],
-        );
-    }
+    let native_mise = fs::read_to_string(root.join("native/mise.toml")).unwrap();
+    let native_tasks = mise_tasks(&native_mise);
     assert!(
-        current_tasks.contains_key("desktop-sign-notarize"),
-        "Developer ID sign/notarize task must remain present"
-    );
-    assert!(
-        current_tasks.contains_key("desktop-release-state"),
-        "desktop publication state task must remain present"
-    );
-
-    // Keep behavioral guards for the operator entry points without pinning
-    // their full source text to a historical checkout. These checks protect
-    // the release contract while allowing harmless task edits.
-    assert_task_contains(
-        &current_tasks,
-        "desktop-build",
-        "cargo xtask desktop build --version",
+        !mise_tasks(&fs::read_to_string(root.join("mise.toml")).unwrap())
+            .keys()
+            .any(|name| name.starts_with("desktop-")),
+        "native task aliases should not be duplicated in root mise.toml"
     );
     assert_task_contains(
-        &current_tasks,
-        "desktop-verify",
-        "cargo xtask desktop verify \"${args[@]}\"",
-    );
-    assert_task_contains(
-        &current_tasks,
-        "desktop-sign-notarize",
+        &native_tasks,
+        "sign-notarize",
         "trap cleanup_signing EXIT INT TERM",
     );
     assert_task_contains(
-        &current_tasks,
-        "desktop-sign-notarize",
+        &native_tasks,
+        "sign-notarize",
         "cargo xtask desktop sign-notarize",
-    );
-    assert_task_contains(
-        &current_tasks,
-        "desktop-release-state",
-        "cargo xtask desktop release-state",
     );
 }
 
@@ -622,19 +587,19 @@ fn repo_root() -> PathBuf {
 }
 
 fn producer_script() -> String {
-    let text = fs::read_to_string(repo_root().join("mise.toml")).unwrap();
-    let root: toml::Value = toml::from_str(&text).unwrap();
-    let script = root
-        .get("tasks")
-        .and_then(|value| value.get("release-preview-package"))
-        .and_then(|value| value.get("run"))
-        .and_then(toml::Value::as_str)
-        .unwrap_or_default();
+    let path = repo_root().join("scripts/release-preview-package");
+    let script = fs::read_to_string(&path).unwrap();
     assert!(
-        !script.is_empty(),
-        "mise.toml must define the real release-preview-package run script"
+        script.starts_with("#!/usr/bin/env bash\n"),
+        "{} must be an executable Bash script",
+        path.display()
     );
-    script.to_owned()
+    assert!(
+        script.contains("cargo xtask release-verify-package"),
+        "{} must verify the completed package handoff",
+        path.display()
+    );
+    script
 }
 
 fn write_shims(directory: &Path) {
@@ -802,28 +767,14 @@ fn git(directory: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
-fn desktop_tasks(mise: &str) -> BTreeMap<String, toml::Value> {
+fn mise_tasks(mise: &str) -> BTreeMap<String, toml::Value> {
     let document: toml::Value = toml::from_str(mise).unwrap();
     document["tasks"]
         .as_table()
         .unwrap()
         .iter()
-        .filter(|(name, _)| *name == "desktop" || name.starts_with("desktop-"))
         .map(|(name, task)| (name.clone(), task.clone()))
         .collect()
-}
-
-fn assert_ordered(text: &str, needles: &[&str]) {
-    let mut rest = text;
-    for needle in needles {
-        let found = rest.find(needle);
-        assert!(
-            found.is_some(),
-            "missing or out-of-order release step: {needle}"
-        );
-        let found = found.unwrap_or_default();
-        rest = &rest[found + needle.len()..];
-    }
 }
 
 fn assert_success(output: &Output, label: &str) {

@@ -263,6 +263,6 @@ local Reduce Transparency and Increased Contrast, and native sidebar collapse.
 Every capture has a WindowServer sidecar proving active application, key window,
 full on-screen containment, frame size, app executable hash, and image hash.
 
-`mise run desktop-prototype-build`, `mise run desktop-test`, and `git diff
+`mise -C native run prototype-build`, `cargo xtask desktop test`, and `git diff
 --check` are the automated gates. Independent design review remains the final
 visual acceptance authority; this audit does not self-certify approval.

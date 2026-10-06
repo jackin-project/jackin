@@ -5,7 +5,7 @@ description: Bound and expose jackin❯-managed Rust build storage without sacri
 
 **Status**: Open
 
-**Outcome**: Every jackin❯-managed Rust cache class has an owner, a bounded retention policy, operator visibility, and safe cleanup; parallel builds reuse compiler output without sharing an unsafe mutable target directory.
+**Outcome**: Every jackin❯-managed Rust cache class has an owner, a bounded retention policy, operator visibility, and safe cleanup; MBX is the sole compiler cache, and parallel builds do not share an unsafe mutable target directory.
 
 ## Current state
 
@@ -14,7 +14,7 @@ Research identified unbounded incremental directories and duplicated target tree
 ## Remaining work
 
 1. Define the owned cache classes, paths, retention rules, and deletion safety contract.
-2. Select and wire the compiler-cache backend for local and container builds, with incremental compilation disabled where required.
+2. Complete MBX cache ownership, configuration, and lifecycle for local and container builds; do not add a second compiler-cache backend.
 3. Add bounded defaults and shared-cache mounts only where cache identity remains correct across projects and toolchains.
 4. Expose bytes and health by cache class in `jackin doctor`; add dry-run and explicit class selectors to `jackin prune`.
 5. Cover concurrency, toolchain drift, filesystem fallback, and cleanup safety with tests and measured acceptance.

@@ -98,10 +98,10 @@ if command -v container &>/dev/null; then
     pass "container CLI installed: $CONTAINER_VERSION"
     echo "container version: $CONTAINER_VERSION" >> "$RESULTS_FILE"
 else
-    fail "container CLI not found" "Run: mise install aqua:apple/container"
+    fail "container CLI not found" "Install Apple Container with: brew install container"
     echo ""
     red "FATAL: apple/container CLI not installed. Cannot proceed with Phase 0."
-    echo "  Run: mise install aqua:apple/container"
+    echo "  Install Apple Container with: brew install container"
     exit 1
 fi
 

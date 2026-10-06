@@ -485,72 +485,60 @@ fn dwarf_uuid_reads_the_arm64_slice() {
 
 #[test]
 fn cadence_tasks_define_the_canonical_graph() {
-    let mise = repo_text("mise.toml");
+    let mise = repo_text("native/mise.toml");
     assert_subsequence(
-        task_block(&mise, "desktop-ci"),
+        task_block(&mise, "ci"),
         &[
-            "desktop-bindings-check",
-            "desktop-generate",
-            "desktop-format-check",
-            "desktop-lint",
-            "desktop-test\n",
-            "desktop-build",
+            "cargo xtask desktop bindings-check",
+            "xcodegen generate",
+            "format-check",
+            "lint",
+            "cargo xtask desktop test",
+            "cargo xtask desktop build",
             "desktop test-swift",
-            "desktop-verify",
+            "cargo xtask desktop verify",
         ],
-        "desktop-ci",
+        "native ci",
     );
     assert_subsequence(
-        task_block(&mise, "desktop-merge"),
-        &["desktop-ci", "desktop-test-ui"],
-        "desktop-merge",
+        task_block(&mise, "merge"),
+        &["mise -C native run ci", "run-ui-tests.sh"],
+        "native merge",
     );
     assert_subsequence(
-        task_block(&mise, "desktop-scheduled"),
-        &["desktop-merge", "desktop-deadcode"],
-        "desktop-scheduled",
+        task_block(&mise, "scheduled"),
+        &["mise -C native run merge", "mise -C native run deadcode"],
+        "native scheduled",
     );
 }
 
 #[test]
-fn cargo_wrapper_routes_native_commands_through_mbx() {
+fn mise_native_rust_option_routes_cargo_through_mbx() {
     let mise = repo_text("mise.toml");
+    let rust_toolchain = repo_text("rust-toolchain.toml");
     assert!(
-        mise.contains("[wrappers.cargo]\ncommand = \"mbx\"\nenv = { MBX_CARGO_SHIM_MODE = \"1\" }"),
-        "all Cargo calls must use MBX's transparent Mise shim"
+        mise.contains("rust = { version = \"latest\", mr_boxington = true }"),
+        "Mise's Rust backend must route Cargo through MBX natively"
+    );
+    assert!(
+        rust_toolchain.contains("channel = \"1.99.0\""),
+        "rust-toolchain.toml must pin the project's Rust toolchain"
     );
     assert!(
         mise.contains("mr-boxington = \"1.22.0\""),
-        "the transparent wrapper must resolve the locked MBX tool"
+        "the native integration must resolve the locked MBX tool"
     );
     assert!(
         mise.contains("idiomatic_version_file_enable_tools = [\"rust\"]"),
-        "rust-toolchain.toml remains the single Rust version source"
+        "Mise must discover Rust from rust-toolchain.toml"
     );
 
-    let desktop_ci = task_block(&mise, "desktop-ci");
+    let native_mise = repo_text("native/mise.toml");
+    let desktop_ci = task_block(&native_mise, "ci");
     assert!(desktop_ci.contains("cargo xtask desktop test-swift --jobs 2"));
     assert!(
         !desktop_ci.contains("mbx build"),
-        "do not nest explicit MBX builds inside the transparent Cargo wrapper"
-    );
-}
-
-#[test]
-fn standalone_native_package_ci_uses_counted_bounded_swift_driver() {
-    let repo = repo_text("mise.toml");
-    let task = task_block(&repo, "swift-package-native-ci");
-    assert_subsequence(
-        task,
-        &[
-            "mise run desktop-xcframework",
-            "cargo xtask desktop test-swift --jobs 2",
-        ],
-        "swift-package-native-ci",
-    );
-    assert!(
-        !task.contains("swift build") && !task.contains("swift test"),
-        "native CI must use the counted xtask driver for all SwiftPM build/test work"
+        "do not nest explicit MBX builds inside Mise's native Cargo integration"
     );
 }
 
@@ -558,7 +546,7 @@ fn standalone_native_package_ci_uses_counted_bounded_swift_driver() {
 // main commit 6c389d38e deleted .github/workflows/release.yml and no surviving
 // workflow (ci.yml, ci-evidence.yml, ci-push-head-ledger.yml) invokes release
 // tasks, signs, or notarizes — there is no release automation left to bind to
-// the canonical mise tasks.
+// the native task cadence.
 
 // NOTE (consolidation 2026-10-06): generated_ci_includes_configured_native_verification_tasks
 // was removed. It pinned task-native-* jobs in the generated workflows, but velnor-actions

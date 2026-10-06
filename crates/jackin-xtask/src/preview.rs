@@ -1635,10 +1635,8 @@ fn extract_release_mise(source: &str) -> Vec<String> {
 }
 
 fn keep_release_mise_key(section: &str, key: &str) -> bool {
-    matches!(
-        key,
-        "zig" | "cosign" | "syft" | "cargo-zigbuild" | "sccache"
-    ) && (section == "tools" || section == "tool_alias" || !section.is_empty())
+    matches!(key, "zig" | "cosign" | "syft" | "cargo-zigbuild")
+        && (section == "tools" || section == "tool_alias" || !section.is_empty())
 }
 
 /// Parse the canonical source commit from a preview release body.

@@ -1,3 +1,5 @@
+> Historical setup audit. Workflow/task names below describe the original CI setup and have since been retired; see `native/README.md` and `native/mise.toml` for current commands.
+
 # Swift Project Setup Audit — 2026-08-20
 
 Mode: `audit` under `tailrocks-swift-project-setup` 0.21.0. Read-only; no files
@@ -55,10 +57,10 @@ live-resolvable during the audit; repo records match the skill baseline.
 - PR CI/local command parity (historical — the `ci.yml` → `ci-native.yml`
   lane was deleted; current lane is generated `ci-pr.yml` `group-swift` →
   `ci-unit-swift.yml` via `velnor-workflow`): generated `ci.yml` → pinned
-  reusable `ci-native.yml` → macos-26 job runs `mise run desktop-ci`
+  reusable `ci-native.yml` → macos-26 job runs `mise -C native run ci`
   verbatim, so the drift gate, format, lint, tests, and build are PR-enforced.
-- Release pipeline parity: `release.yml` invokes `mise run desktop-build /
-  desktop-verify / desktop-sign-notarize / desktop-release-state` verbatim;
+- Release pipeline parity: `release.yml` invokes `cargo xtask desktop build` / `cargo xtask desktop verify` /
+  `mise -C native run sign-notarize` verbatim;
   workspace nextest runs in the same pipeline.
 - Forward-lane exception dated 2026-08-20 with owner and exit condition.
 
@@ -66,10 +68,10 @@ live-resolvable during the audit; repo records match the skill baseline.
 
 1. ~~**Merge cadence never runs.**~~ Closed by
    `.github/workflows/desktop-cadence.yml`: push to `main` and manual dispatch
-   run `mise run desktop-merge` (PR graph + UI tests + accessibility audit) on
+   run `mise -C native run merge` (PR graph + UI tests + accessibility audit) on
    the macos-26 / Xcode 26.6 shipping lane.
 2. ~~**Scheduled cadence never runs.**~~ Closed by the same workflow: weekly
-   cron (Mon 04:41) runs `mise run desktop-scheduled` (merge graph + periphery
+   cron (Mon 04:41) runs `mise -C native run scheduled` (merge graph + periphery
    dead-code scan).
 
 Fix landed locally because `ci.yml` (historical — deleted; current PR lane

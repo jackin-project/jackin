@@ -34,7 +34,7 @@ jobs:
           cache: true
           cache_save: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
       - name: Run ci-evidence
-        run: mise run ci-evidence
+        run: cargo xtask ci-evidence run
       - name: Upload ci-evidence artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

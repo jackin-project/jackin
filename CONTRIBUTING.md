@@ -14,7 +14,7 @@ Employer contributions: confirm authorization before submitting. Use personal em
 
 1. Fork. Branch feature off `main`.
 2. Run `mise install` from the repo root to install the pinned toolchain and dev tools.
-3. Run `mise run hooks-install` once per checkout to install the pre-commit hooks (see "Git hooks" below).
+3. Run `scripts/hooks-install` once per checkout to install the pre-commit hooks (see "Git hooks" below).
 4. Change. Sign every commit: `git commit -s`.
 4. Open PR describing problem solved. CI must pass.
 5. Optional blame hygiene: `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` skips mass layout/fmt sweeps listed in that file.
@@ -22,11 +22,11 @@ Employer contributions: confirm authorization before submitting. Use personal em
 ## Git hooks
 
 Pre-commit checks run via [hk](https://hk.jdx.dev) (`hk.pkl` at the repo
-root; hk 2.0.1 pinned in `mise.toml`/`mise.lock`). Install per checkout —
+root; the version is pinned in `mise.toml`/`mise.lock`). Install per checkout —
 idempotent, safe to re-run:
 
 ```sh
-mise run hooks-install   # installs scripts/pre-commit-snapshot
+scripts/hooks-install   # installs scripts/pre-commit-snapshot
 ```
 
 No shell activation needed. Requirements: Git 2.54+ (config-based hooks;
@@ -42,7 +42,7 @@ boundary.
 What runs on every commit (see `hk.pkl` for the exact commands — each
 mirrors the CI definition it cites):
 
-- `fmt`: `cargo fmt --check` (workspace; fix: `mise run fmt-fix`)
+- `fmt`: `cargo fmt --check` (workspace; fix: `cargo fmt`)
 - `clippy`: `cargo xtask clippy-affected` — Clippy with the exact CI flags
   over the affected closure (changed crates + reverse dependents +
   detached fuzz/arrayref packages + cross-crate file inputs; widens to
@@ -78,15 +78,15 @@ patches remain until the author removes them. Bypass with `HK=0 git commit`
 
 Two intentional divergences from CI: hook Clippy is closure-scoped while
 CI lints the workspace (same flags; full coverage stays in CI /
-`mise run lint`), and `hk check --all` scopes Clippy by `git status`
+`cargo xtask ci --only lint`), and `hk check --all` scopes Clippy by `git status`
 (skips green on a clean tree). The global install
 (`hk install --global --mise`) is GUI-robust but forces `--staged`,
 which disables stashing — hence the repo-owned bootstrap above. Do not
 install hk globally for this repository: a global hk hook is rejected by
-`mise run hooks-install` because it does not use the repository-owned
+`scripts/hooks-install` because it does not use the repository-owned
 snapshot boundary.
 
-Linux developers: same setup (`mise install`, `mise run hooks-install`;
+Linux developers: same setup (`mise install`, `scripts/hooks-install`;
 hook commands are POSIX `sh` and the Swift steps skip themselves where
 `swiftlint`/`xcrun` are absent). CI-on-Linux (the velnor Rust lane on
 `ubuntu-26.04`) proves the shared pieces there: per-package `fmt`,
@@ -154,8 +154,6 @@ Run when PR ready to merge (not before every commit):
 
 ```sh
 cargo xtask ci
-# or
-mise run ci
 ```
 
 For a faster local pass that skips feature-powerset and Docker-backed smoke tests:
@@ -168,4 +166,4 @@ cargo xtask ci --fast
 
 Local builds outside CI default to the package version for `JACKIN_VERSION` / `JACKIN_CAPSULE_VERSION` so each commit does not invalidate every build-meta consumer and capsule cache entry. GitHub Actions sets `CI`, so release, preview, construct, and CI builds still stamp the real `<version>+<sha>`. Set `JACKIN_VERSION_OVERRIDE=<value>` only when you need an explicit local version.
 
-Fmt fail → `cargo fmt`, re-check. See [TESTING.md](TESTING.md).
+Fmt fail → `cargo fmt`, then `cargo fmt --check` again. See [TESTING.md](TESTING.md).

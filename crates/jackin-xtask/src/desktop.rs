@@ -1,12 +1,13 @@
 //! jackin❯ desktop (native macOS usage menu bar) assembly and verification.
 //!
-//! Canonical local/CI path — Rust owns orchestration; mise tasks thin-wrap
-//! these subcommands. No shell scripts.
+//! Rust owns desktop build and verification logic; `native/mise.toml` composes
+//! the local format, lint, test, and cadence commands. The UI test driver stays
+//! in `native/Scripts/run-ui-tests.sh`.
 //!
 //! ```sh
 //! cargo xtask desktop build --version 0.6.0 --build 1
 //! cargo xtask desktop verify native/dist/JackinDesktop.app
-//! # or: mise run desktop-build -- 0.6.0 1
+//! # or use the local native cadence: mise -C native run ci
 //! ```
 
 mod bootstrap;
@@ -20,7 +21,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use quick_xml::{
-    Decoder, XmlVersion,
+    XmlVersion,
     events::{BytesDecl, BytesRef, BytesStart, Event},
     reader::Reader,
 };
@@ -171,7 +172,7 @@ pub(super) fn resolve_app_path(app: &Path) -> Result<PathBuf> {
     };
     if !path.exists() {
         bail!(
-            "app not found at {}\n  build first: mise run desktop-build\n  or:         cargo xtask desktop build --version 0.6.0 --build 1",
+            "app not found at {}\n  build first: cargo xtask desktop build --version 0.6.0 --build 1",
             path.display()
         );
     }
@@ -333,7 +334,7 @@ struct XunitTotals {
 /// An empty root both opens and closes the document; `Start` elements advance
 /// depth at the call site.
 fn check_xunit_open_position(
-    name: &[u8],
+    name: &str,
     depth: usize,
     root_seen: &mut bool,
     root_closed: &mut bool,
@@ -342,7 +343,7 @@ fn check_xunit_open_position(
     anyhow::ensure!(is_xml_name(name), "corrupt xUnit: invalid XML element name");
     if depth == 0 {
         anyhow::ensure!(
-            !*root_seen && !*root_closed && name == b"testsuites",
+            !*root_seen && !*root_closed && name == "testsuites",
             "corrupt xUnit: expected one testsuites document root"
         );
         *root_seen = true;
@@ -351,12 +352,12 @@ fn check_xunit_open_position(
         }
     } else if depth == 1 {
         anyhow::ensure!(
-            name == b"testsuite",
+            name == "testsuite",
             "corrupt xUnit: testsuites may contain only testsuite elements"
         );
     } else {
         anyhow::ensure!(
-            name != b"testsuites" && name != b"testsuite",
+            name != "testsuites" && name != "testsuite",
             "corrupt xUnit: nested test suite element"
         );
     }
@@ -396,12 +397,12 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
                     &mut root_closed,
                     false,
                 )?;
-                validate_xunit_attributes(&element, reader.decoder())?;
+                validate_xunit_attributes(&element)?;
                 if depth == 0 {
                     prolog_started = true;
                 }
-                if element.name().as_ref() == b"testsuite" {
-                    add_xunit_suite(&element, reader.decoder(), &mut totals)?;
+                if element.name().as_ref() == "testsuite" {
+                    add_xunit_suite(&element, &mut totals)?;
                     suites = suites
                         .checked_add(1)
                         .context("corrupt xUnit: testsuite count overflow")?;
@@ -418,12 +419,12 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
                     &mut root_closed,
                     true,
                 )?;
-                validate_xunit_attributes(&element, reader.decoder())?;
+                validate_xunit_attributes(&element)?;
                 if depth == 0 {
                     prolog_started = true;
                 }
-                if element.name().as_ref() == b"testsuite" {
-                    add_xunit_suite(&element, reader.decoder(), &mut totals)?;
+                if element.name().as_ref() == "testsuite" {
+                    add_xunit_suite(&element, &mut totals)?;
                     suites = suites
                         .checked_add(1)
                         .context("corrupt xUnit: testsuite count overflow")?;
@@ -437,7 +438,7 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
                 depth -= 1;
                 if depth == 0 {
                     anyhow::ensure!(
-                        element.name().as_ref() == b"testsuites",
+                        element.name().as_ref() == "testsuites",
                         "corrupt xUnit: testsuites document root closed unexpectedly"
                     );
                     root_closed = true;
@@ -452,7 +453,7 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
             }
             Ok(Event::Text(text)) if depth == 0 => {
                 anyhow::ensure!(
-                    text.iter().copied().all(is_xml_whitespace),
+                    text.as_ref().chars().all(is_xml_whitespace),
                     "corrupt xUnit: character data outside document root"
                 );
                 if !root_seen {
@@ -476,7 +477,7 @@ fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
             Ok(Event::PI(instruction)) => {
                 anyhow::ensure!(
                     is_xml_name(instruction.target())
-                        && !instruction.target().eq_ignore_ascii_case(b"xml"),
+                        && !instruction.target().eq_ignore_ascii_case("xml"),
                     "corrupt xUnit: invalid or reserved processing-instruction target"
                 );
                 if !root_seen {
@@ -511,10 +512,7 @@ fn is_xml_char(character: char) -> bool {
     )
 }
 
-fn is_xml_name(name: &[u8]) -> bool {
-    let Ok(name) = std::str::from_utf8(name) else {
-        return false;
-    };
+fn is_xml_name(name: &str) -> bool {
     let mut characters = name.chars();
     let Some(first) = characters.next() else {
         return false;
@@ -552,8 +550,8 @@ fn is_xml_name_char(character: char) -> bool {
         )
 }
 
-fn is_xml_whitespace(byte: u8) -> bool {
-    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
+fn is_xml_whitespace(character: char) -> bool {
+    matches!(character, ' ' | '\t' | '\n' | '\r')
 }
 
 fn validate_xml_reference(reference: &BytesRef<'_>) -> Result<()> {
@@ -567,21 +565,16 @@ fn validate_xml_reference(reference: &BytesRef<'_>) -> Result<()> {
         );
         return Ok(());
     }
-    let entity: &[u8] = reference.as_ref();
+    let entity = reference.as_ref();
     anyhow::ensure!(
-        entity == b"amp"
-            || entity == b"lt"
-            || entity == b"gt"
-            || entity == b"apos"
-            || entity == b"quot",
+        entity == "amp" || entity == "lt" || entity == "gt" || entity == "apos" || entity == "quot",
         "corrupt xUnit: undeclared entity reference"
     );
     Ok(())
 }
 
 fn validate_xunit_declaration(declaration: &BytesDecl<'_>) -> Result<()> {
-    let content =
-        std::str::from_utf8(declaration.as_ref()).context("decoding xUnit XML declaration")?;
+    let content = declaration.as_ref();
     let element = BytesStart::from_content(content, b"xml".len());
     let mut attributes = element.attributes();
     attributes.with_checks(true);
@@ -589,23 +582,22 @@ fn validate_xunit_declaration(declaration: &BytesDecl<'_>) -> Result<()> {
     for attribute in attributes {
         let attribute = attribute.context("parsing xUnit XML declaration attribute")?;
         match attribute.key.as_ref() {
-            b"version" => {
+            "version" => {
                 anyhow::ensure!(
-                    position == 0 && attribute.value.as_ref() == b"1.0",
+                    position == 0 && attribute.value.as_ref() == "1.0",
                     "corrupt xUnit: declaration must begin with XML version 1.0"
                 );
             }
-            b"encoding" => {
+            "encoding" => {
                 anyhow::ensure!(
-                    position == 1 && attribute.value.as_ref().eq_ignore_ascii_case(b"utf-8"),
+                    position == 1 && attribute.value.as_ref().eq_ignore_ascii_case("utf-8"),
                     "corrupt xUnit: only UTF-8 XML declarations are supported"
                 );
             }
-            b"standalone" => {
+            "standalone" => {
                 anyhow::ensure!(
                     (position == 1 || position == 2)
-                        && (attribute.value.as_ref() == b"yes"
-                            || attribute.value.as_ref() == b"no"),
+                        && (attribute.value.as_ref() == "yes" || attribute.value.as_ref() == "no"),
                     "corrupt xUnit: standalone must follow version/encoding and be yes or no"
                 );
             }
@@ -617,7 +609,7 @@ fn validate_xunit_declaration(declaration: &BytesDecl<'_>) -> Result<()> {
     Ok(())
 }
 
-fn validate_xunit_attributes(element: &BytesStart<'_>, decoder: Decoder) -> Result<()> {
+fn validate_xunit_attributes(element: &BytesStart<'_>) -> Result<()> {
     let mut attributes = element.attributes();
     attributes.with_checks(true);
     for attribute in attributes {
@@ -627,8 +619,8 @@ fn validate_xunit_attributes(element: &BytesStart<'_>, decoder: Decoder) -> Resu
             "corrupt xUnit: invalid XML attribute name"
         );
         let value = attribute
-            .decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
-            .context("decoding xUnit attribute value")?;
+            .normalized_value(XmlVersion::Implicit1_0)
+            .context("normalizing xUnit attribute value")?;
         anyhow::ensure!(
             value.chars().all(is_xml_char),
             "corrupt xUnit: attribute contains a character forbidden by XML 1.0"
@@ -637,11 +629,7 @@ fn validate_xunit_attributes(element: &BytesStart<'_>, decoder: Decoder) -> Resu
     Ok(())
 }
 
-fn add_xunit_suite(
-    element: &BytesStart<'_>,
-    decoder: Decoder,
-    totals: &mut XunitTotals,
-) -> Result<()> {
+fn add_xunit_suite(element: &BytesStart<'_>, totals: &mut XunitTotals) -> Result<()> {
     let mut suite = XunitTotals {
         tests: 0,
         failures: 0,
@@ -653,12 +641,12 @@ fn add_xunit_suite(
     for attribute in element.attributes() {
         let attribute = attribute.context("parsing xUnit testsuite attribute")?;
         let value = attribute
-            .decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
-            .context("decoding xUnit testsuite attribute")?;
+            .normalized_value(XmlVersion::Implicit1_0)
+            .context("normalizing xUnit testsuite attribute value")?;
         let (slot, found, name) = match attribute.key.as_ref() {
-            b"tests" => (&mut suite.tests, &mut found_tests, "tests"),
-            b"failures" => (&mut suite.failures, &mut found_failures, "failures"),
-            b"errors" => (&mut suite.errors, &mut found_errors, "errors"),
+            "tests" => (&mut suite.tests, &mut found_tests, "tests"),
+            "failures" => (&mut suite.failures, &mut found_failures, "failures"),
+            "errors" => (&mut suite.errors, &mut found_errors, "errors"),
             _ => continue,
         };
         *slot = value
@@ -791,10 +779,8 @@ fn print_app_ready_banner(app: &Path, version: &str, build: &str) {
     progress(format!("│   app:     {}", abs.display()));
     progress(format!("│   rel:     {}", rel.display()));
     progress("│");
-    progress("│   verify:  mise run desktop-verify");
-    progress("│            cargo xtask desktop verify");
-    progress("│   run:     mise run desktop-run");
-    progress("│            cargo xtask desktop run");
+    progress("│   verify:  cargo xtask desktop verify");
+    progress("│   run:     cargo xtask desktop run");
     progress(format!("│   open:    open {}", abs.display()));
     progress("│");
     progress("│   (menu bar only — no Dock icon; LSUIElement)");
@@ -820,7 +806,7 @@ pub(super) fn resolve_version_build(
 }
 
 /// Prefer flags/env; otherwise read identity from the app plist so
-/// `mise run desktop-verify` works without re-stating the version.
+/// `cargo xtask desktop verify` reads version metadata from the app bundle.
 fn resolve_version_build_for_verify(
     app: &Path,
     version: Option<String>,
@@ -916,7 +902,7 @@ fn bindings_check(root: &Path, profile: &str) -> Result<()> {
         return Ok(());
     }
     let mut report = String::from(
-        "committed boltffi bindings are stale; run `mise run desktop-bindings` and commit:",
+        "committed boltffi bindings are stale; run `cargo xtask desktop bindings` and commit:",
     );
     for difference in &differences {
         report.push_str("\n  ");
@@ -1422,8 +1408,7 @@ pub(super) fn verify_app(
             "ad-hoc / PR"
         }
     ));
-    progress("│   run:     mise run desktop-run");
-    progress("│            cargo xtask desktop run");
+    progress("│   run:     cargo xtask desktop run");
     progress("└─────────────────────────────────────────────────────────────");
     progress("");
     progress(format!("DESKTOP_APP={}", abs.display()));

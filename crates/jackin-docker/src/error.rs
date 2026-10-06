@@ -45,8 +45,8 @@ pub enum DockerError {
     Prefetch { url: String, detail: String },
     #[error("server at {url} does not support Range requests; cannot download in parallel")]
     RangeUnsupported { url: String },
-    #[error("download task panicked for {url}: {detail}")]
-    DownloadTaskPanicked { url: String, detail: String },
+    #[error("download flush failed for {url}: {detail}")]
+    DownloadFlushFailed { url: String, detail: String },
     #[error("download of {url} timed out after {timeout:?}")]
     DownloadTimeout {
         url: String,
