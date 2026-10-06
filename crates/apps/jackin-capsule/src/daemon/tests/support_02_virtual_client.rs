@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Virtual-client frame-conformance harness for daemon tests.
 
-use super::super::*;
-use super::test_session;
+use super::support_02_fixtures::test_session;
+use super::*;
 
 pub(crate) struct VirtualClient {
     pub(crate) grid: DamageGrid,

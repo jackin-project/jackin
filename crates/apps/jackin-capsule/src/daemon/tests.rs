@@ -35,6 +35,8 @@ use termpane::Cell;
 mod support_01;
 pub(crate) use support_01::*;
 mod support_02;
+mod support_02_fixtures;
+mod support_02_virtual_client;
 use support_02::*;
 mod support_03;
 use support_03::*;

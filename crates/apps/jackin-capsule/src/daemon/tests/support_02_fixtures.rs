@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Session, worktree, and multiplexer fixtures for daemon tests.
 
-use super::super::*;
+use super::*;
 
 pub(crate) fn make_worktree_layout(temp: &Path, worktree_name: &str) -> (PathBuf, PathBuf) {
     let workdir = temp.join("workdir");

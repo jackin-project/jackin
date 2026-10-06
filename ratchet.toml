@@ -790,7 +790,7 @@ key = "jackin-agent-status"
 bound = 26
 [[family.entry]]
 key = "jackin-capsule"
-bound = 79
+bound = 69
 [[family.entry]]
 key = "jackin-config"
 bound = 32

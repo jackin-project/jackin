@@ -3,14 +3,11 @@
 
 use super::*;
 
-mod fixtures;
-mod virtual_client;
-
-pub(crate) use fixtures::{
+pub(crate) use super::support_02_fixtures::{
     arm_pending_pr_lookup, make_worktree_layout, pane_kind_cases, split_tab_mux, test_pane_session,
     test_provider_session, test_session, test_session_with_agent, test_shell_session,
 };
-pub(crate) use virtual_client::{
+pub(crate) use super::support_02_virtual_client::{
     VirtualClient, assert_frame_conformance, attached_single_pane, dispatch_and_compose,
     feed_and_compose,
 };
