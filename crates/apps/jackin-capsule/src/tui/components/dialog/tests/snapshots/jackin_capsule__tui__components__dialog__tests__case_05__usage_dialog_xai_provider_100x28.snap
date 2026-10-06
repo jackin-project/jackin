@@ -1,0 +1,22 @@
+---
+source: crates/apps/jackin-capsule/src/tui/components/dialog/tests/case_05.rs
+assertion_line: 158
+expression: "render_usage_dialog_snapshot_for_view(100, 28, UsageDialogTab::Provider,\nxai_usage_view_fixture())"
+---
+
+
+
+       ┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
+       │         Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax          │
+       │                                              ─────                                 │
+       │────────────────────────────────────────────────────────────────────────────────────│
+       │  xAI                                                            account@work.test  │
+       │  Updated 4m ago                                                                    │
+       │────────────────────────────────────────────────────────────────────────────────────│
+       │  Plan SuperGrok                                                                    │
+       │                                                                                    │
+       │  Weekly                                                                            │
+       │  ████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
+       │  18% left                                                   Resets Jul 1 at 07:00  │
+       │                                                                                    │
+       └────────────────────────────────────────────────────────────────────────────────────┘

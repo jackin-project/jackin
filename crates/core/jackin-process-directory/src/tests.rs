@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+#![cfg(unix)]
+
 use super::current_dir;
 use std::fs::File;
 use std::os::fd::AsRawFd;

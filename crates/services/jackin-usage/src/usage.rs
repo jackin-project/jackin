@@ -31,7 +31,6 @@ use jackin_protocol::control::{
 use jackin_telemetry::ResultTelemetryExt as _;
 use serde::Serialize;
 
-#[path = "process_telemetry.rs"]
 pub(crate) mod process_telemetry;
 
 mod format;

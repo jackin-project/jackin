@@ -25,5 +25,4 @@ pub type InputOutcome = crate::tui::message::ConsoleInputOutcome<
     jackin_core::LaunchSelection,
 >;
 
-#[cfg(test)]
-pub mod test_support;
+pub mod fixtures;

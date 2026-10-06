@@ -1972,6 +1972,3 @@ fn github_ignore_can_skip_state_prepare(
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(all(test, unix))]
-mod selected_source_tests;

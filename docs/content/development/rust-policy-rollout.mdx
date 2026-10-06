@@ -51,7 +51,7 @@ Native `alint check` exit 1: 748 errors, 24 passing / 13 failing rules.
 | `cargo-workspace-inherit-lints` | 4 | Same 4 fuzz manifests. |
 | `toolchain-channel-pinned` | 1 | Channel is `1.97.1`, policy pins `1.98.1`. |
 | `toolchain-mise-parity` | 1 | No `[tools] rust` literal: mise resolves rust via `idiomatic_version_file`. |
-| `ci-build-runs-on` | 1 | Single workflow `.github/workflows/ci.yml` has no `build` job. |
+| `ci-build-runs-on` | 1 | Single workflow <RepoFile path=".github/workflows/ci.yml" /> has no `build` job. |
 | `cargo-no-patch` | 1 | `[patch.crates-io] arrayref = { path = "vendor/arrayref" }`: security-motivated vendor (checksum-verified against pre-attack lockfile). Removal waits on a trustworthy upstream resolution. |
 
 Passing (24, no action): all `layout-requires-*` (incl. nextest config,
@@ -115,9 +115,9 @@ passes.
 ### 2. Toolchain alignment
 
 - Bump `rust-toolchain.toml` channel `1.97.1` -> `1.98.1`; add an
-  explicit `[tools] rust = "1.98.1"` pin to `mise.toml` (parity rule
+  explicit `[tools] rust = "1.98.1"` pin to <RepoFile path="mise.toml" /> (parity rule
   keeps the two in sync; the current idiomatic-only resolution is
-  invisible to it). Decide `rust-version` in root `Cargo.toml`
+  invisible to it). Decide `rust-version` in root <RepoFile path="Cargo.toml" />
   (`1.97` today): align MSRV with the channel or document the split.
 - Forward: pin files only. Rollback: revert. Verify: full `cargo
   check` + nextest suite on the new channel (this is the one step
@@ -128,7 +128,7 @@ passes.
 
 - Per group, map readers/writers/ownership first: workspace `members`
   list, CI path filters, docs links, docker contexts, xtask path
-  assumptions, `renovate.json` `ignorePaths` (jackin-lints entry),
+  assumptions, <RepoFile path="renovate.json" /> `ignorePaths` (jackin-lints entry),
   CODEOWNERS-style path rules. One group per commit; forward is `git
   mv` + member-list update; rollback is revert of that commit.
 - Expand: register the new path in `members` alongside the old.
@@ -278,7 +278,7 @@ passes.
   nested `[workspace]`s) moved to top-level `fuzz/<pkg>/`
   (cargo-fuzz canonical shape, outside all `crates/`-scoped
   rules). Each keeps its own `[workspace]` + committed
-  `Cargo.lock`; path deps repointed to
+  <RepoFile path="Cargo.lock" />; path deps repointed to
   `../../crates/core/jackin-*`.
 - Registered in `policy/auxiliary-workspaces.json`: path,
   kind `cargo-fuzz`, toolchain `inherit:rust-toolchain.toml`
@@ -297,8 +297,8 @@ passes.
 
 ### References updated
 
-- Root `Cargo.toml`: sorted explicit 32-member list, all
-  `[workspace.dependencies]` paths, dylint path. `Cargo.lock`
+- Root <RepoFile path="Cargo.toml" />: sorted explicit 32-member list, all
+  `[workspace.dependencies]` paths, dylint path. <RepoFile path="Cargo.lock" />
   byte-identical (moves change no package set).
 - `crates/**`: every `crates/jackin-*` literal, cross-crate
   `include_str!/bytes!` chains (depth-corrected, not just group
@@ -314,7 +314,7 @@ passes.
   `dev` capsule path deps, telemetry `collect_source_files`
   exclusions, census regenerated via the gate itself).
 - `.velnor/config.toml` discovery excludes (grouped),
-  `.github/workflows/ci.yml` task IDs + `--manifest-path`
+  <RepoFile path=".github/workflows/ci.yml" /> task IDs + `--manifest-path`
   (mechanical rewrite of the frozen artifact; generator still
   capped, no regen possible), `docs/**` path refs (docs site
   routes `/reference/crates/<name>/` deliberately NOT
@@ -325,7 +325,7 @@ passes.
   `ratchet.toml` (34 path keys regrouped + 4 README byte
   budgets raised for path-growth content: capsule 6339->6342,
   core 5618->5624, test-support 2633->2647, lints 2038->2050),
-  `renovate.json` (lints ignorePath + 2 runtime file patterns),
+  <RepoFile path="renovate.json" /> (lints ignorePath + 2 runtime file patterns),
   `container-path-allowlist.toml` (15 paths),
   `code-health-baseline.toml` (94 `crates_*` keys),
   `REUSE.toml`/`hk.pkl` (comments only).
@@ -440,3 +440,111 @@ passes.
   `#[path]` trips `GAP-TEST-002`).
 - Raw outputs: `/tmp/jackin-v011-{alint,gaps,gaps-010,
   inventory}.txt`, parser `/tmp/parse-v011.py`.
+
+## Slice 6: S6 test normalization (2026-10-06)
+
+- Base: `fb52c525` (slice 5 re-pin). Clone:
+  `/tmp/jackin-v011`, branch `rust-policy-rollout`, pushed, NOT
+  merged to `main`.
+- Forward (canonical form per slice 5: `#[cfg(test)] mod
+  tests;` + sibling `tests.rs` + plain `mod <case>;` case
+  splits; shared helpers ungated decl + `#![cfg(test)]`
+  inside the file so the prod `dead_code` deny stays
+  clean). P2 renames/moves: `test_support` ->
+  `fixtures`/`stubs`/`span_snapshot`/`support` per crate,
+  `test_layout` -> `layout_lint`, capsule
+  `tui/daemon/*` -> `daemon/*` (5 presentation modules to
+  canonical paths, `#[path]` bridge + its README removed),
+  orphans canonicalized, 23 `tests/main.rs` placeholders.
+  P1: 11 inline suites extracted (incl. `process_isolation`
+  3-case split, `apple_container`, `launch_pipeline`). Case
+  splitter: 236 candidates, 0 blocked, 6034 test fns
+  mapped; post-split zero `tests.rs` over 150 lines (the
+  460-line `support_02.rs` chunked into 239 + 242). 18
+  insta snapshots relocated to `tests/snapshots/` with the
+  case-path name (bodies byte-identical, headers
+  refreshed). 4 P2-broken doc `RepoFile` refs repointed
+  (`tui/daemon/` -> `daemon/`) + the stale bridge paragraph
+  in `tui/architecture.mdx` rewritten; 9 slice-5
+  `RepoFile` nits in this file converted (repo-links gate
+  now green). Rollback: revert the commit (moves + splits
+  only, no prod behavior change).
+- S6-owed budget touch-ups (not regenerated wholesale):
+  `ratchet.toml` (`too_many_lines@jackin-console` 6->7,
+  deleted grandfathered `observability.rs` 2012 row,
+  xtask README bytes 6112->6113),
+  `container-path-allowlist.toml` (`state_io.rs` ->
+  `state/state_io.rs` path), `CURATED_PUB_MODS`
+  (`jackin-config` `test_support`->`fixtures` + gate
+  test).
+- Repo gates rewritten to the canonical rules:
+  `layout_lint` (plain private `mod <case>;`, flat
+  parent-declared case files, `.rs`-free fixture dirs
+  ignored) and `specs.rs` citation search over
+  `tests/<case>.rs` (stable `::tests::fn` citation form
+  kept). Gate unit tests 12/12 + specs 9/9 green.
+
+### Verify (before -> after, same flags/env)
+
+- Env: rustup-direct cargo/rustc 1.98.1, nextest
+  0.9.143, alint 0.17.0, helper from the v0.1.1
+  artifact. Baseline: fresh worktree
+  `/tmp/jackin-v011-clean` @ `fb52c525`.
+- `cargo check --locked --workspace --all-targets`:
+  green (1 pre-existing future-compat note). `cargo fmt
+  --all --check`: clean. `cargo clippy --locked
+  --workspace --all-targets`: 0 errors. Root
+  <RepoFile path="Cargo.lock" /> untouched (moves change
+  no package set).
+- `cargo nextest list --workspace --all-targets`: 7270
+  -> 7272 unique IDs. Bijection proven over the
+  6021-gone / 6023-new delta: 5654 splitter-paired,
+  364 P1-extraction/P2-rename paired (incl. 4 P1-rename
+  chains), 3 removed + 5 added xtask gate tests (new
+  canonical-rule coverage); net +2. No test lost, no
+  duplicate IDs. The 6034-line source mapping also
+  covers 368 cfg-gated (windows/linux-only, unlisted on
+  macos) + 8 bin-target fns (unlisted both sides,
+  symmetric).
+- `cargo nextest run --workspace --all-targets`: 81
+  unique failures triaged to zero S6 regressions. 78
+  fixed: 53 runtime launch (bulk-script `pub(super)`
+  corruption of TOML literals, reverted), 2 launch_slot
+  (stale `lock_tests` child path), 18 insta snapshots
+  (relocated, bodies identical), 5 usage-ffi bridge
+  (same TOML revert). 3 pre-existing, verified failing
+  on the clean tree, left red as out of scope: 2 xtask
+  (`scanner_records_cross_boundary_literals`,
+  `function_complexity_reports_per_crate_max`) + 1
+  `docs_commands config_reference`.
+- `alint check`: 864 -> 303 findings, 26 passing / 11
+  failing rules. `tests-no-test-files-in-src` 11 -> 0,
+  `tests-dir-present` 23 -> 0, `size-lib-main-150` 241
+  -> 14 (exact S7 entry set, zero test files),
+  `size-file-400` 368 -> 238, `policy-gaps` 199 -> 29,
+  `docs-root-only-allowed` 15 unchanged, plus 7
+  unchanged singles (toolchain x2, ci-build-runs-on,
+  inherit x3 lints, cargo-no-patch).
+- `check-gaps`: 199 -> 29. `GAP-TEST-001/002/003` 136/4/33
+  -> 0/0/0. `GAP-SIZE-001` 15 unchanged; `GAP-SIZE-002`
+  7 -> 10 (`jackin-config`, `jackin-diagnostics`,
+  `jackin-launch` newly over 60 files from split
+  output: slice-7 scope). `GAP-INV-001`,
+  `GAP-DEPS-004`, `GAP-CI-001` unchanged.
+- Repo gates vs clean tree: `lint tests` 0 violations,
+  `docs specs` 49 INV rows / 84 cited tests (incl.
+  `JACKIN_SPECS_RECONCILE=1` nextest reconcile),
+  `lint arch`, `agents`, `agent-links` green; `lint
+  files` 15 -> 11 (4 test files cured by splits);
+  `container-paths` 7 -> 6 rows (39-literal P2 row
+  gone, residual identical); `repo-links` 13 -> 0.
+  `ratchet` (76 rows), `headers`, `suppressions`,
+  `map-check`, `brand` fail byte-identically to base
+  (pre-existing debt, zero new rows). `site-links`
+  needs `DOCS_SITE_URL` (environmental, not run).
+- Raw outputs: `/tmp/jackin-v011-s6-mapping.txt` (6034
+  old->new pairs), `/tmp/jackin-v011-nextest-{before,
+  after, final}.txt` + gone/new census, per-cluster
+  rerun logs, `/tmp/jackin-v011-{alint, gaps}-final.txt`,
+  gate censuses `/tmp/{r, cp, repo}-{-base, -after,
+  -current}.txt`.

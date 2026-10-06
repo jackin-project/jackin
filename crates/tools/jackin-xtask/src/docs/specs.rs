@@ -205,32 +205,62 @@ fn verify_citation(root: &Path, citation: &str) -> Result<String, String> {
         path.push("tests.rs");
         candidates.push(path);
     }
+    // Canonical case splits: the cited fn may live in `tests/<case>.rs`
+    // while the citation keeps the stable `::tests::fn` form.
+    if let Some(suite) = candidates.first()
+        && let Some(suite_dir) = suite.parent()
+    {
+        let cases_dir = suite_dir.join("tests");
+        if cases_dir.is_dir()
+            && let Ok(entries) = crate::fs_util::read_dir_sorted(&cases_dir)
+        {
+            for entry in entries {
+                let path = entry.path();
+                if path.extension().is_some_and(|ext| ext == "rs") {
+                    candidates.push(path);
+                }
+            }
+        }
+    }
 
+    let mut searched: Vec<String> = Vec::new();
+    let mut helper_only: Option<String> = None;
     for path in &candidates {
         if !path.is_file() {
             continue;
         }
         let text = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        return match find_test_fn(&text, fn_name) {
-            TestFnStatus::Ok => Ok(crate_name.to_owned()),
-            TestFnStatus::HelperOnly => Err(format!(
-                "fn `{fn_name}` exists in {} but lacks a test attribute (#[test]/#[tokio::test]/#[rstest]) — helpers are not coverage",
-                relative(root, path)
-            )),
-            TestFnStatus::Missing => Err(format!(
-                "fn `{fn_name}` not found in {}",
-                relative(root, path)
-            )),
-            TestFnStatus::ParseError(msg) => Err(format!(
-                "failed to parse {} as Rust: {msg}",
-                relative(root, path)
-            )),
-        };
+        match find_test_fn(&text, fn_name) {
+            TestFnStatus::Ok => return Ok(crate_name.to_owned()),
+            TestFnStatus::HelperOnly => {
+                helper_only.get_or_insert_with(|| relative(root, path));
+            }
+            TestFnStatus::Missing => {
+                searched.push(relative(root, path));
+            }
+            TestFnStatus::ParseError(msg) => {
+                return Err(format!(
+                    "failed to parse {} as Rust: {msg}",
+                    relative(root, path)
+                ));
+            }
+        }
     }
 
+    if searched.is_empty() && helper_only.is_none() {
+        return Err(format!(
+            "no tests.rs at expected path for crate `{crate_name}` module `{}`",
+            module_parts.join("::")
+        ));
+    }
+    if let Some(path) = helper_only {
+        return Err(format!(
+            "fn `{fn_name}` exists in {path} but lacks a test attribute (#[test]/#[tokio::test]/#[rstest]) — helpers are not coverage"
+        ));
+    }
     Err(format!(
-        "no tests.rs at expected path for crate `{crate_name}` module `{}`",
-        module_parts.join("::")
+        "fn `{fn_name}` not found in {}",
+        searched.join(", ")
     ))
 }
 

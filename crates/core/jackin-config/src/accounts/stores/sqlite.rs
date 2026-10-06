@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+// Test-only by `#![cfg(test)]` (not a gated `mod` decl): the audit parser
+// must never become a production launch or usage candidate.
+#![cfg(test)]
+
 //! Minimal read-only `SQLite` parser shared by the store enumerators.
 //!
 //! Scoped `ENGINEERING.md` waiver of the turso-only rule: turso 0.7.2 has

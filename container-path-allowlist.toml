@@ -78,5 +78,5 @@ reason = "Docker tmpfs flag string for sudoers.d mount options (host Docker conf
 
 [[forbidden-roots]]
 path = "/var"
-file = "crates/services/jackin-isolation/src/state_io.rs"
+file = "crates/services/jackin-isolation/src/state/state_io.rs"
 reason = "macOS-only immutable system-alias normalization (/var to /private/var); host path handling, not a container path"

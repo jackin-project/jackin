@@ -12,7 +12,6 @@ use jackin_config::{AccountCredential, AiProvider, AppConfig};
 use jackin_core::Agent;
 
 #[cfg(unix)]
-#[path = "account_config/private_config_bounds.rs"]
 mod private_config_bounds;
 
 #[cfg(unix)]
@@ -1126,9 +1125,5 @@ fn model_catalog(provider: AiProvider, model: &str) -> Option<serde_json::Value>
     Some(serde_json::json!({ "models": [entry] }))
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests;
-
-#[cfg(all(test, unix))]
-#[path = "account_config/authority_tests.rs"]
-mod authority_tests;

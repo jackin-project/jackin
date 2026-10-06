@@ -224,6 +224,3 @@ pub fn tab_labels(active: EditorTab) -> Vec<(&'static str, bool)> {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod frame_regression_tests;

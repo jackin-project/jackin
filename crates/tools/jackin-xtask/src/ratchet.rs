@@ -627,7 +627,8 @@ const CURATED_PUB_MODS: &[(&str, &[&str])] = &[
     // jackin-env pilot: private impl modules + `pub mod test_support` only.
     ("jackin-env", &["test_support"]),
     // Plan 019: jackin-config narrowed (private mods + root re-exports).
-    ("jackin-config", &["test_support"]),
+    // S6: canonical test-support name is `fixtures`.
+    ("jackin-config", &["fixtures"]),
     // Plan 019: jackin-core — only justified namespace mods remain public.
     ("jackin-core", &["container_paths"]),
 ];
@@ -695,7 +696,7 @@ pub(crate) fn expect_key(lint: &str, crate_name: &str) -> String {
 
 fn invoke_provider_presence(root: &Path, provider: &str) -> Result<BTreeMap<String, String>> {
     match provider {
-        "test_layout_violations" => crate::test_layout::measure_violations(root),
+        "test_layout_violations" => crate::layout_lint::measure_violations(root),
         other => bail!("unknown presence provider {other:?}"),
     }
 }

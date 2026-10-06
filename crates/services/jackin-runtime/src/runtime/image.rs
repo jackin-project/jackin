@@ -3,16 +3,12 @@
 
 //! Docker image build pipeline: prepare binaries, build derived image, tag and cache.
 
-#[path = "image/version.rs"]
 mod version;
 
-#[path = "image/published.rs"]
 mod published;
 
-#[path = "image/prewarm.rs"]
 mod prewarm;
 
-#[path = "image/build.rs"]
 mod build;
 pub(crate) use build::{build_agent_image, git_head_sha};
 #[cfg(test)]

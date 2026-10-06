@@ -76,7 +76,7 @@ impl LaunchProgress {
             diagnostics,
             renderer: Renderer::Test,
             view: Arc::new(std::sync::Mutex::new(initial_view())),
-            host: crate::test_support::test_host_terminal(),
+            host: crate::fixtures::test_host_terminal(),
             cancel_token: CancellationToken::new(),
         }
     }

@@ -86,11 +86,10 @@ src/
 ```
 
 The capsule keeps PTY/session authority and effectful daemon ports under
-`src/daemon/`. Its `src/tui/daemon/` bridge contains only terminal-facing
-`Multiplexer` implementations: composition, dialog/input dispatch, mouse hit
-translation, and pane layout. `daemon.rs` declares those bridge modules with
-explicit paths so the model remains daemon-owned while every visual or
-terminal-interaction implementation follows the same `src/tui/` location rule.
+`src/daemon/`, including the terminal-facing `Multiplexer` implementations:
+composition, dialog/input dispatch, mouse hit translation, and pane layout.
+`daemon.rs` declares those presentation submodules at canonical `daemon/`
+paths (no `#[path]` bridge) so the model stays daemon-owned.
 
 **Multi-screen crate layout** (`jackin-console`):
 ```

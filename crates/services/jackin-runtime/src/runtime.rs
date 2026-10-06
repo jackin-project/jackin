@@ -29,8 +29,7 @@ pub(crate) mod shared_runner;
 pub mod snapshot;
 pub mod universe;
 
-#[cfg(test)]
-pub mod test_support;
+pub mod stubs;
 
 pub use self::attach::docker_unavailable_msg;
 pub use self::attach::{

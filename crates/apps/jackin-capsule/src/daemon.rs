@@ -140,24 +140,18 @@ use jackin_core::Agent;
 use jackin_core::{Clock, SessionId, SystemClock};
 use jackin_protocol::control::{ClientMsg, ServerMsg, SessionEventKind};
 
-// Presentation Multiplexer impls live under `src/tui/daemon/` (TUI source
-// location rule) but remain daemon submodules so `impl Multiplexer` and
-// `pub(super)` stay valid. `#[path]` is intentional — not a second module tree.
-#[path = "tui/daemon/compositor.rs"]
+// Presentation Multiplexer impls: daemon submodules so `impl Multiplexer`
+// and `pub(super)` stay valid, at canonical `daemon/` paths (no `#[path]`).
 mod compositor;
 mod context_mgmt;
 mod control_reply;
-#[path = "tui/daemon/dialog_mgmt.rs"]
 mod dialog_mgmt;
 mod events;
 use events::{handle_control_subscription, publish_status_events, session_observation};
 mod file_export;
-#[path = "tui/daemon/input_dispatch.rs"]
 mod input_dispatch;
-#[path = "tui/daemon/mouse_input.rs"]
 mod mouse_input;
 mod multiplexer_utils;
-#[path = "tui/daemon/pane_layout.rs"]
 mod pane_layout;
 mod ports;
 mod resource_metrics;

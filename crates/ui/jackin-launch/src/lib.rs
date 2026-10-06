@@ -25,4 +25,4 @@ pub use tui::message::LaunchMessage;
 pub use tui::model::{LaunchView, PromptResult};
 pub use tui::update::{active_stage_index, initial_view, update_launch_view, update_stage};
 
-mod test_support;
+mod fixtures;

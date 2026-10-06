@@ -32,6 +32,7 @@ mod fs_util;
 mod github;
 mod headers;
 mod health;
+mod layout_lint;
 mod lint;
 mod pr;
 mod preview;
@@ -47,7 +48,6 @@ mod schema;
 mod suppressions;
 mod telemetry_bench;
 mod telemetry_registry;
-mod test_layout;
 
 use std::{process::ExitCode, thread};
 
@@ -231,7 +231,7 @@ enum LintCommand {
     /// Enforce the test-file-layout rule (tests live in a sibling
     /// `tests.rs`, never inline `#[cfg(test)] mod tests` or split across
     /// `tests/` sub-modules; allowlist in `ratchet.toml` family `test-layout`).
-    Tests(test_layout::LintTestsArgs),
+    Tests(layout_lint::LintTestsArgs),
     /// Enforce that first-party `CLAUDE.md` files are symlinks to sibling
     /// `AGENTS.md` files.
     Agents(agent_files::LintAgentFilesArgs),
@@ -305,7 +305,7 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
 fn run_lint(command: Option<LintCommand>, strict: bool) -> anyhow::Result<()> {
     match command {
         Some(LintCommand::Files(args)) => lint::run(args),
-        Some(LintCommand::Tests(args)) => test_layout::run(args),
+        Some(LintCommand::Tests(args)) => layout_lint::run(args),
         Some(LintCommand::Agents(args)) => agent_files::run(args),
         Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
         Some(LintCommand::AgentStatusTruth(args)) => agent_status_truth::run(args),

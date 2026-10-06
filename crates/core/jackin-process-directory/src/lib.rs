@@ -11,5 +11,5 @@ mod unix;
 #[cfg(unix)]
 pub use unix::current_dir;
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests;

@@ -6,7 +6,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 
 - CI orchestration (`ci`) and the lint gates (`lint` — file-size budget, and the lanes planned under it).
 - Docs checks (`docs` — repo-links, brand prose, spec↔test citations), schema checks (`schema`), profile/feature matrix (`profile_matrix`), and the agent-file symlink gate (`agent_files`, including per-crate README presence).
-- Architecture/structure tooling (`arch`), test-layout gate (`test_layout`), PTY fixture extraction (`pty_fixture`), construct helpers (`construct`), release verification (`release_verify`), and PR tooling (`pr`).
+- Architecture/structure tooling (`arch`), test-layout gate (`layout_lint`), PTY fixture extraction (`pty_fixture`), construct helpers (`construct`), release verification (`release_verify`), and PR tooling (`pr`).
 
 ## Architecture tier and allowed dependencies
 
@@ -30,7 +30,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 | [`headers.rs`](src/headers.rs) · [`headers/`](src/headers) | ownership-header contract gate | [`tests.rs`](src/headers/tests.rs) |
 | [`arch.rs`](src/arch.rs) · [`arch/`](src/arch) | tier-graph dependency-direction gate (`TIERS` table; prod edges must descend; dev-cycle allowlist) | [`tests.rs`](src/arch/tests.rs) |
 | [`readme_freshness.rs`](src/readme_freshness.rs) · [`readme_freshness/`](src/readme_freshness) | structural src change ⇒ README same-PR gate | [`tests.rs`](src/readme_freshness/tests.rs) |
-| [`test_layout.rs`](src/test_layout.rs) · [`test_layout/`](src/test_layout) | test-layout gate | [`tests.rs`](src/test_layout/tests.rs) |
+|  [`layout_lint.rs`](src/layout_lint.rs) · [`layout_lint/`](src/layout_lint) | test-layout gate | [`tests.rs`](src/layout_lint/tests.rs) |
 | [`schema.rs`](src/schema.rs) · [`schema/`](src/schema) | schema check | [`tests.rs`](src/schema/tests.rs) |
 | [`docs.rs`](src/docs.rs) · [`docs/`](src/docs) | docs repo-links / brand / specs / roadmap / research and semantic CI cache contracts | [`tests.rs`](src/docs/tests.rs), contract/brand/specs unit tests |
 | [`telemetry_registry.rs`](src/telemetry_registry.rs) · [`telemetry_registry/`](src/telemetry_registry) | closed-registry Weaver validation and namespace/privacy gates | [`tests.rs`](src/telemetry_registry/tests.rs) |

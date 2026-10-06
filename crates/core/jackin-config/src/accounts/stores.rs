@@ -28,7 +28,6 @@
 pub(crate) mod hermes;
 pub(crate) mod omp;
 pub(crate) mod opencode;
-#[cfg(test)]
 pub(crate) mod sqlite;
 
 use std::path::{Path, PathBuf};

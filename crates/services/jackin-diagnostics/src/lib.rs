@@ -7,14 +7,13 @@ pub mod build_log;
 pub mod logging;
 pub mod metrics;
 pub mod observability;
-#[cfg(feature = "test-support")]
-mod observability_test_support;
 pub mod operation;
 pub mod operator_notice;
 pub mod redact;
 pub mod run;
 pub mod screen;
 pub mod secret_scrub;
+mod span_snapshot;
 mod stage;
 pub mod terminal;
 
@@ -42,9 +41,6 @@ pub use observability::{
     flush_wire_test_export, init_wire_test_export, otlp_runtime_active_for_test,
     otlp_runtime_creation_count_for_test,
 };
-#[cfg(feature = "test-support")]
-#[doc(hidden)]
-pub use observability_test_support::TestSpanSnapshot;
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
     active_subprocess_done, active_timing_done, active_timing_started, emit_panic_crash,
@@ -52,6 +48,9 @@ pub use run::{
 };
 pub use screen::current_screen_name;
 pub use secret_scrub::scrub_secrets;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use span_snapshot::TestSpanSnapshot;
 pub use stage::DiagnosticStage;
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,

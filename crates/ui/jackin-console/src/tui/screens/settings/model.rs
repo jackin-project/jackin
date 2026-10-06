@@ -4,13 +4,9 @@
 //! Settings screen state: per-tab state structs for the General, Mounts,
 //! Environments, Auth, and Trust panels.
 
-#[path = "model/auth_impls.rs"]
 mod auth_impls;
-#[path = "model/env_impls.rs"]
 mod env_impls;
-#[path = "model/general_impls.rs"]
 mod general_impls;
-#[path = "model/trust_impls.rs"]
 mod trust_impls;
 
 pub use auth_impls::*;

@@ -12,7 +12,6 @@
 //! without depending on `jackin-runtime`. Re-exported here for existing call
 //! sites in this crate and downstream consumers.
 
-#[path = "state_io.rs"]
 mod state_io;
 use state_io::{FileSnapshot, StateDirectory};
 
