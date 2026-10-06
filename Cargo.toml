@@ -19,6 +19,7 @@ members = [
     "crates/jackin-host",
     "crates/jackin-image",
     "crates/jackin-manifest",
+    "crates/jackin-omp-store",
     "crates/jackin-process",
     "crates/jackin-process-directory",
     "crates/jackin-protocol",
@@ -85,6 +86,7 @@ jackin-instance = { version = "0.6.4", path = "crates/jackin-instance" }
 jackin-isolation = { version = "0.6.4", path = "crates/jackin-isolation" }
 jackin-launch = { version = "0.6.4", path = "crates/jackin-launch" }
 jackin-manifest = { version = "0.6.4", path = "crates/jackin-manifest" }
+jackin-omp-store = { version = "0.6.4", path = "crates/jackin-omp-store" }
 jackin-otlp-testbed = { version = "0.6.4", path = "crates/jackin-otlp-testbed" }
 jackin-process = { version = "0.6.4", path = "crates/jackin-process" }
 jackin-process-directory = { version = "0.6.4", path = "crates/jackin-process-directory" }
@@ -125,6 +127,7 @@ reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false }
 rustls-native-certs = "0.8"
 rustls-pki-types = "1"
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "backup", "hooks", "limits"] }
 security-framework = "3.7"
 semver = "1"
 serde = "1.0"
@@ -158,6 +161,7 @@ turso = { version = "=0.7.2", default-features = false }
 unicode-width = "0.2"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }
 zip = { version = "6.0.0", default-features = false, features = ["deflate"] }
 x509-cert = { version = "0.3", default-features = false }
 

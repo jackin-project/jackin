@@ -28,6 +28,7 @@
 pub(crate) mod hermes;
 pub(crate) mod omp;
 pub(crate) mod opencode;
+#[cfg(test)]
 pub(crate) mod sqlite;
 
 use std::path::{Path, PathBuf};
@@ -37,8 +38,6 @@ use std::path::{Path, PathBuf};
 pub(crate) enum StoreKind {
     /// XDG data `opencode/auth.json`, provider-keyed entries.
     Opencode,
-    /// `.omp/agent/agent.db`, `SQLite` credentials table.
-    Omp,
     /// `.hermes/` directory: `config.yaml`, `profiles/`, `auth.json`.
     Hermes,
 }

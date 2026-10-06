@@ -97,10 +97,11 @@ fn parse_agent(s: &str) -> Result<jackin_core::Agent, String> {
 }
 
 fn parse_model(s: &str) -> Result<String, String> {
-    if s.trim().is_empty() {
+    let model = s.trim();
+    if model.is_empty() {
         return Err("model ID cannot be empty".to_owned());
     }
-    Ok(s.to_owned())
+    Ok(model.to_owned())
 }
 
 fn parse_reasoning_effort(s: &str) -> Result<jackin_core::ReasoningEffort, String> {

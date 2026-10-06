@@ -64,7 +64,12 @@ fn load_args_agent_optional() {
     let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Load(super::LoadArgs { agent: None, .. }))
+        Some(Command::Load(super::LoadArgs {
+            agent: None,
+            model: None,
+            effort: None,
+            ..
+        }))
     ));
 }
 
@@ -98,6 +103,40 @@ fn load_args_rejects_unknown_effort() {
         Cli::try_parse_from(["jackin", "load", "agent-smith", "--effort", "maximum"]).unwrap_err();
     let message = strip_ansi(&error.to_string());
     assert!(message.contains("low, medium, high, max"), "{message}");
+}
+
+#[test]
+fn load_args_parses_model_and_effort_overrides() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "load",
+        "agent-smith",
+        "--agent",
+        "codex",
+        "--model",
+        "  provider/model-id  ",
+        "--effort",
+        "high",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Load(super::LoadArgs {
+            model: Some(ref model),
+            effort: Some(jackin_core::ReasoningEffort::High),
+            ..
+        })) if model == "provider/model-id"
+    ));
+}
+
+#[test]
+fn load_args_rejects_empty_model_and_unknown_effort() {
+    for args in [
+        vec!["jackin", "load", "agent-smith", "--model", "  "],
+        vec!["jackin", "load", "agent-smith", "--effort", "extreme"],
+    ] {
+        Cli::try_parse_from(args).expect_err("invalid launch override should be rejected");
+    }
 }
 
 #[test]
@@ -305,6 +344,20 @@ fn load_help_shows_mount_format() {
         help.contains("path[:ro]") && help.contains("src:dst[:ro]"),
         "mount format missing"
     );
+}
+
+#[test]
+fn load_help_documents_model_and_effort_overrides() {
+    let help = help_text(&["jackin", "load", "--help"]);
+    assert!(
+        help.contains("--model <MODEL>"),
+        "model option missing: {help}"
+    );
+    assert!(
+        help.contains("--effort <EFFORT>"),
+        "effort option missing: {help}"
+    );
+    assert!(help.contains("(low, medium, high, or max)"));
 }
 
 #[test]

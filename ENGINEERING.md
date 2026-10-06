@@ -17,7 +17,14 @@ Must use crate, not hand-rolled:
 - JSON parsing → `serde_json` (already in workspace).
 - Date/time, base64, semver, URL parsing, hex, regex — pick maintained ecosystem crate.
 - Cryptographic primitives — never roll own; use `ring`, `rustls`, `argon2`, etc.
-- SQLite / embedded-DB access → **`turso` only** (the workspace's single DB stack; see [usage_snapshot_store.rs](crates/jackin-usage/src/usage_snapshot_store.rs)). Never `rusqlite`, `diesel`-on-SQLite, or any other SQLite binding — a second SQLite stack is a continuity-with-workspace violation. `turso`'s API is async, so a sync caller must make its path async (or `block_on` a runtime handle), not reach for a sync binding.
+- SQLite / embedded-DB access → **`turso` by default** (the workspace's single general-purpose DB
+  stack; see [usage_snapshot_store.rs](crates/jackin-usage/src/usage_snapshot_store.rs)). The sole
+  narrow exception is `jackin-omp-store`, which may use the pinned bundled `rusqlite` API only on
+  bounded private copies of OMP's `agent.db` and WAL to recover and back up a coherent credential
+  snapshot. It must never open the live OMP database with SQLite, must reject rollback-journal
+  sidecars, and must not be used by generic workspace stores or other crates. Do not add
+  `diesel`-on-SQLite or another SQLite binding. `turso` remains async; other synchronous callers
+  must use an async path or `block_on` rather than widening this exception.
 - Native FFI bindings → **`boltffi` only** (see [jackin-usage-ffi](crates/jackin-usage-ffi/)). Never `uniffi` — it is workspace-banned in [deny.toml](deny.toml) and must not return in any crate.
 
 "Trivially small" carve-out narrow: single five-line helper splitting one fixed-format string fine. Multi-state line-by-line scanner with quote handling, comment stripping, indent rules, or anything smelling like reimplementing parser — not.
