@@ -111,19 +111,40 @@ fn bail_process(display: &str, status: std::process::ExitStatus) -> Result<()> {
 /// capture with inherited env; keeps `Command::output` for complex configured
 /// commands (env/cwd/stdio already set on the builder).
 pub(crate) fn output(cmd: &mut Command) -> Result<Vec<u8>> {
-    output_request(cmd, None)
+    output_request(cmd, None, None)
 }
 
 /// Capture stdout with a bounded wall-clock wait.
 pub(crate) fn output_timeout(cmd: &mut Command, timeout: Duration) -> Result<Vec<u8>> {
-    output_request(cmd, Some(timeout))
+    output_request(cmd, Some(timeout), None)
 }
 
-fn output_request(cmd: &mut Command, timeout: Option<Duration>) -> Result<Vec<u8>> {
+/// Capture stdout and stderr with wall-clock and byte limits.
+pub(crate) fn output_timeout_limited(
+    cmd: &mut Command,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+    max_stderr_bytes: usize,
+) -> Result<Vec<u8>> {
+    output_request(
+        cmd,
+        Some(timeout),
+        Some((max_stdout_bytes, max_stderr_bytes)),
+    )
+}
+
+fn output_request(
+    cmd: &mut Command,
+    timeout: Option<Duration>,
+    output_limits: Option<(usize, usize)>,
+) -> Result<Vec<u8>> {
     let display = display_command(cmd);
     let mut request = exec_request(cmd);
     if let Some(timeout) = timeout {
         request = request.timeout(timeout);
+    }
+    if let Some((stdout, stderr)) = output_limits {
+        request = request.output_limits(stdout, stderr);
     }
     let output =
         jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
