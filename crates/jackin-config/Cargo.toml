@@ -25,7 +25,7 @@ jackin-telemetry = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
-toml_edit = { workspace = true }
+toml_edit = { workspace = true, features = ["serde"] }
 toml = { workspace = true }
 directories = { workspace = true }
 fs4 = { workspace = true }

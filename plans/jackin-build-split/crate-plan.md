@@ -41,6 +41,18 @@ These names are alternatives, not selected crate boundaries. No proposal has com
 
 Do not infer ownership from a proposed crate name. Do not claim a performance benefit before measurements.
 
+### Independent naming and ownership crosscheck
+
+The independent Luna static crosscheck is recorded by source at `f4902db386e029a4a481b13767f7a29b5351af49` in packet SHA-256 `9c83c4643df9bf34966cc83ebbf9c0566f9abc9288395e851e1a22bb3af0759a`. It recommends `jackin-capsule-builder` for the binary-only builder package and the more specific usage names `jackin-session-usage`, `jackin-usage-providers`, `jackin-usage-store`, and `jackin-usage-broker`. The packet is static naming and ownership evidence only; no extraction, build, test, or benchmark ran.
+
+The full packet is preserved at [naming-crosscheck-2026-10-05.md](evidence/naming-crosscheck-2026-10-05.md) with its original SHA-256 unchanged.
+
+The ownership map keeps generic identities and paths in `jackin-core`, persisted application/workspace configuration in `jackin-config`, and shared wire DTOs in `jackin-protocol`. Provider parsing stays separate from session and broker code. Only the broker joins provider and store capabilities. The existing broker executable is currently owned by `jackin`; any new package with that name must move the executable to one owner and remove the old target, without an alias.
+
+The consumer audit finds a direct Turso-backed account cache in `crates/jackin/src/cli/usage/store.rs`, separate from the usage snapshot store. Capsule still reads OpenCode rows through Turso until that API moves behind a store-owned interface; a session-only move cannot claim Capsule is Turso-free. `jackin-usage-ffi` consumes both host broker APIs and shared presentation, so its dependencies need explicit mapping.
+
+The later usage-boundary packet `68deff0cd045bbf19ee55a644e7c524049e9d2d885ce6d74f16b34b2abeb654f` received only conditional Sol design review. The reviewer found that the dependency graph omits the CLI's direct `accounts.db` schema/query ownership. Before design acceptance, either add the `jackin` to `jackin-usage-store` edge or move the persistence API and migrate CLI callers while preserving schema, path, `account_key_hash`, and CLI cache tests. No crate extraction is authorized until that correction, the accepted-main comparison baseline, and measured target thresholds are complete.
+
 ## Interface requirements
 
 The extraction review must map each interface to its current consumer, contract, and verification command.

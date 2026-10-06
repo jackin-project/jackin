@@ -3,6 +3,8 @@
 
 //! Tests for `manifest`.
 use super::*;
+use crate::repo_contract::MANIFEST_FILENAME;
+use std::path::Path;
 use tempfile::tempdir;
 
 #[test]
@@ -39,12 +41,10 @@ plugins = []
 
 #[test]
 fn loads_architect_manifest_from_immutable_ci_snapshot() -> Result<(), Box<dyn std::error::Error>> {
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../jackin-xtask/tests/fixtures/architect");
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../jackin-xtask/tests/fixtures/architect");
     assert!(
-        fixture
-            .join(crate::repo_contract::MANIFEST_FILENAME)
-            .is_file(),
+        fixture.join(MANIFEST_FILENAME).is_file(),
         "Architect snapshot must provide Jackin's current manifest path"
     );
     let manifest = load_role_manifest(&fixture)?;

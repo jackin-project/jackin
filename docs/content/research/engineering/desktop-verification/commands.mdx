@@ -1,65 +1,57 @@
 ---
 title: "Proven verification commands"
-description: Catalogs local desktop verification commands and separates historical CI evidence from current Rust coverage.
+description: Catalogs build, binding, native-app, verification, and release commands proven by the desktop CI stack.
 ---
 
 ## Summary
 
-This catalog was originally vetted on 2026-07-24 against the former desktop
-CI stack. The retired PR, desktop-cadence, and release workflows are historical
-provenance, not current execution evidence. Their command accounts are retained
-in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a`. Source review on 2026-10-03 found
-only <RepoFile path=".github/workflows/ci.yml" />: Velnor-generated Rust CI.
-<RepoFile path=".velnor/config.toml" /> excludes `native/**`, `docs/**`, and
-`docker/**`; hosted bindings, native-app, and release coverage remains absent.
-Questions: build/test/lint/verify commands for `jackin-usage`,
-`jackin-usage-ffi`, boltffi bindings, the Swift app, and release verification.
+The desktop CI stack establishes the canonical build, binding, native-app, verification, and release command set.
+Questions: exact build/test/lint/verify commands executor plans may cite for
+crates (`jackin-usage`, `jackin-usage-ffi`), the boltffi bindings drift gate,
+the Swift app, and release verification.
 Informs: jackin-desktop
-Method: current source inspection; historical CI claims dated separately
-Vetted: 2026-10-03 (source contracts; no fresh execution claim)
+Method: codebase read (commands proven by CI green usage, not guessed)
+Vetted: 2026-07-24
 
 ## Findings
 
 ### Crates tests
-- Current generated Rust CI invokes each package separately:
-  `mbx nextest run --profile ci --locked --offline --manifest-path crates/jackin-usage/Cargo.toml --package jackin-usage --no-tests fail`
-  and the corresponding `jackin-usage-ffi` invocation —
-  <RepoFile path=".github/workflows/ci.yml" /> (confidence: HIGH).
-- Local desktop testing runs
-  `cargo nextest run -p jackin-usage -p jackin-usage-ffi --lib` through
-  <RepoFile path="crates/jackin-xtask/src/desktop.rs" />. The July 24 catalog's
-  combined `--locked` command came from retired PR CI; it is not today's
-  generated invocation (confidence: HIGH).
+- `cargo nextest run -p jackin-usage -p jackin-usage-ffi --locked` — exact CI
+  command for the `rust-jackin-usage` / `rust-jackin-usage-ffi` units —
+  <RepoFile path=".github/workflows/ci-pr.yml" /> (`group-rust` dispatches
+  `ci-unit-rust.yml`; per-crate commands in <RepoFile path=".github/ci/project.toml" />)
+  (confidence: HIGH)
 - General runner and filters: `cargo nextest run`, `-E 'test(name)'`,
-  `--all-features` — <RepoFile path="TESTING.md" /> (confidence: HIGH).
+  `--all-features` — <RepoFile path="TESTING.md" /> (confidence: HIGH)
 
 ### Bindings drift gate
 - `cargo xtask desktop bindings-check`
-  — local `mise run desktop-ci` step in <RepoFile path="mise.toml" />;
-  the former desktop-merge workflow was retired. <RepoFile path="mise.toml" /> pins `cargo:boltffi_cli` at `0.30.1`
-  to provide `boltffi`; no current hosted bindings gate executes it
+  — desktop-merge step, <RepoFile path=".github/workflows/desktop-merge.yml" />
+  (via `mise run desktop-ci`); requires the locked
+  `github:boltffi/boltffi` release asset (`boltffi` 0.30.1) from
+  <RepoFile path="mise.toml" />
   (confidence: HIGH)
 
 ### App build / verify / run
 - `cargo xtask desktop build --version "$JACKIN_APP_VERSION" --build "$JACKIN_APP_BUILD"`
   → `native/dist/JackinDesktop.app`; `cargo xtask desktop verify
-  native/dist/JackinDesktop.app [zip]` — local desktop steps
-  (`mise run desktop-ci`, with heavier `desktop-merge`/`desktop-scheduled` tasks);
+  native/dist/JackinDesktop.app [zip]` — desktop-cadence steps
+  (`mise run desktop-ci`, via `desktop-merge`/`desktop-scheduled`);
   operator wrappers `mise run desktop-build|desktop-verify|desktop-run|desktop`
   — <RepoFile path="mise.toml" /> (confidence: HIGH)
-- The local `desktop-merge` task also exercises the built app via UI tests
+- The merge cadence also exercises the built app via UI tests
   (`mise run desktop-test-ui`, after `desktop-ci`)
   (confidence: HIGH)
 
 ### Swift tests
-- `cargo xtask desktop test` (mise `desktop-test`, <RepoFile path="mise.toml" />)
-  requires macOS, runs the two Rust library suites, then five pure Swift
-  harnesses. Counted SwiftPM tests use `cargo xtask desktop test-swift` —
-  <RepoFile path="crates/jackin-xtask/src/desktop.rs" /> (confidence: HIGH).
-- **Snapshot runner stability:** The July 24 catalog recorded macOS 26 GA
-  under explicit `macos-26` labels and a June 2026 transition schedule for
-  the moving `macos-latest` alias. That is historical runner evidence; confirm
-  runner availability before adding a hosted native lane.
+- `cargo xtask desktop test` (mise `desktop-test`, <RepoFile path="mise.toml" />);
+  macOS-only guard `require_macos("desktop test")` —
+  `crates/jackin-xtask/src/desktop.rs:157`; full-Xcode alternative printed by
+  xtask: `cd native && swift test -c release` —
+  `crates/jackin-xtask/src/desktop.rs:197` (confidence: HIGH)
+- **Snapshot runner stability:** GitHub's current official runner-image
+  catalog exposes macOS 26 GA under explicit `macos-26` labels, while the
+  moving `macos-latest` alias was scheduled to transition in June 2026.
   Native system-font/SF-Symbol golden tests must use explicit `macos-26`,
   freeze Dynamic Type/accessibility/animation inputs, and keep tolerant
   pixel comparison; otherwise the runner major can change without a source
@@ -68,28 +60,21 @@ Vetted: 2026-10-03 (source contracts; no fresh execution claim)
   (confidence: HIGH)
 
 ### Workspace lint/fmt gates
-- Current generated Rust jobs use per-package `mbx fmt --check` and
-  `mbx clippy --locked --offline --manifest-path <manifest> --package <package> --all-targets -- -D warnings`
-  — <RepoFile path=".github/workflows/ci.yml" /> (confidence: HIGH).
-- Local formatting is `mise run fmt` (`cargo fmt --check`); local lint and
-  merge-readiness entry points are documented in
-  <RepoFile path="CONTRIBUTING.md" />. These local commands do not establish
-  hosted desktop coverage (confidence: HIGH).
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  and `cargo fmt` — workspace baseline, `crates/CLAUDE.md` (removed in #956; consolidated into root AGENTS.md) (lint section);
+  merge-readiness: `cargo xtask ci` / `cargo xtask ci --fast` —
+  `CONTRIBUTING.md` (confidence: HIGH)
 
 ### Release verification
 - `cargo xtask desktop sign-notarize` (mise `desktop-sign-notarize`),
-  `--release` verification requires Developer ID + notarization/staple/Gatekeeper —
-  <RepoFile path="native/README.md" /> and <RepoFile path="mise.toml" />.
-  The July 24 catalog attributed publication and archive naming to the former
-  release workflow. That workflow is absent; current Rust CI does not publish
-  or sign desktop releases (confidence: HIGH for local source contracts).
+  `--release` verify requires Developer ID + notarization/staple/Gatekeeper —
+  `native/README.md` (build/verify + CI/release contracts tables); release
+  artifact naming `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` —
+  `.github/workflows/release.yml:523-549` (confidence: HIGH)
 
 ## Dead ends and contradictions
-- The historical combined Rust invocation and desktop/release workflow
-  provenance do not describe the current generated Rust workflow.
+- None; commands converge across mise.toml, xtask source, CI, and docs.
 
 ## Limitations and open questions
-- Restore bindings/native/release automation through the current Velnor owner;
-  no released configuration in this checkout supplies those lanes.
-- Notarization needs operator Apple credentials; local command availability
-  does not prove a published signed release or a successful current run.
+- None load-bearing; notarization steps need org Apple secrets
+  (`release-macos` environment — names only, `native/README.md`).

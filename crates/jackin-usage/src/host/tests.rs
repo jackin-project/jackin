@@ -374,6 +374,120 @@ fn snapshot_surfaces_discovery_diagnostic_instead_of_refreshing() {
 }
 
 #[test]
+fn selected_account_route_is_unselected_without_persisted_choice() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    let catalog = runtime
+        .materialize_account_catalog()
+        .expect("account catalog");
+
+    let (route, view) = runtime.selected_route_and_view_for_catalog(&catalog, HostSurfaceId::Codex);
+
+    assert_eq!(route, HostSelectedAccountRoute::Unselected);
+    assert!(view.is_some_and(|view| view.is_refreshing_placeholder()));
+}
+
+#[test]
+fn selected_account_route_resolves_during_cold_placeholder_without_sibling_fallback() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let key = "persisted-codex-key";
+    let selected = HashMap::from([("codex".to_owned(), key.to_owned())]);
+    accounts::save_selected_accounts(&accounts::selected_accounts_path(dir.path()), &selected)
+        .expect("seed persisted selection");
+    let mut runtime = open_runtime(dir.path());
+
+    let projection = runtime.desktop_projection(3).expect("cold projection");
+    let provider = projection
+        .providers
+        .iter()
+        .find(|provider| provider.group.surface_id == "codex")
+        .expect("persisted selection keeps provider visible");
+
+    assert_eq!(
+        provider.selected_account_route,
+        HostSelectedAccountRoute::Resolving {
+            account_key: key.to_owned(),
+        }
+    );
+    assert!(provider.selected_usage.is_refreshing_placeholder());
+    assert!(provider.group.accounts.is_empty());
+}
+
+#[test]
+fn selected_account_routes_remain_scoped_to_their_provider() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut runtime = open_runtime(dir.path());
+    let codex_view = codex_fixture_view();
+    let codex = canonical_discovered_account(HostSurfaceId::Codex, "codex@example.com");
+    let mut claude_view = codex_fixture_view();
+    claude_view.focused_agent = Some("claude".to_owned());
+    claude_view.focused_provider = Some("Claude".to_owned());
+    claude_view.account.provider_label = "Anthropic / Claude".to_owned();
+    claude_view.account.account_label = "claude@example.com".to_owned();
+    let claude = canonical_discovered_account(HostSurfaceId::Claude, "claude@example.com");
+    runtime.discovered_views.insert(
+        (HostSurfaceId::Codex, codex.account_key.clone()),
+        codex_view,
+    );
+    runtime.discovered_views.insert(
+        (HostSurfaceId::Claude, claude.account_key.clone()),
+        claude_view,
+    );
+    runtime.discovery = Some(ValidatedUsageDiscovery {
+        config_generation: Some("two-provider-generation".to_owned()),
+        accounts: vec![codex.clone(), claude.clone()],
+        diagnostics: Vec::new(),
+        candidates: Vec::new(),
+        bindings: Vec::new(),
+    });
+    runtime
+        .set_selected_account("codex", &codex.account_key)
+        .expect("select exact Codex account");
+    runtime
+        .selected_accounts
+        .insert("claude".to_owned(), "removed-claude-account".to_owned());
+
+    let projection = runtime
+        .desktop_projection(3)
+        .expect("two-provider projection");
+    let codex_projection = projection
+        .providers
+        .iter()
+        .find(|provider| provider.group.surface_id == "codex")
+        .expect("Codex projection");
+    let claude_projection = projection
+        .providers
+        .iter()
+        .find(|provider| provider.group.surface_id == "claude")
+        .expect("Claude projection");
+
+    assert_eq!(
+        codex_projection.selected_account_route,
+        HostSelectedAccountRoute::Available {
+            account_key: codex.account_key,
+        }
+    );
+    assert_eq!(
+        claude_projection.selected_account_route,
+        HostSelectedAccountRoute::Unavailable {
+            account_key: "removed-claude-account".to_owned(),
+            notice: SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
+        }
+    );
+    assert_eq!(
+        claude_projection.selected_usage.last_error.as_deref(),
+        Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
+    );
+    assert!(
+        claude_projection
+            .group
+            .accounts
+            .iter()
+            .all(|account| !account.selected)
+    );
+}
+
+#[test]
 fn disable_surface_removes_from_list_and_blocks_snapshot() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut runtime = open_runtime(dir.path());
@@ -1084,6 +1198,20 @@ fn multi_account_list_select_and_snapshot() {
     let snap = runtime.snapshot("claude").expect("snapshot A");
     assert_eq!(snap.account.account_label, "personal@example.com");
     assert_eq!(snap.buckets[0].remaining_percent, Some(50));
+    let selected_projection = runtime
+        .desktop_projection(3)
+        .expect("available account projection");
+    let claude = selected_projection
+        .providers
+        .iter()
+        .find(|provider| provider.group.surface_id == "claude")
+        .expect("Claude projection");
+    assert_eq!(
+        claude.selected_account_route,
+        HostSelectedAccountRoute::Available {
+            account_key: key_a.clone()
+        }
+    );
 
     // The current catalog removes A while sibling B remains. The persisted
     // selection is intent, so it stays explicit and unavailable instead of
@@ -1129,7 +1257,13 @@ fn multi_account_list_select_and_snapshot() {
         .iter()
         .find(|provider| provider.group.surface_id == "claude")
         .expect("Claude desktop projection");
-    assert_eq!(claude.selected_account_key.as_deref(), Some(key_a.as_str()));
+    assert_eq!(
+        claude.selected_account_route,
+        HostSelectedAccountRoute::Unavailable {
+            account_key: key_a.clone(),
+            notice: SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
+        }
+    );
     assert_eq!(
         claude.selected_usage.last_error.as_deref(),
         Some(SELECTED_ACCOUNT_UNAVAILABLE_NOTICE)
@@ -1156,6 +1290,20 @@ fn multi_account_list_select_and_snapshot() {
     let restored = runtime.snapshot("claude").expect("restored A");
     assert_eq!(restored.account.account_label, "personal@example.com");
     assert_eq!(restored.buckets[0].remaining_percent, Some(50));
+    let restored_projection = runtime
+        .desktop_projection(3)
+        .expect("restored account projection");
+    let claude = restored_projection
+        .providers
+        .iter()
+        .find(|provider| provider.group.surface_id == "claude")
+        .expect("Claude restored projection");
+    assert_eq!(
+        claude.selected_account_route,
+        HostSelectedAccountRoute::Available {
+            account_key: key_a.clone()
+        }
+    );
 
     runtime
         .set_selected_account("claude", &key_b)
@@ -1210,7 +1358,13 @@ fn removed_last_selected_account_keeps_unavailable_provider_and_restores_exact_k
             .find(|provider| provider.group.surface_id == "codex")
             .expect("requested provider must remain visible");
         assert!(provider.group.accounts.is_empty());
-        assert_eq!(provider.selected_account_key.as_deref(), Some(key.as_str()));
+        assert_eq!(
+            provider.selected_account_route,
+            HostSelectedAccountRoute::Unavailable {
+                account_key: key.clone(),
+                notice: SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
+            }
+        );
         assert_eq!(
             provider.selected_usage.status,
             UsageSnapshotStatus::Unavailable
